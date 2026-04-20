@@ -86,8 +86,8 @@ const STATUS_LABEL: Record<string, string> = {
 }
 const STATUS_COLOR: Record<string, string> = {
   ACTIVE: 'bg-green-500/20 text-green-300', RESERVED: 'bg-blue-500/20 text-blue-300',
-  CHECKOUT_PENDING: 'bg-red-500/20 text-red-400', CHECKED_OUT: 'bg-gray-500/20 text-gray-400',
-  WAITING_TOUR: 'bg-purple-500/20 text-purple-300', TOUR_DONE: 'bg-indigo-500/20 text-indigo-300',
+  CHECKOUT_PENDING: 'bg-red-500/20 text-red-400', CHECKED_OUT: 'bg-gray-500/20 text-[var(--warm-mid)]',
+  WAITING_TOUR: 'bg-purple-500/20 text-purple-300', TOUR_DONE: 'bg-[var(--coral)]/20 text-[var(--coral)]',
   CANCELLED: 'bg-red-500/20 text-red-400', NON_RESIDENT: 'bg-amber-500/20 text-amber-300',
 }
 const REG_LABEL: Record<string, string> = {
@@ -430,7 +430,7 @@ export default function TenantClient({
       <th
         onClick={() => handleSort(sKey)}
         className={`text-left text-xs font-medium px-4 py-3 cursor-pointer select-none whitespace-nowrap transition-colors ${
-          active ? 'text-indigo-400' : 'text-gray-500 hover:text-gray-300'
+          active ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'
         }`}
       >
         {label}{active ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
@@ -452,10 +452,10 @@ export default function TenantClient({
 
       {/* 헤더 */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-bold text-white">입주자 관리</h1>
+        <h1 className="text-xl font-bold text-[var(--warm-dark)]">입주자 관리</h1>
         <button
           onClick={() => { setShowAdd(true); setError('') }}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors"
+          className="px-4 py-2 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors"
         >
           + 입주자 등록
         </button>
@@ -466,7 +466,7 @@ export default function TenantClient({
         {(['active', 'past'] as const).map(tab => (
           <button key={tab} onClick={() => setFilter(tab)}
             className={`px-4 py-2 text-sm font-medium rounded-xl transition-colors ${
-              filter === tab ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
+              filter === tab ? 'bg-[var(--coral)] text-[var(--warm-dark)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'
             }`}
           >
             {tab === 'active' ? `입주/예약자 (${activeCount})` : `퇴실자 내역 (${pastCount})`}
@@ -485,8 +485,8 @@ export default function TenantClient({
             <button key={f.key} onClick={() => set(f.key)}
               className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                 cur === f.key
-                  ? 'bg-gray-700 text-white'
-                  : 'text-gray-500 hover:text-gray-300'
+                  ? 'bg-[var(--canvas)] text-[var(--warm-dark)]'
+                  : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'
               }`}
             >
               {f.label}
@@ -502,21 +502,21 @@ export default function TenantClient({
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="이름, 호실, 국적, 직업 검색..."
-          className="bg-gray-800 border border-gray-700 rounded-xl px-4 py-1.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500 transition-colors w-56"
+          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-4 py-1.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)] transition-colors w-56"
         />
 
         {/* 열 설정 */}
         <div className="relative">
           <button
             onClick={() => setShowColMenu(v => !v)}
-            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white text-sm rounded-xl transition-colors"
+            className="px-3 py-1.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] text-sm rounded-xl transition-colors"
           >
             ⚙ 열 설정
           </button>
           {showColMenu && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowColMenu(false)} />
-              <div className="absolute right-0 mt-2 z-20 bg-gray-800 border border-gray-700 rounded-xl shadow-xl p-3 space-y-2 min-w-[160px]">
+              <div className="absolute right-0 mt-2 z-20 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-xl p-3 space-y-2 min-w-[160px]">
                 {COL_DEFS.filter(c => (c.tabs as readonly string[]).includes(filter)).map(c => (
                   <label key={c.key} className="flex items-center gap-2.5 cursor-pointer">
                     <input
@@ -525,7 +525,7 @@ export default function TenantClient({
                       onChange={e => updateColVis(c.key, e.target.checked)}
                       className="w-4 h-4 accent-indigo-500"
                     />
-                    <span className="text-sm text-gray-300">{c.label}</span>
+                    <span className="text-sm text-[var(--warm-dark)]">{c.label}</span>
                   </label>
                 ))}
               </div>
@@ -543,25 +543,25 @@ export default function TenantClient({
 
       {/* 테이블 */}
       {sorted.length === 0 ? (
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-12 text-center">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-12 text-center">
           <p className="text-4xl mb-3">👤</p>
-          <p className="text-white font-medium">
+          <p className="text-[var(--warm-dark)] font-medium">
             {search.trim() ? '검색 결과가 없습니다' : '입주자가 없습니다'}
           </p>
         </div>
       ) : (
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-auto max-h-[calc(100vh-310px)]">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100vh-310px)]">
           <table className="w-full" style={{ minWidth: `${280 + visibleCols.length * 110}px` }}>
-            <thead className="sticky top-0 z-30 bg-gray-900">
-              <tr className="border-b border-gray-800">
+            <thead className="sticky top-0 z-30 bg-[var(--cream)]">
+              <tr className="border-b border-[var(--warm-border)]">
                 {/* sticky 컬럼 — 호실 (수직+수평 모두 고정: z-40) */}
                 <th onClick={() => handleSort('roomNo')}
-                  className={`sticky left-0 z-40 bg-gray-900 text-left text-xs font-medium px-4 py-3 cursor-pointer select-none whitespace-nowrap transition-colors ${sortKey === 'roomNo' ? 'text-indigo-400' : 'text-gray-500 hover:text-gray-300'}`}>
+                  className={`sticky left-0 z-40 bg-[var(--cream)] text-left text-xs font-medium px-4 py-3 cursor-pointer select-none whitespace-nowrap transition-colors ${sortKey === 'roomNo' ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}>
                   호실{sortKey === 'roomNo' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
                 </th>
                 {/* sticky 컬럼 — 이름 (수직+수평 모두 고정: z-40) */}
                 <th onClick={() => handleSort('name')}
-                  className={`sticky left-[72px] z-40 bg-gray-900 text-left text-xs font-medium px-4 py-3 cursor-pointer select-none whitespace-nowrap transition-colors ${sortKey === 'name' ? 'text-indigo-400' : 'text-gray-500 hover:text-gray-300'}`}>
+                  className={`sticky left-[72px] z-40 bg-[var(--cream)] text-left text-xs font-medium px-4 py-3 cursor-pointer select-none whitespace-nowrap transition-colors ${sortKey === 'name' ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}>
                   이름{sortKey === 'name' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
                 </th>
                 {visibleCols.map(c => {
@@ -574,7 +574,7 @@ export default function TenantClient({
                   const sk = sortMap[c.key]
                   return sk
                     ? <SortTh key={c.key} label={c.label} sKey={sk} />
-                    : <th key={c.key} className="text-left text-xs text-gray-500 font-medium px-4 py-3 whitespace-nowrap">{c.label}</th>
+                    : <th key={c.key} className="text-left text-xs text-[var(--warm-muted)] font-medium px-4 py-3 whitespace-nowrap">{c.label}</th>
                 })}
               </tr>
             </thead>
@@ -588,54 +588,54 @@ export default function TenantClient({
                 return (
                   <tr key={tenant.id}
                     onClick={() => { setDetailTenant(tenant); setDetailTab('info') }}
-                    className="border-b border-gray-800/50 hover:bg-gray-800/40 transition-colors cursor-pointer"
+                    className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer"
                   >
                     {/* sticky — 호실 (클릭 시 호실 관리 페이지로) */}
-                    <td className="sticky left-0 z-20 bg-gray-900 px-4 py-3 text-sm font-semibold whitespace-nowrap"
+                    <td className="sticky left-0 z-20 bg-[var(--cream)] px-4 py-3 text-sm font-semibold whitespace-nowrap"
                       onClick={e => { e.stopPropagation(); if (lease?.room.id) setRoomDetailId(lease.room.id) }}>
-                      <span className="text-indigo-400 hover:text-indigo-300 cursor-pointer underline-offset-2 hover:underline">
+                      <span className="text-[var(--coral)] hover:text-[var(--coral)] cursor-pointer underline-offset-2 hover:underline">
                         {lease?.room.roomNo ? `${lease.room.roomNo}호` : '—'}
                       </span>
                     </td>
                     {/* sticky — 이름 */}
-                    <td className="sticky left-[72px] z-20 bg-gray-900 px-4 py-3 whitespace-nowrap">
-                      <p className="text-sm font-medium text-white">{tenant.name}</p>
+                    <td className="sticky left-[72px] z-20 bg-[var(--cream)] px-4 py-3 whitespace-nowrap">
+                      <p className="text-sm font-medium text-[var(--warm-dark)]">{tenant.name}</p>
                     </td>
                     {visibleCols.map(c => {
                       switch (c.key) {
                         case 'nationality': {
                           const f = flagByName(tenant.nationality)
                           return (
-                            <td key={c.key} className="px-4 py-3 text-sm text-gray-300 whitespace-nowrap">
+                            <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-dark)] whitespace-nowrap">
                               {tenant.nationality ? `${f} ${tenant.nationality}` : '—'}
                             </td>
                           )
                         }
                         case 'gender':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">{GENDER_LABEL[tenant.gender] ?? '—'}</td>
+                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{GENDER_LABEL[tenant.gender] ?? '—'}</td>
                         case 'englishName':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">{tenant.englishName || '—'}</td>
+                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{tenant.englishName || '—'}</td>
                         case 'job':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">{tenant.job || '—'}</td>
+                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{tenant.job || '—'}</td>
                         case 'contact':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">{primary?.contactValue ? formatPhone(primary.contactValue) : '—'}</td>
+                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{primary?.contactValue ? formatPhone(primary.contactValue) : '—'}</td>
                         case 'payMethod':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">{lease?.payMethod || '—'}</td>
+                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{lease?.payMethod || '—'}</td>
                         case 'depositAmount':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-white whitespace-nowrap">{lease ? <MoneyDisplay amount={lease.depositAmount} /> : '—'}</td>
+                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-dark)] whitespace-nowrap">{lease ? <MoneyDisplay amount={lease.depositAmount} /> : '—'}</td>
                         case 'rentAmount':
                           return (
                             <td key={c.key}
                               onClick={e => { e.stopPropagation(); if (lease) openPayModal(tenant, lease) }}
-                              className="px-4 py-3 text-sm text-white whitespace-nowrap cursor-pointer hover:text-indigo-300 transition-colors">
+                              className="px-4 py-3 text-sm text-[var(--warm-dark)] whitespace-nowrap cursor-pointer hover:text-[var(--coral)] transition-colors">
                               {lease ? <MoneyDisplay amount={lease.rentAmount} /> : '—'}
                             </td>
                           )
                         case 'dueDay':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">{fmtDueDay(lease?.dueDay)}</td>
+                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{fmtDueDay(lease?.dueDay)}</td>
                         case 'stayPeriod':
                           return (
-                            <td key={c.key} className="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">
+                            <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">
                               {calcStayPeriod(lease?.moveInDate, lease?.moveOutDate ?? undefined)}
                             </td>
                           )
@@ -655,7 +655,7 @@ export default function TenantClient({
                         }
                         case 'scheduledDate':
                           return (
-                            <td key={c.key} className="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">
+                            <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">
                               {sched ? (
                                 <div className="flex items-center gap-1.5">
                                   <span>{fmtShortDate(sched.date)}</span>
@@ -664,7 +664,7 @@ export default function TenantClient({
                             </td>
                           )
                         case 'moveOutDate':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">{fmtDate(lease?.moveOutDate)}</td>
+                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{fmtDate(lease?.moveOutDate)}</td>
                         default: return null
                       }
                     })}
@@ -706,13 +706,13 @@ export default function TenantClient({
         return (
           <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
             onClick={closeDetail}>
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg flex flex-col max-h-[88vh]"
+            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[88vh]"
               onClick={e => e.stopPropagation()}>
 
               {/* 팝업 헤더 */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
                 <div className="flex items-center gap-2.5">
-                  <h2 className="text-base font-bold text-white">
+                  <h2 className="text-base font-bold text-[var(--warm-dark)]">
                     {detailEditMode ? '입주자 정보 수정' : '입주자 상세정보'}
                   </h2>
                   {!detailEditMode && (
@@ -728,7 +728,7 @@ export default function TenantClient({
                   })()}
                 </div>
                 <div className="flex items-center gap-2 ml-4 shrink-0">
-                  <button onClick={closeDetail} className="text-gray-500 hover:text-white text-xl leading-none">✕</button>
+                  <button onClick={closeDetail} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
                 </div>
               </div>
 
@@ -743,13 +743,13 @@ export default function TenantClient({
                 return (
                   <>
                     {/* 탭 헤더 */}
-                    <div className="flex border-b border-gray-800 px-6 shrink-0">
+                    <div className="flex border-b border-[var(--warm-border)] px-6 shrink-0">
                       {(['info', 'analysis'] as const).map(tab => (
                         <button key={tab} onClick={() => setDetailTab(tab)}
                           className={`py-2.5 px-4 text-sm font-medium border-b-2 transition-colors ${
                             detailTab === tab
-                              ? 'border-indigo-500 text-indigo-400'
-                              : 'border-transparent text-gray-500 hover:text-gray-300'
+                              ? 'border-[var(--coral)] text-[var(--coral)]'
+                              : 'border-transparent text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'
                           }`}>
                           {tab === 'info' ? '상세 정보' : '수납 분석'}
                         </button>
@@ -762,7 +762,7 @@ export default function TenantClient({
                         <>
                           <InfoSection title="기본 정보">
                             <InfoGrid>
-                              <InfoItem label="이름"       value={<span className="font-semibold text-white">{t.name}</span>} />
+                              <InfoItem label="이름"       value={<span className="font-semibold text-[var(--warm-dark)]">{t.name}</span>} />
                               <InfoItem label="호실"       value={lease ? `${lease.room.roomNo}호` : '—'} />
                               {t.englishName && <InfoItem label="영어이름" value={t.englishName} />}
                               <InfoItem label="성별"       value={GENDER_LABEL[t.gender] ?? t.gender} />
@@ -810,7 +810,7 @@ export default function TenantClient({
                                 {lease.contractUrl && (
                                   <InfoItem label="계약서" value={
                                     <a href={lease.contractUrl} target="_blank" rel="noopener noreferrer"
-                                      className="text-indigo-400 hover:text-indigo-300 text-xs">링크 열기 ↗</a>
+                                      className="text-[var(--coral)] hover:text-[var(--coral)] text-xs">링크 열기 ↗</a>
                                   } />
                                 )}
                               </InfoGrid>
@@ -819,7 +819,7 @@ export default function TenantClient({
 
                           {t.memo && (
                             <InfoSection title="메모">
-                              <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{t.memo}</p>
+                              <p className="text-sm text-[var(--warm-dark)] leading-relaxed whitespace-pre-wrap">{t.memo}</p>
                             </InfoSection>
                           )}
                         </>
@@ -828,39 +828,39 @@ export default function TenantClient({
                       {detailTab === 'analysis' && (
                         <>
                           <div className="grid grid-cols-3 gap-3">
-                            <div className="bg-gray-800 rounded-xl p-3 text-center">
-                              <p className="text-xs text-gray-500 mb-1">납부월</p>
+                            <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+                              <p className="text-xs text-[var(--warm-muted)] mb-1">납부월</p>
                               <p className="text-lg font-bold text-green-400">{paidMonths}개월</p>
                             </div>
-                            <div className="bg-gray-800 rounded-xl p-3 text-center">
-                              <p className="text-xs text-gray-500 mb-1">총 납부액</p>
-                              <p className="text-lg font-bold text-white"><MoneyDisplay amount={totalPaid} /></p>
+                            <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+                              <p className="text-xs text-[var(--warm-muted)] mb-1">총 납부액</p>
+                              <p className="text-lg font-bold text-[var(--warm-dark)]"><MoneyDisplay amount={totalPaid} /></p>
                             </div>
-                            <div className="bg-gray-800 rounded-xl p-3 text-center">
-                              <p className="text-xs text-gray-500 mb-1">미납액</p>
-                              <p className={`text-lg font-bold ${unpaid > 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                            <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+                              <p className="text-xs text-[var(--warm-muted)] mb-1">미납액</p>
+                              <p className={`text-lg font-bold ${unpaid > 0 ? 'text-red-400' : 'text-[var(--warm-mid)]'}`}>
                                 <MoneyDisplay amount={Math.max(0, unpaid)} />
                               </p>
                             </div>
                           </div>
                           <InfoSection title="최근 수납 내역 (최대 12개월)">
                             {payments.length === 0 ? (
-                              <p className="text-sm text-gray-500 text-center py-4">수납 기록이 없습니다.</p>
+                              <p className="text-sm text-[var(--warm-muted)] text-center py-4">수납 기록이 없습니다.</p>
                             ) : (
                               <div className="space-y-2">
                                 {payments.map(p => (
-                                  <div key={p.id} className="flex items-center justify-between py-2 border-b border-gray-800/50 last:border-0">
+                                  <div key={p.id} className="flex items-center justify-between py-2 border-b border-[var(--warm-border)]/50 last:border-0">
                                     <div className="flex items-center gap-2">
                                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${p.isPaid ? 'bg-green-400' : 'bg-red-400'}`} />
-                                      <span className="text-sm text-gray-300">{p.targetMonth}</span>
-                                      {p.payMethod && <span className="text-xs text-gray-600">{p.payMethod}</span>}
+                                      <span className="text-sm text-[var(--warm-dark)]">{p.targetMonth}</span>
+                                      {p.payMethod && <span className="text-xs text-[var(--warm-muted)]">{p.payMethod}</span>}
                                     </div>
                                     <div className="text-right">
                                       <span className={`text-sm font-medium ${p.isPaid ? 'text-green-300' : 'text-red-400'}`}>
                                         <MoneyDisplay amount={p.actualAmount} />
                                       </span>
                                       {p.expectedAmount !== p.actualAmount && (
-                                        <span className="text-xs text-gray-600 ml-1">/ <MoneyDisplay amount={p.expectedAmount} /></span>
+                                        <span className="text-xs text-[var(--warm-muted)] ml-1">/ <MoneyDisplay amount={p.expectedAmount} /></span>
                                       )}
                                     </div>
                                   </div>
@@ -870,30 +870,30 @@ export default function TenantClient({
                           </InfoSection>
 
                           {/* Gemini AI 분석 */}
-                          <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4 space-y-3">
+                          <div className="rounded-xl border border-[var(--coral)]/20 bg-[var(--coral)]/5 p-4 space-y-3">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 <span className="text-base">✨</span>
-                                <span className="text-sm font-semibold text-indigo-300">Gemini AI 수납 진단</span>
+                                <span className="text-sm font-semibold text-[var(--coral)]">Gemini AI 수납 진단</span>
                               </div>
                               <button
                                 onClick={handleAiAnalyze}
                                 disabled={aiLoading}
-                                className="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-50">
+                                className="text-xs px-3 py-1.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] rounded-lg transition-colors disabled:opacity-50">
                                 {aiLoading ? '분석 중...' : aiText ? '다시 분석' : '분석하기'}
                               </button>
                             </div>
                             {aiLoading && (
-                              <div className="flex items-center gap-2 text-xs text-indigo-400 animate-pulse">
-                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" />
+                              <div className="flex items-center gap-2 text-xs text-[var(--coral)] animate-pulse">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[var(--coral)] animate-bounce" />
                                 AI가 수납 패턴을 분석하고 있습니다...
                               </div>
                             )}
                             {aiText && !aiLoading && (
-                              <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{aiText}</p>
+                              <p className="text-sm text-[var(--warm-dark)] leading-relaxed whitespace-pre-wrap">{aiText}</p>
                             )}
                             {!aiText && !aiLoading && (
-                              <p className="text-xs text-gray-600">'분석하기'를 눌러 이 입주자의 수납 건전성을 AI로 진단하세요.</p>
+                              <p className="text-xs text-[var(--warm-muted)]">'분석하기'를 눌러 이 입주자의 수납 건전성을 AI로 진단하세요.</p>
                             )}
                           </div>
                         </>
@@ -901,7 +901,7 @@ export default function TenantClient({
                     </div>
 
                     {/* 읽기 전용 푸터 */}
-                    <div className="border-t border-gray-800 px-6 py-4 flex gap-2 shrink-0">
+                    <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                       <button onClick={() => handleDelete(t.id, t.name)} disabled={isPending}
                         className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm rounded-xl transition-colors disabled:opacity-40">
                         삭제
@@ -915,7 +915,7 @@ export default function TenantClient({
                       )}
                       <button
                         onClick={() => { setDetailEditMode(true); setDetailTab('info'); setError('') }}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors">
+                        className="px-4 py-2 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
                         수정
                       </button>
                     </div>
@@ -931,14 +931,14 @@ export default function TenantClient({
                   <div className="overflow-y-auto p-6 space-y-4 flex-1">
                     <TenantForm rooms={rooms} tenant={t} error={error} />
                   </div>
-                  <div className="border-t border-gray-800 px-6 py-4 flex gap-2 shrink-0">
+                  <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                     <button type="button"
                       onClick={() => { setDetailEditMode(false); setError('') }}
-                      className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">
+                      className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
                       취소
                     </button>
                     <button type="submit" disabled={isPending}
-                      className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                      className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                       {isPending ? '저장 중...' : '저장'}
                     </button>
                   </div>
@@ -954,21 +954,21 @@ export default function TenantClient({
       {showAdd && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
           onClick={() => setShowAdd(false)}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh]"
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh]"
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
-              <h2 className="text-base font-bold text-white">입주자 등록</h2>
-              <button onClick={() => setShowAdd(false)} className="text-gray-500 hover:text-white text-xl">✕</button>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+              <h2 className="text-base font-bold text-[var(--warm-dark)]">입주자 등록</h2>
+              <button onClick={() => setShowAdd(false)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl">✕</button>
             </div>
             <form onSubmit={handleAdd} className="overflow-y-auto p-6 space-y-4">
               <TenantForm rooms={rooms} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} />
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={() => setShowAdd(false)}
-                  className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">
+                  className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
                   취소
                 </button>
                 <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                   {isPending ? '저장 중...' : '저장'}
                 </button>
               </div>
@@ -981,11 +981,11 @@ export default function TenantClient({
       {editTenant && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
           onClick={() => setEditTenant(null)}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh]"
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh]"
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
-              <h2 className="text-base font-bold text-white">수정 — {editTenant.name}</h2>
-              <button onClick={() => setEditTenant(null)} className="text-gray-500 hover:text-white text-xl">✕</button>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+              <h2 className="text-base font-bold text-[var(--warm-dark)]">수정 — {editTenant.name}</h2>
+              <button onClick={() => setEditTenant(null)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl">✕</button>
             </div>
             <form key={editTenant.id} onSubmit={handleUpdate} className="overflow-y-auto p-6 space-y-4">
               <input type="hidden" name="tenantId"    value={editTenant.id} />
@@ -993,11 +993,11 @@ export default function TenantClient({
               <TenantForm rooms={rooms} tenant={editTenant} error={error} />
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={() => setEditTenant(null)}
-                  className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">
+                  className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
                   취소
                 </button>
                 <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                   {isPending ? '저장 중...' : '저장'}
                 </button>
               </div>
@@ -1019,20 +1019,20 @@ export default function TenantClient({
         return (
           <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
             onClick={closePayModal}>
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md flex flex-col max-h-[88vh]"
+            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[88vh]"
               onClick={e => e.stopPropagation()}>
 
               {/* 헤더 */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
                 <div>
-                  <h2 className="text-base font-bold text-white">
+                  <h2 className="text-base font-bold text-[var(--warm-dark)]">
                     {lease.room.roomNo}호 — {tenant.name}
                   </h2>
-                  <p className="text-xs text-gray-500 mt-0.5">
+                  <p className="text-xs text-[var(--warm-muted)] mt-0.5">
                     {targetMonth} · 예정 {lease.rentAmount.toLocaleString()}원
                   </p>
                 </div>
-                <button onClick={closePayModal} className="text-gray-500 hover:text-white text-xl leading-none">✕</button>
+                <button onClick={closePayModal} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
               </div>
 
               {/* ── 읽기 전용 ── */}
@@ -1041,12 +1041,12 @@ export default function TenantClient({
                   <div className="flex-1 overflow-y-auto p-6 space-y-5">
                     {/* 요약 */}
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-gray-800 rounded-xl p-3 text-center">
-                        <p className="text-xs text-gray-500">총 수납</p>
-                        <p className="text-sm font-bold mt-0.5 text-white"><MoneyDisplay amount={totalPaid} /></p>
+                      <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+                        <p className="text-xs text-[var(--warm-muted)]">총 수납</p>
+                        <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]"><MoneyDisplay amount={totalPaid} /></p>
                       </div>
-                      <div className="bg-gray-800 rounded-xl p-3 text-center">
-                        <p className="text-xs text-gray-500">잔액</p>
+                      <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+                        <p className="text-xs text-[var(--warm-muted)]">잔액</p>
                         <p className={`text-sm font-bold mt-0.5 ${balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                           {balance > 0
                             ? <MoneyDisplay amount={balance} prefix="+" />
@@ -1060,17 +1060,17 @@ export default function TenantClient({
                     {/* 납부 내역 */}
                     {payHistory.length > 0 && (
                       <div className="space-y-2">
-                        <p className="text-xs font-medium text-gray-400">납부 내역</p>
+                        <p className="text-xs font-medium text-[var(--warm-mid)]">납부 내역</p>
                         {payHistory.map(p => (
-                          <div key={p.id} className="flex items-center justify-between bg-gray-800 rounded-xl px-3 py-2.5">
+                          <div key={p.id} className="flex items-center justify-between bg-[var(--canvas)] rounded-xl px-3 py-2.5">
                             <div>
-                              <p className="text-xs text-gray-400">
+                              <p className="text-xs text-[var(--warm-mid)]">
                                 {p.seqNo}회차 · {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
                               </p>
-                              {p.memo && <p className="text-xs text-indigo-400 mt-0.5">{p.memo}</p>}
+                              {p.memo && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold text-white">{p.actualAmount.toLocaleString()}원</span>
+                              <span className="text-sm font-semibold text-[var(--warm-dark)]">{p.actualAmount.toLocaleString()}원</span>
                               <button onClick={() => handleDeletePayRecord(p.id)}
                                 className="text-xs text-red-400 hover:text-red-300 transition-colors">✕</button>
                             </div>
@@ -1080,7 +1080,7 @@ export default function TenantClient({
                     )}
 
                     {payHistory.length === 0 && (
-                      <p className="text-sm text-gray-600 text-center py-4">이 달 수납 기록이 없습니다.</p>
+                      <p className="text-sm text-[var(--warm-muted)] text-center py-4">이 달 수납 기록이 없습니다.</p>
                     )}
                   </div>
 
@@ -1129,7 +1129,7 @@ export default function TenantClient({
                         </div>
 
                         {isOverrideActive && !showOverrideForm && (
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-[var(--warm-muted)]">
                             기준 {fmtDueDay(lease.dueDay)} → 이번달 {lease.overrideDueDay}일
                             {lease.overrideDueDayReason ? ` · ${lease.overrideDueDayReason}` : ''}
                           </p>
@@ -1139,23 +1139,23 @@ export default function TenantClient({
                           <div className="space-y-2">
                             <div className="flex gap-2">
                               <div className="flex-1 space-y-1">
-                                <label className="text-xs text-gray-500">조정 납부일</label>
+                                <label className="text-xs text-[var(--warm-muted)]">조정 납부일</label>
                                 <input
                                   type="text"
                                   value={overrideInput}
                                   onChange={e => setOverrideInput(e.target.value)}
                                   placeholder="예: 20, 말일"
-                                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-gray-600 outline-none focus:border-amber-500"
+                                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-amber-500"
                                 />
                               </div>
                               <div className="flex-1 space-y-1">
-                                <label className="text-xs text-gray-500">사유 (선택)</label>
+                                <label className="text-xs text-[var(--warm-muted)]">사유 (선택)</label>
                                 <input
                                   type="text"
                                   value={overrideReason}
                                   onChange={e => setOverrideReason(e.target.value)}
                                   placeholder="예: 급여일 변경"
-                                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-gray-600 outline-none focus:border-amber-500"
+                                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-amber-500"
                                 />
                               </div>
                             </div>
@@ -1169,7 +1169,7 @@ export default function TenantClient({
                                   refresh()
                                 })
                               }}
-                              className="w-full py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
+                              className="w-full py-1.5 bg-amber-600 hover:bg-amber-500 text-[var(--warm-dark)] text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
                               {isPending ? '저장 중...' : `${targetMonth} 납부일을 ${overrideInput || '?'}일로 조정`}
                             </button>
                           </div>
@@ -1178,10 +1178,10 @@ export default function TenantClient({
                     )
                   })()}
 
-                  <div className="border-t border-gray-800 px-6 py-4 flex gap-2 shrink-0">
+                  <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                     <div className="flex-1" />
                     <button onClick={() => { setShowPayForm(true); setError('') }}
-                      className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors">
+                      className="px-4 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
                       수납 등록
                     </button>
                   </div>
@@ -1194,20 +1194,20 @@ export default function TenantClient({
                   <div className="flex-1 overflow-y-auto p-6 space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <label className="text-xs text-gray-500">날짜</label>
+                        <label className="text-xs text-[var(--warm-muted)]">날짜</label>
                         <input type="date" name="payDate"
                           defaultValue={new Date().toISOString().slice(0, 10)}
-                          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-500" />
+                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs text-gray-500">금액</label>
+                        <label className="text-xs text-[var(--warm-muted)]">금액</label>
                         <MoneyInput name="amount" defaultValue={lease.rentAmount} placeholder="0원" />
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs text-gray-500">결제 수단</label>
+                      <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
                       <select name="payMethod"
-                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-500">
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                         <option value="계좌이체">계좌이체</option>
                         <option value="현금">현금</option>
                         <option value="신용카드">신용카드</option>
@@ -1215,19 +1215,19 @@ export default function TenantClient({
                       </select>
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs text-gray-500">메모</label>
+                      <label className="text-xs text-[var(--warm-muted)]">메모</label>
                       <input type="text" name="memo" placeholder="메모 (선택)"
-                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                     </div>
                     {error && <p className="text-red-400 text-sm">{error}</p>}
                   </div>
-                  <div className="border-t border-gray-800 px-6 py-4 flex gap-2 shrink-0">
+                  <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                     <button type="button" onClick={() => { setShowPayForm(false); setError('') }}
-                      className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">
+                      className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
                       취소
                     </button>
                     <button type="submit" disabled={isPending}
-                      className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                      className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                       {isPending ? '저장 중...' : '저장'}
                     </button>
                   </div>
@@ -1244,21 +1244,21 @@ export default function TenantClient({
         return (
           <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
             onClick={() => setRoomDetailId(null)}>
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm p-6 space-y-3"
+            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm p-6 space-y-3"
               onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between">
-                <h2 className="text-base font-bold text-white">{room?.roomNo}호 정보</h2>
-                <button onClick={() => setRoomDetailId(null)} className="text-gray-500 hover:text-white text-xl">✕</button>
+                <h2 className="text-base font-bold text-[var(--warm-dark)]">{room?.roomNo}호 정보</h2>
+                <button onClick={() => setRoomDetailId(null)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl">✕</button>
               </div>
               {room ? (
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-gray-500">상태</span><span className={room.isVacant ? 'text-gray-400' : 'text-green-300'}>{room.isVacant ? '공실' : '입주중'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">기본 이용료</span><span className="text-white"><MoneyDisplay amount={room.baseRent} /></span></div>
+                  <div className="flex justify-between"><span className="text-[var(--warm-muted)]">상태</span><span className={room.isVacant ? 'text-[var(--warm-mid)]' : 'text-green-300'}>{room.isVacant ? '공실' : '입주중'}</span></div>
+                  <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기본 이용료</span><span className="text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></span></div>
                 </div>
               ) : (
-                <p className="text-gray-500 text-sm">호실 정보를 찾을 수 없습니다.</p>
+                <p className="text-[var(--warm-muted)] text-sm">호실 정보를 찾을 수 없습니다.</p>
               )}
-              <a href="/room-manage" className="block w-full text-center py-2 mt-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">
+              <a href="/room-manage" className="block w-full text-center py-2 mt-2 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
                 호실 관리 페이지로 →
               </a>
             </div>
@@ -1340,11 +1340,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-gray-400">국적</label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">국적</label>
             <CountrySelect name="nationality" defaultValue={tenant?.nationality} />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-gray-400">직업</label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">직업</label>
             <JobSelect name="job" defaultValue={tenant?.job} />
           </div>
         </div>
@@ -1362,9 +1362,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
         <div className="grid grid-cols-2 gap-3">
           {/* 상태 — controlled (퇴실일 표시 여부 결정) */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-gray-400">상태</label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">상태</label>
             <select name="status" value={statusVal} onChange={e => setStatusVal(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
               <option value="ACTIVE">거주중</option>
               <option value="RESERVED">입실 예정</option>
               <option value="CHECKOUT_PENDING">퇴실 예정</option>
@@ -1381,34 +1381,34 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-gray-400">월 이용료</label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">월 이용료</label>
             <MoneyInput name="rentAmount" defaultValue={lease?.rentAmount} placeholder="0원" />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-gray-400">보증금</label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">보증금</label>
             <MoneyInput name="depositAmount" defaultValue={lease?.depositAmount ?? (defaultDeposit ?? undefined)} placeholder="0원" />
           </div>
         </div>
         {/* 청소비 | 입주일 (아이템 6) */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-gray-400">청소비</label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">청소비</label>
             <MoneyInput name="cleaningFee" defaultValue={lease?.cleaningFee ?? (defaultCleaningFee ?? undefined)} placeholder="0원" />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-gray-400">입주일</label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">입주일</label>
             <input
               type="date" name="moveInDate"
               defaultValue={toDateInput(lease?.moveInDate)}
               onChange={handleMoveInChange}
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
             />
           </div>
         </div>
         {/* 납부일 | 퇴실일(조건부) (아이템 5, 7, 8) */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-gray-400">납부일</label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">납부일</label>
             <input type="hidden" name="dueDay" value={dueDayRaw} />
             <input
               type="text"
@@ -1417,7 +1417,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               onFocus={() => setDueDayDisp(prev => prev.replace(/일$/, ''))}
               onBlur={() => applyDueDay(dueDayDisp)}
               placeholder="15일, 말일 등"
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500 transition-colors"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)] transition-colors"
             />
           </div>
           {showExitDate && (
@@ -1436,14 +1436,14 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             <option value="TELEGRAM">텔레그램</option>
           </SelectField>
           <div className="col-span-2 space-y-1.5">
-            <label className="text-xs font-medium text-gray-400">연락처</label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">연락처</label>
             <PhoneInput name="contactValue" defaultValue={primary?.contactValue ?? ''} />
           </div>
         </div>
         <div className="grid grid-cols-3 gap-2">
           <Field label="비상연락 관계" name="emergencyRelation" defaultValue={emergency?.emergencyRelation ?? ''} placeholder="부모님" />
           <div className="col-span-2 space-y-1.5">
-            <label className="text-xs font-medium text-gray-400">비상 연락처</label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">비상 연락처</label>
             <PhoneInput name="emergencyContact" defaultValue={emergency?.contactValue ?? ''} />
           </div>
         </div>
@@ -1478,7 +1478,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
 
       <FormSection title="메모">
         <textarea name="memo" rows={2} defaultValue={tenant?.memo ?? ''} placeholder="입주자 특이사항"
-          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500 resize-none" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)] resize-none" />
       </FormSection>
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -1491,7 +1491,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
 function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="space-y-3">
-      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider pb-1 border-b border-gray-800/60">{title}</p>
+      <p className="text-xs font-semibold text-[var(--warm-muted)] uppercase tracking-wider pb-1 border-b border-[var(--warm-border)]/60">{title}</p>
       {children}
     </div>
   )
@@ -1502,9 +1502,9 @@ function Field({ label, name, type = 'text', placeholder, defaultValue, required
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-medium text-gray-400">{label}</label>
+      <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       <input type={type} name={name} defaultValue={defaultValue} placeholder={placeholder} required={required}
-        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500 transition-colors" />
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)] transition-colors" />
     </div>
   )
 }
@@ -1514,9 +1514,9 @@ function SelectField({ label, name, children, defaultValue, required }: {
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-medium text-gray-400">{label}</label>
+      <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       <select name={name} defaultValue={defaultValue} required={required}
-        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
         {children}
       </select>
     </div>
@@ -1526,7 +1526,7 @@ function SelectField({ label, name, children, defaultValue, required }: {
 function InfoSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="space-y-2">
-      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider pb-1.5 border-b border-gray-800/60">{title}</p>
+      <p className="text-xs font-semibold text-[var(--warm-muted)] uppercase tracking-wider pb-1.5 border-b border-[var(--warm-border)]/60">{title}</p>
       {children}
     </div>
   )
@@ -1539,8 +1539,8 @@ function InfoGrid({ children }: { children: React.ReactNode }) {
 function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className="text-sm text-gray-200 mt-0.5">{value}</p>
+      <p className="text-xs text-[var(--warm-muted)]">{label}</p>
+      <p className="text-sm text-[var(--warm-dark)] mt-0.5">{value}</p>
     </div>
   )
 }

@@ -389,13 +389,13 @@ export default function FinanceClient({
     <div className="space-y-5">
 
       {/* 서브탭 */}
-      <div className="flex gap-1 border-b border-gray-800 overflow-x-auto scrollbar-hide">
+      <div className="flex gap-1 border-b border-[var(--warm-border)] overflow-x-auto scrollbar-hide">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors rounded-t-xl
               ${tab === t.key
-                ? 'text-indigo-400 border-b-2 border-indigo-400 bg-gray-900'
-                : 'text-gray-500 hover:text-gray-300'}`}>
+                ? 'text-[var(--coral)] border-b-2 border-[var(--coral)] bg-[var(--cream)]'
+                : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}>
             {t.label}
           </button>
         ))}
@@ -406,48 +406,48 @@ export default function FinanceClient({
       ══════════════════════════════════════════════════════════ */}
       {tab === 'expense' && (
         <div className="space-y-4">
-          <h2 className="text-sm font-semibold text-gray-400">{monthLabel} 지출 내역</h2>
+          <h2 className="text-sm font-semibold text-[var(--warm-mid)]">{monthLabel} 지출 내역</h2>
           {/* 필터 + 합계 + 추가 버튼 */}
           <div className="flex flex-wrap items-center gap-2">
             <select value={expFilter.method} onChange={e => setExpFilter(f => ({ ...f, method: e.target.value }))}
-              className="bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded-full px-3 py-1.5 outline-none">
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-full px-3 py-1.5 outline-none">
               <option value="all">결제수단 (전체)</option>
               {PAY_METHODS_EXP.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <select value={expFilter.category} onChange={e => setExpFilter(f => ({ ...f, category: e.target.value }))}
-              className="bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded-full px-3 py-1.5 outline-none">
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-full px-3 py-1.5 outline-none">
               <option value="all">카테고리 (전체)</option>
               {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             {financialAccounts.length > 0 && (
               <select value={expFilter.finance} onChange={e => setExpFilter(f => ({ ...f, finance: e.target.value }))}
-                className="bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded-full px-3 py-1.5 outline-none">
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-full px-3 py-1.5 outline-none">
                 <option value="all">금융사 (전체)</option>
                 {financialAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
               </select>
             )}
             <button onClick={() => setExpFilter({ method: 'all', category: 'all', finance: 'all' })}
-              className="text-xs text-gray-500 hover:text-gray-300 px-2">초기화</button>
+              className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2">초기화</button>
             <span className="ml-auto text-sm font-bold text-red-400 font-mono">
               합계: <MoneyDisplay amount={totalExp} />
             </span>
             <button onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setError('') }}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors">
+              className="px-4 py-2 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
               + 지출 등록
             </button>
           </div>
 
           {/* 지출 목록 */}
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
             {filteredExpenses.length === 0 ? (
               <EmptyState label="지출 내역이 없습니다" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[560px]">
                   <thead>
-                    <tr className="border-b border-gray-800">
+                    <tr className="border-b border-[var(--warm-border)]">
                       {['날짜', '결제수단', '카테고리', '세부 항목', '금액', '정산상태'].map(h => (
-                        <th key={h} className="text-left text-xs text-gray-500 font-medium px-4 py-3">{h}</th>
+                        <th key={h} className="text-left text-xs text-[var(--warm-muted)] font-medium px-4 py-3">{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -455,18 +455,18 @@ export default function FinanceClient({
                     {filteredExpenses.map(e => (
                       <tr key={e.id}
                         onClick={() => { setDetailExp(e); setDetailExpEdit(false); setError('') }}
-                        className="border-b border-gray-800/50 hover:bg-gray-800/40 transition-colors cursor-pointer">
-                        <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(e.date)}</td>
+                        className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer">
+                        <td className="px-4 py-3 text-xs text-[var(--warm-mid)] whitespace-nowrap">{fmtDate(e.date)}</td>
                         <td className="px-4 py-3">
-                          <span className="text-xs px-2 py-1 rounded-full bg-gray-700 text-gray-300">{e.payMethod ?? '—'}</span>
+                          <span className="text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)]">{e.payMethod ?? '—'}</span>
                           {e.financialAccount && (
-                            <div className="text-xs text-gray-600 mt-0.5">{accName(e.financialAccount)}</div>
+                            <div className="text-xs text-[var(--warm-muted)] mt-0.5">{accName(e.financialAccount)}</div>
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="text-xs px-2 py-1 rounded-full bg-indigo-900/40 text-indigo-300">{e.category}</span>
+                          <span className="text-xs px-2 py-1 rounded-full bg-[var(--coral-light)] text-[var(--coral)]">{e.category}</span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-white">{e.detail ?? '—'}</td>
+                        <td className="px-4 py-3 text-sm text-[var(--warm-dark)]">{e.detail ?? '—'}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-red-400 whitespace-nowrap">
                           <MoneyDisplay amount={e.amount} prefix="-" />
                         </td>
@@ -495,36 +495,36 @@ export default function FinanceClient({
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <select value={incFilter.method} onChange={e => setIncFilter(f => ({ ...f, method: e.target.value }))}
-              className="bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded-full px-3 py-1.5 outline-none">
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-full px-3 py-1.5 outline-none">
               <option value="all">입금수단 (전체)</option>
               {PAY_METHODS_INC.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <select value={incFilter.category} onChange={e => setIncFilter(f => ({ ...f, category: e.target.value }))}
-              className="bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded-full px-3 py-1.5 outline-none">
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-full px-3 py-1.5 outline-none">
               <option value="all">카테고리 (전체)</option>
               {incomeCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             <button onClick={() => setIncFilter({ method: 'all', category: 'all' })}
-              className="text-xs text-gray-500 hover:text-gray-300 px-2">초기화</button>
+              className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2">초기화</button>
             <span className="ml-auto text-sm font-bold text-green-400 font-mono">
               합계: <MoneyDisplay amount={totalInc} />
             </span>
             <button onClick={() => { setShowAddInc(true); setAddIncMethod('계좌이체'); setAddIncAccId(''); setError('') }}
-              className="px-4 py-2 bg-green-700 hover:bg-green-600 text-white text-sm font-medium rounded-xl transition-colors">
+              className="px-4 py-2 bg-green-700 hover:bg-green-600 text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
               + 수익 등록
             </button>
           </div>
 
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
             {filteredIncomes.length === 0 ? (
               <EmptyState label="부가 수익 내역이 없습니다" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[480px]">
                   <thead>
-                    <tr className="border-b border-gray-800">
+                    <tr className="border-b border-[var(--warm-border)]">
                       {['날짜', '입금수단', '카테고리', '세부 항목', '금액'].map(h => (
-                        <th key={h} className="text-left text-xs text-gray-500 font-medium px-4 py-3">{h}</th>
+                        <th key={h} className="text-left text-xs text-[var(--warm-muted)] font-medium px-4 py-3">{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -532,18 +532,18 @@ export default function FinanceClient({
                     {filteredIncomes.map(i => (
                       <tr key={i.id}
                         onClick={() => { setDetailInc(i); setDetailIncEdit(false); setError('') }}
-                        className="border-b border-gray-800/50 hover:bg-gray-800/40 transition-colors cursor-pointer">
-                        <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{fmtDate(i.date)}</td>
+                        className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer">
+                        <td className="px-4 py-3 text-xs text-[var(--warm-mid)] whitespace-nowrap">{fmtDate(i.date)}</td>
                         <td className="px-4 py-3">
-                          <span className="text-xs px-2 py-1 rounded-full bg-gray-700 text-gray-300">{i.payMethod ?? '—'}</span>
+                          <span className="text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)]">{i.payMethod ?? '—'}</span>
                           {i.financialAccount && (
-                            <div className="text-xs text-gray-600 mt-0.5">{accName(i.financialAccount)}</div>
+                            <div className="text-xs text-[var(--warm-muted)] mt-0.5">{accName(i.financialAccount)}</div>
                           )}
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-xs px-2 py-1 rounded-full bg-green-900/40 text-green-300">{i.category}</span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-white">{i.detail ?? '—'}</td>
+                        <td className="px-4 py-3 text-sm text-[var(--warm-dark)]">{i.detail ?? '—'}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-green-400 whitespace-nowrap">
                           <MoneyDisplay amount={i.amount} prefix="+" />
                         </td>
@@ -562,19 +562,19 @@ export default function FinanceClient({
       ══════════════════════════════════════════════════════════ */}
       {tab === 'settle' && (
         <div className="space-y-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-1">미정산 신용카드 대금 합산</h2>
-            <p className="text-xs text-gray-500 mb-5">신용카드로 결제된 미정산 지출을 카드별로 합산합니다.</p>
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5">
+            <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">미정산 신용카드 대금 합산</h2>
+            <p className="text-xs text-[var(--warm-muted)] mb-5">신용카드로 결제된 미정산 지출을 카드별로 합산합니다.</p>
 
             {settleGroups.length === 0 ? (
               <EmptyState label="미정산 건이 없습니다" />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {settleGroups.map((g, idx) => (
-                  <div key={idx} className="bg-gray-800 border border-gray-700 rounded-2xl p-5 flex flex-col gap-3">
+                  <div key={idx} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-2xl p-5 flex flex-col gap-3">
                     {/* 카드명 */}
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-white text-base">{g.accountName}</span>
+                      <span className="font-bold text-[var(--warm-dark)] text-base">{g.accountName}</span>
                       {g.payDayStr !== '미지정' && (
                         <span className="text-xs px-2.5 py-1 rounded-full bg-yellow-500/15 text-yellow-400 font-medium">
                           결제일: {g.payDayStr}
@@ -583,16 +583,16 @@ export default function FinanceClient({
                     </div>
 
                     {/* 청구 정보 */}
-                    <div className="text-xs text-gray-400 space-y-0.5">
+                    <div className="text-xs text-[var(--warm-mid)] space-y-0.5">
                       <div>청구기간: {g.billingPeriodStr}</div>
                       {g.linkedAccountName && (
-                        <div>출금계좌: <span className="text-gray-300">{g.linkedAccountName}</span></div>
+                        <div>출금계좌: <span className="text-[var(--warm-dark)]">{g.linkedAccountName}</span></div>
                       )}
                     </div>
 
                     {/* 청구 총액 */}
-                    <div className="flex items-baseline justify-between border-b border-gray-700 pb-3">
-                      <span className="text-xs text-gray-400 font-medium">
+                    <div className="flex items-baseline justify-between border-b border-[var(--warm-border)] pb-3">
+                      <span className="text-xs text-[var(--warm-mid)] font-medium">
                         {g.billMonth.replace('-', '년 ')}월 청구 총액
                       </span>
                       <span className="text-xl font-bold text-red-400 font-mono">
@@ -604,13 +604,13 @@ export default function FinanceClient({
                     <div className="max-h-40 overflow-y-auto space-y-1.5">
                       {g.items.map(item => (
                         <div key={item.id} className="flex items-center justify-between text-xs">
-                          <span className="text-gray-400">
+                          <span className="text-[var(--warm-mid)]">
                             {new Date(item.date).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
                             &nbsp;
-                            <span className="text-gray-500">{item.category}</span>
-                            {item.detail && <span className="text-gray-500"> · {item.detail}</span>}
+                            <span className="text-[var(--warm-muted)]">{item.category}</span>
+                            {item.detail && <span className="text-[var(--warm-muted)]"> · {item.detail}</span>}
                           </span>
-                          <span className="text-gray-300 font-medium font-mono">
+                          <span className="text-[var(--warm-dark)] font-medium font-mono">
                             <MoneyDisplay amount={item.amount} />
                           </span>
                         </div>
@@ -622,11 +622,11 @@ export default function FinanceClient({
                       <button
                         onClick={() => handleSettle(g.items.map(i => i.id), g.accountName, g.billMonth)}
                         disabled={isPending}
-                        className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                        className="w-full py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                         출금 확인 (정산 완료 처리)
                       </button>
                     ) : (
-                      <p className="text-xs text-gray-600 text-center">자산 등록 후 정산하세요</p>
+                      <p className="text-xs text-[var(--warm-muted)] text-center">자산 등록 후 정산하세요</p>
                     )}
                   </div>
                 ))}
@@ -636,29 +636,29 @@ export default function FinanceClient({
 
           {/* 정산 완료 내역 */}
           {settledGroups.length > 0 && (
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-3">
-              <h3 className="text-sm font-semibold text-gray-400">정산 완료 내역 (최근 4개월)</h3>
+            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5 space-y-3">
+              <h3 className="text-sm font-semibold text-[var(--warm-mid)]">정산 완료 내역 (최근 4개월)</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {settledGroups.map(g => (
                   <div key={`${g.accountId}__${g.billMonth}`}
-                    className="bg-gray-800/60 border border-gray-700 rounded-xl p-4 space-y-3 opacity-70">
+                    className="bg-[var(--canvas)]/60 border border-[var(--warm-border)] rounded-xl p-4 space-y-3 opacity-70">
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-gray-300">{g.accountName}</span>
+                        <span className="text-sm font-semibold text-[var(--warm-dark)]">{g.accountName}</span>
                         <span className="text-xs text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full">정산완료</span>
                       </div>
-                      <p className="text-xs text-gray-500 mt-0.5">{g.billingPeriodStr}</p>
+                      <p className="text-xs text-[var(--warm-muted)] mt-0.5">{g.billingPeriodStr}</p>
                     </div>
                     <div className="space-y-1">
                       {g.items.map(item => (
-                        <div key={item.id} className="flex justify-between text-xs text-gray-500">
+                        <div key={item.id} className="flex justify-between text-xs text-[var(--warm-muted)]">
                           <span>{new Date(item.date).getMonth() + 1}. {new Date(item.date).getDate()}. {item.detail ?? item.category}</span>
                           <span>{item.amount.toLocaleString()}원</span>
                         </div>
                       ))}
                     </div>
-                    <div className="flex items-center justify-between pt-1 border-t border-gray-700">
-                      <span className="text-sm font-bold text-gray-300">{g.total.toLocaleString()}원</span>
+                    <div className="flex items-center justify-between pt-1 border-t border-[var(--warm-border)]">
+                      <span className="text-sm font-bold text-[var(--warm-dark)]">{g.total.toLocaleString()}원</span>
                       <button
                         onClick={() => {
                           if (!confirm(`'${g.accountName}' ${g.billMonth} 청구분 정산을 전부 취소하시겠습니까?`)) return
@@ -686,18 +686,18 @@ export default function FinanceClient({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
           {/* 등록/수정 폼 */}
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-4">
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5">
+            <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-4">
               {editingAcc ? '자산 수정' : '자산 등록'}
             </h2>
             <form key={assetFormKey} onSubmit={handleSaveAsset} className="space-y-3">
               {editingAcc && <input type="hidden" name="id" value={editingAcc.id} />}
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400">분류 *</label>
+                <label className="text-xs font-medium text-[var(--warm-mid)]">분류 *</label>
                 <select name="type" value={assetType}
                   onChange={e => { setAssetType(e.target.value); setAssetBrand('') }}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                   <option value="BANK_ACCOUNT">은행계좌</option>
                   <option value="CREDIT_CARD">신용카드</option>
                   <option value="DEBIT_CARD">체크카드</option>
@@ -705,14 +705,14 @@ export default function FinanceClient({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">
                   {assetType === 'BANK_ACCOUNT' ? '은행' : '카드'} *
                 </label>
                 <div className="flex items-center gap-2">
                   <BrandLogo name={assetBrand} size={22} />
                   <select name="brand" value={assetBrand}
                     onChange={e => setAssetBrand(e.target.value)}
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                    className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     <option value="">선택하세요</option>
                     {(assetType === 'BANK_ACCOUNT' ? BANKS
                       : assetType === 'CREDIT_CARD' ? CREDIT_CARDS
@@ -726,55 +726,55 @@ export default function FinanceClient({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-400">별칭</label>
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">별칭</label>
                   <input type="text" name="alias"
                     defaultValue={editingAcc?.alias ?? ''}
                     placeholder="예: 생활비 카드"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-400">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">
                     {assetType === 'BANK_ACCOUNT' ? '계좌번호' : '번호 (끝 4자리)'}
                   </label>
                   <input type="text" name="identifier"
                     defaultValue={editingAcc?.identifier ?? ''}
                     placeholder={assetType === 'BANK_ACCOUNT' ? '예: 110-123-456789' : '예: 1234'}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400">소유주명</label>
+                <label className="text-xs font-medium text-[var(--warm-mid)]">소유주명</label>
                 <input type="text" name="owner"
                   defaultValue={editingAcc?.owner ?? ''}
                   placeholder="예: 홍길동"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
               </div>
 
               {/* 카드 전용 필드 */}
               {(assetType === 'CREDIT_CARD' || assetType === 'DEBIT_CARD') && (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-400">결제일</label>
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">결제일</label>
                   <input type="text" name="payDay"
                     defaultValue={editingAcc?.payDay ? displayDay(editingAcc.payDay) : ''}
                     placeholder="예: 15, 말일"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                 </div>
               )}
               {assetType === 'CREDIT_CARD' && (
                 <>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">이용종료일 (결제 기준일)</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">이용종료일 (결제 기준일)</label>
                     <input type="text" name="cutOffDay"
                       defaultValue={editingAcc?.cutOffDay ? displayDay(editingAcc.cutOffDay) : ''}
                       placeholder="예: 25, 말일"
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">결제 연결 계좌</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">결제 연결 계좌</label>
                     <select name="linkedAccountId"
                       defaultValue={editingAcc?.linkedAccountId ?? ''}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       <option value="">선택 안함</option>
                       {bankAccounts.map(a => (
                         <option key={a.id} value={a.id}>{accName(a)}</option>
@@ -790,12 +790,12 @@ export default function FinanceClient({
                 {editingAcc && (
                   <button type="button"
                     onClick={() => { setEditingAcc(null); setAssetType('BANK_ACCOUNT'); setAssetBrand(''); setAssetFormKey(k => k + 1) }}
-                    className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">
+                    className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
                     취소
                   </button>
                 )}
                 <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                   {isPending ? '저장 중...' : (editingAcc ? '수정 저장' : '등록')}
                 </button>
               </div>
@@ -803,9 +803,9 @@ export default function FinanceClient({
           </div>
 
           {/* 자산 목록 */}
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-800">
-              <h2 className="text-sm font-semibold text-white">등록된 자산 목록</h2>
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-[var(--warm-border)]">
+              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">등록된 자산 목록</h2>
             </div>
             {financialAccounts.length === 0 ? (
               <EmptyState label="등록된 자산이 없습니다" />
@@ -824,14 +824,14 @@ export default function FinanceClient({
                           {ACCOUNT_TYPE_LABEL[a.type]}
                         </span>
                         <BrandLogo name={a.brand} size={16} />
-                        <span className="text-sm font-medium text-white">{accName(a)}</span>
+                        <span className="text-sm font-medium text-[var(--warm-dark)]">{accName(a)}</span>
                         {a.identifier && (
-                          <span className="text-xs text-gray-500">
+                          <span className="text-xs text-[var(--warm-muted)]">
                             {a.type === 'BANK_ACCOUNT' ? a.identifier : `···${a.identifier}`}
                           </span>
                         )}
                       </div>
-                      <div className="text-xs text-gray-500 mt-0.5 space-x-2">
+                      <div className="text-xs text-[var(--warm-muted)] mt-0.5 space-x-2">
                         {a.owner && <span>{a.owner}</span>}
                         {a.payDay && <span>결제일: {displayDay(a.payDay)}</span>}
                         {a.cutOffDay && <span>기준일: {displayDay(a.cutOffDay)}</span>}
@@ -840,7 +840,7 @@ export default function FinanceClient({
                     </div>
                     <button
                       onClick={() => { setEditingAcc(a); setAssetType(a.type); setAssetBrand(a.brand ?? ''); setAssetFormKey(k => k + 1) }}
-                      className="text-xs text-indigo-400 hover:text-indigo-300 px-3 py-1.5 bg-indigo-500/10 rounded-lg transition-colors shrink-0">
+                      className="text-xs text-[var(--coral)] hover:text-[var(--coral)] px-3 py-1.5 bg-[var(--coral)]/10 rounded-lg transition-colors shrink-0">
                       수정
                     </button>
                     <button
@@ -862,14 +862,14 @@ export default function FinanceClient({
       {detailExp && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
           onClick={() => { setDetailExp(null); setDetailExpEdit(false) }}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
-              <h2 className="text-base font-bold text-white">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+              <h2 className="text-base font-bold text-[var(--warm-dark)]">
                 {detailExpEdit ? '지출 수정' : '지출 상세'}
               </h2>
               <button onClick={() => { setDetailExp(null); setDetailExpEdit(false) }}
-                className="text-gray-500 hover:text-white text-xl leading-none">✕</button>
+                className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
             </div>
 
             {!detailExpEdit ? (
@@ -888,7 +888,7 @@ export default function FinanceClient({
                   } />
                   {detailExp.memo && <DetailRow label="메모" value={detailExp.memo} />}
                 </div>
-                <div className="border-t border-gray-800 px-6 py-4 flex gap-2 shrink-0">
+                <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <button onClick={() => handleDeleteExp(detailExp.id)} disabled={isPending}
                     className="px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm rounded-xl transition-colors disabled:opacity-40">삭제</button>
                   {detailExp.settleStatus === 'SETTLED' && (detailExp.payMethod === '신용카드' || detailExp.payMethod === '체크카드') && (
@@ -905,7 +905,7 @@ export default function FinanceClient({
                     setEditExpAccName(detailExp.financeName ?? '')
                     setError('')
                   }}
-                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors">수정</button>
+                    className="px-4 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">수정</button>
                 </div>
               </>
             ) : (
@@ -916,41 +916,41 @@ export default function FinanceClient({
                 <div className="flex-1 overflow-y-auto p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-gray-400">날짜 *</label>
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                       <input type="date" name="date" defaultValue={toDateInput(detailExp.date)} required
-                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500" />
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-gray-400">금액 *</label>
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
                       <MoneyInput name="amount" defaultValue={detailExp.amount} placeholder="0원" />
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">카테고리 *</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                     <select name="category" defaultValue={detailExp.category}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">세부 항목</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                     <input type="text" name="detail" defaultValue={detailExp.detail ?? ''}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">결제수단</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
                     <select name="payMethod" value={editExpMethod}
                       onChange={e => { setEditExpMethod(e.target.value); setEditExpAccId(''); setEditExpAccName('') }}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       {PAY_METHODS_EXP.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                   </div>
                   {editExpMethod === '계좌이체' && bankAccounts.length > 0 && (
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-gray-400">출금 계좌</label>
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">출금 계좌</label>
                       <select value={editExpAccId}
                         onChange={e => pickAccount(e.target.value, setEditExpAccId, setEditExpAccName)}
-                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                         <option value="">선택 안함</option>
                         {bankAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
                       </select>
@@ -958,27 +958,27 @@ export default function FinanceClient({
                   )}
                   {(editExpMethod === '신용카드' || editExpMethod === '체크카드') && cardAccounts.length > 0 && (
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-gray-400">카드 선택</label>
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">카드 선택</label>
                       <select value={editExpAccId}
                         onChange={e => pickAccount(e.target.value, setEditExpAccId, setEditExpAccName)}
-                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                         <option value="">선택 안함</option>
                         {cardAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
                       </select>
                     </div>
                   )}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">메모</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
                     <input type="text" name="memo" defaultValue={detailExp.memo ?? ''}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   </div>
                   {error && <p className="text-red-400 text-sm">{error}</p>}
                 </div>
-                <div className="border-t border-gray-800 px-6 py-4 flex gap-2 shrink-0">
+                <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <button type="button" onClick={() => { setDetailExpEdit(false); setError('') }}
-                    className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">취소</button>
+                    className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">취소</button>
                   <button type="submit" disabled={isPending}
-                    className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                    className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                     {isPending ? '저장 중...' : '저장'}
                   </button>
                 </div>
@@ -994,14 +994,14 @@ export default function FinanceClient({
       {detailInc && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
           onClick={() => { setDetailInc(null); setDetailIncEdit(false) }}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
-              <h2 className="text-base font-bold text-white">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+              <h2 className="text-base font-bold text-[var(--warm-dark)]">
                 {detailIncEdit ? '수익 수정' : '수익 상세'}
               </h2>
               <button onClick={() => { setDetailInc(null); setDetailIncEdit(false) }}
-                className="text-gray-500 hover:text-white text-xl leading-none">✕</button>
+                className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
             </div>
 
             {!detailIncEdit ? (
@@ -1015,7 +1015,7 @@ export default function FinanceClient({
                   {detailInc.financialAccount && <DetailRow label="금융사" value={accName(detailInc.financialAccount)} />}
                   {detailInc.memo && <DetailRow label="메모" value={detailInc.memo} />}
                 </div>
-                <div className="border-t border-gray-800 px-6 py-4 flex gap-2 shrink-0">
+                <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <button onClick={() => handleDeleteInc(detailInc.id)} disabled={isPending}
                     className="px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm rounded-xl transition-colors disabled:opacity-40">삭제</button>
                   <div className="flex-1" />
@@ -1025,7 +1025,7 @@ export default function FinanceClient({
                     setEditIncAccId(detailInc.financialAccountId ?? '')
                     setError('')
                   }}
-                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors">수정</button>
+                    className="px-4 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">수정</button>
                 </div>
               </>
             ) : (
@@ -1035,47 +1035,47 @@ export default function FinanceClient({
                 <div className="flex-1 overflow-y-auto p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-gray-400">날짜 *</label>
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                       <input type="date" name="date" defaultValue={toDateInput(detailInc.date)} required
-                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500" />
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-gray-400">금액 *</label>
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
                       <MoneyInput name="amount" defaultValue={detailInc.amount} placeholder="0원" />
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">카테고리 *</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                     <select name="category" defaultValue={detailInc.category}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       {incomeCategories.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">세부 항목</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                     <input type="text" name="detail" defaultValue={detailInc.detail ?? ''}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">입금수단</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">입금수단</label>
                     <select name="payMethod" value={editIncMethod}
                       onChange={e => { setEditIncMethod(e.target.value); setEditIncAccId('') }}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       {PAY_METHODS_INC.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">메모</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
                     <input type="text" name="memo" defaultValue={detailInc.memo ?? ''}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   </div>
                   {error && <p className="text-red-400 text-sm">{error}</p>}
                 </div>
-                <div className="border-t border-gray-800 px-6 py-4 flex gap-2 shrink-0">
+                <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <button type="button" onClick={() => { setDetailIncEdit(false); setError('') }}
-                    className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">취소</button>
+                    className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">취소</button>
                   <button type="submit" disabled={isPending}
-                    className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                    className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                     {isPending ? '저장 중...' : '저장'}
                   </button>
                 </div>
@@ -1091,11 +1091,11 @@ export default function FinanceClient({
       {showAddExp && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
           onClick={() => setShowAddExp(false)}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
-              <h2 className="text-base font-bold text-white">지출 등록</h2>
-              <button onClick={() => setShowAddExp(false)} className="text-gray-500 hover:text-white text-xl leading-none">✕</button>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+              <h2 className="text-base font-bold text-[var(--warm-dark)]">지출 등록</h2>
+              <button onClick={() => setShowAddExp(false)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
             </div>
             <form onSubmit={handleAddExp} className="flex flex-col flex-1 overflow-hidden">
               <input type="hidden" name="financialAccountId" value={addExpAccId} />
@@ -1103,41 +1103,41 @@ export default function FinanceClient({
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">날짜 *</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                     <input type="date" name="date" defaultValue={new Date().toISOString().slice(0, 10)} required
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">금액 *</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
                     <MoneyInput name="amount" placeholder="0원" />
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-400">카테고리 *</label>
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                   <select name="category"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-400">세부 항목</label>
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                   <input type="text" name="detail" placeholder="세부 내용"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-400">결제수단</label>
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
                   <select name="payMethod" value={addExpMethod}
                     onChange={e => { setAddExpMethod(e.target.value); setAddExpAccId(''); setAddExpAccName('') }}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {PAY_METHODS_EXP.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
                 {addExpMethod === '계좌이체' && bankAccounts.length > 0 && (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">출금 계좌</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">출금 계좌</label>
                     <select value={addExpAccId}
                       onChange={e => pickAccount(e.target.value, setAddExpAccId, setAddExpAccName)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       <option value="">선택 안함</option>
                       {bankAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
                     </select>
@@ -1145,27 +1145,27 @@ export default function FinanceClient({
                 )}
                 {(addExpMethod === '신용카드' || addExpMethod === '체크카드') && cardAccounts.length > 0 && (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">카드 선택</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">카드 선택</label>
                     <select value={addExpAccId}
                       onChange={e => pickAccount(e.target.value, setAddExpAccId, setAddExpAccName)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       <option value="">선택 안함</option>
                       {cardAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
                     </select>
                   </div>
                 )}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-400">메모</label>
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
                   <input type="text" name="memo" placeholder="메모 (선택)"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                 </div>
                 {error && <p className="text-red-400 text-sm">{error}</p>}
               </div>
-              <div className="border-t border-gray-800 px-6 py-4 flex gap-2 shrink-0">
+              <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                 <button type="button" onClick={() => setShowAddExp(false)}
-                  className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">취소</button>
+                  className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">취소</button>
                 <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                   {isPending ? '저장 중...' : '저장'}
                 </button>
               </div>
@@ -1180,58 +1180,58 @@ export default function FinanceClient({
       {showAddInc && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
           onClick={() => setShowAddInc(false)}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
-              <h2 className="text-base font-bold text-white">부가 수익 등록</h2>
-              <button onClick={() => setShowAddInc(false)} className="text-gray-500 hover:text-white text-xl leading-none">✕</button>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+              <h2 className="text-base font-bold text-[var(--warm-dark)]">부가 수익 등록</h2>
+              <button onClick={() => setShowAddInc(false)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
             </div>
             <form onSubmit={handleAddInc} className="flex flex-col flex-1 overflow-hidden">
               <input type="hidden" name="financialAccountId" value={addIncAccId} />
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">날짜 *</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                     <input type="date" name="date" defaultValue={new Date().toISOString().slice(0, 10)} required
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-400">금액 *</label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
                     <MoneyInput name="amount" placeholder="0원" />
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-400">카테고리 *</label>
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                   <select name="category"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {incomeCategories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-400">세부 항목</label>
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                   <input type="text" name="detail" placeholder="세부 내용"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-400">입금수단</label>
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">입금수단</label>
                   <select name="payMethod" value={addIncMethod}
                     onChange={e => { setAddIncMethod(e.target.value); setAddIncAccId('') }}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {PAY_METHODS_INC.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-400">메모</label>
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
                   <input type="text" name="memo" placeholder="메모 (선택)"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                 </div>
                 {error && <p className="text-red-400 text-sm">{error}</p>}
               </div>
-              <div className="border-t border-gray-800 px-6 py-4 flex gap-2 shrink-0">
+              <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                 <button type="button" onClick={() => setShowAddInc(false)}
-                  className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">취소</button>
+                  className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">취소</button>
                 <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-green-700 hover:bg-green-600 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  className="flex-1 py-2.5 bg-green-700 hover:bg-green-600 text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                   {isPending ? '저장 중...' : '저장'}
                 </button>
               </div>
@@ -1247,14 +1247,14 @@ export default function FinanceClient({
 // ── 공통 서브 컴포넌트 ────────────────────────────────────────────
 
 function EmptyState({ label }: { label: string }) {
-  return <div className="p-12 text-center"><p className="text-gray-600 text-sm">{label}</p></div>
+  return <div className="p-12 text-center"><p className="text-[var(--warm-muted)] text-sm">{label}</p></div>
 }
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between py-2 border-b border-gray-800/50 last:border-0 gap-4">
-      <span className="text-xs text-gray-500 shrink-0">{label}</span>
-      <span className="text-sm text-gray-200 text-right">{value}</span>
+    <div className="flex items-start justify-between py-2 border-b border-[var(--warm-border)]/50 last:border-0 gap-4">
+      <span className="text-xs text-[var(--warm-muted)] shrink-0">{label}</span>
+      <span className="text-sm text-[var(--warm-dark)] text-right">{value}</span>
     </div>
   )
 }

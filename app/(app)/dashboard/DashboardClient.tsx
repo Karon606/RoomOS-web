@@ -9,8 +9,8 @@ import { analyzeDashboardWithGemini, getTrendData, type TrendRange, type TrendPo
 type Dist = { label: string; count: number; percent: number }
 
 export type DashboardData = {
-  totalRevenue:      number   // 이달 수입 (수납 + 부가수입)
-  paidRevenue:       number   // 이달 순수 수납액 (이용료만)
+  totalRevenue:      number
+  paidRevenue:       number
   totalExpense:      number
   netProfit:         number
   totalDeposit:      number
@@ -31,14 +31,14 @@ export type DashboardData = {
 // ── 상수 ────────────────────────────────────────────────────────
 
 const CATEGORY_COLORS: Record<string, string> = {
-  관리비:   '#6366f1',
+  관리비:   '#f4623a',
   수선유지: '#f97316',
   세금:     '#ef4444',
   인건비:   '#a855f7',
   소모품:   '#22c55e',
-  기타:     '#6b7280',
+  기타:     '#a89888',
 }
-const FALLBACK_COLORS = ['#6366f1','#f97316','#ef4444','#a855f7','#22c55e','#6b7280','#3b82f6','#eab308']
+const FALLBACK_COLORS = ['#f4623a','#f97316','#ef4444','#a855f7','#22c55e','#a89888','#3b82f6','#eab308']
 
 // ── 도넛 차트 ───────────────────────────────────────────────────
 
@@ -66,7 +66,7 @@ function DonutChart({
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       {total === 0 ? (
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1f2937" strokeWidth={strokeWidth} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e8ddd2" strokeWidth={strokeWidth} />
       ) : (
         segments.filter(s => s.value > 0).map((seg, i) => {
           const pct        = seg.value / total
@@ -87,12 +87,12 @@ function DonutChart({
         })
       )}
       {centerLabel && (
-        <text x={cx} y={cy + 6} textAnchor="middle" fontSize="15" fontWeight="700" fill="white">
+        <text x={cx} y={cy + 6} textAnchor="middle" fontSize="15" fontWeight="700" fill="#5a4a3a">
           {centerLabel}
         </text>
       )}
       {centerSub && (
-        <text x={cx} y={cy + 22} textAnchor="middle" fontSize="10" fill="#9ca3af">
+        <text x={cx} y={cy + 22} textAnchor="middle" fontSize="10" fill="#a89888">
           {centerSub}
         </text>
       )}
@@ -102,23 +102,24 @@ function DonutChart({
 
 // ── 공용 서브 컴포넌트 ──────────────────────────────────────────
 
-function StatCard({ label, value, sub, color }: {
-  label: string; value: React.ReactNode; sub: string; color: string
+function StatCard({ label, value, sub, colorStyle }: {
+  label: string; value: React.ReactNode; sub: string; colorStyle?: React.CSSProperties
 }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-      <p className="text-xs text-gray-500 font-medium">{label}</p>
-      <p className={`text-xl font-bold mt-1.5 ${color}`}>{value}</p>
-      <p className="text-xs text-gray-600 mt-1">{sub}</p>
+    <div className="rounded-2xl p-5"
+         style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <p className="text-xs font-medium" style={{ color: 'var(--warm-muted)' }}>{label}</p>
+      <p className="text-xl font-bold mt-1.5" style={colorStyle ?? { color: 'var(--warm-dark)' }}>{value}</p>
+      <p className="text-xs mt-1" style={{ color: 'var(--warm-muted)' }}>{sub}</p>
     </div>
   )
 }
 
-function Row({ label, value, color }: { label: string; value: React.ReactNode; color: string }) {
+function Row({ label, value, colorStyle }: { label: string; value: React.ReactNode; colorStyle?: React.CSSProperties }) {
   return (
     <div className="flex justify-between items-center">
-      <span className="text-sm text-gray-400">{label}</span>
-      <span className={`text-sm font-semibold ${color}`}>{value}</span>
+      <span className="text-sm" style={{ color: 'var(--warm-mid)' }}>{label}</span>
+      <span className="text-sm font-semibold" style={colorStyle ?? { color: 'var(--warm-dark)' }}>{value}</span>
     </div>
   )
 }
@@ -172,19 +173,20 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
     <div className="space-y-5">
       {/* 주요 지표 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="이달 수입"  value={<MoneyDisplay amount={data.totalRevenue} />} sub="납부액+기타수익"  color="text-indigo-400" />
-        <StatCard label="이달 지출"  value={<MoneyDisplay amount={data.totalExpense} />} sub="이달 지출 합계" color="text-red-400" />
-        <StatCard label="순수익"     value={<MoneyDisplay amount={Math.abs(data.netProfit)} prefix={data.netProfit < 0 ? '-' : ''} />} sub="수입 − 지출" color={data.netProfit >= 0 ? 'text-green-400' : 'text-red-400'} />
-        <StatCard label="보유 보증금" value={<MoneyDisplay amount={data.totalDeposit} />} sub="현재 계약 기준" color="text-purple-400" />
+        <StatCard label="이달 수입"  value={<MoneyDisplay amount={data.totalRevenue} />} sub="납부액+기타수익"  colorStyle={{ color: 'var(--coral)' }} />
+        <StatCard label="이달 지출"  value={<MoneyDisplay amount={data.totalExpense} />} sub="이달 지출 합계"  colorStyle={{ color: '#ef4444' }} />
+        <StatCard label="순수익"     value={<MoneyDisplay amount={Math.abs(data.netProfit)} prefix={data.netProfit < 0 ? '-' : ''} />} sub="수입 − 지출" colorStyle={{ color: data.netProfit >= 0 ? '#22c55e' : '#ef4444' }} />
+        <StatCard label="보유 보증금" value={<MoneyDisplay amount={data.totalDeposit} />} sub="현재 계약 기준"  colorStyle={{ color: '#a855f7' }} />
       </div>
 
       {/* 추이 바 차트 */}
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+      <div className="rounded-2xl p-5"
+           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <h3 className="text-sm font-semibold text-gray-400">추이</h3>
-          <div className="flex gap-4 text-xs text-gray-500">
+          <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>추이</h3>
+          <div className="flex gap-4 text-xs" style={{ color: 'var(--warm-muted)' }}>
             <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full inline-block" style={{ background: '#6366f1' }} />수입
+              <span className="w-2 h-2 rounded-full inline-block" style={{ background: 'var(--coral)' }} />수입
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full inline-block" style={{ background: '#ef4444' }} />지출
@@ -199,10 +201,10 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               key={r.key}
               onClick={() => setTrendRange(r.key)}
               disabled={trendPending}
-              className={`px-2.5 py-1 text-xs rounded-lg transition-colors font-medium disabled:opacity-50
-                ${trendRange === r.key
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:text-white'}`}
+              className="px-2.5 py-1 text-xs rounded-lg transition-colors font-medium disabled:opacity-50"
+              style={trendRange === r.key
+                ? { background: 'var(--coral)', color: '#fff' }
+                : { background: 'var(--canvas)', color: 'var(--warm-mid)' }}
             >
               {r.label}
             </button>
@@ -211,7 +213,8 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
 
         {trendPending ? (
           <div className="h-36 flex items-center justify-center">
-            <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin"
+                 style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -225,16 +228,18 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                 const expPct = Math.round((t.expense / trendMax) * 100)
                 return (
                   <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0" style={{ minWidth: trendPoints.length > 14 ? '28px' : undefined }}>
-                    <p className={`text-xs font-medium whitespace-nowrap ${t.profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    <p className="text-xs font-medium whitespace-nowrap"
+                       style={{ color: t.profit >= 0 ? '#22c55e' : '#ef4444' }}>
                       {t.profit !== 0 ? `${t.profit >= 0 ? '+' : ''}${Math.round(t.profit / 10000)}만` : ''}
                     </p>
                     <div className="w-full flex items-end gap-0.5 h-28">
                       <div className="flex-1 rounded-t-sm"
-                        style={{ background: '#6366f1', opacity: isLast ? 1 : 0.5, height: `${revPct}%`, minHeight: t.revenue > 0 ? '2px' : '0' }} />
+                        style={{ background: 'var(--coral)', opacity: isLast ? 1 : 0.5, height: `${revPct}%`, minHeight: t.revenue > 0 ? '2px' : '0' }} />
                       <div className="flex-1 rounded-t-sm"
                         style={{ background: '#ef4444', opacity: isLast ? 1 : 0.5, height: `${expPct}%`, minHeight: t.expense > 0 ? '2px' : '0' }} />
                     </div>
-                    <p className={`text-xs truncate w-full text-center ${isLast ? 'text-white font-medium' : 'text-gray-600'}`}>
+                    <p className="text-xs truncate w-full text-center"
+                       style={{ color: isLast ? 'var(--warm-dark)' : 'var(--warm-muted)', fontWeight: isLast ? 600 : 400 }}>
                       {t.label}
                     </p>
                   </div>
@@ -249,10 +254,11 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
         {/* 지출 카테고리 도넛 */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-gray-400 mb-4">지출 카테고리</h3>
+        <div className="rounded-2xl p-5"
+             style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>지출 카테고리</h3>
           {data.categoryBreakdown.length === 0 ? (
-            <p className="text-sm text-gray-600 py-6 text-center">이달 지출 없음</p>
+            <p className="text-sm py-6 text-center" style={{ color: 'var(--warm-muted)' }}>이달 지출 없음</p>
           ) : (
             <div className="flex items-center gap-5">
               <div className="shrink-0">
@@ -269,8 +275,8 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                       className="w-2.5 h-2.5 rounded-full shrink-0"
                       style={{ background: CATEGORY_COLORS[c.category] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length] }}
                     />
-                    <span className="text-xs text-gray-400 truncate flex-1">{c.category}</span>
-                    <span className="text-xs text-gray-300 shrink-0">{c.percent}%</span>
+                    <span className="text-xs truncate flex-1" style={{ color: 'var(--warm-mid)' }}>{c.category}</span>
+                    <span className="text-xs shrink-0" style={{ color: 'var(--warm-dark)' }}>{c.percent}%</span>
                   </div>
                 ))}
               </div>
@@ -279,8 +285,9 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
         </div>
 
         {/* 수납률 도넛 */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-gray-400 mb-4">수납 현황</h3>
+        <div className="rounded-2xl p-5"
+             style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>수납 현황</h3>
           <div className="flex items-center gap-5">
             <div className="shrink-0">
               <DonutChart
@@ -292,16 +299,16 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             <div className="flex-1 space-y-3">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-green-500" />
-                <span className="text-sm text-gray-400 flex-1">완납</span>
-                <span className="text-sm font-semibold text-green-400">{data.paidCount}건</span>
+                <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>완납</span>
+                <span className="text-sm font-semibold text-green-500">{data.paidCount}건</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-red-500" />
-                <span className="text-sm text-gray-400 flex-1">미납</span>
-                <span className="text-sm font-semibold text-red-400">{data.unpaidCount}건</span>
+                <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>미납</span>
+                <span className="text-sm font-semibold text-red-500">{data.unpaidCount}건</span>
               </div>
-              <div className="pt-2 border-t border-gray-800">
-                <Row label="이달 수납액" value={<MoneyDisplay amount={data.paidRevenue} />} color="text-white" />
+              <div className="pt-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
+                <Row label="이달 수납액" value={<MoneyDisplay amount={data.paidRevenue} />} />
               </div>
             </div>
           </div>
@@ -317,24 +324,24 @@ const GENDER_LABEL: Record<string, string> = {
   MALE: '남성', FEMALE: '여성', OTHER: '기타', UNKNOWN: '미기재',
 }
 const GENDER_COLOR: Record<string, string> = {
-  MALE: '#3b82f6', FEMALE: '#ec4899', OTHER: '#a855f7', UNKNOWN: '#6b7280',
+  MALE: '#3b82f6', FEMALE: '#ec4899', OTHER: '#a855f7', UNKNOWN: '#a89888',
 }
-const DIST_COLORS = ['#6366f1', '#22c55e', '#f97316', '#a855f7', '#eab308', '#6b7280']
+const DIST_COLORS = ['#f4623a', '#22c55e', '#f97316', '#a855f7', '#eab308', '#a89888']
 
 function DistList({ items, colors }: { items: { label: string; count: number; percent: number }[]; colors: string[] }) {
-  if (items.length === 0) return <p className="text-sm text-gray-600 py-4 text-center">데이터 없음</p>
+  if (items.length === 0) return <p className="text-sm py-4 text-center" style={{ color: 'var(--warm-muted)' }}>데이터 없음</p>
   return (
     <div className="space-y-2.5">
       {items.map((item, i) => (
         <div key={i}>
           <div className="flex justify-between text-xs mb-1">
-            <span className="text-gray-300 flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5" style={{ color: 'var(--warm-dark)' }}>
               <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: colors[i % colors.length] }} />
               {item.label}
             </span>
-            <span className="text-gray-500">{item.count}명 ({item.percent}%)</span>
+            <span style={{ color: 'var(--warm-muted)' }}>{item.count}명 ({item.percent}%)</span>
           </div>
-          <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--warm-border)' }}>
             <div className="h-full rounded-full" style={{ width: `${item.percent}%`, background: colors[i % colors.length] }} />
           </div>
         </div>
@@ -351,8 +358,8 @@ function TenantsTab({ data }: { data: DashboardData }) {
   const statusTotal = data.statusCounts.active + data.statusCounts.reserved + data.statusCounts.checkout + data.statusCounts.nonResident
 
   const occupancySegments = [
-    { value: data.occupiedRooms, color: '#6366f1' },
-    { value: data.vacantRooms,   color: '#1f2937' },
+    { value: data.occupiedRooms, color: '#f4623a' },
+    { value: data.vacantRooms,   color: '#e8ddd2' },
   ]
   const statusSegments = [
     { value: data.statusCounts.active,      color: '#22c55e' },
@@ -362,7 +369,7 @@ function TenantsTab({ data }: { data: DashboardData }) {
   ]
   const genderSegments = data.genderDist.map(d => ({
     value: d.count,
-    color: GENDER_COLOR[d.label] ?? '#6b7280',
+    color: GENDER_COLOR[d.label] ?? '#a89888',
   }))
 
   return (
@@ -370,33 +377,34 @@ function TenantsTab({ data }: { data: DashboardData }) {
 
       {/* 요약 카드 */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard label="전체 입주자"  value={`${data.totalTenants}명`}                     sub="현재 계약 기준"  color="text-white" />
-        <StatCard label="거주중"       value={`${data.statusCounts.active}명`}               sub="ACTIVE"         color="text-green-400" />
-        <StatCard label="입실 예정"    value={`${data.statusCounts.reserved}명`}             sub="RESERVED"       color="text-blue-400" />
-        <StatCard label="퇴실 예정"    value={`${data.statusCounts.checkout}명`}             sub="CHECKOUT"       color="text-yellow-400" />
-        <StatCard label="비거주자"     value={`${data.statusCounts.nonResident}명`}          sub="NON_RESIDENT"   color="text-amber-400" />
+        <StatCard label="전체 입주자"  value={`${data.totalTenants}명`}                     sub="현재 계약 기준"  />
+        <StatCard label="거주중"       value={`${data.statusCounts.active}명`}               sub="ACTIVE"         colorStyle={{ color: '#22c55e' }} />
+        <StatCard label="입실 예정"    value={`${data.statusCounts.reserved}명`}             sub="RESERVED"       colorStyle={{ color: '#3b82f6' }} />
+        <StatCard label="퇴실 예정"    value={`${data.statusCounts.checkout}명`}             sub="CHECKOUT"       colorStyle={{ color: '#eab308' }} />
+        <StatCard label="비거주자"     value={`${data.statusCounts.nonResident}명`}          sub="NON_RESIDENT"   colorStyle={{ color: '#f59e0b' }} />
       </div>
 
       {/* 도넛 3개 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
         {/* 입주율 */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-gray-400 mb-4">호실 현황</h3>
+        <div className="rounded-2xl p-5"
+             style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>호실 현황</h3>
           <div className="flex items-center gap-4">
             <DonutChart segments={occupancySegments} centerLabel={`${occupancyRate}%`} centerSub="입주율" />
             <div className="space-y-2.5 flex-1">
               {[
-                { label: '입주중', val: `${data.occupiedRooms}실`, dot: '#6366f1' },
-                { label: '공실',   val: `${data.vacantRooms}실`,   dot: '#374151' },
+                { label: '입주중', val: `${data.occupiedRooms}실`, dot: '#f4623a' },
+                { label: '공실',   val: `${data.vacantRooms}실`,   dot: '#e8ddd2' },
                 { label: '전체',   val: `${data.totalRooms}실`,    dot: '' },
               ].map(r => (
                 <div key={r.label} className="flex items-center gap-2">
                   {r.dot
                     ? <span className="w-2 h-2 rounded-full shrink-0" style={{ background: r.dot }} />
                     : <span className="w-2 h-2 shrink-0" />}
-                  <span className="text-xs text-gray-400 flex-1">{r.label}</span>
-                  <span className="text-xs font-semibold text-white">{r.val}</span>
+                  <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{r.label}</span>
+                  <span className="text-xs font-semibold" style={{ color: 'var(--warm-dark)' }}>{r.val}</span>
                 </div>
               ))}
             </div>
@@ -404,8 +412,9 @@ function TenantsTab({ data }: { data: DashboardData }) {
         </div>
 
         {/* 상태별 */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-gray-400 mb-4">상태별 현황</h3>
+        <div className="rounded-2xl p-5"
+             style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>상태별 현황</h3>
           <div className="flex items-center gap-4">
             <DonutChart segments={statusSegments} centerLabel={`${statusTotal}명`} centerSub="입주자" />
             <div className="space-y-2.5 flex-1">
@@ -416,8 +425,8 @@ function TenantsTab({ data }: { data: DashboardData }) {
               ].map(s => (
                 <div key={s.label} className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} />
-                  <span className="text-xs text-gray-400 flex-1">{s.label}</span>
-                  <span className="text-xs font-semibold text-white">{s.count}명</span>
+                  <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{s.label}</span>
+                  <span className="text-xs font-semibold" style={{ color: 'var(--warm-dark)' }}>{s.count}명</span>
                 </div>
               ))}
             </div>
@@ -425,8 +434,9 @@ function TenantsTab({ data }: { data: DashboardData }) {
         </div>
 
         {/* 성별 */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-gray-400 mb-4">성별 분포</h3>
+        <div className="rounded-2xl p-5"
+             style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>성별 분포</h3>
           <div className="flex items-center gap-4">
             <DonutChart
               segments={genderSegments}
@@ -436,9 +446,9 @@ function TenantsTab({ data }: { data: DashboardData }) {
             <div className="space-y-2.5 flex-1">
               {data.genderDist.map((d, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: GENDER_COLOR[d.label] ?? '#6b7280' }} />
-                  <span className="text-xs text-gray-400 flex-1">{GENDER_LABEL[d.label] ?? d.label}</span>
-                  <span className="text-xs font-semibold text-white">{d.count}명</span>
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: GENDER_COLOR[d.label] ?? '#a89888' }} />
+                  <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{GENDER_LABEL[d.label] ?? d.label}</span>
+                  <span className="text-xs font-semibold" style={{ color: 'var(--warm-dark)' }}>{d.count}명</span>
                 </div>
               ))}
             </div>
@@ -448,12 +458,14 @@ function TenantsTab({ data }: { data: DashboardData }) {
 
       {/* 국적 / 직업 분포 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-gray-400 mb-4">국적 분포</h3>
+        <div className="rounded-2xl p-5"
+             style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>국적 분포</h3>
           <DistList items={data.nationalityDist} colors={DIST_COLORS} />
         </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-gray-400 mb-4">직업 분포</h3>
+        <div className="rounded-2xl p-5"
+             style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--warm-mid)' }}>직업 분포</h3>
           <DistList items={data.jobDist} colors={DIST_COLORS} />
         </div>
       </div>
@@ -462,7 +474,7 @@ function TenantsTab({ data }: { data: DashboardData }) {
   )
 }
 
-// ── 메인 클라이언트 컴포넌트 ────────────────────────────────────
+// ── AI 분석 탭 ──────────────────────────────────────────────────
 
 function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string }) {
   const [aiText, setAiText] = useState('')
@@ -483,16 +495,20 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
 
   return (
     <div className="space-y-4">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+      <div className="rounded-2xl p-5"
+           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h3 className="text-sm font-semibold text-white">Gemini AI 재무 분석</h3>
-            <p className="text-xs text-gray-500 mt-0.5">{targetMonth} 운영 데이터 기반 AI 분석</p>
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>Gemini AI 재무 분석</h3>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--warm-muted)' }}>{targetMonth} 운영 데이터 기반 AI 분석</p>
           </div>
           <button
             onClick={handleAnalyze}
             disabled={isPending}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors">
+            className="flex items-center gap-2 px-4 py-2 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60"
+            style={{ background: 'var(--coral)' }}
+            onMouseEnter={e => !isPending && ((e.currentTarget as HTMLElement).style.background = 'var(--coral-dark)')}
+            onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = 'var(--coral)')}>
             {isPending
               ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />분석 중...</>
               : '✦ AI 분석하기'}
@@ -500,30 +516,33 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
         </div>
 
         {!aiText && !isPending && !error && (
-          <div className="text-center py-10 text-gray-600 text-sm">
+          <div className="text-center py-10 text-sm" style={{ color: 'var(--warm-muted)' }}>
             버튼을 눌러 이달 재무 현황 AI 분석을 시작하세요
           </div>
         )}
 
         {isPending && (
-          <div className="flex items-center gap-3 py-8 justify-center text-indigo-400 text-sm">
-            <span className="w-4 h-4 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full animate-spin" />
+          <div className="flex items-center gap-3 py-8 justify-center text-sm" style={{ color: 'var(--coral)' }}>
+            <span className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin"
+                  style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
             Gemini가 재무 데이터를 분석하고 있습니다...
           </div>
         )}
 
         {error && (
-          <p className="text-red-400 text-sm py-4 text-center">{error}</p>
+          <p className="text-red-500 text-sm py-4 text-center">{error}</p>
         )}
 
         {aiText && !isPending && (
-          <div className="bg-indigo-950/30 border border-indigo-900/40 rounded-xl p-4">
-            <div className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap">
+          <div className="rounded-xl p-4"
+               style={{ background: 'var(--coral-light)', border: '1px solid rgba(244,98,58,0.2)' }}>
+            <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--warm-dark)' }}>
               {aiText}
             </div>
             <button
               onClick={handleAnalyze}
-              className="mt-3 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+              className="mt-3 text-xs transition-colors"
+              style={{ color: 'var(--coral)' }}>
               ↻ 다시 분석
             </button>
           </div>
@@ -533,13 +552,15 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
   )
 }
 
+// ── 메인 클라이언트 컴포넌트 ────────────────────────────────────
+
 export default function DashboardClient({ data, targetMonth }: { data: DashboardData; targetMonth: string }) {
   const [tab, setTab] = useState<'finance' | 'tenants' | 'ai'>('finance')
 
   return (
     <div className="space-y-5">
       {/* 탭 */}
-      <div className="flex gap-2 sticky top-0 z-10 pb-1 pt-0.5 bg-gray-950">
+      <div className="flex gap-2 sticky top-0 z-10 pb-1 pt-0.5" style={{ background: 'var(--canvas)' }}>
         {([
           { key: 'finance',  label: '재무현황' },
           { key: 'tenants',  label: '입주자 통계' },
@@ -548,11 +569,10 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium rounded-xl transition-colors ${
-              tab === t.key
-                ? t.key === 'ai' ? 'bg-indigo-700 text-white' : 'bg-indigo-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:text-white'
-            }`}
+            className="px-4 py-2 text-sm font-medium rounded-xl transition-colors"
+            style={tab === t.key
+              ? { background: 'var(--coral)', color: '#fff' }
+              : { background: 'var(--cream)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}
           >
             {t.label}
           </button>

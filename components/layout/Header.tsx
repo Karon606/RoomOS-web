@@ -46,12 +46,14 @@ export default function Header({
   const displayMonth = `${cy}년 ${parseInt(cm)}월`
 
   return (
-    <header className="h-14 md:h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-4 md:px-6 shrink-0">
+    <header className="h-14 md:h-16 flex items-center justify-between px-4 md:px-6 shrink-0"
+            style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }}>
       <div className="flex items-center gap-2">
         {/* 햄버거 (모바일 전용) */}
         <button
           onClick={onMenuClick}
-          className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors text-lg"
+          className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg transition-colors text-lg"
+          style={{ color: 'var(--warm-mid)' }}
           aria-label="메뉴 열기"
         >
           ☰
@@ -60,12 +62,14 @@ export default function Header({
         {/* 월 이동 */}
         <button
           onClick={() => changeMonth(-1)}
-          className="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-800 text-gray-400 hover:text-white transition-colors text-sm">
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-colors"
+          style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
           {'◀'}
         </button>
         <div
           onClick={() => setShowPicker(!showPicker)}
-          className="text-sm font-semibold text-white text-center hover:text-indigo-400 transition-colors relative cursor-pointer px-1"
+          className="text-sm font-semibold text-center transition-colors relative cursor-pointer px-1"
+          style={{ color: 'var(--warm-dark)' }}
         >
           {displayMonth}
           {showPicker && (
@@ -80,7 +84,8 @@ export default function Header({
         {currentMonth < todayMonth && (
           <button
             onClick={() => changeMonth(1)}
-            className="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-800 text-gray-400 hover:text-white transition-colors text-sm">
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-colors"
+            style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
             {'▶'}
           </button>
         )}
@@ -96,29 +101,37 @@ export default function Header({
             <img src={user.user_metadata.avatar_url} alt="avatar"
               className="w-8 h-8 rounded-full" />
           ) : (
-            <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-sm font-medium">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold text-white"
+                 style={{ background: 'var(--coral)' }}>
               {user.email?.[0].toUpperCase()}
             </div>
           )}
-          <span className="text-sm text-gray-300 max-w-32 truncate hidden sm:block">
+          <span className="text-sm max-w-32 truncate hidden sm:block" style={{ color: 'var(--warm-mid)' }}>
             {user.user_metadata?.full_name ?? user.email}
           </span>
         </button>
 
         {open && (
-          <div className="absolute right-0 top-12 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-xl z-50">
-            <div className="p-3 border-b border-gray-700">
-              <p className="text-xs text-gray-500 truncate">{user.email}</p>
+          <div className="absolute right-0 top-12 w-48 rounded-xl shadow-xl z-50"
+               style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+            <div className="p-3" style={{ borderBottom: '1px solid var(--warm-border)' }}>
+              <p className="text-xs truncate" style={{ color: 'var(--warm-muted)' }}>{user.email}</p>
             </div>
             <div className="p-1.5 space-y-0.5">
               <a href="/property-select"
-                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-300 hover:bg-gray-700 transition-colors">
-                {'영업장 변경'}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+                style={{ color: 'var(--warm-dark)' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--canvas)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}>
+                영업장 변경
               </a>
               <form action={signOut}>
                 <button type="submit"
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-400 hover:bg-gray-700 transition-colors">
-                  {'로그아웃'}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+                  style={{ color: '#ef4444' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--canvas)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}>
+                  로그아웃
                 </button>
               </form>
             </div>
@@ -145,17 +158,20 @@ function MonthPicker({
 
   return (
     <div
-      className="absolute top-8 left-1/2 -translate-x-1/2 z-50 bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl p-4 w-64"
+      className="absolute top-8 left-1/2 -translate-x-1/2 z-50 rounded-2xl shadow-2xl p-4 w-64"
+      style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
       onClick={e => e.stopPropagation()}
     >
       <div className="flex items-center justify-between mb-3">
         <button onClick={() => setYear(y => y - 1)}
-          className="text-gray-400 hover:text-white px-2 py-1 rounded-lg hover:bg-gray-700 transition-colors text-sm">
+          className="px-2 py-1 rounded-lg text-sm transition-colors"
+          style={{ color: 'var(--warm-mid)' }}>
           {'◀'}
         </button>
-        <span className="text-white font-semibold text-sm">{year}년</span>
+        <span className="font-semibold text-sm" style={{ color: 'var(--warm-dark)' }}>{year}년</span>
         <button onClick={() => setYear(y => y + 1)}
-          className="text-gray-400 hover:text-white px-2 py-1 rounded-lg hover:bg-gray-700 transition-colors text-sm">
+          className="px-2 py-1 rounded-lg text-sm transition-colors"
+          style={{ color: 'var(--warm-mid)' }}>
           {'▶'}
         </button>
       </div>
@@ -164,17 +180,18 @@ function MonthPicker({
         {months.map((label, i) => {
           const monthStr = `${year}-${String(i + 1).padStart(2, '0')}`
           const isActive = monthStr === current
+          const disabled = year > maxYear || (year === maxYear && i + 1 > maxMonth)
           return (
             <button
               key={i}
-              disabled={year > maxYear || (year === maxYear && i + 1 > maxMonth)}
+              disabled={disabled}
               onClick={() => onSelect(monthStr)}
-              className={`py-1.5 text-xs rounded-lg transition-colors
-                ${isActive
-                  ? 'bg-indigo-600 text-white font-semibold'
-                  : year > maxYear || (year === maxYear && i + 1 > maxMonth)
-                    ? 'text-gray-700 cursor-not-allowed'
-                    : 'text-gray-300 hover:bg-gray-700'}`}
+              className="py-1.5 text-xs rounded-lg transition-colors"
+              style={isActive
+                ? { background: 'var(--coral)', color: '#fff', fontWeight: 600 }
+                : disabled
+                  ? { color: 'var(--warm-border)', cursor: 'not-allowed' }
+                  : { color: 'var(--warm-mid)' }}
             >
               {label}
             </button>
@@ -185,14 +202,15 @@ function MonthPicker({
       <div className="flex gap-2 mt-3">
         <button
           onClick={() => onSelect(todayMonth)}
-          className={`flex-1 py-1.5 text-xs rounded-lg transition-colors font-medium
-            ${current === todayMonth
-              ? 'bg-indigo-600/30 text-indigo-300 cursor-default'
-              : 'bg-gray-700 text-gray-300 hover:bg-indigo-600 hover:text-white'}`}>
+          className="flex-1 py-1.5 text-xs rounded-lg transition-colors font-medium"
+          style={current === todayMonth
+            ? { background: 'var(--coral-light)', color: 'var(--coral)', cursor: 'default' }
+            : { background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
           이번달
         </button>
         <button onClick={onClose}
-          className="flex-1 py-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors">
+          className="flex-1 py-1.5 text-xs transition-colors"
+          style={{ color: 'var(--warm-muted)' }}>
           닫기
         </button>
       </div>

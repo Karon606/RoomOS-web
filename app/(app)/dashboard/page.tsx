@@ -317,7 +317,7 @@ export default async function DashboardPage({
 
       {/* ── 헤더 ──────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-bold text-white">{property?.name}</h1>
+        <h1 className="text-xl font-bold text-[var(--warm-dark)]">{property?.name}</h1>
         <Suspense fallback={null}>
           <ExportButton />
         </Suspense>
@@ -325,10 +325,10 @@ export default async function DashboardPage({
 
       {/* ── 알림 (탭보다 위) ───────────────────────────────────── */}
       {alerts.length > 0 && (
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-gray-800 flex items-center gap-2">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-[var(--warm-border)] flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+            <p className="text-xs font-semibold text-[var(--warm-mid)] uppercase tracking-wider">
               알림 {alerts.length}건
             </p>
           </div>
@@ -356,7 +356,7 @@ export default async function DashboardPage({
               const dayColor = isOverdue  ? 'text-red-400 font-bold'
                 : isToday    ? 'text-orange-400 font-bold'
                 : isUrgent   ? 'text-orange-300 font-semibold'
-                : 'text-gray-500'
+                : 'text-[var(--warm-muted)]'
 
               return (
                 <div key={i} className="flex items-center gap-3 px-4 py-3">
@@ -366,7 +366,7 @@ export default async function DashboardPage({
                   </span>
 
                   {/* 호실 + 이름 */}
-                  <span className="text-sm text-white font-medium shrink-0">
+                  <span className="text-sm text-[var(--warm-dark)] font-medium shrink-0">
                     {isWishRoom
                       ? <>{a.tenantName}님 → {a.roomNo}호</>
                       : <>{a.roomNo}호&nbsp;{a.tenantName}</>
@@ -377,7 +377,7 @@ export default async function DashboardPage({
                   <span className="text-gray-700 shrink-0">|</span>
 
                   {/* 날짜/설명 */}
-                  <span className="text-sm text-gray-400 shrink-0">{a.dateStr}</span>
+                  <span className="text-sm text-[var(--warm-mid)] shrink-0">{a.dateStr}</span>
 
                   {/* D-day */}
                   {dayLabel && (

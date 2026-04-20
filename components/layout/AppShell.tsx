@@ -15,12 +15,13 @@ export default function AppShell({
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
-    <div className="flex h-screen bg-gray-950 text-white overflow-hidden">
+    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--canvas)' }}>
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex flex-col flex-1 overflow-hidden">
         <Suspense fallback={
-          <div className="h-14 md:h-16 bg-gray-900 border-b border-gray-800 flex items-center px-4 md:px-6">
-            <span className="text-sm text-gray-500">로딩 중...</span>
+          <div className="h-14 md:h-16 flex items-center px-4 md:px-6 shrink-0"
+               style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }}>
+            <span className="text-sm" style={{ color: 'var(--warm-muted)' }}>로딩 중...</span>
           </div>
         }>
           <Header user={user} onMenuClick={() => setSidebarOpen(true)} />

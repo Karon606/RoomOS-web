@@ -109,38 +109,38 @@ export function JobSelect({ name, defaultValue, placeholder = '직업 선택' }:
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-left focus:outline-none focus:border-indigo-500 transition-colors"
+        className="w-full flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-left focus:outline-none focus:border-[var(--coral)] transition-colors"
       >
         {selected ? (
-          <span className="text-white flex-1">{selected}</span>
+          <span className="text-[var(--warm-dark)] flex-1">{selected}</span>
         ) : (
-          <span className="text-gray-600 flex-1">{placeholder}</span>
+          <span className="text-[var(--warm-muted)] flex-1">{placeholder}</span>
         )}
-        <span className="text-gray-500 text-xs">{open ? '▲' : '▼'}</span>
+        <span className="text-[var(--warm-muted)] text-xs">{open ? '▲' : '▼'}</span>
       </button>
 
       {/* 드롭다운 */}
       {open && (
         <div
-          className="absolute z-50 mt-1 w-full bg-gray-800 border border-gray-700 rounded-xl shadow-2xl flex flex-col"
+          className="absolute z-50 mt-1 w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-2xl flex flex-col"
           style={{ maxHeight: '280px' }}
         >
           {/* 검색창 */}
-          <div className="px-3 pt-2.5 pb-2 border-b border-gray-700 shrink-0">
+          <div className="px-3 pt-2.5 pb-2 border-b border-[var(--warm-border)] shrink-0">
             <input
               ref={searchRef}
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="검색..."
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 outline-none focus:border-indigo-500"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)]"
             />
           </div>
 
           {/* 직업 목록 */}
           <div className="overflow-y-auto flex-1">
             {filtered.length === 0 ? (
-              <p className="px-4 py-4 text-sm text-gray-500 text-center">검색 결과 없음</p>
+              <p className="px-4 py-4 text-sm text-[var(--warm-muted)] text-center">검색 결과 없음</p>
             ) : (
               filtered.map(job => {
                 const isCustom = customJobs.includes(job)
@@ -151,13 +151,13 @@ export function JobSelect({ name, defaultValue, placeholder = '직업 선택' }:
                     onClick={() => pick(job)}
                     className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm text-left transition-colors ${
                       selected === job
-                        ? 'bg-indigo-600/30 text-indigo-300'
-                        : 'text-gray-200 hover:bg-gray-700'
+                        ? 'bg-[var(--coral-light)] text-[var(--coral)]'
+                        : 'text-[var(--warm-dark)] hover:bg-[var(--canvas)]'
                     }`}
                   >
                     <span className="flex-1">{job}</span>
                     {isCustom && (
-                      <span className="text-xs text-gray-500 shrink-0">추가됨</span>
+                      <span className="text-xs text-[var(--warm-muted)] shrink-0">추가됨</span>
                     )}
                   </button>
                 )
@@ -166,8 +166,8 @@ export function JobSelect({ name, defaultValue, placeholder = '직업 선택' }:
           </div>
 
           {/* 직접 추가 */}
-          <div className="border-t border-gray-700 px-3 py-2.5 shrink-0">
-            <p className="text-xs text-gray-500 mb-2">직접 추가</p>
+          <div className="border-t border-[var(--warm-border)] px-3 py-2.5 shrink-0">
+            <p className="text-xs text-[var(--warm-muted)] mb-2">직접 추가</p>
             <div className="flex gap-2">
               <input
                 type="text"
@@ -175,13 +175,13 @@ export function JobSelect({ name, defaultValue, placeholder = '직업 선택' }:
                 onChange={e => setNewJob(e.target.value)}
                 onKeyDown={handleAddKeyDown}
                 placeholder="직업 입력 후 Enter"
-                className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 outline-none focus:border-indigo-500"
+                className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)]"
               />
               <button
                 type="button"
                 onClick={addCustomJob}
                 disabled={!newJob.trim()}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                className="px-3 py-1.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-xs rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
               >
                 추가
               </button>
@@ -190,11 +190,11 @@ export function JobSelect({ name, defaultValue, placeholder = '직업 선택' }:
 
           {/* 선택 초기화 */}
           {selected && (
-            <div className="border-t border-gray-700 px-3 py-2 shrink-0">
+            <div className="border-t border-[var(--warm-border)] px-3 py-2 shrink-0">
               <button
                 type="button"
                 onClick={() => { setSelected(''); setOpen(false) }}
-                className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors"
               >
                 선택 초기화
               </button>

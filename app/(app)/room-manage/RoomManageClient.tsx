@@ -206,16 +206,16 @@ export default function RoomManageClient({
 
   const TypeSection = ({ defaultValue }: { defaultValue?: string }) => (
     <div className="space-y-1.5">
-      <label className="text-xs font-medium text-gray-400">방 타입</label>
+      <label className="text-xs font-medium text-[var(--warm-mid)]">방 타입</label>
       <select name="type" defaultValue={defaultValue ?? ''}
-        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
         <option value="">선택</option>
         {types.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
       <div className="flex gap-2">
         <input type="text" value={newType} onChange={e => setNewType(e.target.value)}
           placeholder="새 방타입 추가..."
-          className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+          className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
         <button type="button"
           onClick={async () => {
             if (!newType.trim()) return
@@ -223,7 +223,7 @@ export default function RoomManageClient({
             setTypes(prev => [...prev, newType.trim()])
             setNewType('')
           }}
-          className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-xl transition-colors">
+          className="px-3 py-2 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-xs rounded-xl transition-colors">
           등록
         </button>
       </div>
@@ -238,12 +238,12 @@ export default function RoomManageClient({
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">호실 관리</h1>
-          <p className="text-sm text-gray-500 mt-0.5">전체 {rooms.length}실</p>
+          <h1 className="text-xl font-bold text-[var(--warm-dark)]">호실 관리</h1>
+          <p className="text-sm text-[var(--warm-muted)] mt-0.5">전체 {rooms.length}실</p>
         </div>
         <button
           onClick={() => { setShowAddModal(true); setError('') }}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors">
+          className="px-4 py-2 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
           + 호실 등록
         </button>
       </div>
@@ -257,10 +257,10 @@ export default function RoomManageClient({
 
       {/* 호실 그리드 */}
       {rooms.length === 0 ? (
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-12 text-center">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-12 text-center">
           <p className="text-4xl mb-3">🏠</p>
-          <p className="text-white font-medium">등록된 호실이 없습니다</p>
-          <p className="text-sm text-gray-500 mt-1">호실 등록 버튼을 눌러 시작하세요</p>
+          <p className="text-[var(--warm-dark)] font-medium">등록된 호실이 없습니다</p>
+          <p className="text-sm text-[var(--warm-muted)] mt-1">호실 등록 버튼을 눌러 시작하세요</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
@@ -270,36 +270,36 @@ export default function RoomManageClient({
             return (
               <div key={room.id}
                 onClick={() => { setDetailRoom(room); setError('') }}
-                className={`bg-gray-900 border rounded-2xl overflow-hidden cursor-pointer hover:border-gray-600 transition-colors
-                  ${room.isVacant ? 'border-gray-800' : 'border-indigo-500/40'}`}>
+                className={`bg-[var(--cream)] border rounded-2xl overflow-hidden cursor-pointer hover:border-[var(--warm-border)] transition-colors
+                  ${room.isVacant ? 'border-[var(--warm-border)]' : 'border-[var(--coral)]/40'}`}>
                 {/* 썸네일 */}
                 {thumb ? (
-                  <div className="h-28 bg-gray-800">
+                  <div className="h-28 bg-[var(--canvas)]">
                     <img src={thumb.storageUrl} alt={`${room.roomNo}호`} className="w-full h-full object-cover" />
                   </div>
                 ) : (
-                  <div className="h-28 bg-gray-800 flex items-center justify-center">
+                  <div className="h-28 bg-[var(--canvas)] flex items-center justify-center">
                     <span className="text-3xl opacity-20">🏠</span>
                   </div>
                 )}
                 {/* 정보 */}
                 <div className="p-3 space-y-1.5">
                   <div className="flex items-start justify-between">
-                    <span className="text-base font-bold text-white">{room.roomNo}호</span>
+                    <span className="text-base font-bold text-[var(--warm-dark)]">{room.roomNo}호</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium
-                      ${room.isVacant ? 'bg-gray-700 text-gray-400' : 'bg-indigo-500/20 text-indigo-300'}`}>
+                      ${room.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-mid)]' : 'bg-[var(--coral)]/20 text-[var(--coral)]'}`}>
                       {room.isVacant ? '공실' : '입주중'}
                     </span>
                   </div>
-                  <p className="text-xs text-gray-400 truncate">{tenant ?? '—'}</p>
+                  <p className="text-xs text-[var(--warm-mid)] truncate">{tenant ?? '—'}</p>
                   <div>
-                    {room.type && <p className="text-xs text-gray-500">{room.type}</p>}
-                    <p className="text-sm font-semibold text-white"><MoneyDisplay amount={room.baseRent} /></p>
+                    {room.type && <p className="text-xs text-[var(--warm-muted)]">{room.type}</p>}
+                    <p className="text-sm font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></p>
                     {room.scheduledRent != null && (
                       <p className="text-xs text-amber-400 mt-0.5">
                         → <MoneyDisplay amount={room.scheduledRent} />
                         {room.rentUpdateDate && (
-                          <span className="text-gray-500 ml-1">({fmtDate(room.rentUpdateDate)})</span>
+                          <span className="text-[var(--warm-muted)] ml-1">({fmtDate(room.rentUpdateDate)})</span>
                         )}
                       </p>
                     )}
@@ -318,19 +318,19 @@ export default function RoomManageClient({
         return (
           <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
             onClick={closeDetail}>
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
+            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
               onClick={e => e.stopPropagation()}>
 
               {/* 헤더 */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
                 <div className="flex items-center gap-2.5">
-                  <h2 className="text-base font-bold text-white">{r.roomNo}호</h2>
+                  <h2 className="text-base font-bold text-[var(--warm-dark)]">{r.roomNo}호</h2>
                   <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
-                    ${r.isVacant ? 'bg-gray-700 text-gray-400' : 'bg-indigo-500/20 text-indigo-300'}`}>
+                    ${r.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-mid)]' : 'bg-[var(--coral)]/20 text-[var(--coral)]'}`}>
                     {r.isVacant ? '공실' : '입주중'}
                   </span>
                 </div>
-                <button onClick={closeDetail} className="text-gray-500 hover:text-white text-xl leading-none">✕</button>
+                <button onClick={closeDetail} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
               </div>
 
               {/* 바디 */}
@@ -354,7 +354,7 @@ export default function RoomManageClient({
                     <DetailRow label="예약 이용료" value={
                       <span className="text-amber-400">
                         <MoneyDisplay amount={r.scheduledRent} />
-                        {r.rentUpdateDate && <span className="text-gray-500 ml-1 text-xs">({fmtDate(r.rentUpdateDate)} 적용)</span>}
+                        {r.rentUpdateDate && <span className="text-[var(--warm-muted)] ml-1 text-xs">({fmtDate(r.rentUpdateDate)} 적용)</span>}
                       </span>
                     } />
                   )}
@@ -371,7 +371,7 @@ export default function RoomManageClient({
               </div>
 
               {/* 푸터 */}
-              <div className="border-t border-gray-800 px-6 py-4 flex gap-2 shrink-0">
+              <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                 <button
                   onClick={() => handleDelete(r.id, r.roomNo)}
                   disabled={!r.isVacant || isPending}
@@ -382,7 +382,7 @@ export default function RoomManageClient({
                 <div className="flex-1" />
                 <button
                   onClick={() => openEdit(r)}
-                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors">
+                  className="px-4 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
                   수정
                 </button>
               </div>
@@ -398,7 +398,7 @@ export default function RoomManageClient({
             <Field label="호실 번호 *" name="roomNo" placeholder="예: 101, A동-3, 옥탑방" />
             <TypeSection />
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-gray-400">기본 월 이용료</label>
+              <label className="text-xs font-medium text-[var(--warm-mid)]">기본 월 이용료</label>
               <MoneyInput name="baseRent" placeholder="0원" />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -410,9 +410,9 @@ export default function RoomManageClient({
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-gray-400">사진</label>
+                <label className="text-xs font-medium text-[var(--warm-mid)]">사진</label>
                 <button type="button" onClick={() => addPhotoInputRef.current?.click()}
-                  className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                  className="text-xs text-[var(--coral)] hover:text-[var(--coral)] transition-colors">
                   + 사진 선택
                 </button>
                 <input ref={addPhotoInputRef} type="file" accept="image/*" multiple className="hidden"
@@ -421,10 +421,10 @@ export default function RoomManageClient({
               {addPhotoPreviews.length > 0 ? (
                 <div className="grid grid-cols-3 gap-2">
                   {addPhotoPreviews.map((p, i) => (
-                    <div key={p.previewUrl} className="relative group aspect-square rounded-lg overflow-hidden bg-gray-800">
+                    <div key={p.previewUrl} className="relative group aspect-square rounded-lg overflow-hidden bg-[var(--canvas)]">
                       <img src={p.previewUrl} alt="" className="w-full h-full object-cover" />
                       <button type="button" onClick={() => removeAddPhoto(i)}
-                        className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full text-[var(--warm-dark)] text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                         ✕
                       </button>
                     </div>
@@ -432,8 +432,8 @@ export default function RoomManageClient({
                 </div>
               ) : (
                 <div onClick={() => addPhotoInputRef.current?.click()}
-                  className="h-20 border border-dashed border-gray-700 rounded-xl flex items-center justify-center cursor-pointer hover:border-gray-600 transition-colors">
-                  <p className="text-xs text-gray-600">클릭하여 사진 선택 (추가 시 업로드)</p>
+                  className="h-20 border border-dashed border-[var(--warm-border)] rounded-xl flex items-center justify-center cursor-pointer hover:border-[var(--warm-border)] transition-colors">
+                  <p className="text-xs text-[var(--warm-muted)]">클릭하여 사진 선택 (추가 시 업로드)</p>
                 </div>
               )}
             </div>
@@ -441,11 +441,11 @@ export default function RoomManageClient({
             {error && <p className="text-red-400 text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
               <button type="button" onClick={closeAddModal}
-                className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">
+                className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
                 취소
               </button>
               <button type="submit" disabled={isPending}
-                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                 {isPending ? '저장 중...' : `저장${addPhotoPreviews.length > 0 ? ` (사진 ${addPhotoPreviews.length}장)` : ''}`}
               </button>
             </div>
@@ -461,19 +461,19 @@ export default function RoomManageClient({
             <Field label="호실 번호 *" name="roomNo" defaultValue={editRoom.roomNo} />
             <TypeSection defaultValue={editRoom.type ?? ''} />
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-gray-400">기본 월 이용료</label>
+              <label className="text-xs font-medium text-[var(--warm-mid)]">기본 월 이용료</label>
               <MoneyInput name="baseRent" defaultValue={editRoom.baseRent} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400">예약 이용료 <span className="text-gray-600">(가격 예약)</span></label>
+                <label className="text-xs font-medium text-[var(--warm-mid)]">예약 이용료 <span className="text-[var(--warm-muted)]">(가격 예약)</span></label>
                 <MoneyInput name="scheduledRent" defaultValue={editRoom.scheduledRent ?? undefined} placeholder="미설정" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400">적용 예정일</label>
+                <label className="text-xs font-medium text-[var(--warm-mid)]">적용 예정일</label>
                 <input type="date" name="rentUpdateDate"
                   defaultValue={editRoom.rentUpdateDate ? fmtDate(editRoom.rentUpdateDate) : ''}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" />
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -485,10 +485,10 @@ export default function RoomManageClient({
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-gray-400">사진</label>
+                <label className="text-xs font-medium text-[var(--warm-mid)]">사진</label>
                 <button type="button" onClick={() => photoInputRef.current?.click()}
                   disabled={photoUploading}
-                  className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors disabled:opacity-50">
+                  className="text-xs text-[var(--coral)] hover:text-[var(--coral)] transition-colors disabled:opacity-50">
                   {photoUploading ? '업로드 중...' : '+ 사진 추가'}
                 </button>
                 <input ref={photoInputRef} type="file" accept="image/*" multiple className="hidden"
@@ -497,26 +497,26 @@ export default function RoomManageClient({
               {editPhotos.length > 0 ? (
                 <div className="grid grid-cols-3 gap-2">
                   {editPhotos.map(photo => (
-                    <div key={photo.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-800">
+                    <div key={photo.id} className="relative aspect-square rounded-lg overflow-hidden bg-[var(--canvas)]">
                       <img src={photo.storageUrl} alt={photo.fileName ?? ''} className="w-full h-full object-cover" />
                       <button type="button" onClick={() => handlePhotoDelete(photo.id)}
-                        className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-red-600/80 rounded-full text-white text-xs transition-colors flex items-center justify-center">
+                        className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-red-600/80 rounded-full text-[var(--warm-dark)] text-xs transition-colors flex items-center justify-center">
                         ✕
                       </button>
                     </div>
                   ))}
                   {photoUploading && (
-                    <div className="aspect-square rounded-lg bg-gray-800 flex items-center justify-center">
-                      <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                    <div className="aspect-square rounded-lg bg-[var(--canvas)] flex items-center justify-center">
+                      <div className="w-5 h-5 border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
                     </div>
                   )}
                 </div>
               ) : (
                 <div onClick={() => photoInputRef.current?.click()}
-                  className="h-20 border border-dashed border-gray-700 rounded-xl flex items-center justify-center cursor-pointer hover:border-gray-600 transition-colors">
+                  className="h-20 border border-dashed border-[var(--warm-border)] rounded-xl flex items-center justify-center cursor-pointer hover:border-[var(--warm-border)] transition-colors">
                   {photoUploading
-                    ? <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-                    : <p className="text-xs text-gray-600">클릭하여 사진 업로드</p>}
+                    ? <div className="w-5 h-5 border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
+                    : <p className="text-xs text-[var(--warm-muted)]">클릭하여 사진 업로드</p>}
                 </div>
               )}
             </div>
@@ -524,11 +524,11 @@ export default function RoomManageClient({
             {error && <p className="text-red-400 text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
               <button type="button" onClick={closeEdit}
-                className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">
+                className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
                 취소
               </button>
               <button type="submit" disabled={isPending}
-                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                 {isPending ? '저장 중...' : '저장'}
               </button>
             </div>
@@ -546,10 +546,10 @@ function Modal({ title, children, onClose }: {
 }) {
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 flex-shrink-0">
-          <h2 className="text-base font-bold text-white">{title}</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors text-xl leading-none">✕</button>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] flex-shrink-0">
+          <h2 className="text-base font-bold text-[var(--warm-dark)]">{title}</h2>
+          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors text-xl leading-none">✕</button>
         </div>
         <div className="overflow-y-auto px-6 py-5 flex-1">{children}</div>
       </div>
@@ -559,9 +559,9 @@ function Modal({ title, children, onClose }: {
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between py-2 border-b border-gray-800/50 last:border-0 gap-4">
-      <span className="text-xs text-gray-500 shrink-0">{label}</span>
-      <span className="text-sm text-gray-200 text-right">{value}</span>
+    <div className="flex items-start justify-between py-2 border-b border-[var(--warm-border)]/50 last:border-0 gap-4">
+      <span className="text-xs text-[var(--warm-muted)] shrink-0">{label}</span>
+      <span className="text-sm text-[var(--warm-dark)] text-right">{value}</span>
     </div>
   )
 }
@@ -571,9 +571,9 @@ function Field({ label, name, placeholder, defaultValue }: {
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-medium text-gray-400">{label}</label>
+      <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       <input type="text" name={name} defaultValue={defaultValue} placeholder={placeholder}
-        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500 transition-colors" />
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)] transition-colors" />
     </div>
   )
 }
@@ -583,9 +583,9 @@ function SelectField({ label, name, options, defaultValue }: {
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-medium text-gray-400">{label}</label>
+      <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       <select name={name} defaultValue={defaultValue ?? ''}
-        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
         <option value="">선택</option>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>

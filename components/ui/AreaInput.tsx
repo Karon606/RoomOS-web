@@ -32,18 +32,18 @@ export function AreaInput({
   return (
     <div className="grid grid-cols-2 gap-3">
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-gray-400">면적 (평)</label>
+        <label className="text-xs font-medium text-[var(--warm-mid)]">면적 (평)</label>
         <input
           type="text" name="areaPyeong" value={pyeong}
           onChange={handlePyeong} placeholder="0.0"
-          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)]" />
       </div>
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-gray-400">면적 (m²)</label>
+        <label className="text-xs font-medium text-[var(--warm-mid)]">면적 (m²)</label>
         <input
           type="text" name="areaM2" value={m2}
           onChange={handleM2} placeholder="0.0"
-          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)]" />
       </div>
     </div>
   )

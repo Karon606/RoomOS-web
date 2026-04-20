@@ -2,6 +2,23 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import LoginButton from './LoginButton'
 
+function RoomOSLogo() {
+  return (
+    <div className="flex items-center justify-center gap-3">
+      <svg width="36" height="28" viewBox="0 0 28 22" fill="none">
+        <rect y="0"  width="28" height="4" rx="2" fill="#f4623a" />
+        <rect y="6"  width="28" height="4" rx="2" fill="#7a6a5a" opacity="0.6" />
+        <rect y="12" width="28" height="4" rx="2" fill="#7a6a5a" opacity="0.4" />
+        <rect y="18" width="28" height="4" rx="2" fill="#7a6a5a" opacity="0.25" />
+      </svg>
+      <span className="text-3xl tracking-tight" style={{ color: '#5a4a3a' }}>
+        <span style={{ fontWeight: 300 }}>Room</span>
+        <span style={{ fontWeight: 700, color: '#f4623a' }}>OS</span>
+      </span>
+    </div>
+  )
+}
+
 export default async function LoginPage({
   searchParams,
 }: {
@@ -14,29 +31,32 @@ export default async function LoginPage({
   const { returnTo, error } = await searchParams
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-950">
-      <div className="w-full max-w-sm space-y-8 px-6">
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold text-white">🏢 RoomOS</h1>
-          <p className="text-sm text-gray-400">고시원·원룸텔 스마트 관리 시스템</p>
+    <main className="min-h-screen flex items-center justify-center p-4"
+          style={{ background: 'var(--canvas)' }}>
+      <div className="w-full max-w-sm space-y-8 px-2">
+        <div className="text-center space-y-3">
+          <RoomOSLogo />
+          <p className="text-sm" style={{ color: 'var(--warm-muted)' }}>고시원·원룸텔 스마트 관리 시스템</p>
         </div>
 
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 space-y-6">
+        <div className="rounded-2xl p-8 space-y-6"
+             style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           <div>
-            <h2 className="text-lg font-semibold text-white">로그인</h2>
-            <p className="text-xs text-gray-500 mt-1">구글 계정으로 시작하세요</p>
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--warm-dark)' }}>로그인</h2>
+            <p className="text-xs mt-1" style={{ color: 'var(--warm-muted)' }}>구글 계정으로 시작하세요</p>
           </div>
 
           {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
-              <p className="text-red-400 text-sm">로그인에 실패했습니다. 다시 시도해주세요.</p>
+            <div className="rounded-xl p-3"
+                 style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}>
+              <p className="text-red-500 text-sm">로그인에 실패했습니다. 다시 시도해주세요.</p>
             </div>
           )}
 
           <LoginButton returnTo={returnTo} />
         </div>
 
-        <p className="text-center text-xs text-gray-600">
+        <p className="text-center text-xs" style={{ color: 'var(--warm-muted)' }}>
           로그인 시 서비스 이용약관 및 개인정보처리방침에 동의하게 됩니다.
         </p>
       </div>

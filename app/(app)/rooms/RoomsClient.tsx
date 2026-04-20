@@ -299,11 +299,11 @@ export default function RoomsClient({
   const unpaidCount = occupied.filter(r => !r.isPaid).length
   const paidCount   = occupied.filter(r => r.isPaid).length
 
-  const thCls = 'text-left text-xs text-gray-500 font-medium px-4 py-3'
+  const thCls = 'text-left text-xs text-[var(--warm-muted)] font-medium px-4 py-3'
 
   const SortTh = ({ label, sk }: { label: string; sk: SortKey }) => (
     <th onClick={() => handleSort(sk)}
-      className={`${thCls} cursor-pointer select-none hover:text-gray-300 whitespace-nowrap`}>
+      className={`${thCls} cursor-pointer select-none hover:text-[var(--warm-dark)] whitespace-nowrap`}>
       {label}
       <span className="ml-1 inline-block w-3 text-center">
         {sortKey === sk ? (sortDir === 'asc' ? '↑' : '↓') : ''}
@@ -313,7 +313,7 @@ export default function RoomsClient({
 
   const VSortTh = ({ label, sk }: { label: string; sk: VacantSortKey }) => (
     <th onClick={() => handleVacantSort(sk)}
-      className={`${thCls} cursor-pointer select-none hover:text-gray-300 whitespace-nowrap`}>
+      className={`${thCls} cursor-pointer select-none hover:text-[var(--warm-dark)] whitespace-nowrap`}>
       {label}
       <span className="ml-1 inline-block w-3 text-center">
         {vacantSortKey === sk ? (vacantSortDir === 'asc' ? '↑' : '↓') : ''}
@@ -343,22 +343,22 @@ export default function RoomsClient({
     <div className="space-y-6">
       {/* 헤더 */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-white">수납 관리</h1>
-        <span className="text-sm text-gray-500">{targetMonth}</span>
+        <h1 className="text-xl font-bold text-[var(--warm-dark)]">수납 관리</h1>
+        <span className="text-sm text-[var(--warm-muted)]">{targetMonth}</span>
       </div>
 
       {/* 요약 뱃지 + 열 설정 버튼 */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex gap-2 flex-wrap">
           {[
-            { key: 'all',    label: `전체 ${occupied.length}실`, color: 'bg-gray-800 text-gray-300' },
+            { key: 'all',    label: `전체 ${occupied.length}실`, color: 'bg-[var(--canvas)] text-[var(--warm-dark)]' },
             { key: 'unpaid', label: `미납 ${unpaidCount}실`,      color: 'bg-red-500/20 text-red-300' },
             { key: 'paid',   label: `완납 ${paidCount}실`,        color: 'bg-green-500/20 text-green-300' },
           ].map(f => (
             <button key={f.key}
               onClick={() => setFilter(f.key as any)}
               className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors
-                ${filter === f.key ? f.color + ' ring-1 ring-white/20' : 'bg-gray-800/50 text-gray-500 hover:text-gray-300'}`}>
+                ${filter === f.key ? f.color + ' ring-1 ring-white/20' : 'bg-[var(--canvas)]/50 text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}>
               {f.label}
             </button>
           ))}
@@ -369,12 +369,12 @@ export default function RoomsClient({
           <button
             onClick={() => setShowColMenu(v => !v)}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors
-              ${showColMenu ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
+              ${showColMenu ? 'bg-[var(--coral)] text-[var(--warm-dark)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
           >
             <span>⚙</span> 열 설정
           </button>
           {showColMenu && (
-            <div className="absolute right-0 top-full mt-1.5 bg-gray-900 border border-gray-700 rounded-xl p-3 z-20 shadow-xl min-w-[140px] space-y-2">
+            <div className="absolute right-0 top-full mt-1.5 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-3 z-20 shadow-xl min-w-[140px] space-y-2">
               {COL_DEFS.map(col => (
                 <label key={col.key} className="flex items-center gap-2.5 cursor-pointer group">
                   <input
@@ -383,7 +383,7 @@ export default function RoomsClient({
                     onChange={e => setColVis(v => ({ ...v, [col.key]: e.target.checked }))}
                     className="w-3.5 h-3.5 rounded accent-indigo-500"
                   />
-                  <span className="text-xs text-gray-300 group-hover:text-white transition-colors">{col.label}</span>
+                  <span className="text-xs text-[var(--warm-dark)] group-hover:text-[var(--warm-dark)] transition-colors">{col.label}</span>
                 </label>
               ))}
             </div>
@@ -392,10 +392,10 @@ export default function RoomsClient({
       </div>
 
       {/* 수납 현황 테이블 */}
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-auto max-h-[calc(100vh-240px)]">
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100vh-240px)]">
           <table className="w-full min-w-[540px]">
-            <thead className="sticky top-0 z-10 bg-gray-900">
-              <tr className="border-b border-gray-800">
+            <thead className="sticky top-0 z-10 bg-[var(--cream)]">
+              <tr className="border-b border-[var(--warm-border)]">
                 <SortTh label="호실"     sk="roomNo" />
                 {colVis.type          && <SortTh label="타입"     sk="type" />}
                 {colVis.windowType    && <SortTh label="창문"     sk="windowType" />}
@@ -413,48 +413,48 @@ export default function RoomsClient({
               {sorted.map(room => (
                 <tr key={room.roomId}
                   onClick={() => !room.isFutureMonth && openPayModal(room)}
-                  className={`border-b border-gray-800/50 transition-colors
-                    ${room.isFutureMonth ? 'opacity-50' : 'cursor-pointer hover:bg-gray-800/40'}`}>
+                  className={`border-b border-[var(--warm-border)]/50 transition-colors
+                    ${room.isFutureMonth ? 'opacity-50' : 'cursor-pointer hover:bg-[var(--canvas)]/40'}`}>
 
-                  <td className="px-4 py-4 text-sm font-bold text-white whitespace-nowrap">
+                  <td className="px-4 py-4 text-sm font-bold text-[var(--warm-dark)] whitespace-nowrap">
                     {room.roomNo}호
                   </td>
 
                   {colVis.type && (
-                    <td className="px-4 py-4 text-sm text-gray-400">{room.type ?? '—'}</td>
+                    <td className="px-4 py-4 text-sm text-[var(--warm-mid)]">{room.type ?? '—'}</td>
                   )}
 
                   {colVis.windowType && (
-                    <td className="px-4 py-4 text-sm text-gray-400">
+                    <td className="px-4 py-4 text-sm text-[var(--warm-mid)]">
                       {room.windowType ? (WINDOW_LABEL[room.windowType] ?? room.windowType) : '—'}
                     </td>
                   )}
 
-                  <td className="px-4 py-4 text-sm text-white">{room.tenantName}</td>
+                  <td className="px-4 py-4 text-sm text-[var(--warm-dark)]">{room.tenantName}</td>
 
                   {colVis.contact && (
-                    <td className="px-4 py-4 text-sm text-gray-400">
+                    <td className="px-4 py-4 text-sm text-[var(--warm-mid)]">
                       {room.contact ? formatPhone(room.contact) : '—'}
                     </td>
                   )}
 
                   {colVis.depositAmount && (
-                    <td className="px-4 py-4 text-sm text-gray-300">
+                    <td className="px-4 py-4 text-sm text-[var(--warm-dark)]">
                       <MoneyDisplay amount={room.depositAmount} />
                     </td>
                   )}
 
                   {colVis.expected && (
-                    <td className="px-4 py-4 text-sm text-gray-300">
+                    <td className="px-4 py-4 text-sm text-[var(--warm-dark)]">
                       <MoneyDisplay amount={room.expected} />
                     </td>
                   )}
 
                   {colVis.totalPaid && (
                     <td className="px-4 py-4 text-sm">
-                      <span className="text-white"><MoneyDisplay amount={room.totalPaid} /></span>
+                      <span className="text-[var(--warm-dark)]"><MoneyDisplay amount={room.totalPaid} /></span>
                       {room.carryOver > 0 && (
-                        <span className="text-xs text-indigo-400 ml-1">(+이월액 <MoneyDisplay amount={room.carryOver} />)</span>
+                        <span className="text-xs text-[var(--coral)] ml-1">(+이월액 <MoneyDisplay amount={room.carryOver} />)</span>
                       )}
                     </td>
                   )}
@@ -472,7 +472,7 @@ export default function RoomsClient({
                   )}
 
                   {colVis.dueDay && (
-                    <td className="px-4 py-4 text-sm text-gray-400 whitespace-nowrap">
+                    <td className="px-4 py-4 text-sm text-[var(--warm-mid)] whitespace-nowrap">
                       {room.dueDay
                         ? room.dueDay === '말일' ? '매월 말일' : `매월 ${room.dueDay}일`
                         : '—'}
@@ -514,33 +514,33 @@ export default function RoomsClient({
       {vacants.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-500">공실 {vacants.length}실</h2>
+            <h2 className="text-sm font-semibold text-[var(--warm-muted)]">공실 {vacants.length}실</h2>
             <div className="relative" ref={vacantColMenuRef}>
               <button
                 onClick={() => setShowVacantColMenu(v => !v)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors
-                  ${showVacantColMenu ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
+                  ${showVacantColMenu ? 'bg-[var(--coral)] text-[var(--warm-dark)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
               >
                 <span>⚙</span> 열 설정
               </button>
               {showVacantColMenu && (
-                <div className="absolute right-0 top-full mt-1.5 bg-gray-900 border border-gray-700 rounded-xl p-3 z-20 shadow-xl min-w-[160px] space-y-2">
+                <div className="absolute right-0 top-full mt-1.5 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-3 z-20 shadow-xl min-w-[160px] space-y-2">
                   {VACANT_COL_DEFS.map(col => (
                     <label key={col.key} className="flex items-center gap-2.5 cursor-pointer group">
                       <input type="checkbox" checked={vacantColVis[col.key] ?? false}
                         onChange={e => setVacantColVis(v => ({ ...v, [col.key]: e.target.checked }))}
                         className="w-3.5 h-3.5 rounded accent-indigo-500" />
-                      <span className="text-xs text-gray-300 group-hover:text-white transition-colors">{col.label}</span>
+                      <span className="text-xs text-[var(--warm-dark)] group-hover:text-[var(--warm-dark)] transition-colors">{col.label}</span>
                     </label>
                   ))}
                 </div>
               )}
             </div>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-auto max-h-64">
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-64">
             <table className="w-full min-w-[400px]">
-              <thead className="sticky top-0 z-10 bg-gray-900">
-                <tr className="border-b border-gray-800">
+              <thead className="sticky top-0 z-10 bg-[var(--cream)]">
+                <tr className="border-b border-[var(--warm-border)]">
                   <VSortTh label="호실" sk="roomNo" />
                   {vacantColVis.type           && <VSortTh label="타입"          sk="type" />}
                   {vacantColVis.windowType     && <VSortTh label="창문"          sk="windowType" />}
@@ -551,26 +551,26 @@ export default function RoomsClient({
               </thead>
               <tbody>
                 {sortedVacants.map(room => (
-                  <tr key={room.roomId} className="border-b border-gray-800/50">
-                    <td className="px-4 py-3 text-sm font-bold text-gray-400">{room.roomNo}호</td>
+                  <tr key={room.roomId} className="border-b border-[var(--warm-border)]/50">
+                    <td className="px-4 py-3 text-sm font-bold text-[var(--warm-mid)]">{room.roomNo}호</td>
                     {vacantColVis.type && (
-                      <td className="px-4 py-3 text-sm text-gray-500">{room.type ?? '—'}</td>
+                      <td className="px-4 py-3 text-sm text-[var(--warm-muted)]">{room.type ?? '—'}</td>
                     )}
                     {vacantColVis.windowType && (
-                      <td className="px-4 py-3 text-sm text-gray-500">
+                      <td className="px-4 py-3 text-sm text-[var(--warm-muted)]">
                         {room.windowType ? (WINDOW_LABEL[room.windowType] ?? room.windowType) : '—'}
                       </td>
                     )}
                     {vacantColVis.baseRent && (
-                      <td className="px-4 py-3 text-sm text-gray-300">
+                      <td className="px-4 py-3 text-sm text-[var(--warm-dark)]">
                         {room.baseRent > 0 ? <MoneyDisplay amount={room.baseRent} /> : '—'}
                       </td>
                     )}
                     {vacantColVis.prevTenantName && (
-                      <td className="px-4 py-3 text-sm text-gray-400">{room.prevTenantName ?? '—'}</td>
+                      <td className="px-4 py-3 text-sm text-[var(--warm-mid)]">{room.prevTenantName ?? '—'}</td>
                     )}
                     {vacantColVis.prevContact && (
-                      <td className="px-4 py-3 text-sm text-gray-400">
+                      <td className="px-4 py-3 text-sm text-[var(--warm-mid)]">
                         {room.prevContact ? formatPhone(room.prevContact) : '—'}
                       </td>
                     )}
@@ -586,22 +586,22 @@ export default function RoomsClient({
       {showPayModal && selectedRoom && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
           onClick={() => { setShowPayModal(false); setShowPayForm(false) }}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md flex flex-col max-h-[88vh]"
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[88vh]"
             onClick={e => e.stopPropagation()}>
 
             {/* 헤더 */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
               <div>
-                <h2 className="text-base font-bold text-white">
+                <h2 className="text-base font-bold text-[var(--warm-dark)]">
                   {selectedRoom.roomNo}호 — {selectedRoom.tenantName}
                 </h2>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-[var(--warm-muted)] mt-0.5">
                   예정 {selectedRoom.expected.toLocaleString()}원
                   {selectedRoom.dueDay && ` · ${selectedRoom.dueDay}일`}
                 </p>
               </div>
               <button onClick={() => { setShowPayModal(false); setShowPayForm(false) }}
-                className="text-gray-500 hover:text-white text-xl leading-none">✕</button>
+                className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
             </div>
 
             {/* ── 읽기 전용 ── */}
@@ -610,14 +610,14 @@ export default function RoomsClient({
                 <div className="flex-1 overflow-y-auto p-6 space-y-5">
                   {/* 잔액 요약 */}
                   <div className="grid grid-cols-3 gap-2">
-                    <div className="bg-gray-800 rounded-xl p-3 text-center">
-                      <p className="text-xs text-gray-500">총 수납</p>
-                      <p className="text-sm font-bold mt-0.5 text-white">
+                    <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+                      <p className="text-xs text-[var(--warm-muted)]">총 수납</p>
+                      <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]">
                         <MoneyDisplay amount={selectedRoom.totalPaid} />
                       </p>
                     </div>
-                    <div className="bg-gray-800 rounded-xl p-3 text-center">
-                      <p className="text-xs text-gray-500">잔액</p>
+                    <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+                      <p className="text-xs text-[var(--warm-muted)]">잔액</p>
                       <p className={`text-sm font-bold mt-0.5 ${selectedRoom.balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                         {selectedRoom.balance > 0
                           ? <MoneyDisplay amount={selectedRoom.balance} prefix="+" />
@@ -626,9 +626,9 @@ export default function RoomsClient({
                             : '0원'}
                       </p>
                     </div>
-                    <div className="bg-gray-800 rounded-xl p-3 text-center">
-                      <p className="text-xs text-gray-500">이월액</p>
-                      <p className="text-sm font-bold mt-0.5 text-indigo-400">
+                    <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+                      <p className="text-xs text-[var(--warm-muted)]">이월액</p>
+                      <p className="text-sm font-bold mt-0.5 text-[var(--coral)]">
                         {selectedRoom.carryOver !== 0
                           ? <MoneyDisplay amount={Math.abs(selectedRoom.carryOver)} prefix={selectedRoom.carryOver > 0 ? '+' : '-'} />
                           : '0원'}
@@ -639,18 +639,18 @@ export default function RoomsClient({
                   {/* 납부 내역 */}
                   {paymentHistory.length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-xs font-medium text-gray-400">납부 내역</p>
+                      <p className="text-xs font-medium text-[var(--warm-mid)]">납부 내역</p>
                       {paymentHistory.map(p => (
                         <div key={p.id}
-                          className="flex items-center justify-between bg-gray-800 rounded-xl px-3 py-2.5">
+                          className="flex items-center justify-between bg-[var(--canvas)] rounded-xl px-3 py-2.5">
                           <div>
-                            <p className="text-xs text-gray-400">
+                            <p className="text-xs text-[var(--warm-mid)]">
                               {p.seqNo}회차 · {fmtDate(p.payDate)} · {p.payMethod ?? '—'}
                             </p>
-                            {p.memo && <p className="text-xs text-indigo-400 mt-0.5">{p.memo}</p>}
+                            {p.memo && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-white">
+                            <span className="text-sm font-semibold text-[var(--warm-dark)]">
                               {p.actualAmount.toLocaleString()}원
                             </span>
                             {canEdit && (
@@ -678,7 +678,7 @@ export default function RoomsClient({
                             {selectedRoom.overrideDueDayReason && ` (${selectedRoom.overrideDueDayReason})`}
                           </p>
                         ) : (
-                          <p className="text-xs text-gray-500 mt-0.5">이번 달 임시 조정 없음</p>
+                          <p className="text-xs text-[var(--warm-muted)] mt-0.5">이번 달 임시 조정 없음</p>
                         )}
                       </div>
                       <div className="flex gap-1.5">
@@ -710,20 +710,20 @@ export default function RoomsClient({
                       <div className="mt-3 space-y-2">
                         <div className="flex gap-2">
                           <div className="flex-1 space-y-1">
-                            <label className="text-xs text-gray-500">조정 납부일</label>
+                            <label className="text-xs text-[var(--warm-muted)]">조정 납부일</label>
                             <input
                               type="text" inputMode="numeric" placeholder="예: 15 또는 말일"
                               value={overrideInput}
                               onChange={e => setOverrideInput(e.target.value)}
-                              className="w-full bg-gray-800 border border-amber-800/50 rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-amber-500" />
+                              className="w-full bg-[var(--canvas)] border border-amber-800/50 rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-amber-500" />
                           </div>
                           <div className="flex-1 space-y-1">
-                            <label className="text-xs text-gray-500">사유 (선택)</label>
+                            <label className="text-xs text-[var(--warm-muted)]">사유 (선택)</label>
                             <input
                               type="text" placeholder="사유"
                               value={overrideReason}
                               onChange={e => setOverrideReason(e.target.value)}
-                              className="w-full bg-gray-800 border border-amber-800/50 rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-amber-500" />
+                              className="w-full bg-[var(--canvas)] border border-amber-800/50 rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-amber-500" />
                           </div>
                         </div>
                         <button
@@ -733,7 +733,7 @@ export default function RoomsClient({
                             setShowOverrideForm(false)
                             router.refresh()
                           })}
-                          className="w-full py-1.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition-colors">
+                          className="w-full py-1.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-[var(--warm-dark)] text-xs font-medium rounded-lg transition-colors">
                           저장
                         </button>
                       </div>
@@ -743,11 +743,11 @@ export default function RoomsClient({
 
                 {/* 읽기 전용 푸터 */}
                 {canEdit && (
-                  <div className="border-t border-gray-800 px-6 py-4 flex gap-2 shrink-0">
+                  <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                     <div className="flex-1" />
                     <button
                       onClick={() => { setShowPayForm(true); setError('') }}
-                      className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors">
+                      className="px-4 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
                       수납 등록
                     </button>
                   </div>
@@ -761,20 +761,20 @@ export default function RoomsClient({
                 <div className="flex-1 overflow-y-auto p-6 space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="text-xs text-gray-500">날짜</label>
+                      <label className="text-xs text-[var(--warm-muted)]">날짜</label>
                       <input type="date" name="payDate"
                         defaultValue={new Date().toISOString().slice(0, 10)}
-                        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-500" />
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs text-gray-500">금액</label>
+                      <label className="text-xs text-[var(--warm-muted)]">금액</label>
                       <MoneyInput name="amount" defaultValue={selectedRoom.expected} placeholder="0원" />
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-gray-500">결제 수단</label>
+                    <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
                     <select name="payMethod"
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-500">
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       <option value="계좌이체">계좌이체</option>
                       <option value="현금">현금</option>
                       <option value="신용카드">신용카드</option>
@@ -782,20 +782,20 @@ export default function RoomsClient({
                     </select>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-gray-500">메모</label>
+                    <label className="text-xs text-[var(--warm-muted)]">메모</label>
                     <input type="text" name="memo" placeholder="메모 (선택)"
-                      className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   </div>
                   {error && <p className="text-red-400 text-sm">{error}</p>}
                 </div>
 
-                <div className="border-t border-gray-800 px-6 py-4 flex gap-2 shrink-0">
+                <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <button type="button" onClick={() => { setShowPayForm(false); setError('') }}
-                    className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">
+                    className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
                     취소
                   </button>
                   <button type="submit" disabled={isPending}
-                    className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                    className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                     {isPending ? '저장 중...' : '저장'}
                   </button>
                 </div>

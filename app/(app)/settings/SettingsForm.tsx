@@ -167,26 +167,26 @@ export default function SettingsForm({
   return (
     <div className="max-w-lg">
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-gray-800 border border-gray-700 rounded-xl px-5 py-3 text-sm text-white shadow-xl">
+        <div className="fixed bottom-6 right-6 z-50 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-5 py-3 text-sm text-[var(--warm-dark)] shadow-xl">
           {toast}
         </div>
       )}
 
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-white">설정</h1>
-        <p className="text-sm text-gray-500 mt-0.5">영업장 기본 정보 및 옵션 관리</p>
+        <h1 className="text-xl font-bold text-[var(--warm-dark)]">설정</h1>
+        <p className="text-sm text-[var(--warm-muted)] mt-0.5">영업장 기본 정보 및 옵션 관리</p>
       </div>
 
       {/* 탭 */}
-      <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-2xl p-1 mb-6">
+      <div className="flex gap-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-1 mb-6">
         {TABS.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`flex-1 py-2 text-sm font-medium rounded-xl transition-colors ${
               tab === t.key
-                ? 'bg-indigo-600 text-white'
-                : 'text-gray-400 hover:text-white'
+                ? 'bg-[var(--coral)] text-[var(--warm-dark)]'
+                : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'
             }`}
           >
             {t.label}
@@ -196,30 +196,30 @@ export default function SettingsForm({
 
       {/* 기본정보 탭 */}
       {tab === 'basic' && (
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-          <h2 className="text-sm font-semibold text-white mb-4">영업장 기본 정보</h2>
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
+          <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-4">영업장 기본 정보</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <Field label="영업장명 *" name="name" defaultValue={property?.name ?? ''} />
             <Field label="주소" name="address" defaultValue={property?.address ?? ''} />
             <Field label="대표 연락처" name="phone" defaultValue={property?.phone ?? ''} />
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-gray-400">인수 날짜</label>
-              <p className="text-xs text-gray-600">이 날짜 이전의 미납금은 이월 계산에서 제외됩니다.</p>
+              <label className="text-xs font-medium text-[var(--warm-mid)]">인수 날짜</label>
+              <p className="text-xs text-[var(--warm-muted)]">이 날짜 이전의 미납금은 이월 계산에서 제외됩니다.</p>
               <input type="date" name="acquisitionDate" defaultValue={acqDate}
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" />
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400">기본 보증금</label>
+                <label className="text-xs font-medium text-[var(--warm-mid)]">기본 보증금</label>
                 <MoneyInput name="defaultDeposit" defaultValue={property?.defaultDeposit ?? undefined} placeholder="0원" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400">기본 청소비</label>
+                <label className="text-xs font-medium text-[var(--warm-mid)]">기본 청소비</label>
                 <MoneyInput name="defaultCleaningFee" defaultValue={property?.defaultCleaningFee ?? undefined} placeholder="0원" />
               </div>
             </div>
             <button type="submit" disabled={isPending}
-              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60 mt-2">
+              className="w-full py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60 mt-2">
               {isPending ? '저장 중...' : '저장'}
             </button>
           </form>
@@ -275,25 +275,25 @@ export default function SettingsForm({
       {tab === 'members' && (
         <div className="space-y-4">
           {/* 현재 멤버 목록 */}
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-            <h2 className="text-sm font-semibold text-white mb-4">멤버 목록</h2>
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
+            <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-4">멤버 목록</h2>
             <div className="space-y-2">
               {members.map(m => (
-                <div key={m.userId} className="flex items-center gap-3 bg-gray-800 rounded-xl px-4 py-3">
-                  <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-sm font-medium text-white shrink-0">
+                <div key={m.userId} className="flex items-center gap-3 bg-[var(--canvas)] rounded-xl px-4 py-3">
+                  <div className="w-8 h-8 rounded-full bg-[var(--coral)] flex items-center justify-center text-sm font-medium text-[var(--warm-dark)] shrink-0">
                     {m.avatarUrl
                       ? <img src={m.avatarUrl} alt="" className="w-8 h-8 rounded-full" />
                       : (m.name ?? m.email)[0].toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white truncate">{m.name ?? m.email}</p>
-                    <p className="text-xs text-gray-500 truncate">{m.email}</p>
+                    <p className="text-sm text-[var(--warm-dark)] truncate">{m.name ?? m.email}</p>
+                    <p className="text-xs text-[var(--warm-muted)] truncate">{m.email}</p>
                   </div>
                   {isOwner ? (
                     <select
                       value={m.role}
                       onChange={e => handleRoleChange(m.userId, e.target.value as Role)}
-                      className="bg-gray-700 border border-gray-600 rounded-lg px-2 py-1 text-xs text-white outline-none"
+                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1 text-xs text-[var(--warm-dark)] outline-none"
                     >
                       <option value="OWNER">소유자</option>
                       <option value="MANAGER">관리자</option>
@@ -301,9 +301,9 @@ export default function SettingsForm({
                     </select>
                   ) : (
                     <span className={`text-xs px-2 py-1 rounded-lg font-medium
-                      ${m.role === 'OWNER' ? 'bg-indigo-600/30 text-indigo-300' :
+                      ${m.role === 'OWNER' ? 'bg-[var(--coral)]/30 text-[var(--coral)]' :
                         m.role === 'MANAGER' ? 'bg-emerald-600/30 text-emerald-300' :
-                        'bg-gray-700 text-gray-400'}`}>
+                        'bg-[var(--canvas)] text-[var(--warm-mid)]'}`}>
                       {m.roleLabel}
                     </span>
                   )}
@@ -321,29 +321,29 @@ export default function SettingsForm({
 
           {/* 멤버 초대 (소유자만) */}
           {isOwner && (
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-              <h2 className="text-sm font-semibold text-white mb-1">멤버 초대</h2>
-              <p className="text-xs text-gray-600 mb-4">RoomOS에 가입된 이메일로만 초대할 수 있습니다.</p>
+            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
+              <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">멤버 초대</h2>
+              <p className="text-xs text-[var(--warm-muted)] mb-4">RoomOS에 가입된 이메일로만 초대할 수 있습니다.</p>
               <div className="space-y-3">
                 <input
                   type="email"
                   value={inviteEmail}
                   onChange={e => setInviteEmail(e.target.value)}
                   placeholder="이메일 입력..."
-                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500"
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]"
                 />
                 <div className="flex gap-2">
                   <select
                     value={inviteRole}
                     onChange={e => setInviteRole(e.target.value as Role)}
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500"
+                    className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
                   >
                     <option value="MANAGER">관리자 — 등록·수정·삭제 가능</option>
                     <option value="STAFF">스태프 — 조회만 가능</option>
                   </select>
                   <button
                     onClick={handleInvite}
-                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors">
+                    className="px-4 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
                     초대
                   </button>
                 </div>
@@ -352,15 +352,15 @@ export default function SettingsForm({
           )}
 
           {/* 권한 안내 */}
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-            <h2 className="text-sm font-semibold text-white mb-3">권한 안내</h2>
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
+            <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-3">권한 안내</h2>
             <div className="space-y-2">
               {([['소유자', '모든 기능 + 멤버 관리'],
                  ['관리자', '등록·수정·삭제 가능, 멤버 관리 불가'],
                  ['스태프', '조회만 가능']] as const).map(([label, desc]) => (
                 <div key={label} className="flex gap-3 text-xs">
-                  <span className="text-gray-300 w-14 shrink-0">{label}</span>
-                  <span className="text-gray-500">{desc}</span>
+                  <span className="text-[var(--warm-dark)] w-14 shrink-0">{label}</span>
+                  <span className="text-[var(--warm-muted)]">{desc}</span>
                 </div>
               ))}
             </div>
@@ -385,17 +385,17 @@ function OptionSection({
   placeholder?: string
 }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-      <h2 className="text-sm font-semibold text-white mb-1">{title}</h2>
-      {description && <p className="text-xs text-gray-600 mb-4">{description}</p>}
+    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
+      <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">{title}</h2>
+      {description && <p className="text-xs text-[var(--warm-muted)] mb-4">{description}</p>}
       {!description && <div className="mb-4" />}
       <div className="space-y-2 mb-4">
         {items.length === 0 && (
-          <p className="text-xs text-gray-600 py-2">항목이 없습니다.</p>
+          <p className="text-xs text-[var(--warm-muted)] py-2">항목이 없습니다.</p>
         )}
         {items.map(item => (
-          <div key={item} className="flex items-center justify-between bg-gray-800 rounded-xl px-4 py-2.5">
-            <span className="text-sm text-white">{getLabel(item)}</span>
+          <div key={item} className="flex items-center justify-between bg-[var(--canvas)] rounded-xl px-4 py-2.5">
+            <span className="text-sm text-[var(--warm-dark)]">{getLabel(item)}</span>
             <button onClick={() => onDelete(item)}
               className="text-xs text-red-400 hover:text-red-300 transition-colors">
               삭제
@@ -408,9 +408,9 @@ function OptionSection({
           onChange={e => onNewValueChange(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && onAdd()}
           placeholder={placeholder ?? '입력...'}
-          className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500" />
+          className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
         <button onClick={onAdd}
-          className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors">
+          className="px-4 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
           등록
         </button>
       </div>
@@ -423,9 +423,9 @@ function Field({ label, name, defaultValue }: {
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-medium text-gray-400">{label}</label>
+      <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       <input type="text" name={name} defaultValue={defaultValue}
-        className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500 transition-colors" />
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
     </div>
   )
 }
