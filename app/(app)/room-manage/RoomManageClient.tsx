@@ -497,10 +497,10 @@ export default function RoomManageClient({
               {editPhotos.length > 0 ? (
                 <div className="grid grid-cols-3 gap-2">
                   {editPhotos.map(photo => (
-                    <div key={photo.id} className="relative group aspect-square rounded-lg overflow-hidden bg-gray-800">
+                    <div key={photo.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-800">
                       <img src={photo.storageUrl} alt={photo.fileName ?? ''} className="w-full h-full object-cover" />
                       <button type="button" onClick={() => handlePhotoDelete(photo.id)}
-                        className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-red-600/80 rounded-full text-white text-xs transition-colors flex items-center justify-center">
                         ✕
                       </button>
                     </div>

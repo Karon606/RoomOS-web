@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
-import { analyzeDashboardWithGemini } from './actions'
+import { analyzeDashboardWithGemini, getTrendData, type TrendRange, type TrendPoint } from './actions'
 
 // ── 타입 ────────────────────────────────────────────────────────
 
@@ -125,8 +125,35 @@ function Row({ label, value, color }: { label: string; value: React.ReactNode; c
 
 // ── 재무현황 탭 ─────────────────────────────────────────────────
 
-function FinanceTab({ data }: { data: DashboardData }) {
-  const trendMax = Math.max(...data.trend.flatMap(t => [t.revenue, t.expense]), 1)
+const TREND_RANGES: { key: TrendRange; label: string }[] = [
+  { key: 'daily',     label: '일간' },
+  { key: 'weekly',    label: '주간' },
+  { key: 'monthly',   label: '월간' },
+  { key: 'quarterly', label: '분기' },
+  { key: 'biannual',  label: '반년' },
+  { key: 'annual',    label: '연간' },
+  { key: 'all',       label: '전체' },
+]
+
+function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: string }) {
+  const [trendRange, setTrendRange] = useState<TrendRange>('biannual')
+  const [trendPoints, setTrendPoints] = useState<TrendPoint[]>(() =>
+    data.trend.map(t => ({ label: `${parseInt(t.month.slice(5))}월`, revenue: t.revenue, expense: t.expense, profit: t.profit }))
+  )
+  const [trendPending, startTrendTransition] = useTransition()
+
+  useEffect(() => {
+    if (trendRange === 'biannual') {
+      setTrendPoints(data.trend.map(t => ({ label: `${parseInt(t.month.slice(5))}월`, revenue: t.revenue, expense: t.expense, profit: t.profit })))
+      return
+    }
+    startTrendTransition(async () => {
+      const result = await getTrendData(trendRange, targetMonth)
+      setTrendPoints(result)
+    })
+  }, [trendRange, targetMonth]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const trendMax = Math.max(...trendPoints.flatMap(t => [t.revenue, t.expense]), 1)
 
   const categorySegments = data.categoryBreakdown.map((c, i) => ({
     value: c.amount,
@@ -151,10 +178,10 @@ function FinanceTab({ data }: { data: DashboardData }) {
         <StatCard label="보유 보증금" value={<MoneyDisplay amount={data.totalDeposit} />} sub="현재 계약 기준" color="text-purple-400" />
       </div>
 
-      {/* 6개월 추이 바 차트 */}
+      {/* 추이 바 차트 */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-sm font-semibold text-gray-400">월별 추이 (6개월)</h3>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h3 className="text-sm font-semibold text-gray-400">추이</h3>
           <div className="flex gap-4 text-xs text-gray-500">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full inline-block" style={{ background: '#6366f1' }} />수입
@@ -164,43 +191,58 @@ function FinanceTab({ data }: { data: DashboardData }) {
             </span>
           </div>
         </div>
-        <div className="flex items-end gap-2 sm:gap-4">
-          {data.trend.map((t, i) => {
-            const isLast  = i === data.trend.length - 1
-            const revPct  = Math.round((t.revenue / trendMax) * 100)
-            const expPct  = Math.round((t.expense / trendMax) * 100)
-            return (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-                <p className={`text-xs font-medium ${t.profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {t.profit >= 0 ? '+' : ''}{Math.round(t.profit / 10000)}만
-                </p>
-                <div className="w-full flex items-end gap-0.5 h-28">
-                  <div
-                    className="flex-1 rounded-t-sm"
-                    style={{
-                      background: '#6366f1',
-                      opacity: isLast ? 1 : 0.5,
-                      height: `${revPct}%`,
-                      minHeight: t.revenue > 0 ? '2px' : '0',
-                    }}
-                  />
-                  <div
-                    className="flex-1 rounded-t-sm"
-                    style={{
-                      background: '#ef4444',
-                      opacity: isLast ? 1 : 0.5,
-                      height: `${expPct}%`,
-                      minHeight: t.expense > 0 ? '2px' : '0',
-                    }}
-                  />
-                </div>
-                <p className={`text-xs ${isLast ? 'text-white font-medium' : 'text-gray-600'}`}>
-                  {t.month.slice(5)}월
-                </p>
-              </div>
-            )
-          })}
+
+        {/* 기간 선택 버튼 */}
+        <div className="flex gap-1 mb-4 flex-wrap">
+          {TREND_RANGES.map(r => (
+            <button
+              key={r.key}
+              onClick={() => setTrendRange(r.key)}
+              disabled={trendPending}
+              className={`px-2.5 py-1 text-xs rounded-lg transition-colors font-medium disabled:opacity-50
+                ${trendRange === r.key
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-800 text-gray-400 hover:text-white'}`}
+            >
+              {r.label}
+            </button>
+          ))}
         </div>
+
+        {trendPending ? (
+          <div className="h-36 flex items-center justify-center">
+            <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <div
+              className="flex items-end gap-1"
+              style={{ minWidth: trendPoints.length > 14 ? `${trendPoints.length * 36}px` : undefined }}
+            >
+              {trendPoints.map((t, i) => {
+                const isLast = i === trendPoints.length - 1
+                const revPct = Math.round((t.revenue / trendMax) * 100)
+                const expPct = Math.round((t.expense / trendMax) * 100)
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0" style={{ minWidth: trendPoints.length > 14 ? '28px' : undefined }}>
+                    <p className={`text-xs font-medium whitespace-nowrap ${t.profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {t.profit !== 0 ? `${t.profit >= 0 ? '+' : ''}${Math.round(t.profit / 10000)}만` : ''}
+                    </p>
+                    <div className="w-full flex items-end gap-0.5 h-28">
+                      <div className="flex-1 rounded-t-sm"
+                        style={{ background: '#6366f1', opacity: isLast ? 1 : 0.5, height: `${revPct}%`, minHeight: t.revenue > 0 ? '2px' : '0' }} />
+                      <div className="flex-1 rounded-t-sm"
+                        style={{ background: '#ef4444', opacity: isLast ? 1 : 0.5, height: `${expPct}%`, minHeight: t.expense > 0 ? '2px' : '0' }} />
+                    </div>
+                    <p className={`text-xs truncate w-full text-center ${isLast ? 'text-white font-medium' : 'text-gray-600'}`}>
+                      {t.label}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 지출 카테고리 + 수납현황 */}
@@ -518,7 +560,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
       </div>
 
       {/* 탭 내용 */}
-      {tab === 'finance' && <FinanceTab data={data} />}
+      {tab === 'finance' && <FinanceTab data={data} targetMonth={targetMonth} />}
       {tab === 'tenants' && <TenantsTab data={data} />}
       {tab === 'ai'      && <AiTab data={data} targetMonth={targetMonth} />}
     </div>
