@@ -1,0 +1,459 @@
+
+// ============================================================
+// schema.prisma — RoomOS 2.0 완성본
+// 총 13개 테이블 / Phase 1 전체
+// ============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// ENUM
+// ============================================================
+
+enum UserRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+enum WindowType {
+  WINDOW
+  NO_WINDOW
+  SKYLIGHT
+}
+
+enum Direction {
+  NORTH
+  NORTH_EAST
+  EAST
+  SOUTH_EAST
+  SOUTH
+  SOUTH_WEST
+  WEST
+  NORTH_WEST
+}
+
+enum ContactType {
+  PHONE
+  KAKAO
+  LINE
+  WECHAT
+  TELEGRAM
+  FACEBOOK
+  SNAPCHAT
+  UNDEFINED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  UNKNOWN
+}
+
+enum LeaseStatus {
+  WAITING_TOUR
+  TOUR_DONE
+  RESERVED
+  ACTIVE
+  CHECKOUT_PENDING
+  CHECKED_OUT
+  CANCELLED
+  NON_RESIDENT
+}
+
+enum PaymentTiming {
+  PREPAID
+  POSTPAID
+}
+
+enum RegistrationStatus {
+  REGISTERED
+  NOT_REPORTED
+  EXEMPTED
+}
+
+enum FinancialAccountType {
+  BANK_ACCOUNT
+  CREDIT_CARD
+  DEBIT_CARD
+}
+
+enum SettleStatus {
+  SETTLED
+  UNSETTLED
+}
+
+// ============================================================
+// [1] User
+// ============================================================
+
+model User {
+  id        String   @id @db.Uuid
+  email     String   @unique
+  name      String?
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  propertyRoles   UserPropertyRole[]
+  ownedProperties Property[]
+  statusLogs      TenantStatusLog[]
+
+  @@map("users")
+}
+
+// ============================================================
+// [2] Property
+// ============================================================
+
+model Property {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  address     String?
+  phone       String?
+  description String?
+  isActive         Boolean   @default(true)
+  acquisitionDate  DateTime? @db.Date
+  roomTypeOptions    String?   // 방타입 목록 (콤마 구분, 예: "원룸,미니룸,복층")
+  windowTypeOptions  String?   // 창문 유형 목록 (콤마 구분, 기본값: "WINDOW,NO_WINDOW")
+  incomeCategories   String?   // 부가수익 카테고리 (콤마 구분)
+  defaultDeposit   Int?      // 기본 보증금
+  defaultCleaningFee Int?    // 기본 청소비
+  createdAt        DateTime  @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ownerId String @db.Uuid
+  owner   User   @relation(fields: [ownerId], references: [id])
+
+  userRoles         UserPropertyRole[]
+  rooms             Room[]
+  tenants           Tenant[]
+  leaseTerms        LeaseTerm[]
+  financialAccounts FinancialAccount[]
+  paymentRecords    PaymentRecord[]
+  expenses          Expense[]
+  extraIncomes      ExtraIncome[]
+  statusLogs        TenantStatusLog[]
+
+  @@map("properties")
+}
+
+// ============================================================
+// [3] UserPropertyRole
+// ============================================================
+
+model UserPropertyRole {
+  id        String   @id @default(uuid()) @db.Uuid
+  role      UserRole @default(STAFF)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+  @@map("user_property_roles")
+}
+
+// ============================================================
+// [4] Room
+// ============================================================
+
+model Room {
+  id         String     @id @default(uuid()) @db.Uuid
+  roomNo     String     // TEXT — 하드코딩 금지, 영업장별 자유 구성
+  type       String?
+  memo       String?
+  baseRent       Int        @default(0)
+  scheduledRent  Int?                   // 예약된 변경 이용료 (가격 예약 시스템)
+  rentUpdateDate DateTime?  @db.Date    // 가격 적용 예정일
+  isVacant   Boolean    @default(true)
+  areaPyeong Float?
+  areaM2     Float?
+  windowType WindowType?
+  direction  Direction?
+  createdAt     DateTime @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  photos     RoomPhoto[]
+  leaseTerms LeaseTerm[]
+  expenses   Expense[]
+
+  @@unique([propertyId, roomNo])
+  @@map("rooms")
+}
+
+// ============================================================
+// [5] RoomPhoto
+// ============================================================
+
+model RoomPhoto {
+  id           String   @id @default(uuid()) @db.Uuid
+  driveFileId  String?  // Google Drive 파일 ID (삭제/관리용)
+  storageUrl   String   // 표시용 URL (Drive 썸네일 또는 구 Supabase URL)
+  fileName     String?
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  roomId String @db.Uuid
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@map("room_photos")
+}
+
+// ============================================================
+// [6] Tenant
+// ============================================================
+
+model Tenant {
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String
+  englishName      String?
+  birthdate        DateTime? @db.Date
+  gender           Gender    @default(UNKNOWN)
+  nationality      String?
+  job              String?
+  memo             String?
+  isBasicRecipient Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  contacts       TenantContact[]
+  leaseTerms     LeaseTerm[]
+  paymentRecords PaymentRecord[]
+  statusLogs     TenantStatusLog[]
+
+  @@map("tenants")
+}
+
+// ============================================================
+// [7] TenantContact
+// ============================================================
+
+model TenantContact {
+  id                String      @id @default(uuid()) @db.Uuid
+  contactType       ContactType @default(PHONE)
+  contactValue      String
+  isEmergency       Boolean     @default(false)
+  emergencyRelation String?
+  isPrimary         Boolean     @default(false)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  tenantId String @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_contacts")
+}
+
+// ============================================================
+// [8] LeaseTerm
+// ============================================================
+
+model LeaseTerm {
+  id                 String             @id @default(uuid()) @db.Uuid
+  status             LeaseStatus        @default(ACTIVE)
+  moveInDate         DateTime?          @db.Date
+  moveOutDate        DateTime?          @db.Date
+  expectedMoveOut    DateTime?          @db.Date
+  rentAmount         Int                @default(0)
+  depositAmount      Int                @default(0)
+  cleaningFee        Int                @default(0)
+  paymentTiming      PaymentTiming      @default(PREPAID)
+  dueDay             String?            // "15", "말일" 등 자유 텍스트
+  overrideDueDay     String?            // 특정 월 임시 납부일
+  overrideDueDayMonth String?           // 적용 대상 월 "YYYY-MM"
+  overrideDueDayReason String?          // 조정 사유
+  payMethod          String?
+  cashReceipt        String?
+  registrationStatus RegistrationStatus @default(NOT_REPORTED)
+  contractUrl        String?
+  wishRooms          String?
+  visitRoute         String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  tenantId String @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  roomId String @db.Uuid
+  room   Room   @relation(fields: [roomId], references: [id])
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id])
+
+  paymentRecords PaymentRecord[]
+  statusLogs     TenantStatusLog[]
+
+  @@index([propertyId, status]) // 영업장별 현재 거주자 조회 최적화
+  @@map("lease_terms")
+}
+
+// ============================================================
+// [9] FinancialAccount
+// ============================================================
+
+model FinancialAccount {
+  id              String               @id @default(uuid()) @db.Uuid
+  type            FinancialAccountType
+  brand           String
+  alias           String?
+  identifier      String?
+  payDay          Int?
+  cutOffDay       Int?
+  owner           String?
+  isActive        Boolean              @default(true)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  linkedAccountId String?            @db.Uuid
+  linkedAccount   FinancialAccount?  @relation("CardToAccount", fields: [linkedAccountId], references: [id])
+  linkedCards     FinancialAccount[] @relation("CardToAccount")
+
+  expenses     Expense[]
+  extraIncomes ExtraIncome[]
+
+  @@map("financial_accounts")
+}
+
+// ============================================================
+// [10] PaymentRecord
+// ============================================================
+
+model PaymentRecord {
+  id             String   @id @default(uuid()) @db.Uuid
+  targetMonth    String   // "YYYY-MM" 형식
+  expectedAmount Int      @default(0)
+  actualAmount   Int      @default(0)
+  carryOver      Int      @default(0)
+  seqNo          Int      @default(1)
+  isPaid         Boolean  @default(false)
+  payDate        DateTime @db.Date
+  payMethod      String?
+  memo           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  leaseTermId String    @db.Uuid
+  leaseTerm   LeaseTerm @relation(fields: [leaseTermId], references: [id], onDelete: Cascade)
+
+  tenantId String @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id])
+
+  @@unique([leaseTermId, targetMonth, seqNo])
+  @@index([leaseTermId, targetMonth])
+  @@index([propertyId, targetMonth])
+  @@map("payment_records")
+}
+
+// ============================================================
+// [11] Expense
+// ============================================================
+
+model Expense {
+  id           String       @id @default(uuid()) @db.Uuid
+  date         DateTime     @db.Date
+  amount       Int
+  category     String
+  detail       String?
+  memo         String?
+  payMethod    String?
+  settleStatus  SettleStatus @default(SETTLED)
+  receiptUrl    String?
+  financeName   String?
+  receiptUrls   String?
+  targetRoomId  String?
+  createdAt     DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  roomId String? @db.Uuid
+  room   Room?   @relation(fields: [roomId], references: [id])
+
+  financialAccountId String?           @db.Uuid
+  financialAccount   FinancialAccount? @relation(fields: [financialAccountId], references: [id])
+
+  @@index([propertyId, date])
+  @@map("expenses")
+}
+
+// ============================================================
+// [12] ExtraIncome
+// ============================================================
+
+model ExtraIncome {
+  id         String   @id @default(uuid()) @db.Uuid
+  date       DateTime @db.Date
+  amount     Int
+  category   String
+  detail     String?
+  memo       String?
+  payMethod  String?
+  receiptUrl String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  financialAccountId String?           @db.Uuid
+  financialAccount   FinancialAccount? @relation(fields: [financialAccountId], references: [id])
+
+  @@index([propertyId, date])
+  @@map("extra_incomes")
+}
+
+// ============================================================
+// [13] TenantStatusLog
+// ============================================================
+
+model TenantStatusLog {
+  id         String      @id @default(uuid()) @db.Uuid
+  fromStatus LeaseStatus
+  toStatus   LeaseStatus
+  reason     String?
+  memo       String?
+  changedAt  DateTime    @default(now())
+
+  tenantId String @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  leaseTermId String?    @db.Uuid
+  leaseTerm   LeaseTerm? @relation(fields: [leaseTermId], references: [id])
+
+  changedById String? @db.Uuid
+  changedBy   User?   @relation(fields: [changedById], references: [id])
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id])
+
+  @@index([tenantId, changedAt])
+  @@index([propertyId, changedAt])
+  @@index([propertyId, toStatus])
+  @@map("tenant_status_logs")
+}
