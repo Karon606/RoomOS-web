@@ -34,7 +34,8 @@ export async function getMyProperties() {
   }))
 }
 
-export async function selectProperty(propertyId: string) {
+export async function selectProperty(formData: FormData) {
+  const propertyId = formData.get('propertyId') as string
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')

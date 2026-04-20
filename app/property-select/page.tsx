@@ -38,7 +38,8 @@ export default async function PropertySelectPage() {
           <ul className="space-y-3">
             {properties.map(p => (
               <li key={p.propertyId}>
-                <form action={selectProperty.bind(null, p.propertyId)}>
+                <form action={selectProperty}>
+                  <input type="hidden" name="propertyId" value={p.propertyId} />
                   <button
                     type="submit"
                     disabled={!p.isActive}
