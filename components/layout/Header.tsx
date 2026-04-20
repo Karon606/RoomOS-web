@@ -2,7 +2,7 @@
 
 import { signOut } from '@/app/property-select/actions'
 import { User } from '@supabase/supabase-js'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 
 const MONTH_KEY = 'roomos_selected_month'
@@ -27,16 +27,6 @@ export default function Header({
   const searchParams = useSearchParams()
 
   const currentMonth = searchParams.get('month') ?? todayMonth
-
-  // 페이지 이동 시 저장된 월로 복원
-  useEffect(() => {
-    const stored = localStorage.getItem(MONTH_KEY)
-    if (stored && !searchParams.get('month') && stored !== todayMonth) {
-      const params = new URLSearchParams(searchParams.toString())
-      params.set('month', stored)
-      router.replace(`${pathname}?${params.toString()}`)
-    }
-  }, [pathname]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const applyMonth = (m: string) => {
     localStorage.setItem(MONTH_KEY, m)

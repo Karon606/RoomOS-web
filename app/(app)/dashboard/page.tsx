@@ -1,4 +1,3 @@
-import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
@@ -297,10 +296,6 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ month?: string }>
 }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-
   const cookieStore = await cookies()
   const propertyId = cookieStore.get('selected_property_id')?.value
   if (!propertyId) redirect('/property-select')
