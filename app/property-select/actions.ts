@@ -37,8 +37,9 @@ export async function getMyProperties() {
 export async function selectProperty(formData: FormData) {
   const propertyId = formData.get('propertyId') as string
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) redirect('/login')
+  const user = session.user
 
   const hasAccess = await prisma.userPropertyRole.findFirst({
     where: { userId: user.id, propertyId },
