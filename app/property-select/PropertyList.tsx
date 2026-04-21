@@ -44,6 +44,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
   }
 
   const handleSelect = (propertyId: string) => {
+    if (selectingId) return  // 이미 선택 중이면 무시
     setSelectingId(propertyId)
     startTransition(async () => {
       const result = await selectProperty(propertyId)
@@ -123,22 +124,17 @@ export default function PropertyList({ properties }: { properties: Property[] })
     <>
       <ul className="space-y-3">
         {properties.map(p => {
-          const isLoading = isPending && selectingId === p.propertyId
+          const isLoading = selectingId === p.propertyId
           const roleStyle = ROLE_STYLE[p.role] ?? ROLE_STYLE.STAFF
           return (
             <li key={p.propertyId}>
               <button
                 onClick={() => handleSelect(p.propertyId)}
                 disabled={!p.isActive || isPending}
-                className="w-full text-left rounded-2xl p-5 transition-all disabled:opacity-40 disabled:cursor-not-allowed touch-manipulation"
-                style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
-                onMouseEnter={e => {
-                  if (p.isActive && !isPending)
-                    (e.currentTarget as HTMLElement).style.borderColor = 'var(--coral)'
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLElement).style.borderColor = 'var(--warm-border)'
-                }}
+                className="w-full text-left rounded-2xl p-5 transition-all touch-manipulation
+                  disabled:opacity-40 disabled:cursor-not-allowed
+                  hover:border-[var(--coral)] active:scale-[0.98] active:opacity-80"
+                style={{ background: 'var(--cream)', border: `1px solid ${isLoading ? 'var(--coral)' : 'var(--warm-border)'}` }}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
