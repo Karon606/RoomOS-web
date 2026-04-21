@@ -105,6 +105,13 @@ export default function PropertyList({ properties }: { properties: Property[] })
           )}
         </div>
         {showCreate && <CreateForm />}
+        <form action={signOut}>
+          <button type="submit"
+            className="w-full text-sm py-2 transition-colors"
+            style={{ color: 'var(--warm-muted)' }}>
+            다른 계정으로 로그인
+          </button>
+        </form>
       </div>
     )
   }
