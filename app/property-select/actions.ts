@@ -57,8 +57,7 @@ export async function selectProperty(propertyId: string): Promise<{ ok: true } |
 
     return { ok: true }
   } catch (err) {
-    const { isRedirectError } = await import('next/dist/client/components/redirect')
-    if (isRedirectError(err)) throw err
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }

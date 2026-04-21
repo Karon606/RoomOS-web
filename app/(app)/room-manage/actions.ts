@@ -7,7 +7,6 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { WindowType, Direction } from '@prisma/client'
 import { requireEdit } from '@/lib/role'
-import { isRedirectError } from 'next/dist/client/components/redirect'
 const PHOTO_BUCKET = 'room-photos'
 
 async function getPropertyId() {
@@ -82,7 +81,7 @@ export async function addRoom(formData: FormData): Promise<{ ok: true; id: strin
   revalidatePath('/room-manage')
   return { ok: true, id: room.id }
   } catch (err) {
-    if (isRedirectError(err)) throw err
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -181,7 +180,7 @@ export async function deleteRoom(id: string): Promise<{ ok: true } | { ok: false
   revalidatePath('/room-manage')
   return { ok: true }
   } catch (err) {
-    if (isRedirectError(err)) throw err
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -231,7 +230,7 @@ export async function uploadRoomPhoto(
     revalidatePath('/room-manage')
     return { ok: true, id: photo.id, driveFileId: photo.driveFileId, storageUrl: photo.storageUrl, fileName: photo.fileName }
   } catch (err) {
-    if (isRedirectError(err)) throw err
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '업로드 실패' }
   }
 }
@@ -254,7 +253,7 @@ export async function deleteRoomPhoto(photoId: string): Promise<{ ok: true } | {
     revalidatePath('/room-manage')
     return { ok: true }
   } catch (err) {
-    if (isRedirectError(err)) throw err
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }

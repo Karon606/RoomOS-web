@@ -7,7 +7,6 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { LeaseStatus, ContactType, Gender, PaymentTiming, RegistrationStatus } from '@prisma/client'
 import { requireEdit } from '@/lib/role'
-import { isRedirectError } from 'next/dist/client/components/redirect'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -164,7 +163,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   revalidatePath('/tenants')
   return { ok: true }
   } catch (err) {
-    if (isRedirectError(err)) throw err
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -337,7 +336,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
   revalidatePath('/tenants')
   return { ok: true }
   } catch (err) {
-    if (isRedirectError(err)) throw err
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -378,7 +377,7 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
   revalidatePath('/tenants')
   return { ok: true }
   } catch (err) {
-    if (isRedirectError(err)) throw err
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -430,7 +429,7 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string): Pro
   revalidatePath('/tenants')
   return { ok: true }
   } catch (err) {
-    if (isRedirectError(err)) throw err
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -531,7 +530,7 @@ export async function deleteTenant(tenantId: string): Promise<{ ok: true } | { o
     revalidatePath('/tenants')
     return { ok: true }
   } catch (err) {
-    if (isRedirectError(err)) throw err
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }

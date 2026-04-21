@@ -5,7 +5,6 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
-import { isRedirectError } from 'next/dist/client/components/redirect'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -300,7 +299,7 @@ export async function deletePayment(paymentId: string): Promise<{ ok: true } | {
     }
     return { ok: true }
   } catch (err) {
-    if (isRedirectError(err)) throw err
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
