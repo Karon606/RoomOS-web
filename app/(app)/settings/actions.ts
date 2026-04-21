@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { isRedirectError } from 'next/dist/client/components/redirect'
 import { getMyRole, requireEdit, requireOwner } from '@/lib/role'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 
@@ -201,6 +202,7 @@ export async function inviteMember(email: string, role: Role): Promise<ActionRes
     })
     return { ok: true }
   } catch (err) {
+    if (isRedirectError(err)) throw err
     return { ok: false, error: (err as Error).message ?? '초대 중 오류가 발생했습니다.' }
   }
 }
@@ -218,6 +220,7 @@ export async function updateMemberRole(userId: string, role: Role): Promise<Acti
     })
     return { ok: true }
   } catch (err) {
+    if (isRedirectError(err)) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
@@ -234,6 +237,7 @@ export async function removeMember(userId: string): Promise<ActionResult> {
     })
     return { ok: true }
   } catch (err) {
+    if (isRedirectError(err)) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
