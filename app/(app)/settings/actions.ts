@@ -180,42 +180,62 @@ export async function getMembers(): Promise<MemberWithUser[]> {
   }))
 }
 
-export async function inviteMember(email: string, role: Role) {
-  await requireOwner()
-  const propertyId = await getPropertyId()
+type ActionResult = { ok: true } | { ok: false; error: string }
 
-  const targetUser = await prisma.user.findUnique({ where: { email } })
-  if (!targetUser) throw new Error('해당 이메일로 가입된 계정이 없습니다.')
+export async function inviteMember(email: string, role: Role): Promise<ActionResult> {
+  try {
+    const myRole = await getMyRole()
+    if (myRole !== 'OWNER') return { ok: false, error: '소유자만 초대할 수 있습니다.' }
+    const propertyId = await getPropertyId()
 
-  const myId = await getMyUserId()
-  if (targetUser.id === myId) throw new Error('자기 자신은 초대할 수 없습니다.')
+    const targetUser = await prisma.user.findUnique({ where: { email } })
+    if (!targetUser) return { ok: false, error: '해당 이메일로 가입된 계정이 없습니다.' }
 
-  await prisma.userPropertyRole.upsert({
-    where: { userId_propertyId: { userId: targetUser.id, propertyId } },
-    create: { userId: targetUser.id, propertyId, role },
-    update: { role },
-  })
+    const myId = await getMyUserId()
+    if (targetUser.id === myId) return { ok: false, error: '자기 자신은 초대할 수 없습니다.' }
+
+    await prisma.userPropertyRole.upsert({
+      where: { userId_propertyId: { userId: targetUser.id, propertyId } },
+      create: { userId: targetUser.id, propertyId, role },
+      update: { role },
+    })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '초대 중 오류가 발생했습니다.' }
+  }
 }
 
-export async function updateMemberRole(userId: string, role: Role) {
-  await requireOwner()
-  const propertyId = await getPropertyId()
-  const myId = await getMyUserId()
-  if (userId === myId) throw new Error('본인의 역할은 변경할 수 없습니다.')
-  await prisma.userPropertyRole.update({
-    where: { userId_propertyId: { userId, propertyId } },
-    data: { role },
-  })
+export async function updateMemberRole(userId: string, role: Role): Promise<ActionResult> {
+  try {
+    const myRole = await getMyRole()
+    if (myRole !== 'OWNER') return { ok: false, error: '소유자만 역할을 변경할 수 있습니다.' }
+    const propertyId = await getPropertyId()
+    const myId = await getMyUserId()
+    if (userId === myId) return { ok: false, error: '본인의 역할은 변경할 수 없습니다.' }
+    await prisma.userPropertyRole.update({
+      where: { userId_propertyId: { userId, propertyId } },
+      data: { role },
+    })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
-export async function removeMember(userId: string) {
-  await requireOwner()
-  const propertyId = await getPropertyId()
-  const myId = await getMyUserId()
-  if (userId === myId) throw new Error('본인은 제거할 수 없습니다.')
-  await prisma.userPropertyRole.delete({
-    where: { userId_propertyId: { userId, propertyId } },
-  })
+export async function removeMember(userId: string): Promise<ActionResult> {
+  try {
+    const myRole = await getMyRole()
+    if (myRole !== 'OWNER') return { ok: false, error: '소유자만 멤버를 제거할 수 있습니다.' }
+    const propertyId = await getPropertyId()
+    const myId = await getMyUserId()
+    if (userId === myId) return { ok: false, error: '본인은 제거할 수 없습니다.' }
+    await prisma.userPropertyRole.delete({
+      where: { userId_propertyId: { userId, propertyId } },
+    })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 // ── 기본 정보 ──────────────────────────────────────────────────────

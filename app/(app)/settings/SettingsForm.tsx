@@ -118,34 +118,25 @@ export default function SettingsForm({
 
   const handleInvite = async () => {
     const email = inviteEmail.trim(); if (!email) return
-    try {
-      await inviteMember(email, inviteRole)
-      setInviteEmail('')
-      showToast('✅ 멤버가 추가되었습니다.')
-      router.refresh()
-    } catch (err: unknown) {
-      showToast('❌ ' + (err as Error).message)
-    }
+    const result = await inviteMember(email, inviteRole)
+    if (!result.ok) { showToast('❌ ' + result.error); return }
+    setInviteEmail('')
+    showToast('✅ 멤버가 추가되었습니다.')
+    router.refresh()
   }
 
   const handleRoleChange = async (userId: string, role: Role) => {
-    try {
-      await updateMemberRole(userId, role)
-      setMembers(prev => prev.map(m => m.userId === userId ? { ...m, role, roleLabel: ROLE_LABEL[role] } : m))
-    } catch (err: unknown) {
-      showToast('❌ ' + (err as Error).message)
-    }
+    const result = await updateMemberRole(userId, role)
+    if (!result.ok) { showToast('❌ ' + result.error); return }
+    setMembers(prev => prev.map(m => m.userId === userId ? { ...m, role, roleLabel: ROLE_LABEL[role] } : m))
   }
 
   const handleRemove = async (userId: string, name: string) => {
     if (!confirm(`'${name}' 멤버를 제거할까요?`)) return
-    try {
-      await removeMember(userId)
-      setMembers(prev => prev.filter(m => m.userId !== userId))
-      showToast('✅ 멤버가 제거되었습니다.')
-    } catch (err: unknown) {
-      showToast('❌ ' + (err as Error).message)
-    }
+    const result = await removeMember(userId)
+    if (!result.ok) { showToast('❌ ' + result.error); return }
+    setMembers(prev => prev.filter(m => m.userId !== userId))
+    showToast('✅ 멤버가 제거되었습니다.')
   }
 
   // ── 부가수익 카테고리 ────────────────────────────────────────────
