@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { WindowType, Direction } from '@prisma/client'
 
 type SheetResult = { imported: number; skipped: number; errors: string[] }
+type Resolutions = Record<string, string>  // conflictId → 'overwrite' | 'keep' | 'archive'
 
 // ── 헬퍼 ────────────────────────────────────────────────────────
 
@@ -37,8 +38,9 @@ function str(val: unknown): string {
 }
 
 const WINDOW_MAP: Record<string, string> = {
-  '창문있음': 'WINDOW', '창문없음': 'NO_WINDOW', '천창': 'SKYLIGHT', '프렌치': 'FRENCH',
-  'WINDOW': 'WINDOW', 'NO_WINDOW': 'NO_WINDOW', 'SKYLIGHT': 'SKYLIGHT', 'FRENCH': 'FRENCH',
+  '외창': 'OUTER', '내창': 'INNER',
+  'OUTER': 'OUTER', 'INNER': 'INNER',
+  'WINDOW': 'OUTER', 'NO_WINDOW': 'INNER',
 }
 const DIRECTION_MAP: Record<string, string> = {
   '동': 'EAST', '서': 'WEST', '남': 'SOUTH', '북': 'NORTH',
@@ -74,7 +76,7 @@ function sheetToRows(wb: XLSX.WorkBook, name: string): Record<string, unknown>[]
 
 // ── 시트별 임포트 ────────────────────────────────────────────────
 
-async function importRooms(rows: Record<string, unknown>[], propertyId: string): Promise<SheetResult> {
+async function importRooms(rows: Record<string, unknown>[], propertyId: string, resolutions: Resolutions): Promise<SheetResult> {
   const result: SheetResult = { imported: 0, skipped: 0, errors: [] }
   for (const row of rows) {
     const roomNo = str(row['호실번호'])
@@ -89,11 +91,19 @@ async function importRooms(rows: Record<string, unknown>[], propertyId: string):
         areaM2:     row['면적(㎡)'] ? parseNum(row['면적(㎡)']) : null,
         memo:       str(row['메모']) || null,
       }
-      await prisma.room.upsert({
+
+      const existing = await prisma.room.findUnique({
         where: { propertyId_roomNo: { propertyId, roomNo } },
-        update: data,
-        create: { ...data, propertyId, roomNo, isVacant: true },
       })
+
+      if (existing) {
+        const resolution = resolutions[`room:${roomNo}`] ?? 'keep'
+        if (resolution === 'keep') { result.skipped++; continue }
+        // overwrite
+        await prisma.room.update({ where: { id: existing.id }, data })
+      } else {
+        await prisma.room.create({ data: { ...data, propertyId, roomNo, isVacant: true } })
+      }
       result.imported++
     } catch (e) {
       result.errors.push(`${roomNo}호: ${(e as Error).message}`)
@@ -102,74 +112,79 @@ async function importRooms(rows: Record<string, unknown>[], propertyId: string):
   return result
 }
 
-async function importTenants(rows: Record<string, unknown>[], propertyId: string): Promise<SheetResult> {
+async function importTenants(rows: Record<string, unknown>[], propertyId: string, resolutions: Resolutions): Promise<SheetResult> {
   const result: SheetResult = { imported: 0, skipped: 0, errors: [] }
   for (const row of rows) {
     const name = str(row['이름'])
     if (!name) { result.skipped++; continue }
     try {
-      const existing = await prisma.tenant.findFirst({ where: { propertyId, name } })
-      if (existing) { result.skipped++; continue }
-
-      const roomNo = str(row['호실'])
-      const room = roomNo ? await prisma.room.findUnique({
-        where: { propertyId_roomNo: { propertyId, roomNo } },
-      }) : null
-
-      const tenant = await prisma.tenant.create({
-        data: {
-          propertyId,
-          name,
-          englishName:      str(row['영문명']) || null,
-          birthdate:        parseDate(row['생년월일']),
-          gender:           (GENDER_MAP[str(row['성별'])] as any) ?? 'UNKNOWN',
-          nationality:      str(row['국적']) || null,
-          job:              str(row['직업']) || null,
-          memo:             str(row['메모']) || null,
-          isBasicRecipient: false,
+      const existing = await prisma.tenant.findFirst({
+        where: { propertyId, name },
+        include: {
+          leaseTerms: {
+            where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+            include: { room: { select: { id: true, roomNo: true } } },
+            take: 1,
+          },
         },
       })
 
-      const contact = str(row['연락처'])
-      if (contact) {
-        await prisma.tenantContact.create({
-          data: { tenantId: tenant.id, contactType: 'PHONE', contactValue: contact, isPrimary: true, isEmergency: false },
-        })
-      }
-      const emergency = str(row['비상연락처'])
-      if (emergency) {
-        await prisma.tenantContact.create({
-          data: {
-            tenantId: tenant.id, contactType: 'PHONE', contactValue: emergency,
-            isPrimary: false, isEmergency: true,
-            emergencyRelation: str(row['비상연락처관계']) || null,
-          },
-        })
-      }
+      if (existing) {
+        const resolution = resolutions[`tenant:${name}`] ?? 'keep'
 
-      if (room) {
-        const status = (STATUS_MAP[str(row['계약상태'])] as any) ?? 'ACTIVE'
-        await prisma.leaseTerm.create({
-          data: {
-            propertyId,
-            tenantId:       tenant.id,
-            roomId:         room.id,
-            status,
-            rentAmount:     parseNum(row['이용료']),
-            depositAmount:  parseNum(row['보증금']),
-            cleaningFee:    parseNum(row['청소비']),
-            dueDay:         str(row['납부일']) || null,
-            payMethod:      str(row['납부방법']) || null,
-            moveInDate:     parseDate(row['입실일']),
-            expectedMoveOut: parseDate(row['퇴실 예정일']),
-          },
-        })
-        if (['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(status)) {
-          await prisma.room.update({ where: { id: room.id }, data: { isVacant: false } })
+        if (resolution === 'keep') { result.skipped++; continue }
+
+        if (resolution === 'archive') {
+          // 기존 계약을 퇴실 처리
+          const activeLease = existing.leaseTerms[0]
+          if (activeLease) {
+            await prisma.leaseTerm.update({
+              where: { id: activeLease.id },
+              data: { status: 'CHECKED_OUT', moveOutDate: new Date() },
+            })
+            await prisma.room.update({
+              where: { id: activeLease.room.id },
+              data: { isVacant: true },
+            })
+          }
+          // 새 입주자로 등록 (아래 create 로직 실행)
+          await createTenantAndLease(row, propertyId, result)
+          continue
+        }
+
+        if (resolution === 'overwrite') {
+          // 기존 입주자 정보 업데이트
+          await prisma.tenant.update({
+            where: { id: existing.id },
+            data: {
+              englishName: str(row['영문명']) || null,
+              birthdate:   parseDate(row['생년월일']),
+              gender:      (GENDER_MAP[str(row['성별'])] as any) ?? existing.gender,
+              nationality: str(row['국적']) || null,
+              job:         str(row['직업']) || null,
+              memo:        str(row['메모']) || null,
+            },
+          })
+          // 기존 활성 계약 이용료 업데이트
+          const activeLease = existing.leaseTerms[0]
+          if (activeLease && row['이용료']) {
+            await prisma.leaseTerm.update({
+              where: { id: activeLease.id },
+              data: {
+                rentAmount:    parseNum(row['이용료']),
+                depositAmount: parseNum(row['보증금']),
+                cleaningFee:   parseNum(row['청소비']),
+                dueDay:        str(row['납부일']) || null,
+                payMethod:     str(row['납부방법']) || null,
+              },
+            })
+          }
+          result.imported++
+          continue
         }
       }
 
-      result.imported++
+      await createTenantAndLease(row, propertyId, result)
     } catch (e) {
       result.errors.push(`${name}: ${(e as Error).message}`)
     }
@@ -177,7 +192,70 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
   return result
 }
 
-async function importExpenses(rows: Record<string, unknown>[], propertyId: string): Promise<SheetResult> {
+async function createTenantAndLease(row: Record<string, unknown>, propertyId: string, result: SheetResult) {
+  const name = str(row['이름'])
+  const roomNo = str(row['호실'])
+  const room = roomNo ? await prisma.room.findUnique({
+    where: { propertyId_roomNo: { propertyId, roomNo } },
+  }) : null
+
+  const tenant = await prisma.tenant.create({
+    data: {
+      propertyId,
+      name,
+      englishName:      str(row['영문명']) || null,
+      birthdate:        parseDate(row['생년월일']),
+      gender:           (GENDER_MAP[str(row['성별'])] as any) ?? 'UNKNOWN',
+      nationality:      str(row['국적']) || null,
+      job:              str(row['직업']) || null,
+      memo:             str(row['메모']) || null,
+      isBasicRecipient: false,
+    },
+  })
+
+  const contact = str(row['연락처'])
+  if (contact) {
+    await prisma.tenantContact.create({
+      data: { tenantId: tenant.id, contactType: 'PHONE', contactValue: contact, isPrimary: true, isEmergency: false },
+    })
+  }
+  const emergency = str(row['비상연락처'])
+  if (emergency) {
+    await prisma.tenantContact.create({
+      data: {
+        tenantId: tenant.id, contactType: 'PHONE', contactValue: emergency,
+        isPrimary: false, isEmergency: true,
+        emergencyRelation: str(row['비상연락처관계']) || null,
+      },
+    })
+  }
+
+  if (room) {
+    const status = (STATUS_MAP[str(row['계약상태'])] as any) ?? 'ACTIVE'
+    await prisma.leaseTerm.create({
+      data: {
+        propertyId,
+        tenantId:        tenant.id,
+        roomId:          room.id,
+        status,
+        rentAmount:      parseNum(row['이용료']),
+        depositAmount:   parseNum(row['보증금']),
+        cleaningFee:     parseNum(row['청소비']),
+        dueDay:          str(row['납부일']) || null,
+        payMethod:       str(row['납부방법']) || null,
+        moveInDate:      parseDate(row['입실일']),
+        expectedMoveOut: parseDate(row['퇴실 예정일']),
+      },
+    })
+    if (['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(status)) {
+      await prisma.room.update({ where: { id: room.id }, data: { isVacant: false } })
+    }
+  }
+
+  result.imported++
+}
+
+async function importExpenses(rows: Record<string, unknown>[], propertyId: string, resolutions: Resolutions): Promise<SheetResult> {
   const result: SheetResult = { imported: 0, skipped: 0, errors: [] }
   for (const row of rows) {
     const date     = parseDate(row['날짜'])
@@ -185,13 +263,21 @@ async function importExpenses(rows: Record<string, unknown>[], propertyId: strin
     const amount   = parseNum(row['금액'])
     if (!date || !category || !amount) { result.skipped++; continue }
     try {
+      const existing = await prisma.expense.findFirst({
+        where: { propertyId, date, category, amount },
+      })
+
+      if (existing) {
+        const resolution = resolutions[`expense:${existing.id}`] ?? 'keep'
+        if (resolution === 'keep') { result.skipped++; continue }
+        // overwrite: 기존 삭제 후 새로 생성
+        await prisma.expense.delete({ where: { id: existing.id } })
+      }
+
       const payMethod = str(row['결제수단']) || '계좌이체'
       await prisma.expense.create({
         data: {
-          propertyId,
-          date,
-          category,
-          amount,
+          propertyId, date, category, amount,
           detail:      str(row['세부항목']) || null,
           memo:        str(row['메모']) || null,
           payMethod,
@@ -206,7 +292,7 @@ async function importExpenses(rows: Record<string, unknown>[], propertyId: strin
   return result
 }
 
-async function importIncomes(rows: Record<string, unknown>[], propertyId: string): Promise<SheetResult> {
+async function importIncomes(rows: Record<string, unknown>[], propertyId: string, resolutions: Resolutions): Promise<SheetResult> {
   const result: SheetResult = { imported: 0, skipped: 0, errors: [] }
   for (const row of rows) {
     const date     = parseDate(row['날짜'])
@@ -214,12 +300,19 @@ async function importIncomes(rows: Record<string, unknown>[], propertyId: string
     const amount   = parseNum(row['금액'])
     if (!date || !category || !amount) { result.skipped++; continue }
     try {
+      const existing = await prisma.extraIncome.findFirst({
+        where: { propertyId, date, category, amount },
+      })
+
+      if (existing) {
+        const resolution = resolutions[`income:${existing.id}`] ?? 'keep'
+        if (resolution === 'keep') { result.skipped++; continue }
+        await prisma.extraIncome.delete({ where: { id: existing.id } })
+      }
+
       await prisma.extraIncome.create({
         data: {
-          propertyId,
-          date,
-          category,
-          amount,
+          propertyId, date, category, amount,
           detail:    str(row['세부항목']) || null,
           memo:      str(row['메모']) || null,
           payMethod: str(row['입금수단']) || '계좌이체',
@@ -242,9 +335,7 @@ async function importSettings(rows: Record<string, unknown>[], propertyId: strin
       const type = (ACCOUNT_TYPE_MAP[str(row['타입'])] as any) ?? 'BANK_ACCOUNT'
       const alias = str(row['별칭']) || null
       const data = {
-        type,
-        brand,
-        alias,
+        type, brand, alias,
         identifier: str(row['계좌/카드번호']) || null,
         owner:      str(row['소유자']) || null,
         payDay:     parseDay(row['결제일']),
@@ -286,22 +377,25 @@ export async function POST(request: NextRequest) {
   const file = formData.get('file') as File | null
   if (!file) return NextResponse.json({ error: 'No file' }, { status: 400 })
 
+  const resolutionsRaw = formData.get('resolutions') as string | null
+  const resolutions: Resolutions = resolutionsRaw ? JSON.parse(resolutionsRaw) : {}
+
   const buffer = Buffer.from(await file.arrayBuffer())
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true })
 
   const results: Record<string, SheetResult> = {}
 
   if (wb.SheetNames.includes('호실관리'))
-    results['호실관리'] = await importRooms(sheetToRows(wb, '호실관리'), propertyId)
+    results['호실관리'] = await importRooms(sheetToRows(wb, '호실관리'), propertyId, resolutions)
 
   if (wb.SheetNames.includes('입주자관리'))
-    results['입주자관리'] = await importTenants(sheetToRows(wb, '입주자관리'), propertyId)
+    results['입주자관리'] = await importTenants(sheetToRows(wb, '입주자관리'), propertyId, resolutions)
 
   if (wb.SheetNames.includes('지출'))
-    results['지출'] = await importExpenses(sheetToRows(wb, '지출'), propertyId)
+    results['지출'] = await importExpenses(sheetToRows(wb, '지출'), propertyId, resolutions)
 
   if (wb.SheetNames.includes('기타수익'))
-    results['기타수익'] = await importIncomes(sheetToRows(wb, '기타수익'), propertyId)
+    results['기타수익'] = await importIncomes(sheetToRows(wb, '기타수익'), propertyId, resolutions)
 
   if (wb.SheetNames.includes('설정'))
     results['설정'] = await importSettings(sheetToRows(wb, '설정'), propertyId)

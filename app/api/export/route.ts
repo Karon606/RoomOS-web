@@ -25,7 +25,7 @@ const STATUS_LABEL: Record<string, string> = {
   CHECKED_OUT: '퇴실', CANCELLED: '취소', NON_RESIDENT: '비거주',
 }
 const WINDOW_LABEL: Record<string, string> = {
-  WINDOW: '창문있음', NO_WINDOW: '창문없음', SKYLIGHT: '천창', FRENCH: '프렌치',
+  OUTER: '외창', INNER: '내창',
 }
 const DIRECTION_LABEL: Record<string, string> = {
   EAST: '동', WEST: '서', SOUTH: '남', NORTH: '북',

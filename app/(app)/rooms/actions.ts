@@ -17,9 +17,19 @@ async function getPropertyId() {
 }
 
 // ============================================================
+type RoomRow = {
+  roomId: string; roomNo: string; type: string | null; windowType: string | null
+  isVacant: boolean; tenantId: string | null; tenantName: string | null; contact: string | null
+  status: string | null; expected: number; dueDay: string | null; currentPaid: number
+  carryOver: number; totalPaid: number; balance: number; isPaid: boolean
+  leaseTermId: string | null; depositAmount: number; accumulatedUnpaid: number
+  isFutureMonth: boolean; baseRent: number; prevTenantName: string | null; prevContact: string | null
+  overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
+}
+
 // 핵심 비즈니스 로직 — GAS의 getRoomPaymentStatus 이관
 // ============================================================
-export async function getRoomPaymentStatus(targetMonth: string) {
+export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow[]> {
   const propertyId = await getPropertyId()
 
   const [yyyy, mm] = targetMonth.split('-').map(Number)
@@ -81,46 +91,26 @@ export async function getRoomPaymentStatus(targetMonth: string) {
     },
   })
 
-  return rooms.map(room => {
-    const lease = activeLeases.find(l => l.roomId === room.id)
+  type LeaseWithOverride = (typeof activeLeases)[number] & {
+    overrideDueDay: string | null
+    overrideDueDayMonth: string | null
+    overrideDueDayReason: string | null
+  }
 
-    if (!lease) {
-      const prev = prevLeases.find(l => l.roomId === room.id)
-      return {
-        roomId: room.id, roomNo: room.roomNo, type: room.type,
-        windowType: room.windowType ?? null,
-        isVacant: true, tenantId: null, tenantName: null,
-        contact: null, status: null, expected: 0, dueDay: null,
-        currentPaid: 0, carryOver: 0, totalPaid: 0,
-        balance: 0, isPaid: false, leaseTermId: null,
-        depositAmount: 0, accumulatedUnpaid: 0, isFutureMonth,
-        baseRent: room.baseRent,
-        prevTenantName: prev?.tenant.name ?? null,
-        prevContact: prev?.tenant.contacts[0]?.contactValue ?? null,
-        overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null,
-      }
-    }
-
-    const expected = lease.rentAmount
-    type LeaseWithOverride = typeof lease & {
-      overrideDueDay: string | null
-      overrideDueDayMonth: string | null
-      overrideDueDayReason: string | null
-    }
+  const buildLeaseRow = (room: typeof rooms[number], lease: LeaseWithOverride, prevTenantName: string | null, prevContact: string | null): RoomRow => {
     const l = lease as LeaseWithOverride
+    const expected = lease.rentAmount
     const effectiveDueDay = (l.overrideDueDayMonth === targetMonth && l.overrideDueDay)
       ? l.overrideDueDay
       : lease.dueDay
-    const dueDay   = effectiveDueDay ? Number(effectiveDueDay) : 1
+    const dueDay = effectiveDueDay ? Number(effectiveDueDay) : 1
 
-    // 인수 날짜 관련
     const acqDate     = acquisitionDate ? new Date(acquisitionDate) : null
     const acqDay      = acqDate ? acqDate.getDate() : 1
     const acqYyyy     = acqDate ? acqDate.getFullYear() : 2000
     const acqMm       = acqDate ? acqDate.getMonth() + 1 : 1
     const acqMonthStr = `${acqYyyy}-${String(acqMm).padStart(2, '0')}`
 
-    // 인수월 이전 → 완납/0원 처리
     if (targetMonth < acqMonthStr) {
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
@@ -133,36 +123,26 @@ export async function getRoomPaymentStatus(targetMonth: string) {
         balance: 0, isPaid: true,
         leaseTermId: lease.id, depositAmount: lease.depositAmount,
         accumulatedUnpaid: 0, isFutureMonth: false, baseRent: room.baseRent,
-        prevTenantName: null, prevContact: null,
+        prevTenantName, prevContact,
         overrideDueDay: l.overrideDueDay ?? null,
         overrideDueDayMonth: l.overrideDueDayMonth ?? null,
         overrideDueDayReason: l.overrideDueDayReason ?? null,
       }
     }
 
-    // ── 케이스 1~3 처리: 전 운영자 몫 계산 ──────────────────────
-    // dueDay < acqDay: 인수월 이용료는 전 운영자 몫
-    // 단, 초과 납부분(선납)은 현 운영자 몫 (케이스 2)
     const isDueBefore = dueDay < acqDay
-
-    // 청구권은 전 운영자 것이지만, 실제 수납금은 현 운영자 크레딧
-    // → prevOperatorPortion = 0 (청구권 귀속과 수납금 귀속 분리)
     const prevOperatorPortion = 0
-    // ── 이월 잔액(carryBalance) 계산: 인수월~전월 ────────────────
     const allPrevPaidForCurrentOp = allPrevPayments
       .filter(p => p.leaseTermId === lease.id)
       .reduce((s, p) => s + p.actualAmount, 0) - prevOperatorPortion
 
-    // 현 운영자 몫 청구 개월 수 (인수월~전월)
     const [prevYyyy2, prevMm2] = prevMonth.split('-').map(Number)
     let prevMonthsOwed = (prevYyyy2 - acqYyyy) * 12 + (prevMm2 - acqMm) + 1
-    if (isDueBefore) prevMonthsOwed -= 1 // 인수월 제외 (전 운영자 몫)
+    if (isDueBefore) prevMonthsOwed -= 1
     prevMonthsOwed = Math.max(0, prevMonthsOwed)
 
-    // carryBalance: 양수=선납(크레딧), 음수=미납(채무) 모두 이월
     const carryBalance = allPrevPaidForCurrentOp - expected * prevMonthsOwed
-    // (기존에 Math.min(0, ...) 으로 음수만 이월했다면 제거)
-    // ── 미래 월: 이월 잔액만 표시 ────────────────────────────────
+
     if (isFutureMonth) {
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
@@ -176,23 +156,18 @@ export async function getRoomPaymentStatus(targetMonth: string) {
         isPaid: carryBalance >= 0,
         leaseTermId: lease.id, depositAmount: lease.depositAmount,
         accumulatedUnpaid: 0, isFutureMonth: true, baseRent: room.baseRent,
-        prevTenantName: null, prevContact: null,
+        prevTenantName, prevContact,
         overrideDueDay: l.overrideDueDay ?? null,
         overrideDueDayMonth: l.overrideDueDayMonth ?? null,
         overrideDueDayReason: l.overrideDueDayReason ?? null,
       }
     }
 
-    // ── 당월 계산 ─────────────────────────────────────────────────
     const currentPaidRaw = payments
       .filter(p => p.leaseTermId === lease.id)
       .reduce((s, p) => s + p.actualAmount, 0)
-
-    // 잔액(display): 수납액 - 계약 이용료 (항상 contract expected 기준, 이월 미포함)
-    // 사용자 직관: "20만 냈고 40만이 이용료면 잔액은 -20만"
-    const displayBalance  = currentPaidRaw - expected
-    // 완납 여부: 이번 달 납부액이 계약 이용료 이상인지만 판단 (이월·인수월 보정 미반영)
-    const isPaid          = currentPaidRaw >= expected
+    const displayBalance = currentPaidRaw - expected
+    const isPaid = currentPaidRaw >= expected
 
     return {
       roomId: room.id, roomNo: room.roomNo, type: room.type,
@@ -205,11 +180,39 @@ export async function getRoomPaymentStatus(targetMonth: string) {
       totalPaid: currentPaidRaw, balance: displayBalance, isPaid,
       leaseTermId: lease.id, depositAmount: lease.depositAmount,
       accumulatedUnpaid: 0, isFutureMonth: false, baseRent: room.baseRent,
-      prevTenantName: null, prevContact: null,
-      overrideDueDay: lease.overrideDueDay ?? null,
-      overrideDueDayMonth: lease.overrideDueDayMonth ?? null,
-      overrideDueDayReason: lease.overrideDueDayReason ?? null,
+      prevTenantName, prevContact,
+      overrideDueDay: l.overrideDueDay ?? null,
+      overrideDueDayMonth: l.overrideDueDayMonth ?? null,
+      overrideDueDayReason: l.overrideDueDayReason ?? null,
     }
+  }
+
+  return rooms.flatMap(room => {
+    const roomLeases = activeLeases.filter(l => l.roomId === room.id)
+    const primaryLease = roomLeases.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))
+    const nonResidentLease = roomLeases.find(l => l.status === 'NON_RESIDENT')
+
+    if (!primaryLease && !nonResidentLease) {
+      const prev = prevLeases.find(l => l.roomId === room.id)
+      return [{
+        roomId: room.id, roomNo: room.roomNo, type: room.type,
+        windowType: room.windowType ?? null,
+        isVacant: true, tenantId: null, tenantName: null,
+        contact: null, status: null, expected: 0, dueDay: null,
+        currentPaid: 0, carryOver: 0, totalPaid: 0,
+        balance: 0, isPaid: false, leaseTermId: null,
+        depositAmount: 0, accumulatedUnpaid: 0, isFutureMonth,
+        baseRent: room.baseRent,
+        prevTenantName: prev?.tenant.name ?? null,
+        prevContact: prev?.tenant.contacts[0]?.contactValue ?? null,
+        overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null,
+      }]
+    }
+
+    const rows = []
+    if (primaryLease) rows.push(buildLeaseRow(room, primaryLease as LeaseWithOverride, null, null))
+    if (nonResidentLease) rows.push(buildLeaseRow(room, nonResidentLease as LeaseWithOverride, null, null))
+    return rows
   })
 }
 

@@ -53,7 +53,7 @@ export async function getRoomsForSelect() {
   return prisma.room.findMany({
     where: { propertyId },
     orderBy: { roomNo: 'asc' },
-    select: { id: true, roomNo: true, baseRent: true, isVacant: true },
+    select: { id: true, roomNo: true, baseRent: true, isVacant: true, type: true, windowType: true, direction: true },
   })
 }
 
@@ -95,10 +95,19 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
   if (!roomId) return { ok: false, error: '호실을 선택해주세요.' }
 
-  const existingLease = await prisma.leaseTerm.findFirst({
-    where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+  // NON_RESIDENT(명의만)와 실거주자(ACTIVE/RESERVED/CHECKOUT_PENDING)는 같은 방에 공존 가능
+  const existingLeases = await prisma.leaseTerm.findMany({
+    where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+    select: { status: true },
   })
-  if (existingLease) return { ok: false, error: '해당 호실에 이미 입주자가 있습니다.' }
+  const hasActiveResident = existingLeases.some(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))
+  const hasNonResident    = existingLeases.some(l => l.status === 'NON_RESIDENT')
+  const incomingIsResident = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(status)
+  const incomingIsNonResident = status === 'NON_RESIDENT'
+
+  if (incomingIsResident && hasActiveResident) return { ok: false, error: '해당 호실에 이미 거주 중인 입주자가 있습니다.' }
+  if (incomingIsNonResident && hasNonResident) return { ok: false, error: '해당 호실에 이미 비거주자(명의)가 등록되어 있습니다.' }
+  if (!incomingIsResident && !incomingIsNonResident && existingLeases.length > 0) return { ok: false, error: '해당 호실에 이미 입주자가 있습니다.' }
 
   const contactsToCreate: {
     contactType: ContactType; contactValue: string; isPrimary: boolean;
@@ -155,6 +164,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   if (['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'].includes(status)) {
     await prisma.room.update({ where: { id: roomId }, data: { isVacant: false } })
   }
+  // NON_RESIDENT는 isVacant에 영향 없음
 
   await prisma.tenantStatusLog.create({
     data: { tenantId: tenant.id, fromStatus: 'RESERVED', toStatus: status, propertyId },
@@ -301,23 +311,33 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
       cashReceipt: cashReceipt || null,
       registrationStatus,
       contractUrl: contractUrl || null,
-      wishRooms: wishRooms || null,
+      // 호실이 실제로 바뀌면 희망 호실 초기화 (이미 이동했으므로 의미 없음)
+      wishRooms: (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishRooms || null),
       visitRoute: visitRoute || null,
     },
   })
 
-  // 호실 공실 상태 업데이트
+  // 호실 공실 상태 업데이트 (NON_RESIDENT는 isVacant에 영향 없음)
   const isActiveStatus  = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(status)
   const wasActiveStatus = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(prevStatus)
 
+  const hasOtherActiveInRoom = async (roomId: string, excludeLeaseTermId: string) => {
+    const count = await prisma.leaseTerm.count({
+      where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] }, id: { not: excludeLeaseTermId } },
+    })
+    return count > 0
+  }
+
   if (newRoomId !== prevRoomId && prevRoomId && wasActiveStatus) {
-    await prisma.room.update({ where: { id: prevRoomId }, data: { isVacant: true } })
+    const hasOther = await hasOtherActiveInRoom(prevRoomId, leaseTermId)
+    if (!hasOther) await prisma.room.update({ where: { id: prevRoomId }, data: { isVacant: true } })
   }
 
   if (isActiveStatus && newRoomId) {
     await prisma.room.update({ where: { id: newRoomId }, data: { isVacant: false } })
   } else if (!isActiveStatus && prevRoomId && wasActiveStatus) {
-    await prisma.room.update({ where: { id: prevRoomId }, data: { isVacant: true } })
+    const hasOther = await hasOtherActiveInRoom(prevRoomId, leaseTermId)
+    if (!hasOther) await prisma.room.update({ where: { id: prevRoomId }, data: { isVacant: true } })
   }
 
   if (status !== prevStatus) {

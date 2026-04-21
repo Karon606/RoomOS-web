@@ -24,9 +24,8 @@ enum UserRole {
 }
 
 enum WindowType {
-  WINDOW
-  NO_WINDOW
-  SKYLIGHT
+  OUTER
+  INNER
 }
 
 enum Direction {

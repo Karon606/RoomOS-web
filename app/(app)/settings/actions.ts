@@ -86,7 +86,7 @@ export async function getWindowTypeOptions(): Promise<string[]> {
     where: { id: propertyId },
     select: { windowTypeOptions: true },
   })
-  const raw = (property as any)?.windowTypeOptions ?? 'WINDOW,NO_WINDOW'
+  const raw = (property as any)?.windowTypeOptions ?? 'OUTER,INNER'
   return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
 }
 

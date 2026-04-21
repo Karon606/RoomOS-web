@@ -84,9 +84,8 @@ const DEFAULT_VACANT_VIS = Object.fromEntries(
 ) as Record<VacantColKey, boolean>
 
 const WINDOW_LABEL: Record<string, string> = {
-  WINDOW:    '내창',
-  NO_WINDOW: '외창',
-  SKYLIGHT:  '천창',
+  OUTER: '외창',
+  INNER: '내창',
 }
 
 // 납부일 경과/잔여일 계산

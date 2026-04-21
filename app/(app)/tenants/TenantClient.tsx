@@ -13,7 +13,7 @@ import { JobSelect } from '@/components/ui/JobSelect'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
-type Room = { id: string; roomNo: string; baseRent: number; isVacant: boolean }
+type Room = { id: string; roomNo: string; baseRent: number; isVacant: boolean; type: string | null; windowType: string | null; direction: string | null }
 
 type Contact = {
   id: string; contactType: string; contactValue: string
@@ -1271,6 +1271,108 @@ export default function TenantClient({
   )
 }
 
+// ── 희망 호실 선택기 ──────────────────────────────────────────────
+
+const WISH_WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창' }
+const WISH_DIR_LABEL: Record<string, string> = {
+  NORTH: '북향', NORTH_EAST: '북동향', EAST: '동향', SOUTH_EAST: '남동향',
+  SOUTH: '남향', SOUTH_WEST: '남서향', WEST: '서향', NORTH_WEST: '북서향',
+}
+const WISH_RANK = ['1순위', '2순위', '3순위', '4순위', '5순위']
+
+function getFloor(roomNo: string): string {
+  const n = roomNo.replace(/[^0-9]/g, '')
+  if (n.length >= 3) return n.slice(0, n.length - 2)
+  return ''
+}
+
+function WishRoomPicker({ rooms, defaultValue }: { rooms: Room[]; defaultValue?: string | null }) {
+  const initial = (defaultValue ?? '').split(',').map(s => s.trim()).filter(Boolean)
+  const [selected, setSelected] = useState<string[]>(initial.slice(0, 5))
+  const [floorF, setFloorF]     = useState('')
+  const [windowF, setWindowF]   = useState('')
+  const [typeF, setTypeF]       = useState('')
+  const [directionF, setDirF]   = useState('')
+
+  const floors     = [...new Set(rooms.map(r => getFloor(r.roomNo)).filter(Boolean))].sort((a, b) => Number(a) - Number(b))
+  const windowTypes = [...new Set(rooms.map(r => r.windowType).filter(Boolean))] as string[]
+  const types      = [...new Set(rooms.map(r => r.type).filter(Boolean))] as string[]
+  const directions = [...new Set(rooms.map(r => r.direction).filter(Boolean))] as string[]
+
+  const filtered = rooms.filter(r => {
+    if (floorF && getFloor(r.roomNo) !== floorF) return false
+    if (windowF && r.windowType !== windowF) return false
+    if (typeF && r.type !== typeF) return false
+    if (directionF && r.direction !== directionF) return false
+    return true
+  })
+
+  const add = (roomNo: string) => {
+    if (!roomNo || selected.includes(roomNo) || selected.length >= 5) return
+    setSelected(prev => [...prev, roomNo])
+  }
+  const remove = (roomNo: string) => setSelected(prev => prev.filter(r => r !== roomNo))
+
+  const selCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-2.5 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] w-full'
+
+  return (
+    <div className="space-y-2">
+      <label className="text-xs font-medium text-[var(--warm-mid)]">
+        입실 희망 호실 <span className="font-normal opacity-60">(최대 5개 · 공실/퇴실 예정 시 대시보드 알림)</span>
+      </label>
+      <input type="hidden" name="wishRooms" value={selected.join(',')} />
+
+      {/* 필터 */}
+      <div className="grid grid-cols-4 gap-2">
+        <select value={floorF} onChange={e => setFloorF(e.target.value)} className={selCls}>
+          <option value="">층 전체</option>
+          {floors.map(f => <option key={f} value={f}>{f}층</option>)}
+        </select>
+        <select value={windowF} onChange={e => setWindowF(e.target.value)} className={selCls}>
+          <option value="">창문 전체</option>
+          {windowTypes.map(w => <option key={w} value={w}>{WISH_WINDOW_LABEL[w] ?? w}</option>)}
+        </select>
+        <select value={typeF} onChange={e => setTypeF(e.target.value)} className={selCls}>
+          <option value="">타입 전체</option>
+          {types.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={directionF} onChange={e => setDirF(e.target.value)} className={selCls}>
+          <option value="">방향 전체</option>
+          {directions.map(d => <option key={d} value={d}>{WISH_DIR_LABEL[d] ?? d}</option>)}
+        </select>
+      </div>
+
+      {/* 호실 선택 */}
+      <select
+        value=""
+        onChange={e => { add(e.target.value); e.target.value = '' }}
+        disabled={selected.length >= 5}
+        className={selCls}
+      >
+        <option value="">호실 선택...</option>
+        {filtered.filter(r => !selected.includes(r.roomNo)).map(r => (
+          <option key={r.id} value={r.roomNo}>
+            {r.roomNo}호{r.isVacant ? ' (공실)' : ''}
+          </option>
+        ))}
+      </select>
+
+      {/* 선택된 순위 칩 */}
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {selected.map((roomNo, i) => (
+            <span key={roomNo} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--coral)]/20 text-[var(--coral)]">
+              {WISH_RANK[i]} {roomNo}호
+              <button type="button" onClick={() => remove(roomNo)}
+                className="leading-none hover:text-red-400 transition-colors">×</button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── 폼 컴포넌트 (추가/수정 공용) ─────────────────────────────────
 
 function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }: {
@@ -1370,6 +1472,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               <option value="ACTIVE">거주중</option>
               <option value="RESERVED">입실 예정</option>
               <option value="CHECKOUT_PENDING">퇴실 예정</option>
+              <option value="NON_RESIDENT">비거주자 (명의만)</option>
               {tenant && <option value="CHECKED_OUT">퇴실</option>}
               <option value="WAITING_TOUR">투어 대기</option>
               <option value="TOUR_DONE">투어 완료</option>
@@ -1474,7 +1577,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           </SelectField>
           <Field label="방문 경로" name="visitRoute" defaultValue={lease?.visitRoute ?? ''} placeholder="소개, 네이버 등" />
         </div>
-        <Field label="희망 이동 호실" name="wishRooms" defaultValue={lease?.wishRooms ?? ''} placeholder="예: 101, 201" />
+        <WishRoomPicker rooms={rooms} defaultValue={lease?.wishRooms} />
         <Field label="계약서 링크" name="contractUrl" type="url" defaultValue={lease?.contractUrl ?? ''} placeholder="https://..." />
       </FormSection>
 

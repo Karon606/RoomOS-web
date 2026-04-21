@@ -32,7 +32,7 @@ type Room = {
 }
 
 const WINDOW_TYPE_LABEL: Record<string, string> = {
-  WINDOW: '내창', NO_WINDOW: '외창', SKYLIGHT: '천창',
+  OUTER: '외창', INNER: '내창',
 }
 const DIRECTION_LABEL: Record<string, string> = {
   NORTH: '북향', NORTH_EAST: '북동향', EAST: '동향', SOUTH_EAST: '남동향',

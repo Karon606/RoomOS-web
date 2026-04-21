@@ -24,7 +24,7 @@ type Property = {
 }
 
 const WINDOW_TYPE_LABEL: Record<string, string> = {
-  WINDOW: '내창', NO_WINDOW: '외창', SKYLIGHT: '천창',
+  OUTER: '외창', INNER: '내창',
 }
 
 function windowLabel(val: string) {
