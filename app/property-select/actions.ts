@@ -69,7 +69,7 @@ export async function createProperty(name: string): Promise<{ ok: true; property
     if (!trimmed) return { ok: false, error: '영업장 이름을 입력해주세요.' }
 
     const property = await prisma.property.create({
-      data: { name: trimmed },
+      data: { name: trimmed, ownerId: user.id },
     })
 
     await prisma.userPropertyRole.create({
