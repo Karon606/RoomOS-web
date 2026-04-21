@@ -6,7 +6,7 @@ import {
   getRoomTypeOptions, addRoomTypeOption, deleteRoomTypeOption,
   getWindowTypeOptions, addWindowTypeOption, deleteWindowTypeOption,
   getIncomeCategories, addIncomeCategory, deleteIncomeCategory,
-  inviteMember, updateMemberRole, removeMember,
+  inviteMember, updateMemberRole, removeMember, getMembers,
   type MemberWithUser,
 } from './actions'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
@@ -119,7 +119,7 @@ export default function SettingsForm({
     try {
       await inviteMember(email, inviteRole)
       setInviteEmail('')
-      const updated = await import('./actions').then(m => m.getMembers())
+      const updated = await getMembers()
       setMembers(updated)
       showToast('✅ 멤버가 추가되었습니다.')
     } catch (err: unknown) {
