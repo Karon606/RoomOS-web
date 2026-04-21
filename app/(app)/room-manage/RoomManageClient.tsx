@@ -126,19 +126,16 @@ export default function RoomManageClient({
     e.preventDefault(); setError('')
     const formData = new FormData(e.currentTarget)
     startTransition(async () => {
-      try {
-        const { id: roomId } = await addRoom(formData)
-        for (const { file } of addPhotoPreviews) {
-          const fd = new FormData()
-          fd.set('roomId', roomId)
-          fd.set('photo', file)
-          await uploadRoomPhoto(fd)
-        }
-        closeAddModal()
-        window.location.reload()
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : '오류가 발생했습니다.')
+      const res = await addRoom(formData)
+      if (!res.ok) { setError(res.error); return }
+      for (const { file } of addPhotoPreviews) {
+        const fd = new FormData()
+        fd.set('roomId', res.id)
+        fd.set('photo', file)
+        await uploadRoomPhoto(fd)
       }
+      closeAddModal()
+      window.location.reload()
     })
   }
 
@@ -160,13 +157,10 @@ export default function RoomManageClient({
     if (!confirm(`${roomNo}호를 삭제하시겠습니까?`)) return
     setError('')
     startTransition(async () => {
-      try {
-        await deleteRoom(id)
-        closeDetail()
-        window.location.reload()
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : '오류가 발생했습니다.')
-      }
+      const res = await deleteRoom(id)
+      if (!res.ok) { setError(res.error); return }
+      closeDetail()
+      window.location.reload()
     })
   }
 
@@ -184,11 +178,10 @@ export default function RoomManageClient({
         const fd = new FormData()
         fd.set('roomId', editRoom.id)
         fd.set('photo', file)
-        const photo = await uploadRoomPhoto(fd)
-        setEditPhotos(prev => [...prev, photo])
+        const res = await uploadRoomPhoto(fd)
+        if (!res.ok) { setError(res.error); break }
+        setEditPhotos(prev => [...prev, { id: res.id, driveFileId: res.driveFileId, storageUrl: res.storageUrl, fileName: res.fileName }])
       }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '업로드 실패')
     } finally {
       setPhotoUploading(false); e.target.value = ''
     }
@@ -196,12 +189,9 @@ export default function RoomManageClient({
 
   const handlePhotoDelete = async (photoId: string) => {
     if (!confirm('이 사진을 삭제하시겠습니까?')) return
-    try {
-      await deleteRoomPhoto(photoId)
-      setEditPhotos(prev => prev.filter(p => p.id !== photoId))
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '삭제 실패')
-    }
+    const res = await deleteRoomPhoto(photoId)
+    if (!res.ok) { setError(res.error); return }
+    setEditPhotos(prev => prev.filter(p => p.id !== photoId))
   }
 
   const TypeSection = ({ defaultValue }: { defaultValue?: string }) => (

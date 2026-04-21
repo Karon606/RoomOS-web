@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
+import { isRedirectError } from 'next/dist/client/components/redirect'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -279,23 +280,28 @@ async function recalculatePayments(
 }
 
 // 수납 기록 삭제
-export async function deletePayment(paymentId: string) {
-  await requireEdit()
-  const record = await prisma.paymentRecord.findUnique({
-    where: { id: paymentId },
-    select: { leaseTermId: true, targetMonth: true },
-  })
-  if (!record) throw new Error('수납 기록을 찾을 수 없습니다.')
+export async function deletePayment(paymentId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const record = await prisma.paymentRecord.findUnique({
+      where: { id: paymentId },
+      select: { leaseTermId: true, targetMonth: true },
+    })
+    if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
 
-  await prisma.paymentRecord.delete({ where: { id: paymentId } })
+    await prisma.paymentRecord.delete({ where: { id: paymentId } })
 
-  // 삭제 후 재계산
-  const lease = await prisma.leaseTerm.findUnique({
-    where: { id: record.leaseTermId },
-    select: { rentAmount: true },
-  })
-  if (lease) {
-    await recalculatePayments(record.leaseTermId, record.targetMonth, lease.rentAmount)
+    const lease = await prisma.leaseTerm.findUnique({
+      where: { id: record.leaseTermId },
+      select: { rentAmount: true },
+    })
+    if (lease) {
+      await recalculatePayments(record.leaseTermId, record.targetMonth, lease.rentAmount)
+    }
+    return { ok: true }
+  } catch (err) {
+    if (isRedirectError(err)) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
 

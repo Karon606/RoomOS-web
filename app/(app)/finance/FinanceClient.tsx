@@ -293,16 +293,18 @@ export default function FinanceClient({
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      try { await addExpense(fd); setShowAddExp(false); router.refresh() }
-      catch (err: unknown) { setError((err as Error).message) }
+      const res = await addExpense(fd)
+      if (!res.ok) { setError(res.error); return }
+      setShowAddExp(false); router.refresh()
     })
   }
   const handleUpdateExp = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      try { await updateExpense(fd); setDetailExp(null); setDetailExpEdit(false); router.refresh() }
-      catch (err: unknown) { setError((err as Error).message) }
+      const res = await updateExpense(fd)
+      if (!res.ok) { setError(res.error); return }
+      setDetailExp(null); setDetailExpEdit(false); router.refresh()
     })
   }
   const handleDeleteExp = (id: string) => {
@@ -316,16 +318,18 @@ export default function FinanceClient({
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      try { await addExtraIncome(fd); setShowAddInc(false); router.refresh() }
-      catch (err: unknown) { setError((err as Error).message) }
+      const res = await addExtraIncome(fd)
+      if (!res.ok) { setError(res.error); return }
+      setShowAddInc(false); router.refresh()
     })
   }
   const handleUpdateInc = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      try { await updateExtraIncome(fd); setDetailInc(null); setDetailIncEdit(false); router.refresh() }
-      catch (err: unknown) { setError((err as Error).message) }
+      const res = await updateExtraIncome(fd)
+      if (!res.ok) { setError(res.error); return }
+      setDetailInc(null); setDetailIncEdit(false); router.refresh()
     })
   }
   const handleDeleteInc = (id: string) => {
@@ -353,10 +357,9 @@ export default function FinanceClient({
     e.preventDefault(); setAssetError('')
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      try {
-        await saveFinancialAccount(fd)
-        setEditingAcc(null); setAssetType('BANK_ACCOUNT'); setAssetBrand(''); setAssetFormKey(k => k + 1); router.refresh()
-      } catch (err: unknown) { setAssetError((err as Error).message) }
+      const res = await saveFinancialAccount(fd)
+      if (!res.ok) { setAssetError(res.error); return }
+      setEditingAcc(null); setAssetType('BANK_ACCOUNT'); setAssetBrand(''); setAssetFormKey(k => k + 1); router.refresh()
     })
   }
   const handleDeleteAsset = (id: string) => {

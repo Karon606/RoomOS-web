@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { LeaseStatus, ContactType, Gender, PaymentTiming, RegistrationStatus } from '@prisma/client'
 import { requireEdit } from '@/lib/role'
+import { isRedirectError } from 'next/dist/client/components/redirect'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -58,7 +59,8 @@ export async function getRoomsForSelect() {
 }
 
 // 입주자 추가
-export async function addTenant(formData: FormData) {
+export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
   await requireEdit()
   const { propertyId } = await getPropertyId()
 
@@ -91,13 +93,13 @@ export async function addTenant(formData: FormData) {
   const wishRooms           = formData.get('wishRooms') as string
   const visitRoute          = formData.get('visitRoute') as string
 
-  if (!name?.trim()) throw new Error('이름은 필수입니다.')
-  if (!roomId) throw new Error('호실을 선택해주세요.')
+  if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
+  if (!roomId) return { ok: false, error: '호실을 선택해주세요.' }
 
   const existingLease = await prisma.leaseTerm.findFirst({
     where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
   })
-  if (existingLease) throw new Error('해당 호실에 이미 입주자가 있습니다.')
+  if (existingLease) return { ok: false, error: '해당 호실에 이미 입주자가 있습니다.' }
 
   const contactsToCreate: {
     contactType: ContactType; contactValue: string; isPrimary: boolean;
@@ -160,10 +162,16 @@ export async function addTenant(formData: FormData) {
   })
 
   revalidatePath('/tenants')
+  return { ok: true }
+  } catch (err) {
+    if (isRedirectError(err)) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 // 입주자 수정
-export async function updateTenant(formData: FormData) {
+export async function updateTenant(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
   await requireEdit()
   const { propertyId, user } = await getPropertyId()
 
@@ -203,13 +211,13 @@ export async function updateTenant(formData: FormData) {
   const wishRooms          = formData.get('wishRooms') as string
   const visitRoute         = formData.get('visitRoute') as string
 
-  if (!name?.trim()) throw new Error('이름은 필수입니다.')
+  if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
 
   const currentLease = await prisma.leaseTerm.findUnique({
     where: { id: leaseTermId },
     select: { roomId: true, status: true },
   })
-  if (!currentLease) throw new Error('계약 정보를 찾을 수 없습니다.')
+  if (!currentLease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
   const prevRoomId = currentLease.roomId
   const prevStatus = currentLease.status
@@ -327,10 +335,16 @@ export async function updateTenant(formData: FormData) {
   }
 
   revalidatePath('/tenants')
+  return { ok: true }
+  } catch (err) {
+    if (isRedirectError(err)) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 // 입실 처리 (입실예정 → 거주중)
-export async function moveInTenant(leaseTermId: string, tenantId: string) {
+export async function moveInTenant(leaseTermId: string, tenantId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
   await requireEdit()
   const { propertyId, user } = await getPropertyId()
 
@@ -338,7 +352,7 @@ export async function moveInTenant(leaseTermId: string, tenantId: string) {
     where: { id: leaseTermId },
     select: { roomId: true, status: true },
   })
-  if (!lease) throw new Error('계약 정보를 찾을 수 없습니다.')
+  if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
   await prisma.leaseTerm.update({
     where: { id: leaseTermId },
@@ -362,10 +376,16 @@ export async function moveInTenant(leaseTermId: string, tenantId: string) {
   })
 
   revalidatePath('/tenants')
+  return { ok: true }
+  } catch (err) {
+    if (isRedirectError(err)) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 // 퇴실 처리
-export async function checkoutTenant(leaseTermId: string, tenantId: string) {
+export async function checkoutTenant(leaseTermId: string, tenantId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
   await requireEdit()
   const { propertyId } = await getPropertyId()
 
@@ -373,7 +393,7 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string) {
     where: { id: leaseTermId },
     select: { roomId: true, status: true },
   })
-  if (!lease) throw new Error('계약 정보를 찾을 수 없습니다.')
+  if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
   await prisma.leaseTerm.update({
     where: { id: leaseTermId },
@@ -408,6 +428,11 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string) {
   })
 
   revalidatePath('/tenants')
+  return { ok: true }
+  } catch (err) {
+    if (isRedirectError(err)) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 // Gemini 수납 분석
@@ -493,14 +518,20 @@ ${paymentLines || '  수납 기록 없음'}
 }
 
 // 입주자 삭제
-export async function deleteTenant(tenantId: string) {
-  await requireEdit()
+export async function deleteTenant(tenantId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
 
-  const activeLease = await prisma.leaseTerm.findFirst({
-    where: { tenantId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-  })
-  if (activeLease) throw new Error('거주중인 입주자는 삭제할 수 없습니다. 먼저 퇴실 처리해주세요.')
+    const activeLease = await prisma.leaseTerm.findFirst({
+      where: { tenantId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+    })
+    if (activeLease) return { ok: false, error: '거주중인 입주자는 삭제할 수 없습니다. 먼저 퇴실 처리해주세요.' }
 
-  await prisma.tenant.delete({ where: { id: tenantId } })
-  revalidatePath('/tenants')
+    await prisma.tenant.delete({ where: { id: tenantId } })
+    revalidatePath('/tenants')
+    return { ok: true }
+  } catch (err) {
+    if (isRedirectError(err)) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }

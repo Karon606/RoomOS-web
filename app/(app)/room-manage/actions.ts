@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { WindowType, Direction } from '@prisma/client'
 import { requireEdit } from '@/lib/role'
+import { isRedirectError } from 'next/dist/client/components/redirect'
 const PHOTO_BUCKET = 'room-photos'
 
 async function getPropertyId() {
@@ -39,7 +40,8 @@ export async function getRooms() {
 }
 
 // 호실 추가
-export async function addRoom(formData: FormData) {
+export async function addRoom(formData: FormData): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
   await requireEdit()
   const { propertyId } = await getPropertyId()
 
@@ -48,13 +50,12 @@ export async function addRoom(formData: FormData) {
   const baseRent = Number(formData.get('baseRent')) || 0
   const memo = formData.get('memo') as string
 
-  if (!roomNo?.trim()) throw new Error('호실 번호는 필수입니다.')
+  if (!roomNo?.trim()) return { ok: false, error: '호실 번호는 필수입니다.' }
 
-  // 같은 영업장 내 중복 호실 번호 체크
   const existing = await prisma.room.findUnique({
     where: { propertyId_roomNo: { propertyId, roomNo: roomNo.trim() } },
   })
-  if (existing) throw new Error(`${roomNo}호는 이미 존재합니다.`)
+  if (existing) return { ok: false, error: `${roomNo}호는 이미 존재합니다.` }
 
   const windowTypeRaw = formData.get('windowType') as string
   const directionRaw  = formData.get('direction') as string
@@ -79,7 +80,11 @@ export async function addRoom(formData: FormData) {
   })
 
   revalidatePath('/room-manage')
-  return { id: room.id }
+  return { ok: true, id: room.id }
+  } catch (err) {
+    if (isRedirectError(err)) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 // 호실 수정
@@ -139,17 +144,17 @@ export async function updateRoom(formData: FormData) {
 }
 
 // 호실 삭제
-export async function deleteRoom(id: string) {
+export async function deleteRoom(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
   await requireEdit()
 
-  // 현재 거주자가 있는 호실은 삭제 불가
   const activeLeases = await prisma.leaseTerm.count({
     where: {
       roomId: id,
       status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] },
     },
   })
-  if (activeLeases > 0) throw new Error('거주중인 입주자가 있어 삭제할 수 없습니다.')
+  if (activeLeases > 0) return { ok: false, error: '거주중인 입주자가 있어 삭제할 수 없습니다.' }
 
   // Storage 파일 정리
   const photos = await prisma.roomPhoto.findMany({ where: { roomId: id }, select: { storageUrl: true } })
@@ -174,68 +179,84 @@ export async function deleteRoom(id: string) {
 
   await prisma.room.delete({ where: { id } })
   revalidatePath('/room-manage')
+  return { ok: true }
+  } catch (err) {
+    if (isRedirectError(err)) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 // 호실 사진 업로드 (Supabase Storage)
 export async function uploadRoomPhoto(
   formData: FormData
-): Promise<{ id: string; driveFileId: string | null; storageUrl: string; fileName: string | null }> {
-  await requireEdit()
-  const { propertyId } = await getPropertyId()
-  const roomId = formData.get('roomId') as string
-  const file = formData.get('photo') as File
+): Promise<{ ok: true; id: string; driveFileId: string | null; storageUrl: string; fileName: string | null } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const roomId = formData.get('roomId') as string
+    const file = formData.get('photo') as File
 
-  if (!file || file.size === 0) throw new Error('파일이 없습니다.')
-  if (!file.type.startsWith('image/')) throw new Error('이미지 파일만 업로드 가능합니다.')
-  if (file.size > 10 * 1024 * 1024) throw new Error('파일 크기는 10MB 이하여야 합니다.')
+    if (!file || file.size === 0) return { ok: false, error: '파일이 없습니다.' }
+    if (!file.type.startsWith('image/')) return { ok: false, error: '이미지 파일만 업로드 가능합니다.' }
+    if (file.size > 10 * 1024 * 1024) return { ok: false, error: '파일 크기는 10MB 이하여야 합니다.' }
 
-  const supabase = await createClient()
-  const ext = file.name.split('.').pop() ?? 'jpg'
-  const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
-  const storagePath = `${propertyId}/${roomId}/${uniqueName}`
+    const supabase = await createClient()
+    const ext = file.name.split('.').pop() ?? 'jpg'
+    const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+    const storagePath = `${propertyId}/${roomId}/${uniqueName}`
 
-  const arrayBuffer = await file.arrayBuffer()
-  const { error } = await supabase.storage
-    .from(PHOTO_BUCKET)
-    .upload(storagePath, new Uint8Array(arrayBuffer), { contentType: file.type })
-  if (error) throw new Error(`업로드 실패: ${error.message}`)
+    const arrayBuffer = await file.arrayBuffer()
+    const { error } = await supabase.storage
+      .from(PHOTO_BUCKET)
+      .upload(storagePath, new Uint8Array(arrayBuffer), { contentType: file.type })
+    if (error) return { ok: false, error: `업로드 실패: ${error.message}` }
 
-  const { data: { publicUrl } } = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(storagePath)
+    const { data: { publicUrl } } = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(storagePath)
 
-  const lastPhoto = await prisma.roomPhoto.findFirst({
-    where: { roomId },
-    orderBy: { sortOrder: 'desc' },
-    select: { sortOrder: true },
-  })
+    const lastPhoto = await prisma.roomPhoto.findFirst({
+      where: { roomId },
+      orderBy: { sortOrder: 'desc' },
+      select: { sortOrder: true },
+    })
 
-  const photo = await prisma.roomPhoto.create({
-    data: {
-      roomId,
-      storageUrl: publicUrl,
-      fileName: file.name,
-      sortOrder: (lastPhoto?.sortOrder ?? 0) + 1,
-    },
-  })
+    const photo = await prisma.roomPhoto.create({
+      data: {
+        roomId,
+        storageUrl: publicUrl,
+        fileName: file.name,
+        sortOrder: (lastPhoto?.sortOrder ?? 0) + 1,
+      },
+    })
 
-  revalidatePath('/room-manage')
-  return { id: photo.id, driveFileId: photo.driveFileId, storageUrl: photo.storageUrl, fileName: photo.fileName }
+    revalidatePath('/room-manage')
+    return { ok: true, id: photo.id, driveFileId: photo.driveFileId, storageUrl: photo.storageUrl, fileName: photo.fileName }
+  } catch (err) {
+    if (isRedirectError(err)) throw err
+    return { ok: false, error: (err as Error).message ?? '업로드 실패' }
+  }
 }
 
 // 호실 사진 삭제 (Supabase Storage)
-export async function deleteRoomPhoto(photoId: string) {
-  await requireEdit()
+export async function deleteRoomPhoto(photoId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
 
-  const photo = await prisma.roomPhoto.findUnique({ where: { id: photoId } })
-  if (!photo) throw new Error('사진을 찾을 수 없습니다.')
+    const photo = await prisma.roomPhoto.findUnique({ where: { id: photoId } })
+    if (!photo) return { ok: false, error: '사진을 찾을 수 없습니다.' }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const prefix = `${supabaseUrl}/storage/v1/object/public/${PHOTO_BUCKET}/`
-  const storagePath = photo.storageUrl.replace(prefix, '')
-  const supabase = await createClient()
-  await supabase.storage.from(PHOTO_BUCKET).remove([storagePath])
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const prefix = `${supabaseUrl}/storage/v1/object/public/${PHOTO_BUCKET}/`
+    const storagePath = photo.storageUrl.replace(prefix, '')
+    const supabase = await createClient()
+    await supabase.storage.from(PHOTO_BUCKET).remove([storagePath])
 
-  await prisma.roomPhoto.delete({ where: { id: photoId } })
-  revalidatePath('/room-manage')
+    await prisma.roomPhoto.delete({ where: { id: photoId } })
+    revalidatePath('/room-manage')
+    return { ok: true }
+  } catch (err) {
+    if (isRedirectError(err)) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 // ── [Trigger B] 예약된 가격 일괄 적용 ────────────────────────────────

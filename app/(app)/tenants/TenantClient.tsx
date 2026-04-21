@@ -325,8 +325,9 @@ export default function TenantClient({
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      try { await addTenant(fd); setShowAdd(false); refresh() }
-      catch (err: unknown) { setError((err as Error).message) }
+      const res = await addTenant(fd)
+      if (!res.ok) { setError(res.error); return }
+      setShowAdd(false); refresh()
     })
   }
 
@@ -334,8 +335,9 @@ export default function TenantClient({
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      try { await updateTenant(fd); setEditTenant(null); refresh() }
-      catch (err: unknown) { setError((err as Error).message) }
+      const res = await updateTenant(fd)
+      if (!res.ok) { setError(res.error); return }
+      setEditTenant(null); refresh()
     })
   }
 
@@ -344,20 +346,20 @@ export default function TenantClient({
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      try {
-        await updateTenant(fd)
-        setDetailTenant(null)
-        setDetailEditMode(false)
-        refresh()
-      } catch (err: unknown) { setError((err as Error).message) }
+      const res = await updateTenant(fd)
+      if (!res.ok) { setError(res.error); return }
+      setDetailTenant(null)
+      setDetailEditMode(false)
+      refresh()
     })
   }
 
   const handleMoveIn = async (leaseTermId: string, tenantId: string, name: string) => {
     if (!confirm(`${name}님 입실 처리하시겠습니까?`)) return
     startTransition(async () => {
-      try { await moveInTenant(leaseTermId, tenantId); setDetailTenant(null); refresh() }
-      catch (err: unknown) { setError((err as Error).message) }
+      const res = await moveInTenant(leaseTermId, tenantId)
+      if (!res.ok) { setError(res.error); return }
+      setDetailTenant(null); refresh()
     })
   }
 
@@ -403,22 +405,22 @@ export default function TenantClient({
   const handleDeletePayRecord = async (paymentId: string) => {
     if (!confirm('이 수납 기록을 삭제하시겠습니까?')) return
     startTransition(async () => {
-      try {
-        await deletePayment(paymentId)
-        if (payTarget) {
-          const records = await getPaymentsByLease(payTarget.lease.id, targetMonth)
-          setPayHistory(records as PayRecord[])
-        }
-        refresh()
-      } catch (err: unknown) { setError((err as Error).message) }
+      const res = await deletePayment(paymentId)
+      if (!res.ok) { setError(res.error); return }
+      if (payTarget) {
+        const records = await getPaymentsByLease(payTarget.lease.id, targetMonth)
+        setPayHistory(records as PayRecord[])
+      }
+      refresh()
     })
   }
 
   const handleDelete = async (tenantId: string, name: string) => {
     if (!confirm(`${name}님을 완전 삭제하시겠습니까?`)) return
     startTransition(async () => {
-      try { await deleteTenant(tenantId); setDetailTenant(null); refresh() }
-      catch (err: unknown) { setError((err as Error).message) }
+      const res = await deleteTenant(tenantId)
+      if (!res.ok) { setError(res.error); return }
+      setDetailTenant(null); refresh()
     })
   }
 
