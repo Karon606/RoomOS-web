@@ -80,7 +80,7 @@ export default function SettingsForm({
   const [roomTypes, setRoomTypes] = useState<string[]>([])
   const [newRoomType, setNewRoomType] = useState('')
 
-  useEffect(() => { getRoomTypeOptions().then(setRoomTypes) }, [])
+  useEffect(() => { getRoomTypeOptions().then(setRoomTypes).catch(console.error) }, [])
 
   const handleAddRoomType = async () => {
     const v = newRoomType.trim(); if (!v) return
@@ -97,7 +97,7 @@ export default function SettingsForm({
   const [windowTypes, setWindowTypes] = useState<string[]>([])
   const [newWindowType, setNewWindowType] = useState('')
 
-  useEffect(() => { getWindowTypeOptions().then(setWindowTypes) }, [])
+  useEffect(() => { getWindowTypeOptions().then(setWindowTypes).catch(console.error) }, [])
 
   const handleAddWindowType = async () => {
     const v = newWindowType.trim(); if (!v) return
@@ -152,7 +152,7 @@ export default function SettingsForm({
   const [incomeCategs, setIncomeCategs] = useState<string[]>([])
   const [newIncomeCateg, setNewIncomeCateg] = useState('')
 
-  useEffect(() => { getIncomeCategories().then(setIncomeCategs) }, [])
+  useEffect(() => { getIncomeCategories().then(setIncomeCategs).catch(console.error) }, [])
 
   const handleAddIncomeCateg = async () => {
     const v = newIncomeCateg.trim(); if (!v) return
