@@ -1,15 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --cream:       #fffcf7;
-  --canvas:      #f5efe6;
-  --coral:       #f4623a;
-  --coral-dark:  #d94d28;
-  --coral-light: #fde8e1;
-  --warm-mid:    #7a6a5a;
-  --warm-dark:   #5a4a3a;
-  --warm-border: #e8ddd2;
-  --warm-muted:  #a89888;
+  --cream:        #fffcf7;
+  --canvas:       #f5efe6;
+  --coral:        #f4623a;
+  --coral-dark:   #d94d28;
+  --coral-light:  #ff7f5c;
+  --coral-pale:   #fde8e2;
+  --sun:          #fbbf24;
+  --warm-mid:     #7a6a5a;
+  --warm-dark:    #5a4a3a;
+  --warm-border:  #e8ddd2;
+  --warm-muted:   #b0a090;
+  --sand:         #f7ead6;
 }
 
 @theme inline {
@@ -18,10 +21,13 @@
   --color-coral:        var(--coral);
   --color-coral-dark:   var(--coral-dark);
   --color-coral-light:  var(--coral-light);
+  --color-coral-pale:   var(--coral-pale);
+  --color-sun:          var(--sun);
   --color-warm-mid:     var(--warm-mid);
   --color-warm-dark:    var(--warm-dark);
   --color-warm-border:  var(--warm-border);
   --color-warm-muted:   var(--warm-muted);
+  --color-sand:         var(--sand);
   --font-sans: 'Plus Jakarta Sans', sans-serif;
 }
 

@@ -3,26 +3,69 @@
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 
-const NAV_ITEMS = [
-  { href: '/dashboard',   label: '홈',                  icon: '📊' },
-  { href: '/rooms',       label: '수납 관리',            icon: '🏠' },
-  { href: '/tenants',     label: '입주자 관리',          icon: '👤' },
-  { href: '/finance',     label: '지출/기타수익 관리',   icon: '💰' },
-  { href: '/room-manage', label: '호실 관리',            icon: '🔧' },
-  { href: '/settings',    label: '설정',                 icon: '⚙️' },
+// ── SVG Icons ──────────────────────────────────────────────────────
+const ico = { viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: '1.6', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, width: 17, height: 17, style: { flexShrink: 0 } }
+
+function IcoDashboard() {
+  return <svg {...ico}><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>
+}
+function IcoRooms() {
+  return <svg {...ico}><rect x="2" y="2" width="12" height="12" rx="2"/><line x1="2" y1="7" x2="14" y2="7"/><line x1="7" y1="7" x2="7" y2="14"/></svg>
+}
+function IcoTenants() {
+  return <svg {...ico}><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-5 6-5s6 1.7 6 5"/></svg>
+}
+function IcoFinance() {
+  return <svg {...ico}><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><circle cx="8" cy="9" r="1.5"/></svg>
+}
+function IcoRoomManage() {
+  return <svg {...ico}><rect x="1" y="1" width="6" height="6" rx="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.2"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="12" y1="9" x2="12" y2="15"/></svg>
+}
+function IcoSettings() {
+  return <svg {...ico}><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M3.2 12.8l1.4-1.4M11.4 4.6l1.4-1.4"/></svg>
+}
+
+// ── Nav structure ──────────────────────────────────────────────────
+const NAV_GROUPS = [
+  {
+    label: '메인',
+    items: [
+      { href: '/dashboard',   label: '홈',           Icon: IcoDashboard },
+      { href: '/rooms',       label: '수납 관리',     Icon: IcoRooms },
+      { href: '/tenants',     label: '입주자 관리',   Icon: IcoTenants },
+    ],
+  },
+  {
+    label: '수익',
+    items: [
+      { href: '/finance',     label: '지출/기타수익', Icon: IcoFinance },
+    ],
+  },
+  {
+    label: '관리',
+    items: [
+      { href: '/room-manage', label: '호실 관리',     Icon: IcoRoomManage },
+    ],
+  },
+  {
+    label: '설정',
+    items: [
+      { href: '/settings',    label: '설정',          Icon: IcoSettings },
+    ],
+  },
 ]
 
-function RoomOSLogo() {
+// ── Logo variants ──────────────────────────────────────────────────
+function LogoFull() {
   return (
-    <div className="flex items-center gap-2.5">
-      {/* Floor-mark: 4 horizontal lines, first is coral */}
-      <svg width="28" height="22" viewBox="0 0 28 22" fill="none">
-        <rect y="0"  width="28" height="4" rx="2" fill="#f4623a" />
-        <rect y="6"  width="28" height="4" rx="2" fill="#7a6a5a" opacity="0.6" />
-        <rect y="12" width="28" height="4" rx="2" fill="#7a6a5a" opacity="0.4" />
-        <rect y="18" width="28" height="4" rx="2" fill="#7a6a5a" opacity="0.25" />
+    <div className="flex items-center gap-3">
+      <svg width="28" height="30" viewBox="0 0 28 30" fill="none">
+        <line x1="0" y1="3.5"  x2="28" y2="3.5"  stroke="#f4623a" strokeWidth="4.5" strokeLinecap="round"/>
+        <line x1="0" y1="12"   x2="18" y2="12"   stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.42"/>
+        <line x1="0" y1="20.5" x2="28" y2="20.5" stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.62"/>
+        <line x1="0" y1="29"   x2="14" y2="29"   stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.28"/>
       </svg>
-      <span className="text-lg tracking-tight" style={{ color: 'var(--warm-dark)' }}>
+      <span className="text-[18px] tracking-tight" style={{ color: 'var(--warm-dark)' }}>
         <span style={{ fontWeight: 300 }}>Room</span>
         <span style={{ fontWeight: 700, color: 'var(--coral)' }}>OS</span>
       </span>
@@ -30,52 +73,114 @@ function RoomOSLogo() {
   )
 }
 
-function NavContent({ pathname, month, onClose }: { pathname: string; month: string | null; onClose?: () => void }) {
+function LogoMark() {
+  return (
+    <svg width="28" height="30" viewBox="0 0 28 30" fill="none">
+      <line x1="0" y1="3.5"  x2="28" y2="3.5"  stroke="#f4623a" strokeWidth="4.5" strokeLinecap="round"/>
+      <line x1="0" y1="12"   x2="18" y2="12"   stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.42"/>
+      <line x1="0" y1="20.5" x2="28" y2="20.5" stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.62"/>
+      <line x1="0" y1="29"   x2="14" y2="29"   stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.28"/>
+    </svg>
+  )
+}
+
+// ── NavContent ─────────────────────────────────────────────────────
+// variant='sidebar': CSS-responsive (icon at md, full at lg)
+// variant='drawer':  always full (mobile drawer, always 220px)
+function NavContent({
+  variant,
+  pathname,
+  month,
+  onClose,
+}: {
+  variant: 'sidebar' | 'drawer'
+  pathname: string
+  month: string | null
+  onClose?: () => void
+}) {
+  const drawer = variant === 'drawer'
+
   return (
     <>
-      <div className="h-14 md:h-16 flex items-center px-6 shrink-0"
-           style={{ borderBottom: '1px solid var(--warm-border)' }}>
-        <RoomOSLogo />
+      {/* Logo */}
+      <div
+        className="flex items-center shrink-0"
+        style={{
+          minHeight: 65,
+          padding: drawer ? '0 20px' : undefined,
+          borderBottom: '1px solid var(--warm-border)',
+        }}
+      >
+        {drawer ? (
+          <LogoFull />
+        ) : (
+          <>
+            <div className="hidden lg:flex px-5"><LogoFull /></div>
+            <div className="flex lg:hidden w-full justify-center"><LogoMark /></div>
+          </>
+        )}
       </div>
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {NAV_ITEMS.map(item => {
-          const isActive = pathname === item.href
-          const href = month ? `${item.href}?month=${month}` : item.href
-          return (
-            <Link
-              key={item.href}
-              href={href}
-              onClick={onClose}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors"
-              style={isActive ? {
-                background: 'var(--coral)',
-                color: '#fff',
-              } : {
-                color: 'var(--warm-mid)',
-              }}
-              onMouseEnter={e => {
-                if (!isActive) {
-                  (e.currentTarget as HTMLElement).style.background = 'var(--coral-light)'
-                  ;(e.currentTarget as HTMLElement).style.color = 'var(--coral-dark)'
-                }
-              }}
-              onMouseLeave={e => {
-                if (!isActive) {
-                  (e.currentTarget as HTMLElement).style.background = ''
-                  ;(e.currentTarget as HTMLElement).style.color = 'var(--warm-mid)'
-                }
+
+      {/* Nav groups */}
+      <nav className="flex-1 overflow-y-auto py-2">
+        {NAV_GROUPS.map(group => (
+          <div key={group.label}>
+            {/* Group label */}
+            <div
+              className={drawer ? 'block' : 'hidden lg:block'}
+              style={{
+                padding: '12px 20px 5px',
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: 'rgba(120,90,60,0.35)',
               }}
             >
-              <span className="text-base">{item.icon}</span>
-              <span>{item.label}</span>
-            </Link>
-          )
-        })}
+              {group.label}
+            </div>
+
+            {group.items.map(({ href, label, Icon }) => {
+              const isActive = pathname === href
+              const linkHref = month ? `${href}?month=${month}` : href
+              return (
+                <Link
+                  key={href}
+                  href={linkHref}
+                  onClick={onClose}
+                  className={[
+                    'flex items-center transition-colors',
+                    drawer
+                      ? 'gap-2.5 px-5 py-[9px] border-l-[2.5px]'
+                      : 'gap-0 py-[10px] justify-center border-l-0 lg:gap-2.5 lg:px-5 lg:justify-start lg:border-l-[2.5px]',
+                  ].join(' ')}
+                  style={isActive ? {
+                    color: 'var(--coral)',
+                    fontWeight: 500,
+                    background: 'rgba(244,98,58,0.06)',
+                    borderLeftColor: 'var(--coral)',
+                  } : {
+                    color: 'var(--warm-muted)',
+                    borderLeftColor: 'transparent',
+                  }}
+                >
+                  <Icon />
+                  <span
+                    className={`text-[13px] ${drawer ? 'block' : 'hidden lg:block'}`}
+                  >
+                    {label}
+                  </span>
+                </Link>
+              )
+            })}
+          </div>
+        ))}
       </nav>
     </>
   )
 }
 
+// ── Sidebar ────────────────────────────────────────────────────────
 export default function Sidebar({
   isOpen = false,
   onClose,
@@ -87,24 +192,30 @@ export default function Sidebar({
   const searchParams = useSearchParams()
   const month = searchParams.get('month')
 
-  const sidebarStyle = {
+  const style = {
     background: 'var(--cream)',
     borderRight: '1px solid var(--warm-border)',
   }
 
   return (
     <>
-      {/* ── 데스크탑: 정적 사이드바 ── */}
-      <aside className="hidden md:flex w-56 flex-col shrink-0" style={sidebarStyle}>
-        <NavContent pathname={pathname} month={month} />
+      {/* ── 태블릿(md) + 데스크탑(lg): in-flow 사이드바 ── */}
+      <aside
+        className="hidden md:flex md:w-16 lg:w-[220px] flex-col shrink-0"
+        style={style}
+      >
+        <NavContent variant="sidebar" pathname={pathname} month={month} />
       </aside>
 
       {/* ── 모바일: 드로어 ── */}
       {isOpen && (
         <>
-          <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
-          <aside className="fixed inset-y-0 left-0 z-50 w-56 flex flex-col shrink-0" style={sidebarStyle}>
-            <NavContent pathname={pathname} month={month} onClose={onClose} />
+          <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={onClose} />
+          <aside
+            className="fixed inset-y-0 left-0 z-50 w-[220px] flex flex-col md:hidden"
+            style={style}
+          >
+            <NavContent variant="drawer" pathname={pathname} month={month} onClose={onClose} />
           </aside>
         </>
       )}

@@ -52,11 +52,15 @@ export default function Header({
         {/* 햄버거 (모바일 전용) */}
         <button
           onClick={onMenuClick}
-          className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg transition-colors text-lg"
+          className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
           style={{ color: 'var(--warm-mid)' }}
           aria-label="메뉴 열기"
         >
-          ☰
+          <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <line x1="0" y1="1" x2="18" y2="1"/>
+            <line x1="0" y1="7" x2="18" y2="7"/>
+            <line x1="0" y1="13" x2="18" y2="13"/>
+          </svg>
         </button>
 
         {/* 월 이동 */}

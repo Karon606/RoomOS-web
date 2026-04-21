@@ -5,11 +5,11 @@ import LoginButton from './LoginButton'
 function RoomOSLogo() {
   return (
     <div className="flex items-center justify-center gap-3">
-      <svg width="36" height="28" viewBox="0 0 28 22" fill="none">
-        <rect y="0"  width="28" height="4" rx="2" fill="#f4623a" />
-        <rect y="6"  width="28" height="4" rx="2" fill="#7a6a5a" opacity="0.6" />
-        <rect y="12" width="28" height="4" rx="2" fill="#7a6a5a" opacity="0.4" />
-        <rect y="18" width="28" height="4" rx="2" fill="#7a6a5a" opacity="0.25" />
+      <svg width="36" height="38" viewBox="0 0 28 30" fill="none">
+        <line x1="0" y1="3.5"  x2="28" y2="3.5"  stroke="#f4623a" strokeWidth="4.5" strokeLinecap="round"/>
+        <line x1="0" y1="12"   x2="18" y2="12"   stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.42"/>
+        <line x1="0" y1="20.5" x2="28" y2="20.5" stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.62"/>
+        <line x1="0" y1="29"   x2="14" y2="29"   stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.28"/>
       </svg>
       <span className="text-3xl tracking-tight" style={{ color: '#5a4a3a' }}>
         <span style={{ fontWeight: 300 }}>Room</span>
