@@ -357,7 +357,7 @@ model PaymentRecord {
   leaseTerm   LeaseTerm @relation(fields: [leaseTermId], references: [id], onDelete: Cascade)
 
   tenantId String @db.Uuid
-  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   propertyId String   @db.Uuid
   property   Property @relation(fields: [propertyId], references: [id])
