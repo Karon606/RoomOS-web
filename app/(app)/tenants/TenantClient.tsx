@@ -237,6 +237,7 @@ export default function TenantClient({
   const [aiLoading, setAiLoading]         = useState(false)
   const [roomDetailId, setRoomDetailId]   = useState<string | null>(null)
   const [error, setError]               = useState('')
+  const [deleteTarget, setDeleteTarget]   = useState<{ id: string; name: string } | null>(null)
   const [filter, setFilter]             = useState<'active' | 'past'>('active')
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
   const [pastFilter, setPastFilter]     = useState<PastFilter>('all')
@@ -415,10 +416,16 @@ export default function TenantClient({
     })
   }
 
-  const handleDelete = async (tenantId: string, name: string) => {
-    if (!confirm(`${name}님을 완전 삭제하시겠습니까?`)) return
+  const handleDelete = (tenantId: string, name: string) => {
+    setDeleteTarget({ id: tenantId, name })
+  }
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return
+    const { id, name } = deleteTarget
+    setDeleteTarget(null)
     startTransition(async () => {
-      const res = await deleteTenant(tenantId)
+      const res = await deleteTenant(id)
       if (!res.ok) { setError(res.error); return }
       setDetailTenant(null); refresh()
     })
@@ -540,6 +547,36 @@ export default function TenantClient({
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
           <p className="text-red-400 text-sm">{error}</p>
+        </div>
+      )}
+
+      {/* 삭제 확인 모달 */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
+          <div className="bg-[var(--cream)] rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">⚠️</span>
+              <div>
+                <p className="font-semibold text-[var(--warm-dark)]">{deleteTarget.name}님을 완전 삭제하시겠습니까?</p>
+                <p className="text-sm text-[var(--warm-mid)] mt-1.5 leading-relaxed">
+                  수납 기록, 계약 이력, 연락처 등 모든 데이터가 <span className="text-red-400 font-medium">영구적으로 삭제</span>되며 복구할 수 없습니다.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                취소
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={isPending}
+                className="flex-1 py-2.5 rounded-xl text-sm bg-red-500 hover:bg-red-600 text-white font-medium transition-colors disabled:opacity-50">
+                {isPending ? '삭제 중...' : '영구 삭제'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
