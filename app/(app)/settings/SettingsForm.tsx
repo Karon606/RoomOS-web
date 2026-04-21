@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   updatePropertySettings,
   getRoomTypeOptions, addRoomTypeOption, deleteRoomTypeOption,
   getWindowTypeOptions, addWindowTypeOption, deleteWindowTypeOption,
   getIncomeCategories, addIncomeCategory, deleteIncomeCategory,
-  inviteMember, updateMemberRole, removeMember, getMembers,
+  inviteMember, updateMemberRole, removeMember,
   type MemberWithUser,
 } from './actions'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
@@ -48,6 +49,7 @@ export default function SettingsForm({
   members: MemberWithUser[]
   myRole: Role
 }) {
+  const router = useRouter()
   const [tab, setTab]             = useState<Tab>('basic')
   const [toast, setToast]         = useState('')
   const [isPending, startTransition] = useTransition()
@@ -119,9 +121,8 @@ export default function SettingsForm({
     try {
       await inviteMember(email, inviteRole)
       setInviteEmail('')
-      const updated = await getMembers()
-      setMembers(updated)
       showToast('✅ 멤버가 추가되었습니다.')
+      router.refresh()
     } catch (err: unknown) {
       showToast('❌ ' + (err as Error).message)
     }

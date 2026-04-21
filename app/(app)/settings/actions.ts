@@ -195,7 +195,6 @@ export async function inviteMember(email: string, role: Role) {
     create: { userId: targetUser.id, propertyId, role },
     update: { role },
   })
-  revalidatePath('/settings')
 }
 
 export async function updateMemberRole(userId: string, role: Role) {
@@ -207,7 +206,6 @@ export async function updateMemberRole(userId: string, role: Role) {
     where: { userId_propertyId: { userId, propertyId } },
     data: { role },
   })
-  revalidatePath('/settings')
 }
 
 export async function removeMember(userId: string) {
@@ -218,7 +216,6 @@ export async function removeMember(userId: string) {
   await prisma.userPropertyRole.delete({
     where: { userId_propertyId: { userId, propertyId } },
   })
-  revalidatePath('/settings')
 }
 
 // ── 기본 정보 ──────────────────────────────────────────────────────
