@@ -559,7 +559,7 @@ export default function TenantClient({
               <div>
                 <p className="font-semibold text-[var(--warm-dark)]">{deleteTarget.name}님을 완전 삭제하시겠습니까?</p>
                 <p className="text-sm text-[var(--warm-mid)] mt-1.5 leading-relaxed">
-                  수납 기록, 계약 이력, 연락처 등 모든 데이터가 <span className="text-red-400 font-medium">영구적으로 삭제</span>되며 복구할 수 없습니다.
+                  수납 기록, 계약 이력, 연락처 등 모든 데이터가 <span className="text-red-400 font-medium">영구적으로 삭제</span>되며 복구할 수 없습니다. 거주중이었다면 해당 호실은 공실로 전환됩니다.
                 </p>
               </div>
             </div>

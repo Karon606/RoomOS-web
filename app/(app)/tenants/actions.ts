@@ -541,10 +541,15 @@ export async function deleteTenant(tenantId: string): Promise<{ ok: true } | { o
   try {
     await requireEdit()
 
-    const activeLease = await prisma.leaseTerm.findFirst({
+    // 활성 계약이 있으면 해당 호실을 공실로 전환 후 삭제
+    const activeLeases = await prisma.leaseTerm.findMany({
       where: { tenantId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+      select: { roomId: true },
     })
-    if (activeLease) return { ok: false, error: '거주중인 입주자는 삭제할 수 없습니다. 먼저 퇴실 처리해주세요.' }
+    if (activeLeases.length > 0) {
+      const roomIds = [...new Set(activeLeases.map(l => l.roomId))]
+      await prisma.room.updateMany({ where: { id: { in: roomIds } }, data: { isVacant: true } })
+    }
 
     await prisma.tenant.delete({ where: { id: tenantId } })
     revalidatePath('/tenants')
