@@ -315,7 +315,7 @@ export default function SettingsForm({
           {isOwner && (
             <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
               <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">멤버 초대</h2>
-              <p className="text-xs text-[var(--warm-muted)] mb-4">RoomOS에 가입된 이메일로만 초대할 수 있습니다.</p>
+              <p className="text-xs text-[var(--warm-muted)] mb-4">초대할 멤버가 먼저 <a href="/login" className="underline">RoomOS에 Google로 로그인</a>한 후 이메일을 입력해주세요.</p>
               <div className="space-y-3">
                 <input
                   type="email"

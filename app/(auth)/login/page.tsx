@@ -42,8 +42,8 @@ export default async function LoginPage({
         <div className="rounded-2xl p-8 space-y-6"
              style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           <div>
-            <h2 className="text-lg font-semibold" style={{ color: 'var(--warm-dark)' }}>로그인</h2>
-            <p className="text-xs mt-1" style={{ color: 'var(--warm-muted)' }}>구글 계정으로 시작하세요</p>
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--warm-dark)' }}>로그인 / 회원가입</h2>
+            <p className="text-xs mt-1" style={{ color: 'var(--warm-muted)' }}>구글 계정으로 로그인하면 자동으로 가입됩니다</p>
           </div>
 
           {error && (
