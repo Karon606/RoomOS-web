@@ -21,6 +21,9 @@ function IcoFinance() {
 function IcoChart() {
   return <svg {...ico}><path d="M2 12l3-4 3 2 3-5 3 2"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
 }
+function IcoWallet() {
+  return <svg {...ico}><rect x="1" y="4" width="14" height="10" rx="1.5"/><path d="M11 9h2"/><circle cx="11.5" cy="9" r="0.5" fill="currentColor"/></svg>
+}
 function IcoSettings() {
   return <svg {...ico}><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M3.2 12.8l1.4-1.4M11.4 4.6l1.4-1.4"/></svg>
 }
@@ -36,10 +39,11 @@ const NAV_GROUPS = [
     ],
   },
   {
-    label: '수익',
+    label: '수익/지출',
     items: [
-      { href: '/rooms',       label: '수납 관리',    Icon: IcoFinance },
-      { href: '/stats',        label: '통계·리포트',  Icon: IcoChart },
+      { href: '/rooms',   label: '수납 관리',    Icon: IcoFinance },
+      { href: '/finance', label: '지출/기타수익', Icon: IcoWallet  },
+      { href: '/stats',   label: '통계·리포트',  Icon: IcoChart   },
     ],
   },
   {
