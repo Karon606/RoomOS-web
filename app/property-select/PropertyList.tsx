@@ -46,9 +46,12 @@ export default function PropertyList({ properties }: { properties: Property[] })
   const handleSelect = (propertyId: string) => {
     setSelectingId(propertyId)
     startTransition(async () => {
-      const formData = new FormData()
-      formData.set('propertyId', propertyId)
-      await selectProperty(formData)
+      const result = await selectProperty(propertyId)
+      if (result.ok) {
+        router.push('/dashboard')
+      } else {
+        setSelectingId(null)
+      }
     })
   }
 

@@ -34,29 +34,33 @@ export async function getMyProperties() {
   }))
 }
 
-export async function selectProperty(formData: FormData) {
-  const propertyId = formData.get('propertyId') as string
-  const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) redirect('/login')
-  const user = session.user
+export async function selectProperty(propertyId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const supabase = await createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) redirect('/login')
+    const user = session.user
 
-  const hasAccess = await prisma.userPropertyRole.findFirst({
-    where: { userId: user.id, propertyId },
-  })
+    const hasAccess = await prisma.userPropertyRole.findFirst({
+      where: { userId: user.id, propertyId },
+    })
+    if (!hasAccess) return { ok: false, error: '접근 권한이 없습니다.' }
 
-  if (!hasAccess) throw new Error('접근 권한이 없습니다.')
+    const cookieStore = await cookies()
+    cookieStore.set('selected_property_id', propertyId, {
+      httpOnly: true,
+      secure:   process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path:     '/',
+      maxAge:   60 * 60 * 24 * 7,
+    })
 
-  const cookieStore = await cookies()
-  cookieStore.set('selected_property_id', propertyId, {
-    httpOnly: true,
-    secure:   process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path:     '/',
-    maxAge:   60 * 60 * 24 * 7,
-  })
-
-  redirect('/dashboard')
+    return { ok: true }
+  } catch (err) {
+    const { isRedirectError } = await import('next/dist/client/components/redirect')
+    if (isRedirectError(err)) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 export async function createProperty(name: string): Promise<{ ok: true; propertyId: string } | { ok: false; error: string }> {
