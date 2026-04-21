@@ -1,7 +1,8 @@
 'use client'
 
 import { useTransition, useState } from 'react'
-import { selectProperty, signOut } from './actions'
+import { useRouter } from 'next/navigation'
+import { selectProperty, signOut, createProperty } from './actions'
 
 const ROLE_STYLE: Record<string, { bg: string; color: string }> = {
   OWNER:   { bg: 'rgba(244,98,58,0.12)', color: '#d94d28' },
@@ -21,8 +22,26 @@ type Property = {
 }
 
 export default function PropertyList({ properties }: { properties: Property[] }) {
+  const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [selectingId, setSelectingId] = useState<string | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [createError, setCreateError] = useState('')
+  const [isCreating, setIsCreating] = useState(false)
+
+  const handleCreate = async () => {
+    if (!newName.trim()) return
+    setIsCreating(true)
+    setCreateError('')
+    const result = await createProperty(newName)
+    if (!result.ok) {
+      setCreateError(result.error)
+      setIsCreating(false)
+      return
+    }
+    router.push('/dashboard')
+  }
 
   const handleSelect = (propertyId: string) => {
     setSelectingId(propertyId)
@@ -33,15 +52,59 @@ export default function PropertyList({ properties }: { properties: Property[] })
     })
   }
 
+  const CreateForm = () => (
+    <div className="rounded-2xl p-6 space-y-3"
+         style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <p className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>새 영업장 개설</p>
+      <input
+        autoFocus
+        type="text"
+        value={newName}
+        onChange={e => setNewName(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && handleCreate()}
+        placeholder="영업장 이름 (예: 강남 고시원)"
+        className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+        style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
+      />
+      {createError && <p className="text-xs text-red-500">{createError}</p>}
+      <div className="flex gap-2">
+        <button
+          onClick={() => { setShowCreate(false); setNewName(''); setCreateError('') }}
+          className="flex-1 py-2.5 rounded-xl text-sm"
+          style={{ background: 'var(--canvas)', color: 'var(--warm-muted)', border: '1px solid var(--warm-border)' }}>
+          취소
+        </button>
+        <button
+          onClick={handleCreate}
+          disabled={isCreating || !newName.trim()}
+          className="flex-1 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50"
+          style={{ background: 'var(--coral)', color: 'var(--warm-dark)' }}>
+          {isCreating ? '개설 중...' : '개설하기'}
+        </button>
+      </div>
+    </div>
+  )
+
   if (properties.length === 0) {
     return (
-      <div className="rounded-2xl p-8 text-center space-y-3"
-           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-        <p className="text-4xl">🏗️</p>
-        <p className="font-medium" style={{ color: 'var(--warm-dark)' }}>소속된 영업장이 없습니다</p>
-        <p className="text-sm" style={{ color: 'var(--warm-muted)' }}>
-          영업장 오너로부터 초대를 받거나<br />새 영업장을 직접 개설하세요.
-        </p>
+      <div className="space-y-3">
+        <div className="rounded-2xl p-8 text-center space-y-3"
+             style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <p className="text-4xl">🏗️</p>
+          <p className="font-medium" style={{ color: 'var(--warm-dark)' }}>소속된 영업장이 없습니다</p>
+          <p className="text-sm" style={{ color: 'var(--warm-muted)' }}>
+            영업장 오너로부터 초대를 받거나<br />새 영업장을 직접 개설하세요.
+          </p>
+          {!showCreate && (
+            <button
+              onClick={() => setShowCreate(true)}
+              className="mt-2 px-6 py-2.5 rounded-xl text-sm font-medium"
+              style={{ background: 'var(--coral)', color: 'var(--warm-dark)' }}>
+              + 새 영업장 개설
+            </button>
+          )}
+        </div>
+        {showCreate && <CreateForm />}
       </div>
     )
   }
@@ -102,6 +165,18 @@ export default function PropertyList({ properties }: { properties: Property[] })
           )
         })}
       </ul>
+
+      {showCreate ? (
+        <CreateForm />
+      ) : (
+        <button
+          onClick={() => setShowCreate(true)}
+          disabled={isPending}
+          className="w-full py-3 rounded-2xl text-sm font-medium disabled:opacity-40"
+          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-mid)' }}>
+          + 새 영업장 개설
+        </button>
+      )}
 
       <form action={signOut}>
         <button

@@ -59,6 +59,38 @@ export async function selectProperty(formData: FormData) {
   redirect('/dashboard')
 }
 
+export async function createProperty(name: string): Promise<{ ok: true; propertyId: string } | { ok: false; error: string }> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { ok: false, error: '로그인이 필요합니다.' }
+
+    const trimmed = name.trim()
+    if (!trimmed) return { ok: false, error: '영업장 이름을 입력해주세요.' }
+
+    const property = await prisma.property.create({
+      data: { name: trimmed },
+    })
+
+    await prisma.userPropertyRole.create({
+      data: { userId: user.id, propertyId: property.id, role: 'OWNER' },
+    })
+
+    const cookieStore = await cookies()
+    cookieStore.set('selected_property_id', property.id, {
+      httpOnly: true,
+      secure:   process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path:     '/',
+      maxAge:   60 * 60 * 24 * 7,
+    })
+
+    return { ok: true, propertyId: property.id }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '개설 중 오류가 발생했습니다.' }
+  }
+}
+
 export async function signOut() {
   const supabase = await createClient()
   await supabase.auth.signOut()
