@@ -18,8 +18,8 @@ function IcoTenants() {
 function IcoFinance() {
   return <svg {...ico}><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><circle cx="8" cy="9" r="1.5"/></svg>
 }
-function IcoRoomManage() {
-  return <svg {...ico}><rect x="1" y="1" width="6" height="6" rx="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.2"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="12" y1="9" x2="12" y2="15"/></svg>
+function IcoChart() {
+  return <svg {...ico}><path d="M2 12l3-4 3 2 3-5 3 2"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
 }
 function IcoSettings() {
   return <svg {...ico}><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M3.2 12.8l1.4-1.4M11.4 4.6l1.4-1.4"/></svg>
@@ -30,27 +30,22 @@ const NAV_GROUPS = [
   {
     label: '메인',
     items: [
-      { href: '/dashboard',   label: '홈',           Icon: IcoDashboard },
-      { href: '/rooms',       label: '수납 관리',     Icon: IcoRooms },
-      { href: '/tenants',     label: '입주자 관리',   Icon: IcoTenants },
+      { href: '/dashboard',   label: '대시보드',    Icon: IcoDashboard },
+      { href: '/room-manage', label: '방 관리',      Icon: IcoRooms },
+      { href: '/tenants',     label: '입주자 관리',  Icon: IcoTenants },
     ],
   },
   {
     label: '수익',
     items: [
-      { href: '/finance',     label: '지출/기타수익', Icon: IcoFinance },
-    ],
-  },
-  {
-    label: '관리',
-    items: [
-      { href: '/room-manage', label: '호실 관리',     Icon: IcoRoomManage },
+      { href: '/rooms',       label: '수납 관리',    Icon: IcoFinance },
+      { href: '/finance',     label: '통계·리포트',  Icon: IcoChart },
     ],
   },
   {
     label: '설정',
     items: [
-      { href: '/settings',    label: '설정',          Icon: IcoSettings },
+      { href: '/settings',    label: '환경설정',     Icon: IcoSettings },
     ],
   },
 ]
@@ -85,8 +80,6 @@ function LogoMark() {
 }
 
 // ── NavContent ─────────────────────────────────────────────────────
-// variant='sidebar': CSS-responsive (icon at md, full at lg)
-// variant='drawer':  always full (mobile drawer, always 220px)
 function NavContent({
   variant,
   pathname,

@@ -23,9 +23,13 @@ function daysUntil(date: Date | string): number {
   return Math.round((target.getTime() - today.getTime()) / 86400000)
 }
 
-function formatKoreanDate(date: Date | string): string {
-  const d = new Date(date)
-  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`
+function relativeTime(date: Date): string {
+  const diff = Date.now() - date.getTime()
+  if (diff < 60000) return '방금'
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}분 전`
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}시간 전`
+  if (diff < 2 * 86400000) return '어제'
+  return `${Math.floor(diff / 86400000)}일 전`
 }
 
 // ── 데이터 패칭 ────────────────────────────────────────────────
@@ -64,6 +68,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     activeTenants,
     vacantRoomList,
     wishRoomLeases,
+    roomsWithTenants,
+    recentPaymentsRaw,
+    unpaidLeasesRaw,
   ] = await Promise.all([
     prisma.leaseTerm.findMany({
       where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
@@ -91,7 +98,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       _sum: { amount: true },
       orderBy: { _sum: { amount: 'desc' } },
     }),
-    // 입실예정 알림 (RESERVED + moveInDate)
+    // 입실예정 알림
     prisma.leaseTerm.findMany({
       where: {
         propertyId,
@@ -104,7 +111,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       orderBy: { moveInDate: 'asc' },
     }),
-    // 퇴실예정 알림 (CHECKOUT_PENDING + expectedMoveOut)
+    // 퇴실예정 알림
     prisma.leaseTerm.findMany({
       where: {
         propertyId,
@@ -117,7 +124,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       orderBy: { expectedMoveOut: 'asc' },
     }),
-    // 6개월 트렌드 벌크 조회
+    // 6개월 트렌드
     prisma.paymentRecord.findMany({
       where: { propertyId, targetMonth: { in: last6Months } },
       select: { targetMonth: true, actualAmount: true },
@@ -134,7 +141,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     prisma.leaseTerm.count({ where: { propertyId, status: 'RESERVED' } }),
     prisma.leaseTerm.count({ where: { propertyId, status: 'CHECKOUT_PENDING' } }),
     prisma.leaseTerm.count({ where: { propertyId, status: 'NON_RESIDENT' } }),
-    // 입주자 분포 (성별/국적/직업) — NON_RESIDENT 포함
+    // 입주자 분포
     prisma.tenant.findMany({
       where: {
         propertyId,
@@ -142,12 +149,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       select: { gender: true, nationality: true, job: true },
     }),
-    // 희망 이동 호실 알림용 — 현재 공실 목록
+    // 희망 이동 호실용 공실 목록
     prisma.room.findMany({
       where: { propertyId, isVacant: true },
       select: { roomNo: true },
     }),
-    // 희망 이동 호실이 있는 활성 계약
+    // 희망 이동 호실 계약
     prisma.leaseTerm.findMany({
       where: {
         propertyId,
@@ -159,10 +166,53 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         room:   { select: { roomNo: true } },
       },
     }),
+    // 방 현황 그리드용
+    prisma.room.findMany({
+      where: { propertyId },
+      select: {
+        roomNo: true,
+        isVacant: true,
+        leaseTerms: {
+          where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+          select: { tenant: { select: { name: true } } },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+      orderBy: { roomNo: 'asc' },
+    }),
+    // 최근 수납 내역 (활동 피드용)
+    prisma.paymentRecord.findMany({
+      where: {
+        propertyId,
+        createdAt: { gte: new Date(Date.now() - 30 * 86400000) },
+      },
+      select: {
+        createdAt: true,
+        actualAmount: true,
+        tenant: { select: { name: true } },
+        leaseTerm: { select: { room: { select: { roomNo: true } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 8,
+    }),
+    // 미납 상세 (이달 청구 대상 계약)
+    prisma.leaseTerm.findMany({
+      where: {
+        propertyId,
+        status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] },
+        rentAmount: { gt: 0 },
+      },
+      select: {
+        id: true,
+        rentAmount: true,
+        room: { select: { roomNo: true } },
+        tenant: { select: { name: true } },
+      },
+    }),
   ])
 
   // ── 이달 집계 ────────────────────────────────────────────────
-  // active 계약 기준으로만 수납액 집계 (해지된 계약 제외)
   const activeLeaseIds = new Set(activeLeases.map(l => l.id))
   const paidRevenue    = payments
     .filter(p => activeLeaseIds.has(p.leaseTermId))
@@ -172,11 +222,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const totalExpense = expenses.reduce((s, e) => s + e.amount, 0)
   const totalDeposit = depositAgg._sum.depositAmount ?? 0
 
-  // 완납 판단: 입주자별로 이달 납부 합계 >= 이용료 (rentAmount > 0인 청구 대상만)
   const paymentByLease = payments.reduce((acc, p) => {
     acc[p.leaseTermId] = (acc[p.leaseTermId] ?? 0) + p.actualAmount
     return acc
   }, {} as Record<string, number>)
+
   const billableLeases = activeLeases.filter(l => l.rentAmount > 0)
   const paidCount      = billableLeases.filter(l => (paymentByLease[l.id] ?? 0) >= l.rentAmount).length
   const unpaidCount    = billableLeases.length - paidCount
@@ -187,10 +237,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     percent:  totalExpense > 0 ? Math.round(((c._sum.amount ?? 0) / totalExpense) * 100) : 0,
   }))
 
-  // ── 알림 목록 ────────────────────────────────────────────────
+  // ── 희망 호실 알림 ───────────────────────────────────────────
   const vacantRoomNos = new Set(vacantRoomList.map(r => r.roomNo))
-
-  // 희망 이동 호실이 현재 공실인 경우 알림 생성
   const wishRoomAlerts = wishRoomLeases.flatMap(l => {
     const wished = (l.wishRooms ?? '').split(',').map(s => s.trim()).filter(Boolean)
     return wished
@@ -199,35 +247,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         type:       'wish_room' as const,
         tenantName: l.tenant.name,
         roomNo:     no,
-        dateStr:    `${l.room.roomNo}호 거주 중`,
         days:       0,
       }))
   })
 
-  const alerts = [
-    ...moveInLeases.map(l => ({
-      type:       'move_in' as const,
-      tenantName: l.tenant.name,
-      roomNo:     l.room.roomNo,
-      dateStr:    formatKoreanDate(l.moveInDate!),
-      days:       daysUntil(l.moveInDate!),
-    })),
-    ...moveOutLeases.map(l => ({
-      type:       'move_out' as const,
-      tenantName: l.tenant.name,
-      roomNo:     l.room.roomNo,
-      dateStr:    formatKoreanDate(l.expectedMoveOut!),
-      days:       daysUntil(l.expectedMoveOut!),
-    })),
-    ...wishRoomAlerts,
-  ].sort((a, b) => a.days - b.days)
-
-  // ── 6개월 트렌드 인메모리 계산 ──────────────────────────────
+  // ── 6개월 트렌드 ─────────────────────────────────────────────
   const trend = last6Months.map(m => {
     const [y, mo] = m.split('-').map(Number)
     const mStart  = new Date(y, mo - 1, 1)
     const mEnd    = new Date(y, mo, 0)
-
     const revenue =
       trendPayments.filter(p => p.targetMonth === m).reduce((s, p) => s + p.actualAmount, 0) +
       trendIncomes
@@ -237,11 +265,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       trendExpenses
         .filter(e => new Date(e.date) >= mStart && new Date(e.date) <= mEnd)
         .reduce((s, e) => s + e.amount, 0)
-
     return { month: m, revenue, expense, profit: revenue - expense }
   })
 
-  // ── 입주자 분포 계산 ─────────────────────────────────────────
+  // ── 입주자 분포 ──────────────────────────────────────────────
   function toDistribution(map: Record<string, number>) {
     const total = Object.values(map).reduce((s, v) => s + v, 0)
     return Object.entries(map)
@@ -266,6 +293,68 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     jobMap[job] = (jobMap[job] ?? 0) + 1
   })
 
+  // ── 방 현황 그리드 ───────────────────────────────────────────
+  const roomsData = roomsWithTenants.map(r => ({
+    roomNo:     r.roomNo,
+    isVacant:   r.isVacant,
+    tenantName: r.leaseTerms[0]?.tenant.name ?? null,
+  }))
+
+  // ── 미납 상세 ────────────────────────────────────────────────
+  const unpaidAmount = unpaidLeasesRaw.reduce((sum, l) => {
+    const paid = paymentByLease[l.id] ?? 0
+    return sum + Math.max(0, l.rentAmount - paid)
+  }, 0)
+
+  const unpaidLeases = unpaidLeasesRaw
+    .filter(l => (paymentByLease[l.id] ?? 0) < l.rentAmount)
+    .map(l => ({
+      roomNo:     l.room.roomNo,
+      tenantName: l.tenant.name,
+      desc:       `${targetMonth.slice(5)}월 미납`,
+    }))
+
+  // ── 활동 피드 ────────────────────────────────────────────────
+  const activityItems: { text: string; timeLabel: string; dotColor: string }[] = []
+
+  // 알림 (입실/퇴실 예정)
+  const alerts = [
+    ...moveInLeases.map(l => ({
+      type: 'move_in' as const,
+      tenantName: l.tenant.name,
+      roomNo: l.room.roomNo,
+      days: daysUntil(l.moveInDate!),
+    })),
+    ...moveOutLeases.map(l => ({
+      type: 'move_out' as const,
+      tenantName: l.tenant.name,
+      roomNo: l.room.roomNo,
+      days: daysUntil(l.expectedMoveOut!),
+    })),
+    ...wishRoomAlerts,
+  ].sort((a, b) => a.days - b.days)
+
+  for (const a of alerts.slice(0, 3)) {
+    const text = a.type === 'wish_room'
+      ? `${a.tenantName}님 희망 호실 ${a.roomNo}호 공실`
+      : a.type === 'move_in'
+      ? `${a.tenantName}님 ${a.roomNo}호 입실 예정`
+      : `${a.tenantName}님 ${a.roomNo}호 퇴실 예정`
+    const dotColor = a.type === 'wish_room' ? '#a855f7' : a.type === 'move_in' ? '#3b82f6' : '#eab308'
+    const timeLabel = a.days < 0 ? `${Math.abs(a.days)}일 경과` : a.days === 0 ? '오늘' : `${a.days}일 후`
+    activityItems.push({ text, timeLabel, dotColor })
+  }
+
+  // 최근 수납
+  for (const p of recentPaymentsRaw) {
+    if (activityItems.length >= 6) break
+    activityItems.push({
+      text:      `${p.tenant.name}님 ${p.leaseTerm.room.roomNo}호 수납`,
+      timeLabel: relativeTime(p.createdAt),
+      dotColor:  '#22c55e',
+    })
+  }
+
   const dashboardData: DashboardData = {
     totalRevenue,
     paidRevenue,
@@ -274,6 +363,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     totalDeposit,
     paidCount,
     unpaidCount,
+    unpaidAmount,
     categoryBreakdown,
     trend,
     totalRooms,
@@ -284,9 +374,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     genderDist:      toDistribution(genderMap),
     nationalityDist: toDistribution(nationalityMap),
     jobDist:         toDistribution(jobMap),
+    rooms:           roomsData,
+    activity:        activityItems,
+    unpaidLeases,
   }
 
-  return { dashboardData, alerts }
+  return dashboardData
 }
 
 // ── 페이지 ────────────────────────────────────────────────────
@@ -310,87 +403,20 @@ export default async function DashboardPage({
     select: { name: true },
   })
 
-  const { dashboardData, alerts } = await getDashboardData(propertyId, targetMonth)
+  const dashboardData = await getDashboardData(propertyId, targetMonth)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3.5">
 
       {/* ── 헤더 ──────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-bold text-[var(--warm-dark)]">{property?.name}</h1>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--warm-dark)' }}>{property?.name}</h1>
         <Suspense fallback={null}>
           <DataButtons />
         </Suspense>
       </div>
 
-      {/* ── 알림 (탭보다 위) ───────────────────────────────────── */}
-      {alerts.length > 0 && (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-[var(--warm-border)] flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
-            <p className="text-xs font-semibold text-[var(--warm-mid)] uppercase tracking-wider">
-              알림 {alerts.length}건
-            </p>
-          </div>
-          <div className="divide-y divide-gray-800/60">
-            {alerts.map((a, i) => {
-              const isWishRoom = a.type === 'wish_room'
-              const isMoveIn   = a.type === 'move_in'
-              const isOverdue  = a.days < 0
-              const isToday    = a.days === 0
-              const isUrgent   = a.days > 0 && a.days <= 7
-
-              const typeColor = isWishRoom ? 'text-purple-400'
-                : isMoveIn   ? 'text-blue-400'
-                : 'text-red-400'
-              const typeBg = isWishRoom ? 'bg-purple-500/10'
-                : isMoveIn  ? 'bg-blue-500/10'
-                : 'bg-red-500/10'
-              const typeLabel = isWishRoom ? '희망호실 공실'
-                : isMoveIn   ? '입실 예정'
-                : '퇴실 예정'
-
-              const dayLabel = isWishRoom ? '' : isOverdue ? `${Math.abs(a.days)}일 초과`
-                : isToday    ? '오늘'
-                : `${a.days}일 후`
-              const dayColor = isOverdue  ? 'text-red-400 font-bold'
-                : isToday    ? 'text-orange-400 font-bold'
-                : isUrgent   ? 'text-orange-300 font-semibold'
-                : 'text-[var(--warm-muted)]'
-
-              return (
-                <div key={i} className="flex items-center gap-3 px-4 py-3">
-                  {/* 유형 뱃지 */}
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-md shrink-0 ${typeBg} ${typeColor}`}>
-                    {typeLabel}
-                  </span>
-
-                  {/* 호실 + 이름 */}
-                  <span className="text-sm text-[var(--warm-dark)] font-medium shrink-0">
-                    {isWishRoom
-                      ? <>{a.tenantName}님 → {a.roomNo}호</>
-                      : <>{a.roomNo}호&nbsp;{a.tenantName}</>
-                    }
-                  </span>
-
-                  {/* 구분선 */}
-                  <span className="text-gray-700 shrink-0">|</span>
-
-                  {/* 날짜/설명 */}
-                  <span className="text-sm text-[var(--warm-mid)] shrink-0">{a.dateStr}</span>
-
-                  {/* D-day */}
-                  {dayLabel && (
-                    <span className={`ml-auto text-sm shrink-0 ${dayColor}`}>{dayLabel}</span>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── 탭 + 내용 (클라이언트) ─────────────────────────────── */}
+      {/* ── 대시보드 ──────────────────────────────────────────── */}
       <DashboardClient data={dashboardData} targetMonth={targetMonth} />
 
     </div>

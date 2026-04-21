@@ -8,12 +8,12 @@ const ico = { viewBox: '0 0 22 22', fill: 'none', stroke: 'currentColor', stroke
 const NAV_ITEMS = [
   {
     href: '/dashboard',
-    label: '홈',
+    label: '대시보드',
     Icon: () => <svg {...ico}><rect x="2" y="2" width="8" height="8" rx="1.5"/><rect x="12" y="2" width="8" height="8" rx="1.5"/><rect x="2" y="12" width="8" height="8" rx="1.5"/><rect x="12" y="12" width="8" height="8" rx="1.5"/></svg>,
   },
   {
-    href: '/rooms',
-    label: '수납',
+    href: '/room-manage',
+    label: '방 관리',
     Icon: () => <svg {...ico}><rect x="2" y="2" width="18" height="18" rx="2.5"/><line x1="2" y1="9" x2="20" y2="9"/><line x1="9" y1="9" x2="9" y2="20"/></svg>,
   },
   {
@@ -22,14 +22,14 @@ const NAV_ITEMS = [
     Icon: () => <svg {...ico}><circle cx="11" cy="7" r="4"/><path d="M3 20c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>,
   },
   {
-    href: '/finance',
-    label: '수익',
+    href: '/rooms',
+    label: '수납',
     Icon: () => <svg {...ico}><rect x="3" y="6" width="16" height="12" rx="2"/><path d="M7 6V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1"/><circle cx="11" cy="12" r="2"/></svg>,
   },
   {
-    href: '/room-manage',
-    label: '호실',
-    Icon: () => <svg {...ico}><rect x="2" y="2" width="7" height="7" rx="1.2"/><rect x="13" y="2" width="7" height="7" rx="1.2"/><rect x="2" y="13" width="7" height="7" rx="1.2"/><line x1="13" y1="16.5" x2="19" y2="16.5"/><line x1="16" y1="13" x2="16" y2="19"/></svg>,
+    href: '/settings',
+    label: '설정',
+    Icon: () => <svg {...ico}><circle cx="11" cy="11" r="3"/><path d="M11 2v2M11 18v2M2 11h2M18 11h2M4.9 4.9l1.4 1.4M15.7 15.7l1.4 1.4M4.9 17.1l1.4-1.4M15.7 6.3l1.4-1.4"/></svg>,
   },
 ]
 
