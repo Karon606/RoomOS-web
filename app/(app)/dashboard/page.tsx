@@ -2,7 +2,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import { Suspense } from 'react'
-import ExportButton from '@/components/ExportButton'
+import DataButtons from '@/components/DataButtons'
 import DashboardClient, { type DashboardData } from './DashboardClient'
 
 // ── 헬퍼 ──────────────────────────────────────────────────────
@@ -319,7 +319,7 @@ export default async function DashboardPage({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl font-bold text-[var(--warm-dark)]">{property?.name}</h1>
         <Suspense fallback={null}>
-          <ExportButton />
+          <DataButtons />
         </Suspense>
       </div>
 
