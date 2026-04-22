@@ -77,6 +77,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     roomsWithTenants,
     recentPaymentsRaw,
     unpaidLeasesRaw,
+    tenantRequestsRaw,
   ] = await Promise.all([
     prisma.leaseTerm.findMany({
       where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
@@ -218,7 +219,18 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       select: {
         id: true,
         rentAmount: true,
+        dueDay: true,
         room: { select: { roomNo: true } },
+        tenant: { select: { id: true, name: true } },
+      },
+    }),
+    // 미해결 입주자 요청사항
+    prisma.tenantRequest.findMany({
+      where: { propertyId, resolvedAt: null },
+      orderBy: { requestDate: 'asc' },
+      select: {
+        id: true, content: true, requestDate: true, targetDate: true,
+        tenantId: true,
         tenant: { select: { name: true } },
       },
     }),
@@ -233,6 +245,22 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const totalRevenue = paidRevenue + extraRevenue
   const totalExpense = expenses.reduce((s, e) => s + e.amount, 0)
   const totalDeposit = depositAgg._sum.depositAmount ?? 0
+
+  function calcDaysOverdue(dueDay: string | null): number | null {
+    if (!dueDay) return null
+    const [y, m] = targetMonth.split('-').map(Number)
+    let dayNum: number
+    if (dueDay.includes('말')) {
+      dayNum = new Date(y, m, 0).getDate()
+    } else {
+      dayNum = parseInt(dueDay, 10)
+      if (isNaN(dayNum) || dayNum < 1) return null
+    }
+    const dueDate = new Date(y, m - 1, dayNum)
+    dueDate.setHours(0, 0, 0, 0)
+    const todayCopy = new Date(); todayCopy.setHours(0, 0, 0, 0)
+    return Math.round((todayCopy.getTime() - dueDate.getTime()) / 86400000)
+  }
 
   const paymentByLease = payments.reduce((acc, p) => {
     acc[p.leaseTermId] = (acc[p.leaseTermId] ?? 0) + p.actualAmount
@@ -317,7 +345,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     tenantStatus: r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.status ?? null,
   }))
 
-  // ── 미납 상세 ────────────────────────────────────────────────
+  // ── 미수납 상세 ──────────────────────────────────────────────
   const unpaidAmount = unpaidLeasesRaw.reduce((sum, l) => {
     const paid = paymentByLease[l.id] ?? 0
     return sum + Math.max(0, l.rentAmount - paid)
@@ -326,12 +354,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const unpaidLeases = unpaidLeasesRaw
     .filter(l => (paymentByLease[l.id] ?? 0) < l.rentAmount)
     .map(l => ({
-      roomNo:     l.room.roomNo,
-      tenantName: l.tenant.name,
-      desc:       `${targetMonth.slice(5)}월 미납`,
+      roomNo:       l.room.roomNo,
+      tenantName:   l.tenant.name,
+      tenantId:     l.tenant.id,
+      leaseId:      l.id,
+      daysOverdue:  calcDaysOverdue(l.dueDay),
+      unpaidAmount: Math.max(0, l.rentAmount - (paymentByLease[l.id] ?? 0)),
     }))
 
-  // ── 알림 (별도) ──────────────────────────────────────────────
+  // ── 알림 ────────────────────────────────────────────────────
   const alertItems: DashboardData['alerts'] = []
 
   for (const l of moveInLeases) {
@@ -363,9 +394,22 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     })
   }
 
-  // ── 최근 활동 ────────────────────────────────────────────────
+  for (const r of tenantRequestsRaw) {
+    const daysLeft = r.targetDate
+      ? Math.round((new Date(r.targetDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+      : null
+    alertItems.push({
+      text:      `${r.tenant.name}님 요청: ${r.content.slice(0, 28)}${r.content.length > 28 ? '…' : ''}`,
+      link:      `/tenants?tenantId=${r.tenantId}&tab=requests`,
+      dotColor:  '#f4623a',
+      timeLabel: daysLeft != null ? (daysLeft <= 0 ? '처리 필요' : `D-${daysLeft}`) : '미처리',
+      tenantId:  r.tenantId,
+    })
+  }
+
+  // ── 최근 납입 완료 ────────────────────────────────────────────
   const activityItems: DashboardData['activity'] = recentPaymentsRaw.map(p => ({
-    text:      `${p.tenant.name}님 ${p.leaseTerm.room.roomNo}호 수납`,
+    text:      `${p.tenant.name}님 ${p.leaseTerm.room.roomNo}호 납입 완료`,
     timeLabel: relativeTime(p.createdAt),
     dotColor:  '#22c55e',
     link:      `/rooms?month=${p.targetMonth}`,
@@ -374,6 +418,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const dashboardData: DashboardData = {
     totalRevenue,
     paidRevenue,
+    extraRevenue,
     totalExpense,
     netProfit: totalRevenue - totalExpense,
     totalDeposit,

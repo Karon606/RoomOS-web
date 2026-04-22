@@ -10,6 +10,7 @@ import { analyzeDashboardWithGemini, getTrendData, type TrendRange, type TrendPo
 export type DashboardData = {
   totalRevenue:      number
   paidRevenue:       number
+  extraRevenue:      number
   totalExpense:      number
   netProfit:         number
   totalDeposit:      number
@@ -27,9 +28,9 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number }[]
-  alerts:            { text: string; link: string; dotColor: string; timeLabel: string }[]
+  alerts:            { text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string }[]
   activity:          { text: string; timeLabel: string; dotColor: string; link: string }[]
-  unpaidLeases:      { roomNo: string; tenantName: string; desc: string }[]
+  unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; unpaidAmount: number }[]
 }
 
 // ── 레이블 ──────────────────────────────────────────────────────
@@ -55,7 +56,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 }
 const FALLBACK_COLORS = ['#f4623a','#f97316','#ef4444','#a855f7','#22c55e','#a89888','#3b82f6','#eab308']
 const GENDER_LABEL: Record<string, string> = { MALE: '남성', FEMALE: '여성', OTHER: '기타', UNKNOWN: '미기재' }
-const GENDER_COLOR: Record<string, string> = { MALE: '#3b82f6', FEMALE: '#ec4899', OTHER: '#a855f7', UNKNOWN: '#a89888' }
+const GENDER_COLOR: Record<string, string>  = { MALE: '#3b82f6', FEMALE: '#ec4899', OTHER: '#a855f7', UNKNOWN: '#a89888' }
 const DIST_COLORS = ['#f4623a', '#22c55e', '#f97316', '#a855f7', '#eab308', '#a89888']
 const TREND_RANGES: { key: TrendRange; label: string }[] = [
   { key: 'daily',     label: '일간' },
@@ -66,69 +67,45 @@ const TREND_RANGES: { key: TrendRange; label: string }[] = [
   { key: 'annual',    label: '연간' },
   { key: 'all',       label: '전체' },
 ]
-const COLLAPSED_LIMIT = 4
+const UNPAID_LIMIT = 5
 
-// ── 피드 카드 ───────────────────────────────────────────────────
+// ── 미수납 days 표시 ────────────────────────────────────────────
 
-function FeedCard({
-  title, headerRight, items, emptyText, expanded, onToggle,
-}: {
-  title: string
-  headerRight?: React.ReactNode
-  items: { text: string; link: string; dotColor: string; timeLabel: string }[]
-  emptyText: string
-  expanded: boolean
-  onToggle: () => void
-}) {
-  const hasMore = items.length > COLLAPSED_LIMIT
-  const visibleItems = expanded ? items : items.slice(0, COLLAPSED_LIMIT)
+function daysLabel(daysOverdue: number | null): { text: string; color: string } {
+  if (daysOverdue == null) return { text: '—', color: 'var(--warm-muted)' }
+  if (daysOverdue > 0)  return { text: `${daysOverdue}일 초과`, color: '#ef4444' }
+  if (daysOverdue === 0) return { text: '오늘 납부일', color: '#f97316' }
+  return { text: `D${daysOverdue}`, color: '#eab308' }  // e.g. D-5
+}
 
+// ── 알림 스트립 (항상 표시) ──────────────────────────────────────
+
+function AlertsStrip({ alerts }: { alerts: DashboardData['alerts'] }) {
+  if (alerts.length === 0) return null
   return (
-    <div
-      className="rounded-xl flex flex-col flex-1"
-      style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', minHeight: 160 }}
-    >
-      <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
-        <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>{title}</h3>
-        {headerRight}
+    <div className="rounded-xl overflow-hidden" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <div className="flex items-center justify-between px-4 pt-3 pb-1.5">
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#5a4a3a' }}>
+          알림
+        </span>
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>
+          {alerts.length}건
+        </span>
       </div>
-      <div className="flex-1 overflow-y-auto px-5">
-        {items.length === 0 ? (
-          <p className="text-sm text-center py-6" style={{ color: 'var(--warm-muted)' }}>{emptyText}</p>
-        ) : (
-          visibleItems.map((item, i) => (
-            <Link
-              key={i}
-              href={item.link}
-              className="flex items-start gap-2.5 py-[10px] hover:opacity-70 transition-opacity"
-              style={{ borderBottom: i < visibleItems.length - 1 ? '1px solid var(--warm-border)' : 'none' }}
-            >
-              <span
-                className="w-[7px] h-[7px] rounded-full shrink-0"
-                style={{ background: item.dotColor, marginTop: 4 }}
-              />
-              <span className="flex-1 leading-snug" style={{ fontSize: 12, color: 'var(--warm-mid)' }}>
-                {item.text}
-              </span>
-              <span className="whitespace-nowrap shrink-0" style={{ fontSize: 10, color: 'var(--warm-muted)', fontFamily: 'monospace' }}>
-                {item.timeLabel}
-              </span>
-            </Link>
-          ))
-        )}
+      <div className="divide-y" style={{ borderColor: 'var(--warm-border)' }}>
+        {alerts.map((item, i) => (
+          <Link
+            key={i}
+            href={item.link}
+            className="flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
+          >
+            <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ background: item.dotColor }} />
+            <span className="flex-1 text-xs leading-snug" style={{ color: 'var(--warm-mid)' }}>{item.text}</span>
+            <span className="text-[10px] shrink-0 font-mono" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</span>
+            <span style={{ color: 'var(--warm-muted)', fontSize: 11 }}>›</span>
+          </Link>
+        ))}
       </div>
-      {hasMore && (
-        <button
-          onClick={onToggle}
-          className="shrink-0 w-full py-2.5 flex items-center justify-center gap-1 transition-opacity hover:opacity-70"
-          style={{ fontSize: 11, color: 'var(--warm-muted)', borderTop: '1px solid var(--warm-border)' }}
-        >
-          {expanded
-            ? <>접기 <span style={{ fontSize: 10 }}>↑</span></>
-            : <>더보기 <span style={{ fontSize: 10, color: 'var(--coral)' }}>+{items.length - COLLAPSED_LIMIT}</span> <span style={{ fontSize: 10 }}>↓</span></>
-          }
-        </button>
-      )}
     </div>
   )
 }
@@ -170,7 +147,7 @@ function DonutChart({
   )
 }
 
-// ── 공용 카드/행 컴포넌트 ───────────────────────────────────────
+// ── 공용 컴포넌트 ───────────────────────────────────────────────
 
 function StatCard({ label, value, sub, colorStyle }: {
   label: string; value: React.ReactNode; sub: string; colorStyle?: React.CSSProperties
@@ -250,13 +227,27 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="이달 수입"   value={<MoneyDisplay amount={data.totalRevenue} />} sub="납부액+기타수익"  colorStyle={{ color: 'var(--coral)' }} />
-        <StatCard label="이달 지출"   value={<MoneyDisplay amount={data.totalExpense} />} sub="이달 지출 합계"  colorStyle={{ color: '#ef4444' }} />
-        <StatCard label="순수익"      value={<MoneyDisplay amount={Math.abs(data.netProfit)} prefix={data.netProfit < 0 ? '-' : ''} />} sub="수입 − 지출" colorStyle={{ color: data.netProfit >= 0 ? '#22c55e' : '#ef4444' }} />
-        <StatCard label="보유 보증금" value={<MoneyDisplay amount={data.totalDeposit} />} sub="현재 계약 기준"  colorStyle={{ color: '#a855f7' }} />
+      {/* ── 세부 재무 요약 ── */}
+      <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--warm-border)' }}>
+        <div className="grid grid-cols-5 divide-x" style={{ borderColor: 'var(--warm-border)', background: 'var(--cream)' }}>
+          {[
+            { label: '수납액',   value: data.paidRevenue,  color: 'var(--coral)' },
+            { label: '기타수익', value: data.extraRevenue, color: '#f97316' },
+            { label: '지출',     value: data.totalExpense, color: '#ef4444' },
+            { label: '순수익',   value: data.netProfit,    color: data.netProfit >= 0 ? '#22c55e' : '#ef4444' },
+            { label: '보유 보증금', value: data.totalDeposit, color: '#a855f7' },
+          ].map((item, i) => (
+            <div key={i} className="px-4 py-3 text-center" style={{ borderColor: 'var(--warm-border)' }}>
+              <p className="text-[10.5px] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>{item.label}</p>
+              <p className="text-sm font-bold" style={{ color: item.color }}>
+                <MoneyDisplay amount={Math.abs(item.value)} prefix={item.value < 0 ? '-' : ''} />
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
 
+      {/* ── 추이 ── */}
       <div className="rounded-2xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>추이</h3>
@@ -575,10 +566,9 @@ const TABS: { key: Tab; label: string }[] = [
 ]
 
 export default function DashboardClient({ data, targetMonth }: { data: DashboardData; targetMonth: string }) {
-  const [tab, setTab]                     = useState<Tab>('overview')
-  const [selectedRoom, setSelectedRoom]   = useState<DashboardData['rooms'][number] | null>(null)
-  const [alertsExpanded, setAlertsExpanded]     = useState(false)
-  const [activityExpanded, setActivityExpanded] = useState(false)
+  const [tab, setTab]                             = useState<Tab>('overview')
+  const [selectedRoom, setSelectedRoom]           = useState<DashboardData['rooms'][number] | null>(null)
+  const [unpaidExpanded, setUnpaidExpanded]       = useState(false)
 
   const prev = data.trend[data.trend.length - 2]
   const cur  = data.trend[data.trend.length - 1]
@@ -588,10 +578,20 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
 
   const maxRevenue = Math.max(...data.trend.map(t => t.revenue), 1)
 
+  // 미수납 정렬: 체납 오래된 순 → 납부일 임박 순
+  const sortedUnpaid = [...data.unpaidLeases].sort((a, b) => {
+    const ao = a.daysOverdue ?? -999
+    const bo = b.daysOverdue ?? -999
+    if (ao > 0 && bo <= 0) return -1
+    if (ao <= 0 && bo > 0) return  1
+    return bo - ao
+  })
+  const visibleUnpaid = unpaidExpanded ? sortedUnpaid : sortedUnpaid.slice(0, UNPAID_LIMIT)
+
   return (
     <div className="space-y-3.5">
 
-      {/* ── KPI 카드 (항상 표시) ────────────────────────────────── */}
+      {/* ── KPI 카드 ────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
 
         {/* 이달 수입 */}
@@ -654,192 +654,200 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
         </div>
       </div>
 
-      {/* ── 탭 바 ───────────────────────────────────────────────── */}
-      <div className="flex gap-2 sticky top-0 z-10 pb-1 pt-0.5" style={{ background: 'var(--canvas)' }}>
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className="px-4 py-2 text-sm font-medium rounded-xl transition-colors"
-            style={tab === t.key
-              ? { background: 'var(--coral)', color: '#fff' }
-              : { background: 'var(--cream)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* ── 알림 스트립 (항상 표시) ─────────────────────────────── */}
+      <AlertsStrip alerts={data.alerts} />
 
-      {/* ── 현황 탭 ────────────────────────────────────────────── */}
-      {tab === 'overview' && (
-        <div className="space-y-3.5">
+      {/* ── 탭 섹션 ─────────────────────────────────────────────── */}
+      <div>
+        {/* 탭 바 (밑줄 스타일) */}
+        <div className="flex border-b-2 sticky top-0 z-10 -mx-1 px-1 pb-0" style={{ borderColor: 'var(--warm-border)', background: 'var(--canvas)' }}>
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className="px-5 py-2.5 text-sm font-medium transition-colors relative whitespace-nowrap"
+              style={tab === t.key
+                ? { color: 'var(--coral)', borderBottom: '2px solid var(--coral)', marginBottom: '-2px' }
+                : { color: 'var(--warm-muted)' }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
 
-          {/* 방 현황 + 알림/최근활동 */}
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-3.5 lg:items-stretch">
+        {/* 탭 콘텐츠 */}
+        <div className="pt-3.5 space-y-3.5">
 
-            <div className="rounded-xl p-5 flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-              <div className="flex items-center justify-between mb-3.5 shrink-0">
-                <p style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>
-                  방 현황
-                  <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 6 }}>
-                    {data.totalRooms}개 호실
-                  </span>
-                </p>
-                <Link href="/room-manage" style={{ fontSize: 11, color: 'var(--coral)' }}>전체 보기 →</Link>
+          {/* ── 현황 탭 ── */}
+          {tab === 'overview' && (
+            <>
+              {/* 방 현황 + 미수납 현황 */}
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3.5 lg:items-start">
+
+                {/* 방 현황 그리드 */}
+                <div className="rounded-xl p-5 flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+                  <div className="flex items-center justify-between mb-3.5 shrink-0">
+                    <p style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>
+                      방 현황
+                      <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 6 }}>{data.totalRooms}개 호실</span>
+                    </p>
+                    <Link href="/room-manage" style={{ fontSize: 11, color: 'var(--coral)' }}>전체 보기 →</Link>
+                  </div>
+                  {data.rooms.length === 0 ? (
+                    <p className="text-center py-8 text-sm" style={{ color: 'var(--warm-muted)' }}>등록된 호실 없음</p>
+                  ) : (
+                    <>
+                      <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+                        {data.rooms.map(r => {
+                          const rentMan = r.baseRent > 0 ? `${Math.round(r.baseRent / 10000)}만` : null
+                          return (
+                            <div
+                              key={r.roomNo}
+                              onClick={() => setSelectedRoom(r)}
+                              className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[4px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
+                              style={r.isVacant
+                                ? { background: 'rgba(200,160,120,0.12)', color: 'var(--warm-muted)' }
+                                : { background: 'rgba(244,98,58,0.09)', color: 'var(--coral)' }}
+                            >
+                              <span className="truncate w-full text-center font-bold" style={{ fontSize: 12 }}>{r.roomNo}호</span>
+                              <span style={{ fontSize: 10, fontWeight: 500 }}>{r.isVacant ? '공실' : '입실'}</span>
+                              {rentMan && <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div className="flex gap-3.5 mt-3 shrink-0">
+                        <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
+                          <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(244,98,58,0.25)' }} />입실
+                        </div>
+                        <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
+                          <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(200,160,120,0.25)' }} />공실
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* 이달 미수납 */}
+                <div className="rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+                  <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b shrink-0" style={{ borderColor: 'var(--warm-border)' }}>
+                    <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>이달 미수납</h3>
+                    {data.unpaidCount > 0 && (
+                      <span className="rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>
+                        {data.unpaidCount}건
+                      </span>
+                    )}
+                  </div>
+
+                  {sortedUnpaid.length === 0 ? (
+                    <p className="text-sm text-center py-8" style={{ color: 'var(--warm-muted)' }}>이달 수납 완료 🎉</p>
+                  ) : (
+                    <>
+                      <div className="divide-y" style={{ borderColor: 'var(--warm-border)' }}>
+                        {visibleUnpaid.map((l, i) => {
+                          const dl = daysLabel(l.daysOverdue)
+                          return (
+                            <Link
+                              key={i}
+                              href={`/tenants?tenantId=${l.tenantId}&tab=info`}
+                              className="flex items-center gap-3 px-5 py-3 hover:opacity-70 transition-opacity"
+                            >
+                              <div
+                                className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
+                                style={{ background: 'var(--sand)', fontSize: 11, color: '#c08050' }}
+                              >
+                                {l.tenantName.slice(0, 1)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>
+                                  {l.roomNo}호 {l.tenantName}
+                                </p>
+                                <p className="text-[10px] font-medium mt-0.5" style={{ color: dl.color }}>
+                                  {dl.text}
+                                </p>
+                              </div>
+                              <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>
+                                {Math.round(l.unpaidAmount / 10000)}만원
+                              </span>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                      {sortedUnpaid.length > UNPAID_LIMIT && (
+                        <button
+                          onClick={() => setUnpaidExpanded(v => !v)}
+                          className="w-full py-2.5 text-xs font-medium border-t flex items-center justify-center gap-1 hover:opacity-70 transition-opacity"
+                          style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-muted)' }}
+                        >
+                          {unpaidExpanded
+                            ? <>접기 ↑</>
+                            : <>더보기 <span style={{ color: 'var(--coral)' }}>+{sortedUnpaid.length - UNPAID_LIMIT}</span> ↓</>}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
 
-              {data.rooms.length === 0 ? (
-                <p className="text-center py-8 text-sm" style={{ color: 'var(--warm-muted)' }}>등록된 호실 없음</p>
-              ) : (
-                <>
-                  <div
-                    className="grid gap-[6px]"
-                    style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}
-                  >
-                    {data.rooms.map(r => {
-                      const rentMan = r.baseRent > 0 ? `${Math.round(r.baseRent / 10000)}만` : null
+              {/* 월별 수납 현황 + 최근 납입 완료 */}
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3.5">
+
+                <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>월별 수납 현황</h3>
+                    <Link href={`/finance?month=${targetMonth}`} style={{ fontSize: 11, color: 'var(--coral)' }}>리포트 →</Link>
+                  </div>
+                  <div className="space-y-[9px]">
+                    {data.trend.map(t => {
+                      const pct = Math.round((t.revenue / maxRevenue) * 100)
                       return (
-                        <div
-                          key={r.roomNo}
-                          onClick={() => setSelectedRoom(r)}
-                          className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[4px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
-                          style={r.isVacant
-                            ? { background: 'rgba(200,160,120,0.12)', color: 'var(--warm-muted)' }
-                            : { background: 'rgba(244,98,58,0.09)', color: 'var(--coral)' }
-                          }
-                        >
-                          <span className="truncate w-full text-center font-bold" style={{ fontSize: 12 }}>{r.roomNo}호</span>
-                          <span style={{ fontSize: 10, fontWeight: 500 }}>{r.isVacant ? '공실' : '입실'}</span>
-                          {rentMan && <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
+                        <div key={t.month} className="flex items-center gap-2.5">
+                          <span className="w-7 shrink-0 text-right" style={{ fontSize: '10.5px', color: 'var(--warm-muted)' }}>
+                            {parseInt(t.month.slice(5))}월
+                          </span>
+                          <div className="flex-1 h-[7px] rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.15)' }}>
+                            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'var(--coral)', transition: 'width 0.6s ease' }} />
+                          </div>
+                          <span className="w-14 text-right shrink-0" style={{ fontSize: '10.5px', fontWeight: 600, color: '#5a4a3a', fontFamily: 'monospace' }}>
+                            {Math.round(t.revenue / 10000).toLocaleString()}만
+                          </span>
                         </div>
                       )
                     })}
                   </div>
-                  <div className="flex gap-3.5 mt-3 shrink-0">
-                    <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
-                      <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(244,98,58,0.25)' }} />입실
-                    </div>
-                    <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
-                      <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(200,160,120,0.25)' }} />공실
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-3.5" style={{ minHeight: 600 }}>
-              <FeedCard
-                title="알림"
-                items={data.alerts}
-                emptyText="새 알림 없음"
-                expanded={alertsExpanded}
-                onToggle={() => setAlertsExpanded(v => !v)}
-                headerRight={
-                  data.alerts.length > 0
-                    ? <span className="rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>{data.alerts.length}</span>
-                    : undefined
-                }
-              />
-              <FeedCard
-                title="최근 활동"
-                items={data.activity}
-                emptyText="최근 활동 없음"
-                expanded={activityExpanded}
-                onToggle={() => setActivityExpanded(v => !v)}
-                headerRight={
-                  <Link href={`/rooms?month=${targetMonth}`} style={{ fontSize: 11, color: 'var(--coral)' }}>전체 →</Link>
-                }
-              />
-            </div>
-          </div>
-
-          {/* 월별 수납 현황 + 미납 입주자 */}
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-3.5">
-
-            <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-              <div className="flex items-center justify-between mb-3">
-                <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>월별 수납 현황</h3>
-                <Link href={`/finance?month=${targetMonth}`} style={{ fontSize: 11, color: 'var(--coral)' }}>리포트 →</Link>
-              </div>
-              <div className="space-y-[9px]">
-                {data.trend.map(t => {
-                  const pct = Math.round((t.revenue / maxRevenue) * 100)
-                  return (
-                    <div key={t.month} className="flex items-center gap-2.5">
-                      <span className="w-7 shrink-0 text-right" style={{ fontSize: '10.5px', color: 'var(--warm-muted)' }}>
-                        {parseInt(t.month.slice(5))}월
-                      </span>
-                      <div className="flex-1 h-[7px] rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.15)' }}>
-                        <div
-                          className="h-full rounded-full"
-                          style={{ width: `${pct}%`, background: 'var(--coral)', transition: 'width 0.6s ease' }}
-                        />
-                      </div>
-                      <span className="w-14 text-right shrink-0" style={{ fontSize: '10.5px', fontWeight: 600, color: '#5a4a3a', fontFamily: 'monospace' }}>
-                        {Math.round(t.revenue / 10000).toLocaleString()}만
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-              <div className="flex items-center justify-between mb-3">
-                <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>미납 입주자</h3>
-                {data.unpaidCount > 0 && (
-                  <span
-                    className="rounded-full"
-                    style={{ fontSize: 10, fontWeight: 600, padding: '4px 11px', background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}
-                  >
-                    {data.unpaidCount}건
-                  </span>
-                )}
-              </div>
-
-              {data.unpaidLeases.length === 0 ? (
-                <p className="text-sm text-center py-8" style={{ color: 'var(--warm-muted)' }}>미납 없음 🎉</p>
-              ) : (
-                <div className="space-y-2">
-                  {data.unpaidLeases.map((l, i) => (
-                    <Link
-                      key={i}
-                      href="/tenants"
-                      className="flex items-center gap-2.5 rounded-lg hover:opacity-70 transition-opacity"
-                      style={{ background: 'rgba(200,160,120,0.06)', padding: '10px 12px' }}
-                    >
-                      <div
-                        className="w-[30px] h-[30px] rounded-full flex items-center justify-center shrink-0"
-                        style={{ background: 'var(--sand)', fontSize: 11, fontWeight: 700, color: '#c08050' }}
-                      >
-                        {l.tenantName.slice(0, 1)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold truncate" style={{ fontSize: 12, color: '#5a4a3a' }}>{l.tenantName}</p>
-                        <p style={{ fontSize: 10, color: 'var(--warm-muted)' }}>{l.roomNo}호 · {l.desc}</p>
-                      </div>
-                      <span
-                        className="rounded-full shrink-0"
-                        style={{ fontSize: 10, fontWeight: 600, padding: '3px 8px', background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}
-                      >
-                        미납
-                      </span>
-                    </Link>
-                  ))}
                 </div>
-              )}
-            </div>
-          </div>
+
+                <div className="rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', minHeight: 160 }}>
+                  <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
+                    <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>납입 완료</h3>
+                    <Link href={`/rooms?month=${targetMonth}`} style={{ fontSize: 11, color: 'var(--coral)' }}>전체 →</Link>
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-5">
+                    {data.activity.length === 0 ? (
+                      <p className="text-sm text-center py-6" style={{ color: 'var(--warm-muted)' }}>최근 납입 내역 없음</p>
+                    ) : (
+                      data.activity.map((item, i) => (
+                        <Link
+                          key={i}
+                          href={item.link}
+                          className="flex items-start gap-2.5 py-[10px] hover:opacity-70 transition-opacity"
+                          style={{ borderBottom: i < data.activity.length - 1 ? '1px solid var(--warm-border)' : 'none' }}
+                        >
+                          <span className="w-[7px] h-[7px] rounded-full shrink-0 mt-1" style={{ background: item.dotColor }} />
+                          <span className="flex-1 leading-snug" style={{ fontSize: 12, color: 'var(--warm-mid)' }}>{item.text}</span>
+                          <span className="whitespace-nowrap shrink-0" style={{ fontSize: 10, color: 'var(--warm-muted)', fontFamily: 'monospace' }}>{item.timeLabel}</span>
+                        </Link>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {tab === 'finance' && <FinanceTab data={data} targetMonth={targetMonth} />}
+          {tab === 'tenants' && <TenantsTab data={data} />}
+          {tab === 'ai'      && <AiTab data={data} targetMonth={targetMonth} />}
         </div>
-      )}
+      </div>
 
-      {/* ── 재무 탭 ────────────────────────────────────────────── */}
-      {tab === 'finance' && <FinanceTab data={data} targetMonth={targetMonth} />}
-
-      {/* ── 입주자 탭 ──────────────────────────────────────────── */}
-      {tab === 'tenants' && <TenantsTab data={data} />}
-
-      {/* ── AI 분석 탭 ─────────────────────────────────────────── */}
-      {tab === 'ai' && <AiTab data={data} targetMonth={targetMonth} />}
-
-      {/* ── 방 상세 팝업 ────────────────────────────────────────── */}
       {selectedRoom && <RoomDetailPopup room={selectedRoom} onClose={() => setSelectedRoom(null)} />}
     </div>
   )

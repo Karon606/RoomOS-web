@@ -141,6 +141,7 @@ model Property {
   expenses          Expense[]
   extraIncomes      ExtraIncome[]
   statusLogs        TenantStatusLog[]
+  tenantRequests    TenantRequest[]
 
   @@map("properties")
 }
@@ -238,6 +239,7 @@ model Tenant {
   leaseTerms     LeaseTerm[]
   paymentRecords PaymentRecord[]
   statusLogs     TenantStatusLog[]
+  requests       TenantRequest[]
 
   @@map("tenants")
 }
@@ -455,4 +457,28 @@ model TenantStatusLog {
   @@index([propertyId, changedAt])
   @@index([propertyId, toStatus])
   @@map("tenant_status_logs")
+}
+
+// ============================================================
+// [14] TenantRequest
+// ============================================================
+
+model TenantRequest {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  content     String
+  requestDate DateTime  @default(now()) @db.Date
+  targetDate  DateTime? @db.Date
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenantId   String @db.Uuid
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id])
+
+  @@index([propertyId, resolvedAt])
+  @@index([tenantId, createdAt])
+  @@map("tenant_requests")
 }

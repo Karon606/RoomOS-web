@@ -564,6 +564,66 @@ export async function deleteTenant(tenantId: string): Promise<{ ok: true } | { o
   }
 }
 
+// ── 입주자 요청사항 ──────────────────────────────────────────────
+
+export async function getTenantRequests(tenantId: string) {
+  await getPropertyId()
+  return prisma.tenantRequest.findMany({
+    where: { tenantId },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true, content: true, requestDate: true,
+      targetDate: true, resolvedAt: true, createdAt: true,
+      tenant: { select: { name: true } },
+    },
+  })
+}
+
+export async function createTenantRequest(data: {
+  tenantId: string
+  content: string
+  requestDate: string
+  targetDate: string | null
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    if (!data.content.trim()) return { ok: false, error: '내용을 입력해주세요.' }
+    await prisma.tenantRequest.create({
+      data: {
+        tenantId:    data.tenantId,
+        propertyId,
+        content:     data.content.trim(),
+        requestDate: data.requestDate ? new Date(data.requestDate) : new Date(),
+        targetDate:  data.targetDate  ? new Date(data.targetDate)  : null,
+      },
+    })
+    revalidatePath('/tenants')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function resolveTenantRequest(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    await getPropertyId()
+    await prisma.tenantRequest.update({
+      where: { id },
+      data: { resolvedAt: new Date() },
+    })
+    revalidatePath('/tenants')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // 입실 예정 → 거주중 자동 전환 (입주일 도래 시)
 export async function autoTransitionReserved() {
   try {

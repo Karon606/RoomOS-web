@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithGemini } from './actions'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithGemini, createTenantRequest, resolveTenantRequest, getTenantRequests } from './actions'
 import { savePayment, deletePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -243,6 +243,7 @@ export default function TenantClient({
 }) {
   const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const initColVis = Object.fromEntries(
     COL_DEFS.map(c => [c.key, c.defaultOn])
@@ -252,7 +253,16 @@ export default function TenantClient({
   const [editTenant, setEditTenant]       = useState<Tenant | null>(null)
   const [detailTenant, setDetailTenant]   = useState<Tenant | null>(null)
   const [detailEditMode, setDetailEditMode] = useState(false)
-  const [detailTab, setDetailTab]         = useState<'info' | 'analysis'>('info')
+  const [detailTab, setDetailTab]         = useState<'info' | 'requests' | 'analysis'>('info')
+
+  // 요청사항 탭 상태
+  const [requests, setRequests]               = useState<Awaited<ReturnType<typeof getTenantRequests>>>([])
+  const [requestsLoading, setRequestsLoading] = useState(false)
+  const [newContent, setNewContent]           = useState('')
+  const [newReqDate, setNewReqDate]           = useState(() => new Date().toISOString().slice(0, 10))
+  const [newTargetDate, setNewTargetDate]     = useState('')
+  const [reqPending, startReqTransition]      = useTransition()
+  const [showHistory, setShowHistory]         = useState(false)
   const [aiText, setAiText]               = useState('')
   const [aiLoading, setAiLoading]         = useState(false)
   const [roomDetailId, setRoomDetailId]   = useState<string | null>(null)
@@ -292,6 +302,30 @@ export default function TenantClient({
 
   // colWidths 변경 시 ref 동기화
   useEffect(() => { colWidthsRef.current = colWidths }, [colWidths])
+
+  // URL 파라미터로 특정 입주자 팝업 열기 (/tenants?tenantId=xxx&tab=requests)
+  useEffect(() => {
+    const tenantId = searchParams.get('tenantId')
+    const tab = searchParams.get('tab')
+    if (tenantId) {
+      const found = initialTenants.find(t => t.id === tenantId)
+      if (found) {
+        setDetailTenant(found)
+        setDetailTab(tab === 'requests' ? 'requests' : tab === 'analysis' ? 'analysis' : 'info')
+      }
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 요청사항 탭 진입 시 목록 로드
+  useEffect(() => {
+    if (detailTab === 'requests' && detailTenant) {
+      setRequestsLoading(true)
+      getTenantRequests(detailTenant.id).then(r => {
+        setRequests(r)
+        setRequestsLoading(false)
+      })
+    }
+  }, [detailTab, detailTenant?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 열 설정 변경 시 저장
   const updateColVis = (key: ColKey, val: boolean) => {
@@ -869,14 +903,18 @@ export default function TenantClient({
                 <>
                     {/* 탭 헤더 */}
                     <div className="flex border-b border-[var(--warm-border)] px-6 shrink-0">
-                      {(['info', 'analysis'] as const).map(tab => (
-                        <button key={tab} onClick={() => setDetailTab(tab)}
-                          className={`py-2.5 px-4 text-sm font-medium border-b-2 transition-colors ${
-                            detailTab === tab
+                      {([
+                        { key: 'info',     label: '상세 정보' },
+                        { key: 'requests', label: '요청·컴플레인' },
+                        { key: 'analysis', label: '수납 분석' },
+                      ] as const).map(t => (
+                        <button key={t.key} onClick={() => setDetailTab(t.key)}
+                          className={`py-2.5 px-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                            detailTab === t.key
                               ? 'border-[var(--coral)] text-[var(--coral)]'
                               : 'border-transparent text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'
                           }`}>
-                          {tab === 'info' ? '상세 정보' : '수납 분석'}
+                          {t.label}
                         </button>
                       ))}
                     </div>
@@ -949,6 +987,124 @@ export default function TenantClient({
                           )}
                         </>
                       )}
+
+                      {detailTab === 'requests' && (() => {
+                        const unresolved = requests.filter(r => !r.resolvedAt)
+                        const resolved   = requests.filter(r =>  r.resolvedAt)
+                        const fmtDate = (d: string | Date | null) => d ? new Date(d).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }) : '—'
+
+                        const handleCreate = () => {
+                          if (!newContent.trim()) return
+                          startReqTransition(async () => {
+                            await createTenantRequest({
+                              tenantId:    detailTenant!.id,
+                              content:     newContent,
+                              requestDate: newReqDate,
+                              targetDate:  newTargetDate || null,
+                            })
+                            setNewContent(''); setNewTargetDate('')
+                            setNewReqDate(new Date().toISOString().slice(0, 10))
+                            const updated = await getTenantRequests(detailTenant!.id)
+                            setRequests(updated)
+                          })
+                        }
+
+                        const handleResolve = (id: string) => {
+                          startReqTransition(async () => {
+                            await resolveTenantRequest(id)
+                            const updated = await getTenantRequests(detailTenant!.id)
+                            setRequests(updated)
+                          })
+                        }
+
+                        return (
+                          <div className="space-y-4">
+                            {/* 새 요청 등록 */}
+                            <div className="rounded-xl p-4 space-y-3" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+                              <p className="text-xs font-semibold" style={{ color: 'var(--warm-mid)' }}>새 요청 등록</p>
+                              <textarea
+                                value={newContent}
+                                onChange={e => setNewContent(e.target.value)}
+                                rows={3}
+                                placeholder="요청 내용을 입력하세요"
+                                className="w-full text-sm rounded-lg px-3 py-2 resize-none"
+                                style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)', outline: 'none' }}
+                              />
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>요청 날짜</label>
+                                  <input type="date" value={newReqDate} onChange={e => setNewReqDate(e.target.value)}
+                                    className="w-full text-xs rounded-lg px-3 py-2"
+                                    style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }} />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>처리 목표일 (선택)</label>
+                                  <input type="date" value={newTargetDate} onChange={e => setNewTargetDate(e.target.value)}
+                                    className="w-full text-xs rounded-lg px-3 py-2"
+                                    style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }} />
+                                </div>
+                              </div>
+                              <button onClick={handleCreate} disabled={reqPending || !newContent.trim()}
+                                className="w-full py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+                                style={{ background: 'var(--coral)', color: '#fff' }}>
+                                {reqPending ? '등록 중...' : '등록'}
+                              </button>
+                            </div>
+
+                            {/* 미처리 요청 목록 */}
+                            {requestsLoading ? (
+                              <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>불러오는 중...</p>
+                            ) : unresolved.length === 0 ? (
+                              <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>미처리 요청 없음</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {unresolved.map(r => (
+                                  <div key={r.id} className="rounded-xl p-4 space-y-2" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--warm-muted)' }}>
+                                        <span>요청 {fmtDate(r.requestDate)}</span>
+                                        {r.targetDate && <span className="font-medium" style={{ color: '#f97316' }}>목표 {fmtDate(r.targetDate)}</span>}
+                                      </div>
+                                      <button onClick={() => handleResolve(r.id)} disabled={reqPending}
+                                        className="shrink-0 text-[11px] font-medium px-3 py-1 rounded-lg transition-colors disabled:opacity-50"
+                                        style={{ background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>
+                                        처리완료
+                                      </button>
+                                    </div>
+                                    <p className="text-sm leading-snug" style={{ color: 'var(--warm-dark)' }}>{r.content}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* 처리 이력 */}
+                            {resolved.length > 0 && (
+                              <div>
+                                <button onClick={() => setShowHistory(v => !v)}
+                                  className="text-xs font-medium flex items-center gap-1"
+                                  style={{ color: 'var(--warm-muted)' }}>
+                                  처리된 이력 {resolved.length}건 {showHistory ? '▲' : '▼'}
+                                </button>
+                                {showHistory && (
+                                  <div className="mt-2 space-y-2">
+                                    {resolved.map(r => (
+                                      <div key={r.id} className="rounded-xl p-3 opacity-60" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+                                        <div className="flex items-center gap-2 text-[10px] mb-1" style={{ color: 'var(--warm-muted)' }}>
+                                          <span className="font-medium text-green-500">완료</span>
+                                          <span>{fmtDate(r.resolvedAt)}</span>
+                                          <span>·</span>
+                                          <span>요청 {fmtDate(r.requestDate)}</span>
+                                        </div>
+                                        <p className="text-xs" style={{ color: 'var(--warm-mid)' }}>{r.content}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
 
                       {detailTab === 'analysis' && (
                         <>
