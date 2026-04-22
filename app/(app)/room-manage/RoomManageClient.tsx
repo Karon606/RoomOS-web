@@ -278,7 +278,7 @@ export default function RoomManageClient({
                     <span className="text-base font-bold text-[var(--warm-dark)]">{room.roomNo}호</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium
                       ${room.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'}`}>
-                      {room.isVacant ? '공실' : '입주중'}
+                      {room.isVacant ? '공실' : '거주중'}
                     </span>
                   </div>
                   <p className="text-xs text-[var(--warm-mid)] truncate">{tenant ?? '—'}</p>
@@ -335,7 +335,7 @@ export default function RoomManageClient({
                   <h2 className="text-base font-bold text-[var(--warm-dark)]">{r.roomNo}호</h2>
                   <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
                     ${r.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'}`}>
-                    {r.isVacant ? '공실' : '입주중'}
+                    {r.isVacant ? '공실' : '거주중'}
                   </span>
                 </div>
                 <button onClick={closeDetail} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
@@ -383,7 +383,7 @@ export default function RoomManageClient({
                 <button
                   onClick={() => handleDelete(r.id, r.roomNo)}
                   disabled={!r.isVacant || isPending}
-                  title={!r.isVacant ? '입주중인 호실은 삭제할 수 없습니다' : ''}
+                  title={!r.isVacant ? '거주중인 호실은 삭제할 수 없습니다' : ''}
                   className="px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm rounded-xl transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                   삭제
                 </button>

@@ -380,7 +380,7 @@ function RoomDetailPopup({ room, onClose }: { room: DashboardData['rooms'][numbe
             <span className="text-base font-bold text-[var(--warm-dark)]">{room.roomNo}호</span>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium
               ${room.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-mid)]' : 'bg-[var(--coral)]/20 text-[var(--coral)]'}`}>
-              {room.isVacant ? '공실' : (DASH_STATUS_LABEL[room.tenantStatus ?? ''] ?? '입주중')}
+              {room.isVacant ? '공실' : (DASH_STATUS_LABEL[room.tenantStatus ?? ''] ?? '거주중')}
             </span>
           </div>
           <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-lg leading-none">✕</button>

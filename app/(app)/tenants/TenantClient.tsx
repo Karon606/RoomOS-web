@@ -829,6 +829,12 @@ export default function TenantClient({
           }
         }
 
+        const payments      = lease?.paymentRecords ?? []
+        const totalExpected = payments.reduce((s, p) => s + p.expectedAmount, 0)
+        const totalPaid     = payments.reduce((s, p) => s + p.actualAmount, 0)
+        const unpaid        = totalExpected - totalPaid
+        const paidMonths    = payments.filter(p => p.isPaid).length
+
         return (
           <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
             onClick={closeDetail}>
@@ -859,15 +865,8 @@ export default function TenantClient({
               </div>
 
               {/* ── 읽기 전용 모드 ── */}
-              {!detailEditMode && (() => {
-                const payments = lease?.paymentRecords ?? []
-                const totalExpected = payments.reduce((s, p) => s + p.expectedAmount, 0)
-                const totalPaid     = payments.reduce((s, p) => s + p.actualAmount, 0)
-                const unpaid        = totalExpected - totalPaid
-                const paidMonths    = payments.filter(p => p.isPaid).length
-
-                return (
-                  <>
+              {!detailEditMode && (
+                <>
                     {/* 탭 헤더 */}
                     <div className="flex border-b border-[var(--warm-border)] px-6 shrink-0">
                       {(['info', 'analysis'] as const).map(tab => (
@@ -1046,8 +1045,7 @@ export default function TenantClient({
                       </button>
                     </div>
                   </>
-                )
-              })()}
+              )}
 
               {/* ── 편집 모드 ── */}
               {detailEditMode && (
@@ -1378,7 +1376,7 @@ export default function TenantClient({
               </div>
               {room ? (
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-[var(--warm-muted)]">상태</span><span className={room.isVacant ? 'text-[var(--warm-mid)]' : 'text-green-300'}>{room.isVacant ? '공실' : '입주중'}</span></div>
+                  <div className="flex justify-between"><span className="text-[var(--warm-muted)]">상태</span><span className={room.isVacant ? 'text-[var(--warm-mid)]' : 'text-green-300'}>{room.isVacant ? '공실' : '거주중'}</span></div>
                   <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기본 이용료</span><span className="text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></span></div>
                 </div>
               ) : (
