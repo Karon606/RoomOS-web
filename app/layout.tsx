@@ -1,7 +1,5 @@
-// app/layout.tsx
 import type { Metadata } from 'next'
 import './globals.css'
-import ProgressBar from '@/components/ProgressBar'
 
 export const metadata: Metadata = {
   title: 'RoomOS',
@@ -23,10 +21,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>
-        {children}
-        <ProgressBar />
-      </body>
+      <body>{children}</body>
     </html>
   )
 }
