@@ -511,7 +511,7 @@ export default function TenantClient({
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="이름, 호실, 국적, 직업 검색..."
-          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-4 py-1.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)] transition-colors w-56"
+          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-4 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors w-56"
         />
 
         {/* 열 설정 */}
@@ -1184,7 +1184,7 @@ export default function TenantClient({
                                   value={overrideInput}
                                   onChange={e => setOverrideInput(e.target.value)}
                                   placeholder="예: 20, 말일"
-                                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-amber-500"
+                                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-amber-500"
                                 />
                               </div>
                               <div className="flex-1 space-y-1">
@@ -1194,7 +1194,7 @@ export default function TenantClient({
                                   value={overrideReason}
                                   onChange={e => setOverrideReason(e.target.value)}
                                   placeholder="예: 급여일 변경"
-                                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-amber-500"
+                                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-amber-500"
                                 />
                               </div>
                             </div>
@@ -1256,7 +1256,7 @@ export default function TenantClient({
                     <div className="space-y-1">
                       <label className="text-xs text-[var(--warm-muted)]">메모</label>
                       <input type="text" name="memo" placeholder="메모 (선택)"
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)]" />
                     </div>
                     {error && <p className="text-red-400 text-sm">{error}</p>}
                   </div>
@@ -1585,7 +1585,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               onFocus={() => setDueDayDisp(prev => prev.replace(/일$/, ''))}
               onBlur={() => applyDueDay(dueDayDisp)}
               placeholder="15일, 말일 등"
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)] transition-colors"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
             />
           </div>
           {showExitDate && (
@@ -1646,7 +1646,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
 
       <FormSection title="메모">
         <textarea name="memo" rows={2} defaultValue={tenant?.memo ?? ''} placeholder="입주자 특이사항"
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)] resize-none" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] resize-none" />
       </FormSection>
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -1672,7 +1672,7 @@ function Field({ label, name, type = 'text', placeholder, defaultValue, required
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       <input type={type} name={name} defaultValue={defaultValue} placeholder={placeholder} required={required}
-        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)] transition-colors" />
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors" />
     </div>
   )
 }
