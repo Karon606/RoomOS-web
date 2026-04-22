@@ -1,7 +1,7 @@
 // app/layout.tsx
 import type { Metadata } from 'next'
-import './globals.css' // CSS 경로는 여기서 한 번만 정확히 불러옵니다.
-import { AppProgressBar as ProgressBar } from 'next-nprogress-bar';
+import './globals.css'
+import ProgressBar from '@/components/ProgressBar'
 
 export const metadata: Metadata = {
   title: 'RoomOS',
@@ -24,16 +24,8 @@ export default function RootLayout({
         />
       </head>
       <body>
-        {/* 모든 페이지의 내용이 이 자리에 들어옵니다 */}
         {children}
-        
-        {/* RoomOS 브랜드 컬러(#f4623a) 상단 프로그레스 바 */}
-        <ProgressBar
-          height="3px"
-          color="#f4623a" 
-          options={{ showSpinner: false }}
-          shallowRouting
-        />
+        <ProgressBar />
       </body>
     </html>
   )
