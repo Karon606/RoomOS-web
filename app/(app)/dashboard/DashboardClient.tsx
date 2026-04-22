@@ -224,22 +224,19 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
               >
                 {data.rooms.map(r => {
                   const rentMan = r.baseRent > 0 ? `${Math.round(r.baseRent / 10000)}만` : null
-                  const winLabel = r.windowType === 'OUTER' ? '외창' : r.windowType === 'INNER' ? '내창' : null
                   return (
                     <div
                       key={r.roomNo}
                       onClick={() => setSelectedRoom(r)}
-                      className="rounded-[8px] flex flex-col px-2 py-2 gap-[3px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
+                      className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[4px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
                       style={r.isVacant
                         ? { background: 'rgba(200,160,120,0.12)', color: 'var(--warm-muted)' }
                         : { background: 'rgba(244,98,58,0.09)', color: 'var(--coral)' }
                       }
                     >
-                      <span className="truncate font-bold leading-tight" style={{ fontSize: 12 }}>{r.roomNo}호</span>
-                      <span className="leading-tight" style={{ fontSize: 10, fontWeight: 500 }}>{r.isVacant ? '공실' : '입실'}</span>
-                      {r.type && <span className="truncate leading-tight" style={{ fontSize: 9, opacity: 0.75 }}>{r.type}</span>}
-                      {winLabel && <span className="leading-tight" style={{ fontSize: 9, opacity: 0.75 }}>{winLabel}</span>}
-                      {rentMan && <span className="leading-tight font-semibold" style={{ fontSize: 10, marginTop: 1 }}>{rentMan}</span>}
+                      <span className="truncate w-full text-center font-bold" style={{ fontSize: 12 }}>{r.roomNo}호</span>
+                      <span style={{ fontSize: 10, fontWeight: 500 }}>{r.isVacant ? '공실' : '입실'}</span>
+                      {rentMan && <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
                     </div>
                   )
                 })}
