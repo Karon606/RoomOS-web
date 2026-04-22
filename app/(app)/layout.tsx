@@ -1,27 +1,18 @@
-import type { Metadata } from 'next'
-import './globals.css'
+// app/(app)/layout.tsx
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import AppShell from '@/components/layout/AppShell'
 
-export const metadata: Metadata = {
-  title: 'RoomOS',
-  description: '고시원·원룸텔 스마트 관리 시스템',
-}
-
-export default function RootLayout({
+export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  return (
-    <html lang="ko">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
-      </head>
-      <body>{children}</body>
-    </html>
-  )
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) redirect('/login')
+
+  // 기존 사이드바와 레이아웃을 담당하는 AppShell을 그대로 유지합니다.
+  return <AppShell user={user}>{children}</AppShell>
 }
