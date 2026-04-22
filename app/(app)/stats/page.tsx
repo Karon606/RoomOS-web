@@ -149,7 +149,7 @@ async function getStatsData(propertyId: string, targetMonth: string): Promise<Da
     genderDist:      toDistribution(genderMap),
     nationalityDist: toDistribution(nationalityMap),
     jobDist:         toDistribution(jobMap),
-    rooms: [], activity: [], unpaidLeases: [],
+    rooms: [], alerts: [], activity: [], unpaidLeases: [],
   }
 }
 

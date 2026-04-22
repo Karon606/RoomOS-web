@@ -25,11 +25,12 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number }[]
-  activity:          { text: string; timeLabel: string; dotColor: string }[]
+  alerts:            { text: string; link: string; dotColor: string; timeLabel: string }[]
+  activity:          { text: string; timeLabel: string; dotColor: string; link: string }[]
   unpaidLeases:      { roomNo: string; tenantName: string; desc: string }[]
 }
 
-// ── 메인 ────────────────────────────────────────────────────────
+// ── 레이블 ──────────────────────────────────────────────────────
 
 const DASH_WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창' }
 const DASH_DIR_LABEL: Record<string, string> = {
@@ -40,8 +41,87 @@ const DASH_STATUS_LABEL: Record<string, string> = {
   ACTIVE: '거주중', RESERVED: '입실 예정', CHECKOUT_PENDING: '퇴실 예정',
 }
 
+// ── 피드 카드 컴포넌트 ───────────────────────────────────────────
+
+const COLLAPSED_LIMIT = 4
+
+function FeedCard({
+  title, headerRight, items, emptyText, expanded, onToggle,
+}: {
+  title: string
+  headerRight?: React.ReactNode
+  items: { text: string; link: string; dotColor: string; timeLabel: string }[]
+  emptyText: string
+  expanded: boolean
+  onToggle: () => void
+}) {
+  const hasMore = items.length > COLLAPSED_LIMIT
+  const visibleItems = expanded ? items : items.slice(0, COLLAPSED_LIMIT)
+
+  return (
+    <div
+      className="rounded-xl flex flex-col flex-1"
+      style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', minHeight: 160 }}
+    >
+      {/* 헤더 */}
+      <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
+        <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>{title}</h3>
+        {headerRight}
+      </div>
+
+      {/* 아이템 목록 */}
+      <div className="flex-1 overflow-y-auto px-5">
+        {items.length === 0 ? (
+          <p className="text-sm text-center py-6" style={{ color: 'var(--warm-muted)' }}>{emptyText}</p>
+        ) : (
+          visibleItems.map((item, i) => (
+            <Link
+              key={i}
+              href={item.link}
+              className="flex items-start gap-2.5 py-[10px] hover:opacity-70 transition-opacity"
+              style={{ borderBottom: i < visibleItems.length - 1 ? '1px solid var(--warm-border)' : 'none' }}
+            >
+              <span
+                className="w-[7px] h-[7px] rounded-full shrink-0"
+                style={{ background: item.dotColor, marginTop: 4 }}
+              />
+              <span className="flex-1 leading-snug" style={{ fontSize: 12, color: 'var(--warm-mid)' }}>
+                {item.text}
+              </span>
+              <span className="whitespace-nowrap shrink-0" style={{ fontSize: 10, color: 'var(--warm-muted)', fontFamily: 'monospace' }}>
+                {item.timeLabel}
+              </span>
+            </Link>
+          ))
+        )}
+      </div>
+
+      {/* 더보기 버튼 */}
+      {hasMore && (
+        <button
+          onClick={onToggle}
+          className="shrink-0 w-full py-2.5 flex items-center justify-center gap-1 transition-opacity hover:opacity-70"
+          style={{
+            fontSize: 11, color: 'var(--warm-muted)',
+            borderTop: '1px solid var(--warm-border)',
+          }}
+        >
+          {expanded
+            ? <>접기 <span style={{ fontSize: 10 }}>↑</span></>
+            : <>더보기 <span style={{ fontSize: 10, color: 'var(--coral)' }}>+{items.length - COLLAPSED_LIMIT}</span> <span style={{ fontSize: 10 }}>↓</span></>
+          }
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ── 메인 컴포넌트 ────────────────────────────────────────────────
+
 export default function DashboardClient({ data, targetMonth }: { data: DashboardData; targetMonth: string }) {
-  const [selectedRoom, setSelectedRoom] = useState<DashboardData['rooms'][number] | null>(null)
+  const [selectedRoom,     setSelectedRoom]     = useState<DashboardData['rooms'][number] | null>(null)
+  const [alertsExpanded,   setAlertsExpanded]   = useState(false)
+  const [activityExpanded, setActivityExpanded] = useState(false)
 
   const prev = data.trend[data.trend.length - 2]
   const cur  = data.trend[data.trend.length - 1]
@@ -58,7 +138,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
       {/* ── 통계 카드 ──────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
 
-        {/* 이번 달 수납 - accent */}
+        {/* 이번 달 수납 */}
         <div className="rounded-xl" style={{ background: 'var(--coral)', padding: '18px 20px' }}>
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'rgba(255,252,247,0.6)', marginBottom: 8 }}>
             이번 달 수납
@@ -118,12 +198,12 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
         </div>
       </div>
 
-      {/* ── 방 현황 + 최근 활동 ─────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3.5">
+      {/* ── 방 현황 + 알림/최근활동 ─────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-3.5 lg:items-stretch">
 
         {/* 방 현황 그리드 */}
-        <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-          <div className="flex items-center justify-between mb-3.5">
+        <div className="rounded-xl p-5 flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <div className="flex items-center justify-between mb-3.5 shrink-0">
             <p style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>
               방 현황
               <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 6 }}>
@@ -137,23 +217,27 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
             <p className="text-center py-8 text-sm" style={{ color: 'var(--warm-muted)' }}>등록된 호실 없음</p>
           ) : (
             <>
-              <div className="grid gap-[7px]" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+              {/* 반응형 그리드: 컨테이너 폭에 맞춰 타일이 자연스럽게 줄어듦 */}
+              <div
+                className="grid gap-[6px]"
+                style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}
+              >
                 {data.rooms.map(r => (
                   <div
                     key={r.roomNo}
                     onClick={() => setSelectedRoom(r)}
-                    className="aspect-square rounded-[7px] flex flex-col items-center justify-center gap-[3px] cursor-pointer transition-opacity hover:opacity-75"
+                    className="aspect-square rounded-[7px] flex flex-col items-center justify-center cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
                     style={r.isVacant
                       ? { background: 'rgba(200,160,120,0.12)', color: 'var(--warm-muted)' }
                       : { background: 'rgba(244,98,58,0.09)', color: 'var(--coral)' }
                     }
                   >
-                    <span style={{ fontSize: 11, fontWeight: 700 }}>{r.roomNo}</span>
-                    <span style={{ fontSize: 10, fontWeight: 500 }}>{r.isVacant ? '공실' : '입실'}</span>
+                    <span className="truncate w-full text-center px-0.5" style={{ fontSize: 10, fontWeight: 700 }}>{r.roomNo}</span>
+                    <span style={{ fontSize: 9, fontWeight: 500 }}>{r.isVacant ? '공실' : '입실'}</span>
                   </div>
                 ))}
               </div>
-              <div className="flex gap-3.5 mt-3.5">
+              <div className="flex gap-3.5 mt-3 shrink-0">
                 <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
                   <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(244,98,58,0.25)' }} />입실
                 </div>
@@ -165,42 +249,35 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
           )}
         </div>
 
-        {/* 최근 활동 */}
-        <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-          <div className="flex items-center justify-between mb-0.5">
-            <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>최근 활동</h3>
-            <Link href={`/rooms?month=${targetMonth}`} style={{ fontSize: 11, color: 'var(--coral)' }}>전체 →</Link>
-          </div>
-
-          {data.activity.length === 0 ? (
-            <p className="text-sm text-center py-8" style={{ color: 'var(--warm-muted)' }}>최근 활동 없음</p>
-          ) : (
-            <div>
-              {data.activity.map((a, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-2.5 py-[11px]"
-                  style={{ borderBottom: i < data.activity.length - 1 ? '1px solid var(--warm-border)' : 'none' }}
-                >
-                  <span
-                    className="w-[7px] h-[7px] rounded-full shrink-0"
-                    style={{ background: a.dotColor, marginTop: 4 }}
-                  />
-                  <span className="flex-1 leading-snug" style={{ fontSize: 12, color: 'var(--warm-mid)' }}>
-                    {a.text}
-                  </span>
-                  <span className="whitespace-nowrap shrink-0" style={{ fontSize: 10, color: 'var(--warm-muted)', fontFamily: 'monospace' }}>
-                    {a.timeLabel}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+        {/* 우측: 알림 + 최근 활동 (각 절반씩) */}
+        <div className="flex flex-col gap-3.5" style={{ minHeight: 600 }}>
+          <FeedCard
+            title="알림"
+            items={data.alerts}
+            emptyText="새 알림 없음"
+            expanded={alertsExpanded}
+            onToggle={() => setAlertsExpanded(v => !v)}
+            headerRight={
+              data.alerts.length > 0
+                ? <span className="rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>{data.alerts.length}</span>
+                : undefined
+            }
+          />
+          <FeedCard
+            title="최근 활동"
+            items={data.activity}
+            emptyText="최근 활동 없음"
+            expanded={activityExpanded}
+            onToggle={() => setActivityExpanded(v => !v)}
+            headerRight={
+              <Link href={`/rooms?month=${targetMonth}`} style={{ fontSize: 11, color: 'var(--coral)' }}>전체 →</Link>
+            }
+          />
         </div>
       </div>
 
       {/* ── 월별 수납 현황 + 미납 입주자 ───────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3.5">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-3.5">
 
         {/* 월별 수납 현황 */}
         <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
@@ -250,9 +327,10 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
           ) : (
             <div className="space-y-2">
               {data.unpaidLeases.map((l, i) => (
-                <div
+                <Link
                   key={i}
-                  className="flex items-center gap-2.5 rounded-lg"
+                  href="/tenants"
+                  className="flex items-center gap-2.5 rounded-lg hover:opacity-70 transition-opacity"
                   style={{ background: 'rgba(200,160,120,0.06)', padding: '10px 12px' }}
                 >
                   <div
@@ -271,19 +349,21 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
                   >
                     미납
                   </span>
-                </div>
+                </Link>
               ))}
             </div>
           )}
         </div>
       </div>
 
+      {/* ── 방 상세 팝업 ─────────────────────────────────────────── */}
       {selectedRoom && <RoomDetailPopup room={selectedRoom} onClose={() => setSelectedRoom(null)} />}
     </div>
   )
 }
 
-// ── 방 상세 팝업 (별도 컴포넌트) ──────────────────────────────────
+// ── 방 상세 팝업 ─────────────────────────────────────────────────
+
 function RoomDetailPopup({ room, onClose }: { room: DashboardData['rooms'][number]; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"

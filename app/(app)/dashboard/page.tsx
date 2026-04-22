@@ -23,6 +23,12 @@ function daysUntil(date: Date | string): number {
   return Math.round((target.getTime() - today.getTime()) / 86400000)
 }
 
+function dayLabel(days: number): string {
+  if (days < 0) return `${Math.abs(days)}일 경과`
+  if (days === 0) return '오늘'
+  return `D-${days}`
+}
+
 function relativeTime(date: Date): string {
   const diff = Date.now() - date.getTime()
   if (diff < 60000) return '방금'
@@ -193,13 +199,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         createdAt: { gte: new Date(Date.now() - 30 * 86400000) },
       },
       select: {
+        targetMonth: true,
         createdAt: true,
         actualAmount: true,
         tenant: { select: { name: true } },
         leaseTerm: { select: { room: { select: { roomNo: true } } } },
       },
       orderBy: { createdAt: 'desc' },
-      take: 8,
+      take: 10,
     }),
     // 미납 상세 (이달 청구 대상 계약)
     prisma.leaseTerm.findMany({
@@ -249,10 +256,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     return wished
       .filter(no => vacantRoomNos.has(no))
       .map(no => ({
-        type:       'wish_room' as const,
         tenantName: l.tenant.name,
         roomNo:     no,
-        days:       0,
       }))
   })
 
@@ -326,46 +331,45 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       desc:       `${targetMonth.slice(5)}월 미납`,
     }))
 
-  // ── 활동 피드 ────────────────────────────────────────────────
-  const activityItems: { text: string; timeLabel: string; dotColor: string }[] = []
+  // ── 알림 (별도) ──────────────────────────────────────────────
+  const alertItems: DashboardData['alerts'] = []
 
-  // 알림 (입실/퇴실 예정)
-  const alerts = [
-    ...moveInLeases.map(l => ({
-      type: 'move_in' as const,
-      tenantName: l.tenant.name,
-      roomNo: l.room.roomNo,
-      days: daysUntil(l.moveInDate!),
-    })),
-    ...moveOutLeases.map(l => ({
-      type: 'move_out' as const,
-      tenantName: l.tenant.name,
-      roomNo: l.room.roomNo,
-      days: daysUntil(l.expectedMoveOut!),
-    })),
-    ...wishRoomAlerts,
-  ].sort((a, b) => a.days - b.days)
-
-  for (const a of alerts.slice(0, 3)) {
-    const text = a.type === 'wish_room'
-      ? `${a.tenantName}님 희망 호실 ${a.roomNo}호 공실`
-      : a.type === 'move_in'
-      ? `${a.tenantName}님 ${a.roomNo}호 입실 예정`
-      : `${a.tenantName}님 ${a.roomNo}호 퇴실 예정`
-    const dotColor = a.type === 'wish_room' ? '#a855f7' : a.type === 'move_in' ? '#3b82f6' : '#eab308'
-    const timeLabel = a.days < 0 ? `${Math.abs(a.days)}일 경과` : a.days === 0 ? '오늘' : `${a.days}일 후`
-    activityItems.push({ text, timeLabel, dotColor })
-  }
-
-  // 최근 수납
-  for (const p of recentPaymentsRaw) {
-    if (activityItems.length >= 6) break
-    activityItems.push({
-      text:      `${p.tenant.name}님 ${p.leaseTerm.room.roomNo}호 수납`,
-      timeLabel: relativeTime(p.createdAt),
-      dotColor:  '#22c55e',
+  for (const l of moveInLeases) {
+    const days = daysUntil(l.moveInDate!)
+    alertItems.push({
+      text:      `${l.tenant.name}님 ${l.room.roomNo}호 입실 예정`,
+      link:      '/tenants',
+      dotColor:  '#3b82f6',
+      timeLabel: dayLabel(days),
     })
   }
+
+  for (const l of moveOutLeases) {
+    const days = daysUntil(l.expectedMoveOut!)
+    alertItems.push({
+      text:      `${l.tenant.name}님 ${l.room.roomNo}호 퇴실 예정`,
+      link:      '/tenants',
+      dotColor:  '#eab308',
+      timeLabel: dayLabel(days),
+    })
+  }
+
+  for (const a of wishRoomAlerts) {
+    alertItems.push({
+      text:      `${a.tenantName}님 희망 ${a.roomNo}호 공실`,
+      link:      '/tenants',
+      dotColor:  '#a855f7',
+      timeLabel: '지금',
+    })
+  }
+
+  // ── 최근 활동 ────────────────────────────────────────────────
+  const activityItems: DashboardData['activity'] = recentPaymentsRaw.map(p => ({
+    text:      `${p.tenant.name}님 ${p.leaseTerm.room.roomNo}호 수납`,
+    timeLabel: relativeTime(p.createdAt),
+    dotColor:  '#22c55e',
+    link:      `/rooms?month=${p.targetMonth}`,
+  }))
 
   const dashboardData: DashboardData = {
     totalRevenue,
@@ -387,6 +391,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     nationalityDist: toDistribution(nationalityMap),
     jobDist:         toDistribution(jobMap),
     rooms:           roomsData,
+    alerts:          alertItems,
     activity:        activityItems,
     unpaidLeases,
   }
