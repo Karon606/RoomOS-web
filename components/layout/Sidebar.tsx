@@ -43,13 +43,18 @@ const NAV_GROUPS = [
     items: [
       { href: '/rooms',   label: '수납 관리',    Icon: IcoFinance },
       { href: '/finance', label: '지출/기타수익', Icon: IcoWallet  },
-      { href: '/stats',   label: '통계·리포트',  Icon: IcoChart   },
+    ],
+  },
+  {
+    label: '분석',
+    items: [
+      { href: '/stats', label: '통계·리포트', Icon: IcoChart },
     ],
   },
   {
     label: '설정',
     items: [
-      { href: '/settings',    label: '환경설정',     Icon: IcoSettings },
+      { href: '/settings', label: '환경설정', Icon: IcoSettings },
     ],
   },
 ]
