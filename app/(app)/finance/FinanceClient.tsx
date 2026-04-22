@@ -536,13 +536,13 @@ export default function FinanceClient({
                         <span className="truncate block">{fmtDate(e.date)}</span>
                       </td>
                       <td className="px-4 py-3 overflow-hidden">
-                        <span className="text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] truncate block max-w-full">{e.payMethod ?? '—'}</span>
+                        <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] whitespace-nowrap">{e.payMethod ?? '—'}</span>
                         {e.financialAccount && (
-                          <span className="text-xs text-[var(--warm-muted)] mt-0.5 truncate block">{accName(e.financialAccount)}</span>
+                          <div className="text-xs text-[var(--warm-muted)] mt-0.5 truncate">{accName(e.financialAccount)}</div>
                         )}
                       </td>
                       <td className="px-4 py-3 overflow-hidden">
-                        <span className="text-xs px-2 py-1 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20 truncate block max-w-full">{e.category}</span>
+                        <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20 whitespace-nowrap">{e.category}</span>
                       </td>
                       <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
                         <span className="truncate block">{e.detail ?? '—'}</span>
@@ -551,7 +551,7 @@ export default function FinanceClient({
                         <span className="truncate block"><MoneyDisplay amount={e.amount} prefix="-" /></span>
                       </td>
                       <td className="px-4 py-3 overflow-hidden">
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ring-1 truncate block max-w-full
+                        <span className={`inline-flex items-center text-xs px-2 py-1 rounded-full font-medium ring-1 whitespace-nowrap
                           ${e.settleStatus === 'UNSETTLED'
                             ? 'bg-red-50 text-red-600 ring-red-200'
                             : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
@@ -620,13 +620,13 @@ export default function FinanceClient({
                         <span className="truncate block">{fmtDate(i.date)}</span>
                       </td>
                       <td className="px-4 py-3 overflow-hidden">
-                        <span className="text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] truncate block max-w-full">{i.payMethod ?? '—'}</span>
+                        <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] whitespace-nowrap">{i.payMethod ?? '—'}</span>
                         {i.financialAccount && (
-                          <span className="text-xs text-[var(--warm-muted)] mt-0.5 truncate block">{accName(i.financialAccount)}</span>
+                          <div className="text-xs text-[var(--warm-muted)] mt-0.5 truncate">{accName(i.financialAccount)}</div>
                         )}
                       </td>
                       <td className="px-4 py-3 overflow-hidden">
-                        <span className="text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 truncate block max-w-full">{i.category}</span>
+                        <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 whitespace-nowrap">{i.category}</span>
                       </td>
                       <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
                         <span className="truncate block">{i.detail ?? '—'}</span>
