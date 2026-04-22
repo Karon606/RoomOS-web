@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useRef, useEffect } from 'react'
+import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import { savePayment, deletePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from './actions'
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -83,6 +83,23 @@ const DEFAULT_VACANT_VIS = Object.fromEntries(
   VACANT_COL_DEFS.map(c => [c.key, c.defaultOn])
 ) as Record<VacantColKey, boolean>
 
+const COL_WIDTHS_KEY = 'roomos_rooms_col_widths'
+
+const DEFAULT_WIDTHS: Record<string, number> = {
+  roomNo: 80, tenantName: 140,
+  contact: 130, type: 80, windowType: 80,
+  depositAmount: 100, expected: 110, totalPaid: 110,
+  balance: 100, dueDay: 110, status: 130,
+}
+
+function loadColWidths(): Record<string, number> | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(COL_WIDTHS_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
 const WINDOW_LABEL: Record<string, string> = {
   OUTER: '외창',
   INNER: '내창',
@@ -162,6 +179,8 @@ export default function RoomsClient({
   const [overrideReason, setOverrideReason] = useState('')
   const colMenuRef       = useRef<HTMLDivElement>(null)
   const vacantColMenuRef = useRef<HTMLDivElement>(null)
+  const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_WIDTHS)
+  const colWidthsRef              = useRef<Record<string, number>>(DEFAULT_WIDTHS)
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -203,6 +222,35 @@ export default function RoomsClient({
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [showVacantColMenu])
+
+  useEffect(() => {
+    const savedW = loadColWidths()
+    if (savedW) {
+      const merged = { ...DEFAULT_WIDTHS, ...savedW }
+      setColWidths(merged)
+      colWidthsRef.current = merged
+    }
+  }, [])
+
+  useEffect(() => { colWidthsRef.current = colWidths }, [colWidths])
+
+  const startResize = useCallback((col: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startW = colWidthsRef.current[col] ?? 100
+    const onMove = (ev: MouseEvent) => {
+      const newW = Math.max(50, startW + ev.clientX - startX)
+      setColWidths(prev => ({ ...prev, [col]: newW }))
+    }
+    const onUp = () => {
+      localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(colWidthsRef.current))
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [])
 
   const occupied = roomStatus.filter(r => !r.isVacant)
   const vacants  = roomStatus.filter(r => r.isVacant).sort((a, b) =>
@@ -300,14 +348,43 @@ export default function RoomsClient({
 
   const thCls = 'text-left text-xs text-[var(--warm-muted)] font-medium px-4 py-3'
 
+  function ResizableTh({ label, colKey, onClick, isActive, stickyLeft }: {
+    label: string; colKey: string; onClick?: () => void; isActive?: boolean; stickyLeft?: number
+  }) {
+    const w = colWidths[colKey] ?? 100
+    return (
+      <th
+        onClick={onClick}
+        className={`relative text-left text-xs font-medium px-4 py-3 select-none overflow-hidden whitespace-nowrap ${
+          onClick ? 'cursor-pointer transition-colors' : ''
+        } ${isActive ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'} ${
+          stickyLeft !== undefined ? 'sticky z-30 bg-[var(--cream)]' : ''
+        }`}
+        style={{
+          width: w, minWidth: w, maxWidth: w,
+          ...(stickyLeft !== undefined ? { left: stickyLeft } : {}),
+        }}
+      >
+        <span className="truncate block">{label}{isActive ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</span>
+        <div
+          onMouseDown={e => startResize(colKey, e)}
+          onClick={e => e.stopPropagation()}
+          className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize group"
+          style={{ userSelect: 'none' }}
+        >
+          <div className="absolute right-[2px] top-[20%] bottom-[20%] w-[1px] bg-[var(--warm-border)] group-hover:bg-[var(--coral)] transition-colors" />
+        </div>
+      </th>
+    )
+  }
+
   const SortTh = ({ label, sk }: { label: string; sk: SortKey }) => (
-    <th onClick={() => handleSort(sk)}
-      className={`${thCls} cursor-pointer select-none hover:text-[var(--warm-dark)] whitespace-nowrap`}>
-      {label}
-      <span className="ml-1 inline-block w-3 text-center">
-        {sortKey === sk ? (sortDir === 'asc' ? '↑' : '↓') : ''}
-      </span>
-    </th>
+    <ResizableTh
+      label={label}
+      colKey={sk}
+      onClick={() => handleSort(sk)}
+      isActive={sortKey === sk}
+    />
   )
 
   const VSortTh = ({ label, sk }: { label: string; sk: VacantSortKey }) => (
@@ -346,75 +423,73 @@ export default function RoomsClient({
         <span className="text-sm text-[var(--warm-muted)]">{targetMonth}</span>
       </div>
 
-      {/* 요약 뱃지 + 열 설정 버튼 */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex gap-2 flex-wrap">
-          {[
-            { key: 'all',    label: `전체 ${occupied.length}실`, color: 'bg-[var(--canvas)] text-[var(--warm-dark)]' },
-            { key: 'unpaid', label: `미납 ${unpaidCount}실`,      color: 'bg-red-50 text-red-600 ring-1 ring-red-200' },
-            { key: 'paid',   label: `완납 ${paidCount}실`,        color: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' },
-          ].map(f => (
-            <button key={f.key}
-              onClick={() => setFilter(f.key as any)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors
-                ${filter === f.key ? f.color + ' ring-1 ring-white/20' : 'bg-[var(--canvas)]/50 text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}>
-              {f.label}
-            </button>
-          ))}
-        </div>
+      {/* 빠른 필터 + 열 설정 */}
+      <div className="flex gap-2 flex-wrap items-center">
+        {[
+          { key: 'all',    label: `전체 ${occupied.length}실` },
+          { key: 'unpaid', label: `미납 ${unpaidCount}실` },
+          { key: 'paid',   label: `완납 ${paidCount}실` },
+        ].map(f => (
+          <button key={f.key}
+            onClick={() => setFilter(f.key as any)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors
+              ${filter === f.key
+                ? 'bg-[var(--canvas)] text-[var(--warm-dark)]'
+                : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}>
+            {f.label}
+          </button>
+        ))}
+
+        <div className="flex-1" />
 
         {/* 열 설정 드롭다운 */}
         <div className="relative" ref={colMenuRef}>
           <button
             onClick={() => setShowColMenu(v => !v)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors
-              ${showColMenu ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
+            className="px-3 py-1.5 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] text-xs font-medium rounded-xl transition-colors"
           >
-            <span>⚙</span> 열 설정
+            ⚙ 열 설정
           </button>
           {showColMenu && (
-            <div className="absolute right-0 top-full mt-1.5 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-3 z-20 shadow-xl min-w-[140px] space-y-2">
-              {COL_DEFS.map(col => (
-                <label key={col.key} className="flex items-center gap-2.5 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={colVis[col.key] ?? false}
-                    onChange={e => setColVis(v => ({ ...v, [col.key]: e.target.checked }))}
-                    className="w-3.5 h-3.5 rounded accent-indigo-500"
-                  />
-                  <span className="text-xs text-[var(--warm-dark)] group-hover:text-[var(--warm-dark)] transition-colors">{col.label}</span>
-                </label>
-              ))}
-            </div>
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowColMenu(false)} />
+              <div className="absolute right-0 mt-2 z-20 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-xl p-3 space-y-2 min-w-[140px]">
+                {COL_DEFS.map(col => (
+                  <label key={col.key} className="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={colVis[col.key] ?? false}
+                      onChange={e => setColVis(v => ({ ...v, [col.key]: e.target.checked }))}
+                      className="w-4 h-4 accent-indigo-500"
+                    />
+                    <span className="text-sm text-[var(--warm-dark)]">{col.label}</span>
+                  </label>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>
 
       {/* 수납 현황 테이블 */}
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100vh-240px)]">
-          <table className="w-full min-w-[540px]">
+          <table className="w-full" style={{
+            tableLayout: 'fixed',
+            minWidth: colWidths.roomNo + colWidths.tenantName +
+              COL_DEFS.filter(c => colVis[c.key]).reduce((s, c) => s + (colWidths[c.key] ?? 100), 0),
+          }}>
             <thead className="sticky top-0 z-10 bg-[var(--cream)]">
               <tr className="border-b border-[var(--warm-border)]">
-                {/* sticky — 호실 */}
-                <th onClick={() => handleSort('roomNo')}
-                  className={`${thCls} cursor-pointer select-none whitespace-nowrap sticky left-0 z-30 bg-[var(--cream)] transition-colors ${sortKey === 'roomNo' ? 'text-[var(--coral)]' : 'hover:text-[var(--warm-dark)]'}`}
-                  style={{ width: 80, minWidth: 80 }}>
-                  호실{sortKey === 'roomNo' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
-                </th>
-                {/* sticky — 입주자 */}
-                <th onClick={() => handleSort('tenantName')}
-                  className={`${thCls} cursor-pointer select-none whitespace-nowrap sticky z-30 bg-[var(--cream)] transition-colors ${sortKey === 'tenantName' ? 'text-[var(--coral)]' : 'hover:text-[var(--warm-dark)]'}`}
-                  style={{ left: 80, width: 140, minWidth: 140 }}>
-                  입주자{sortKey === 'tenantName' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
-                </th>
-                {colVis.contact       && <SortTh label="연락처"   sk="contact" />}
-                {colVis.type          && <SortTh label="타입"     sk="type" />}
-                {colVis.windowType    && <SortTh label="창문"     sk="windowType" />}
-                {colVis.depositAmount && <SortTh label="보증금"   sk="depositAmount" />}
+                <ResizableTh label="호실"   colKey="roomNo"     onClick={() => handleSort('roomNo')}     isActive={sortKey === 'roomNo'}     stickyLeft={0} />
+                <ResizableTh label="입주자" colKey="tenantName" onClick={() => handleSort('tenantName')} isActive={sortKey === 'tenantName'} stickyLeft={colWidths.roomNo} />
+                {colVis.contact       && <SortTh label="연락처"    sk="contact" />}
+                {colVis.type          && <SortTh label="타입"      sk="type" />}
+                {colVis.windowType    && <SortTh label="창문"      sk="windowType" />}
+                {colVis.depositAmount && <SortTh label="보증금"    sk="depositAmount" />}
                 {colVis.expected      && <SortTh label="월 이용료" sk="expected" />}
-                {colVis.totalPaid     && <SortTh label="총납부액" sk="totalPaid" />}
-                {colVis.balance       && <SortTh label="잔액"     sk="balance" />}
-                {colVis.dueDay        && <th className={`${thCls} whitespace-nowrap`}>납부일</th>}
+                {colVis.totalPaid     && <SortTh label="총납부액"  sk="totalPaid" />}
+                {colVis.balance       && <SortTh label="잔액"      sk="balance" />}
+                {colVis.dueDay        && <ResizableTh label="납부일"    colKey="dueDay" />}
                 {colVis.status        && <SortTh label="수납 상태" sk="status" />}
               </tr>
             </thead>
@@ -426,14 +501,14 @@ export default function RoomsClient({
                     ${room.isFutureMonth ? 'opacity-50' : 'cursor-pointer hover:bg-[var(--canvas)]/40'}`}>
 
                   {/* sticky — 호실 */}
-                  <td className="px-4 py-4 text-sm font-bold text-[var(--coral)] whitespace-nowrap sticky left-0 z-20 bg-[var(--cream)]"
-                    style={{ width: 80, minWidth: 80 }}>
-                    {room.roomNo}호
+                  <td className="px-4 py-4 text-sm font-bold text-[var(--coral)] overflow-hidden sticky left-0 z-20 bg-[var(--cream)]"
+                    style={{ width: colWidths.roomNo, minWidth: colWidths.roomNo, maxWidth: colWidths.roomNo }}>
+                    <span className="truncate block">{room.roomNo}호</span>
                   </td>
                   {/* sticky — 입주자 */}
-                  <td className="px-4 py-4 text-sm font-medium text-[var(--warm-dark)] sticky z-20 bg-[var(--cream)]"
-                    style={{ left: 80, width: 140, minWidth: 140 }}>
-                    {room.tenantName}
+                  <td className="px-4 py-4 text-sm font-medium text-[var(--warm-dark)] overflow-hidden sticky z-20 bg-[var(--cream)]"
+                    style={{ left: colWidths.roomNo, width: colWidths.tenantName, minWidth: colWidths.tenantName, maxWidth: colWidths.tenantName }}>
+                    <span className="truncate block">{room.tenantName}</span>
                   </td>
 
                   {colVis.contact && (
@@ -495,7 +570,7 @@ export default function RoomsClient({
 
                   {colVis.status && (
                     <td className="px-4 py-4">
-                      <div className="flex flex-col gap-1 items-start">
+                      <div className="flex flex-col gap-1 items-center text-center">
                         {room.status === 'NON_RESIDENT' && (
                           <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-orange-50 text-orange-700 ring-1 ring-orange-200 mb-0.5">
                             비거주

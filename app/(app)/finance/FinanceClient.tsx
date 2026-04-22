@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import {
   addExpense, updateExpense, deleteExpense,
   addExtraIncome, updateExtraIncome, deleteExtraIncome,
@@ -136,6 +136,21 @@ const DEBIT_CARDS: { name: string; domain: string }[] = [
 
 const ALL_BRANDS = [...BANKS, ...CREDIT_CARDS, ...DEBIT_CARDS]
 
+const FIN_WIDTHS_KEY = 'roomos_finance_col_widths'
+
+const DEFAULT_FIN_WIDTHS: Record<string, number> = {
+  expDate: 120, expMethod: 120, expCategory: 110, expDetail: 200, expAmount: 100, expSettle: 110,
+  incDate: 120, incMethod: 120, incCategory: 110, incDetail: 200, incAmount: 100,
+}
+
+function loadFinWidths(): Record<string, number> | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(FIN_WIDTHS_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
 function getBrandDomain(name: string): string | null {
   return ALL_BRANDS.find(b => b.name === name)?.domain ?? null
 }
@@ -236,6 +251,8 @@ export default function FinanceClient({
   const [tab, setTab] = useState<Tab>('expense')
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState('')
+  const [finColWidths, setFinColWidths] = useState<Record<string, number>>(DEFAULT_FIN_WIDTHS)
+  const finColWidthsRef                 = useRef<Record<string, number>>(DEFAULT_FIN_WIDTHS)
 
   // ── 지출 탭 상태 ─────────────────────────────────────────────
   const [expFilter, setExpFilter] = useState({ method: 'all', category: 'all', finance: 'all' })
@@ -265,6 +282,54 @@ export default function FinanceClient({
   const [assetBrand, setAssetBrand]     = useState('')
   const [assetError, setAssetError]     = useState('')
   const [assetFormKey, setAssetFormKey] = useState(0)
+
+  useEffect(() => {
+    const savedW = loadFinWidths()
+    if (savedW) {
+      const merged = { ...DEFAULT_FIN_WIDTHS, ...savedW }
+      setFinColWidths(merged)
+      finColWidthsRef.current = merged
+    }
+  }, [])
+
+  useEffect(() => { finColWidthsRef.current = finColWidths }, [finColWidths])
+
+  const startResize = useCallback((col: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startW = finColWidthsRef.current[col] ?? 100
+    const onMove = (ev: MouseEvent) => {
+      const newW = Math.max(50, startW + ev.clientX - startX)
+      setFinColWidths(prev => ({ ...prev, [col]: newW }))
+    }
+    const onUp = () => {
+      localStorage.setItem(FIN_WIDTHS_KEY, JSON.stringify(finColWidthsRef.current))
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [])
+
+  function ResizableTh({ label, colKey }: { label: string; colKey: string }) {
+    const w = finColWidths[colKey] ?? 100
+    return (
+      <th
+        className="relative text-left text-xs font-medium text-[var(--warm-muted)] px-4 py-3 select-none overflow-hidden"
+        style={{ width: w, minWidth: w, maxWidth: w }}
+      >
+        <span className="truncate block">{label}</span>
+        <div
+          onMouseDown={e => startResize(colKey, e)}
+          className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize group"
+          style={{ userSelect: 'none' }}
+        >
+          <div className="absolute right-[2px] top-[20%] bottom-[20%] w-[1px] bg-[var(--warm-border)] group-hover:bg-[var(--coral)] transition-colors" />
+        </div>
+      </th>
+    )
+  }
 
   // ── 파생 데이터 ──────────────────────────────────────────────
   const cardAccounts = financialAccounts.filter(a => a.type === 'CREDIT_CARD' || a.type === 'DEBIT_CARD')
@@ -444,51 +509,59 @@ export default function FinanceClient({
           </div>
 
           {/* 지출 목록 */}
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100vh-340px)]">
             {filteredExpenses.length === 0 ? (
               <EmptyState label="지출 내역이 없습니다" />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px]">
-                  <thead>
-                    <tr className="border-b border-[var(--warm-border)]">
-                      {['날짜', '결제수단', '카테고리', '세부 항목', '금액', '정산상태'].map(h => (
-                        <th key={h} className="text-left text-xs text-[var(--warm-muted)] font-medium px-4 py-3">{h}</th>
-                      ))}
+              <table className="w-full" style={{
+                tableLayout: 'fixed',
+                minWidth: ['expDate','expMethod','expCategory','expDetail','expAmount','expSettle'].reduce((s, k) => s + (finColWidths[k] ?? 100), 0),
+              }}>
+                <thead className="sticky top-0 z-10 bg-[var(--cream)]">
+                  <tr className="border-b border-[var(--warm-border)]">
+                    <ResizableTh label="날짜"     colKey="expDate" />
+                    <ResizableTh label="결제수단" colKey="expMethod" />
+                    <ResizableTh label="카테고리" colKey="expCategory" />
+                    <ResizableTh label="세부 항목" colKey="expDetail" />
+                    <ResizableTh label="금액"     colKey="expAmount" />
+                    <ResizableTh label="정산상태" colKey="expSettle" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredExpenses.map(e => (
+                    <tr key={e.id}
+                      onClick={() => { setDetailExp(e); setDetailExpEdit(false); setError('') }}
+                      className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer">
+                      <td className="px-4 py-3 text-xs text-[var(--warm-mid)] overflow-hidden">
+                        <span className="truncate block">{fmtDate(e.date)}</span>
+                      </td>
+                      <td className="px-4 py-3 overflow-hidden">
+                        <span className="text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] truncate block max-w-full">{e.payMethod ?? '—'}</span>
+                        {e.financialAccount && (
+                          <span className="text-xs text-[var(--warm-muted)] mt-0.5 truncate block">{accName(e.financialAccount)}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 overflow-hidden">
+                        <span className="text-xs px-2 py-1 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20 truncate block max-w-full">{e.category}</span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
+                        <span className="truncate block">{e.detail ?? '—'}</span>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-semibold text-red-500 overflow-hidden">
+                        <span className="truncate block"><MoneyDisplay amount={e.amount} prefix="-" /></span>
+                      </td>
+                      <td className="px-4 py-3 overflow-hidden">
+                        <span className={`text-xs px-2 py-1 rounded-full font-medium ring-1 truncate block max-w-full
+                          ${e.settleStatus === 'UNSETTLED'
+                            ? 'bg-red-50 text-red-600 ring-red-200'
+                            : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
+                          {e.settleStatus === 'UNSETTLED' ? '미정산' : '정산완료'}
+                        </span>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {filteredExpenses.map(e => (
-                      <tr key={e.id}
-                        onClick={() => { setDetailExp(e); setDetailExpEdit(false); setError('') }}
-                        className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer">
-                        <td className="px-4 py-3 text-xs text-[var(--warm-mid)] whitespace-nowrap">{fmtDate(e.date)}</td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)]">{e.payMethod ?? '—'}</span>
-                          {e.financialAccount && (
-                            <div className="text-xs text-[var(--warm-muted)] mt-0.5">{accName(e.financialAccount)}</div>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs px-2 py-1 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20">{e.category}</span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-[var(--warm-dark)]">{e.detail ?? '—'}</td>
-                        <td className="px-4 py-3 text-sm font-semibold text-red-400 whitespace-nowrap">
-                          <MoneyDisplay amount={e.amount} prefix="-" />
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`text-xs px-2 py-1 rounded-full font-medium ring-1
-                            ${e.settleStatus === 'UNSETTLED'
-                              ? 'bg-red-50 text-red-600 ring-red-200'
-                              : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
-                            {e.settleStatus === 'UNSETTLED' ? '미정산' : '정산완료'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         </div>
@@ -521,43 +594,50 @@ export default function FinanceClient({
             </button>
           </div>
 
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100vh-340px)]">
             {filteredIncomes.length === 0 ? (
               <EmptyState label="부가 수익 내역이 없습니다" />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[480px]">
-                  <thead>
-                    <tr className="border-b border-[var(--warm-border)]">
-                      {['날짜', '입금수단', '카테고리', '세부 항목', '금액'].map(h => (
-                        <th key={h} className="text-left text-xs text-[var(--warm-muted)] font-medium px-4 py-3">{h}</th>
-                      ))}
+              <table className="w-full" style={{
+                tableLayout: 'fixed',
+                minWidth: ['incDate','incMethod','incCategory','incDetail','incAmount'].reduce((s, k) => s + (finColWidths[k] ?? 100), 0),
+              }}>
+                <thead className="sticky top-0 z-10 bg-[var(--cream)]">
+                  <tr className="border-b border-[var(--warm-border)]">
+                    <ResizableTh label="날짜"     colKey="incDate" />
+                    <ResizableTh label="입금수단" colKey="incMethod" />
+                    <ResizableTh label="카테고리" colKey="incCategory" />
+                    <ResizableTh label="세부 항목" colKey="incDetail" />
+                    <ResizableTh label="금액"     colKey="incAmount" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredIncomes.map(i => (
+                    <tr key={i.id}
+                      onClick={() => { setDetailInc(i); setDetailIncEdit(false); setError('') }}
+                      className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer">
+                      <td className="px-4 py-3 text-xs text-[var(--warm-mid)] overflow-hidden">
+                        <span className="truncate block">{fmtDate(i.date)}</span>
+                      </td>
+                      <td className="px-4 py-3 overflow-hidden">
+                        <span className="text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] truncate block max-w-full">{i.payMethod ?? '—'}</span>
+                        {i.financialAccount && (
+                          <span className="text-xs text-[var(--warm-muted)] mt-0.5 truncate block">{accName(i.financialAccount)}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 overflow-hidden">
+                        <span className="text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 truncate block max-w-full">{i.category}</span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
+                        <span className="truncate block">{i.detail ?? '—'}</span>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-semibold text-emerald-600 overflow-hidden">
+                        <span className="truncate block"><MoneyDisplay amount={i.amount} prefix="+" /></span>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {filteredIncomes.map(i => (
-                      <tr key={i.id}
-                        onClick={() => { setDetailInc(i); setDetailIncEdit(false); setError('') }}
-                        className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer">
-                        <td className="px-4 py-3 text-xs text-[var(--warm-mid)] whitespace-nowrap">{fmtDate(i.date)}</td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)]">{i.payMethod ?? '—'}</span>
-                          {i.financialAccount && (
-                            <div className="text-xs text-[var(--warm-muted)] mt-0.5">{accName(i.financialAccount)}</div>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">{i.category}</span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-[var(--warm-dark)]">{i.detail ?? '—'}</td>
-                        <td className="px-4 py-3 text-sm font-semibold text-green-400 whitespace-nowrap">
-                          <MoneyDisplay amount={i.amount} prefix="+" />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         </div>
@@ -888,7 +968,7 @@ export default function FinanceClient({
                   <DetailRow label="결제수단"    value={detailExp.payMethod ?? '—'} />
                   {detailExp.financeName && <DetailRow label="금융사" value={detailExp.financeName} />}
                   <DetailRow label="정산상태"    value={
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${detailExp.settleStatus === 'UNSETTLED' ? 'bg-red-500/15 text-red-400' : 'bg-green-500/15 text-green-400'}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ring-1 ${detailExp.settleStatus === 'UNSETTLED' ? 'bg-red-50 text-red-600 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
                       {detailExp.settleStatus === 'UNSETTLED' ? '미정산' : '정산완료'}
                     </span>
                   } />
