@@ -435,7 +435,7 @@ export default function FinanceClient({
               합계: <MoneyDisplay amount={totalExp} />
             </span>
             <button onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setError('') }}
-              className="px-4 py-2 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
+              className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
               + 지출 등록
             </button>
           </div>
@@ -625,7 +625,7 @@ export default function FinanceClient({
                       <button
                         onClick={() => handleSettle(g.items.map(i => i.id), g.accountName, g.billMonth)}
                         disabled={isPending}
-                        className="w-full py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                        className="w-full py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                         출금 확인 (정산 완료 처리)
                       </button>
                     ) : (
@@ -798,7 +798,7 @@ export default function FinanceClient({
                   </button>
                 )}
                 <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                   {isPending ? '저장 중...' : (editingAcc ? '수정 저장' : '등록')}
                 </button>
               </div>
@@ -908,7 +908,7 @@ export default function FinanceClient({
                     setEditExpAccName(detailExp.financeName ?? '')
                     setError('')
                   }}
-                    className="px-4 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">수정</button>
+                    className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">수정</button>
                 </div>
               </>
             ) : (
@@ -981,7 +981,7 @@ export default function FinanceClient({
                   <button type="button" onClick={() => { setDetailExpEdit(false); setError('') }}
                     className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">취소</button>
                   <button type="submit" disabled={isPending}
-                    className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                    className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                     {isPending ? '저장 중...' : '저장'}
                   </button>
                 </div>
@@ -1028,7 +1028,7 @@ export default function FinanceClient({
                     setEditIncAccId(detailInc.financialAccountId ?? '')
                     setError('')
                   }}
-                    className="px-4 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">수정</button>
+                    className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">수정</button>
                 </div>
               </>
             ) : (
@@ -1078,7 +1078,7 @@ export default function FinanceClient({
                   <button type="button" onClick={() => { setDetailIncEdit(false); setError('') }}
                     className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">취소</button>
                   <button type="submit" disabled={isPending}
-                    className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                    className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                     {isPending ? '저장 중...' : '저장'}
                   </button>
                 </div>
@@ -1168,7 +1168,7 @@ export default function FinanceClient({
                 <button type="button" onClick={() => setShowAddExp(false)}
                   className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">취소</button>
                 <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                   {isPending ? '저장 중...' : '저장'}
                 </button>
               </div>

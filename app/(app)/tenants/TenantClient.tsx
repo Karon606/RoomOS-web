@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithGemini } from './actions'
 import { savePayment, deletePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
@@ -75,7 +75,23 @@ const COL_DEFS = [
 ] as const
 type ColKey = (typeof COL_DEFS)[number]['key']
 
-const COL_VIS_KEY = 'roomos_tenant_col_vis'
+const COL_VIS_KEY    = 'roomos_tenant_col_vis'
+const COL_WIDTHS_KEY = 'roomos_tenant_col_widths'
+
+const DEFAULT_WIDTHS: Record<string, number> = {
+  roomNo: 72, name: 140,
+  englishName: 120, nationality: 80, gender: 60, job: 100,
+  contact: 130, payMethod: 90, depositAmount: 90, rentAmount: 100,
+  dueDay: 90, stayPeriod: 90, status: 120, scheduledDate: 80, moveOutDate: 130,
+}
+
+function loadColWidths(): Record<string, number> | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(COL_WIDTHS_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
 
 // ── 상수 ─────────────────────────────────────────────────────────
 
@@ -251,6 +267,8 @@ export default function TenantClient({
   const [colVis, setColVis]             = useState<Record<ColKey, boolean>>(initColVis)
   const [showColMenu, setShowColMenu]   = useState(false)
   const [isPending, startTransition]    = useTransition()
+  const [colWidths, setColWidths]       = useState<Record<string, number>>(DEFAULT_WIDTHS)
+  const colWidthsRef                    = useRef<Record<string, number>>(DEFAULT_WIDTHS)
 
   // 수납 모달
   const [payTarget, setPayTarget]   = useState<{ tenant: Tenant; lease: LeaseTerm } | null>(null)
@@ -264,7 +282,16 @@ export default function TenantClient({
   useEffect(() => {
     const saved = loadColVis()
     if (saved) setColVis(prev => ({ ...prev, ...saved }))
+    const savedW = loadColWidths()
+    if (savedW) {
+      const merged = { ...DEFAULT_WIDTHS, ...savedW }
+      setColWidths(merged)
+      colWidthsRef.current = merged
+    }
   }, [])
+
+  // colWidths 변경 시 ref 동기화
+  useEffect(() => { colWidthsRef.current = colWidths }, [colWidths])
 
   // 열 설정 변경 시 저장
   const updateColVis = (key: ColKey, val: boolean) => {
@@ -272,6 +299,25 @@ export default function TenantClient({
     setColVis(next)
     localStorage.setItem(COL_VIS_KEY, JSON.stringify(next))
   }
+
+  const startResize = useCallback((col: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startW = colWidthsRef.current[col] ?? 100
+
+    const onMove = (ev: MouseEvent) => {
+      const newW = Math.max(50, startW + ev.clientX - startX)
+      setColWidths(prev => ({ ...prev, [col]: newW }))
+    }
+    const onUp = () => {
+      localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(colWidthsRef.current))
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [])
 
   const visibleCols = COL_DEFS.filter(
     c => (c.tabs as readonly string[]).includes(filter) && colVis[c.key]
@@ -437,17 +483,41 @@ export default function TenantClient({
 
   // ── 정렬 헤더 ─────────────────────────────────────────────────
 
-  function SortTh({ label, sKey }: { label: string; sKey: SortKey }) {
-    const active = sortKey === sKey
+  function ResizableTh({ label, colKey, onClick, isActive }: {
+    label: string; colKey: string; onClick?: () => void; isActive?: boolean
+  }) {
+    const w = colWidths[colKey] ?? 100
     return (
       <th
-        onClick={() => handleSort(sKey)}
-        className={`text-left text-xs font-medium px-4 py-3 cursor-pointer select-none whitespace-nowrap transition-colors ${
-          active ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'
-        }`}
+        onClick={onClick}
+        className={`relative text-left text-xs font-medium px-4 py-3 select-none overflow-hidden ${
+          onClick ? 'cursor-pointer transition-colors' : ''
+        } ${isActive ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}
+        style={{ width: w, minWidth: w, maxWidth: w }}
       >
-        {label}{active ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+        <span className="truncate block">{label}{isActive ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</span>
+        {/* 드래그 핸들 */}
+        <div
+          onMouseDown={e => startResize(colKey, e)}
+          onClick={e => e.stopPropagation()}
+          className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize group"
+          style={{ userSelect: 'none' }}
+        >
+          <div className="absolute right-[2px] top-[20%] bottom-[20%] w-[1px] bg-[var(--warm-border)] group-hover:bg-[var(--coral)] transition-colors" />
+        </div>
       </th>
+    )
+  }
+
+  function SortTh({ label, sKey, colKey }: { label: string; sKey: SortKey; colKey: string }) {
+    const active = sortKey === sKey
+    return (
+      <ResizableTh
+        label={label}
+        colKey={colKey}
+        onClick={() => handleSort(sKey)}
+        isActive={active}
+      />
     )
   }
 
@@ -468,7 +538,7 @@ export default function TenantClient({
         <h1 className="text-xl font-bold text-[var(--warm-dark)]">입주자 관리</h1>
         <button
           onClick={() => { setShowAdd(true); setError('') }}
-          className="px-4 py-2 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors"
+          className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors"
         >
           + 입주자 등록
         </button>
@@ -479,7 +549,7 @@ export default function TenantClient({
         {(['active', 'past'] as const).map(tab => (
           <button key={tab} onClick={() => setFilter(tab)}
             className={`px-4 py-2 text-sm font-medium rounded-xl transition-colors ${
-              filter === tab ? 'bg-[var(--coral)] text-[var(--warm-dark)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'
+              filter === tab ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'
             }`}
           >
             {tab === 'active' ? `입주/예약자 (${activeCount})` : `퇴실자 내역 (${pastCount})`}
@@ -594,18 +664,32 @@ export default function TenantClient({
         </div>
       ) : (
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100vh-310px)]">
-          <table className="w-full" style={{ minWidth: `${280 + visibleCols.length * 110}px` }}>
+          <table className="w-full" style={{ tableLayout: 'fixed', minWidth: colWidths.roomNo + colWidths.name + visibleCols.reduce((s, c) => s + (colWidths[c.key] ?? 100), 0) }}>
             <thead className="sticky top-0 z-30 bg-[var(--cream)]">
               <tr className="border-b border-[var(--warm-border)]">
-                {/* sticky 컬럼 — 호실 (수직+수평 모두 고정: z-40) */}
-                <th onClick={() => handleSort('roomNo')}
-                  className={`sticky left-0 z-40 bg-[var(--cream)] text-left text-xs font-medium px-4 py-3 cursor-pointer select-none whitespace-nowrap transition-colors ${sortKey === 'roomNo' ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}>
-                  호실{sortKey === 'roomNo' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                {/* sticky — 호실 */}
+                <th
+                  onClick={() => handleSort('roomNo')}
+                  className={`relative sticky left-0 z-40 bg-[var(--cream)] text-left text-xs font-medium px-4 py-3 cursor-pointer select-none overflow-hidden transition-colors ${sortKey === 'roomNo' ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}
+                  style={{ width: colWidths.roomNo, minWidth: colWidths.roomNo, maxWidth: colWidths.roomNo }}
+                >
+                  <span className="truncate block">호실{sortKey === 'roomNo' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</span>
+                  <div onMouseDown={e => startResize('roomNo', e)} onClick={e => e.stopPropagation()}
+                    className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize group" style={{ userSelect: 'none' }}>
+                    <div className="absolute right-[2px] top-[20%] bottom-[20%] w-[1px] bg-[var(--warm-border)] group-hover:bg-[var(--coral)] transition-colors" />
+                  </div>
                 </th>
-                {/* sticky 컬럼 — 이름 (수직+수평 모두 고정: z-40) */}
-                <th onClick={() => handleSort('name')}
-                  className={`sticky left-[72px] z-40 bg-[var(--cream)] text-left text-xs font-medium px-4 py-3 cursor-pointer select-none whitespace-nowrap transition-colors ${sortKey === 'name' ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}>
-                  이름{sortKey === 'name' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                {/* sticky — 이름 */}
+                <th
+                  onClick={() => handleSort('name')}
+                  className={`relative sticky z-40 bg-[var(--cream)] text-left text-xs font-medium px-4 py-3 cursor-pointer select-none overflow-hidden transition-colors ${sortKey === 'name' ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}
+                  style={{ left: colWidths.roomNo, width: colWidths.name, minWidth: colWidths.name, maxWidth: colWidths.name }}
+                >
+                  <span className="truncate block">이름{sortKey === 'name' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</span>
+                  <div onMouseDown={e => startResize('name', e)} onClick={e => e.stopPropagation()}
+                    className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize group" style={{ userSelect: 'none' }}>
+                    <div className="absolute right-[2px] top-[20%] bottom-[20%] w-[1px] bg-[var(--warm-border)] group-hover:bg-[var(--coral)] transition-colors" />
+                  </div>
                 </th>
                 {visibleCols.map(c => {
                   const sortMap: Partial<Record<ColKey, SortKey>> = {
@@ -616,8 +700,8 @@ export default function TenantClient({
                   }
                   const sk = sortMap[c.key]
                   return sk
-                    ? <SortTh key={c.key} label={c.label} sKey={sk} />
-                    : <th key={c.key} className="text-left text-xs text-[var(--warm-muted)] font-medium px-4 py-3 whitespace-nowrap">{c.label}</th>
+                    ? <SortTh key={c.key} label={c.label} sKey={sk} colKey={c.key} />
+                    : <ResizableTh key={c.key} label={c.label} colKey={c.key} />
                 })}
               </tr>
             </thead>
@@ -634,80 +718,79 @@ export default function TenantClient({
                     className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer"
                   >
                     {/* sticky — 호실 (클릭 시 호실 관리 페이지로) */}
-                    <td className="sticky left-0 z-20 bg-[var(--cream)] px-4 py-3 text-sm font-semibold whitespace-nowrap"
+                    <td className="sticky left-0 z-20 bg-[var(--cream)] px-4 py-3 text-sm font-semibold overflow-hidden"
+                      style={{ maxWidth: colWidths.roomNo }}
                       onClick={e => { e.stopPropagation(); if (lease?.room.id) setRoomDetailId(lease.room.id) }}>
-                      <span className="text-[var(--coral)] hover:text-[var(--coral)] cursor-pointer underline-offset-2 hover:underline">
+                      <span className="block truncate text-[var(--coral)] cursor-pointer underline-offset-2 hover:underline">
                         {lease?.room.roomNo ? `${lease.room.roomNo}호` : '—'}
                       </span>
                     </td>
                     {/* sticky — 이름 */}
-                    <td className="sticky left-[72px] z-20 bg-[var(--cream)] px-4 py-3 whitespace-nowrap">
-                      <p className="text-sm font-medium text-[var(--warm-dark)]">{tenant.name}</p>
+                    <td className="sticky z-20 bg-[var(--cream)] px-4 py-3 overflow-hidden"
+                      style={{ left: colWidths.roomNo, maxWidth: colWidths.name }}>
+                      <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant.name}</p>
                     </td>
                     {visibleCols.map(c => {
+                      const tdBase = 'px-4 py-3 overflow-hidden'
                       switch (c.key) {
                         case 'nationality': {
                           const f = flagByName(tenant.nationality)
                           return (
-                            <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-dark)] whitespace-nowrap">
-                              {tenant.nationality ? `${f} ${tenant.nationality}` : '—'}
+                            <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-dark)]`}>
+                              <span className="block truncate">{tenant.nationality ? `${f} ${tenant.nationality}` : '—'}</span>
                             </td>
                           )
                         }
                         case 'gender':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{GENDER_LABEL[tenant.gender] ?? '—'}</td>
+                          return <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}><span className="block truncate">{GENDER_LABEL[tenant.gender] ?? '—'}</span></td>
                         case 'englishName':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{tenant.englishName || '—'}</td>
+                          return <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}><span className="block truncate">{tenant.englishName || '—'}</span></td>
                         case 'job':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{tenant.job || '—'}</td>
+                          return <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}><span className="block truncate">{tenant.job || '—'}</span></td>
                         case 'contact':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{primary?.contactValue ? formatPhone(primary.contactValue) : '—'}</td>
+                          return <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}><span className="block truncate">{primary?.contactValue ? formatPhone(primary.contactValue) : '—'}</span></td>
                         case 'payMethod':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{lease?.payMethod || '—'}</td>
+                          return <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}><span className="block truncate">{lease?.payMethod || '—'}</span></td>
                         case 'depositAmount':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-dark)] whitespace-nowrap">{lease && lease.depositAmount > 0 ? <MoneyDisplay amount={lease.depositAmount} /> : '—'}</td>
+                          return <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-dark)]`}><span className="block truncate">{lease && lease.depositAmount > 0 ? <MoneyDisplay amount={lease.depositAmount} /> : '—'}</span></td>
                         case 'rentAmount':
                           return (
                             <td key={c.key}
                               onClick={e => { e.stopPropagation(); if (lease) openPayModal(tenant, lease) }}
-                              className="px-4 py-3 text-sm text-[var(--warm-dark)] whitespace-nowrap cursor-pointer hover:text-[var(--coral)] transition-colors">
-                              {lease ? <MoneyDisplay amount={lease.rentAmount} /> : '—'}
+                              className={`${tdBase} text-sm text-[var(--warm-dark)] cursor-pointer hover:text-[var(--coral)] transition-colors`}>
+                              <span className="block truncate">{lease ? <MoneyDisplay amount={lease.rentAmount} /> : '—'}</span>
                             </td>
                           )
                         case 'dueDay':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{fmtDueDay(lease?.dueDay)}</td>
+                          return <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}><span className="block truncate">{fmtDueDay(lease?.dueDay)}</span></td>
                         case 'stayPeriod':
                           return (
-                            <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">
-                              {calcStayPeriod(lease?.moveInDate, lease?.moveOutDate ?? undefined)}
+                            <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}>
+                              <span className="block truncate">{calcStayPeriod(lease?.moveInDate, lease?.moveOutDate ?? undefined)}</span>
                             </td>
                           )
                         case 'status': {
                           const ddLabel = sched ? fmtDDay(sched.date) : null
-                          const ddColor = sched?.label === '입실' ? 'text-blue-400' : 'text-red-400'
+                          const ddColor = sched?.label === '입실' ? 'text-blue-600' : 'text-red-500'
                           return (
-                            <td key={c.key} className="px-4 py-3 whitespace-nowrap">
+                            <td key={c.key} className={tdBase}>
                               <div className="flex flex-col gap-0.5">
-                                <span className={`text-xs px-2.5 py-1 rounded-full font-medium self-start ${STATUS_COLOR[status] ?? ''}`}>
+                                <span className={`text-xs px-2.5 py-1 rounded-full font-medium self-start whitespace-nowrap ${STATUS_COLOR[status] ?? ''}`}>
                                   {STATUS_LABEL[status] ?? status}
                                 </span>
-                                {ddLabel && <span className={`text-xs font-medium pl-1 ${ddColor}`}>{ddLabel}</span>}
+                                {ddLabel && <span className={`text-xs font-medium pl-1 whitespace-nowrap ${ddColor}`}>{ddLabel}</span>}
                               </div>
                             </td>
                           )
                         }
                         case 'scheduledDate':
                           return (
-                            <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">
-                              {sched ? (
-                                <div className="flex items-center gap-1.5">
-                                  <span>{fmtShortDate(sched.date)}</span>
-                                </div>
-                              ) : '—'}
+                            <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}>
+                              <span className="block truncate">{sched ? fmtShortDate(sched.date) : '—'}</span>
                             </td>
                           )
                         case 'moveOutDate':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{fmtDate(lease?.moveOutDate)}</td>
+                          return <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}><span className="block truncate">{fmtDate(lease?.moveOutDate)}</span></td>
                         default: return null
                       }
                     })}
@@ -922,7 +1005,7 @@ export default function TenantClient({
                               <button
                                 onClick={handleAiAnalyze}
                                 disabled={aiLoading}
-                                className="text-xs px-3 py-1.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] rounded-lg transition-colors disabled:opacity-50">
+                                className="text-xs px-3 py-1.5 bg-[var(--coral)] hover:opacity-90 text-white rounded-lg transition-colors disabled:opacity-50">
                                 {aiLoading ? '분석 중...' : aiText ? '다시 분석' : '분석하기'}
                               </button>
                             </div>
@@ -958,7 +1041,7 @@ export default function TenantClient({
                       )}
                       <button
                         onClick={() => { setDetailEditMode(true); setDetailTab('info'); setError('') }}
-                        className="px-4 py-2 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
+                        className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
                         수정
                       </button>
                     </div>
@@ -981,7 +1064,7 @@ export default function TenantClient({
                       취소
                     </button>
                     <button type="submit" disabled={isPending}
-                      className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                      className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                       {isPending ? '저장 중...' : '저장'}
                     </button>
                   </div>
@@ -1011,7 +1094,7 @@ export default function TenantClient({
                   취소
                 </button>
                 <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                   {isPending ? '저장 중...' : '저장'}
                 </button>
               </div>
@@ -1040,7 +1123,7 @@ export default function TenantClient({
                   취소
                 </button>
                 <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                   {isPending ? '저장 중...' : '저장'}
                 </button>
               </div>
@@ -1224,7 +1307,7 @@ export default function TenantClient({
                   <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                     <div className="flex-1" />
                     <button onClick={() => { setShowPayForm(true); setError('') }}
-                      className="px-4 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
+                      className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
                       수납 등록
                     </button>
                   </div>
@@ -1270,7 +1353,7 @@ export default function TenantClient({
                       취소
                     </button>
                     <button type="submit" disabled={isPending}
-                      className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                      className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                       {isPending ? '저장 중...' : '저장'}
                     </button>
                   </div>

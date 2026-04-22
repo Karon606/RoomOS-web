@@ -213,7 +213,7 @@ export default function RoomManageClient({
             setTypes(prev => [...prev, newType.trim()])
             setNewType('')
           }}
-          className="px-3 py-2 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-xs rounded-xl transition-colors">
+          className="px-3 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-xs rounded-xl transition-colors">
           등록
         </button>
       </div>
@@ -233,7 +233,7 @@ export default function RoomManageClient({
         </div>
         <button
           onClick={() => { setShowAddModal(true); setError('') }}
-          className="px-4 py-2 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
+          className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
           + 호실 등록
         </button>
       </div>
@@ -277,7 +277,7 @@ export default function RoomManageClient({
                   <div className="flex items-start justify-between">
                     <span className="text-base font-bold text-[var(--warm-dark)]">{room.roomNo}호</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium
-                      ${room.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-mid)]' : 'bg-[var(--coral)]/20 text-[var(--coral)]'}`}>
+                      ${room.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'}`}>
                       {room.isVacant ? '공실' : '입주중'}
                     </span>
                   </div>
@@ -334,7 +334,7 @@ export default function RoomManageClient({
                 <div className="flex items-center gap-2.5">
                   <h2 className="text-base font-bold text-[var(--warm-dark)]">{r.roomNo}호</h2>
                   <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
-                    ${r.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-mid)]' : 'bg-[var(--coral)]/20 text-[var(--coral)]'}`}>
+                    ${r.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'}`}>
                     {r.isVacant ? '공실' : '입주중'}
                   </span>
                 </div>
@@ -390,7 +390,7 @@ export default function RoomManageClient({
                 <div className="flex-1" />
                 <button
                   onClick={() => openEdit(r)}
-                  className="px-4 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
+                  className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
                   수정
                 </button>
               </div>
@@ -453,7 +453,7 @@ export default function RoomManageClient({
                 취소
               </button>
               <button type="submit" disabled={isPending}
-                className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                 {isPending ? '저장 중...' : `저장${addPhotoPreviews.length > 0 ? ` (사진 ${addPhotoPreviews.length}장)` : ''}`}
               </button>
             </div>
@@ -536,7 +536,7 @@ export default function RoomManageClient({
                 취소
               </button>
               <button type="submit" disabled={isPending}
-                className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                 {isPending ? '저장 중...' : '저장'}
               </button>
             </div>

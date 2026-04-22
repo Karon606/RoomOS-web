@@ -273,7 +273,7 @@ export default function DataButtons() {
               취소
             </button>
             <button onClick={() => applyImport(file, resolutions)}
-              className="flex-1 py-2.5 bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
+              className="flex-1 py-2.5 bg-[var(--coral)] text-white text-sm font-medium rounded-xl transition-colors">
               가져오기 적용
             </button>
           </div>

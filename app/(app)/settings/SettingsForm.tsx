@@ -177,7 +177,7 @@ export default function SettingsForm({
             onClick={() => setTab(t.key)}
             className={`flex-1 py-2 text-sm font-medium rounded-xl transition-colors ${
               tab === t.key
-                ? 'bg-[var(--coral)] text-[var(--warm-dark)]'
+                ? 'bg-[var(--coral)] text-white'
                 : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'
             }`}
           >
@@ -211,7 +211,7 @@ export default function SettingsForm({
               </div>
             </div>
             <button type="submit" disabled={isPending}
-              className="w-full py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60 mt-2">
+              className="w-full py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60 mt-2">
               {isPending ? '저장 중...' : '저장'}
             </button>
           </form>
@@ -272,7 +272,7 @@ export default function SettingsForm({
             <div className="space-y-2">
               {members.map(m => (
                 <div key={m.userId} className="flex items-center gap-3 bg-[var(--canvas)] rounded-xl px-4 py-3">
-                  <div className="w-8 h-8 rounded-full bg-[var(--coral)] flex items-center justify-center text-sm font-medium text-[var(--warm-dark)] shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-[var(--coral)] flex items-center justify-center text-sm font-medium text-white shrink-0">
                     {m.avatarUrl
                       ? <img src={m.avatarUrl} alt="" className="w-8 h-8 rounded-full" />
                       : (m.name ?? m.email)[0].toUpperCase()}
@@ -335,7 +335,7 @@ export default function SettingsForm({
                   </select>
                   <button
                     onClick={handleInvite}
-                    className="px-4 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
+                    className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
                     초대
                   </button>
                 </div>
@@ -402,7 +402,7 @@ function OptionSection({
           placeholder={placeholder ?? '입력...'}
           className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
         <button onClick={onAdd}
-          className="px-4 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
+          className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
           등록
         </button>
       </div>

@@ -351,8 +351,8 @@ export default function RoomsClient({
         <div className="flex gap-2 flex-wrap">
           {[
             { key: 'all',    label: `전체 ${occupied.length}실`, color: 'bg-[var(--canvas)] text-[var(--warm-dark)]' },
-            { key: 'unpaid', label: `미납 ${unpaidCount}실`,      color: 'bg-red-500/20 text-red-300' },
-            { key: 'paid',   label: `완납 ${paidCount}실`,        color: 'bg-green-500/20 text-green-300' },
+            { key: 'unpaid', label: `미납 ${unpaidCount}실`,      color: 'bg-red-50 text-red-600 ring-1 ring-red-200' },
+            { key: 'paid',   label: `완납 ${paidCount}실`,        color: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' },
           ].map(f => (
             <button key={f.key}
               onClick={() => setFilter(f.key as any)}
@@ -368,7 +368,7 @@ export default function RoomsClient({
           <button
             onClick={() => setShowColMenu(v => !v)}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors
-              ${showColMenu ? 'bg-[var(--coral)] text-[var(--warm-dark)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
+              ${showColMenu ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
           >
             <span>⚙</span> 열 설정
           </button>
@@ -482,23 +482,23 @@ export default function RoomsClient({
                     <td className="px-4 py-4">
                       <div className="flex flex-col gap-1 items-start">
                         {room.status === 'NON_RESIDENT' && (
-                          <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-amber-500/20 text-amber-300 mb-0.5">
+                          <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-orange-50 text-orange-700 ring-1 ring-orange-200 mb-0.5">
                             비거주
                           </span>
                         )}
                         <span className={`text-xs px-2.5 py-1 rounded-full font-medium
-                          ${room.isPaid ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                          ${room.isPaid ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-red-50 text-red-600 ring-1 ring-red-200'}`}>
                           {room.isPaid ? '완납' : '미납'}
                         </span>
                         {!room.isPaid && (() => {
                           const info = getDueInfo(room.dueDay, targetMonth)
                           if (!info) return null
                           if (info.days === 0) return (
-                            <span className="text-xs text-orange-400 font-medium">오늘</span>
+                            <span className="text-xs text-orange-600 font-medium">오늘</span>
                           )
                           return info.overdue
                             ? <span className="text-xs text-red-400">{info.days}일 초과</span>
-                            : <span className="text-xs text-yellow-400">{info.days}일 후</span>
+                            : <span className="text-xs text-yellow-600">{info.days}일 후</span>
                         })()}
                       </div>
                     </td>
@@ -518,7 +518,7 @@ export default function RoomsClient({
               <button
                 onClick={() => setShowVacantColMenu(v => !v)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors
-                  ${showVacantColMenu ? 'bg-[var(--coral)] text-[var(--warm-dark)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
+                  ${showVacantColMenu ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
               >
                 <span>⚙</span> 열 설정
               </button>
@@ -654,7 +654,7 @@ export default function RoomsClient({
                             </span>
                             {canEdit && (
                               <button onClick={() => handleDeletePayment(p.id)}
-                                className="text-xs text-red-400 hover:text-red-300 transition-colors">
+                                className="text-xs text-red-600 hover:text-red-700 transition-colors">
                                 ✕
                               </button>
                             )}
@@ -667,12 +667,12 @@ export default function RoomsClient({
 
                 {/* 납부일 임시 조정 */}
                 {selectedRoom.leaseTermId && (
-                  <div className="border-t border-amber-900/40 px-6 py-3 shrink-0 bg-amber-950/20">
+                  <div className="border-t border-amber-200 px-6 py-3 shrink-0 bg-amber-50">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-xs font-medium text-amber-400">납부일 임시 조정</p>
                         {selectedRoom.overrideDueDayMonth === targetMonth && selectedRoom.overrideDueDay ? (
-                          <p className="text-xs text-amber-300 mt-0.5">
+                          <p className="text-xs text-amber-700 mt-0.5">
                             이번 달 납부일: <span className="font-bold">{selectedRoom.overrideDueDay}일</span>
                             {selectedRoom.overrideDueDayReason && ` (${selectedRoom.overrideDueDayReason})`}
                           </p>
@@ -688,7 +688,7 @@ export default function RoomsClient({
                               setShowOverrideForm(false)
                               router.refresh()
                             })}
-                            className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded-lg border border-red-900/50 hover:border-red-700 transition-colors">
+                            className="text-xs text-red-600 hover:text-red-700 px-2 py-1 rounded-lg border border-red-200 hover:border-red-400 transition-colors">
                             해제
                           </button>
                         )}
@@ -699,7 +699,7 @@ export default function RoomsClient({
                               setOverrideInput(selectedRoom.overrideDueDayMonth === targetMonth ? (selectedRoom.overrideDueDay ?? '') : '')
                               setOverrideReason(selectedRoom.overrideDueDayMonth === targetMonth ? (selectedRoom.overrideDueDayReason ?? '') : '')
                             }}
-                            className="text-xs text-amber-400 hover:text-amber-300 px-2 py-1 rounded-lg border border-amber-900/50 hover:border-amber-700 transition-colors">
+                            className="text-xs text-amber-600 hover:text-amber-700 px-2 py-1 rounded-lg border border-amber-200 hover:border-amber-400 transition-colors">
                             {showOverrideForm ? '닫기' : (selectedRoom.overrideDueDayMonth === targetMonth && selectedRoom.overrideDueDay ? '수정' : '조정하기')}
                           </button>
                         )}
@@ -714,7 +714,7 @@ export default function RoomsClient({
                               type="text" inputMode="numeric" placeholder="예: 15 또는 말일"
                               value={overrideInput}
                               onChange={e => setOverrideInput(e.target.value)}
-                              className="w-full bg-[var(--canvas)] border border-amber-800/50 rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-amber-500" />
+                              className="w-full bg-[var(--canvas)] border border-amber-200 rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-amber-500" />
                           </div>
                           <div className="flex-1 space-y-1">
                             <label className="text-xs text-[var(--warm-muted)]">사유 (선택)</label>
@@ -722,7 +722,7 @@ export default function RoomsClient({
                               type="text" placeholder="사유"
                               value={overrideReason}
                               onChange={e => setOverrideReason(e.target.value)}
-                              className="w-full bg-[var(--canvas)] border border-amber-800/50 rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-amber-500" />
+                              className="w-full bg-[var(--canvas)] border border-amber-200 rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-amber-500" />
                           </div>
                         </div>
                         <button
@@ -746,7 +746,7 @@ export default function RoomsClient({
                     <div className="flex-1" />
                     <button
                       onClick={() => { setShowPayForm(true); setError('') }}
-                      className="px-4 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
+                      className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
                       수납 등록
                     </button>
                   </div>
@@ -794,7 +794,7 @@ export default function RoomsClient({
                     취소
                   </button>
                   <button type="submit" disabled={isPending}
-                    className="flex-1 py-2.5 bg-[var(--coral)] hover:bg-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                    className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                     {isPending ? '저장 중...' : '저장'}
                   </button>
                 </div>
