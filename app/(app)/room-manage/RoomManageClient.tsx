@@ -282,11 +282,29 @@ export default function RoomManageClient({
                     </span>
                   </div>
                   <p className="text-xs text-[var(--warm-mid)] truncate">{tenant ?? '—'}</p>
-                  <div>
+                  <div className="space-y-0.5">
                     {room.type && <p className="text-xs text-[var(--warm-muted)]">{room.type}</p>}
+                    {/* 창문 · 방향 */}
+                    {(room.windowType || room.direction) && (
+                      <p className="text-xs text-[var(--warm-muted)]">
+                        {[
+                          room.windowType ? (WINDOW_TYPE_LABEL[room.windowType] ?? room.windowType) : null,
+                          room.direction  ? (DIRECTION_LABEL[room.direction]  ?? room.direction)  : null,
+                        ].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                    {/* 면적 */}
+                    {(room.areaPyeong || room.areaM2) && (
+                      <p className="text-xs text-[var(--warm-muted)]">
+                        {[
+                          room.areaPyeong ? `${room.areaPyeong}평` : null,
+                          room.areaM2     ? `${room.areaM2}㎡`    : null,
+                        ].filter(Boolean).join(' / ')}
+                      </p>
+                    )}
                     <p className="text-sm font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></p>
                     {room.scheduledRent != null && (
-                      <p className="text-xs text-amber-400 mt-0.5">
+                      <p className="text-xs text-amber-400">
                         → <MoneyDisplay amount={room.scheduledRent} />
                         {room.rentUpdateDate && (
                           <span className="text-[var(--warm-muted)] ml-1">({fmtDate(room.rentUpdateDate)})</span>

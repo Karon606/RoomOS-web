@@ -172,11 +172,16 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       select: {
         roomNo: true,
         isVacant: true,
+        type: true,
+        windowType: true,
+        direction: true,
+        areaPyeong: true,
+        areaM2: true,
+        baseRent: true,
         leaseTerms: {
-          where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-          select: { tenant: { select: { name: true } } },
+          where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+          select: { tenant: { select: { name: true } }, status: true },
           orderBy: { createdAt: 'desc' },
-          take: 1,
         },
       },
       orderBy: { roomNo: 'asc' },
@@ -297,7 +302,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const roomsData = roomsWithTenants.map(r => ({
     roomNo:     r.roomNo,
     isVacant:   r.isVacant,
-    tenantName: r.leaseTerms[0]?.tenant.name ?? null,
+    type:       r.type,
+    windowType: r.windowType as string | null,
+    direction:  r.direction as string | null,
+    areaPyeong: r.areaPyeong,
+    areaM2:     r.areaM2,
+    baseRent:   r.baseRent,
+    tenantName: r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.tenant.name ?? null,
+    tenantStatus: r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.status ?? null,
   }))
 
   // ── 미납 상세 ────────────────────────────────────────────────

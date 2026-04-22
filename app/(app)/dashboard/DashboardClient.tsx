@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
 
 // ── 타입 ────────────────────────────────────────────────────────
 
@@ -23,14 +24,25 @@ export type DashboardData = {
   genderDist:        { label: string; count: number; percent: number }[]
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
-  rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null }[]
+  rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number }[]
   activity:          { text: string; timeLabel: string; dotColor: string }[]
   unpaidLeases:      { roomNo: string; tenantName: string; desc: string }[]
 }
 
 // ── 메인 ────────────────────────────────────────────────────────
 
+const DASH_WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창' }
+const DASH_DIR_LABEL: Record<string, string> = {
+  NORTH: '북향', NORTH_EAST: '북동향', EAST: '동향', SOUTH_EAST: '남동향',
+  SOUTH: '남향', SOUTH_WEST: '남서향', WEST: '서향', NORTH_WEST: '북서향',
+}
+const DASH_STATUS_LABEL: Record<string, string> = {
+  ACTIVE: '거주중', RESERVED: '입실 예정', CHECKOUT_PENDING: '퇴실 예정',
+}
+
 export default function DashboardClient({ data, targetMonth }: { data: DashboardData; targetMonth: string }) {
+  const [selectedRoom, setSelectedRoom] = useState<DashboardData['rooms'][number] | null>(null)
+
   const prev = data.trend[data.trend.length - 2]
   const cur  = data.trend[data.trend.length - 1]
 
@@ -129,7 +141,8 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
                 {data.rooms.map(r => (
                   <div
                     key={r.roomNo}
-                    className="aspect-square rounded-[7px] flex flex-col items-center justify-center gap-[3px]"
+                    onClick={() => setSelectedRoom(r)}
+                    className="aspect-square rounded-[7px] flex flex-col items-center justify-center gap-[3px] cursor-pointer transition-opacity hover:opacity-75"
                     style={r.isVacant
                       ? { background: 'rgba(200,160,120,0.12)', color: 'var(--warm-muted)' }
                       : { background: 'rgba(244,98,58,0.09)', color: 'var(--coral)' }
@@ -265,6 +278,69 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
         </div>
       </div>
 
+      {selectedRoom && <RoomDetailPopup room={selectedRoom} onClose={() => setSelectedRoom(null)} />}
+    </div>
+  )
+}
+
+// ── 방 상세 팝업 (별도 컴포넌트) ──────────────────────────────────
+function RoomDetailPopup({ room, onClose }: { room: DashboardData['rooms'][number]; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+      onClick={onClose}>
+      <div className="bg-[var(--cream)] rounded-2xl shadow-2xl w-full max-w-xs overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+        {/* 헤더 */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
+          <div className="flex items-center gap-2">
+            <span className="text-base font-bold text-[var(--warm-dark)]">{room.roomNo}호</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium
+              ${room.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-mid)]' : 'bg-[var(--coral)]/20 text-[var(--coral)]'}`}>
+              {room.isVacant ? '공실' : (DASH_STATUS_LABEL[room.tenantStatus ?? ''] ?? '입주중')}
+            </span>
+          </div>
+          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-lg leading-none">✕</button>
+        </div>
+        {/* 정보 */}
+        <div className="px-5 py-4 space-y-2 text-sm">
+          {room.tenantName && (
+            <div className="flex justify-between">
+              <span className="text-[var(--warm-muted)]">입주자</span>
+              <span className="font-medium text-[var(--warm-dark)]">{room.tenantName}</span>
+            </div>
+          )}
+          {room.type && (
+            <div className="flex justify-between">
+              <span className="text-[var(--warm-muted)]">타입</span>
+              <span className="text-[var(--warm-dark)]">{room.type}</span>
+            </div>
+          )}
+          {room.windowType && (
+            <div className="flex justify-between">
+              <span className="text-[var(--warm-muted)]">창문</span>
+              <span className="text-[var(--warm-dark)]">{DASH_WINDOW_LABEL[room.windowType] ?? room.windowType}</span>
+            </div>
+          )}
+          {room.direction && (
+            <div className="flex justify-between">
+              <span className="text-[var(--warm-muted)]">방향</span>
+              <span className="text-[var(--warm-dark)]">{DASH_DIR_LABEL[room.direction] ?? room.direction}</span>
+            </div>
+          )}
+          {(room.areaPyeong || room.areaM2) && (
+            <div className="flex justify-between">
+              <span className="text-[var(--warm-muted)]">면적</span>
+              <span className="text-[var(--warm-dark)]">
+                {[room.areaPyeong ? `${room.areaPyeong}평` : null, room.areaM2 ? `${room.areaM2}㎡` : null].filter(Boolean).join(' / ')}
+              </span>
+            </div>
+          )}
+          <div className="flex justify-between border-t border-[var(--warm-border)] pt-2 mt-1">
+            <span className="text-[var(--warm-muted)]">기본이용료</span>
+            <span className="font-semibold text-[var(--warm-dark)]">{room.baseRent.toLocaleString()}원</span>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
