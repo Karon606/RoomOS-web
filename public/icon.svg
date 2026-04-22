@@ -1,4 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="18" fill="#f4623a"/>
-  <text x="50" y="72" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-weight="700" font-size="62" fill="white">R</text>
+  <rect width="100" height="100" rx="22" fill="#f4623a"/>
+  <!-- 4-line floor mark (coral bg variant) -->
+  <g transform="translate(18, 20)">
+    <line x1="0" y1="4.5"  x2="56" y2="4.5"  stroke="#fbbf24" stroke-width="9" stroke-linecap="round"/>
+    <line x1="0" y1="21.5" x2="36" y2="21.5" stroke="#fffcf7" stroke-width="9" stroke-linecap="round" opacity="0.55"/>
+    <line x1="0" y1="38.5" x2="56" y2="38.5" stroke="#fffcf7" stroke-width="9" stroke-linecap="round" opacity="0.75"/>
+    <line x1="0" y1="55.5" x2="28" y2="55.5" stroke="#fffcf7" stroke-width="9" stroke-linecap="round" opacity="0.35"/>
+  </g>
 </svg>
