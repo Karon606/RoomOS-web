@@ -391,6 +391,9 @@ export default function FinanceClient({
   return (
     <div className="space-y-5">
 
+      {/* 헤더 */}
+      <h1 className="text-xl font-bold text-[var(--warm-dark)]">지출/기타 수익</h1>
+
       {/* 서브탭 */}
       <div className="flex gap-1 border-b border-[var(--warm-border)] overflow-x-auto scrollbar-hide">
         {TABS.map(t => (
@@ -467,17 +470,17 @@ export default function FinanceClient({
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="text-xs px-2 py-1 rounded-full bg-[var(--coral-light)] text-[var(--coral)]">{e.category}</span>
+                          <span className="text-xs px-2 py-1 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20">{e.category}</span>
                         </td>
                         <td className="px-4 py-3 text-sm text-[var(--warm-dark)]">{e.detail ?? '—'}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-red-400 whitespace-nowrap">
                           <MoneyDisplay amount={e.amount} prefix="-" />
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`text-xs px-2 py-1 rounded-full font-medium
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium ring-1
                             ${e.settleStatus === 'UNSETTLED'
-                              ? 'bg-red-500/15 text-red-400'
-                              : 'bg-green-500/15 text-green-400'}`}>
+                              ? 'bg-red-50 text-red-600 ring-red-200'
+                              : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
                             {e.settleStatus === 'UNSETTLED' ? '미정산' : '정산완료'}
                           </span>
                         </td>
@@ -513,7 +516,7 @@ export default function FinanceClient({
               합계: <MoneyDisplay amount={totalInc} />
             </span>
             <button onClick={() => { setShowAddInc(true); setAddIncMethod('계좌이체'); setAddIncAccId(''); setError('') }}
-              className="px-4 py-2 bg-green-700 hover:bg-green-600 text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
+              className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
               + 수익 등록
             </button>
           </div>
@@ -544,7 +547,7 @@ export default function FinanceClient({
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="text-xs px-2 py-1 rounded-full bg-green-900/40 text-green-300">{i.category}</span>
+                          <span className="text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">{i.category}</span>
                         </td>
                         <td className="px-4 py-3 text-sm text-[var(--warm-dark)]">{i.detail ?? '—'}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-green-400 whitespace-nowrap">
@@ -579,7 +582,7 @@ export default function FinanceClient({
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-[var(--warm-dark)] text-base">{g.accountName}</span>
                       {g.payDayStr !== '미지정' && (
-                        <span className="text-xs px-2.5 py-1 rounded-full bg-yellow-500/15 text-yellow-400 font-medium">
+                        <span className="text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 font-medium">
                           결제일: {g.payDayStr}
                         </span>
                       )}

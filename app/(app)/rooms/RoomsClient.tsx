@@ -395,11 +395,21 @@ export default function RoomsClient({
           <table className="w-full min-w-[540px]">
             <thead className="sticky top-0 z-10 bg-[var(--cream)]">
               <tr className="border-b border-[var(--warm-border)]">
-                <SortTh label="호실"     sk="roomNo" />
+                {/* sticky — 호실 */}
+                <th onClick={() => handleSort('roomNo')}
+                  className={`${thCls} cursor-pointer select-none whitespace-nowrap sticky left-0 z-30 bg-[var(--cream)] transition-colors ${sortKey === 'roomNo' ? 'text-[var(--coral)]' : 'hover:text-[var(--warm-dark)]'}`}
+                  style={{ width: 80, minWidth: 80 }}>
+                  호실{sortKey === 'roomNo' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                </th>
+                {/* sticky — 입주자 */}
+                <th onClick={() => handleSort('tenantName')}
+                  className={`${thCls} cursor-pointer select-none whitespace-nowrap sticky z-30 bg-[var(--cream)] transition-colors ${sortKey === 'tenantName' ? 'text-[var(--coral)]' : 'hover:text-[var(--warm-dark)]'}`}
+                  style={{ left: 80, width: 140, minWidth: 140 }}>
+                  입주자{sortKey === 'tenantName' ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                </th>
+                {colVis.contact       && <SortTh label="연락처"   sk="contact" />}
                 {colVis.type          && <SortTh label="타입"     sk="type" />}
                 {colVis.windowType    && <SortTh label="창문"     sk="windowType" />}
-                <SortTh label="입주자"   sk="tenantName" />
-                {colVis.contact       && <SortTh label="연락처"   sk="contact" />}
                 {colVis.depositAmount && <SortTh label="보증금"   sk="depositAmount" />}
                 {colVis.expected      && <SortTh label="월 이용료" sk="expected" />}
                 {colVis.totalPaid     && <SortTh label="총납부액" sk="totalPaid" />}
@@ -415,9 +425,22 @@ export default function RoomsClient({
                   className={`border-b border-[var(--warm-border)]/50 transition-colors
                     ${room.isFutureMonth ? 'opacity-50' : 'cursor-pointer hover:bg-[var(--canvas)]/40'}`}>
 
-                  <td className="px-4 py-4 text-sm font-bold text-[var(--warm-dark)] whitespace-nowrap">
+                  {/* sticky — 호실 */}
+                  <td className="px-4 py-4 text-sm font-bold text-[var(--coral)] whitespace-nowrap sticky left-0 z-20 bg-[var(--cream)]"
+                    style={{ width: 80, minWidth: 80 }}>
                     {room.roomNo}호
                   </td>
+                  {/* sticky — 입주자 */}
+                  <td className="px-4 py-4 text-sm font-medium text-[var(--warm-dark)] sticky z-20 bg-[var(--cream)]"
+                    style={{ left: 80, width: 140, minWidth: 140 }}>
+                    {room.tenantName}
+                  </td>
+
+                  {colVis.contact && (
+                    <td className="px-4 py-4 text-sm text-[var(--warm-mid)]">
+                      {room.contact ? formatPhone(room.contact) : '—'}
+                    </td>
+                  )}
 
                   {colVis.type && (
                     <td className="px-4 py-4 text-sm text-[var(--warm-mid)]">{room.type ?? '—'}</td>
@@ -426,14 +449,6 @@ export default function RoomsClient({
                   {colVis.windowType && (
                     <td className="px-4 py-4 text-sm text-[var(--warm-mid)]">
                       {room.windowType ? (WINDOW_LABEL[room.windowType] ?? room.windowType) : '—'}
-                    </td>
-                  )}
-
-                  <td className="px-4 py-4 text-sm text-[var(--warm-dark)]">{room.tenantName}</td>
-
-                  {colVis.contact && (
-                    <td className="px-4 py-4 text-sm text-[var(--warm-mid)]">
-                      {room.contact ? formatPhone(room.contact) : '—'}
                     </td>
                   )}
 
@@ -460,7 +475,7 @@ export default function RoomsClient({
 
                   {colVis.balance && (
                     <td className="px-4 py-4 text-sm font-semibold">
-                      <span className={room.balance >= 0 ? 'text-green-400' : 'text-red-400'}>
+                      <span className={room.balance >= 0 ? 'text-emerald-600' : 'text-red-500'}>
                         {room.balance > 0
                           ? <MoneyDisplay amount={room.balance} prefix="+" />
                           : room.balance < 0
