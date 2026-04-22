@@ -1531,6 +1531,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">호실 *</label>
           <select name="roomId" value={selectedRoomId} onChange={handleRoomChange} required
+            onWheel={e => e.stopPropagation()}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
             {!tenant && <option value="">호실 선택</option>}
             {rooms.map(r => {
@@ -1538,9 +1539,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               const isOccupied = !r.isVacant && !isCurrentRoom
               const disableRoom = activeOnlyStatus && isOccupied
               return (
-                <option key={r.id} value={r.id} disabled={disableRoom}
-                  className={disableRoom ? 'text-[var(--warm-muted)]' : ''}>
-                  {r.roomNo}호{disableRoom ? ' (입주중)' : ''}
+                <option key={r.id} value={r.id} disabled={disableRoom}>
+                  {r.roomNo}호
                 </option>
               )
             })}
