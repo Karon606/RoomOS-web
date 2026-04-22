@@ -1,22 +1,31 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export function MoneyInput({
-  name, defaultValue, placeholder
+  name, defaultValue, value, onChange, placeholder
 }: {
   name: string
   defaultValue?: number
+  value?: number        // controlled: 외부에서 값 주입 시 (호실 선택 자동 입력 등)
+  onChange?: (v: number) => void
   placeholder?: string
 }) {
-  const [display, setDisplay] = useState(
-    defaultValue ? defaultValue.toLocaleString() : ''
-  )
+  const init = value ?? defaultValue
+  const [display, setDisplay] = useState(init ? init.toLocaleString() : '')
   const [focused, setFocused] = useState(false)
+
+  // 외부 value 변경 시 동기화
+  useEffect(() => {
+    if (value !== undefined) {
+      setDisplay(value ? value.toLocaleString() : '')
+    }
+  }, [value])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.replace(/[^0-9]/g, '')
     setDisplay(raw ? Number(raw).toLocaleString() : '')
+    onChange?.(raw ? Number(raw) : 0)
   }
 
   const rawValue = display.replace(/[^0-9]/g, '')

@@ -1420,7 +1420,20 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   const primary   = tenant?.contacts.find(c => c.isPrimary)
   const emergency = tenant?.contacts.find(c => c.isEmergency)
 
-  const [statusVal, setStatusVal] = useState(lease?.status ?? 'ACTIVE')
+  const [statusVal, setStatusVal]   = useState(lease?.status ?? 'ACTIVE')
+  const [selectedRoomId, setSelectedRoomId] = useState(lease?.room.id ?? '')
+  const [rentAmount, setRentAmount] = useState<number | undefined>(lease?.rentAmount)
+
+  const handleRoomChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const roomId = e.target.value
+    setSelectedRoomId(roomId)
+    const room = rooms.find(r => r.id === roomId)
+    if (room) setRentAmount(room.baseRent)
+  }
+
+  // 상태에 따라 이미 입주중인 방 선택 가능 여부 결정
+  // ACTIVE, CHECKOUT_PENDING → 입주중 방 비활성화 (NON_RESIDENT는 중복 허용이므로 항상 활성)
+  const activeOnlyStatus = ['ACTIVE', 'CHECKOUT_PENDING'].includes(statusVal)
 
   // 납부일 상태 — raw 값(숫자 또는 '말일')과 표시 문자열 분리
   const initDueDay = (): { raw: string; disp: string } => {
@@ -1492,16 +1505,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
       </FormSection>
 
       <FormSection title="계약 정보">
-        <SelectField label="호실 *" name="roomId" defaultValue={lease?.room.id} required>
-          {!tenant && <option value="">호실 선택</option>}
-          {rooms.map(r => (
-            <option key={r.id} value={r.id}>
-              {r.roomNo}호 {r.isVacant || r.id === lease?.room.id ? '(공실)' : '(입주중)'} — {r.baseRent >= 10000 ? `${r.baseRent / 10000}만원` : `${r.baseRent.toLocaleString()}원`}
-            </option>
-          ))}
-        </SelectField>
         <div className="grid grid-cols-2 gap-3">
-          {/* 상태 — controlled (퇴실일 표시 여부 결정) */}
+          {/* 상태 — controlled: 호실 선택 가능 여부 및 퇴실일 표시 결정 */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">상태</label>
             <select name="status" value={statusVal} onChange={e => setStatusVal(e.target.value)}
@@ -1521,10 +1526,31 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             <option value="POSTPAID">후납</option>
           </SelectField>
         </div>
+
+        {/* 호실 — 상태에 따라 입주중 방 비활성화 */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">호실 *</label>
+          <select name="roomId" value={selectedRoomId} onChange={handleRoomChange} required
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+            {!tenant && <option value="">호실 선택</option>}
+            {rooms.map(r => {
+              const isCurrentRoom = r.id === lease?.room.id
+              const isOccupied = !r.isVacant && !isCurrentRoom
+              const disableRoom = activeOnlyStatus && isOccupied
+              return (
+                <option key={r.id} value={r.id} disabled={disableRoom}
+                  className={disableRoom ? 'text-[var(--warm-muted)]' : ''}>
+                  {r.roomNo}호{disableRoom ? ' (입주중)' : ''}
+                </option>
+              )
+            })}
+          </select>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">월 이용료</label>
-            <MoneyInput name="rentAmount" defaultValue={lease?.rentAmount} placeholder="0원" />
+            <MoneyInput name="rentAmount" value={rentAmount} onChange={setRentAmount} placeholder="0원" />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">보증금</label>

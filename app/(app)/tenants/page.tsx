@@ -1,4 +1,4 @@
-import { getTenants, getRoomsForSelect } from './actions'
+import { getTenants, getRoomsForSelect, autoTransitionReserved } from './actions'
 import { getPropertySettings, getMyRole } from '@/app/(app)/settings/actions'
 import TenantClient from './TenantClient'
 
@@ -12,7 +12,7 @@ export default async function TenantsPage({
   const targetMonth = month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
   const [tenants, rooms, settings, myRole] = await Promise.all([
-    getTenants(),
+    autoTransitionReserved().then(() => getTenants()),
     getRoomsForSelect(),
     getPropertySettings(),
     getMyRole(),

@@ -541,14 +541,18 @@ export async function deleteTenant(tenantId: string): Promise<{ ok: true } | { o
   try {
     await requireEdit()
 
-    // 활성 계약이 있으면 해당 호실을 공실로 전환 후 삭제
+    // 활성 계약이 있으면 해당 호실을 공실로 전환 (단, 다른 입주자/비거주자가 남아있으면 제외)
     const activeLeases = await prisma.leaseTerm.findMany({
       where: { tenantId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
       select: { roomId: true },
     })
-    if (activeLeases.length > 0) {
-      const roomIds = [...new Set(activeLeases.map(l => l.roomId))]
-      await prisma.room.updateMany({ where: { id: { in: roomIds } }, data: { isVacant: true } })
+    for (const { roomId } of activeLeases) {
+      const remaining = await prisma.leaseTerm.findFirst({
+        where: { roomId, tenantId: { not: tenantId }, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+      })
+      if (!remaining) {
+        await prisma.room.update({ where: { id: roomId }, data: { isVacant: true } })
+      }
     }
 
     await prisma.tenant.delete({ where: { id: tenantId } })
@@ -557,5 +561,32 @@ export async function deleteTenant(tenantId: string): Promise<{ ok: true } | { o
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 입실 예정 → 거주중 자동 전환 (입주일 도래 시)
+export async function autoTransitionReserved() {
+  try {
+    const { propertyId } = await getPropertyId()
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const dueLeases = await prisma.leaseTerm.findMany({
+      where: { propertyId, status: 'RESERVED', moveInDate: { lte: today } },
+      select: { id: true, roomId: true, tenantId: true },
+    })
+    if (dueLeases.length === 0) return
+
+    for (const lease of dueLeases) {
+      await prisma.leaseTerm.update({ where: { id: lease.id }, data: { status: 'ACTIVE' } })
+      await prisma.room.update({ where: { id: lease.roomId }, data: { isVacant: false } })
+      await prisma.tenantStatusLog.create({
+        data: { tenantId: lease.tenantId, leaseTermId: lease.id, propertyId, fromStatus: 'RESERVED', toStatus: 'ACTIVE' },
+      })
+    }
+    revalidatePath('/tenants')
+    revalidatePath('/rooms')
+  } catch {
+    // 페이지 로드 중 호출되므로 실패해도 무시
   }
 }
