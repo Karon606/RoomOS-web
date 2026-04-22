@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoomOS — Floor · Door · New Ideas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #f5efe6; font-family: 'DM Sans', sans-serif; overflow: hidden; }</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useRef, useEffect, useCallback } = React;
+
+const C = {
+  coral:     '#f4623a',
+  coralDk:   '#d94d28',
+  coralLt:   '#ff8060',
+  coralPale: '#fde8e2',
+  sun:       '#f5a623',
+  sunLt:     '#fbbf24',
+  sunPale:   '#fef3d0',
+  sage:      '#5a8a6a',
+  sagePale:  '#e4f0e8',
+  // Lights only — no heavy darks
+  cream:     '#fffcf7',
+  sand:      '#f7ead6',
+  sandDk:    '#eeddc0',
+  mist:      '#fdf8f2',
+  warmMid:   '#7a6a5a',   // text — warm medium, replaces black
+  warmLt:    '#b0a090',   // secondary text
+  canvas:    '#f5efe6',
+};
+
+// ── Canvas ────────────────────────────────────────────────────
+function DesignCanvas({ children }) {
+  const vpRef = useRef(null);
+  const worldRef = useRef(null);
+  const tf = useRef({ x: 60, y: 60, scale: 1 });
+  const apply = useCallback(() => {
+    const { x, y, scale } = tf.current;
+    if (worldRef.current) worldRef.current.style.transform = `translate3d(${x}px,${y}px,0) scale(${scale})`;
+  }, []);
+  useEffect(() => {
+    const vp = vpRef.current;
+    let drag = null, gsBase = 1, isGesturing = false;
+    const zoomAt = (cx, cy, f) => {
+      const r = vp.getBoundingClientRect(), px = cx-r.left, py = cy-r.top, t = tf.current;
+      const next = Math.min(8, Math.max(0.1, t.scale*f)), k = next/t.scale;
+      t.x = px-(px-t.x)*k; t.y = py-(py-t.y)*k; t.scale = next; apply();
+    };
+    const isMW = e => e.deltaMode!==0||(e.deltaX===0&&Number.isInteger(e.deltaY)&&Math.abs(e.deltaY)>=40);
+    const onW = e => { e.preventDefault(); if(isGesturing)return; if(e.ctrlKey)zoomAt(e.clientX,e.clientY,Math.exp(-e.deltaY*0.01)); else if(isMW(e))zoomAt(e.clientX,e.clientY,Math.exp(-Math.sign(e.deltaY)*0.18)); else{tf.current.x-=e.deltaX;tf.current.y-=e.deltaY;apply();} };
+    const onGS=e=>{e.preventDefault();isGesturing=true;gsBase=tf.current.scale;};
+    const onGC=e=>{e.preventDefault();zoomAt(e.clientX,e.clientY,(gsBase*e.scale)/tf.current.scale);};
+    const onGE=e=>{e.preventDefault();isGesturing=false;};
+    const onPD=e=>{const onBg=e.target===vp||e.target===worldRef.current;if(!(e.button===1||(e.button===0&&onBg)))return;e.preventDefault();vp.setPointerCapture(e.pointerId);drag={id:e.pointerId,lx:e.clientX,ly:e.clientY};vp.style.cursor='grabbing';};
+    const onPM=e=>{if(!drag||e.pointerId!==drag.id)return;tf.current.x+=e.clientX-drag.lx;tf.current.y+=e.clientY-drag.ly;drag.lx=e.clientX;drag.ly=e.clientY;apply();};
+    const onPU=e=>{if(!drag||e.pointerId!==drag.id)return;vp.releasePointerCapture(e.pointerId);drag=null;vp.style.cursor='';};
+    vp.addEventListener('wheel',onW,{passive:false});
+    vp.addEventListener('gesturestart',onGS,{passive:false});
+    vp.addEventListener('gesturechange',onGC,{passive:false});
+    vp.addEventListener('gestureend',onGE,{passive:false});
+    vp.addEventListener('pointerdown',onPD);
+    vp.addEventListener('pointermove',onPM);
+    vp.addEventListener('pointerup',onPU);
+    vp.addEventListener('pointercancel',onPU);
+    return ()=>{
+      vp.removeEventListener('wheel',onW);
+      vp.removeEventListener('gesturestart',onGS);
+      vp.removeEventListener('gesturechange',onGC);
+      vp.removeEventListener('gestureend',onGE);
+      ['pointerdown','pointermove','pointerup','pointercancel'].forEach((ev,i)=>vp.removeEventListener(ev,[onPD,onPM,onPU,onPU][i]));
+    };
+  }, [apply]);
+  const grid=`url("data:image/svg+xml,%3Csvg width='100' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M100 0H0v100' fill='none' stroke='rgba(140,90,50,0.07)' stroke-width='1'/%3E%3C/svg%3E")`;
+  return (
+    <div ref={vpRef} style={{height:'100vh',width:'100vw',background:C.canvas,overflow:'hidden',overscrollBehavior:'none',touchAction:'none',position:'relative',userSelect:'none'}}>
+      <div ref={worldRef} style={{position:'absolute',top:0,left:0,transformOrigin:'0 0',willChange:'transform',backgroundImage:grid,backgroundSize:'100px 100px',width:'4200px',height:'2600px'}}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Sec({ title, subtitle, top, left, children }) {
+  return (
+    <div style={{position:'absolute',top,left}}>
+      <div style={{marginBottom:24}}>
+        <div style={{fontSize:12,fontWeight:600,color:'rgba(100,65,35,0.48)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:3}}>{title}</div>
+        {subtitle&&<div style={{fontSize:11.5,color:'rgba(100,65,35,0.33)',maxWidth:600}}>{subtitle}</div>}
+      </div>
+      <div style={{display:'flex',gap:24,alignItems:'flex-start'}}>{children}</div>
+    </div>
+  );
+}
+
+function Board({ label, width=280, height=240, children, shadow=true }) {
+  return (
+    <div style={{position:'relative',flexShrink:0}}>
+      {label&&<div style={{position:'absolute',bottom:'100%',left:0,paddingBottom:7,fontSize:11,fontWeight:500,color:'rgba(100,65,35,0.45)',whiteSpace:'nowrap'}}>{label}</div>}
+      <div style={{width,height,borderRadius:8,overflow:'hidden',
+        boxShadow:shadow?'0 2px 12px rgba(140,80,40,0.09),0 6px 30px rgba(140,80,40,0.06)':'none'}}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ── SVG Marks ─────────────────────────────────────────────────
+
+// FLOOR — stacked horizontal lines (층별)
+function MarkFloor({ size=40, color=C.warmMid, accent=C.coral }) {
+  const s=size, sw=s*0.095, pad=s*0.13;
+  const lines = [
+    { w:1.0, isAccent:true  },
+    { w:0.65, isAccent:false },
+    { w:1.0, isAccent:false },
+    { w:0.5, isAccent:false  },
+  ];
+  const totalH = sw*lines.length;
+  const gapH = (s - pad*2 - totalH) / (lines.length - 1);
+  return (
+    <svg width={s} height={s} viewBox={`0 0 ${s} ${s}`} fill="none">
+      {lines.map(({ w, isAccent }, i) => {
+        const y = pad + sw/2 + i*(sw + gapH);
+        const lw = (s - pad*2) * w;
+        return <line key={i} x1={pad} y1={y} x2={pad+lw} y2={y}
+          stroke={isAccent ? accent : color}
+          strokeWidth={sw} strokeLinecap="round"
+          opacity={isAccent ? 1 : i===1 ? 0.45 : i===2 ? 0.65 : 0.3}/>;
+      })}
+    </svg>
+  );
+}
+
+// DOOR — minimal frame + knob
+function MarkDoor({ size=40, color=C.warmMid, accent=C.coral }) {
+  const s=size, sw=s*0.09, pad=s*0.12;
+  const dw=s*0.44, cx=s/2;
+  const top=pad+sw/2, bot=s-pad-sw/2;
+  const lft=cx-dw/2, rgt=cx+dw/2;
+  const kx=rgt-s*0.115, ky=(top+bot)/2+s*0.05;
+  return (
+    <svg width={s} height={s} viewBox={`0 0 ${s} ${s}`} fill="none">
+      <line x1={pad} y1={bot} x2={s-pad} y2={bot} stroke={color} strokeWidth={sw} strokeLinecap="round"/>
+      <path d={`M${lft} ${bot} L${lft} ${top} Q${cx} ${top-s*0.015} ${rgt} ${top} L${rgt} ${bot}`}
+        stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+      <circle cx={kx} cy={ky} r={sw*0.75} fill={accent}/>
+    </svg>
+  );
+}
+
+// WINDOW — 4-pane window (창문)
+function MarkWindow({ size=40, color=C.warmMid, accent=C.coral }) {
+  const s=size, sw=s*0.085, pad=s*0.12, r=s*0.06;
+  const W=s-pad*2, H=s-pad*2;
+  const cx=pad+W/2, cy=pad+H/2;
+  return (
+    <svg width={s} height={s} viewBox={`0 0 ${s} ${s}`} fill="none">
+      {/* outer frame */}
+      <rect x={pad} y={pad} width={W} height={H} rx={r} stroke={color} strokeWidth={sw}/>
+      {/* cross divider */}
+      <line x1={cx} y1={pad} x2={cx} y2={pad+H} stroke={color} strokeWidth={sw*0.7} strokeLinecap="round"/>
+      <line x1={pad} y1={cy} x2={pad+W} y2={cy} stroke={color} strokeWidth={sw*0.7} strokeLinecap="round"/>
+      {/* accent pane — top left */}
+      <rect x={pad+sw/2} y={pad+sw/2} width={W/2-sw*0.85} height={H/2-sw*0.85} rx={r*0.6} fill={accent} opacity={0.18}/>
+    </svg>
+  );
+}
+
+// ARCH — rounded doorway (아치형)
+function MarkArch({ size=40, color=C.warmMid, accent=C.coral }) {
+  const s=size, sw=s*0.09, pad=s*0.12;
+  const aw=s*0.5, cx=s/2;
+  const bot=s-pad-sw/2, archTop=bot-aw*1.1;
+  const lft=cx-aw/2, rgt=cx+aw/2;
+  const kx=rgt-aw*0.2, ky=bot-aw*0.38;
+  return (
+    <svg width={s} height={s} viewBox={`0 0 ${s} ${s}`} fill="none">
+      {/* floor line */}
+      <line x1={pad} y1={bot} x2={s-pad} y2={bot} stroke={color} strokeWidth={sw} strokeLinecap="round"/>
+      {/* arch path */}
+      <path d={`M${lft} ${bot} L${lft} ${archTop+aw/2} Q${lft} ${archTop} ${cx} ${archTop} Q${rgt} ${archTop} ${rgt} ${archTop+aw/2} L${rgt} ${bot}`}
+        stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      {/* accent dot */}
+      <circle cx={kx} cy={ky} r={sw*0.72} fill={accent}/>
+    </svg>
+  );
+}
+
+// STEPS — ascending steps (계단, 층 개념)
+function MarkSteps({ size=40, color=C.warmMid, accent=C.coral }) {
+  const s=size, sw=s*0.09, pad=s*0.13;
+  const steps=3;
+  const totalW=s-pad*2, totalH=s-pad*2;
+  const stepW=totalW/steps, stepH=totalH/steps;
+  const points = [];
+  for(let i=0;i<=steps;i++){
+    points.push({ x: pad+i*stepW, yTop: pad+(steps-i)*stepH, yBot: s-pad });
+  }
+  let d=`M${points[0].x} ${points[0].yBot}`;
+  for(let i=0;i<steps;i++){
+    d+=` L${points[i].x} ${points[i].yTop} L${points[i+1].x} ${points[i].yTop}`;
+  }
+  d+=` L${points[steps].x} ${points[steps].yBot} Z`;
+  return (
+    <svg width={s} height={s} viewBox={`0 0 ${s} ${s}`} fill="none">
+      <path d={d} fill={color} opacity={0.12}/>
+      <path d={`M${pad} ${s-pad}`} stroke="none"/>
+      {/* step outlines */}
+      {Array.from({length:steps},(_,i)=>{
+        const x1=pad+i*stepW, y1=pad+(steps-i)*stepH;
+        const x2=pad+(i+1)*stepW;
+        return <g key={i}>
+          <line x1={x1} y1={y1} x2={x2} y2={y1} stroke={i===0?accent:color} strokeWidth={sw} strokeLinecap="round" opacity={i===0?1:0.6}/>
+          <line x1={x2} y1={y1} x2={x2} y2={y1+stepH} stroke={color} strokeWidth={sw} strokeLinecap="round" opacity={i===steps-1?0.3:0.6}/>
+        </g>;
+      })}
+      <line x1={pad} y1={s-pad} x2={s-pad} y2={s-pad} stroke={color} strokeWidth={sw} strokeLinecap="round" opacity={0.2}/>
+    </svg>
+  );
+}
+
+// ROOF + FLOOR — 지붕선 + 층 라인
+function MarkRoofFloor({ size=40, color=C.warmMid, accent=C.coral }) {
+  const s=size, sw=s*0.085, pad=s*0.12;
+  const cx=s/2;
+  const roofY=pad+sw/2, midY=s*0.52, botY=s-pad-sw/2;
+  return (
+    <svg width={s} height={s} viewBox={`0 0 ${s} ${s}`} fill="none">
+      {/* roof */}
+      <path d={`M${pad+sw/2} ${midY-s*0.06} L${cx} ${roofY} L${s-pad-sw/2} ${midY-s*0.06}`}
+        stroke={accent} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+      {/* floors */}
+      <line x1={pad} y1={midY} x2={s-pad} y2={midY} stroke={color} strokeWidth={sw} strokeLinecap="round"/>
+      <line x1={pad} y1={botY} x2={s-pad*1.6} y2={botY} stroke={color} strokeWidth={sw} strokeLinecap="round" opacity={0.4}/>
+    </svg>
+  );
+}
+
+// ── Wordmark ──────────────────────────────────────────────────
+function WM({ size=26, color=C.warmMid, osColor=C.coral, weight=600, lightRoom=false, font='DM Sans' }) {
+  return (
+    <span style={{fontFamily:`'${font}', sans-serif`,fontSize:size,lineHeight:1,color,letterSpacing:'-0.022em'}}>
+      <span style={{fontWeight:lightRoom?300:weight}}>Room</span>
+      <span style={{fontWeight:lightRoom?700:weight,color:osColor}}>OS</span>
+    </span>
+  );
+}
+
+function Lockup({ mark, wm, gap=13 }) {
+  return <div style={{display:'flex',alignItems:'center',gap}}>{mark}{wm}</div>;
+}
+
+// ── Warm light card ── (no heavy darks — use coral/sand as alt bg)
+function Card({ label, bg1=C.cream, bg2=C.coralPale, content1, content2, w=280, h=260, tag }) {
+  return (
+    <Board label={label} width={w} height={h}>
+      <div style={{height:'100%',display:'flex',flexDirection:'column'}}>
+        <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',background:bg1,borderBottom:`1px solid rgba(200,160,120,0.18)`}}>
+          {content1}
+        </div>
+        <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',background:bg2}}>
+          {content2}
+        </div>
+        {tag&&<div style={{padding:'8px 14px',background:'#fff',borderTop:`1px solid rgba(200,160,120,0.2)`}}>
+          <span style={{fontSize:10,color:C.warmLt,fontFamily:"'DM Mono',monospace",letterSpacing:'0.04em'}}>{tag}</span>
+        </div>}
+      </div>
+    </Board>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+function App() {
+  return (
+    <DesignCanvas>
+
+      {/* ── A. FLOOR MARK ── */}
+      <Sec top={80} left={80}
+        title="A. Floor — 층별 라인"
+        subtitle="층·호실의 구조를 추상화 — 수평선의 리듬감">
+
+        <Card label="A1 · DM Sans / 코랄" tag="floor / coral / dm"
+          bg1={C.cream} bg2={C.coralPale}
+          content1={<Lockup gap={14} mark={<MarkFloor size={42} color={C.warmMid} accent={C.coral}/>} wm={<WM size={25} color={C.warmMid} osColor={C.coral}/>}/>}
+          content2={<Lockup gap={14} mark={<MarkFloor size={42} color={C.coral} accent={C.coralDk}/>} wm={<WM size={25} color={C.coral} osColor={C.coralDk}/>}/>}
+        />
+
+        <Card label="A2 · Jakarta / 코랄" tag="floor / coral / jakarta"
+          bg1={C.cream} bg2={C.coralPale}
+          content1={<Lockup gap={14} mark={<MarkFloor size={42} color={C.warmMid} accent={C.coral}/>} wm={<WM size={25} color={C.warmMid} osColor={C.coral} font="Plus Jakarta Sans"/>}/>}
+          content2={<Lockup gap={14} mark={<MarkFloor size={42} color={C.coral} accent={C.coralDk}/>} wm={<WM size={25} color={C.coral} osColor={C.coralDk} font="Plus Jakarta Sans"/>}/>}
+        />
+
+        <Card label="A3 · Jakarta Light / 선샤인" tag="floor / sun / jakarta light"
+          bg1={C.cream} bg2={C.sunPale}
+          content1={<Lockup gap={14} mark={<MarkFloor size={42} color={C.warmMid} accent={C.sun}/>} wm={<WM size={25} color={C.warmMid} osColor={C.sun} font="Plus Jakarta Sans" lightRoom/>}/>}
+          content2={<Lockup gap={14} mark={<MarkFloor size={42} color={C.sun} accent={C.coral}/>} wm={<WM size={25} color={C.sun} osColor={C.coral} font="Plus Jakarta Sans" lightRoom/>}/>}
+        />
+
+        <Card label="A4 · 코랄 bg" tag="floor / coral bg"
+          bg1={C.cream} bg2={C.coral}
+          content1={<Lockup gap={14} mark={<MarkFloor size={42} color={C.warmMid} accent={C.coral}/>} wm={<WM size={25} color={C.warmMid} osColor={C.coral}/>}/>}
+          content2={<Lockup gap={14} mark={<MarkFloor size={42} color={C.cream} accent={C.sunLt}/>} wm={<WM size={25} color={C.cream} osColor={C.sunLt}/>}/>}
+        />
+      </Sec>
+
+      {/* ── B. DOOR MARK ── */}
+      <Sec top={80} left={1240}
+        title="B. Door — 문틀"
+        subtitle="입구·공간 관리의 시작점 — 단순하고 명료한 기하">
+
+        <Card label="B1 · DM Sans / 코랄" tag="door / coral / dm"
+          bg1={C.cream} bg2={C.coralPale}
+          content1={<Lockup gap={14} mark={<MarkDoor size={42} color={C.warmMid} accent={C.coral}/>} wm={<WM size={25} color={C.warmMid} osColor={C.coral}/>}/>}
+          content2={<Lockup gap={14} mark={<MarkDoor size={42} color={C.coral} accent={C.coralDk}/>} wm={<WM size={25} color={C.coral} osColor={C.coralDk}/>}/>}
+        />
+
+        <Card label="B2 · Jakarta / 코랄" tag="door / coral / jakarta"
+          bg1={C.cream} bg2={C.coralPale}
+          content1={<Lockup gap={14} mark={<MarkDoor size={42} color={C.warmMid} accent={C.coral}/>} wm={<WM size={25} color={C.warmMid} osColor={C.coral} font="Plus Jakarta Sans"/>}/>}
+          content2={<Lockup gap={14} mark={<MarkDoor size={42} color={C.coral} accent={C.coralDk}/>} wm={<WM size={25} color={C.coral} osColor={C.coralDk} font="Plus Jakarta Sans"/>}/>}
+        />
+
+        <Card label="B3 · Jakarta Light / 코랄" tag="door / coral / jakarta light"
+          bg1={C.cream} bg2={C.sand}
+          content1={<Lockup gap={14} mark={<MarkDoor size={42} color={C.warmMid} accent={C.coral}/>} wm={<WM size={25} color={C.warmMid} osColor={C.coral} font="Plus Jakarta Sans" lightRoom/>}/>}
+          content2={<Lockup gap={14} mark={<MarkDoor size={42} color={C.warmMid} accent={C.coral}/>} wm={<WM size={25} color={C.warmMid} osColor={C.coral} font="Plus Jakarta Sans" lightRoom/>}/>}
+        />
+
+        <Card label="B4 · 코랄 bg" tag="door / coral bg"
+          bg1={C.cream} bg2={C.coral}
+          content1={<Lockup gap={14} mark={<MarkDoor size={42} color={C.warmMid} accent={C.coral}/>} wm={<WM size={25} color={C.warmMid} osColor={C.coral}/>}/>}
+          content2={<Lockup gap={14} mark={<MarkDoor size={42} color={C.cream} accent={C.sunLt}/>} wm={<WM size={25} color={C.cream} osColor={C.sunLt}/>}/>}
+        />
+      </Sec>
+
+      {/* ── C. NEW IDEAS ── */}
+      <Sec top={80} left={2400}
+        title="C. 추가 아이디어"
+        subtitle="Window · Arch · Steps · Roof+Floor — 새로운 방향 제안">
+
+        <div style={{display:'flex',flexDirection:'column',gap:20}}>
+          <Board label="C1 · Window (창문)" width={280} height={120}>
+            <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:C.cream}}>
+              <Lockup gap={14} mark={<MarkWindow size={42} color={C.warmMid} accent={C.coral}/>} wm={<WM size={25} color={C.warmMid} osColor={C.coral} font="Plus Jakarta Sans"/>}/>
+            </div>
+          </Board>
+          <Board label="C2 · Arch (아치)" width={280} height={120}>
+            <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:C.cream}}>
+              <Lockup gap={14} mark={<MarkArch size={42} color={C.warmMid} accent={C.coral}/>} wm={<WM size={25} color={C.warmMid} osColor={C.coral} font="Plus Jakarta Sans"/>}/>
+            </div>
+          </Board>
+          <Board label="C3 · Steps (계단/층)" width={280} height={120}>
+            <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:C.cream}}>
+              <Lockup gap={14} mark={<MarkSteps size={42} color={C.warmMid} accent={C.coral}/>} wm={<WM size={25} color={C.warmMid} osColor={C.coral} font="Plus Jakarta Sans"/>}/>
+            </div>
+          </Board>
+          <Board label="C4 · Roof+Floor (지붕+층)" width={280} height={120}>
+            <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:C.cream}}>
+              <Lockup gap={14} mark={<MarkRoofFloor size={42} color={C.warmMid} accent={C.coral}/>} wm={<WM size={25} color={C.warmMid} osColor={C.coral} font="Plus Jakarta Sans"/>}/>
+            </div>
+          </Board>
+        </div>
+
+        {/* 코랄 bg 버전 */}
+        <div style={{display:'flex',flexDirection:'column',gap:20}}>
+          <Board label="C1 · Window / 코랄 bg" width={280} height={120}>
+            <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:C.coral}}>
+              <Lockup gap={14} mark={<MarkWindow size={42} color={C.cream} accent={C.sunLt}/>} wm={<WM size={25} color={C.cream} osColor={C.sunLt} font="Plus Jakarta Sans"/>}/>
+            </div>
+          </Board>
+          <Board label="C2 · Arch / 코랄 bg" width={280} height={120}>
+            <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:C.coral}}>
+              <Lockup gap={14} mark={<MarkArch size={42} color={C.cream} accent={C.sunLt}/>} wm={<WM size={25} color={C.cream} osColor={C.sunLt} font="Plus Jakarta Sans"/>}/>
+            </div>
+          </Board>
+          <Board label="C3 · Steps / 코랄 bg" width={280} height={120}>
+            <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:C.coral}}>
+              <Lockup gap={14} mark={<MarkSteps size={42} color={C.cream} accent={C.sunLt}/>} wm={<WM size={25} color={C.cream} osColor={C.sunLt} font="Plus Jakarta Sans"/>}/>
+            </div>
+          </Board>
+          <Board label="C4 · Roof+Floor / 코랄 bg" width={280} height={120}>
+            <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:C.coral}}>
+              <Lockup gap={14} mark={<MarkRoofFloor size={42} color={C.cream} accent={C.sunLt}/>} wm={<WM size={25} color={C.cream} osColor={C.sunLt} font="Plus Jakarta Sans"/>}/>
+            </div>
+          </Board>
+        </div>
+      </Sec>
+
+      {/* ── D. 추천 조합 크게 보기 ── */}
+      <Sec top={600} left={80}
+        title="D. 추천 조합 — 크게 보기"
+        subtitle="색상·마크·서체 최종 후보">
+
+        <Board label="① Floor + Jakarta Light" width={380} height={180}>
+          <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:C.cream}}>
+            <Lockup gap={20}
+              mark={<MarkFloor size={56} color={C.warmMid} accent={C.coral}/>}
+              wm={<WM size={38} color={C.warmMid} osColor={C.coral} font="Plus Jakarta Sans" lightRoom/>}
+            />
+          </div>
+        </Board>
+
+        <Board label="② Door + Jakarta Light" width={380} height={180}>
+          <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:C.cream}}>
+            <Lockup gap={20}
+              mark={<MarkDoor size={56} color={C.warmMid} accent={C.coral}/>}
+              wm={<WM size={38} color={C.warmMid} osColor={C.coral} font="Plus Jakarta Sans" lightRoom/>}
+            />
+          </div>
+        </Board>
+
+        <Board label="③ Arch + Jakarta 600" width={380} height={180}>
+          <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:C.cream}}>
+            <Lockup gap={20}
+              mark={<MarkArch size={56} color={C.warmMid} accent={C.coral}/>}
+              wm={<WM size={38} color={C.warmMid} osColor={C.coral} font="Plus Jakarta Sans" weight={600}/>}
+            />
+          </div>
+        </Board>
+      </Sec>
+
+      {/* ── E. 코랄 버전 ── */}
+      <Sec top={600} left={1580}
+        title="E. 코랄 배경 버전"
+        subtitle="산뜻하고 따뜻한 — 스플래시·앱 헤더용">
+
+        <Board label="① Floor / coral bg" width={340} height={180}>
+          <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:C.coral}}>
+            <Lockup gap={18}
+              mark={<MarkFloor size={52} color={C.cream} accent={C.sunLt}/>}
+              wm={<WM size={34} color={C.cream} osColor={C.sunLt} font="Plus Jakarta Sans" lightRoom/>}
+            />
+          </div>
+        </Board>
+
+        <Board label="② Door / coral bg" width={340} height={180}>
+          <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:C.coral}}>
+            <Lockup gap={18}
+              mark={<MarkDoor size={52} color={C.cream} accent={C.sunLt}/>}
+              wm={<WM size={34} color={C.cream} osColor={C.sunLt} font="Plus Jakarta Sans" lightRoom/>}
+            />
+          </div>
+        </Board>
+
+        <Board label="③ Arch / sand bg" width={340} height={180}>
+          <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',background:C.sand}}>
+            <Lockup gap={18}
+              mark={<MarkArch size={52} color={C.warmMid} accent={C.coral}/>}
+              wm={<WM size={34} color={C.warmMid} osColor={C.coral} font="Plus Jakarta Sans" weight={600}/>}
+            />
+          </div>
+        </Board>
+      </Sec>
+
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

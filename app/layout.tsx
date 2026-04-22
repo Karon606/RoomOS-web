@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
+// 1. 프로그레스 바 라이브러리 가져오기
+import { AppProgressBar as ProgressBar } from 'next-nprogress-bar';
 
 export const metadata: Metadata = {
   title: 'RoomOS',
@@ -21,7 +23,17 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        
+        {/* 2. 상단 프로그레스 바 설정 */}
+        <ProgressBar
+          height="3px"
+          color="#f4623a" // RoomOS Coral 브랜드 컬러 적용
+          options={{ showSpinner: false }} // 우측 하단 뱅글뱅글 도는 스피너는 숨김
+          shallowRouting
+        />
+      </body>
     </html>
   )
 }

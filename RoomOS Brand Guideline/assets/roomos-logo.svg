@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 44" width="220" height="44" fill="none">
+  
+  <line x1="0" y1="5" x2="36" y2="5" stroke="#f4623a" stroke-width="6" stroke-linecap="round"></line>
+  <line x1="0" y1="16" x2="23" y2="16" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.42"></line>
+  <line x1="0" y1="27" x2="36" y2="27" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.62"></line>
+  <line x1="0" y1="38" x2="18" y2="38" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.28"></line>
+  
+  <text x="50" y="32" font-family="&#39;Plus Jakarta Sans&#39;, sans-serif" font-size="30" letter-spacing="-0.7">
+    <tspan font-weight="300" fill="#7a6a5a">Room</tspan><tspan font-weight="700" fill="#f4623a">OS</tspan>
+  </text>
+</svg>

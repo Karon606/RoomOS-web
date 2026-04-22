@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoomOS — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Plus Jakarta Sans', sans-serif; background: #f5efe6; height: 100vh; display: flex; overflow: hidden; }
+
+/* ── Sidebar ── */
+.sidebar {
+  width: 220px; min-width: 220px;
+  background: #fffcf7;
+  border-right: 1px solid rgba(200,160,120,0.15);
+  display: flex; flex-direction: column;
+  height: 100vh;
+}
+.sidebar-logo {
+  padding: 24px 22px 20px;
+  border-bottom: 1px solid rgba(200,160,120,0.13);
+}
+.sidebar-logo svg { display: block; }
+
+.nav { flex: 1; padding: 10px 0; overflow-y: auto; }
+.nav-group-label {
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: rgba(120,90,60,0.38);
+  padding: 14px 22px 6px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 22px;
+  font-size: 13px; font-weight: 400; color: #b0a090;
+  cursor: default; border-left: 2.5px solid transparent;
+  transition: color 0.15s;
+}
+.nav-item.active {
+  color: #f4623a; font-weight: 500;
+  background: rgba(244,98,58,0.06);
+  border-left-color: #f4623a;
+}
+.nav-item .dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  background: currentColor; opacity: 0.6;
+}
+.nav-item.active .dot { opacity: 1; }
+
+.sidebar-footer {
+  padding: 16px 22px;
+  border-top: 1px solid rgba(200,160,120,0.13);
+  display: flex; align-items: center; gap: 10px;
+}
+.avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: #f4623a;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+.user-name { font-size: 12px; font-weight: 500; color: #7a6a5a; }
+.user-role { font-size: 10px; color: #b0a090; }
+
+/* ── Main ── */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+.topbar {
+  background: #fffcf7;
+  border-bottom: 1px solid rgba(200,160,120,0.13);
+  padding: 0 32px;
+  height: 56px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.topbar-title { font-size: 15px; font-weight: 600; color: #5a4a3a; letter-spacing: -0.01em; }
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+.btn-primary {
+  background: #f4623a; color: #fff;
+  border: none; border-radius: 7px;
+  padding: 7px 16px; font-size: 12px; font-weight: 600;
+  cursor: default; font-family: inherit; letter-spacing: -0.01em;
+}
+.badge {
+  background: rgba(244,98,58,0.1); color: #f4623a;
+  border-radius: 20px; padding: 3px 10px;
+  font-size: 11px; font-weight: 600;
+}
+
+.content { flex: 1; overflow-y: auto; padding: 28px 32px; }
+
+/* ── Stat cards ── */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
+.stat-card {
+  background: #fffcf7;
+  border-radius: 12px;
+  padding: 20px 22px;
+  box-shadow: 0 1px 4px rgba(140,80,40,0.06), 0 4px 16px rgba(140,80,40,0.04);
+}
+.stat-label { font-size: 11px; font-weight: 500; color: #b0a090; letter-spacing: 0.02em; margin-bottom: 10px; }
+.stat-value { font-size: 28px; font-weight: 700; color: #5a4a3a; letter-spacing: -0.03em; line-height: 1; margin-bottom: 8px; }
+.stat-sub { font-size: 11px; color: #b0a090; }
+.stat-sub span { color: #f4623a; font-weight: 600; }
+.stat-card.accent { background: #f4623a; }
+.stat-card.accent .stat-label { color: rgba(255,252,247,0.65); }
+.stat-card.accent .stat-value { color: #fff; }
+.stat-card.accent .stat-sub { color: rgba(255,252,247,0.55); }
+.stat-card.accent .stat-sub span { color: #fbbf24; }
+
+/* ── Two-col layout ── */
+.two-col { display: grid; grid-template-columns: 1fr 340px; gap: 16px; margin-bottom: 28px; }
+
+/* ── Room grid ── */
+.panel {
+  background: #fffcf7;
+  border-radius: 12px;
+  padding: 22px;
+  box-shadow: 0 1px 4px rgba(140,80,40,0.06), 0 4px 16px rgba(140,80,40,0.04);
+}
+.panel-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 18px;
+}
+.panel-title { font-size: 13px; font-weight: 600; color: #5a4a3a; }
+.panel-action { font-size: 11px; color: #f4623a; font-weight: 500; cursor: default; }
+
+.room-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.room-cell {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 4px; cursor: default;
+  font-size: 11px; font-weight: 500;
+}
+.room-cell .room-no { font-size: 12px; font-weight: 700; }
+.room-occupied { background: rgba(244,98,58,0.08); color: #f4623a; }
+.room-occupied .room-no { color: #f4623a; }
+.room-vacant { background: rgba(200,160,120,0.1); color: #c0a888; }
+.room-vacant .room-no { color: #c0a888; }
+.room-maintenance { background: rgba(251,191,36,0.12); color: #d97706; }
+.room-maintenance .room-no { color: #d97706; }
+
+/* ── Tenant list ── */
+.tenant-list { display: flex; flex-direction: column; gap: 10px; }
+.tenant-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 8px;
+  background: rgba(200,160,120,0.06);
+}
+.tenant-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: #f7ead6; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #c08050; flex-shrink: 0;
+}
+.tenant-info { flex: 1; }
+.tenant-name { font-size: 12px; font-weight: 600; color: #5a4a3a; margin-bottom: 2px; }
+.tenant-detail { font-size: 10px; color: #b0a090; }
+.tenant-status {
+  font-size: 10px; font-weight: 600;
+  padding: 3px 8px; border-radius: 20px;
+}
+.tenant-status.ok { background: rgba(90,138,106,0.1); color: #5a8a6a; }
+.tenant-status.due { background: rgba(244,98,58,0.1); color: #f4623a; }
+
+/* ── Revenue bar ── */
+.revenue-chart { display: flex; flex-direction: column; gap: 10px; }
+.rev-row { display: flex; align-items: center; gap: 10px; }
+.rev-month { font-size: 11px; color: #b0a090; width: 24px; flex-shrink: 0; }
+.rev-bar-wrap { flex: 1; height: 8px; background: rgba(200,160,120,0.15); border-radius: 4px; overflow: hidden; }
+.rev-bar { height: 100%; border-radius: 4px; background: #f4623a; }
+.rev-val { font-size: 11px; font-weight: 600; color: #5a4a3a; width: 54px; text-align: right; flex-shrink: 0; font-family: 'DM Mono', monospace; }
+
+/* ── Recent activity ── */
+.activity-list { display: flex; flex-direction: column; gap: 0; }
+.activity-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid rgba(200,160,120,0.1);
+}
+.activity-item:last-child { border-bottom: none; }
+.activity-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  margin-top: 4px; flex-shrink: 0;
+}
+.activity-text { flex: 1; font-size: 12px; color: #7a6a5a; line-height: 1.4; }
+.activity-text strong { color: #5a4a3a; font-weight: 600; }
+.activity-time { font-size: 10px; color: #c0a888; font-family: 'DM Mono', monospace; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<!-- ── SIDEBAR ── -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <svg viewBox="0 0 160 32" width="134" height="27" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="4"  x2="26" y2="4"  stroke="#f4623a" stroke-width="4.5" stroke-linecap="round"/>
+      <line x1="0" y1="12" x2="17" y2="12" stroke="#7a6a5a" stroke-width="4.5" stroke-linecap="round" opacity="0.42"/>
+      <line x1="0" y1="20" x2="26" y2="20" stroke="#7a6a5a" stroke-width="4.5" stroke-linecap="round" opacity="0.62"/>
+      <line x1="0" y1="28" x2="13" y2="28" stroke="#7a6a5a" stroke-width="4.5" stroke-linecap="round" opacity="0.28"/>
+      <text x="36" y="23" font-family="'Plus Jakarta Sans',sans-serif" font-size="22" letter-spacing="-0.5" fill="#7a6a5a">
+        <tspan font-weight="300">Room</tspan><tspan font-weight="700" fill="#f4623a">OS</tspan>
+      </text>
+    </svg>
+  </div>
+
+  <nav class="nav">
+    <div class="nav-group-label">메인</div>
+    <div class="nav-item active"><div class="dot"></div>대시보드</div>
+    <div class="nav-item"><div class="dot"></div>방 관리</div>
+    <div class="nav-item"><div class="dot"></div>입주자 관리</div>
+
+    <div class="nav-group-label">수익</div>
+    <div class="nav-item"><div class="dot"></div>수납 관리</div>
+    <div class="nav-item"><div class="dot"></div>지출 관리</div>
+    <div class="nav-item"><div class="dot"></div>통계 · 리포트</div>
+
+    <div class="nav-group-label">설정</div>
+    <div class="nav-item"><div class="dot"></div>공지 · 알림</div>
+    <div class="nav-item"><div class="dot"></div>환경설정</div>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="avatar">김</div>
+    <div>
+      <div class="user-name">김관리</div>
+      <div class="user-role">고시원 원장</div>
+    </div>
+  </div>
+</aside>
+
+<!-- ── MAIN ── -->
+<main class="main">
+  <div class="topbar">
+    <div class="topbar-title">대시보드</div>
+    <div class="topbar-right">
+      <div class="badge">미납 3건</div>
+      <button class="btn-primary">+ 입주자 등록</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- Stats -->
+    <div class="stats">
+      <div class="stat-card accent">
+        <div class="stat-label">이번 달 수납</div>
+        <div class="stat-value">4,820<span style="font-size:14px;font-weight:400;">만</span></div>
+        <div class="stat-sub"><span>+12%</span> 지난 달 대비</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">총 입실 현황</div>
+        <div class="stat-value">38 <span style="font-size:14px;font-weight:400;color:#c0a888;">/ 42</span></div>
+        <div class="stat-sub">공실 <span>4</span>개</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">이번 달 지출</div>
+        <div class="stat-value">620<span style="font-size:14px;font-weight:400;">만</span></div>
+        <div class="stat-sub">전월 대비 <span>-8%</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">미납 금액</div>
+        <div class="stat-value">85<span style="font-size:14px;font-weight:400;">만</span></div>
+        <div class="stat-sub"><span>3명</span> 미납</div>
+      </div>
+    </div>
+
+    <!-- Room grid + Tenants -->
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">방 현황 <span style="font-size:11px;color:#b0a090;font-weight:400;margin-left:6px;">1층 · 101~120호</span></div>
+          <div class="panel-action">전체 보기 →</div>
+        </div>
+        <div class="room-grid">
+          {/* 101~120 */}
+          {['101','102','103','104','105','106','107','108','109','110','111','112','113','114','115','116','117','118','119','120'].map((n, i) => {
+            // placeholder rendered as static below
+          })}
+        </div>
+        <div class="room-grid">
+          <div class="room-cell room-occupied"><div class="room-no">101</div><div>입실</div></div>
+          <div class="room-cell room-occupied"><div class="room-no">102</div><div>입실</div></div>
+          <div class="room-cell room-vacant"><div class="room-no">103</div><div>공실</div></div>
+          <div class="room-cell room-occupied"><div class="room-no">104</div><div>입실</div></div>
+          <div class="room-cell room-occupied"><div class="room-no">105</div><div>입실</div></div>
+          <div class="room-cell room-occupied"><div class="room-no">106</div><div>입실</div></div>
+          <div class="room-cell room-maintenance"><div class="room-no">107</div><div>점검</div></div>
+          <div class="room-cell room-occupied"><div class="room-no">108</div><div>입실</div></div>
+          <div class="room-cell room-occupied"><div class="room-no">109</div><div>입실</div></div>
+          <div class="room-cell room-vacant"><div class="room-no">110</div><div>공실</div></div>
+          <div class="room-cell room-occupied"><div class="room-no">111</div><div>입실</div></div>
+          <div class="room-cell room-occupied"><div class="room-no">112</div><div>입실</div></div>
+          <div class="room-cell room-occupied"><div class="room-no">113</div><div>입실</div></div>
+          <div class="room-cell room-vacant"><div class="room-no">114</div><div>공실</div></div>
+          <div class="room-cell room-occupied"><div class="room-no">115</div><div>입실</div></div>
+          <div class="room-cell room-occupied"><div class="room-no">116</div><div>입실</div></div>
+          <div class="room-cell room-occupied"><div class="room-no">117</div><div>입실</div></div>
+          <div class="room-cell room-occupied"><div class="room-no">118</div><div>입실</div></div>
+          <div class="room-cell room-vacant"><div class="room-no">119</div><div>공실</div></div>
+          <div class="room-cell room-occupied"><div class="room-no">120</div><div>입실</div></div>
+        </div>
+        <!-- Legend -->
+        <div style="display:flex;gap:16px;margin-top:16px;">
+          <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:#b0a090;">
+            <div style="width:8px;height:8px;border-radius:2px;background:rgba(244,98,58,0.2);"></div>입실
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:#b0a090;">
+            <div style="width:8px;height:8px;border-radius:2px;background:rgba(200,160,120,0.18);"></div>공실
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:#b0a090;">
+            <div style="width:8px;height:8px;border-radius:2px;background:rgba(251,191,36,0.2);"></div>점검중
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent activity -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">최근 활동</div>
+          <div class="panel-action">전체 →</div>
+        </div>
+        <div class="activity-list">
+          <div class="activity-item">
+            <div class="activity-dot" style="background:#f4623a;"></div>
+            <div class="activity-text"><strong>이민준</strong> 씨 101호 입실 완료</div>
+            <div class="activity-time">방금</div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-dot" style="background:#fbbf24;"></div>
+            <div class="activity-text"><strong>103호</strong> 수납 미납 알림 발송</div>
+            <div class="activity-time">1시간 전</div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-dot" style="background:#5a8a6a;"></div>
+            <div class="activity-text"><strong>박서연</strong> 씨 4월 수납 완료 <span style="color:#5a8a6a;font-weight:600;">350,000원</span></div>
+            <div class="activity-time">오전 10:22</div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-dot" style="background:#b0a090;"></div>
+            <div class="activity-text"><strong>107호</strong> 보일러 점검 등록</div>
+            <div class="activity-time">어제</div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-dot" style="background:#f4623a;"></div>
+            <div class="activity-text"><strong>최지우</strong> 씨 퇴실 처리 — 118호</div>
+            <div class="activity-time">어제</div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-dot" style="background:#5a8a6a;"></div>
+            <div class="activity-text">4월 정산 완료 — 순수익 <span style="color:#5a8a6a;font-weight:600;">4,200만원</span></div>
+            <div class="activity-time">4/1</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Revenue + Tenants -->
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">월별 수납 현황</div>
+          <div class="panel-action">리포트 →</div>
+        </div>
+        <div class="revenue-chart">
+          {[
+            { m:'11월', v: 4200, pct: 84 },
+            { m:'12월', v: 4050, pct: 81 },
+            { m:'1월',  v: 4600, pct: 92 },
+            { m:'2월',  v: 4380, pct: 88 },
+            { m:'3월',  v: 4750, pct: 95 },
+            { m:'4월',  v: 4820, pct: 100 },
+          ].map(({ m, v, pct }) => (
+            `<div class="rev-row">
+              <div class="rev-month">${m}</div>
+              <div class="rev-bar-wrap"><div class="rev-bar" style="width:${pct}%"></div></div>
+              <div class="rev-val">${v.toLocaleString()}만</div>
+            </div>`
+          )).join('')}
+        </div>
+        <script>
+          document.querySelector('.revenue-chart').innerHTML = [
+            { m:'11월', v: 4200, pct: 84 },
+            { m:'12월', v: 4050, pct: 81 },
+            { m:'1월',  v: 4600, pct: 92 },
+            { m:'2월',  v: 4380, pct: 88 },
+            { m:'3월',  v: 4750, pct: 95 },
+            { m:'4월',  v: 4820, pct: 100 },
+          ].map(({ m, v, pct }) =>
+            `<div class="rev-row">
+              <div class="rev-month">${m}</div>
+              <div class="rev-bar-wrap"><div class="rev-bar" style="width:${pct}%"></div></div>
+              <div class="rev-val">${v.toLocaleString()}만</div>
+            </div>`
+          ).join('');
+        </script>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">미납 입주자</div>
+          <div class="badge" style="font-size:10px;">3건</div>
+        </div>
+        <div class="tenant-list">
+          <div class="tenant-row">
+            <div class="tenant-avatar">김</div>
+            <div class="tenant-info">
+              <div class="tenant-name">김도현</div>
+              <div class="tenant-detail">103호 · 4월 미납</div>
+            </div>
+            <div class="tenant-status due">미납</div>
+          </div>
+          <div class="tenant-row">
+            <div class="tenant-avatar">오</div>
+            <div class="tenant-info">
+              <div class="tenant-name">오세훈</div>
+              <div class="tenant-detail">112호 · 3,4월 미납</div>
+            </div>
+            <div class="tenant-status due">미납</div>
+          </div>
+          <div class="tenant-row">
+            <div class="tenant-avatar">장</div>
+            <div class="tenant-info">
+              <div class="tenant-name">장미래</div>
+              <div class="tenant-detail">119호 · 4월 미납</div>
+            </div>
+            <div class="tenant-status due">미납</div>
+          </div>
+          <div class="tenant-row" style="opacity:0.5;">
+            <div class="tenant-avatar" style="background:#f7ead6;color:#c08050;">박</div>
+            <div class="tenant-info">
+              <div class="tenant-name">박서연</div>
+              <div class="tenant-detail">108호 · 4월 수납완료</div>
+            </div>
+            <div class="tenant-status ok">완납</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+</body>
+</html>

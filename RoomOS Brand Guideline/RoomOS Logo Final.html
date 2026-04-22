@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoomOS — Final Logo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #f5efe6; font-family: 'Plus Jakarta Sans', sans-serif; min-height: 100vh; }
+
+:root {
+  --coral:     #f4623a;
+  --coral-dk:  #d94d28;
+  --coral-lt:  #ff7f5c;
+  --coral-pale:#fde8e2;
+  --sun:       #f5a623;
+  --sun-lt:    #fbbf24;
+  --cream:     #fffcf7;
+  --sand:      #f7ead6;
+  --sand-dk:   #eeddc0;
+  --mid:       #7a6a5a;
+  --canvas:    #f5efe6;
+}
+
+/* ── Page layout ── */
+.page { max-width: 1100px; margin: 0 auto; padding: 80px 48px 120px; }
+
+.section { margin-bottom: 80px; }
+.section-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; color: rgba(100,65,35,0.42);
+  margin-bottom: 6px;
+}
+.section-title {
+  font-size: 15px; font-weight: 500; color: rgba(80,50,30,0.6);
+  margin-bottom: 32px;
+}
+
+/* ── Divider ── */
+.divider { border: none; border-top: 1px solid rgba(180,130,80,0.15); margin: 0 0 72px; }
+
+/* ── Logo lockup ── */
+.logo { display: inline-flex; align-items: center; gap: 0; }
+.logo-mark { display: block; flex-shrink: 0; }
+.logo-wordmark {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  line-height: 1;
+  letter-spacing: -0.025em;
+}
+.logo-wordmark .room { font-weight: 300; }
+.logo-wordmark .os   { font-weight: 700; color: var(--coral); }
+
+/* ── Hero card ── */
+.hero {
+  background: var(--cream);
+  border-radius: 16px;
+  padding: 80px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 16px rgba(140,80,40,0.07), 0 8px 40px rgba(140,80,40,0.05);
+  margin-bottom: 16px;
+}
+
+/* ── Variant grid ── */
+.variants { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.variant-card {
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(140,80,40,0.08), 0 4px 20px rgba(140,80,40,0.05);
+}
+.variant-face {
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px 32px;
+}
+.variant-label {
+  padding: 10px 16px;
+  font-size: 10px; font-weight: 500; color: rgba(100,65,35,0.4);
+  font-family: 'DM Mono', monospace; letter-spacing: 0.04em;
+  background: #fff; border-top: 1px solid rgba(200,160,120,0.15);
+}
+
+/* ── Size scale ── */
+.sizes { display: flex; align-items: flex-end; gap: 40px; flex-wrap: wrap; }
+.size-item { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.size-tag { font-size: 10px; font-family: 'DM Mono', monospace; color: rgba(100,65,35,0.38); letter-spacing: 0.04em; }
+
+/* ── Usage row ── */
+.usage { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.usage-card {
+  border-radius: 10px; overflow: hidden;
+  box-shadow: 0 2px 10px rgba(140,80,40,0.08);
+}
+
+/* ── Clearspace diagram ── */
+.clearspace-wrap {
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px dashed rgba(244,98,58,0.35); border-radius: 4px;
+  padding: 28px 36px; background: var(--cream);
+  position: relative;
+}
+
+/* ── Color chips ── */
+.chips { display: flex; gap: 20px; flex-wrap: wrap; }
+.chip { display: flex; flex-direction: column; gap: 10px; }
+.chip-swatch { width: 64px; height: 64px; border-radius: 10px; box-shadow: 0 1px 6px rgba(140,80,40,0.12); }
+.chip-name { font-size: 12px; font-weight: 600; color: var(--mid); }
+.chip-hex  { font-size: 10px; font-family: 'DM Mono', monospace; color: rgba(100,65,35,0.4); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── HERO ── -->
+  <div class="section">
+    <div class="section-label">RoomOS — Brand Identity</div>
+    <div class="section-title">최종 로고 시스템</div>
+
+    <div class="hero">
+      <svg id="logo-hero" viewBox="0 0 260 52" width="260" height="52" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Floor mark: 4 lines, first = coral accent -->
+        <!-- Line 1 (coral, full width) -->
+        <line x1="0" y1="7"  x2="42" y2="7"  stroke="#f4623a" stroke-width="7" stroke-linecap="round"/>
+        <!-- Line 2 (mid, 65%) -->
+        <line x1="0" y1="20" x2="27" y2="20" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.42"/>
+        <!-- Line 3 (mid, full) -->
+        <line x1="0" y1="33" x2="42" y2="33" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.62"/>
+        <!-- Line 4 (mid, 50%) -->
+        <line x1="0" y1="46" x2="21" y2="46" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.28"/>
+        <!-- Wordmark -->
+        <text x="58" y="40"
+          font-family="'Plus Jakarta Sans', sans-serif"
+          font-size="38" letter-spacing="-1"
+          fill="#7a6a5a">
+          <tspan font-weight="300">Room</tspan><tspan font-weight="700" fill="#f4623a">OS</tspan>
+        </text>
+      </svg>
+    </div>
+    <div style="text-align:center; font-size:11px; color:rgba(100,65,35,0.35); letter-spacing:0.04em; font-family:'DM Mono',monospace;">PRIMARY LOCKUP — LIGHT BACKGROUND</div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── VARIANTS ── -->
+  <div class="section">
+    <div class="section-label">Color Variants</div>
+    <div class="section-title">배경별 로고 사용</div>
+
+    <div class="variants">
+
+      <!-- 1. Cream bg -->
+      <div class="variant-card">
+        <div class="variant-face" style="background: var(--cream);">
+          <svg viewBox="0 0 220 44" width="220" height="44" fill="none">
+            <line x1="0" y1="6"  x2="36" y2="6"  stroke="#f4623a" stroke-width="6" stroke-linecap="round"/>
+            <line x1="0" y1="17" x2="23" y2="17" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.42"/>
+            <line x1="0" y1="28" x2="36" y2="28" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.62"/>
+            <line x1="0" y1="39" x2="18" y2="39" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.28"/>
+            <text x="50" y="34" font-family="'Plus Jakarta Sans',sans-serif" font-size="32" letter-spacing="-0.8" fill="#7a6a5a">
+              <tspan font-weight="300">Room</tspan><tspan font-weight="700" fill="#f4623a">OS</tspan>
+            </text>
+          </svg>
+        </div>
+        <div class="variant-label">Cream / Primary</div>
+      </div>
+
+      <!-- 2. Sand bg -->
+      <div class="variant-card">
+        <div class="variant-face" style="background: var(--sand);">
+          <svg viewBox="0 0 220 44" width="220" height="44" fill="none">
+            <line x1="0" y1="6"  x2="36" y2="6"  stroke="#f4623a" stroke-width="6" stroke-linecap="round"/>
+            <line x1="0" y1="17" x2="23" y2="17" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.42"/>
+            <line x1="0" y1="28" x2="36" y2="28" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.62"/>
+            <line x1="0" y1="39" x2="18" y2="39" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.28"/>
+            <text x="50" y="34" font-family="'Plus Jakarta Sans',sans-serif" font-size="32" letter-spacing="-0.8" fill="#7a6a5a">
+              <tspan font-weight="300">Room</tspan><tspan font-weight="700" fill="#f4623a">OS</tspan>
+            </text>
+          </svg>
+        </div>
+        <div class="variant-label">Sand / Warm Neutral</div>
+      </div>
+
+      <!-- 3. Coral bg -->
+      <div class="variant-card">
+        <div class="variant-face" style="background: var(--coral);">
+          <svg viewBox="0 0 220 44" width="220" height="44" fill="none">
+            <line x1="0" y1="6"  x2="36" y2="6"  stroke="#fbbf24" stroke-width="6" stroke-linecap="round"/>
+            <line x1="0" y1="17" x2="23" y2="17" stroke="#fffcf7" stroke-width="6" stroke-linecap="round" opacity="0.55"/>
+            <line x1="0" y1="28" x2="36" y2="28" stroke="#fffcf7" stroke-width="6" stroke-linecap="round" opacity="0.75"/>
+            <line x1="0" y1="39" x2="18" y2="39" stroke="#fffcf7" stroke-width="6" stroke-linecap="round" opacity="0.35"/>
+            <text x="50" y="34" font-family="'Plus Jakarta Sans',sans-serif" font-size="32" letter-spacing="-0.8" fill="#fffcf7">
+              <tspan font-weight="300">Room</tspan><tspan font-weight="700" fill="#fbbf24">OS</tspan>
+            </text>
+          </svg>
+        </div>
+        <div class="variant-label">Coral / Primary Dark</div>
+      </div>
+
+      <!-- 4. Coral pale -->
+      <div class="variant-card">
+        <div class="variant-face" style="background: var(--coral-pale);">
+          <svg viewBox="0 0 220 44" width="220" height="44" fill="none">
+            <line x1="0" y1="6"  x2="36" y2="6"  stroke="#f4623a" stroke-width="6" stroke-linecap="round"/>
+            <line x1="0" y1="17" x2="23" y2="17" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.42"/>
+            <line x1="0" y1="28" x2="36" y2="28" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.62"/>
+            <line x1="0" y1="39" x2="18" y2="39" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.28"/>
+            <text x="50" y="34" font-family="'Plus Jakarta Sans',sans-serif" font-size="32" letter-spacing="-0.8" fill="#7a6a5a">
+              <tspan font-weight="300">Room</tspan><tspan font-weight="700" fill="#f4623a">OS</tspan>
+            </text>
+          </svg>
+        </div>
+        <div class="variant-label">Coral Pale / Tinted</div>
+      </div>
+
+      <!-- 5. White -->
+      <div class="variant-card">
+        <div class="variant-face" style="background: #fff;">
+          <svg viewBox="0 0 220 44" width="220" height="44" fill="none">
+            <line x1="0" y1="6"  x2="36" y2="6"  stroke="#f4623a" stroke-width="6" stroke-linecap="round"/>
+            <line x1="0" y1="17" x2="23" y2="17" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.42"/>
+            <line x1="0" y1="28" x2="36" y2="28" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.62"/>
+            <line x1="0" y1="39" x2="18" y2="39" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.28"/>
+            <text x="50" y="34" font-family="'Plus Jakarta Sans',sans-serif" font-size="32" letter-spacing="-0.8" fill="#7a6a5a">
+              <tspan font-weight="300">Room</tspan><tspan font-weight="700" fill="#f4623a">OS</tspan>
+            </text>
+          </svg>
+        </div>
+        <div class="variant-label">White / App UI</div>
+      </div>
+
+      <!-- 6. Mono -->
+      <div class="variant-card">
+        <div class="variant-face" style="background: var(--cream);">
+          <svg viewBox="0 0 220 44" width="220" height="44" fill="none">
+            <line x1="0" y1="6"  x2="36" y2="6"  stroke="#7a6a5a" stroke-width="6" stroke-linecap="round"/>
+            <line x1="0" y1="17" x2="23" y2="17" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.42"/>
+            <line x1="0" y1="28" x2="36" y2="28" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.62"/>
+            <line x1="0" y1="39" x2="18" y2="39" stroke="#7a6a5a" stroke-width="6" stroke-linecap="round" opacity="0.28"/>
+            <text x="50" y="34" font-family="'Plus Jakarta Sans',sans-serif" font-size="32" letter-spacing="-0.8" fill="#7a6a5a">
+              <tspan font-weight="300">Room</tspan><tspan font-weight="700">OS</tspan>
+            </text>
+          </svg>
+        </div>
+        <div class="variant-label">Monochrome / Single color</div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── SIZE SCALE ── -->
+  <div class="section">
+    <div class="section-label">Size Scale</div>
+    <div class="section-title">크기별 사용</div>
+
+    <div class="sizes">
+      <!-- XL: 48px height -->
+      <div class="size-item">
+        <svg viewBox="0 0 260 52" width="260" height="52" fill="none">
+          <line x1="0" y1="7"  x2="42" y2="7"  stroke="#f4623a" stroke-width="7" stroke-linecap="round"/>
+          <line x1="0" y1="20" x2="27" y2="20" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.42"/>
+          <line x1="0" y1="33" x2="42" y2="33" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.62"/>
+          <line x1="0" y1="46" x2="21" y2="46" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.28"/>
+          <text x="58" y="40" font-family="'Plus Jakarta Sans',sans-serif" font-size="38" letter-spacing="-1" fill="#7a6a5a">
+            <tspan font-weight="300">Room</tspan><tspan font-weight="700" fill="#f4623a">OS</tspan>
+          </text>
+        </svg>
+        <div class="size-tag">XL — 헤더 / 스플래시</div>
+      </div>
+
+      <!-- MD: 32px -->
+      <div class="size-item">
+        <svg viewBox="0 0 178 36" width="178" height="36" fill="none">
+          <line x1="0" y1="5"  x2="29" y2="5"  stroke="#f4623a" stroke-width="5" stroke-linecap="round"/>
+          <line x1="0" y1="14" x2="19" y2="14" stroke="#7a6a5a" stroke-width="5" stroke-linecap="round" opacity="0.42"/>
+          <line x1="0" y1="23" x2="29" y2="23" stroke="#7a6a5a" stroke-width="5" stroke-linecap="round" opacity="0.62"/>
+          <line x1="0" y1="32" x2="14" y2="32" stroke="#7a6a5a" stroke-width="5" stroke-linecap="round" opacity="0.28"/>
+          <text x="40" y="27" font-family="'Plus Jakarta Sans',sans-serif" font-size="26" letter-spacing="-0.6" fill="#7a6a5a">
+            <tspan font-weight="300">Room</tspan><tspan font-weight="700" fill="#f4623a">OS</tspan>
+          </text>
+        </svg>
+        <div class="size-tag">MD — 사이드바 / 카드</div>
+      </div>
+
+      <!-- SM: 20px -->
+      <div class="size-item">
+        <svg viewBox="0 0 120 24" width="120" height="24" fill="none">
+          <line x1="0" y1="3.5" x2="19" y2="3.5" stroke="#f4623a" stroke-width="3.5" stroke-linecap="round"/>
+          <line x1="0" y1="10" x2="12" y2="10" stroke="#7a6a5a" stroke-width="3.5" stroke-linecap="round" opacity="0.42"/>
+          <line x1="0" y1="16.5" x2="19" y2="16.5" stroke="#7a6a5a" stroke-width="3.5" stroke-linecap="round" opacity="0.62"/>
+          <line x1="0" y1="23" x2="9.5" y2="23" stroke="#7a6a5a" stroke-width="3.5" stroke-linecap="round" opacity="0.28"/>
+          <text x="26" y="18" font-family="'Plus Jakarta Sans',sans-serif" font-size="17" letter-spacing="-0.4" fill="#7a6a5a">
+            <tspan font-weight="300">Room</tspan><tspan font-weight="700" fill="#f4623a">OS</tspan>
+          </text>
+        </svg>
+        <div class="size-tag">SM — 탭바 / 라벨</div>
+      </div>
+
+      <!-- Mark only -->
+      <div class="size-item">
+        <div style="display:flex; gap:20px; align-items:flex-end;">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+            <svg viewBox="0 0 42 46" width="42" height="46" fill="none">
+              <line x1="0" y1="5.5" x2="42" y2="5.5" stroke="#f4623a" stroke-width="7" stroke-linecap="round"/>
+              <line x1="0" y1="18" x2="27" y2="18" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.42"/>
+              <line x1="0" y1="30.5" x2="42" y2="30.5" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.62"/>
+              <line x1="0" y1="43" x2="21" y2="43" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.28"/>
+            </svg>
+            <div class="size-tag">42px</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+            <svg viewBox="0 0 42 46" width="28" height="30" fill="none">
+              <line x1="0" y1="5.5" x2="42" y2="5.5" stroke="#f4623a" stroke-width="7" stroke-linecap="round"/>
+              <line x1="0" y1="18" x2="27" y2="18" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.42"/>
+              <line x1="0" y1="30.5" x2="42" y2="30.5" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.62"/>
+              <line x1="0" y1="43" x2="21" y2="43" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.28"/>
+            </svg>
+            <div class="size-tag">28px</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+            <svg viewBox="0 0 42 46" width="18" height="20" fill="none">
+              <line x1="0" y1="5.5" x2="42" y2="5.5" stroke="#f4623a" stroke-width="7" stroke-linecap="round"/>
+              <line x1="0" y1="18" x2="27" y2="18" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.42"/>
+              <line x1="0" y1="30.5" x2="42" y2="30.5" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.62"/>
+              <line x1="0" y1="43" x2="21" y2="43" stroke="#7a6a5a" stroke-width="7" stroke-linecap="round" opacity="0.28"/>
+            </svg>
+            <div class="size-tag">18px</div>
+          </div>
+        </div>
+        <div class="size-tag">마크 단독 — 파비콘 / 아바타</div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── IN-CONTEXT ── -->
+  <div class="section">
+    <div class="section-label">In Context</div>
+    <div class="section-title">실사용 미리보기</div>
+
+    <div class="usage">
+
+      <!-- Sidebar -->
+      <div class="usage-card" style="background: #fffcf7; height: 320px; padding: 0; display:flex; flex-direction:column;">
+        <!-- nav header -->
+        <div style="padding:22px 24px 18px; border-bottom:1px solid rgba(200,160,120,0.15);">
+          <svg viewBox="0 0 178 36" width="134" height="27" fill="none">
+            <line x1="0" y1="5"  x2="29" y2="5"  stroke="#f4623a" stroke-width="5" stroke-linecap="round"/>
+            <line x1="0" y1="14" x2="19" y2="14" stroke="#7a6a5a" stroke-width="5" stroke-linecap="round" opacity="0.42"/>
+            <line x1="0" y1="23" x2="29" y2="23" stroke="#7a6a5a" stroke-width="5" stroke-linecap="round" opacity="0.62"/>
+            <line x1="0" y1="32" x2="14" y2="32" stroke="#7a6a5a" stroke-width="5" stroke-linecap="round" opacity="0.28"/>
+            <text x="40" y="27" font-family="'Plus Jakarta Sans',sans-serif" font-size="26" letter-spacing="-0.6" fill="#7a6a5a">
+              <tspan font-weight="300">Room</tspan><tspan font-weight="700" fill="#f4623a">OS</tspan>
+            </text>
+          </svg>
+        </div>
+        <!-- nav items -->
+        <div style="flex:1; padding:8px 0;">
+          {['대시보드','방 관리','입주자','수납 관리','통계'].map ? null : ''}
+          <div style="padding:10px 24px; font-size:13px; color:#f4623a; font-weight:500; background:rgba(244,98,58,0.07); border-left:3px solid #f4623a;">대시보드</div>
+          <div style="padding:10px 24px; font-size:13px; color:#b0a090; border-left:3px solid transparent;">방 관리</div>
+          <div style="padding:10px 24px; font-size:13px; color:#b0a090; border-left:3px solid transparent;">입주자</div>
+          <div style="padding:10px 24px; font-size:13px; color:#b0a090; border-left:3px solid transparent;">수납 관리</div>
+          <div style="padding:10px 24px; font-size:13px; color:#b0a090; border-left:3px solid transparent;">통계</div>
+        </div>
+        <div style="font-size:10px;color:rgba(100,65,35,0.3);padding:12px 24px;font-family:'DM Mono',monospace;letter-spacing:0.04em;border-top:1px solid rgba(200,160,120,0.12);">사이드바 헤더</div>
+      </div>
+
+      <!-- Splash -->
+      <div class="usage-card" style="background: var(--coral); height:320px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px;">
+        <svg viewBox="0 0 42 46" width="52" height="58" fill="none">
+          <line x1="0" y1="5.5" x2="42" y2="5.5" stroke="#fbbf24" stroke-width="7" stroke-linecap="round"/>
+          <line x1="0" y1="18" x2="27" y2="18" stroke="#fffcf7" stroke-width="7" stroke-linecap="round" opacity="0.55"/>
+          <line x1="0" y1="30.5" x2="42" y2="30.5" stroke="#fffcf7" stroke-width="7" stroke-linecap="round" opacity="0.75"/>
+          <line x1="0" y1="43" x2="21" y2="43" stroke="#fffcf7" stroke-width="7" stroke-linecap="round" opacity="0.35"/>
+        </svg>
+        <svg viewBox="0 0 178 36" width="178" height="36" fill="none">
+          <text x="0" y="28" font-family="'Plus Jakarta Sans',sans-serif" font-size="32" letter-spacing="-0.8" fill="#fffcf7">
+            <tspan font-weight="300">Room</tspan><tspan font-weight="700" fill="#fbbf24">OS</tspan>
+          </text>
+        </svg>
+        <div style="font-size:11px; color:rgba(255,252,247,0.5); letter-spacing:0.06em; font-family:'DM Mono',monospace;">고시원 · 원룸텔 관리</div>
+        <div style="font-size:10px;color:rgba(255,252,247,0.3);position:absolute;bottom:12px;font-family:'DM Mono',monospace;letter-spacing:0.04em;">스플래시 / 로딩</div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── COLOR SYSTEM ── -->
+  <div class="section">
+    <div class="section-label">Color System</div>
+    <div class="section-title">브랜드 컬러</div>
+
+    <div class="chips">
+      <div class="chip">
+        <div class="chip-swatch" style="background:#f4623a;"></div>
+        <div class="chip-name">Coral</div>
+        <div class="chip-hex">#f4623a</div>
+        <div class="chip-hex" style="margin-top:2px;font-size:9px;color:rgba(100,65,35,0.3);">Primary Accent</div>
+      </div>
+      <div class="chip">
+        <div class="chip-swatch" style="background:#fbbf24;"></div>
+        <div class="chip-name">Sun</div>
+        <div class="chip-hex">#fbbf24</div>
+        <div class="chip-hex" style="margin-top:2px;font-size:9px;color:rgba(100,65,35,0.3);">On Dark</div>
+      </div>
+      <div class="chip">
+        <div class="chip-swatch" style="background:#d94d28;"></div>
+        <div class="chip-name">Coral Dark</div>
+        <div class="chip-hex">#d94d28</div>
+        <div class="chip-hex" style="margin-top:2px;font-size:9px;color:rgba(100,65,35,0.3);">Pressed / Hover</div>
+      </div>
+      <div class="chip">
+        <div class="chip-swatch" style="background:#7a6a5a;"></div>
+        <div class="chip-name">Warm Mid</div>
+        <div class="chip-hex">#7a6a5a</div>
+        <div class="chip-hex" style="margin-top:2px;font-size:9px;color:rgba(100,65,35,0.3);">Text / Mark</div>
+      </div>
+      <div class="chip">
+        <div class="chip-swatch" style="background:#fffcf7; border:1px solid #eeddc0;"></div>
+        <div class="chip-name">Cream</div>
+        <div class="chip-hex">#fffcf7</div>
+        <div class="chip-hex" style="margin-top:2px;font-size:9px;color:rgba(100,65,35,0.3);">Background</div>
+      </div>
+      <div class="chip">
+        <div class="chip-swatch" style="background:#f7ead6; border:1px solid #eeddc0;"></div>
+        <div class="chip-name">Sand</div>
+        <div class="chip-hex">#f7ead6</div>
+        <div class="chip-hex" style="margin-top:2px;font-size:9px;color:rgba(100,65,35,0.3);">Tinted BG</div>
+      </div>
+      <div class="chip">
+        <div class="chip-swatch" style="background:#fde8e2; border:1px solid #eeddc0;"></div>
+        <div class="chip-name">Coral Pale</div>
+        <div class="chip-hex">#fde8e2</div>
+        <div class="chip-hex" style="margin-top:2px;font-size:9px;color:rgba(100,65,35,0.3);">Tinted BG</div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── TYPEFACE ── -->
+  <div class="section">
+    <div class="section-label">Typeface</div>
+    <div class="section-title">서체 시스템</div>
+
+    <div style="display:flex; gap:48px; align-items:flex-start;">
+      <div>
+        <div style="font-size:48px; font-weight:300; color:#7a6a5a; line-height:1; letter-spacing:-0.03em; margin-bottom:12px;">Aa</div>
+        <div style="font-size:13px; font-weight:600; color:#7a6a5a; margin-bottom:4px;">Plus Jakarta Sans</div>
+        <div style="font-size:11px; color:rgba(100,65,35,0.4); font-family:'DM Mono',monospace;">Light 300 · Bold 700</div>
+        <div style="font-size:11px; color:rgba(100,65,35,0.4); font-family:'DM Mono',monospace; margin-top:2px;">Letter-spacing: −0.025em</div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px; padding-top:8px;">
+        <span style="font-size:28px; font-weight:300; color:#7a6a5a; letter-spacing:-0.025em;">RoomOS — Light 300</span>
+        <span style="font-size:28px; font-weight:700; color:#7a6a5a; letter-spacing:-0.025em;">RoomOS — Bold 700</span>
+        <span style="font-size:28px; color:#7a6a5a; letter-spacing:-0.025em;"><span style="font-weight:300">Room</span><span style="font-weight:700;color:#f4623a">OS</span> — 조합</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
