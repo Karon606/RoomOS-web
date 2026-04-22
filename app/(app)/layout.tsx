@@ -1,25 +1,27 @@
-// app/(app)/layout.tsx
-'use client';
+import type { Metadata } from 'next'
+import './globals.css'
 
-import { AppProgressBar as ProgressBar } from 'next-nprogress-bar';
+export const metadata: Metadata = {
+  title: 'RoomOS',
+  description: '고시원·원룸텔 스마트 관리 시스템',
+}
 
-export default function AppLayout({
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
   return (
-    <>
-      {/* 실제 페이지 내용들 */}
-      {children}
-      
-      {/* RoomOS 브랜드 컬러(#f4623a) 상단 바 */}
-      <ProgressBar
-        height="3px"
-        color="#f4623a" 
-        options={{ showSpinner: false }}
-        shallowRouting
-      />
-    </>
-  );
+    <html lang="ko">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body>{children}</body>
+    </html>
+  )
 }
