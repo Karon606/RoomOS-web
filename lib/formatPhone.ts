@@ -3,7 +3,8 @@
  * 02-XXXX-XXXX / 010-XXXX-XXXX 등
  */
 export function formatPhone(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 11)
+  // Excel 텍스트 접두사(') 및 비숫자 제거
+  const digits = raw.replace(/^'+/, '').replace(/\D/g, '').slice(0, 11)
   if (!digits) return ''
 
   if (digits.startsWith('02')) {

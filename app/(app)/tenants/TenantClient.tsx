@@ -85,10 +85,14 @@ const STATUS_LABEL: Record<string, string> = {
   NON_RESIDENT: '비거주자',
 }
 const STATUS_COLOR: Record<string, string> = {
-  ACTIVE: 'bg-green-500/20 text-green-300', RESERVED: 'bg-blue-500/20 text-blue-300',
-  CHECKOUT_PENDING: 'bg-red-500/20 text-red-400', CHECKED_OUT: 'bg-gray-500/20 text-[var(--warm-mid)]',
-  WAITING_TOUR: 'bg-purple-500/20 text-purple-300', TOUR_DONE: 'bg-[var(--coral)]/20 text-[var(--coral)]',
-  CANCELLED: 'bg-red-500/20 text-red-400', NON_RESIDENT: 'bg-amber-500/20 text-amber-300',
+  ACTIVE:           'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+  RESERVED:         'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
+  CHECKOUT_PENDING: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+  CHECKED_OUT:      'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]',
+  WAITING_TOUR:     'bg-purple-50 text-purple-700 ring-1 ring-purple-200',
+  TOUR_DONE:        'bg-[var(--coral)]/10 text-[var(--coral)] ring-1 ring-[var(--coral)]/30',
+  CANCELLED:        'bg-red-50 text-red-600 ring-1 ring-red-200',
+  NON_RESIDENT:     'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
 }
 const REG_LABEL: Record<string, string> = {
   NOT_REPORTED: '미신고', REGISTERED: '완료', EXEMPTED: '해당없음',
@@ -661,7 +665,7 @@ export default function TenantClient({
                         case 'payMethod':
                           return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-mid)] whitespace-nowrap">{lease?.payMethod || '—'}</td>
                         case 'depositAmount':
-                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-dark)] whitespace-nowrap">{lease ? <MoneyDisplay amount={lease.depositAmount} /> : '—'}</td>
+                          return <td key={c.key} className="px-4 py-3 text-sm text-[var(--warm-dark)] whitespace-nowrap">{lease && lease.depositAmount > 0 ? <MoneyDisplay amount={lease.depositAmount} /> : '—'}</td>
                         case 'rentAmount':
                           return (
                             <td key={c.key}
