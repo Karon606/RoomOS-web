@@ -99,7 +99,6 @@ async function importRooms(rows: Record<string, unknown>[], propertyId: string, 
       if (existing) {
         const resolution = resolutions[`room:${roomNo}`] ?? 'keep'
         if (resolution === 'keep') { result.skipped++; continue }
-        // overwrite
         await prisma.room.update({ where: { id: existing.id }, data })
       } else {
         await prisma.room.create({ data: { ...data, propertyId, roomNo, isVacant: true } })
@@ -135,7 +134,6 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
         if (resolution === 'keep') { result.skipped++; continue }
 
         if (resolution === 'archive') {
-          // 기존 계약을 퇴실 처리
           const activeLease = existing.leaseTerms[0]
           if (activeLease) {
             await prisma.leaseTerm.update({
@@ -147,13 +145,11 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
               data: { isVacant: true },
             })
           }
-          // 새 입주자로 등록 (아래 create 로직 실행)
           await createTenantAndLease(row, propertyId, result)
           continue
         }
 
         if (resolution === 'overwrite') {
-          // 기존 입주자 정보 업데이트
           await prisma.tenant.update({
             where: { id: existing.id },
             data: {
@@ -165,7 +161,6 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
               memo:        str(row['메모']) || null,
             },
           })
-          // 기존 활성 계약 이용료 업데이트
           const activeLease = existing.leaseTerms[0]
           if (activeLease && row['이용료']) {
             await prisma.leaseTerm.update({
@@ -263,6 +258,14 @@ async function importExpenses(rows: Record<string, unknown>[], propertyId: strin
     const amount   = parseNum(row['금액'])
     if (!date || !category || !amount) { result.skipped++; continue }
     try {
+      const detail = str(row['세부항목']) || null
+
+      // 완전 동일 항목은 자동 건너뜀
+      const exactMatch = await prisma.expense.findFirst({
+        where: { propertyId, date, category, amount, detail },
+      })
+      if (exactMatch) { result.skipped++; continue }
+
       const existing = await prisma.expense.findFirst({
         where: { propertyId, date, category, amount },
       })
@@ -270,7 +273,6 @@ async function importExpenses(rows: Record<string, unknown>[], propertyId: strin
       if (existing) {
         const resolution = resolutions[`expense:${existing.id}`] ?? 'keep'
         if (resolution === 'keep') { result.skipped++; continue }
-        // overwrite: 기존 삭제 후 새로 생성
         await prisma.expense.delete({ where: { id: existing.id } })
       }
 
@@ -278,7 +280,7 @@ async function importExpenses(rows: Record<string, unknown>[], propertyId: strin
       await prisma.expense.create({
         data: {
           propertyId, date, category, amount,
-          detail:      str(row['세부항목']) || null,
+          detail,
           memo:        str(row['메모']) || null,
           payMethod,
           settleStatus: payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED',
@@ -300,6 +302,14 @@ async function importIncomes(rows: Record<string, unknown>[], propertyId: string
     const amount   = parseNum(row['금액'])
     if (!date || !category || !amount) { result.skipped++; continue }
     try {
+      const detail = str(row['세부항목']) || null
+
+      // 완전 동일 항목은 자동 건너뜀
+      const exactMatch = await prisma.extraIncome.findFirst({
+        where: { propertyId, date, category, amount, detail },
+      })
+      if (exactMatch) { result.skipped++; continue }
+
       const existing = await prisma.extraIncome.findFirst({
         where: { propertyId, date, category, amount },
       })
@@ -313,7 +323,7 @@ async function importIncomes(rows: Record<string, unknown>[], propertyId: string
       await prisma.extraIncome.create({
         data: {
           propertyId, date, category, amount,
-          detail:    str(row['세부항목']) || null,
+          detail,
           memo:      str(row['메모']) || null,
           payMethod: str(row['입금수단']) || '계좌이체',
         },
@@ -326,7 +336,7 @@ async function importIncomes(rows: Record<string, unknown>[], propertyId: string
   return result
 }
 
-async function importSettings(rows: Record<string, unknown>[], propertyId: string): Promise<SheetResult> {
+async function importSettings(rows: Record<string, unknown>[], propertyId: string, resolutions: Resolutions): Promise<SheetResult> {
   const result: SheetResult = { imported: 0, skipped: 0, errors: [] }
   for (const row of rows) {
     const brand = str(row['금융사'])
@@ -345,6 +355,8 @@ async function importSettings(rows: Record<string, unknown>[], propertyId: strin
         where: { propertyId, brand, alias: alias ?? undefined },
       })
       if (existing) {
+        const resolution = resolutions[`setting:${existing.id}`] ?? 'keep'
+        if (resolution === 'keep') { result.skipped++; continue }
         await prisma.financialAccount.update({ where: { id: existing.id }, data })
       } else {
         await prisma.financialAccount.create({ data: { ...data, propertyId } })
@@ -398,7 +410,7 @@ export async function POST(request: NextRequest) {
     results['기타수익'] = await importIncomes(sheetToRows(wb, '기타수익'), propertyId, resolutions)
 
   if (wb.SheetNames.includes('설정'))
-    results['설정'] = await importSettings(sheetToRows(wb, '설정'), propertyId)
+    results['설정'] = await importSettings(sheetToRows(wb, '설정'), propertyId, resolutions)
 
   return NextResponse.json(results)
 }

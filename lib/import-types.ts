@@ -36,15 +36,26 @@ export type IncomeConflict = {
   detail: string | null
 }
 
-export type Conflict = RoomConflict | TenantConflict | ExpenseConflict | IncomeConflict
+export type SettingConflict = {
+  id: string
+  sheet: 'settings'
+  existingId: string
+  brand: string
+  alias: string | null
+  existing: { type: string; identifier: string | null; owner: string | null }
+  incoming: { type: string; identifier: string | null; owner: string | null }
+}
+
+export type Conflict = RoomConflict | TenantConflict | ExpenseConflict | IncomeConflict | SettingConflict
 
 export type PreviewResult = {
   conflicts: Conflict[]
+  hasPaymentSheet: boolean
   counts: {
     rooms:    { new: number; conflict: number }
     tenants:  { new: number; conflict: number }
-    expenses: { new: number; conflict: number }
-    incomes:  { new: number; conflict: number }
-    settings: { new: number }
+    expenses: { new: number; conflict: number; autoSkipped: number }
+    incomes:  { new: number; conflict: number; autoSkipped: number }
+    settings: { new: number; conflict: number }
   }
 }

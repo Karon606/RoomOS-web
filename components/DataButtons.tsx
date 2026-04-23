@@ -16,10 +16,13 @@ type Step =
   | { type: 'done'; results: Record<string, SheetResult> }
 
 const SHEET_LABELS: Record<string, string> = {
-  rooms: '호실관리', tenants: '입주자관리', expenses: '지출', incomes: '기타수익',
+  rooms: '호실관리', tenants: '입주자관리', expenses: '지출', incomes: '기타수익', settings: '설정',
 }
 
 const WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창' }
+const ACCOUNT_TYPE_LABEL: Record<string, string> = {
+  BANK_ACCOUNT: '은행계좌', CREDIT_CARD: '신용카드', CHECK_CARD: '체크카드', OTHER: '기타',
+}
 
 function fmtMoney(n: number) {
   return n.toLocaleString('ko-KR') + '원'
@@ -38,6 +41,7 @@ function ConflictRow({
 }) {
   const isTenant = conflict.sheet === 'tenants'
   const isExpenseOrIncome = conflict.sheet === 'expenses' || conflict.sheet === 'incomes'
+  const isSetting = conflict.sheet === 'settings'
 
   const desc = (() => {
     if (conflict.sheet === 'rooms') {
@@ -66,12 +70,22 @@ function ConflictRow({
         </p>
       )
     }
+    if (conflict.sheet === 'settings') {
+      const e = conflict.existing, i = conflict.incoming
+      return (
+        <div className="text-xs text-[var(--warm-muted)] space-y-0.5">
+          <p>기존: {ACCOUNT_TYPE_LABEL[e.type] ?? e.type} / {e.identifier ?? '—'} / {e.owner ?? '—'}</p>
+          <p>새값: {ACCOUNT_TYPE_LABEL[i.type] ?? i.type} / {i.identifier ?? '—'} / {i.owner ?? '—'}</p>
+        </div>
+      )
+    }
     return null
   })()
 
   const label = (() => {
     if (conflict.sheet === 'rooms') return `${conflict.roomNo}호`
     if (conflict.sheet === 'tenants') return conflict.name
+    if (conflict.sheet === 'settings') return conflict.alias ? `${conflict.brand} (${conflict.alias})` : conflict.brand
     return `${conflict.date} ${conflict.category}`
   })()
 
@@ -83,7 +97,7 @@ function ConflictRow({
           {desc}
         </div>
         <div className="flex gap-1.5 shrink-0 flex-wrap justify-end">
-          {isExpenseOrIncome ? (
+          {isExpenseOrIncome || isSetting ? (
             <>
               <ResBtn active={resolution === 'keep'} onClick={() => onChange(conflict.id, 'keep')} label="기존 유지" />
               <ResBtn active={resolution === 'overwrite'} onClick={() => onChange(conflict.id, 'overwrite')} label="새값으로" color="coral" />
@@ -156,15 +170,13 @@ export default function DataButtons() {
       const res = await fetch('/api/import/preview', { method: 'POST', body: fd })
       const preview: PreviewResult = await res.json()
 
-      // 기본 resolution 설정: 지출/수입 충돌은 기본 'keep', 나머지 'keep'
       const defaults: ResolutionMap = {}
       for (const c of preview.conflicts) {
         defaults[c.id] = 'keep'
       }
       setResolutions(defaults)
 
-      if (preview.conflicts.length === 0) {
-        // 충돌 없음 → 바로 적용
+      if (preview.conflicts.length === 0 && !preview.hasPaymentSheet) {
         await applyImport(file, {})
       } else {
         setStep({ type: 'conflict', preview, file })
@@ -212,15 +224,28 @@ export default function DataButtons() {
   const ConflictModal = () => {
     if (step.type !== 'conflict') return null
     const { preview, file } = step
-    const conflictsBySheet = (['rooms', 'tenants', 'expenses', 'incomes'] as const).map(sheet => ({
+    const conflictsBySheet = (['rooms', 'tenants', 'expenses', 'incomes', 'settings'] as const).map(sheet => ({
       sheet,
       label: SHEET_LABELS[sheet],
       items: preview.conflicts.filter(c => c.sheet === sheet),
     })).filter(g => g.items.length > 0)
 
-    const counts = preview.counts
-    const totalNew = (counts.rooms?.new ?? 0) + (counts.tenants?.new ?? 0) +
-      (counts.expenses?.new ?? 0) + (counts.incomes?.new ?? 0) + (counts.settings?.new ?? 0)
+    const c = preview.counts
+    const summaryParts: string[] = []
+    if (c.rooms.new)      summaryParts.push(`호실 ${c.rooms.new}개 신규`)
+    if (c.rooms.conflict) summaryParts.push(`호실 ${c.rooms.conflict}개 변경`)
+    if (c.tenants.new)      summaryParts.push(`입주자 ${c.tenants.new}명 신규`)
+    if (c.tenants.conflict) summaryParts.push(`입주자 ${c.tenants.conflict}명 변경`)
+    if (c.expenses.new)        summaryParts.push(`지출 ${c.expenses.new}건 신규`)
+    if (c.expenses.conflict)   summaryParts.push(`지출 ${c.expenses.conflict}건 충돌`)
+    if (c.expenses.autoSkipped) summaryParts.push(`지출 ${c.expenses.autoSkipped}건 자동건너뜀`)
+    if (c.incomes.new)        summaryParts.push(`수익 ${c.incomes.new}건 신규`)
+    if (c.incomes.conflict)   summaryParts.push(`수익 ${c.incomes.conflict}건 충돌`)
+    if (c.incomes.autoSkipped) summaryParts.push(`수익 ${c.incomes.autoSkipped}건 자동건너뜀`)
+    if (c.settings.new)      summaryParts.push(`계좌 ${c.settings.new}개 신규`)
+    if (c.settings.conflict) summaryParts.push(`계좌 ${c.settings.conflict}개 변경`)
+
+    const hasConflicts = preview.conflicts.length > 0
 
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}
@@ -231,16 +256,34 @@ export default function DataButtons() {
           {/* 헤더 */}
           <div className="flex items-start justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
             <div>
-              <h3 className="font-semibold text-[var(--warm-dark)]">중복 데이터 발견</h3>
-              <p className="text-xs text-[var(--warm-muted)] mt-0.5">
-                신규 {totalNew}건 · 충돌 {preview.conflicts.length}건 — 각 항목의 처리 방법을 선택하세요
-              </p>
+              <h3 className="font-semibold text-[var(--warm-dark)]">
+                {hasConflicts ? '중복 데이터 발견' : '가져오기 확인'}
+              </h3>
+              {summaryParts.length > 0 && (
+                <p className="text-xs text-[var(--warm-muted)] mt-0.5">{summaryParts.join(' · ')}</p>
+              )}
+              {hasConflicts && (
+                <p className="text-xs text-[var(--warm-muted)] mt-0.5">충돌 {preview.conflicts.length}건 — 각 항목의 처리 방법을 선택하세요</p>
+              )}
             </div>
             <button onClick={close} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none ml-4">✕</button>
           </div>
 
+          {/* 수납현황 안내 */}
+          {preview.hasPaymentSheet && (
+            <div className="mx-6 mt-4 px-4 py-3 rounded-xl text-xs text-amber-700 bg-amber-50 border border-amber-200">
+              <span className="font-semibold">수납현황</span> 시트는 내보내기 전용입니다. 가져오기 시 해당 시트의 데이터는 무시됩니다.
+            </div>
+          )}
+
           {/* 충돌 목록 */}
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+            {conflictsBySheet.length === 0 && !preview.hasPaymentSheet && (
+              <p className="text-sm text-[var(--warm-muted)] text-center py-4">충돌 없음 — 모든 데이터를 가져올 수 있습니다.</p>
+            )}
+            {conflictsBySheet.length === 0 && preview.hasPaymentSheet && (
+              <p className="text-sm text-[var(--warm-muted)] text-center py-4">충돌이 없습니다. 아래 버튼으로 가져오기를 진행하세요.</p>
+            )}
             {conflictsBySheet.map(({ sheet, label, items }) => (
               <div key={sheet} className="space-y-2">
                 {/* 시트 헤더 + 일괄 버튼 */}

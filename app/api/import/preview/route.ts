@@ -3,9 +3,9 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import * as XLSX from 'xlsx'
 import { NextRequest, NextResponse } from 'next/server'
-import type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, Conflict, PreviewResult } from '@/lib/import-types'
+import type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, SettingConflict, Conflict, PreviewResult } from '@/lib/import-types'
 
-export type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, Conflict, PreviewResult }
+export type { RoomConflict, TenantConflict, ExpenseConflict, IncomeConflict, SettingConflict, Conflict, PreviewResult }
 
 // ── 헬퍼 ────────────────────────────────────────────────────────
 
@@ -123,6 +123,7 @@ async function previewTenants(rows: Record<string, unknown>[], propertyId: strin
 async function previewExpenses(rows: Record<string, unknown>[], propertyId: string) {
   const conflicts: ExpenseConflict[] = []
   let newCount = 0
+  let autoSkipped = 0
 
   for (const row of rows) {
     const date = parseDate(row['날짜'])
@@ -130,13 +131,17 @@ async function previewExpenses(rows: Record<string, unknown>[], propertyId: stri
     const amount = parseNum(row['금액'])
     if (!date || !category || !amount) continue
 
+    const detail = str(row['세부항목']) || null
+
+    // 완전 동일 항목(날짜+카테고리+금액+세부항목)은 자동 건너뜀
+    const exactMatch = await prisma.expense.findFirst({
+      where: { propertyId, date, category, amount, detail },
+    })
+    if (exactMatch) { autoSkipped++; continue }
+
+    // 부분 일치(날짜+카테고리+금액만 같고 세부항목 다름)는 충돌
     const existing = await prisma.expense.findFirst({
-      where: {
-        propertyId,
-        date,
-        category,
-        amount,
-      },
+      where: { propertyId, date, category, amount },
     })
 
     if (existing) {
@@ -147,25 +152,34 @@ async function previewExpenses(rows: Record<string, unknown>[], propertyId: stri
         date: fmtDate(date),
         category,
         amount,
-        detail: str(row['세부항목']) || null,
+        detail,
       })
     } else {
       newCount++
     }
   }
 
-  return { conflicts, newCount }
+  return { conflicts, newCount, autoSkipped }
 }
 
 async function previewIncomes(rows: Record<string, unknown>[], propertyId: string) {
   const conflicts: IncomeConflict[] = []
   let newCount = 0
+  let autoSkipped = 0
 
   for (const row of rows) {
     const date = parseDate(row['날짜'])
     const category = str(row['카테고리'])
     const amount = parseNum(row['금액'])
     if (!date || !category || !amount) continue
+
+    const detail = str(row['세부항목']) || null
+
+    // 완전 동일 항목은 자동 건너뜀
+    const exactMatch = await prisma.extraIncome.findFirst({
+      where: { propertyId, date, category, amount, detail },
+    })
+    if (exactMatch) { autoSkipped++; continue }
 
     const existing = await prisma.extraIncome.findFirst({
       where: { propertyId, date, category, amount },
@@ -179,7 +193,42 @@ async function previewIncomes(rows: Record<string, unknown>[], propertyId: strin
         date: fmtDate(date),
         category,
         amount,
-        detail: str(row['세부항목']) || null,
+        detail,
+      })
+    } else {
+      newCount++
+    }
+  }
+
+  return { conflicts, newCount, autoSkipped }
+}
+
+async function previewSettings(rows: Record<string, unknown>[], propertyId: string) {
+  const conflicts: SettingConflict[] = []
+  let newCount = 0
+
+  for (const row of rows) {
+    const brand = str(row['금융사'])
+    if (!brand) continue
+    const alias = str(row['별칭']) || null
+
+    const existing = await prisma.financialAccount.findFirst({
+      where: { propertyId, brand, alias: alias ?? undefined },
+    })
+
+    if (existing) {
+      conflicts.push({
+        id: `setting:${existing.id}`,
+        sheet: 'settings',
+        existingId: existing.id,
+        brand,
+        alias,
+        existing: { type: existing.type, identifier: existing.identifier, owner: existing.owner },
+        incoming: {
+          type: str(row['타입']) || 'BANK_ACCOUNT',
+          identifier: str(row['계좌/카드번호']) || null,
+          owner: str(row['소유자']) || null,
+        },
       })
     } else {
       newCount++
@@ -216,9 +265,9 @@ export async function POST(request: NextRequest) {
   const counts: PreviewResult['counts'] = {
     rooms:    { new: 0, conflict: 0 },
     tenants:  { new: 0, conflict: 0 },
-    expenses: { new: 0, conflict: 0 },
-    incomes:  { new: 0, conflict: 0 },
-    settings: { new: 0 },
+    expenses: { new: 0, conflict: 0, autoSkipped: 0 },
+    incomes:  { new: 0, conflict: 0, autoSkipped: 0 },
+    settings: { new: 0, conflict: 0 },
   }
 
   if (wb.SheetNames.includes('호실관리')) {
@@ -234,20 +283,24 @@ export async function POST(request: NextRequest) {
   }
 
   if (wb.SheetNames.includes('지출')) {
-    const { conflicts, newCount } = await previewExpenses(sheetToRows(wb, '지출'), propertyId)
+    const { conflicts, newCount, autoSkipped } = await previewExpenses(sheetToRows(wb, '지출'), propertyId)
     allConflicts.push(...conflicts)
-    counts.expenses = { new: newCount, conflict: conflicts.length }
+    counts.expenses = { new: newCount, conflict: conflicts.length, autoSkipped }
   }
 
   if (wb.SheetNames.includes('기타수익')) {
-    const { conflicts, newCount } = await previewIncomes(sheetToRows(wb, '기타수익'), propertyId)
+    const { conflicts, newCount, autoSkipped } = await previewIncomes(sheetToRows(wb, '기타수익'), propertyId)
     allConflicts.push(...conflicts)
-    counts.incomes = { new: newCount, conflict: conflicts.length }
+    counts.incomes = { new: newCount, conflict: conflicts.length, autoSkipped }
   }
 
   if (wb.SheetNames.includes('설정')) {
-    counts.settings.new = sheetToRows(wb, '설정').filter(r => str(r['금융사'])).length
+    const { conflicts, newCount } = await previewSettings(sheetToRows(wb, '설정'), propertyId)
+    allConflicts.push(...conflicts)
+    counts.settings = { new: newCount, conflict: conflicts.length }
   }
 
-  return NextResponse.json({ conflicts: allConflicts, counts } satisfies PreviewResult)
+  const hasPaymentSheet = wb.SheetNames.includes('수납현황')
+
+  return NextResponse.json({ conflicts: allConflicts, counts, hasPaymentSheet } satisfies PreviewResult)
 }
