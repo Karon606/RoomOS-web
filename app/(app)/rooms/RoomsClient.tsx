@@ -361,7 +361,7 @@ export default function RoomsClient({
         className={`relative text-left text-xs font-medium px-4 py-3 select-none overflow-hidden whitespace-nowrap ${
           onClick ? 'cursor-pointer transition-colors' : ''
         } ${isActive ? 'text-[var(--coral)]' : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'} ${
-          stickyLeft !== undefined ? 'sticky z-30 bg-[var(--cream)]' : ''
+          stickyLeft !== undefined ? 'sticky z-40 bg-[var(--cream)]' : ''
         }`}
         style={{
           width: w, minWidth: w, maxWidth: w,
@@ -482,7 +482,7 @@ export default function RoomsClient({
             minWidth: colWidths.roomNo + colWidths.tenantName +
               COL_DEFS.filter(c => colVis[c.key]).reduce((s, c) => s + (colWidths[c.key] ?? 100), 0),
           }}>
-            <thead className="sticky top-0 z-10 bg-[var(--cream)]">
+            <thead className="sticky top-0 z-30 bg-[var(--cream)]">
               <tr className="border-b border-[var(--warm-border)]">
                 <ResizableTh label="호실"   colKey="roomNo"     onClick={() => handleSort('roomNo')}     isActive={sortKey === 'roomNo'}     stickyLeft={0} />
                 <ResizableTh label="입주자" colKey="tenantName" onClick={() => handleSort('tenantName')} isActive={sortKey === 'tenantName'} stickyLeft={colWidths.roomNo} />
