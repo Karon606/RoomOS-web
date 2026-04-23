@@ -384,9 +384,9 @@ export default function DataButtons() {
               </p>
               <div className="space-y-2">
                 {([
-                  { value: 'month', label: '이번 달만', desc: `${month.slice(0, 4)}년 ${parseInt(month.slice(5))}월 데이터` },
-                  { value: 'year',  label: '올해 전체', desc: `${month.slice(0, 4)}년 1월 ~ 12월 데이터` },
-                  { value: 'all',   label: '전체 데이터', desc: '모든 기간의 데이터' },
+                  { value: 'month', label: '해당 월',   desc: `${month.slice(0, 4)}년 ${parseInt(month.slice(5))}월 데이터` },
+                  { value: 'year',  label: '해당 연도', desc: `${month.slice(0, 4)}년 전체 데이터` },
+                  { value: 'all',   label: '전체 기간', desc: '모든 기간의 데이터' },
                 ] as const).map(opt => (
                   <button key={opt.value} onClick={() => setExportScope(opt.value)}
                     className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-colors"
