@@ -239,7 +239,7 @@ function calcProRata(rentAmount: number, oldDueDay: string | null, newDueDayStr:
   if (oldDay === null || newDay === null) return null
   const diff = newDay - oldDay
   if (diff === 0) return { days: 0, amount: 0, type: 'none' as const }
-  const amount = Math.round(Math.abs(diff) * rentAmount / daysInMonth)
+  const amount = Math.floor(Math.abs(diff) * rentAmount / daysInMonth)
   return { days: Math.abs(diff), amount, type: diff > 0 ? 'extra' as const : 'refund' as const }
 }
 
