@@ -31,8 +31,49 @@
   --font-sans: 'Plus Jakarta Sans', sans-serif;
 }
 
+/* ── Base ─────────────────────────────────────────────────────── */
+html {
+  /* Apple 디스플레이에서 서브픽셀 안티앨리어싱 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
 body {
   background: var(--cream);
   color: var(--warm-dark);
   font-family: 'Plus Jakarta Sans', sans-serif;
 }
+
+/* iOS/Android 탭 하이라이트 제거 */
+a, button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── iOS Safe Area ─────────────────────────────────────────────── */
+.safe-b {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.safe-t {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* ── 모바일 하단 탭바 영역 확보 ──────────────────────────────────
+   BottomNav 높이(≈60px) + iOS home indicator safe area를 합산해
+   마지막 콘텐츠가 탭바 뒤에 가려지지 않도록 함.             */
+.app-main {
+  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 768px) {
+  /* 태블릿/데스크탑: BottomNav 없으므로 p-6 하단 패딩과 동일 */
+  .app-main {
+    padding-bottom: 1.5rem;
+  }
+}
+
+/* ── 스크롤바 (macOS / iPadOS 네이티브 느낌) ─────────────────── */
+::-webkit-scrollbar          { width: 5px; height: 5px; }
+::-webkit-scrollbar-track    { background: transparent; }
+::-webkit-scrollbar-thumb    { background: var(--warm-border); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--warm-muted); }

@@ -31,17 +31,14 @@ export default function Header({
 
   const searchParamsMonth = searchParams.get('month') ?? todayMonth
 
-  // 로컬 표시용 월 — 클릭 즉시 반영, 실제 내비게이션은 디바운스
   const [localMonth, setLocalMonth] = useState(searchParamsMonth)
   const localMonthRef = useRef(localMonth)
 
-  // 내비게이션 완료 후 서치파라미터와 동기화
   useEffect(() => {
     setLocalMonth(searchParamsMonth)
     localMonthRef.current = searchParamsMonth
   }, [searchParamsMonth])
 
-  // 픽커 외부 클릭 시 닫기
   useEffect(() => {
     if (!showPicker) return
     const handle = (e: MouseEvent) => {
@@ -66,10 +63,8 @@ export default function Header({
     const [yyyy, mm] = localMonthRef.current.split('-').map(Number)
     const d = new Date(yyyy, mm - 1 + delta, 1)
     const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    // 즉시 표시 업데이트
     localMonthRef.current = next
     setLocalMonth(next)
-    // 디바운스로 실제 내비게이션 (연속 클릭 시 마지막 값만 적용)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => applyMonth(localMonthRef.current), 350)
   }
@@ -78,14 +73,16 @@ export default function Header({
   const displayMonth = `${cy}년 ${parseInt(cm)}월`
 
   return (
-    // relative z-[100]: 헤더가 사이드바(z-50)보다 항상 위에 위치 → 픽커 겹침 방지
-    <header className="h-14 md:h-16 flex items-center justify-between px-4 md:px-6 shrink-0 relative z-[100]"
-            style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }}>
-      <div className="flex items-center gap-2">
-        {/* 햄버거 — 클릭 시 픽커 닫기 */}
+    /* relative z-[100]: 헤더가 사이드바(z-50)보다 항상 위 → MonthPicker 겹침 방지 */
+    <header
+      className="h-14 md:h-16 flex items-center justify-between px-4 md:px-6 shrink-0 relative z-[100]"
+      style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }}
+    >
+      <div className="flex items-center gap-1">
+        {/* ── 햄버거 (모바일) ── HIG: 44×44pt 최소 터치 타겟 */}
         <button
           onClick={() => { setShowPicker(false); onMenuClick?.() }}
-          className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+          className="md:hidden w-11 h-11 flex items-center justify-center rounded-xl transition-colors"
           style={{ color: 'var(--warm-mid)' }}
           aria-label="메뉴 열기"
         >
@@ -96,20 +93,24 @@ export default function Header({
           </svg>
         </button>
 
-        {/* 이전 달 */}
+        {/* ── 이전 달 ── HIG: 모바일 44pt, 데스크탑 32pt */}
         <button
           onClick={() => changeMonth(-1)}
-          className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-colors"
-          style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
-          {'◀'}
+          className="w-11 h-11 md:w-8 md:h-8 flex items-center justify-center rounded-xl md:rounded-lg text-sm transition-colors"
+          style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}
+          aria-label="이전 달"
+        >
+          ◀
         </button>
 
-        {/* 월 표시 + 픽커 */}
+        {/* ── 월 표시 + MonthPicker ── */}
         <div ref={pickerRef} className="relative">
           <div
             onClick={() => setShowPicker(v => !v)}
-            className="text-sm font-semibold text-center cursor-pointer px-1"
+            className="text-sm font-semibold text-center cursor-pointer px-2 py-2 rounded-xl select-none"
             style={{ color: 'var(--warm-dark)' }}
+            role="button"
+            aria-label="월 선택"
           >
             {displayMonth}
           </div>
@@ -123,22 +124,25 @@ export default function Header({
           )}
         </div>
 
-        {/* 다음 달 (현재 월 이전일 때만 표시) */}
+        {/* ── 다음 달 (현재 월 이전일 때만) ── */}
         {localMonth < todayMonth && (
           <button
             onClick={() => changeMonth(1)}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-colors"
-            style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
-            {'▶'}
+            className="w-11 h-11 md:w-8 md:h-8 flex items-center justify-center rounded-xl md:rounded-lg text-sm transition-colors"
+            style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}
+            aria-label="다음 달"
+          >
+            ▶
           </button>
         )}
       </div>
 
-      {/* 유저 메뉴 */}
+      {/* ── 유저 메뉴 ── */}
       <div className="relative">
         <button
           onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity p-1 rounded-xl"
+          aria-label="사용자 메뉴"
         >
           {user.user_metadata?.avatar_url ? (
             <img src={user.user_metadata.avatar_url} alt="avatar"
@@ -162,7 +166,7 @@ export default function Header({
             </div>
             <div className="p-1.5 space-y-0.5">
               <a href="/property-select"
-                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+                className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition-colors min-h-[44px]"
                 style={{ color: 'var(--warm-dark)' }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--canvas)'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}>
@@ -170,7 +174,7 @@ export default function Header({
               </a>
               <form action={signOut}>
                 <button type="submit"
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition-colors min-h-[44px]"
                   style={{ color: '#ef4444' }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--canvas)'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}>
@@ -201,24 +205,32 @@ function MonthPicker({
 
   return (
     <div
-      className="absolute top-8 left-1/2 -translate-x-1/2 rounded-2xl shadow-2xl p-4 w-64"
+      className="absolute top-9 left-1/2 -translate-x-1/2 rounded-2xl shadow-2xl p-4 w-72"
       style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
       onClick={e => e.stopPropagation()}
     >
+      {/* 연도 네비 — HIG: 44pt 터치 타겟 */}
       <div className="flex items-center justify-between mb-3">
-        <button onClick={() => setYear(y => y - 1)}
-          className="px-2 py-1 rounded-lg text-sm transition-colors"
-          style={{ color: 'var(--warm-mid)' }}>
-          {'◀'}
+        <button
+          onClick={() => setYear(y => y - 1)}
+          className="w-11 h-11 flex items-center justify-center rounded-xl transition-colors"
+          style={{ color: 'var(--warm-mid)' }}
+          aria-label="이전 연도"
+        >
+          ◀
         </button>
         <span className="font-semibold text-sm" style={{ color: 'var(--warm-dark)' }}>{year}년</span>
-        <button onClick={() => setYear(y => y + 1)}
-          className="px-2 py-1 rounded-lg text-sm transition-colors"
-          style={{ color: 'var(--warm-mid)' }}>
-          {'▶'}
+        <button
+          onClick={() => setYear(y => y + 1)}
+          className="w-11 h-11 flex items-center justify-center rounded-xl transition-colors"
+          style={{ color: 'var(--warm-mid)' }}
+          aria-label="다음 연도"
+        >
+          ▶
         </button>
       </div>
 
+      {/* 월 그리드 — HIG: 최소 44pt 높이 */}
       <div className="grid grid-cols-4 gap-1.5">
         {months.map((label, i) => {
           const monthStr = `${year}-${String(i + 1).padStart(2, '0')}`
@@ -229,9 +241,9 @@ function MonthPicker({
               key={i}
               disabled={disabled}
               onClick={() => onSelect(monthStr)}
-              className="py-1.5 text-xs rounded-lg transition-colors"
+              className="py-3 text-sm rounded-xl transition-colors font-medium"
               style={isActive
-                ? { background: 'var(--coral)', color: '#fff', fontWeight: 600 }
+                ? { background: 'var(--coral)', color: '#fff' }
                 : disabled
                   ? { color: 'var(--warm-border)', cursor: 'not-allowed' }
                   : { color: 'var(--warm-mid)' }}
@@ -242,18 +254,22 @@ function MonthPicker({
         })}
       </div>
 
+      {/* 하단 버튼 — HIG: 44pt 높이 */}
       <div className="flex gap-2 mt-3">
         <button
           onClick={() => onSelect(todayMonth)}
-          className="flex-1 py-1.5 text-xs rounded-lg transition-colors font-medium"
+          className="flex-1 py-3 text-sm rounded-xl transition-colors font-medium"
           style={current === todayMonth
-            ? { background: 'var(--coral-light)', color: 'var(--coral)', cursor: 'default' }
-            : { background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
+            ? { background: 'var(--coral-light)', color: '#fff', cursor: 'default' }
+            : { background: 'var(--canvas)', color: 'var(--warm-mid)' }}
+        >
           이번달
         </button>
-        <button onClick={onClose}
-          className="flex-1 py-1.5 text-xs transition-colors"
-          style={{ color: 'var(--warm-muted)' }}>
+        <button
+          onClick={onClose}
+          className="flex-1 py-3 text-sm rounded-xl transition-colors"
+          style={{ color: 'var(--warm-muted)' }}
+        >
           닫기
         </button>
       </div>

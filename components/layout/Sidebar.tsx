@@ -99,7 +99,7 @@ function NavContent({
       <div
         className="flex items-center shrink-0"
         style={{
-          minHeight: 65,
+          minHeight: 56,
           padding: drawer ? '0 20px' : undefined,
           borderBottom: '1px solid var(--warm-border)',
         }}
@@ -115,19 +115,19 @@ function NavContent({
       </div>
 
       {/* Nav groups */}
-      <nav className="flex-1 overflow-y-auto py-2">
+      <nav className="flex-1 overflow-y-auto py-1">
         {NAV_GROUPS.map(group => (
           <div key={group.label}>
-            {/* Group label */}
+            {/* Group label — HIG 최소 11pt */}
             <div
               className={drawer ? 'block' : 'hidden lg:block'}
               style={{
-                padding: '12px 20px 5px',
-                fontSize: 10,
+                padding: '12px 20px 4px',
+                fontSize: 11,
                 fontWeight: 600,
-                letterSpacing: '0.08em',
+                letterSpacing: '0.07em',
                 textTransform: 'uppercase',
-                color: 'rgba(120,90,60,0.35)',
+                color: 'rgba(120,90,60,0.45)',
               }}
             >
               {group.label}
@@ -141,11 +141,12 @@ function NavContent({
                   key={href}
                   href={linkHref}
                   onClick={onClose}
+                  /* HIG: 최소 44pt 터치 타겟 — py-3.5로 달성 (14×2 + 아이콘17 = 45px) */
                   className={[
-                    'flex items-center transition-colors',
+                    'flex items-center transition-colors min-h-[44px]',
                     drawer
-                      ? 'gap-2.5 px-5 py-[9px] border-l-[2.5px]'
-                      : 'gap-0 py-[10px] justify-center border-l-0 lg:gap-2.5 lg:px-5 lg:justify-start lg:border-l-[2.5px]',
+                      ? 'gap-2.5 px-5 py-3.5 border-l-[2.5px]'
+                      : 'gap-0 py-3.5 justify-center border-l-0 lg:gap-2.5 lg:px-5 lg:justify-start lg:border-l-[2.5px]',
                   ].join(' ')}
                   style={isActive ? {
                     color: 'var(--coral)',
@@ -158,9 +159,7 @@ function NavContent({
                   }}
                 >
                   <Icon />
-                  <span
-                    className={`text-[13px] ${drawer ? 'block' : 'hidden lg:block'}`}
-                  >
+                  <span className={`text-[13px] ${drawer ? 'block' : 'hidden lg:block'}`}>
                     {label}
                   </span>
                 </Link>
@@ -200,12 +199,12 @@ export default function Sidebar({
         <NavContent variant="sidebar" pathname={pathname} month={month} />
       </aside>
 
-      {/* ── 모바일: 드로어 ── */}
+      {/* ── 모바일: 슬라이드 드로어 ── */}
       {isOpen && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={onClose} />
           <aside
-            className="fixed inset-y-0 left-0 z-50 w-[220px] flex flex-col md:hidden"
+            className="fixed inset-y-0 left-0 z-50 w-[240px] flex flex-col md:hidden"
             style={style}
           >
             <NavContent variant="drawer" pathname={pathname} month={month} onClose={onClose} />

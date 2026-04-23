@@ -3,7 +3,16 @@
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 
-const ico = { viewBox: '0 0 22 22', fill: 'none', stroke: 'currentColor', strokeWidth: '1.6', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, width: 22, height: 22 }
+const ico = {
+  viewBox: '0 0 22 22',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: '1.6',
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  width: 22,
+  height: 22,
+}
 
 const NAV_ITEMS = [
   {
@@ -39,6 +48,7 @@ export default function BottomNav() {
   const month = searchParams.get('month')
 
   return (
+    /* HIG: 탭 바는 화면 하단 고정, safe area 위에 콘텐츠 배치 */
     <nav
       className="fixed bottom-0 left-0 right-0 z-40 md:hidden flex safe-b"
       style={{ background: 'var(--cream)', borderTop: '1px solid var(--warm-border)' }}
@@ -50,11 +60,13 @@ export default function BottomNav() {
           <Link
             key={href}
             href={linkHref}
-            className="flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors"
-            style={{ color: isActive ? 'var(--coral)' : 'var(--warm-muted)' }}
+            /* HIG: 탭 아이템 최소 높이 49pt, 아이콘+레이블 수직 중앙 */
+            className="flex-1 flex flex-col items-center justify-center gap-1 py-3 transition-colors"
+            style={{ color: isActive ? 'var(--coral)' : 'var(--warm-muted)', minHeight: 49 }}
           >
             <Icon />
-            <span className="text-[10px] font-medium">{label}</span>
+            {/* HIG: 탭 레이블 최소 11pt */}
+            <span className="text-[11px] font-medium leading-none">{label}</span>
           </Link>
         )
       })}
