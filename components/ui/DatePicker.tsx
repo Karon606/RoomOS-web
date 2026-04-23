@@ -237,6 +237,17 @@ export function DatePicker({
                 )
               })}
             </div>
+            {/* 올해로 이동 */}
+            {viewYear !== new Date().getFullYear() && (
+              <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
+                <button
+                  onClick={() => setViewYear(new Date().getFullYear())}
+                  className="w-full py-1.5 text-xs rounded-lg font-medium transition-colors"
+                  style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
+                  올해로
+                </button>
+              </div>
+            )}
           </>
         )}
 
@@ -269,6 +280,21 @@ export function DatePicker({
                 )
               })}
             </div>
+            {/* 현재 연도 범위로 이동 */}
+            {(() => {
+              const thisYear = new Date().getFullYear()
+              const thisBase = Math.floor(thisYear / 12) * 12
+              return thisBase !== yearBase ? (
+                <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
+                  <button
+                    onClick={() => setYearBase(thisBase)}
+                    className="w-full py-1.5 text-xs rounded-lg font-medium transition-colors"
+                    style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
+                    현재 연도로
+                  </button>
+                </div>
+              ) : null
+            })()}
           </>
         )}
       </div>
