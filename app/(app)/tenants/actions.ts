@@ -478,7 +478,7 @@ export async function analyzeTenantWithGemini(tenantId: string): Promise<string>
     },
   })
 
-  if (!tenant) throw new Error('입주자를 찾을 수 없습니다.')
+  if (!tenant) return '[오류] 입주자를 찾을 수 없습니다.'
 
   const lease = tenant.leaseTerms[0]
   const payments = lease?.paymentRecords ?? []
@@ -520,7 +520,7 @@ ${paymentLines || '  수납 기록 없음'}
 분석 결과를 실용적이고 구체적으로 작성해주세요.`
 
   const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) throw new Error('Gemini API 키가 설정되지 않았습니다.')
+  if (!apiKey) return '[오류] Gemini API 키가 설정되지 않았습니다.'
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
@@ -531,7 +531,7 @@ ${paymentLines || '  수납 기록 없음'}
     }
   )
 
-  if (!res.ok) throw new Error(`Gemini API 오류: ${res.status}`)
+  if (!res.ok) return `[오류] Gemini API 응답 실패 (${res.status})`
   const json = await res.json()
   return json.candidates?.[0]?.content?.parts?.[0]?.text ?? 'AI 분석 결과를 가져올 수 없습니다.'
 }
