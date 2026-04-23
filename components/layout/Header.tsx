@@ -15,9 +15,11 @@ function todayMonthStr() {
 export default function Header({
   user,
   onMenuClick,
+  startNavigation,
 }: {
   user: User
   onMenuClick?: () => void
+  startNavigation?: (fn: () => void) => void
 }) {
   const [open, setOpen]             = useState(false)
   const [showPicker, setShowPicker] = useState(false)
@@ -54,7 +56,9 @@ export default function Header({
     localStorage.setItem(MONTH_KEY, m)
     const params = new URLSearchParams(searchParams.toString())
     params.set('month', m)
-    router.push(`${pathname}?${params.toString()}`)
+    const navigate = () => router.push(`${pathname}?${params.toString()}`)
+    if (startNavigation) startNavigation(navigate)
+    else navigate()
   }
 
   const changeMonth = (delta: number) => {
