@@ -207,7 +207,7 @@ function MonthPicker({
 
   return (
     <div
-      className="absolute top-9 left-1/2 -translate-x-1/2 rounded-2xl shadow-2xl p-4 w-72"
+      className="absolute top-9 left-0 rounded-2xl shadow-2xl p-4 w-72"
       style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
       onClick={e => e.stopPropagation()}
     >

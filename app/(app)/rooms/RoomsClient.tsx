@@ -476,7 +476,7 @@ export default function RoomsClient({
       </div>
 
       {/* 수납 현황 테이블 */}
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100vh-240px)]">
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100dvh-240px)]">
           <table className="w-full" style={{
             tableLayout: 'fixed',
             minWidth: colWidths.roomNo + colWidths.tenantName +

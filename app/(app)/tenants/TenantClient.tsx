@@ -740,7 +740,7 @@ export default function TenantClient({
           </p>
         </div>
       ) : (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100vh-310px)]">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100dvh-310px)]">
           <table className="w-full" style={{ tableLayout: 'fixed', minWidth: colWidths.roomNo + colWidths.name + visibleCols.reduce((s, c) => s + (colWidths[c.key] ?? 100), 0) }}>
             <thead className="sticky top-0 z-30 bg-[var(--cream)]">
               <tr className="border-b border-[var(--warm-border)]">

@@ -8,7 +8,7 @@ import { User } from '@supabase/supabase-js'
 
 function PageLoadingOverlay() {
   return (
-    <div className="absolute inset-0 flex items-center justify-center z-10" style={{ background: 'var(--canvas)' }}>
+    <div className="absolute inset-0 flex items-center justify-center z-[60]" style={{ background: 'var(--canvas)' }}>
       <style>{`
         @keyframes roos-from-left {
           0%   { transform: translateX(-54px); }
