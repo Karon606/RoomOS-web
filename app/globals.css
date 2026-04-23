@@ -37,12 +37,17 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  /* iOS Safari: document 레벨 스크롤 차단 → 헤더가 콘텐츠에 덮히지 않음 */
+  overflow: hidden;
+  height: 100%;
 }
 
 body {
   background: var(--cream);
   color: var(--warm-dark);
   font-family: 'Plus Jakarta Sans', sans-serif;
+  overflow: hidden;
+  height: 100%;
 }
 
 /* iOS/Android 탭 하이라이트 제거 */
@@ -64,6 +69,7 @@ a, button, [role="button"], input[type="button"], input[type="submit"], input[ty
    마지막 콘텐츠가 탭바 뒤에 가려지지 않도록 함.             */
 .app-main {
   padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+  overscroll-behavior: none;
 }
 @media (min-width: 768px) {
   /* 태블릿/데스크탑: BottomNav 없으므로 p-6 하단 패딩과 동일 */
