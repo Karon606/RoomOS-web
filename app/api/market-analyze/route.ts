@@ -59,7 +59,7 @@ ${competitorsText}
 JSON 권장 단가는 다음 형식: {"권장단가": [{"type": "방타입", "price": 숫자, "reason": "이유"}]}`
 
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
