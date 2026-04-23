@@ -10,6 +10,7 @@ import { PhoneInput } from '@/components/ui/PhoneInput'
 import { formatPhone } from '@/lib/formatPhone'
 import { CountrySelect, flagByName } from '@/components/ui/CountrySelect'
 import { JobSelect } from '@/components/ui/JobSelect'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
@@ -1717,6 +1718,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   }
   const [dueDayRaw, setDueDayRaw] = useState(initDueDay().raw)
   const [dueDayDisp, setDueDayDisp] = useState(initDueDay().disp)
+  const [moveInDateVal, setMoveInDateVal] = useState(toDateInput(lease?.moveInDate))
 
   const applyDueDay = (input: string) => {
     const t = input.trim()
@@ -1837,11 +1839,20 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">입주일</label>
-            <input
-              type="date" name="moveInDate"
-              defaultValue={toDateInput(lease?.moveInDate)}
-              onChange={handleMoveInChange}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+            <DatePicker
+              name="moveInDate"
+              value={moveInDateVal}
+              onChange={(v) => {
+                setMoveInDateVal(v)
+                if (v) {
+                  const d = new Date(v)
+                  const day = d.getDate()
+                  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+                  applyDueDay(day >= lastDay ? '말일' : String(day))
+                }
+              }}
+              placeholder="입주일 선택"
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
             />
           </div>
         </div>

@@ -12,27 +12,6 @@ function todayMonthStr() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
-// 미니 로고 스피너 (헤더 전용 소형)
-function MiniLogoSpinner() {
-  return (
-    <>
-      <style>{`
-        @keyframes mls-l { 0%,100%{transform:translateX(-5px);opacity:0} 25%,70%{transform:translateX(0);opacity:1} }
-        @keyframes mls-r { 0%,100%{transform:translateX(5px);opacity:0}  25%,70%{transform:translateX(0);opacity:1} }
-        .mls-b1{animation:mls-l 1.6s ease-in-out infinite 0s}
-        .mls-b2{animation:mls-r 1.6s ease-in-out infinite 0.12s}
-        .mls-b3{animation:mls-l 1.6s ease-in-out infinite 0.24s}
-        .mls-b4{animation:mls-r 1.6s ease-in-out infinite 0.36s}
-      `}</style>
-      <svg width="22" height="20" viewBox="0 0 28 24" xmlns="http://www.w3.org/2000/svg">
-        <g className="mls-b1"><line x1="1" y1="3"  x2="25" y2="3"  stroke="#f4623a" strokeWidth="4" strokeLinecap="round"/></g>
-        <g className="mls-b2"><line x1="1" y1="11" x2="16" y2="11" stroke="#f4623a" strokeWidth="4" strokeLinecap="round" opacity="0.5"/></g>
-        <g className="mls-b3"><line x1="1" y1="19" x2="25" y2="19" stroke="#f4623a" strokeWidth="4" strokeLinecap="round" opacity="0.72"/></g>
-      </svg>
-    </>
-  )
-}
-
 export default function Header({
   user,
   onMenuClick,
@@ -42,14 +21,25 @@ export default function Header({
 }) {
   const [open, setOpen]             = useState(false)
   const [showPicker, setShowPicker] = useState(false)
-  const [isPending, startTransition] = useTransition()
-  const router      = useRouter()
-  const todayMonth  = todayMonthStr()
-  const pathname    = usePathname()
+  const [, startTransition]         = useTransition()
+  const router       = useRouter()
+  const todayMonth   = todayMonthStr()
+  const pathname     = usePathname()
   const searchParams = useSearchParams()
-  const pickerRef   = useRef<HTMLDivElement>(null)
+  const pickerRef    = useRef<HTMLDivElement>(null)
+  const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const currentMonth = searchParams.get('month') ?? todayMonth
+  const searchParamsMonth = searchParams.get('month') ?? todayMonth
+
+  // 로컬 표시용 월 — 클릭 즉시 반영, 실제 내비게이션은 디바운스
+  const [localMonth, setLocalMonth] = useState(searchParamsMonth)
+  const localMonthRef = useRef(localMonth)
+
+  // 내비게이션 완료 후 서치파라미터와 동기화
+  useEffect(() => {
+    setLocalMonth(searchParamsMonth)
+    localMonthRef.current = searchParamsMonth
+  }, [searchParamsMonth])
 
   // 픽커 외부 클릭 시 닫기
   useEffect(() => {
@@ -73,20 +63,26 @@ export default function Header({
   }
 
   const changeMonth = (delta: number) => {
-    const [yyyy, mm] = currentMonth.split('-').map(Number)
+    const [yyyy, mm] = localMonthRef.current.split('-').map(Number)
     const d = new Date(yyyy, mm - 1 + delta, 1)
     const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    applyMonth(next)
+    // 즉시 표시 업데이트
+    localMonthRef.current = next
+    setLocalMonth(next)
+    // 디바운스로 실제 내비게이션 (연속 클릭 시 마지막 값만 적용)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => applyMonth(localMonthRef.current), 350)
   }
 
-  const [cy, cm] = currentMonth.split('-')
+  const [cy, cm] = localMonth.split('-')
   const displayMonth = `${cy}년 ${parseInt(cm)}월`
 
   return (
-    <header className="h-14 md:h-16 flex items-center justify-between px-4 md:px-6 shrink-0"
+    // relative z-[100]: 헤더가 사이드바(z-50)보다 항상 위에 위치 → 픽커 겹침 방지
+    <header className="h-14 md:h-16 flex items-center justify-between px-4 md:px-6 shrink-0 relative z-[100]"
             style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }}>
       <div className="flex items-center gap-2">
-        {/* 햄버거 (모바일 전용) — 클릭 시 픽커도 닫기 */}
+        {/* 햄버거 — 클릭 시 픽커 닫기 */}
         <button
           onClick={() => { setShowPicker(false); onMenuClick?.() }}
           className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
@@ -100,11 +96,10 @@ export default function Header({
           </svg>
         </button>
 
-        {/* 이전 달 버튼 */}
+        {/* 이전 달 */}
         <button
           onClick={() => changeMonth(-1)}
-          disabled={isPending}
-          className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-colors disabled:opacity-40"
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-colors"
           style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
           {'◀'}
         </button>
@@ -112,28 +107,27 @@ export default function Header({
         {/* 월 표시 + 픽커 */}
         <div ref={pickerRef} className="relative">
           <div
-            onClick={() => !isPending && setShowPicker(v => !v)}
-            className="text-sm font-semibold text-center transition-opacity relative cursor-pointer px-1 flex items-center gap-1.5"
-            style={{ color: 'var(--warm-dark)', opacity: isPending ? 0.4 : 1 }}
+            onClick={() => setShowPicker(v => !v)}
+            className="text-sm font-semibold text-center cursor-pointer px-1"
+            style={{ color: 'var(--warm-dark)' }}
           >
-            {isPending ? <MiniLogoSpinner /> : displayMonth}
+            {displayMonth}
           </div>
-          {showPicker && !isPending && (
+          {showPicker && (
             <MonthPicker
-              current={currentMonth}
+              current={localMonth}
               todayMonth={todayMonth}
-              onSelect={(m) => { setShowPicker(false); applyMonth(m) }}
+              onSelect={(m) => { setShowPicker(false); setLocalMonth(m); localMonthRef.current = m; applyMonth(m) }}
               onClose={() => setShowPicker(false)}
             />
           )}
         </div>
 
-        {/* 다음 달 버튼 */}
-        {currentMonth < todayMonth && (
+        {/* 다음 달 (현재 월 이전일 때만 표시) */}
+        {localMonth < todayMonth && (
           <button
             onClick={() => changeMonth(1)}
-            disabled={isPending}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-colors disabled:opacity-40"
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-colors"
             style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
             {'▶'}
           </button>
@@ -207,7 +201,7 @@ function MonthPicker({
 
   return (
     <div
-      className="absolute top-8 left-1/2 -translate-x-1/2 z-[60] rounded-2xl shadow-2xl p-4 w-64"
+      className="absolute top-8 left-1/2 -translate-x-1/2 rounded-2xl shadow-2xl p-4 w-64"
       style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
       onClick={e => e.stopPropagation()}
     >
