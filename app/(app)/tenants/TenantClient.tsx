@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithGemini, createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests } from './actions'
+import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithGemini, createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests, changeDueDay } from './actions'
 import { savePayment, deletePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -222,6 +222,27 @@ function getSortValue(t: Tenant, key: SortKey): string | number {
   }
 }
 
+// 납입일 변경 일할 계산
+function calcProRata(rentAmount: number, oldDueDay: string | null, newDueDayStr: string, targetMonth: string) {
+  const str = newDueDayStr.trim()
+  if (!str) return null
+  const [y, m] = targetMonth.split('-').map(Number)
+  const daysInMonth = new Date(y, m, 0).getDate()
+  const parseDay = (d: string) => {
+    if (d.includes('말')) return daysInMonth
+    const n = parseInt(d, 10)
+    if (isNaN(n) || n < 1 || n > 31) return null
+    return Math.min(n, daysInMonth)
+  }
+  const oldDay = oldDueDay ? parseDay(oldDueDay) : null
+  const newDay = parseDay(str)
+  if (oldDay === null || newDay === null) return null
+  const diff = newDay - oldDay
+  if (diff === 0) return { days: 0, amount: 0, type: 'none' as const }
+  const amount = Math.round(Math.abs(diff) * rentAmount / daysInMonth)
+  return { days: Math.abs(diff), amount, type: diff > 0 ? 'extra' as const : 'refund' as const }
+}
+
 function loadColVis(): Record<ColKey, boolean> | null {
   if (typeof window === 'undefined') return null
   try {
@@ -280,6 +301,10 @@ export default function TenantClient({
   const [isPending, startTransition]    = useTransition()
   const [colWidths, setColWidths]       = useState<Record<string, number>>(DEFAULT_WIDTHS)
   const colWidthsRef                    = useRef<Record<string, number>>(DEFAULT_WIDTHS)
+
+  // 납입일 변경
+  const [showDueDayChange, setShowDueDayChange] = useState(false)
+  const [newDueDayInput, setNewDueDayInput]     = useState('')
 
   // 수납 모달
   const [payTarget, setPayTarget]   = useState<{ tenant: Tenant; lease: LeaseTerm } | null>(null)
@@ -497,6 +522,23 @@ export default function TenantClient({
         const records = await getPaymentsByLease(payTarget.lease.id, targetMonth)
         setPayHistory(records as PayRecord[])
       }
+      refresh()
+    })
+  }
+
+  const handleChangeDueDayAction = async () => {
+    if (!detailTenant || !newDueDayInput.trim()) return
+    const lease = detailTenant.leaseTerms[0]
+    if (!lease) return
+    const calc = calcProRata(lease.rentAmount, lease.dueDay, newDueDayInput, targetMonth)
+    if (!calc || calc.type === 'none') return
+    const adjustAmount = calc.type === 'extra' ? -calc.amount : calc.amount
+    startTransition(async () => {
+      const res = await changeDueDay(lease.id, newDueDayInput.trim(), targetMonth, adjustAmount)
+      if (!res.ok) { setError(res.error); return }
+      setShowDueDayChange(false)
+      setNewDueDayInput('')
+      setDetailTenant(null)
       refresh()
     })
   }
@@ -850,6 +892,7 @@ export default function TenantClient({
         const closeDetail = () => {
           setDetailTenant(null); setDetailEditMode(false); setError('')
           setAiText(''); setAiLoading(false)
+          setShowDueDayChange(false); setNewDueDayInput('')
         }
 
         const handleAiAnalyze = async () => {
@@ -953,13 +996,95 @@ export default function TenantClient({
                                 <InfoItem label="월 이용료"  value={<MoneyDisplay amount={lease.rentAmount} />} />
                                 <InfoItem label="보증금"     value={<MoneyDisplay amount={lease.depositAmount} />} />
                                 <InfoItem label="청소비"     value={<MoneyDisplay amount={lease.cleaningFee} />} />
-                                <InfoItem label="납부일"     value={fmtDueDay(lease.dueDay)} />
+                                <InfoItem label="납부일" value={
+                                  <span className="flex items-center gap-2">
+                                    <span>{fmtDueDay(lease.dueDay)}</span>
+                                    {canEdit && (
+                                      <button
+                                        onClick={() => { setShowDueDayChange(v => !v); setNewDueDayInput('') }}
+                                        className="text-[10px] px-1.5 py-0.5 rounded transition-colors"
+                                        style={{ color: 'var(--coral)', border: '1px solid rgba(244,98,58,0.35)' }}>
+                                        납입일 변경
+                                      </button>
+                                    )}
+                                  </span>
+                                } />
                                 <InfoItem label="납부방식"   value={PT_LABEL[lease.paymentTiming] ?? lease.paymentTiming} />
                                 <InfoItem label="입주일"     value={fmtDate(lease.moveInDate)} />
                                 <InfoItem label="거주기간"   value={calcStayPeriod(lease.moveInDate, lease.moveOutDate ?? undefined)} />
                                 {lease.expectedMoveOut && <InfoItem label="퇴실 예정일" value={fmtDate(lease.expectedMoveOut)} />}
                                 {lease.moveOutDate && <InfoItem label="퇴실일" value={fmtDate(lease.moveOutDate)} />}
                               </InfoGrid>
+
+                              {/* 납입일 변경 인라인 폼 */}
+                              {showDueDayChange && (() => {
+                                const calc = newDueDayInput.trim()
+                                  ? calcProRata(lease.rentAmount, lease.dueDay, newDueDayInput, targetMonth)
+                                  : null
+                                const canApply = !!calc && calc.type !== 'none'
+                                return (
+                                  <div className="mt-3 p-3 rounded-xl space-y-3"
+                                    style={{ background: 'var(--canvas)', border: '1px solid rgba(244,98,58,0.25)' }}>
+                                    <p className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>
+                                      납입일 변경 — {targetMonth} 기준 일할 계산
+                                    </p>
+                                    <div className="flex items-end gap-3">
+                                      <div className="flex-1 space-y-1">
+                                        <label className="text-xs text-[var(--warm-muted)]">새 납입일</label>
+                                        <input
+                                          type="text"
+                                          value={newDueDayInput}
+                                          onChange={e => setNewDueDayInput(e.target.value)}
+                                          placeholder="예: 25, 말일"
+                                          className="w-full rounded-lg px-2.5 py-1.5 text-sm outline-none"
+                                          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
+                                        />
+                                      </div>
+                                      <div className="text-xs pb-1.5" style={{ color: 'var(--warm-muted)' }}>
+                                        현재 {fmtDueDay(lease.dueDay)}
+                                      </div>
+                                    </div>
+
+                                    {calc && calc.type !== 'none' && (
+                                      <div className="rounded-lg px-3 py-2 text-xs font-medium"
+                                        style={{
+                                          background: calc.type === 'extra' ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
+                                          color: calc.type === 'extra' ? '#ef4444' : '#16a34a',
+                                          border: `1px solid ${calc.type === 'extra' ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)'}`,
+                                        }}>
+                                        {calc.type === 'extra'
+                                          ? `납입일 ${calc.days}일 늦어짐 → 추가납부 ${calc.amount.toLocaleString()}원 발생`
+                                          : `납입일 ${calc.days}일 빨라짐 → 과입금 ${calc.amount.toLocaleString()}원 환급`}
+                                        <span className="block mt-0.5 font-normal" style={{ color: 'var(--warm-muted)' }}>
+                                          월 {lease.rentAmount.toLocaleString()}원 ÷ {(() => { const [y,mo] = targetMonth.split('-').map(Number); return new Date(y,mo,0).getDate() })()}일 × {calc.days}일
+                                        </span>
+                                      </div>
+                                    )}
+                                    {calc && calc.type === 'none' && (
+                                      <p className="text-xs" style={{ color: 'var(--warm-muted)' }}>기존 납입일과 동일합니다.</p>
+                                    )}
+                                    {newDueDayInput.trim() && !calc && (
+                                      <p className="text-xs text-red-400">유효한 날짜를 입력하세요 (1~31 또는 말일)</p>
+                                    )}
+
+                                    <div className="flex gap-2">
+                                      <button type="button"
+                                        onClick={() => { setShowDueDayChange(false); setNewDueDayInput('') }}
+                                        className="flex-1 py-1.5 text-xs rounded-lg transition-colors"
+                                        style={{ background: 'var(--cream)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
+                                        취소
+                                      </button>
+                                      <button type="button"
+                                        disabled={isPending || !canApply}
+                                        onClick={handleChangeDueDayAction}
+                                        className="flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors disabled:opacity-40"
+                                        style={{ background: 'var(--coral)', color: '#fff' }}>
+                                        {isPending ? '처리 중...' : '변경 적용'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                )
+                              })()}
                             </InfoSection>
                           )}
 
@@ -1321,8 +1446,11 @@ export default function TenantClient({
       {/* ── 수납 모달 ─────────────────────────────────────────────── */}
       {payTarget && (() => {
         const { tenant, lease } = payTarget
-        const totalPaid = payHistory.reduce((s, p) => s + p.actualAmount, 0)
-        const balance   = totalPaid - lease.rentAmount
+        const adjRecords = payHistory.filter(p => p.memo?.startsWith('[납입일변경]'))
+        const regularRecords = payHistory.filter(p => !p.memo?.startsWith('[납입일변경]'))
+        const regularPaid = regularRecords.reduce((s, p) => s + p.actualAmount, 0)
+        const adjNet = adjRecords.reduce((s, p) => s + p.actualAmount, 0)
+        const balance = regularPaid + adjNet - lease.rentAmount
         const DAYS = ['일', '월', '화', '수', '목', '금', '토']
         const fmtPayDate = (d: Date | string) => {
           const dt = new Date(d)
@@ -1355,7 +1483,13 @@ export default function TenantClient({
                     <div className="grid grid-cols-2 gap-3">
                       <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
                         <p className="text-xs text-[var(--warm-muted)]">총 수납</p>
-                        <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]"><MoneyDisplay amount={totalPaid} /></p>
+                        <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]"><MoneyDisplay amount={regularPaid} /></p>
+                        {adjNet !== 0 && (
+                          <p className="text-[10px] mt-0.5 font-medium"
+                            style={{ color: adjNet > 0 ? '#16a34a' : '#ef4444' }}>
+                            조정 {adjNet > 0 ? '+' : ''}{adjNet.toLocaleString()}원
+                          </p>
+                        )}
                       </div>
                       <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
                         <p className="text-xs text-[var(--warm-muted)]">잔액</p>
@@ -1369,11 +1503,48 @@ export default function TenantClient({
                       </div>
                     </div>
 
+                    {/* 납입일 변경 조정 내역 */}
+                    {adjRecords.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>납입일 변경 조정</p>
+                        {adjRecords.map(p => {
+                          const isExtra = p.actualAmount < 0
+                          const absAmt = Math.abs(p.actualAmount)
+                          const label = p.memo?.replace('[납입일변경] ', '') ?? ''
+                          return (
+                            <div key={p.id} className="flex items-center justify-between rounded-xl px-3 py-2.5"
+                              style={{
+                                background: isExtra ? 'rgba(239,68,68,0.07)' : 'rgba(34,197,94,0.07)',
+                                border: `1px solid ${isExtra ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)'}`,
+                              }}>
+                              <div>
+                                <p className="text-xs font-semibold"
+                                  style={{ color: isExtra ? '#ef4444' : '#16a34a' }}>
+                                  {isExtra ? '추가납부 필요' : '과입금 처리'}
+                                </p>
+                                {label && (
+                                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--warm-muted)' }}>{label}</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold"
+                                  style={{ color: isExtra ? '#ef4444' : '#16a34a' }}>
+                                  {isExtra ? '-' : '+'}{absAmt.toLocaleString()}원
+                                </span>
+                                <button onClick={() => handleDeletePayRecord(p.id)}
+                                  className="text-xs text-red-400 hover:text-red-300 transition-colors">✕</button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
                     {/* 납부 내역 */}
-                    {payHistory.length > 0 && (
+                    {regularRecords.length > 0 && (
                       <div className="space-y-2">
                         <p className="text-xs font-medium text-[var(--warm-mid)]">납부 내역</p>
-                        {payHistory.map(p => (
+                        {regularRecords.map(p => (
                           <div key={p.id} className="flex items-center justify-between bg-[var(--canvas)] rounded-xl px-3 py-2.5">
                             <div>
                               <p className="text-xs text-[var(--warm-mid)]">

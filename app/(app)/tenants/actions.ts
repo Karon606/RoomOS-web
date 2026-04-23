@@ -624,6 +624,62 @@ export async function resolveTenantRequest(id: string): Promise<{ ok: true } | {
   }
 }
 
+// 납입일 영구 변경 + 일할 조정 기록 생성
+export async function changeDueDay(
+  leaseTermId: string,
+  newDueDay: string,
+  targetMonth: string,
+  adjustAmount: number, // 양수 = 과입금(환불), 음수 = 추가납부 필요
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+
+    const lease = await prisma.leaseTerm.findUnique({
+      where: { id: leaseTermId },
+      select: { dueDay: true, rentAmount: true, tenantId: true },
+    })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+
+    await prisma.leaseTerm.update({
+      where: { id: leaseTermId },
+      data: { dueDay: newDueDay.trim() },
+    })
+
+    if (adjustAmount !== 0) {
+      const maxSeq = await prisma.paymentRecord.aggregate({
+        where: { leaseTermId, targetMonth },
+        _max: { seqNo: true },
+      })
+      const seqNo = (maxSeq._max.seqNo ?? 0) + 1
+      const isRefund = adjustAmount > 0
+      const absAmt = Math.abs(adjustAmount)
+      const typeLabel = isRefund ? '과입금' : '추가납부'
+
+      await prisma.paymentRecord.create({
+        data: {
+          leaseTermId,
+          tenantId:      lease.tenantId,
+          propertyId,
+          targetMonth,
+          expectedAmount: 0,
+          actualAmount:   adjustAmount,
+          isPaid:         isRefund,
+          payDate:        new Date(),
+          seqNo,
+          memo: `[납입일변경] ${lease.dueDay ?? '?'}일→${newDueDay} 변경, 일할 ${absAmt.toLocaleString()}원 (${typeLabel})`,
+        },
+      })
+    }
+
+    revalidatePath('/tenants')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 export async function deleteTenantRequest(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
