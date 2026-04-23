@@ -16,7 +16,7 @@ export default function AppShell({
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--canvas)' }}>
+    <div className="flex h-dvh overflow-hidden" style={{ background: 'var(--canvas)' }}>
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex flex-col flex-1 overflow-hidden">

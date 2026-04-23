@@ -2,7 +2,7 @@
 
 import { signOut } from '@/app/property-select/actions'
 import { User } from '@supabase/supabase-js'
-import { useState, useTransition, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 
 const MONTH_KEY = 'roomos_selected_month'
@@ -21,13 +21,13 @@ export default function Header({
 }) {
   const [open, setOpen]             = useState(false)
   const [showPicker, setShowPicker] = useState(false)
-  const [, startTransition]         = useTransition()
   const router       = useRouter()
   const todayMonth   = todayMonthStr()
   const pathname     = usePathname()
   const searchParams = useSearchParams()
   const pickerRef    = useRef<HTMLDivElement>(null)
   const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+
 
   const searchParamsMonth = searchParams.get('month') ?? todayMonth
 
@@ -54,9 +54,7 @@ export default function Header({
     localStorage.setItem(MONTH_KEY, m)
     const params = new URLSearchParams(searchParams.toString())
     params.set('month', m)
-    startTransition(() => {
-      router.push(`${pathname}?${params.toString()}`)
-    })
+    router.push(`${pathname}?${params.toString()}`)
   }
 
   const changeMonth = (delta: number) => {

@@ -728,7 +728,10 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
                 {/* 이달 미수납 */}
                 <div className="rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
                   <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b shrink-0" style={{ borderColor: 'var(--warm-border)' }}>
-                    <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>이달 미수납</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>이달 미수납</h3>
+                      <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>오늘 기준</span>
+                    </div>
                     {data.unpaidCount > 0 && (
                       <span className="rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>
                         {data.unpaidCount}건

@@ -248,7 +248,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   function calcDaysOverdue(dueDay: string | null): number | null {
     if (!dueDay) return null
-    const [y, m] = targetMonth.split('-').map(Number)
+    const todayCopy = new Date(); todayCopy.setHours(0, 0, 0, 0)
+    const y = todayCopy.getFullYear()
+    const m = todayCopy.getMonth() + 1
     let dayNum: number
     if (dueDay.includes('말')) {
       dayNum = new Date(y, m, 0).getDate()
@@ -258,7 +260,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }
     const dueDate = new Date(y, m - 1, dayNum)
     dueDate.setHours(0, 0, 0, 0)
-    const todayCopy = new Date(); todayCopy.setHours(0, 0, 0, 0)
     return Math.round((todayCopy.getTime() - dueDate.getTime()) / 86400000)
   }
 
