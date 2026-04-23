@@ -67,47 +67,84 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const targetMonth = searchParams.get('month') ??
     `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+  const scope = (searchParams.get('scope') ?? 'month') as 'month' | 'year' | 'all'
 
   const [yyyy, mm] = targetMonth.split('-').map(Number)
   const monthStart = new Date(yyyy, mm - 1, 1)
-  const monthEnd   = new Date(yyyy, mm, 0)
+  const monthEnd   = new Date(yyyy, mm, 0, 23, 59, 59)
+  const yearStart  = new Date(yyyy, 0, 1)
+  const yearEnd    = new Date(yyyy, 11, 31, 23, 59, 59)
+
+  const dateRange = scope === 'month'
+    ? { gte: monthStart, lte: monthEnd }
+    : scope === 'year'
+      ? { gte: yearStart, lte: yearEnd }
+      : undefined
 
   // ── 수납현황 ────────────────────────────────────────────────────
-  const leases = await prisma.leaseTerm.findMany({
-    where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-    include: {
-      room: { select: { roomNo: true } },
-      tenant: {
-        select: {
-          name: true,
-          contacts: { where: { isPrimary: true }, take: 1, select: { contactValue: true } },
+  let paymentSheet: object[]
+
+  if (scope === 'month') {
+    const leases = await prisma.leaseTerm.findMany({
+      where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+      include: {
+        room: { select: { roomNo: true } },
+        tenant: {
+          select: {
+            name: true,
+            contacts: { where: { isPrimary: true }, take: 1, select: { contactValue: true } },
+          },
         },
       },
-    },
-    orderBy: { room: { roomNo: 'asc' } },
-  })
-  const payments = await prisma.paymentRecord.findMany({ where: { propertyId, targetMonth } })
-  const paymentSheet = leases.map(l => {
-    const ps = payments.filter(p => p.leaseTermId === l.id)
-    const totalPaid = ps.reduce((s, x) => s + x.actualAmount, 0)
-    const effectiveDueDay =
-      l.overrideDueDayMonth === targetMonth && l.overrideDueDay ? l.overrideDueDay : l.dueDay
-    return {
-      '호실':        l.room.roomNo,
-      '입주자명':    l.tenant.name,
-      '연락처':      l.tenant.contacts[0]?.contactValue ?? '',
-      '이용료':      l.rentAmount,
-      '보증금':      l.depositAmount,
-      '총 수납액':   totalPaid,
-      '잔액':        totalPaid - l.rentAmount,
-      '납부일':      effectiveDueDay ? `매월 ${effectiveDueDay}일` : '',
-      '납부방법':    l.payMethod ?? '',
-      '상태':        totalPaid >= l.rentAmount ? '완납' : '미수납',
-      '계약상태':    STATUS_LABEL[l.status] ?? l.status,
-      '입실일':      fmtDate(l.moveInDate),
-      '퇴실 예정일': fmtDate(l.expectedMoveOut),
-    }
-  })
+      orderBy: { room: { roomNo: 'asc' } },
+    })
+    const payments = await prisma.paymentRecord.findMany({ where: { propertyId, targetMonth } })
+    paymentSheet = leases.map(l => {
+      const ps = payments.filter(p => p.leaseTermId === l.id)
+      const totalPaid = ps.reduce((s, x) => s + x.actualAmount, 0)
+      const effectiveDueDay =
+        l.overrideDueDayMonth === targetMonth && l.overrideDueDay ? l.overrideDueDay : l.dueDay
+      return {
+        '호실':        l.room.roomNo,
+        '입주자명':    l.tenant.name,
+        '연락처':      l.tenant.contacts[0]?.contactValue ?? '',
+        '이용료':      l.rentAmount,
+        '보증금':      l.depositAmount,
+        '총 수납액':   totalPaid,
+        '잔액':        totalPaid - l.rentAmount,
+        '납부일':      effectiveDueDay ? `매월 ${effectiveDueDay}일` : '',
+        '납부방법':    l.payMethod ?? '',
+        '상태':        totalPaid >= l.rentAmount ? '완납' : '미수납',
+        '계약상태':    STATUS_LABEL[l.status] ?? l.status,
+        '입실일':      fmtDate(l.moveInDate),
+        '퇴실 예정일': fmtDate(l.expectedMoveOut),
+      }
+    })
+  } else {
+    const allPayments = await prisma.paymentRecord.findMany({
+      where: {
+        propertyId,
+        ...(scope === 'year' ? { targetMonth: { startsWith: `${yyyy}-` } } : {}),
+      },
+      include: {
+        leaseTerm: { include: { room: { select: { roomNo: true } } } },
+        tenant: { select: { name: true } },
+      },
+      orderBy: [{ targetMonth: 'asc' }, { leaseTerm: { room: { roomNo: 'asc' } } }],
+    })
+    paymentSheet = allPayments.map(p => ({
+      '월':       p.targetMonth,
+      '호실':     p.leaseTerm.room.roomNo,
+      '입주자명': p.tenant.name,
+      '이용료':   p.expectedAmount,
+      '납부액':   p.actualAmount,
+      '잔액':     p.actualAmount - p.expectedAmount,
+      '납부방법': p.payMethod ?? '',
+      '수납상태': p.isPaid ? '완납' : '미수납',
+      '납부일자': p.payDate ? fmtDate(p.payDate) : '',
+      '메모':     p.memo ?? '',
+    }))
+  }
 
   // ── 입주자관리 ──────────────────────────────────────────────────
   const tenants = await prisma.tenant.findMany({
@@ -115,7 +152,9 @@ export async function GET(request: NextRequest) {
     include: {
       contacts: { select: { contactType: true, contactValue: true, isPrimary: true, isEmergency: true, emergencyRelation: true } },
       leaseTerms: {
-        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        where: scope === 'all'
+          ? {}
+          : { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
         include: { room: { select: { roomNo: true } } },
         orderBy: { createdAt: 'desc' },
         take: 1,
@@ -128,25 +167,25 @@ export async function GET(request: NextRequest) {
     const primary = t.contacts.find(c => c.isPrimary) ?? t.contacts[0]
     const emergency = t.contacts.find(c => c.isEmergency)
     return {
-      '호실':          lease?.room.roomNo ?? '',
-      '이름':          t.name,
-      '영문명':        t.englishName ?? '',
-      '연락처':        primary?.contactValue ?? '',
-      '비상연락처':    emergency?.contactValue ?? '',
+      '호실':           lease?.room.roomNo ?? '',
+      '이름':           t.name,
+      '영문명':         t.englishName ?? '',
+      '연락처':         primary?.contactValue ?? '',
+      '비상연락처':     emergency?.contactValue ?? '',
       '비상연락처관계': emergency?.emergencyRelation ?? '',
-      '생년월일':      fmtDate(t.birthdate),
-      '성별':          GENDER_LABEL[t.gender] ?? '',
-      '국적':          t.nationality ?? '',
-      '직업':          t.job ?? '',
-      '이용료':        lease?.rentAmount ?? '',
-      '보증금':        lease?.depositAmount ?? '',
-      '청소비':        lease?.cleaningFee ?? '',
-      '납부일':        lease?.dueDay ?? '',
-      '납부방법':      lease?.payMethod ?? '',
-      '입실일':        fmtDate(lease?.moveInDate),
-      '퇴실 예정일':   fmtDate(lease?.expectedMoveOut),
-      '계약상태':      STATUS_LABEL[lease?.status ?? ''] ?? '',
-      '메모':          t.memo ?? '',
+      '생년월일':       fmtDate(t.birthdate),
+      '성별':           GENDER_LABEL[t.gender] ?? '',
+      '국적':           t.nationality ?? '',
+      '직업':           t.job ?? '',
+      '이용료':         lease?.rentAmount ?? '',
+      '보증금':         lease?.depositAmount ?? '',
+      '청소비':         lease?.cleaningFee ?? '',
+      '납부일':         lease?.dueDay ?? '',
+      '납부방법':       lease?.payMethod ?? '',
+      '입실일':         fmtDate(lease?.moveInDate),
+      '퇴실 예정일':    fmtDate(lease?.expectedMoveOut),
+      '계약상태':       STATUS_LABEL[lease?.status ?? ''] ?? '',
+      '메모':           t.memo ?? '',
     }
   })
 
@@ -169,24 +208,24 @@ export async function GET(request: NextRequest) {
 
   // ── 지출 ────────────────────────────────────────────────────────
   const expenses = await prisma.expense.findMany({
-    where: { propertyId, date: { gte: monthStart, lte: monthEnd } },
+    where: { propertyId, ...(dateRange ? { date: dateRange } : {}) },
     include: { financialAccount: { select: { brand: true, alias: true } } },
     orderBy: { date: 'asc' },
   })
   const expenseSheet = expenses.map(e => ({
-    '날짜':     fmtDate(e.date),
-    '카테고리': e.category,
-    '세부항목': e.detail ?? '',
-    '금액':     e.amount,
-    '결제수단': e.payMethod ?? '',
+    '날짜':      fmtDate(e.date),
+    '카테고리':  e.category,
+    '세부항목':  e.detail ?? '',
+    '금액':      e.amount,
+    '결제수단':  e.payMethod ?? '',
     '카드/계좌': e.financeName || fmtAccount(e.financialAccount),
-    '정산여부': SETTLE_LABEL[e.settleStatus] ?? '',
-    '메모':     e.memo ?? '',
+    '정산여부':  SETTLE_LABEL[e.settleStatus] ?? '',
+    '메모':      e.memo ?? '',
   }))
 
   // ── 기타수익 ────────────────────────────────────────────────────
   const incomes = await prisma.extraIncome.findMany({
-    where: { propertyId, date: { gte: monthStart, lte: monthEnd } },
+    where: { propertyId, ...(dateRange ? { date: dateRange } : {}) },
     include: { financialAccount: { select: { brand: true, alias: true } } },
     orderBy: { date: 'asc' },
   })
@@ -207,25 +246,25 @@ export async function GET(request: NextRequest) {
     orderBy: { createdAt: 'asc' },
   })
   const settingSheet = accounts.map(a => ({
-    '타입':      ACCOUNT_TYPE_LABEL[a.type] ?? a.type,
-    '금융사':    a.brand,
-    '별칭':      a.alias ?? '',
+    '타입':          ACCOUNT_TYPE_LABEL[a.type] ?? a.type,
+    '금융사':        a.brand,
+    '별칭':          a.alias ?? '',
     '계좌/카드번호': a.identifier ?? '',
-    '소유자':    a.owner ?? '',
-    '결제일':    fmtDay(a.payDay),
-    '마감일':    fmtDay(a.cutOffDay),
-    '연결계좌':  a.linkedAccount ? fmtAccount(a.linkedAccount) : '',
+    '소유자':        a.owner ?? '',
+    '결제일':        fmtDay(a.payDay),
+    '마감일':        fmtDay(a.cutOffDay),
+    '연결계좌':      a.linkedAccount ? fmtAccount(a.linkedAccount) : '',
   }))
 
   // ── 워크북 생성 ──────────────────────────────────────────────────
   const wb = XLSX.utils.book_new()
   const sheets: [string, object[]][] = [
-    ['수납현황',  paymentSheet],
+    ['수납현황',   paymentSheet],
     ['입주자관리', tenantSheet],
-    ['호실관리',  roomSheet],
-    ['지출',      expenseSheet],
-    ['기타수익',  incomeSheet],
-    ['설정',      settingSheet],
+    ['호실관리',   roomSheet],
+    ['지출',       expenseSheet],
+    ['기타수익',   incomeSheet],
+    ['설정',       settingSheet],
   ]
   for (const [name, data] of sheets) {
     const ws = XLSX.utils.json_to_sheet(data)
@@ -233,11 +272,17 @@ export async function GET(request: NextRequest) {
     XLSX.utils.book_append_sheet(wb, ws, name)
   }
 
+  const filename = scope === 'month'
+    ? `RoomOS_${targetMonth}.xlsx`
+    : scope === 'year'
+      ? `RoomOS_${yyyy}년.xlsx`
+      : 'RoomOS_전체.xlsx'
+
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
   return new NextResponse(buf, {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="RoomOS_${targetMonth}.xlsx"`,
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
     },
   })
 }

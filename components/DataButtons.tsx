@@ -134,7 +134,14 @@ export default function DataButtons() {
   const [step, setStep] = useState<Step>({ type: 'idle' })
   const [resolutions, setResolutions] = useState<ResolutionMap>({})
 
-  const handleExport = () => { window.location.href = `/api/export?month=${month}` }
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [exportScope, setExportScope] = useState<'month' | 'year' | 'all'>('month')
+
+  const handleExportClick = () => { setExportScope('month'); setShowExportModal(true) }
+  const doExport = () => {
+    window.location.href = `/api/export?month=${month}&scope=${exportScope}`
+    setShowExportModal(false)
+  }
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -333,7 +340,7 @@ export default function DataButtons() {
   return (
     <>
       <div className="flex items-center gap-2">
-        <button onClick={handleExport}
+        <button onClick={handleExportClick}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors"
           style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-mid)' }}>
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
@@ -363,6 +370,59 @@ export default function DataButtons() {
         </button>
         <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={handleFileSelect} />
       </div>
+
+      {/* ── 내보내기 범위 선택 모달 ── */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
+          onClick={() => setShowExportModal(false)}>
+          <div className="bg-[var(--cream)] rounded-2xl shadow-2xl w-full max-w-sm"
+            onClick={e => e.stopPropagation()}>
+            <div className="px-6 pt-6 pb-4">
+              <h3 className="text-base font-bold mb-1" style={{ color: 'var(--warm-dark)' }}>내보내기 범위</h3>
+              <p className="text-xs mb-4" style={{ color: 'var(--warm-muted)' }}>
+                {month.slice(0, 4)}년 {parseInt(month.slice(5))}월 기준
+              </p>
+              <div className="space-y-2">
+                {([
+                  { value: 'month', label: '이번 달만', desc: `${month.slice(0, 4)}년 ${parseInt(month.slice(5))}월 데이터` },
+                  { value: 'year',  label: '올해 전체', desc: `${month.slice(0, 4)}년 1월 ~ 12월 데이터` },
+                  { value: 'all',   label: '전체 데이터', desc: '모든 기간의 데이터' },
+                ] as const).map(opt => (
+                  <button key={opt.value} onClick={() => setExportScope(opt.value)}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-colors"
+                    style={{
+                      background: exportScope === opt.value ? 'rgba(244,98,58,0.08)' : 'var(--canvas)',
+                      border: `1.5px solid ${exportScope === opt.value ? 'var(--coral)' : 'var(--warm-border)'}`,
+                    }}>
+                    <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0"
+                      style={{ borderColor: exportScope === opt.value ? 'var(--coral)' : 'var(--warm-border)' }}>
+                      {exportScope === opt.value && (
+                        <div className="w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }} />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium" style={{ color: 'var(--warm-dark)' }}>{opt.label}</p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--warm-muted)' }}>{opt.desc}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2 px-6 pb-6">
+              <button onClick={() => setShowExportModal(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium"
+                style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
+                취소
+              </button>
+              <button onClick={doExport}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium text-white"
+                style={{ background: 'var(--coral)' }}>
+                내보내기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConflictModal />
       <ResultModal />
