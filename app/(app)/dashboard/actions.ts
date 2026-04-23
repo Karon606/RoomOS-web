@@ -196,7 +196,7 @@ export async function analyzeDashboardWithGemini(
   targetMonth: string
 ): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) throw new Error('GEMINI_API_KEY가 설정되지 않았습니다.')
+  if (!apiKey) return '[오류] Gemini API 키가 설정되지 않았습니다.'
 
   const paymentRate = (data.paidCount + data.unpaidCount) > 0
     ? Math.round((data.paidCount / (data.paidCount + data.unpaidCount)) * 100)
@@ -262,7 +262,7 @@ ${trendText}
     }
   )
 
-  if (!res.ok) throw new Error(`Gemini API 오류: ${res.status}`)
+  if (!res.ok) return `[오류] Gemini API 응답 실패 (${res.status})`
   const json = await res.json()
   return json.candidates?.[0]?.content?.parts?.[0]?.text ?? '분석 결과를 가져올 수 없습니다.'
 }
