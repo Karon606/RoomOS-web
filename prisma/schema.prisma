@@ -142,6 +142,7 @@ model Property {
   extraIncomes      ExtraIncome[]
   statusLogs        TenantStatusLog[]
   tenantRequests    TenantRequest[]
+  marketSurveys     MarketSurvey[]
 
   @@map("properties")
 }
@@ -481,4 +482,45 @@ model TenantRequest {
   @@index([propertyId, resolvedAt])
   @@index([tenantId, createdAt])
   @@map("tenant_requests")
+}
+
+// ============================================================
+// [15] MarketSurvey
+// ============================================================
+
+model MarketSurvey {
+  id         String   @id @default(uuid()) @db.Uuid
+  surveyedAt DateTime @default(now())
+  strategy   String?  // '실속형' | '시세형' | '프리미엄형'
+  aiResult   String?  // JSON string from Gemini
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  propertyId  String            @db.Uuid
+  property    Property          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  competitors MarketCompetitor[]
+
+  @@index([propertyId, surveyedAt])
+  @@map("market_surveys")
+}
+
+// ============================================================
+// [16] MarketCompetitor
+// ============================================================
+
+model MarketCompetitor {
+  id             String       @id @default(uuid()) @db.Uuid
+  name           String
+  address        String
+  naverPlaceUrl  String?
+  roomPrices     Json         // [{type: string, price: number, memo?: string}]
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  marketSurveyId String       @db.Uuid
+  marketSurvey   MarketSurvey @relation(fields: [marketSurveyId], references: [id], onDelete: Cascade)
+
+  @@map("market_competitors")
 }

@@ -24,6 +24,9 @@ function IcoWallet() {
 function IcoSettings() {
   return <svg {...ico}><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M3.2 12.8l1.4-1.4M11.4 4.6l1.4-1.4"/></svg>
 }
+function IcoMarket() {
+  return <svg {...ico}><rect x="1" y="8" width="3" height="6" rx="0.5"/><rect x="6" y="5" width="3" height="9" rx="0.5"/><rect x="11" y="2" width="3" height="12" rx="0.5"/><line x1="0" y1="14.5" x2="15" y2="14.5"/></svg>
+}
 
 // ── Nav structure ──────────────────────────────────────────────────
 const NAV_GROUPS = [
@@ -40,6 +43,12 @@ const NAV_GROUPS = [
     items: [
       { href: '/rooms',   label: '수납 관리',    Icon: IcoFinance },
       { href: '/finance', label: '지출/기타수익', Icon: IcoWallet  },
+    ],
+  },
+  {
+    label: '시장분석',
+    items: [
+      { href: '/market-analysis', label: '시세 조사', Icon: IcoMarket },
     ],
   },
   {
