@@ -47,9 +47,13 @@ export function DatePicker({
     if (triggerRef.current) {
       const r = triggerRef.current.getBoundingClientRect()
       const popW = Math.max(r.width, 280)
-      // 우측 경계 체크
-      const left = Math.min(r.left, window.innerWidth - popW - 8)
-      setPos({ top: r.bottom + 4, left: Math.max(8, left), width: popW })
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - popW - 8))
+      // 뷰포트 하단 잘림 방지: 공간이 부족하면 트리거 위쪽에 표시
+      const estimatedH = 340
+      const spaceBelow = window.innerHeight - r.bottom - 8
+      const topBelow   = r.bottom + 4
+      const topAbove   = Math.max(8, r.top - estimatedH - 4)
+      setPos({ top: spaceBelow >= estimatedH ? topBelow : topAbove, left, width: popW })
     }
     setView('day')
     setOpen(true)
@@ -113,19 +117,10 @@ export function DatePicker({
         {/* ════ 일 뷰 ════ */}
         {view === 'day' && (
           <>
-            {/* 헤더: ◀ [月] [年] ▶ */}
+            {/* 헤더: ◀ [年] [月] ▶ */}
             <div className="flex items-center gap-1 mb-2">
               <button onClick={prevMonth} className={navBtn.base} style={navBtn.style}>◀</button>
               <div className="flex-1 flex items-center justify-center gap-1">
-                <button
-                  onClick={() => setView('month')}
-                  className={headerBtn(false).className}
-                  style={headerBtn(false).style}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--canvas)'}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}
-                >
-                  {KO_MONTHS[viewMonth]}
-                </button>
                 <button
                   onClick={() => { setYearBase(Math.floor(viewYear / 12) * 12); setView('year') }}
                   className={headerBtn(false).className}
@@ -134,6 +129,15 @@ export function DatePicker({
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}
                 >
                   {viewYear}년
+                </button>
+                <button
+                  onClick={() => setView('month')}
+                  className={headerBtn(false).className}
+                  style={headerBtn(false).style}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--canvas)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}
+                >
+                  {KO_MONTHS[viewMonth]}
                 </button>
               </div>
               <button onClick={nextMonth} className={navBtn.base} style={navBtn.style}>▶</button>
