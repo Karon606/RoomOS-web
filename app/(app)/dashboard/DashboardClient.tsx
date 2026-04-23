@@ -660,7 +660,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
       {/* ── 탭 섹션 ─────────────────────────────────────────────── */}
       <div>
         {/* 탭 바 (밑줄 스타일) */}
-        <div className="flex border-b-2 sticky top-0 z-10 -mx-1 px-1 pb-0" style={{ borderColor: 'var(--warm-border)', background: 'var(--canvas)' }}>
+        <div className="flex border-b-2 sticky -top-4 md:-top-6 z-10 -mx-1 px-1 pb-0" style={{ borderColor: 'var(--warm-border)', background: 'var(--canvas)' }}>
           {TABS.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className="px-5 py-2.5 text-sm font-medium transition-colors relative whitespace-nowrap"

@@ -2,7 +2,7 @@
 
 import { signOut } from '@/app/property-select/actions'
 import { User } from '@supabase/supabase-js'
-import { useState } from 'react'
+import { useState, useTransition, useEffect, useRef } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 
 const MONTH_KEY = 'roomos_selected_month'
@@ -10,6 +10,27 @@ const MONTH_KEY = 'roomos_selected_month'
 function todayMonthStr() {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+// 미니 로고 스피너 (헤더 전용 소형)
+function MiniLogoSpinner() {
+  return (
+    <>
+      <style>{`
+        @keyframes mls-l { 0%,100%{transform:translateX(-5px);opacity:0} 25%,70%{transform:translateX(0);opacity:1} }
+        @keyframes mls-r { 0%,100%{transform:translateX(5px);opacity:0}  25%,70%{transform:translateX(0);opacity:1} }
+        .mls-b1{animation:mls-l 1.6s ease-in-out infinite 0s}
+        .mls-b2{animation:mls-r 1.6s ease-in-out infinite 0.12s}
+        .mls-b3{animation:mls-l 1.6s ease-in-out infinite 0.24s}
+        .mls-b4{animation:mls-r 1.6s ease-in-out infinite 0.36s}
+      `}</style>
+      <svg width="22" height="20" viewBox="0 0 28 24" xmlns="http://www.w3.org/2000/svg">
+        <g className="mls-b1"><line x1="1" y1="3"  x2="25" y2="3"  stroke="#f4623a" strokeWidth="4" strokeLinecap="round"/></g>
+        <g className="mls-b2"><line x1="1" y1="11" x2="16" y2="11" stroke="#f4623a" strokeWidth="4" strokeLinecap="round" opacity="0.5"/></g>
+        <g className="mls-b3"><line x1="1" y1="19" x2="25" y2="19" stroke="#f4623a" strokeWidth="4" strokeLinecap="round" opacity="0.72"/></g>
+      </svg>
+    </>
+  )
 }
 
 export default function Header({
@@ -21,18 +42,34 @@ export default function Header({
 }) {
   const [open, setOpen]             = useState(false)
   const [showPicker, setShowPicker] = useState(false)
+  const [isPending, startTransition] = useTransition()
   const router      = useRouter()
   const todayMonth  = todayMonthStr()
   const pathname    = usePathname()
   const searchParams = useSearchParams()
+  const pickerRef   = useRef<HTMLDivElement>(null)
 
   const currentMonth = searchParams.get('month') ?? todayMonth
+
+  // 픽커 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!showPicker) return
+    const handle = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setShowPicker(false)
+      }
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [showPicker])
 
   const applyMonth = (m: string) => {
     localStorage.setItem(MONTH_KEY, m)
     const params = new URLSearchParams(searchParams.toString())
     params.set('month', m)
-    router.push(`${pathname}?${params.toString()}`)
+    startTransition(() => {
+      router.push(`${pathname}?${params.toString()}`)
+    })
   }
 
   const changeMonth = (delta: number) => {
@@ -49,9 +86,9 @@ export default function Header({
     <header className="h-14 md:h-16 flex items-center justify-between px-4 md:px-6 shrink-0"
             style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }}>
       <div className="flex items-center gap-2">
-        {/* 햄버거 (모바일 전용) */}
+        {/* 햄버거 (모바일 전용) — 클릭 시 픽커도 닫기 */}
         <button
-          onClick={onMenuClick}
+          onClick={() => { setShowPicker(false); onMenuClick?.() }}
           className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
           style={{ color: 'var(--warm-mid)' }}
           aria-label="메뉴 열기"
@@ -63,20 +100,25 @@ export default function Header({
           </svg>
         </button>
 
-        {/* 월 이동 */}
+        {/* 이전 달 버튼 */}
         <button
           onClick={() => changeMonth(-1)}
-          className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-colors"
+          disabled={isPending}
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-colors disabled:opacity-40"
           style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
           {'◀'}
         </button>
-        <div
-          onClick={() => setShowPicker(!showPicker)}
-          className="text-sm font-semibold text-center transition-colors relative cursor-pointer px-1"
-          style={{ color: 'var(--warm-dark)' }}
-        >
-          {displayMonth}
-          {showPicker && (
+
+        {/* 월 표시 + 픽커 */}
+        <div ref={pickerRef} className="relative">
+          <div
+            onClick={() => !isPending && setShowPicker(v => !v)}
+            className="text-sm font-semibold text-center transition-opacity relative cursor-pointer px-1 flex items-center gap-1.5"
+            style={{ color: 'var(--warm-dark)', opacity: isPending ? 0.4 : 1 }}
+          >
+            {isPending ? <MiniLogoSpinner /> : displayMonth}
+          </div>
+          {showPicker && !isPending && (
             <MonthPicker
               current={currentMonth}
               todayMonth={todayMonth}
@@ -85,10 +127,13 @@ export default function Header({
             />
           )}
         </div>
+
+        {/* 다음 달 버튼 */}
         {currentMonth < todayMonth && (
           <button
             onClick={() => changeMonth(1)}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-colors"
+            disabled={isPending}
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-sm transition-colors disabled:opacity-40"
             style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
             {'▶'}
           </button>
@@ -162,7 +207,7 @@ function MonthPicker({
 
   return (
     <div
-      className="absolute top-8 left-1/2 -translate-x-1/2 z-50 rounded-2xl shadow-2xl p-4 w-64"
+      className="absolute top-8 left-1/2 -translate-x-1/2 z-[60] rounded-2xl shadow-2xl p-4 w-64"
       style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
       onClick={e => e.stopPropagation()}
     >

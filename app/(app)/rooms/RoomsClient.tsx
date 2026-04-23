@@ -234,22 +234,25 @@ export default function RoomsClient({
 
   useEffect(() => { colWidthsRef.current = colWidths }, [colWidths])
 
-  const startResize = useCallback((col: string, e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const startX = e.clientX
+  const startResize = useCallback((col: string, startX: number) => {
     const startW = colWidthsRef.current[col] ?? 100
-    const onMove = (ev: MouseEvent) => {
-      const newW = Math.max(50, startW + ev.clientX - startX)
+    const onMove = (clientX: number) => {
+      const newW = Math.max(50, startW + clientX - startX)
       setColWidths(prev => ({ ...prev, [col]: newW }))
     }
-    const onUp = () => {
+    const onMouseMove = (ev: MouseEvent) => onMove(ev.clientX)
+    const onTouchMove = (ev: TouchEvent) => onMove(ev.touches[0].clientX)
+    const onEnd = () => {
       localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(colWidthsRef.current))
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onEnd)
+      document.removeEventListener('touchmove', onTouchMove)
+      document.removeEventListener('touchend', onEnd)
     }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onEnd)
+    document.addEventListener('touchmove', onTouchMove, { passive: true })
+    document.addEventListener('touchend', onEnd)
   }, [])
 
   const occupied = roomStatus.filter(r => !r.isVacant)
@@ -367,12 +370,13 @@ export default function RoomsClient({
       >
         <span className="truncate block">{label}{isActive ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}</span>
         <div
-          onMouseDown={e => startResize(colKey, e)}
+          onMouseDown={e => { e.preventDefault(); e.stopPropagation(); startResize(colKey, e.clientX) }}
+          onTouchStart={e => { e.stopPropagation(); startResize(colKey, e.touches[0].clientX) }}
           onClick={e => e.stopPropagation()}
-          className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize group"
+          className="absolute right-0 top-0 bottom-0 w-[12px] cursor-col-resize group touch-none"
           style={{ userSelect: 'none' }}
         >
-          <div className="absolute right-[2px] top-[20%] bottom-[20%] w-[1px] bg-[var(--warm-border)] group-hover:bg-[var(--coral)] transition-colors" />
+          <div className="absolute right-[5px] top-[20%] bottom-[20%] w-[1px] bg-[var(--warm-border)] group-hover:bg-[var(--coral)] transition-colors" />
         </div>
       </th>
     )

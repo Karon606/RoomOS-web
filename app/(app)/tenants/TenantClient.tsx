@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithGemini, createTenantRequest, resolveTenantRequest, getTenantRequests } from './actions'
+import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithGemini, createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests } from './actions'
 import { savePayment, deletePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -1017,6 +1017,15 @@ export default function TenantClient({
                           })
                         }
 
+                        const handleDelete = (id: string) => {
+                          if (!confirm('이 요청을 삭제하시겠습니까? 복구할 수 없습니다.')) return
+                          startReqTransition(async () => {
+                            await deleteTenantRequest(id)
+                            const updated = await getTenantRequests(detailTenant!.id)
+                            setRequests(updated)
+                          })
+                        }
+
                         return (
                           <div className="space-y-4">
                             {/* 새 요청 등록 */}
@@ -1030,17 +1039,17 @@ export default function TenantClient({
                                 className="w-full text-sm rounded-lg px-3 py-2 resize-none"
                                 style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)', outline: 'none' }}
                               />
-                              <div className="grid grid-cols-2 gap-2">
-                                <div>
+                              <div className="flex flex-col xs:grid xs:grid-cols-2 gap-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+                                <div className="min-w-0">
                                   <label className="block text-[10px] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>요청 날짜</label>
                                   <input type="date" value={newReqDate} onChange={e => setNewReqDate(e.target.value)}
-                                    className="w-full text-xs rounded-lg px-3 py-2"
+                                    className="w-full text-[11px] rounded-lg px-2 py-2 min-w-0"
                                     style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }} />
                                 </div>
-                                <div>
+                                <div className="min-w-0">
                                   <label className="block text-[10px] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>처리 목표일 (선택)</label>
                                   <input type="date" value={newTargetDate} onChange={e => setNewTargetDate(e.target.value)}
-                                    className="w-full text-xs rounded-lg px-3 py-2"
+                                    className="w-full text-[11px] rounded-lg px-2 py-2 min-w-0"
                                     style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }} />
                                 </div>
                               </div>
@@ -1059,19 +1068,32 @@ export default function TenantClient({
                             ) : (
                               <div className="space-y-2">
                                 {unresolved.map(r => (
-                                  <div key={r.id} className="rounded-xl p-4 space-y-2" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+                                  <div key={r.id} className="rounded-xl p-4 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
                                     <div className="flex items-start justify-between gap-2">
                                       <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--warm-muted)' }}>
                                         <span>요청 {fmtDate(r.requestDate)}</span>
                                         {r.targetDate && <span className="font-medium" style={{ color: '#f97316' }}>목표 {fmtDate(r.targetDate)}</span>}
                                       </div>
-                                      <button onClick={() => handleResolve(r.id)} disabled={reqPending}
-                                        className="shrink-0 text-[11px] font-medium px-3 py-1 rounded-lg transition-colors disabled:opacity-50"
-                                        style={{ background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>
-                                        처리완료
+                                      {/* 삭제 버튼 */}
+                                      <button onClick={() => handleDelete(r.id)} disabled={reqPending}
+                                        className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md transition-colors disabled:opacity-40"
+                                        style={{ color: 'var(--warm-muted)' }}
+                                        title="삭제">
+                                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                                          <path d="M1 3h12M4 3V2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M5.5 6v5M8.5 6v5M2 3l.8 9a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L12 3"/>
+                                        </svg>
                                       </button>
                                     </div>
                                     <p className="text-sm leading-snug" style={{ color: 'var(--warm-dark)' }}>{r.content}</p>
+                                    {/* 완료 처리 CTA */}
+                                    <button onClick={() => handleResolve(r.id)} disabled={reqPending}
+                                      className="w-full py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                                      style={{ background: 'rgba(34,197,94,0.12)', color: '#16a34a', border: '1.5px solid rgba(34,197,94,0.35)' }}>
+                                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M2 6l3 3 5-5"/>
+                                      </svg>
+                                      완료로 처리하기
+                                    </button>
                                   </div>
                                 ))}
                               </div>
@@ -1089,11 +1111,20 @@ export default function TenantClient({
                                   <div className="mt-2 space-y-2">
                                     {resolved.map(r => (
                                       <div key={r.id} className="rounded-xl p-3 opacity-60" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
-                                        <div className="flex items-center gap-2 text-[10px] mb-1" style={{ color: 'var(--warm-muted)' }}>
-                                          <span className="font-medium text-green-500">완료</span>
-                                          <span>{fmtDate(r.resolvedAt)}</span>
-                                          <span>·</span>
-                                          <span>요청 {fmtDate(r.requestDate)}</span>
+                                        <div className="flex items-start justify-between gap-1 mb-1">
+                                          <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--warm-muted)' }}>
+                                            <span className="font-medium text-green-500">완료</span>
+                                            <span>{fmtDate(r.resolvedAt)}</span>
+                                            <span>·</span>
+                                            <span>요청 {fmtDate(r.requestDate)}</span>
+                                          </div>
+                                          <button onClick={() => handleDelete(r.id)} disabled={reqPending}
+                                            className="shrink-0 w-5 h-5 flex items-center justify-center rounded transition-colors disabled:opacity-40"
+                                            style={{ color: 'var(--warm-muted)' }} title="삭제">
+                                            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                                              <path d="M1 3h12M4 3V2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M5.5 6v5M8.5 6v5M2 3l.8 9a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L12 3"/>
+                                            </svg>
+                                          </button>
                                         </div>
                                         <p className="text-xs" style={{ color: 'var(--warm-mid)' }}>{r.content}</p>
                                       </div>

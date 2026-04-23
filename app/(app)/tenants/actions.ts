@@ -624,6 +624,20 @@ export async function resolveTenantRequest(id: string): Promise<{ ok: true } | {
   }
 }
 
+export async function deleteTenantRequest(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    await getPropertyId()
+    await prisma.tenantRequest.delete({ where: { id } })
+    revalidatePath('/tenants')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // 입실 예정 → 거주중 자동 전환 (입주일 도래 시)
 export async function autoTransitionReserved() {
   try {
