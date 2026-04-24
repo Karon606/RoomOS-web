@@ -276,6 +276,16 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const totalExpense = expenses.reduce((s, e) => s + e.amount, 0)
   const totalDeposit = depositAgg._sum.depositAmount ?? 0
 
+  // 완납 여부 판단: cutoff 이전 납부도 포함 (수익 계산과 별개)
+  const allMonthPayments = await prisma.paymentRecord.findMany({
+    where: { propertyId, targetMonth, isDeposit: false },
+    select: { leaseTermId: true, actualAmount: true },
+  })
+  const paymentByLeaseForStatus = allMonthPayments.reduce((acc, p) => {
+    acc[p.leaseTermId] = (acc[p.leaseTermId] ?? 0) + p.actualAmount
+    return acc
+  }, {} as Record<string, number>)
+
   function calcDaysOverdue(dueDay: string | null): number | null {
     if (!dueDay) return null
     const todayCopy = new Date(); todayCopy.setHours(0, 0, 0, 0)
@@ -299,7 +309,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }, {} as Record<string, number>)
 
   const billableLeases = activeLeases.filter(l => l.rentAmount > 0)
-  const paidCount      = billableLeases.filter(l => (paymentByLease[l.id] ?? 0) >= l.rentAmount).length
+  const paidCount      = billableLeases.filter(l => (paymentByLeaseForStatus[l.id] ?? 0) >= l.rentAmount).length
   const unpaidCount    = billableLeases.length - paidCount
 
   const categoryBreakdown = expByCategory.map(c => ({
@@ -380,19 +390,19 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   // ── 미수납 상세 ──────────────────────────────────────────────
   const unpaidAmount = unpaidLeasesRaw.reduce((sum, l) => {
-    const paid = paymentByLease[l.id] ?? 0
+    const paid = paymentByLeaseForStatus[l.id] ?? 0
     return sum + Math.max(0, l.rentAmount - paid)
   }, 0)
 
   const unpaidLeases = unpaidLeasesRaw
-    .filter(l => (paymentByLease[l.id] ?? 0) < l.rentAmount)
+    .filter(l => (paymentByLeaseForStatus[l.id] ?? 0) < l.rentAmount)
     .map(l => ({
       roomNo:       l.room?.roomNo ?? '?',
       tenantName:   l.tenant.name,
       tenantId:     l.tenant.id,
       leaseId:      l.id,
       daysOverdue:  calcDaysOverdue(l.dueDay),
-      unpaidAmount: Math.max(0, l.rentAmount - (paymentByLease[l.id] ?? 0)),
+      unpaidAmount: Math.max(0, l.rentAmount - (paymentByLeaseForStatus[l.id] ?? 0)),
     }))
 
   // ── 알림 ────────────────────────────────────────────────────
