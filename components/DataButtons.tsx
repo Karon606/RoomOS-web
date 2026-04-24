@@ -176,7 +176,7 @@ export default function DataButtons() {
       }
       setResolutions(defaults)
 
-      if (preview.conflicts.length === 0 && !preview.hasPaymentSheet && !preview.hasRequestSheet) {
+      if (preview.conflicts.length === 0 && !preview.hasPaymentSheet) {
         await applyImport(file, {})
       } else {
         setStep({ type: 'conflict', preview, file })
@@ -244,6 +244,9 @@ export default function DataButtons() {
     if (c.incomes.autoSkipped) summaryParts.push(`수익 ${c.incomes.autoSkipped}건 자동건너뜀`)
     if (c.settings.new)      summaryParts.push(`계좌 ${c.settings.new}개 신규`)
     if (c.settings.conflict) summaryParts.push(`계좌 ${c.settings.conflict}개 변경`)
+    if (c.requests?.new)        summaryParts.push(`요청사항 ${c.requests.new}건 신규`)
+    if (c.requests?.autoSkipped) summaryParts.push(`요청사항 ${c.requests.autoSkipped}건 자동건너뜀`)
+    if (c.requests?.noTenant)   summaryParts.push(`요청사항 ${c.requests.noTenant}건 입주자 미매칭`)
 
     const hasConflicts = preview.conflicts.length > 0
 
@@ -270,14 +273,9 @@ export default function DataButtons() {
           </div>
 
           {/* 내보내기 전용 시트 안내 */}
-          {(preview.hasPaymentSheet || preview.hasRequestSheet) && (
-            <div className="mx-6 mt-4 px-4 py-3 rounded-xl text-xs text-amber-700 bg-amber-50 border border-amber-200 space-y-1">
-              {preview.hasPaymentSheet && (
-                <p><span className="font-semibold">수납현황</span> 시트는 내보내기 전용입니다. 가져오기 시 무시됩니다.</p>
-              )}
-              {preview.hasRequestSheet && (
-                <p><span className="font-semibold">요청사항</span> 시트는 내보내기 전용입니다. 가져오기 시 무시됩니다.</p>
-              )}
+          {preview.hasPaymentSheet && (
+            <div className="mx-6 mt-4 px-4 py-3 rounded-xl text-xs text-amber-700 bg-amber-50 border border-amber-200">
+              <span className="font-semibold">수납현황</span> 시트는 내보내기 전용입니다. 가져오기 시 무시됩니다.
             </div>
           )}
 

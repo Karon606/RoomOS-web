@@ -338,6 +338,43 @@ async function importIncomes(rows: Record<string, unknown>[], propertyId: string
   return result
 }
 
+async function importRequests(rows: Record<string, unknown>[], propertyId: string): Promise<SheetResult> {
+  const result: SheetResult = { imported: 0, skipped: 0, errors: [] }
+  for (const row of rows) {
+    const tenantName = str(row['입주자명'])
+    const content    = str(row['내용'])
+    const date       = parseDate(row['작성일'])
+    if (!tenantName || !content || !date) { result.skipped++; continue }
+    try {
+      const tenant = await prisma.tenant.findFirst({ where: { propertyId, name: tenantName } })
+      if (!tenant) { result.skipped++; continue }
+
+      const exactMatch = await prisma.tenantRequest.findFirst({
+        where: { propertyId, tenantId: tenant.id, requestDate: date, content },
+      })
+      if (exactMatch) { result.skipped++; continue }
+
+      const resolvedRaw = str(row['처리여부'])
+      const resolvedAt  = resolvedRaw === '완료' ? (parseDate(row['해결일']) ?? new Date()) : parseDate(row['해결일'])
+
+      await prisma.tenantRequest.create({
+        data: {
+          propertyId,
+          tenantId:    tenant.id,
+          content,
+          requestDate: date,
+          targetDate:  parseDate(row['처리예정일']),
+          resolvedAt,
+        },
+      })
+      result.imported++
+    } catch (e) {
+      result.errors.push(`${tenantName} (${str(row['작성일'])}): ${(e as Error).message}`)
+    }
+  }
+  return result
+}
+
 async function importSettings(rows: Record<string, unknown>[], propertyId: string, resolutions: Resolutions): Promise<SheetResult> {
   const result: SheetResult = { imported: 0, skipped: 0, errors: [] }
   for (const row of rows) {
@@ -421,6 +458,9 @@ export async function POST(request: NextRequest) {
 
   if (wb.SheetNames.includes('기타수익'))
     results['기타수익'] = await importIncomes(sheetToRows(wb, '기타수익'), propertyId, resolutions)
+
+  if (wb.SheetNames.includes('요청사항'))
+    results['요청사항'] = await importRequests(sheetToRows(wb, '요청사항'), propertyId)
 
   if (wb.SheetNames.includes('설정'))
     results['설정'] = await importSettings(sheetToRows(wb, '설정'), propertyId, resolutions)

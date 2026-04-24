@@ -203,6 +203,31 @@ async function previewIncomes(rows: Record<string, unknown>[], propertyId: strin
   return { conflicts, newCount, autoSkipped }
 }
 
+async function previewRequests(rows: Record<string, unknown>[], propertyId: string) {
+  let newCount = 0
+  let autoSkipped = 0
+  let noTenant = 0
+
+  for (const row of rows) {
+    const tenantName = str(row['입주자명'])
+    const content    = str(row['내용'])
+    const date       = parseDate(row['작성일'])
+    if (!tenantName || !content || !date) continue
+
+    const tenant = await prisma.tenant.findFirst({ where: { propertyId, name: tenantName } })
+    if (!tenant) { noTenant++; continue }
+
+    const exactMatch = await prisma.tenantRequest.findFirst({
+      where: { propertyId, tenantId: tenant.id, requestDate: date, content },
+    })
+    if (exactMatch) { autoSkipped++; continue }
+
+    newCount++
+  }
+
+  return { newCount, autoSkipped, noTenant }
+}
+
 async function previewSettings(rows: Record<string, unknown>[], propertyId: string) {
   const conflicts: SettingConflict[] = []
   let newCount = 0
@@ -268,6 +293,7 @@ export async function POST(request: NextRequest) {
     expenses: { new: 0, conflict: 0, autoSkipped: 0 },
     incomes:  { new: 0, conflict: 0, autoSkipped: 0 },
     settings: { new: 0, conflict: 0 },
+    requests: { new: 0, autoSkipped: 0, noTenant: 0 },
   }
 
   if (wb.SheetNames.includes('호실관리')) {
@@ -309,8 +335,12 @@ export async function POST(request: NextRequest) {
     counts.settings = { new: newCount, conflict: conflicts.length }
   }
 
-  const hasPaymentSheet = wb.SheetNames.includes('수납현황')
-  const hasRequestSheet = wb.SheetNames.includes('요청사항')
+  if (wb.SheetNames.includes('요청사항')) {
+    const { newCount, autoSkipped, noTenant } = await previewRequests(sheetToRows(wb, '요청사항'), propertyId)
+    counts.requests = { new: newCount, autoSkipped, noTenant }
+  }
 
-  return NextResponse.json({ conflicts: allConflicts, counts, hasPaymentSheet, hasRequestSheet } satisfies PreviewResult)
+  const hasPaymentSheet = wb.SheetNames.includes('수납현황')
+
+  return NextResponse.json({ conflicts: allConflicts, counts, hasPaymentSheet } satisfies PreviewResult)
 }
