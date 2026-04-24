@@ -5,7 +5,7 @@ import {
   addExpense, updateExpense, deleteExpense,
   addExtraIncome, updateExtraIncome, deleteExtraIncome,
   settleCardExpenses, unsettleExpenses,
-  saveFinancialAccount, deleteFinancialAccount,
+  saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
 } from './actions'
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -428,9 +428,17 @@ export default function FinanceClient({
     })
   }
   const handleDeleteAsset = (id: string) => {
-    if (!confirm('자산을 삭제하시겠습니까?')) return
+    if (!confirm('자산을 완전히 삭제하시겠습니까?\n기존 지출·수익 기록과의 연결도 끊어집니다.')) return
     startTransition(async () => {
       await deleteFinancialAccount(id)
+      setEditingAcc(null); setAssetBrand(''); setAssetFormKey(k => k + 1); router.refresh()
+    })
+  }
+
+  const handleDeactivateAsset = (id: string) => {
+    if (!confirm('해지 처리 하시겠습니까?\n기존 기록은 유지되며 신규 사용은 불가합니다.')) return
+    startTransition(async () => {
+      await deactivateFinancialAccount(id)
       setEditingAcc(null); setAssetBrand(''); setAssetFormKey(k => k + 1); router.refresh()
     })
   }
@@ -926,8 +934,13 @@ export default function FinanceClient({
                     </div>
                     <button
                       onClick={() => { setEditingAcc(a); setAssetType(a.type); setAssetBrand(a.brand ?? ''); setAssetFormKey(k => k + 1) }}
-                      className="text-xs text-[var(--coral)] hover:text-[var(--coral)] px-3 py-1.5 bg-[var(--coral)]/10 rounded-lg transition-colors shrink-0">
+                      className="text-xs text-[var(--coral)] px-3 py-1.5 bg-[var(--coral)]/10 rounded-lg transition-colors shrink-0">
                       수정
+                    </button>
+                    <button
+                      onClick={() => handleDeactivateAsset(a.id)}
+                      className="text-xs text-amber-400 hover:text-amber-300 px-3 py-1.5 bg-amber-500/10 rounded-lg transition-colors shrink-0">
+                      해지
                     </button>
                     <button
                       onClick={() => handleDeleteAsset(a.id)}

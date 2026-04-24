@@ -146,15 +146,24 @@ export async function GET(request: NextRequest) {
     }))
   }
 
-  // ── 입주자관리 ──────────────────────────────────────────────────
-  const tenants = await prisma.tenant.findMany({
-    where: { propertyId },
+  // ── 공통 연락처 포함 입주자 조회 ──────────────────────────────────
+  const contactSelect = {
+    select: {
+      contactType: true, contactValue: true,
+      isPrimary: true, isEmergency: true, emergencyRelation: true,
+    },
+  }
+
+  // ── 입주자관리 (현재 입주자: ACTIVE/RESERVED/CHECKOUT_PENDING) ───
+  const activeTenants = await prisma.tenant.findMany({
+    where: {
+      propertyId,
+      leaseTerms: { some: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } } },
+    },
     include: {
-      contacts: { select: { contactType: true, contactValue: true, isPrimary: true, isEmergency: true, emergencyRelation: true } },
+      contacts: contactSelect,
       leaseTerms: {
-        where: scope === 'all'
-          ? {}
-          : { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
         include: { room: { select: { roomNo: true } } },
         orderBy: { createdAt: 'desc' },
         take: 1,
@@ -162,7 +171,7 @@ export async function GET(request: NextRequest) {
     },
     orderBy: { name: 'asc' },
   })
-  const tenantSheet = tenants.map(t => {
+  const tenantSheet = activeTenants.map(t => {
     const lease   = t.leaseTerms[0]
     const primary = t.contacts.find(c => c.isPrimary) ?? t.contacts[0]
     const emergency = t.contacts.find(c => c.isEmergency)
@@ -189,6 +198,51 @@ export async function GET(request: NextRequest) {
     }
   })
 
+  // ── 퇴실자 (CHECKED_OUT/CANCELLED, 현재 활성 계약 없음) ──────────
+  const exTenants = await prisma.tenant.findMany({
+    where: {
+      propertyId,
+      leaseTerms: {
+        none: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        some: { status: { in: ['CHECKED_OUT', 'CANCELLED'] } },
+      },
+    },
+    include: {
+      contacts: contactSelect,
+      leaseTerms: {
+        where: { status: { in: ['CHECKED_OUT', 'CANCELLED'] } },
+        include: { room: { select: { roomNo: true } } },
+        orderBy: { moveOutDate: 'desc' },
+        take: 1,
+      },
+    },
+    orderBy: { name: 'asc' },
+  })
+  const exTenantSheet = exTenants.map(t => {
+    const lease   = t.leaseTerms[0]
+    const primary = t.contacts.find(c => c.isPrimary) ?? t.contacts[0]
+    const emergency = t.contacts.find(c => c.isEmergency)
+    return {
+      '호실':           lease?.room.roomNo ?? '',
+      '이름':           t.name,
+      '영문명':         t.englishName ?? '',
+      '연락처':         primary?.contactValue ?? '',
+      '비상연락처':     emergency?.contactValue ?? '',
+      '생년월일':       fmtDate(t.birthdate),
+      '성별':           GENDER_LABEL[t.gender] ?? '',
+      '국적':           t.nationality ?? '',
+      '직업':           t.job ?? '',
+      '이용료':         lease?.rentAmount ?? '',
+      '보증금':         lease?.depositAmount ?? '',
+      '청소비':         lease?.cleaningFee ?? '',
+      '입실일':         fmtDate(lease?.moveInDate),
+      '퇴실일':         fmtDate((lease as any)?.moveOutDate),
+      '퇴실 예정일':    fmtDate(lease?.expectedMoveOut),
+      '계약상태':       STATUS_LABEL[lease?.status ?? ''] ?? '',
+      '메모':           t.memo ?? '',
+    }
+  })
+
   // ── 호실관리 ────────────────────────────────────────────────────
   const rooms = await prisma.room.findMany({
     where: { propertyId },
@@ -204,6 +258,36 @@ export async function GET(request: NextRequest) {
     '면적(㎡)':   r.areaM2 ?? '',
     '공실':       r.isVacant ? 'Y' : 'N',
     '메모':       r.memo ?? '',
+  }))
+
+  // ── 요청사항 ─────────────────────────────────────────────────────
+  const requests = await prisma.tenantRequest.findMany({
+    where: {
+      propertyId,
+      ...(dateRange ? { requestDate: dateRange } : {}),
+    },
+    include: {
+      tenant: {
+        select: {
+          name: true,
+          leaseTerms: {
+            where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+            include: { room: { select: { roomNo: true } } },
+            take: 1,
+          },
+        },
+      },
+    },
+    orderBy: { requestDate: 'desc' },
+  })
+  const requestSheet = requests.map(r => ({
+    '작성일':     fmtDate(r.requestDate),
+    '입주자명':   r.tenant.name,
+    '호실':       r.tenant.leaseTerms[0]?.room.roomNo ?? '',
+    '내용':       r.content,
+    '처리예정일': fmtDate(r.targetDate),
+    '해결일':     fmtDate(r.resolvedAt),
+    '처리여부':   r.resolvedAt ? '완료' : '미완료',
   }))
 
   // ── 지출 ────────────────────────────────────────────────────────
@@ -261,7 +345,9 @@ export async function GET(request: NextRequest) {
   const sheets: [string, object[]][] = [
     ['수납현황',   paymentSheet],
     ['입주자관리', tenantSheet],
+    ['퇴실자',     exTenantSheet],
     ['호실관리',   roomSheet],
+    ['요청사항',   requestSheet],
     ['지출',       expenseSheet],
     ['기타수익',   incomeSheet],
     ['설정',       settingSheet],

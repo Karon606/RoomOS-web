@@ -21,7 +21,7 @@ JavaScript
 // ============================================================
 
 const SPREADSHEET_ID = '1OLTVviv4ZPNRrzS18MJLEx18Sz6KISa6yChRdyIODCA';
-const GEMINI_API_KEY = 'AIzaSyDGpMjfKnQohAQj29zLkr4dhun_VovetNY';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // 환경 변수 사용
 const GEMINI_MODEL   = 'gemini-2.0-flash';
 
 const SHEET = {

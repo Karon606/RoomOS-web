@@ -53,7 +53,9 @@ const GENDER_MAP: Record<string, string> = {
 }
 const STATUS_MAP: Record<string, string> = {
   '거주중': 'ACTIVE', '입실예정': 'RESERVED', '퇴실예정': 'CHECKOUT_PENDING',
+  '퇴실': 'CHECKED_OUT', '취소': 'CANCELLED', '비거주': 'NON_RESIDENT',
   'ACTIVE': 'ACTIVE', 'RESERVED': 'RESERVED', 'CHECKOUT_PENDING': 'CHECKOUT_PENDING',
+  'CHECKED_OUT': 'CHECKED_OUT', 'CANCELLED': 'CANCELLED', 'NON_RESIDENT': 'NON_RESIDENT',
 }
 const ACCOUNT_TYPE_MAP: Record<string, string> = {
   '은행계좌': 'BANK_ACCOUNT', '신용카드': 'CREDIT_CARD', '체크카드': 'CHECK_CARD', '기타': 'OTHER',
@@ -402,6 +404,17 @@ export async function POST(request: NextRequest) {
 
   if (wb.SheetNames.includes('입주자관리'))
     results['입주자관리'] = await importTenants(sheetToRows(wb, '입주자관리'), propertyId, resolutions)
+
+  if (wb.SheetNames.includes('퇴실자')) {
+    const r = await importTenants(sheetToRows(wb, '퇴실자'), propertyId, resolutions)
+    if (results['입주자관리']) {
+      results['입주자관리'].imported += r.imported
+      results['입주자관리'].skipped  += r.skipped
+      results['입주자관리'].errors.push(...r.errors)
+    } else {
+      results['퇴실자'] = r
+    }
+  }
 
   if (wb.SheetNames.includes('지출'))
     results['지출'] = await importExpenses(sheetToRows(wb, '지출'), propertyId, resolutions)

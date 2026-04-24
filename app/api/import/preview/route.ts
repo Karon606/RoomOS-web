@@ -282,6 +282,15 @@ export async function POST(request: NextRequest) {
     counts.tenants = { new: newCount, conflict: conflicts.length }
   }
 
+  if (wb.SheetNames.includes('퇴실자')) {
+    const { conflicts, newCount } = await previewTenants(sheetToRows(wb, '퇴실자'), propertyId)
+    allConflicts.push(...conflicts)
+    counts.tenants = {
+      new: counts.tenants.new + newCount,
+      conflict: counts.tenants.conflict + conflicts.length,
+    }
+  }
+
   if (wb.SheetNames.includes('지출')) {
     const { conflicts, newCount, autoSkipped } = await previewExpenses(sheetToRows(wb, '지출'), propertyId)
     allConflicts.push(...conflicts)
@@ -301,6 +310,7 @@ export async function POST(request: NextRequest) {
   }
 
   const hasPaymentSheet = wb.SheetNames.includes('수납현황')
+  const hasRequestSheet = wb.SheetNames.includes('요청사항')
 
-  return NextResponse.json({ conflicts: allConflicts, counts, hasPaymentSheet } satisfies PreviewResult)
+  return NextResponse.json({ conflicts: allConflicts, counts, hasPaymentSheet, hasRequestSheet } satisfies PreviewResult)
 }

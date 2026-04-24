@@ -51,6 +51,7 @@ export type Conflict = RoomConflict | TenantConflict | ExpenseConflict | IncomeC
 export type PreviewResult = {
   conflicts: Conflict[]
   hasPaymentSheet: boolean
+  hasRequestSheet: boolean
   counts: {
     rooms:    { new: number; conflict: number }
     tenants:  { new: number; conflict: number }

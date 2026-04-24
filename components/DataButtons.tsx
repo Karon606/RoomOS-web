@@ -176,7 +176,7 @@ export default function DataButtons() {
       }
       setResolutions(defaults)
 
-      if (preview.conflicts.length === 0 && !preview.hasPaymentSheet) {
+      if (preview.conflicts.length === 0 && !preview.hasPaymentSheet && !preview.hasRequestSheet) {
         await applyImport(file, {})
       } else {
         setStep({ type: 'conflict', preview, file })
@@ -269,10 +269,15 @@ export default function DataButtons() {
             <button onClick={close} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none ml-4">✕</button>
           </div>
 
-          {/* 수납현황 안내 */}
-          {preview.hasPaymentSheet && (
-            <div className="mx-6 mt-4 px-4 py-3 rounded-xl text-xs text-amber-700 bg-amber-50 border border-amber-200">
-              <span className="font-semibold">수납현황</span> 시트는 내보내기 전용입니다. 가져오기 시 해당 시트의 데이터는 무시됩니다.
+          {/* 내보내기 전용 시트 안내 */}
+          {(preview.hasPaymentSheet || preview.hasRequestSheet) && (
+            <div className="mx-6 mt-4 px-4 py-3 rounded-xl text-xs text-amber-700 bg-amber-50 border border-amber-200 space-y-1">
+              {preview.hasPaymentSheet && (
+                <p><span className="font-semibold">수납현황</span> 시트는 내보내기 전용입니다. 가져오기 시 무시됩니다.</p>
+              )}
+              {preview.hasRequestSheet && (
+                <p><span className="font-semibold">요청사항</span> 시트는 내보내기 전용입니다. 가져오기 시 무시됩니다.</p>
+              )}
             </div>
           )}
 

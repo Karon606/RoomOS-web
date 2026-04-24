@@ -331,3 +331,9 @@ export async function deleteFinancialAccount(id: string) {
   await prisma.financialAccount.delete({ where: { id } })
   revalidatePath('/finance')
 }
+
+export async function deactivateFinancialAccount(id: string) {
+  await requireEdit()
+  await prisma.financialAccount.update({ where: { id }, data: { isActive: false } })
+  revalidatePath('/finance')
+}
