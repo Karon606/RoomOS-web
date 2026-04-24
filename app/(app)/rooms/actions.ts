@@ -467,6 +467,28 @@ export async function clearDueDayOverride(leaseTermId: string) {
 }
 
 // 수납 내역 조회
+export async function getTenantLeaseForDashboard(tenantId: string) {
+  const supabase = await createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return null
+  return prisma.leaseTerm.findFirst({
+    where: { tenantId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+    select: {
+      id: true,
+      rentAmount: true,
+      depositAmount: true,
+      dueDay: true,
+      paymentTiming: true,
+      overrideDueDay: true,
+      overrideDueDayMonth: true,
+      room: { select: { roomNo: true } },
+      tenant: { select: { id: true, name: true } },
+      property: { select: { acquisitionDate: true, prevOwnerCutoffDate: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+}
+
 export async function getPaymentsByLease(leaseTermId: string, targetMonth: string) {
   const propertyId = await getPropertyId()
   const [records, property] = await Promise.all([

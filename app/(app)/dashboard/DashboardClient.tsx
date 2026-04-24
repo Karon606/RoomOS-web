@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState, useTransition, useEffect } from 'react'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { analyzeDashboardWithGemini, getTrendData, type TrendRange, type TrendPoint } from './actions'
+import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment } from '@/app/(app)/rooms/actions'
 
 // ── 타입 ────────────────────────────────────────────────────────
 
@@ -493,6 +494,387 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
   )
 }
 
+// ── 입주자 수납 팝업 (대시보드용) ────────────────────────────────
+
+type DashLease = Awaited<ReturnType<typeof getTenantLeaseForDashboard>>
+type DashPayRecord = { id: string; seqNo: number; actualAmount: number; payDate: Date; payMethod: string | null; memo: string | null; isDeposit: boolean }
+
+function DashboardTenantModal({ tenantId, targetMonth, onClose }: {
+  tenantId: string
+  targetMonth: string
+  onClose: () => void
+}) {
+  const [lease, setLease] = useState<DashLease>(null)
+  const [payHistory, setPayHistory] = useState<DashPayRecord[]>([])
+  const [acquisitionDate, setAcquisitionDate] = useState<Date | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [payAmount, setPayAmount] = useState(0)
+  const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10))
+  const [isDepositMode, setIsDepositMode] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editAmount, setEditAmount] = useState(0)
+  const [editDate, setEditDate] = useState('')
+  const [editPayMethod, setEditPayMethod] = useState('')
+  const [editMemo, setEditMemo] = useState('')
+  const [error, setError] = useState('')
+  const [isPending, startTransition] = useTransition()
+
+  const reload = async (l: DashLease) => {
+    if (!l) return
+    const { records, acquisitionDate: acq } = await getPaymentsByLease(l.id, targetMonth)
+    setPayHistory(records as DashPayRecord[])
+    setAcquisitionDate(acq ? new Date(acq) : null)
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      const l = await getTenantLeaseForDashboard(tenantId)
+      if (cancelled) return
+      setLease(l)
+      if (l) {
+        setPayAmount(l.rentAmount)
+        const { records, acquisitionDate: acq } = await getPaymentsByLease(l.id, targetMonth)
+        if (cancelled) return
+        setPayHistory(records as DashPayRecord[])
+        setAcquisitionDate(acq ? new Date(acq) : null)
+      }
+      setLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [tenantId, targetMonth])
+
+  if (!lease && !loading) {
+    return (
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+        <div className="bg-[var(--cream)] rounded-2xl p-6 text-center" onClick={e => e.stopPropagation()}>
+          <p className="text-sm text-[var(--warm-muted)]">활성 계약을 찾을 수 없습니다.</p>
+          <button onClick={onClose} className="mt-3 text-sm font-medium" style={{ color: 'var(--coral)' }}>닫기</button>
+        </div>
+      </div>
+    )
+  }
+
+  const isPreAcq = (p: DashPayRecord) => !!(acquisitionDate && new Date(p.payDate) < acquisitionDate)
+  const depositRecords = payHistory.filter(p => p.isDeposit)
+  const regularRecords = payHistory.filter(p => !p.isDeposit && !p.memo?.startsWith('[납입일변경]'))
+  const adjRecords = payHistory.filter(p => p.memo?.startsWith('[납입일변경]'))
+  const prevOwnerPaid = regularRecords.filter(isPreAcq).reduce((s, p) => s + p.actualAmount, 0)
+  const regularPaid = regularRecords.reduce((s, p) => s + p.actualAmount, 0) - prevOwnerPaid
+  const adjNet = adjRecords.reduce((s, p) => s + p.actualAmount, 0)
+  const balance = lease ? regularPaid + adjNet - lease.rentAmount : 0
+  const DAYS = ['일', '월', '화', '수', '목', '금', '토']
+  const fmtDate = (d: Date | string) => {
+    const dt = new Date(d)
+    return `${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})`
+  }
+
+  const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!lease) return
+    const fd = new FormData(e.currentTarget)
+    const payMethod = fd.get('payMethod') as string
+    const memo = fd.get('memo') as string
+    startTransition(async () => {
+      try {
+        if (isDepositMode) {
+          await saveDepositPayment({
+            leaseTermId: lease.id,
+            tenantId,
+            targetMonth,
+            depositAmount: lease.depositAmount,
+            rentAmount: lease.rentAmount,
+            totalPaid: payAmount,
+            payDate,
+            payMethod,
+            memo: memo || undefined,
+          })
+        } else {
+          await savePayment({
+            leaseTermId: lease.id,
+            tenantId,
+            targetMonth,
+            expectedAmount: lease.rentAmount,
+            actualAmount: payAmount,
+            payDate,
+            payMethod,
+            memo,
+          })
+        }
+        setShowForm(false)
+        setIsDepositMode(false)
+        await reload(lease)
+      } catch (err: unknown) { setError((err as Error).message) }
+    })
+  }
+
+  const handleDelete = (id: string) => {
+    if (!confirm('이 수납 기록을 삭제하시겠습니까?')) return
+    startTransition(async () => {
+      await deletePayment(id)
+      await reload(lease)
+    })
+  }
+
+  const startEdit = (p: DashPayRecord) => {
+    setEditingId(p.id)
+    setEditAmount(p.actualAmount)
+    setEditDate(new Date(p.payDate).toISOString().slice(0, 10))
+    setEditPayMethod(p.payMethod ?? '')
+    setEditMemo(p.memo ?? '')
+  }
+
+  const handleSaveEdit = () => {
+    if (!editingId) return
+    startTransition(async () => {
+      const res = await updatePayment(editingId, { actualAmount: editAmount, payDate: editDate, payMethod: editPayMethod, memo: editMemo || undefined })
+      if (!res.ok) { setError(res.error); return }
+      setEditingId(null)
+      await reload(lease)
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[88vh]"
+        onClick={e => e.stopPropagation()}>
+
+        {/* 헤더 */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+          {loading ? (
+            <div className="h-5 w-32 bg-[var(--sand)] rounded animate-pulse" />
+          ) : (
+            <div>
+              <h2 className="text-base font-bold text-[var(--warm-dark)]">
+                {lease?.room?.roomNo ? `${lease.room.roomNo}호 — ` : ''}{lease?.tenant.name}
+              </h2>
+              <p className="text-xs text-[var(--warm-muted)] mt-0.5">
+                {targetMonth} · 예정 {lease?.rentAmount.toLocaleString()}원
+              </p>
+            </div>
+          )}
+          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none ml-4">✕</button>
+        </div>
+
+        {/* 본문 */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="w-6 h-6 border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : (
+            <div className="p-6 space-y-5">
+              {error && <p className="text-xs text-red-500 bg-red-50 rounded-xl px-3 py-2">{error}</p>}
+
+              {/* 수납 현황 */}
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: '예정 금액', value: `${lease!.rentAmount.toLocaleString()}원`, color: 'var(--warm-dark)' },
+                  { label: '납부 금액', value: `${regularPaid.toLocaleString()}원`, color: regularPaid >= lease!.rentAmount ? '#16a34a' : 'var(--warm-dark)' },
+                  { label: balance >= 0 ? '과입금' : '미납', value: `${Math.abs(balance).toLocaleString()}원`, color: balance >= 0 ? '#16a34a' : '#ef4444' },
+                ].map(item => (
+                  <div key={item.label} className="rounded-xl p-3 text-center" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+                    <p className="text-[10px] text-[var(--warm-muted)] mb-1">{item.label}</p>
+                    <p className="text-xs font-bold" style={{ color: item.color }}>{item.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* 납부 내역 */}
+              {payHistory.length > 0 && (
+                <div className="space-y-2">
+                  {depositRecords.length > 0 && (
+                    <>
+                      <p className="text-xs font-medium text-[var(--warm-mid)]">보증금 수납 내역</p>
+                      {depositRecords.map(p => (
+                        editingId === p.id ? (
+                          <DashEditRow key={p.id} editAmount={editAmount} editDate={editDate} editPayMethod={editPayMethod} editMemo={editMemo}
+                            setEditAmount={setEditAmount} setEditDate={setEditDate} setEditPayMethod={setEditPayMethod} setEditMemo={setEditMemo}
+                            onSave={handleSaveEdit} onCancel={() => setEditingId(null)} isPending={isPending} color="purple" />
+                        ) : (
+                          <DashPayRow key={p.id} p={p} isPreAcq={false} onEdit={startEdit} onDelete={handleDelete} color="purple" />
+                        )
+                      ))}
+                    </>
+                  )}
+                  {prevOwnerPaid > 0 && (
+                    <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                      <p className="text-xs text-amber-700">이전 원장 귀속</p>
+                      <p className="text-xs font-semibold text-amber-700">{prevOwnerPaid.toLocaleString()}원</p>
+                    </div>
+                  )}
+                  {regularRecords.length > 0 && (
+                    <>
+                      <p className="text-xs font-medium text-[var(--warm-mid)]">납부 내역</p>
+                      {regularRecords.map(p => (
+                        editingId === p.id ? (
+                          <DashEditRow key={p.id} editAmount={editAmount} editDate={editDate} editPayMethod={editPayMethod} editMemo={editMemo}
+                            setEditAmount={setEditAmount} setEditDate={setEditDate} setEditPayMethod={setEditPayMethod} setEditMemo={setEditMemo}
+                            onSave={handleSaveEdit} onCancel={() => setEditingId(null)} isPending={isPending} color={isPreAcq(p) ? 'amber' : 'default'} />
+                        ) : (
+                          <DashPayRow key={p.id} p={p} isPreAcq={isPreAcq(p)} onEdit={startEdit} onDelete={handleDelete} color={isPreAcq(p) ? 'amber' : 'default'} />
+                        )
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* 수납 입력 폼 */}
+              {showForm ? (
+                <form onSubmit={handleSave} className="space-y-3 rounded-2xl border border-[var(--warm-border)] p-4" style={{ background: 'var(--canvas)' }}>
+                  {lease!.depositAmount > 0 && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={isDepositMode} onChange={e => {
+                        setIsDepositMode(e.target.checked)
+                        if (e.target.checked) setPayAmount(lease!.depositAmount)
+                        else setPayAmount(lease!.rentAmount)
+                      }} className="accent-[var(--coral)]" />
+                      <span className="text-xs font-medium text-[var(--warm-dark)]">보증금 수납 ({lease!.depositAmount.toLocaleString()}원)</span>
+                    </label>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <p className="text-[10px] text-[var(--warm-muted)]">금액</p>
+                      <input type="text" inputMode="numeric"
+                        value={payAmount.toLocaleString()}
+                        onChange={e => setPayAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
+                        className="w-full bg-white border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--coral)]" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] text-[var(--warm-muted)]">납부일</p>
+                      <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)}
+                        className="w-full bg-white border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--coral)]" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <p className="text-[10px] text-[var(--warm-muted)]">납부방법</p>
+                      <input name="payMethod" type="text" placeholder="계좌이체, 현금…"
+                        className="w-full bg-white border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--coral)]" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] text-[var(--warm-muted)]">메모</p>
+                      <input name="memo" type="text"
+                        className="w-full bg-white border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--coral)]" />
+                    </div>
+                  </div>
+                  {isDepositMode && payAmount > lease!.depositAmount && (
+                    <p className="text-[10px] text-[var(--coral)]">
+                      초과금 {(payAmount - lease!.depositAmount).toLocaleString()}원 → {targetMonth} 이용료 처리
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => { setShowForm(false); setIsDepositMode(false) }}
+                      className="flex-1 py-2.5 rounded-xl border text-sm text-[var(--warm-mid)] transition-colors"
+                      style={{ borderColor: 'var(--warm-border)' }}>취소</button>
+                    <button type="submit" disabled={isPending}
+                      className="flex-1 py-2.5 rounded-xl bg-[var(--coral)] text-white text-sm font-medium transition-colors disabled:opacity-50">
+                      {isPending ? '저장 중…' : '저장'}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button onClick={() => setShowForm(true)}
+                  className="w-full py-3 rounded-2xl text-sm font-medium transition-colors"
+                  style={{ background: 'var(--coral)', color: 'white' }}>
+                  + 수납 입력
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 하단 — 입주자 관리에서 보기 */}
+        {!loading && lease && (
+          <div className="px-6 py-3 border-t shrink-0" style={{ borderColor: 'var(--warm-border)' }}>
+            <Link href={`/tenants?tenantId=${lease.tenant.id}&tab=info`}
+              onClick={onClose}
+              className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-colors"
+              style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+              입주자 관리에서 보기 →
+            </Link>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DashPayRow({ p, isPreAcq, onEdit, onDelete, color }: {
+  p: DashPayRecord; isPreAcq: boolean
+  onEdit: (p: DashPayRecord) => void; onDelete: (id: string) => void
+  color: 'purple' | 'amber' | 'default'
+}) {
+  const bg = color === 'purple' ? 'bg-purple-50 border border-purple-200' : color === 'amber' ? 'bg-amber-50 border border-amber-200' : 'bg-[var(--canvas)]'
+  const textColor = color === 'purple' ? 'text-purple-600' : color === 'amber' ? 'text-amber-600' : 'text-[var(--warm-mid)]'
+  const amountColor = color === 'purple' ? 'text-purple-700' : color === 'amber' ? 'text-amber-700' : 'text-[var(--warm-dark)]'
+  const DAYS = ['일', '월', '화', '수', '목', '금', '토']
+  const fmtD = (d: Date | string) => { const dt = new Date(d); return `${dt.getMonth()+1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})` }
+  return (
+    <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 ${bg}`}>
+      <div>
+        <p className={`text-xs ${textColor}`}>
+          {p.seqNo}회차 · {fmtD(p.payDate)} · {p.payMethod ?? '—'}
+          {color === 'purple' && <span className="ml-1.5 text-[10px] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>}
+          {isPreAcq && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">이전 원장</span>}
+        </p>
+        {p.memo && !p.isDeposit && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
+      </div>
+      <div className="flex items-center gap-2">
+        <span className={`text-sm font-semibold ${amountColor}`}>{p.actualAmount.toLocaleString()}원</span>
+        <div className="flex gap-1.5 ml-1">
+          <button onClick={() => onEdit(p)} className="text-[10px] font-medium px-2 py-1 rounded-lg border transition-colors" style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>수정</button>
+          <button onClick={() => onDelete(p.id)} className="text-[10px] font-medium px-2 py-1 rounded-lg border border-red-200 text-red-500 transition-colors">삭제</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DashEditRow({ editAmount, editDate, editPayMethod, editMemo, setEditAmount, setEditDate, setEditPayMethod, setEditMemo, onSave, onCancel, isPending, color }: {
+  editAmount: number; editDate: string; editPayMethod: string; editMemo: string
+  setEditAmount: (v: number) => void; setEditDate: (v: string) => void; setEditPayMethod: (v: string) => void; setEditMemo: (v: string) => void
+  onSave: () => void; onCancel: () => void; isPending: boolean; color: 'purple' | 'amber' | 'default'
+}) {
+  const borderColor = color === 'purple' ? 'border-purple-400' : color === 'amber' ? 'border-amber-400' : 'border-[var(--coral)]'
+  const bg = color === 'purple' ? 'bg-purple-50' : color === 'amber' ? 'bg-amber-50' : 'bg-[var(--canvas)]'
+  return (
+    <div className={`rounded-xl border ${borderColor} ${bg} px-3 py-2.5 space-y-2`}>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <p className="text-[10px] text-[var(--warm-muted)]">금액</p>
+          <input type="text" inputMode="numeric" value={editAmount.toLocaleString()} onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
+            className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+        </div>
+        <div className="space-y-1">
+          <p className="text-[10px] text-[var(--warm-muted)]">납부일</p>
+          <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
+            className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <p className="text-[10px] text-[var(--warm-muted)]">납부방법</p>
+          <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)} placeholder="계좌이체, 현금…"
+            className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+        </div>
+        <div className="space-y-1">
+          <p className="text-[10px] text-[var(--warm-muted)]">메모</p>
+          <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
+            className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+        </div>
+      </div>
+      <div className="flex gap-2 justify-end">
+        <button onClick={onCancel} className="text-xs px-3 py-1.5 rounded-lg border transition-colors" style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>취소</button>
+        <button onClick={onSave} disabled={isPending} className="text-xs text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50" style={{ background: 'var(--coral)' }}>저장</button>
+      </div>
+    </div>
+  )
+}
+
 // ── 방 상세 팝업 ─────────────────────────────────────────────────
 
 function RoomDetailPopup({ room, onClose }: { room: DashboardData['rooms'][number]; onClose: () => void }) {
@@ -584,6 +966,7 @@ const TABS: { key: Tab; label: string }[] = [
 export default function DashboardClient({ data, targetMonth }: { data: DashboardData; targetMonth: string }) {
   const [tab, setTab]                             = useState<Tab>('overview')
   const [selectedRoom, setSelectedRoom]           = useState<DashboardData['rooms'][number] | null>(null)
+  const [dashTenantId, setDashTenantId]           = useState<string | null>(null)
   const [unpaidExpanded, setUnpaidExpanded]       = useState(false)
 
   const prev = data.trend[data.trend.length - 2]
@@ -763,10 +1146,10 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
                         {visibleUnpaid.map((l, i) => {
                           const dl = daysLabel(l.daysOverdue)
                           return (
-                            <Link
+                            <button
                               key={i}
-                              href={`/tenants?tenantId=${l.tenantId}&tab=info`}
-                              className="flex items-center gap-3 px-5 py-3 hover:opacity-70 transition-opacity"
+                              onClick={() => setDashTenantId(l.tenantId)}
+                              className="w-full flex items-center gap-3 px-5 py-3 hover:opacity-70 active:opacity-50 transition-opacity text-left"
                             >
                               <div
                                 className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
@@ -785,7 +1168,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
                               <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>
                                 {Math.round(l.unpaidAmount / 10000)}만원
                               </span>
-                            </Link>
+                            </button>
                           )
                         })}
                       </div>
@@ -850,10 +1233,10 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
                   ) : (
                     <div className="divide-y" style={{ borderColor: 'var(--warm-border)' }}>
                       {data.activity.map((item, i) => (
-                        <Link
+                        <button
                           key={i}
-                          href={item.link}
-                          className="flex items-center gap-3 px-5 py-3 hover:opacity-70 transition-opacity active:opacity-50"
+                          onClick={() => setDashTenantId(item.tenantId)}
+                          className="w-full flex items-center gap-3 px-5 py-3 hover:opacity-70 transition-opacity active:opacity-50 text-left"
                         >
                           <div
                             className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
@@ -872,7 +1255,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
                           <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
                             {Math.round(item.amount / 10000)}만원
                           </span>
-                        </Link>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -888,6 +1271,13 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
       </div>
 
       {selectedRoom && <RoomDetailPopup room={selectedRoom} onClose={() => setSelectedRoom(null)} />}
+      {dashTenantId && (
+        <DashboardTenantModal
+          tenantId={dashTenantId}
+          targetMonth={targetMonth}
+          onClose={() => setDashTenantId(null)}
+        />
+      )}
     </div>
   )
 }
