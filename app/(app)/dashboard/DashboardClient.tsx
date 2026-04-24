@@ -68,7 +68,17 @@ const TREND_RANGES: { key: TrendRange; label: string }[] = [
   { key: 'annual',    label: '연간' },
   { key: 'all',       label: '전체' },
 ]
-const UNPAID_LIMIT = 5
+const UNPAID_LIMIT    = 5
+const ACTIVITY_LIMIT  = 5
+const ALERTS_LIMIT    = 3
+const DIVIDER_COLOR   = 'rgba(200,160,120,0.12)'
+
+function hexToRgba(hex: string, alpha: number) {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
 
 // ── 미수납 days 표시 ────────────────────────────────────────────
 
@@ -81,32 +91,68 @@ function daysLabel(daysOverdue: number | null): { text: string; color: string } 
 
 // ── 알림 스트립 (항상 표시) ──────────────────────────────────────
 
-function AlertsStrip({ alerts }: { alerts: DashboardData['alerts'] }) {
+function AlertsStrip({ alerts, onOpenTenant }: {
+  alerts: DashboardData['alerts']
+  onOpenTenant: (id: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
   if (alerts.length === 0) return null
+  const visible = expanded ? alerts : alerts.slice(0, ALERTS_LIMIT)
   return (
-    <div className="rounded-xl overflow-hidden" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-      <div className="flex items-center justify-between px-4 pt-3 pb-1.5">
-        <span style={{ fontSize: 12, fontWeight: 600, color: '#5a4a3a' }}>
-          알림
-        </span>
-        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>
+    <div className="rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b shrink-0" style={{ borderColor: DIVIDER_COLOR }}>
+        <div className="flex items-center gap-2">
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>알림</h3>
+          <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>미처리</span>
+        </div>
+        <span className="rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>
           {alerts.length}건
         </span>
       </div>
-      <div className="divide-y" style={{ borderColor: 'var(--warm-border)' }}>
-        {alerts.map((item, i) => (
-          <Link
-            key={i}
-            href={item.link}
-            className="flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
-          >
-            <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ background: item.dotColor }} />
-            <span className="flex-1 text-xs leading-snug" style={{ color: 'var(--warm-mid)' }}>{item.text}</span>
-            <span className="text-[10px] shrink-0 font-mono" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</span>
-            <span style={{ color: 'var(--warm-muted)', fontSize: 11 }}>›</span>
-          </Link>
-        ))}
+      <div>
+        {visible.map((item, i) => {
+          const initial = item.text.slice(0, 1)
+          const avatarBg = hexToRgba(item.dotColor, 0.12)
+          const row = (
+            <div className="flex items-center gap-3 px-5 py-3">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
+                style={{ background: avatarBg, fontSize: 11, color: item.dotColor }}>
+                {initial}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>{item.text}</p>
+                <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</p>
+              </div>
+              <span style={{ color: 'var(--warm-muted)', fontSize: 14 }}>›</span>
+            </div>
+          )
+          return (
+            <div key={i} style={{ borderBottom: i < visible.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
+              {item.tenantId ? (
+                <button className="w-full text-left hover:opacity-70 active:opacity-50 transition-opacity"
+                  onClick={() => onOpenTenant(item.tenantId!)}>
+                  {row}
+                </button>
+              ) : (
+                <Link href={item.link} className="block hover:opacity-70 active:opacity-50 transition-opacity">
+                  {row}
+                </Link>
+              )}
+            </div>
+          )
+        })}
       </div>
+      {alerts.length > ALERTS_LIMIT && (
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="w-full py-2.5 text-xs font-medium border-t flex items-center justify-center gap-1 hover:opacity-70 transition-opacity"
+          style={{ borderColor: DIVIDER_COLOR, color: 'var(--warm-muted)' }}
+        >
+          {expanded
+            ? <>접기 ↑</>
+            : <>더보기 <span style={{ color: 'var(--coral)' }}>+{alerts.length - ALERTS_LIMIT}</span> ↓</>}
+        </button>
+      )}
     </div>
   )
 }
@@ -968,6 +1014,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
   const [selectedRoom, setSelectedRoom]           = useState<DashboardData['rooms'][number] | null>(null)
   const [dashTenantId, setDashTenantId]           = useState<string | null>(null)
   const [unpaidExpanded, setUnpaidExpanded]       = useState(false)
+  const [activityExpanded, setActivityExpanded]   = useState(false)
 
   const prev = data.trend[data.trend.length - 2]
   const cur  = data.trend[data.trend.length - 1]
@@ -1054,7 +1101,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
       </div>
 
       {/* ── 알림 스트립 (항상 표시) ─────────────────────────────── */}
-      <AlertsStrip alerts={data.alerts} />
+      <AlertsStrip alerts={data.alerts} onOpenTenant={setDashTenantId} />
 
       {/* ── 탭 섹션 ─────────────────────────────────────────────── */}
       <div>
@@ -1126,7 +1173,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
 
                 {/* 이달 미수납 */}
                 <div className="rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-                  <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b shrink-0" style={{ borderColor: 'var(--warm-border)' }}>
+                  <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b shrink-0" style={{ borderColor: DIVIDER_COLOR }}>
                     <div className="flex items-center gap-2">
                       <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>이달 미수납</h3>
                       <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>오늘 기준</span>
@@ -1142,7 +1189,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
                     <p className="text-sm text-center py-8" style={{ color: 'var(--warm-muted)' }}>이달 수납 완료 🎉</p>
                   ) : (
                     <>
-                      <div className="divide-y" style={{ borderColor: 'var(--warm-border)' }}>
+                      <div>
                         {visibleUnpaid.map((l, i) => {
                           const dl = daysLabel(l.daysOverdue)
                           return (
@@ -1150,6 +1197,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
                               key={i}
                               onClick={() => setDashTenantId(l.tenantId)}
                               className="w-full flex items-center gap-3 px-5 py-3 hover:opacity-70 active:opacity-50 transition-opacity text-left"
+                              style={{ borderBottom: i < visibleUnpaid.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}
                             >
                               <div
                                 className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
@@ -1176,7 +1224,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
                         <button
                           onClick={() => setUnpaidExpanded(v => !v)}
                           className="w-full py-2.5 text-xs font-medium border-t flex items-center justify-center gap-1 hover:opacity-70 transition-opacity"
-                          style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-muted)' }}
+                          style={{ borderColor: DIVIDER_COLOR, color: 'var(--warm-muted)' }}
                         >
                           {unpaidExpanded
                             ? <>접기 ↑</>
@@ -1217,7 +1265,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
                 </div>
 
                 <div className="order-1 lg:order-2 rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', minHeight: 160 }}>
-                  <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b shrink-0" style={{ borderColor: 'var(--warm-border)' }}>
+                  <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b shrink-0" style={{ borderColor: DIVIDER_COLOR }}>
                     <div className="flex items-center gap-2">
                       <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>납입 완료</h3>
                       <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>최근 30일</span>
@@ -1231,33 +1279,47 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
                   {data.activity.length === 0 ? (
                     <p className="text-sm text-center py-8" style={{ color: 'var(--warm-muted)' }}>최근 납입 내역 없음</p>
                   ) : (
-                    <div className="divide-y" style={{ borderColor: 'var(--warm-border)' }}>
-                      {data.activity.map((item, i) => (
-                        <button
-                          key={i}
-                          onClick={() => setDashTenantId(item.tenantId)}
-                          className="w-full flex items-center gap-3 px-5 py-3 hover:opacity-70 transition-opacity active:opacity-50 text-left"
-                        >
-                          <div
-                            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
-                            style={{ background: 'rgba(34,197,94,0.12)', fontSize: 11, color: '#16a34a' }}
+                    <>
+                      <div>
+                        {(activityExpanded ? data.activity : data.activity.slice(0, ACTIVITY_LIMIT)).map((item, i, arr) => (
+                          <button
+                            key={i}
+                            onClick={() => setDashTenantId(item.tenantId)}
+                            className="w-full flex items-center gap-3 px-5 py-3 hover:opacity-70 transition-opacity active:opacity-50 text-left"
+                            style={{ borderBottom: i < arr.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}
                           >
-                            {item.tenantName.slice(0, 1)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>
-                              {item.roomNo}호 {item.tenantName}
-                            </p>
-                            <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
-                              {item.timeLabel}
-                            </p>
-                          </div>
-                          <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
-                            {Math.round(item.amount / 10000)}만원
-                          </span>
+                            <div
+                              className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
+                              style={{ background: 'rgba(34,197,94,0.12)', fontSize: 11, color: '#16a34a' }}
+                            >
+                              {item.tenantName.slice(0, 1)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>
+                                {item.roomNo}호 {item.tenantName}
+                              </p>
+                              <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+                                {item.timeLabel}
+                              </p>
+                            </div>
+                            <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
+                              {Math.round(item.amount / 10000)}만원
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                      {data.activity.length > ACTIVITY_LIMIT && (
+                        <button
+                          onClick={() => setActivityExpanded(v => !v)}
+                          className="w-full py-2.5 text-xs font-medium border-t flex items-center justify-center gap-1 hover:opacity-70 transition-opacity"
+                          style={{ borderColor: DIVIDER_COLOR, color: 'var(--warm-muted)' }}
+                        >
+                          {activityExpanded
+                            ? <>접기 ↑</>
+                            : <>더보기 <span style={{ color: '#16a34a' }}>+{data.activity.length - ACTIVITY_LIMIT}</span> ↓</>}
                         </button>
-                      ))}
-                    </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
