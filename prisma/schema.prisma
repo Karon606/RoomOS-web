@@ -289,14 +289,15 @@ model LeaseTerm {
   contractUrl        String?
   wishRooms          String?
   visitRoute         String?
+  tourDate           DateTime?          @db.Date
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
   tenantId String @db.Uuid
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  roomId String @db.Uuid
-  room   Room   @relation(fields: [roomId], references: [id])
+  roomId String? @db.Uuid
+  room   Room?   @relation(fields: [roomId], references: [id])
 
   propertyId String   @db.Uuid
   property   Property @relation(fields: [propertyId], references: [id])

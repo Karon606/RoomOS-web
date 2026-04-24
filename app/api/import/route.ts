@@ -70,6 +70,10 @@ function parseDay(val: unknown): number | null {
   return isNaN(n) ? null : n
 }
 
+function fmtDate(d: Date | null | undefined): string {
+  return d ? d.toISOString().slice(0, 10) : ''
+}
+
 function sheetToRows(wb: XLSX.WorkBook, name: string): Record<string, unknown>[] {
   const ws = wb.Sheets[name]
   if (!ws) return []
@@ -99,6 +103,16 @@ async function importRooms(rows: Record<string, unknown>[], propertyId: string, 
       })
 
       if (existing) {
+        const isExact =
+          existing.type                  === data.type &&
+          existing.baseRent              === data.baseRent &&
+          (existing.windowType ?? null)  === data.windowType &&
+          (existing.direction  ?? null)  === data.direction &&
+          (existing.areaPyeong ?? null)  === data.areaPyeong &&
+          (existing.areaM2     ?? null)  === data.areaM2 &&
+          (existing.memo       ?? null)  === data.memo
+        if (isExact) { result.skipped++; continue }
+
         const resolution = resolutions[`room:${roomNo}`] ?? 'keep'
         if (resolution === 'keep') { result.skipped++; continue }
         await prisma.room.update({ where: { id: existing.id }, data })
@@ -131,6 +145,29 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
       })
 
       if (existing) {
+        const activeLease  = existing.leaseTerms[0]
+        const existingRoom = activeLease?.room?.roomNo ?? null
+        const inRoomNo     = str(row['호실']) || null
+        const inStatus     = inRoomNo ? (STATUS_MAP[str(row['계약상태'])] ?? 'ACTIVE') : null
+
+        const isExact =
+          (existing.englishName  ?? null)                === (str(row['영문명']) || null) &&
+          fmtDate(existing.birthdate)                    === fmtDate(parseDate(row['생년월일'])) &&
+          (existing.gender as string)                    === (GENDER_MAP[str(row['성별'])] ?? 'UNKNOWN') &&
+          (existing.nationality  ?? null)                === (str(row['국적']) || null) &&
+          (existing.job          ?? null)                === (str(row['직업']) || null) &&
+          (existing.memo         ?? null)                === (str(row['메모']) || null) &&
+          existingRoom                                   === inRoomNo &&
+          ((activeLease?.status ?? null) as string|null) === inStatus &&
+          (activeLease?.rentAmount    ?? 0)              === parseNum(row['이용료']) &&
+          (activeLease?.depositAmount ?? 0)              === parseNum(row['보증금']) &&
+          (activeLease?.cleaningFee   ?? 0)              === parseNum(row['청소비']) &&
+          (activeLease?.dueDay        ?? null)           === (str(row['납부일']) || null) &&
+          (activeLease?.payMethod     ?? null)           === (str(row['납부방법']) || null) &&
+          fmtDate(activeLease?.moveInDate      ?? null)  === fmtDate(parseDate(row['입실일'])) &&
+          fmtDate(activeLease?.expectedMoveOut ?? null)  === fmtDate(parseDate(row['퇴실 예정일']))
+        if (isExact) { result.skipped++; continue }
+
         const resolution = resolutions[`tenant:${name}`] ?? 'keep'
 
         if (resolution === 'keep') { result.skipped++; continue }
@@ -142,10 +179,12 @@ async function importTenants(rows: Record<string, unknown>[], propertyId: string
               where: { id: activeLease.id },
               data: { status: 'CHECKED_OUT', moveOutDate: new Date() },
             })
-            await prisma.room.update({
-              where: { id: activeLease.room.id },
-              data: { isVacant: true },
-            })
+            if (activeLease.room?.id) {
+              await prisma.room.update({
+                where: { id: activeLease.room.id },
+                data: { isVacant: true },
+              })
+            }
           }
           await createTenantAndLease(row, propertyId, result)
           continue
@@ -394,6 +433,14 @@ async function importSettings(rows: Record<string, unknown>[], propertyId: strin
         where: { propertyId, brand, alias: alias ?? undefined },
       })
       if (existing) {
+        const isExact =
+          (existing.type as string)       === data.type &&
+          (existing.identifier ?? null)   === data.identifier &&
+          (existing.owner      ?? null)   === data.owner &&
+          (existing.payDay     ?? null)   === data.payDay &&
+          (existing.cutOffDay  ?? null)   === data.cutOffDay
+        if (isExact) { result.skipped++; continue }
+
         const resolution = resolutions[`setting:${existing.id}`] ?? 'keep'
         if (resolution === 'keep') { result.skipped++; continue }
         await prisma.financialAccount.update({ where: { id: existing.id }, data })

@@ -46,7 +46,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     select: { acquisitionDate: true },
   })
   const acquisitionDate = property?.acquisitionDate ?? null
-  console.log('[DEBUG] acquisitionDate:', acquisitionDate, 'acqMonth:', acquisitionDate ? `${new Date(acquisitionDate).getFullYear()}-${String(new Date(acquisitionDate).getMonth()+1).padStart(2,'0')}` : null, 'targetMonth:', targetMonth)
+
 
   const rooms = await prisma.room.findMany({
     where: { propertyId },
@@ -106,7 +106,6 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const dueDay = effectiveDueDay ? Number(effectiveDueDay) : 1
 
     const acqDate     = acquisitionDate ? new Date(acquisitionDate) : null
-    const acqDay      = acqDate ? acqDate.getDate() : 1
     const acqYyyy     = acqDate ? acqDate.getFullYear() : 2000
     const acqMm       = acqDate ? acqDate.getMonth() + 1 : 1
     const acqMonthStr = `${acqYyyy}-${String(acqMm).padStart(2, '0')}`
@@ -130,15 +129,28 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       }
     }
 
-    const isDueBefore = dueDay < acqDay
-    const prevOperatorPortion = 0
-    const allPrevPaidForCurrentOp = allPrevPayments
-      .filter(p => p.leaseTermId === lease.id)
+    // 인수일 기준: payDate < acquisitionDate 인 납부금은 이전 원장 귀속
+    const leaseAllPrev = allPrevPayments.filter(p => p.leaseTermId === lease.id)
+    const prevOperatorPortion = acqDate
+      ? leaseAllPrev
+          .filter(p => new Date(p.payDate) < acqDate)
+          .reduce((s, p) => s + p.actualAmount, 0)
+      : 0
+
+    const allPrevPaidForCurrentOp = leaseAllPrev
       .reduce((s, p) => s + p.actualAmount, 0) - prevOperatorPortion
+
+    // 인수월에 이전 원장 몫 납부가 있었다면 그 달은 현 원장 청구 개월에서 제외
+    const acqMonthPaidToPrev = acqDate
+      ? leaseAllPrev
+          .filter(p => p.targetMonth === acqMonthStr && new Date(p.payDate) < acqDate)
+          .reduce((s, p) => s + p.actualAmount, 0)
+      : 0
+    const acqMonthPrePaid = acqMonthPaidToPrev >= expected
 
     const [prevYyyy2, prevMm2] = prevMonth.split('-').map(Number)
     let prevMonthsOwed = (prevYyyy2 - acqYyyy) * 12 + (prevMm2 - acqMm) + 1
-    if (isDueBefore) prevMonthsOwed -= 1
+    if (acqMonthPrePaid) prevMonthsOwed -= 1
     prevMonthsOwed = Math.max(0, prevMonthsOwed)
 
     const carryBalance = allPrevPaidForCurrentOp - expected * prevMonthsOwed
@@ -163,9 +175,12 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       }
     }
 
-    const currentPaidRaw = payments
-      .filter(p => p.leaseTermId === lease.id)
-      .reduce((s, p) => s + p.actualAmount, 0)
+    const leaseCurrentPayments = payments.filter(p => p.leaseTermId === lease.id)
+    // 이번 달이 인수월인 경우 payDate < 인수일 납부금은 이전 원장 몫 제외
+    const currentPreAcq = (acqDate && targetMonth === acqMonthStr)
+      ? leaseCurrentPayments.filter(p => new Date(p.payDate) < acqDate).reduce((s, p) => s + p.actualAmount, 0)
+      : 0
+    const currentPaidRaw = leaseCurrentPayments.reduce((s, p) => s + p.actualAmount, 0) - currentPreAcq
     const displayBalance = currentPaidRaw - expected
     const isPaid = currentPaidRaw >= expected
 
@@ -339,8 +354,16 @@ export async function clearDueDayOverride(leaseTermId: string) {
 
 // 수납 내역 조회
 export async function getPaymentsByLease(leaseTermId: string, targetMonth: string) {
-  return prisma.paymentRecord.findMany({
-    where: { leaseTermId, targetMonth },
-    orderBy: { seqNo: 'asc' },
-  })
+  const propertyId = await getPropertyId()
+  const [records, property] = await Promise.all([
+    prisma.paymentRecord.findMany({
+      where: { leaseTermId, targetMonth },
+      orderBy: { seqNo: 'asc' },
+    }),
+    prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { acquisitionDate: true },
+    }),
+  ])
+  return { records, acquisitionDate: property?.acquisitionDate ?? null }
 }

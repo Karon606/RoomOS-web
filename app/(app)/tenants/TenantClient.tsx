@@ -14,7 +14,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
-type Room = { id: string; roomNo: string; baseRent: number; isVacant: boolean; type: string | null; windowType: string | null; direction: string | null }
+type Room = { id: string; roomNo: string; baseRent: number; isVacant: boolean; type: string | null; windowType: string | null; direction: string | null; currentLeaseStatus: string | null }
 
 type Contact = {
   id: string; contactType: string; contactValue: string
@@ -36,11 +36,12 @@ type LeaseTerm = {
   cleaningFee: number; dueDay: string | null
   overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
   moveInDate: string | Date | null; moveOutDate: string | Date | null
-  expectedMoveOut: string | Date | null; paymentTiming: string
+  expectedMoveOut: string | Date | null; tourDate: string | Date | null
+  paymentTiming: string
   payMethod: string | null; cashReceipt: string | null
   registrationStatus: string; contractUrl: string | null
   wishRooms: string | null; visitRoute: string | null
-  room: { id: string; roomNo: string }
+  room: { id: string; roomNo: string } | null
   paymentRecords: PaymentRecord[]
 }
 
@@ -97,7 +98,7 @@ function loadColWidths(): Record<string, number> | null {
 // ── 상수 ─────────────────────────────────────────────────────────
 
 const STATUS_LABEL: Record<string, string> = {
-  ACTIVE: '거주중', RESERVED: '입실 예정', CHECKOUT_PENDING: '퇴실 예정',
+  ACTIVE: '거주중', RESERVED: '예약', CHECKOUT_PENDING: '퇴실 예정',
   CHECKED_OUT: '퇴실', WAITING_TOUR: '투어 대기', TOUR_DONE: '투어 완료', CANCELLED: '취소',
   NON_RESIDENT: '비거주자',
 }
@@ -123,7 +124,7 @@ const PT_LABEL: Record<string, string> = { PREPAID: '선납', POSTPAID: '후납'
 const ACTIVE_FILTERS = [
   { key: 'all',             label: '전체' },
   { key: 'ACTIVE',          label: '거주중' },
-  { key: 'RESERVED',        label: '입실 예정' },
+  { key: 'RESERVED',        label: '예약' },
   { key: 'CHECKOUT_PENDING', label: '퇴실 예정' },
   { key: 'TOUR',            label: '투어' },
   { key: 'NON_RESIDENT',    label: '비거주자' },
@@ -196,8 +197,10 @@ function fmtDDay(date: string | Date | null | undefined): string | null {
 
 function getScheduledDate(lease: LeaseTerm | undefined): { date: string | Date | null; label: string } | null {
   if (!lease) return null
-  if (lease.status === 'RESERVED' && lease.moveInDate)
-    return { date: lease.moveInDate, label: '입실' }
+  if (lease.status === 'WAITING_TOUR' && lease.tourDate)
+    return { date: lease.tourDate, label: '투어' }
+  if (['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'].includes(lease.status) && lease.moveInDate)
+    return { date: lease.moveInDate, label: '입주희망' }
   if ((lease.status === 'CHECKOUT_PENDING' || lease.status === 'ACTIVE') && lease.expectedMoveOut)
     return { date: lease.expectedMoveOut, label: '퇴실' }
   return null
@@ -206,7 +209,7 @@ function getScheduledDate(lease: LeaseTerm | undefined): { date: string | Date |
 function getSortValue(t: Tenant, key: SortKey): string | number {
   const l = t.leaseTerms[0]
   switch (key) {
-    case 'roomNo':          return l?.room.roomNo ?? ''
+    case 'roomNo':          return l?.room?.roomNo ?? ''
     case 'name':            return t.name
     case 'status':          return l?.status ?? ''
     case 'rentAmount':      return l?.rentAmount ?? 0
@@ -309,7 +312,9 @@ export default function TenantClient({
   // 수납 모달
   const [payTarget, setPayTarget]   = useState<{ tenant: Tenant; lease: LeaseTerm } | null>(null)
   const [payHistory, setPayHistory] = useState<PayRecord[]>([])
+  const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
   const [showPayForm, setShowPayForm] = useState(false)
+  const [payAmount, setPayAmount]   = useState(0)
   const [showOverrideForm, setShowOverrideForm] = useState(false)
   const [overrideInput, setOverrideInput] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
@@ -408,7 +413,7 @@ export default function TenantClient({
     return (
       t.name.toLowerCase().includes(q) ||
       (t.englishName?.toLowerCase().includes(q) ?? false) ||
-      (t.leaseTerms[0]?.room.roomNo ?? '').includes(q) ||
+      (t.leaseTerms[0]?.room?.roomNo ?? '').includes(q) ||
       (STATUS_LABEL[status] ?? '').includes(q) ||
       (t.nationality?.toLowerCase().includes(q) ?? false) ||
       (t.job?.toLowerCase().includes(q) ?? false)
@@ -489,10 +494,12 @@ export default function TenantClient({
 
   const openPayModal = async (tenant: Tenant, lease: LeaseTerm) => {
     setPayTarget({ tenant, lease })
+    setPayAmount(lease.rentAmount)
     setShowPayForm(false)
     setError('')
-    const records = await getPaymentsByLease(lease.id, targetMonth)
+    const { records, acquisitionDate } = await getPaymentsByLease(lease.id, targetMonth)
     setPayHistory(records as PayRecord[])
+    setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
   }
 
   const closePayModal = () => {
@@ -518,7 +525,7 @@ export default function TenantClient({
         })
         setShowPayForm(false)
         // 내역 새로고침
-        const records = await getPaymentsByLease(payTarget.lease.id, targetMonth)
+        const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
         setPayHistory(records as PayRecord[])
         refresh()
       } catch (err: unknown) { setError((err as Error).message) }
@@ -531,7 +538,7 @@ export default function TenantClient({
       const res = await deletePayment(paymentId)
       if (!res.ok) { setError(res.error); return }
       if (payTarget) {
-        const records = await getPaymentsByLease(payTarget.lease.id, targetMonth)
+        const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
         setPayHistory(records as PayRecord[])
       }
       refresh()
@@ -821,9 +828,9 @@ export default function TenantClient({
                     {/* sticky — 호실 (클릭 시 호실 관리 페이지로) */}
                     <td className="sticky left-0 z-20 bg-[var(--cream)] px-4 py-3 text-sm font-semibold overflow-hidden"
                       style={{ maxWidth: colWidths.roomNo }}
-                      onClick={e => { e.stopPropagation(); if (lease?.room.id) setRoomDetailId(lease.room.id) }}>
+                      onClick={e => { e.stopPropagation(); if (lease?.room?.id) setRoomDetailId(lease.room.id) }}>
                       <span className="block truncate text-[var(--coral)] cursor-pointer underline-offset-2 hover:underline">
-                        {lease?.room.roomNo ? `${lease.room.roomNo}호` : '—'}
+                        {lease?.room?.roomNo ? `${lease.room.roomNo}호` : '—'}
                       </span>
                     </td>
                     {/* sticky — 이름 */}
@@ -994,7 +1001,7 @@ export default function TenantClient({
                           <InfoSection title="기본 정보">
                             <InfoGrid>
                               <InfoItem label="이름"       value={<span className="font-semibold text-[var(--warm-dark)]">{t.name}</span>} />
-                              <InfoItem label="호실"       value={lease ? `${lease.room.roomNo}호` : '—'} />
+                              <InfoItem label="호실"       value={lease?.room?.roomNo ? `${lease.room.roomNo}호` : '—'} />
                               {t.englishName && <InfoItem label="영어이름" value={t.englishName} />}
                               <InfoItem label="성별"       value={GENDER_LABEL[t.gender] ?? t.gender} />
                               <InfoItem label="국적"       value={t.nationality ? `${natFlag} ${t.nationality}` : '—'} />
@@ -1472,7 +1479,9 @@ export default function TenantClient({
         const { tenant, lease } = payTarget
         const adjRecords = payHistory.filter(p => p.memo?.startsWith('[납입일변경]'))
         const regularRecords = payHistory.filter(p => !p.memo?.startsWith('[납입일변경]'))
-        const regularPaid = regularRecords.reduce((s, p) => s + p.actualAmount, 0)
+        const isPreAcq = (p: PayRecord) => !!(payAcquisitionDate && new Date(p.payDate) < payAcquisitionDate)
+        const prevOwnerPaid = regularRecords.filter(isPreAcq).reduce((s, p) => s + p.actualAmount, 0)
+        const regularPaid = regularRecords.reduce((s, p) => s + p.actualAmount, 0) - prevOwnerPaid
         const adjNet = adjRecords.reduce((s, p) => s + p.actualAmount, 0)
         const balance = regularPaid + adjNet - lease.rentAmount
         const DAYS = ['일', '월', '화', '수', '목', '금', '토']
@@ -1490,7 +1499,7 @@ export default function TenantClient({
               <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
                 <div>
                   <h2 className="text-base font-bold text-[var(--warm-dark)]">
-                    {lease.room.roomNo}호 — {tenant.name}
+                    {lease.room?.roomNo ? `${lease.room.roomNo}호 — ` : ''}{tenant.name}
                   </h2>
                   <p className="text-xs text-[var(--warm-muted)] mt-0.5">
                     {targetMonth} · 예정 {lease.rentAmount.toLocaleString()}원
@@ -1526,6 +1535,12 @@ export default function TenantClient({
                         </p>
                       </div>
                     </div>
+                    {prevOwnerPaid > 0 && (
+                      <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                        <p className="text-xs text-amber-700">이전 원장 귀속 (인수일 이전 납부)</p>
+                        <p className="text-xs font-semibold text-amber-700">{prevOwnerPaid.toLocaleString()}원</p>
+                      </div>
+                    )}
 
                     {/* 납입일 변경 조정 내역 */}
                     {adjRecords.length > 0 && (
@@ -1568,21 +1583,25 @@ export default function TenantClient({
                     {regularRecords.length > 0 && (
                       <div className="space-y-2">
                         <p className="text-xs font-medium text-[var(--warm-mid)]">납부 내역</p>
-                        {regularRecords.map(p => (
-                          <div key={p.id} className="flex items-center justify-between bg-[var(--canvas)] rounded-xl px-3 py-2.5">
-                            <div>
-                              <p className="text-xs text-[var(--warm-mid)]">
-                                {p.seqNo}회차 · {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
-                              </p>
-                              {p.memo && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
+                        {regularRecords.map(p => {
+                          const prevOwner = isPreAcq(p)
+                          return (
+                            <div key={p.id} className={`flex items-center justify-between rounded-xl px-3 py-2.5 ${prevOwner ? 'bg-amber-50 border border-amber-200' : 'bg-[var(--canvas)]'}`}>
+                              <div>
+                                <p className={`text-xs ${prevOwner ? 'text-amber-600' : 'text-[var(--warm-mid)]'}`}>
+                                  {p.seqNo}회차 · {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
+                                  {prevOwner && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">이전 원장</span>}
+                                </p>
+                                {p.memo && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-sm font-semibold ${prevOwner ? 'text-amber-700' : 'text-[var(--warm-dark)]'}`}>{p.actualAmount.toLocaleString()}원</span>
+                                <button onClick={() => handleDeletePayRecord(p.id)}
+                                  className="text-xs text-red-400 hover:text-red-300 transition-colors">✕</button>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold text-[var(--warm-dark)]">{p.actualAmount.toLocaleString()}원</span>
-                              <button onClick={() => handleDeletePayRecord(p.id)}
-                                className="text-xs text-red-400 hover:text-red-300 transition-colors">✕</button>
-                            </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     )}
 
@@ -1708,7 +1727,19 @@ export default function TenantClient({
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs text-[var(--warm-muted)]">금액</label>
-                        <MoneyInput name="amount" defaultValue={lease.rentAmount} placeholder="0원" />
+                        <MoneyInput name="amount" value={payAmount} onChange={setPayAmount} placeholder="0원" />
+                        <div className="flex gap-1 mt-1">
+                          <button type="button" onClick={() => setPayAmount(lease.rentAmount)}
+                            className="flex-1 py-1 text-xs bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg text-[var(--warm-mid)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors truncate px-1">
+                            이용료 {lease.rentAmount.toLocaleString()}
+                          </button>
+                          {lease.depositAmount > 0 && (
+                            <button type="button" onClick={() => setPayAmount(lease.depositAmount)}
+                              className="flex-1 py-1 text-xs bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg text-[var(--warm-mid)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors truncate px-1">
+                              보증금 {lease.depositAmount.toLocaleString()}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="space-y-1">
@@ -1889,8 +1920,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   const emergency = tenant?.contacts.find(c => c.isEmergency)
 
   const [statusVal, setStatusVal]   = useState(lease?.status ?? 'ACTIVE')
-  const [selectedRoomId, setSelectedRoomId] = useState(lease?.room.id ?? '')
+  const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
   const [rentAmount, setRentAmount] = useState<number | undefined>(lease?.rentAmount)
+  const [tourDateVal, setTourDateVal] = useState(toDateInput(lease?.tourDate))
 
   const handleRoomChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const roomId = e.target.value
@@ -1899,9 +1931,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
     if (room) setRentAmount(room.baseRent)
   }
 
-  // 상태에 따라 이미 입주중인 방 선택 가능 여부 결정
-  // ACTIVE, CHECKOUT_PENDING → 입주중 방 비활성화 (NON_RESIDENT는 중복 허용이므로 항상 활성)
+  // WAITING_TOUR/TOUR_DONE/RESERVED는 호실 필수 아님
+  const roomIsOptional = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'].includes(statusVal)
+  // ACTIVE, CHECKOUT_PENDING → 입주중 방 비활성화
   const activeOnlyStatus = ['ACTIVE', 'CHECKOUT_PENDING'].includes(statusVal)
+  const isWaitingTourStatus = statusVal === 'WAITING_TOUR'
 
   // 납부일 상태 — raw 값(숫자 또는 '말일')과 표시 문자열 분리
   const initDueDay = (): { raw: string; disp: string } => {
@@ -1940,6 +1974,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   }
 
   const showExitDate = ['CHECKOUT_PENDING', 'CHECKED_OUT'].includes(statusVal)
+  const moveInLabel = roomIsOptional ? '입주희망일' : '입주일'
 
   return (
     <>
@@ -1981,12 +2016,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             <select name="status" value={statusVal} onChange={e => setStatusVal(e.target.value)}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
               <option value="ACTIVE">거주중</option>
-              <option value="RESERVED">입실 예정</option>
               <option value="CHECKOUT_PENDING">퇴실 예정</option>
               <option value="NON_RESIDENT">비거주자 (명의만)</option>
-              {tenant && <option value="CHECKED_OUT">퇴실</option>}
               <option value="WAITING_TOUR">투어 대기</option>
               <option value="TOUR_DONE">투어 완료</option>
+              <option value="RESERVED">예약</option>
+              {tenant && <option value="CHECKED_OUT">퇴실</option>}
               {tenant && <option value="CANCELLED">취소</option>}
             </select>
           </div>
@@ -1996,20 +2031,26 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           </SelectField>
         </div>
 
-        {/* 호실 — 상태에 따라 입주중 방 비활성화 */}
+        {/* 호실 — 상태에 따라 선택 규칙 다름 */}
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-[var(--warm-mid)]">호실 *</label>
-          <select name="roomId" value={selectedRoomId} onChange={handleRoomChange} required
+          <label className="text-xs font-medium text-[var(--warm-mid)]">
+            호실{roomIsOptional ? '' : ' *'}
+          </label>
+          <select name="roomId" value={selectedRoomId} onChange={handleRoomChange} required={!roomIsOptional}
             onWheel={e => e.stopPropagation()}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-            {!tenant && <option value="">호실 선택</option>}
+            <option value="">{roomIsOptional ? '호실 선택 (선택사항)' : '호실 선택'}</option>
             {rooms.map(r => {
-              const isCurrentRoom = r.id === lease?.room.id
-              const isOccupied = !r.isVacant && !isCurrentRoom
-              const disableRoom = activeOnlyStatus && isOccupied
+              const isCurrentRoom = r.id === lease?.room?.id
+              const isCheckoutPending = r.currentLeaseStatus === 'CHECKOUT_PENDING'
+              // WAITING_TOUR: 공실이거나 퇴실예정인 방만 활성화
+              const disableRoom = isWaitingTourStatus
+                ? (!r.isVacant && !isCheckoutPending && !isCurrentRoom)
+                : (activeOnlyStatus && !r.isVacant && !isCurrentRoom)
               return (
-                <option key={r.id} value={r.id} disabled={disableRoom}>
-                  {r.roomNo}호
+                <option key={r.id} value={r.id} disabled={disableRoom}
+                  style={isWaitingTourStatus && isCheckoutPending && !r.isVacant ? { fontWeight: 'bold' } : undefined}>
+                  {r.roomNo}호{isWaitingTourStatus && isCheckoutPending && !r.isVacant ? ' (퇴실예정)' : ''}
                 </option>
               )
             })}
@@ -2026,31 +2067,44 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             <MoneyInput name="depositAmount" defaultValue={lease?.depositAmount ?? (defaultDeposit ?? undefined)} placeholder="0원" />
           </div>
         </div>
-        {/* 청소비 | 입주일 (아이템 6) */}
+        {/* 청소비 | 입주일 or 입주희망일 */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">청소비</label>
             <MoneyInput name="cleaningFee" defaultValue={lease?.cleaningFee ?? (defaultCleaningFee ?? undefined)} placeholder="0원" />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">입주일</label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">{moveInLabel}</label>
             <DatePicker
               name="moveInDate"
               value={moveInDateVal}
               onChange={(v) => {
                 setMoveInDateVal(v)
-                if (v) {
+                if (v && !roomIsOptional) {
                   const d = new Date(v)
                   const day = d.getDate()
                   const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
                   applyDueDay(day >= lastDay ? '말일' : String(day))
                 }
               }}
-              placeholder="입주일 선택"
+              placeholder={`${moveInLabel} 선택`}
               className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
             />
           </div>
         </div>
+        {/* 투어 예정일 (WAITING_TOUR 전용) */}
+        {statusVal === 'WAITING_TOUR' && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">투어 예정일</label>
+            <DatePicker
+              name="tourDate"
+              value={tourDateVal}
+              onChange={setTourDateVal}
+              placeholder="투어 예정일 선택"
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
+            />
+          </div>
+        )}
         {/* 납부일 | 퇴실일(조건부) (아이템 5, 7, 8) */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">

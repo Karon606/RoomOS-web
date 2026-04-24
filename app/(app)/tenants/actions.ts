@@ -50,11 +50,23 @@ export async function getTenants() {
 // 호실 목록 (입주자 등록/수정 시 선택용)
 export async function getRoomsForSelect() {
   const { propertyId } = await getPropertyId()
-  return prisma.room.findMany({
+  const rooms = await prisma.room.findMany({
     where: { propertyId },
     orderBy: { roomNo: 'asc' },
-    select: { id: true, roomNo: true, baseRent: true, isVacant: true, type: true, windowType: true, direction: true },
+    select: {
+      id: true, roomNo: true, baseRent: true, isVacant: true, type: true, windowType: true, direction: true,
+      leaseTerms: {
+        where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] } },
+        select: { status: true },
+        take: 1,
+        orderBy: { createdAt: 'desc' },
+      },
+    },
   })
+  return rooms.map(({ leaseTerms, ...r }) => ({
+    ...r,
+    currentLeaseStatus: (leaseTerms[0]?.status ?? null) as string | null,
+  }))
 }
 
 // 입주자 추가
@@ -91,15 +103,17 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const contractUrl         = formData.get('contractUrl') as string
   const wishRooms           = formData.get('wishRooms') as string
   const visitRoute          = formData.get('visitRoute') as string
+  const tourDate            = formData.get('tourDate') as string
 
+  const roomOptionalStatuses = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] as string[]
   if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
-  if (!roomId) return { ok: false, error: '호실을 선택해주세요.' }
+  if (!roomId && !roomOptionalStatuses.includes(status)) return { ok: false, error: '호실을 선택해주세요.' }
 
   // NON_RESIDENT(명의만)와 실거주자(ACTIVE/RESERVED/CHECKOUT_PENDING)는 같은 방에 공존 가능
-  const existingLeases = await prisma.leaseTerm.findMany({
+  const existingLeases = roomId ? await prisma.leaseTerm.findMany({
     where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
     select: { status: true },
-  })
+  }) : []
   const hasActiveResident = existingLeases.some(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))
   const hasNonResident    = existingLeases.some(l => l.status === 'NON_RESIDENT')
   const incomingIsResident = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(status)
@@ -140,7 +154,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
       leaseTerms: {
         create: {
           propertyId,
-          roomId,
+          roomId: roomId || null,
           status,
           rentAmount,
           depositAmount,
@@ -148,6 +162,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
           dueDay: dueDay || null,
           moveInDate: moveInDate ? new Date(moveInDate) : null,
           expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
+          tourDate: tourDate ? new Date(tourDate) : null,
           paymentTiming,
           payMethod: payMethod || null,
           cashReceipt: cashReceipt || null,
@@ -161,10 +176,10 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
     },
   })
 
-  if (['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'].includes(status)) {
+  if (['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'].includes(status) && roomId) {
     await prisma.room.update({ where: { id: roomId }, data: { isVacant: false } })
   }
-  // NON_RESIDENT는 isVacant에 영향 없음
+  // NON_RESIDENT, WAITING_TOUR, TOUR_DONE는 isVacant에 영향 없음
 
   await prisma.tenantStatusLog.create({
     data: { tenantId: tenant.id, fromStatus: 'RESERVED', toStatus: status, propertyId },
@@ -219,6 +234,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
   const contractUrl        = formData.get('contractUrl') as string
   const wishRooms          = formData.get('wishRooms') as string
   const visitRoute         = formData.get('visitRoute') as string
+  const tourDate           = formData.get('tourDate') as string
 
   if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
 
@@ -305,8 +321,9 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
       dueDay: dueDay || null,
       moveInDate: moveInDate ? new Date(moveInDate) : null,
       expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
+      tourDate: tourDate ? new Date(tourDate) : null,
       paymentTiming,
-      roomId: newRoomId,
+      roomId: newRoomId ?? null,
       payMethod: payMethod || null,
       cashReceipt: cashReceipt || null,
       registrationStatus,
@@ -378,10 +395,12 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
     data: { status: 'ACTIVE' },
   })
 
-  await prisma.room.update({
-    where: { id: lease.roomId },
-    data: { isVacant: false },
-  })
+  if (lease.roomId) {
+    await prisma.room.update({
+      where: { id: lease.roomId },
+      data: { isVacant: false },
+    })
+  }
 
   await prisma.tenantStatusLog.create({
     data: {
@@ -420,21 +439,23 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string): Pro
   })
 
   // [Trigger A] 퇴실 완료 시 예약된 가격이 있으면 baseRent에 적용하고 예약 필드 초기화
-  const room = await prisma.room.findUnique({
-    where: { id: lease.roomId },
-    select: { scheduledRent: true },
-  })
-  await prisma.room.update({
-    where: { id: lease.roomId },
-    data: {
-      isVacant: true,
-      ...(room?.scheduledRent != null && {
-        baseRent:      room.scheduledRent,
-        scheduledRent: null,
-        rentUpdateDate: null,
-      }),
-    },
-  })
+  if (lease.roomId) {
+    const room = await prisma.room.findUnique({
+      where: { id: lease.roomId },
+      select: { scheduledRent: true },
+    })
+    await prisma.room.update({
+      where: { id: lease.roomId },
+      data: {
+        isVacant: true,
+        ...(room?.scheduledRent != null && {
+          baseRent:      room.scheduledRent,
+          scheduledRent: null,
+          rentUpdateDate: null,
+        }),
+      },
+    })
+  }
 
   await prisma.tenantStatusLog.create({
     data: {
@@ -505,7 +526,7 @@ export async function analyzeTenantWithGemini(tenantId: string): Promise<string>
   const prompt = `당신은 공간 대여 관리 전문 AI입니다. 아래 입주자의 수납 데이터를 분석하고 한국어로 3~5문장으로 수납 패턴, 건전성, 관리 제안을 알려주세요.
 
 [입주자 정보]
-- 이름: ${tenant.name}, 호실: ${lease?.room.roomNo ?? '미지정'}호
+- 이름: ${tenant.name}, 호실: ${lease?.room?.roomNo ?? '미지정'}호
 - 월 이용료: ${lease?.rentAmount.toLocaleString() ?? '—'}원, 납부일: ${lease?.dueDay ?? '미지정'}
 - 입주일: ${lease?.moveInDate ? new Date(lease.moveInDate).toLocaleDateString('ko-KR') : '—'}
 
@@ -547,6 +568,7 @@ export async function deleteTenant(tenantId: string): Promise<{ ok: true } | { o
       select: { roomId: true },
     })
     for (const { roomId } of activeLeases) {
+      if (!roomId) continue
       const remaining = await prisma.leaseTerm.findFirst({
         where: { roomId, tenantId: { not: tenantId }, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
       })
@@ -709,7 +731,9 @@ export async function autoTransitionReserved() {
 
     for (const lease of dueLeases) {
       await prisma.leaseTerm.update({ where: { id: lease.id }, data: { status: 'ACTIVE' } })
-      await prisma.room.update({ where: { id: lease.roomId }, data: { isVacant: false } })
+      if (lease.roomId) {
+        await prisma.room.update({ where: { id: lease.roomId }, data: { isVacant: false } })
+      }
       await prisma.tenantStatusLog.create({
         data: { tenantId: lease.tenantId, leaseTermId: lease.id, propertyId, fromStatus: 'RESERVED', toStatus: 'ACTIVE' },
       })

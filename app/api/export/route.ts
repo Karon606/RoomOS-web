@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
       const effectiveDueDay =
         l.overrideDueDayMonth === targetMonth && l.overrideDueDay ? l.overrideDueDay : l.dueDay
       return {
-        '호실':        l.room.roomNo,
+        '호실':        l.room?.roomNo ?? '',
         '입주자명':    l.tenant.name,
         '연락처':      l.tenant.contacts[0]?.contactValue ?? '',
         '이용료':      l.rentAmount,
@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
     })
     paymentSheet = allPayments.map(p => ({
       '월':       p.targetMonth,
-      '호실':     p.leaseTerm.room.roomNo,
+      '호실':     p.leaseTerm.room?.roomNo ?? '',
       '입주자명': p.tenant.name,
       '이용료':   p.expectedAmount,
       '납부액':   p.actualAmount,
@@ -176,7 +176,7 @@ export async function GET(request: NextRequest) {
     const primary = t.contacts.find(c => c.isPrimary) ?? t.contacts[0]
     const emergency = t.contacts.find(c => c.isEmergency)
     return {
-      '호실':           lease?.room.roomNo ?? '',
+      '호실':           lease?.room?.roomNo ?? '',
       '이름':           t.name,
       '영문명':         t.englishName ?? '',
       '연락처':         primary?.contactValue ?? '',
@@ -223,7 +223,7 @@ export async function GET(request: NextRequest) {
     const primary = t.contacts.find(c => c.isPrimary) ?? t.contacts[0]
     const emergency = t.contacts.find(c => c.isEmergency)
     return {
-      '호실':           lease?.room.roomNo ?? '',
+      '호실':           lease?.room?.roomNo ?? '',
       '이름':           t.name,
       '영문명':         t.englishName ?? '',
       '연락처':         primary?.contactValue ?? '',
@@ -283,7 +283,7 @@ export async function GET(request: NextRequest) {
   const requestSheet = requests.map(r => ({
     '작성일':     fmtDate(r.requestDate),
     '입주자명':   r.tenant.name,
-    '호실':       r.tenant.leaseTerms[0]?.room.roomNo ?? '',
+    '호실':       r.tenant.leaseTerms[0]?.room?.roomNo ?? '',
     '내용':       r.content,
     '처리예정일': fmtDate(r.targetDate),
     '해결일':     fmtDate(r.resolvedAt),

@@ -47,11 +47,42 @@ function sheetToRows(wb: XLSX.WorkBook, name: string): Record<string, unknown>[]
   return XLSX.utils.sheet_to_json(ws, { defval: '' })
 }
 
+function parseDay(val: unknown): number | null {
+  const s = str(val)
+  if (!s) return null
+  if (s.includes('말')) return 31
+  const n = parseInt(s.replace(/[^0-9]/g, ''))
+  return isNaN(n) ? null : n
+}
+
+const WINDOW_MAP: Record<string, string> = {
+  '외창': 'OUTER', '내창': 'INNER', 'OUTER': 'OUTER', 'INNER': 'INNER',
+}
+const DIRECTION_MAP: Record<string, string> = {
+  '동': 'EAST', '서': 'WEST', '남': 'SOUTH', '북': 'NORTH',
+  '남동': 'SOUTHEAST', '남서': 'SOUTHWEST', '북동': 'NORTHEAST', '북서': 'NORTHWEST',
+  'EAST': 'EAST', 'WEST': 'WEST', 'SOUTH': 'SOUTH', 'NORTH': 'NORTH',
+  'SOUTHEAST': 'SOUTHEAST', 'SOUTHWEST': 'SOUTHWEST', 'NORTHEAST': 'NORTHEAST', 'NORTHWEST': 'NORTHWEST',
+}
+const GENDER_MAP: Record<string, string> = {
+  '남': 'MALE', '여': 'FEMALE', '기타': 'OTHER', 'MALE': 'MALE', 'FEMALE': 'FEMALE',
+}
+const STATUS_MAP: Record<string, string> = {
+  '거주중': 'ACTIVE', '입실예정': 'RESERVED', '퇴실예정': 'CHECKOUT_PENDING',
+  '퇴실': 'CHECKED_OUT', '취소': 'CANCELLED',
+  'ACTIVE': 'ACTIVE', 'RESERVED': 'RESERVED', 'CHECKOUT_PENDING': 'CHECKOUT_PENDING',
+}
+const ACCOUNT_TYPE_MAP: Record<string, string> = {
+  '은행계좌': 'BANK_ACCOUNT', '신용카드': 'CREDIT_CARD', '체크카드': 'CHECK_CARD', '기타': 'OTHER',
+  'BANK_ACCOUNT': 'BANK_ACCOUNT', 'CREDIT_CARD': 'CREDIT_CARD', 'CHECK_CARD': 'CHECK_CARD', 'OTHER': 'OTHER',
+}
+
 // ── 시트별 충돌 감지 ─────────────────────────────────────────────
 
 async function previewRooms(rows: Record<string, unknown>[], propertyId: string) {
   const conflicts: RoomConflict[] = []
   let newCount = 0
+  let autoSkipped = 0
 
   for (const row of rows) {
     const roomNo = str(row['호실번호'])
@@ -62,28 +93,44 @@ async function previewRooms(rows: Record<string, unknown>[], propertyId: string)
     })
 
     if (existing) {
+      const inType       = str(row['타입']) || null
+      const inBaseRent   = parseNum(row['기본이용료'])
+      const inWindowType = WINDOW_MAP[str(row['채광'])] || null
+      const inDirection  = DIRECTION_MAP[str(row['방향'])] || null
+      const inAreaPy     = row['면적(평)'] ? parseNum(row['면적(평)']) : null
+      const inAreaM2     = row['면적(㎡)'] ? parseNum(row['면적(㎡)']) : null
+      const inMemo       = str(row['메모']) || null
+
+      const isExact =
+        existing.type       === inType &&
+        existing.baseRent   === inBaseRent &&
+        (existing.windowType ?? null) === inWindowType &&
+        (existing.direction  ?? null) === inDirection &&
+        (existing.areaPyeong ?? null) === inAreaPy &&
+        (existing.areaM2     ?? null) === inAreaM2 &&
+        (existing.memo       ?? null) === inMemo
+
+      if (isExact) { autoSkipped++; continue }
+
       conflicts.push({
         id: `room:${roomNo}`,
         sheet: 'rooms',
         roomNo,
         existing: { type: existing.type, baseRent: existing.baseRent, windowType: existing.windowType },
-        incoming: {
-          type: str(row['타입']) || null,
-          baseRent: parseNum(row['기본이용료']),
-          windowType: str(row['채광']) || null,
-        },
+        incoming: { type: inType, baseRent: inBaseRent, windowType: str(row['채광']) || null },
       })
     } else {
       newCount++
     }
   }
 
-  return { conflicts, newCount }
+  return { conflicts, newCount, autoSkipped }
 }
 
 async function previewTenants(rows: Record<string, unknown>[], propertyId: string) {
   const conflicts: TenantConflict[] = []
   let newCount = 0
+  let autoSkipped = 0
 
   for (const row of rows) {
     const name = str(row['이름'])
@@ -102,7 +149,42 @@ async function previewTenants(rows: Record<string, unknown>[], propertyId: strin
 
     if (existing) {
       const incomingRoom = str(row['호실']) || null
-      const existingRoom = existing.leaseTerms[0]?.room.roomNo ?? null
+      const activeLease  = existing.leaseTerms[0]
+      const existingRoom = activeLease?.room?.roomNo ?? null
+
+      const inEnglishName = str(row['영문명']) || null
+      const inGender      = (GENDER_MAP[str(row['성별'])] ?? 'UNKNOWN') as string
+      const inNationality = str(row['국적']) || null
+      const inJob         = str(row['직업']) || null
+      const inMemo        = str(row['메모']) || null
+      const inStatus      = incomingRoom ? (STATUS_MAP[str(row['계약상태'])] ?? 'ACTIVE') : null
+      const inRent        = parseNum(row['이용료'])
+      const inDeposit     = parseNum(row['보증금'])
+      const inCleaning    = parseNum(row['청소비'])
+      const inDueDay      = str(row['납부일']) || null
+      const inPayMethod   = str(row['납부방법']) || null
+      const inMoveIn      = fmtDate(parseDate(row['입실일']))
+      const inMoveOut     = fmtDate(parseDate(row['퇴실 예정일']))
+
+      const isExact =
+        (existing.englishName  ?? null)               === inEnglishName &&
+        fmtDate(existing.birthdate ?? null)            === fmtDate(parseDate(row['생년월일'])) &&
+        (existing.gender as string)                    === inGender &&
+        (existing.nationality  ?? null)                === inNationality &&
+        (existing.job          ?? null)                === inJob &&
+        (existing.memo         ?? null)                === inMemo &&
+        existingRoom                                   === incomingRoom &&
+        ((activeLease?.status ?? null) as string|null) === inStatus &&
+        (activeLease?.rentAmount    ?? 0)              === inRent &&
+        (activeLease?.depositAmount ?? 0)              === inDeposit &&
+        (activeLease?.cleaningFee   ?? 0)              === inCleaning &&
+        (activeLease?.dueDay        ?? null)           === inDueDay &&
+        (activeLease?.payMethod     ?? null)           === inPayMethod &&
+        fmtDate(activeLease?.moveInDate      ?? null)  === inMoveIn &&
+        fmtDate(activeLease?.expectedMoveOut ?? null)  === inMoveOut
+
+      if (isExact) { autoSkipped++; continue }
+
       conflicts.push({
         id: `tenant:${name}`,
         sheet: 'tenants',
@@ -110,14 +192,14 @@ async function previewTenants(rows: Record<string, unknown>[], propertyId: strin
         incomingRoom,
         existingRoom,
         sameRoom: !!incomingRoom && incomingRoom === existingRoom,
-        existingStatus: existing.leaseTerms[0]?.status ?? null,
+        existingStatus: activeLease?.status ?? null,
       })
     } else {
       newCount++
     }
   }
 
-  return { conflicts, newCount }
+  return { conflicts, newCount, autoSkipped }
 }
 
 async function previewExpenses(rows: Record<string, unknown>[], propertyId: string) {
@@ -231,6 +313,7 @@ async function previewRequests(rows: Record<string, unknown>[], propertyId: stri
 async function previewSettings(rows: Record<string, unknown>[], propertyId: string) {
   const conflicts: SettingConflict[] = []
   let newCount = 0
+  let autoSkipped = 0
 
   for (const row of rows) {
     const brand = str(row['금융사'])
@@ -242,6 +325,21 @@ async function previewSettings(rows: Record<string, unknown>[], propertyId: stri
     })
 
     if (existing) {
+      const inType       = ACCOUNT_TYPE_MAP[str(row['타입'])] || 'BANK_ACCOUNT'
+      const inIdentifier = str(row['계좌/카드번호']) || null
+      const inOwner      = str(row['소유자']) || null
+      const inPayDay     = parseDay(row['결제일'])
+      const inCutOffDay  = parseDay(row['마감일'])
+
+      const isExact =
+        (existing.type as string)         === inType &&
+        (existing.identifier ?? null)     === inIdentifier &&
+        (existing.owner      ?? null)     === inOwner &&
+        (existing.payDay     ?? null)     === inPayDay &&
+        (existing.cutOffDay  ?? null)     === inCutOffDay
+
+      if (isExact) { autoSkipped++; continue }
+
       conflicts.push({
         id: `setting:${existing.id}`,
         sheet: 'settings',
@@ -250,9 +348,9 @@ async function previewSettings(rows: Record<string, unknown>[], propertyId: stri
         alias,
         existing: { type: existing.type, identifier: existing.identifier, owner: existing.owner },
         incoming: {
-          type: str(row['타입']) || 'BANK_ACCOUNT',
-          identifier: str(row['계좌/카드번호']) || null,
-          owner: str(row['소유자']) || null,
+          type: inType,
+          identifier: inIdentifier,
+          owner: inOwner,
         },
       })
     } else {
@@ -260,7 +358,7 @@ async function previewSettings(rows: Record<string, unknown>[], propertyId: stri
     }
   }
 
-  return { conflicts, newCount }
+  return { conflicts, newCount, autoSkipped }
 }
 
 // ── 핸들러 ──────────────────────────────────────────────────────
@@ -288,32 +386,33 @@ export async function POST(request: NextRequest) {
 
   const allConflicts: Conflict[] = []
   const counts: PreviewResult['counts'] = {
-    rooms:    { new: 0, conflict: 0 },
-    tenants:  { new: 0, conflict: 0 },
+    rooms:    { new: 0, conflict: 0, autoSkipped: 0 },
+    tenants:  { new: 0, conflict: 0, autoSkipped: 0 },
     expenses: { new: 0, conflict: 0, autoSkipped: 0 },
     incomes:  { new: 0, conflict: 0, autoSkipped: 0 },
-    settings: { new: 0, conflict: 0 },
+    settings: { new: 0, conflict: 0, autoSkipped: 0 },
     requests: { new: 0, autoSkipped: 0, noTenant: 0 },
   }
 
   if (wb.SheetNames.includes('호실관리')) {
-    const { conflicts, newCount } = await previewRooms(sheetToRows(wb, '호실관리'), propertyId)
+    const { conflicts, newCount, autoSkipped } = await previewRooms(sheetToRows(wb, '호실관리'), propertyId)
     allConflicts.push(...conflicts)
-    counts.rooms = { new: newCount, conflict: conflicts.length }
+    counts.rooms = { new: newCount, conflict: conflicts.length, autoSkipped }
   }
 
   if (wb.SheetNames.includes('입주자관리')) {
-    const { conflicts, newCount } = await previewTenants(sheetToRows(wb, '입주자관리'), propertyId)
+    const { conflicts, newCount, autoSkipped } = await previewTenants(sheetToRows(wb, '입주자관리'), propertyId)
     allConflicts.push(...conflicts)
-    counts.tenants = { new: newCount, conflict: conflicts.length }
+    counts.tenants = { new: newCount, conflict: conflicts.length, autoSkipped }
   }
 
   if (wb.SheetNames.includes('퇴실자')) {
-    const { conflicts, newCount } = await previewTenants(sheetToRows(wb, '퇴실자'), propertyId)
+    const { conflicts, newCount, autoSkipped } = await previewTenants(sheetToRows(wb, '퇴실자'), propertyId)
     allConflicts.push(...conflicts)
     counts.tenants = {
       new: counts.tenants.new + newCount,
       conflict: counts.tenants.conflict + conflicts.length,
+      autoSkipped: counts.tenants.autoSkipped + autoSkipped,
     }
   }
 
@@ -330,9 +429,9 @@ export async function POST(request: NextRequest) {
   }
 
   if (wb.SheetNames.includes('설정')) {
-    const { conflicts, newCount } = await previewSettings(sheetToRows(wb, '설정'), propertyId)
+    const { conflicts, newCount, autoSkipped } = await previewSettings(sheetToRows(wb, '설정'), propertyId)
     allConflicts.push(...conflicts)
-    counts.settings = { new: newCount, conflict: conflicts.length }
+    counts.settings = { new: newCount, conflict: conflicts.length, autoSkipped }
   }
 
   if (wb.SheetNames.includes('요청사항')) {

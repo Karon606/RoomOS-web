@@ -161,6 +161,7 @@ export default function RoomsClient({
   const router = useRouter()
   const [selectedRoom, setSelectedRoom] = useState<RoomStatus | null>(null)
   const [paymentHistory, setPaymentHistory] = useState<PaymentRecord[]>([])
+  const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
   const [showPayModal, setShowPayModal] = useState(false)
   const [showPayForm, setShowPayForm] = useState(false)
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid'>('all')
@@ -177,6 +178,7 @@ export default function RoomsClient({
   const [showOverrideForm, setShowOverrideForm] = useState(false)
   const [overrideInput, setOverrideInput] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
+  const [payAmount, setPayAmount] = useState(0)
   const colMenuRef       = useRef<HTMLDivElement>(null)
   const vacantColMenuRef = useRef<HTMLDivElement>(null)
   const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_WIDTHS)
@@ -287,14 +289,16 @@ export default function RoomsClient({
 
   const openPayModal = async (room: RoomStatus) => {
     setSelectedRoom(room)
+    setPayAmount(room.expected)
     setError('')
     setShowPayForm(false)
     setShowOverrideForm(false)
     setOverrideInput('')
     setOverrideReason('')
     if (room.leaseTermId) {
-      const records = await getPaymentsByLease(room.leaseTermId, targetMonth)
+      const { records, acquisitionDate } = await getPaymentsByLease(room.leaseTermId, targetMonth)
       setPaymentHistory(records as PaymentRecord[])
+      setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
     }
     setShowPayModal(true)
   }
@@ -730,33 +734,47 @@ export default function RoomsClient({
                   </div>
 
                   {/* 납부 내역 */}
-                  {paymentHistory.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-[var(--warm-mid)]">납부 내역</p>
-                      {paymentHistory.map(p => (
-                        <div key={p.id}
-                          className="flex items-center justify-between bg-[var(--canvas)] rounded-xl px-3 py-2.5">
-                          <div>
-                            <p className="text-xs text-[var(--warm-mid)]">
-                              {p.seqNo}회차 · {fmtDate(p.payDate)} · {p.payMethod ?? '—'}
-                            </p>
-                            {p.memo && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
+                  {paymentHistory.length > 0 && (() => {
+                    const isPreAcq = (p: PaymentRecord) => !!(payAcquisitionDate && new Date(p.payDate) < payAcquisitionDate)
+                    const prevOwnerPaid = paymentHistory.filter(isPreAcq).reduce((s, p) => s + p.actualAmount, 0)
+                    return (
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-[var(--warm-mid)]">납부 내역</p>
+                        {prevOwnerPaid > 0 && (
+                          <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                            <p className="text-xs text-amber-700">이전 원장 귀속 (인수일 이전 납부)</p>
+                            <p className="text-xs font-semibold text-amber-700">{prevOwnerPaid.toLocaleString()}원</p>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-[var(--warm-dark)]">
-                              {p.actualAmount.toLocaleString()}원
-                            </span>
-                            {canEdit && (
-                              <button onClick={() => handleDeletePayment(p.id)}
-                                className="text-xs text-red-600 hover:text-red-700 transition-colors">
-                                ✕
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                        )}
+                        {paymentHistory.map(p => {
+                          const prevOwner = isPreAcq(p)
+                          return (
+                            <div key={p.id}
+                              className={`flex items-center justify-between rounded-xl px-3 py-2.5 ${prevOwner ? 'bg-amber-50 border border-amber-200' : 'bg-[var(--canvas)]'}`}>
+                              <div>
+                                <p className={`text-xs ${prevOwner ? 'text-amber-600' : 'text-[var(--warm-mid)]'}`}>
+                                  {p.seqNo}회차 · {fmtDate(p.payDate)} · {p.payMethod ?? '—'}
+                                  {prevOwner && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">이전 원장</span>}
+                                </p>
+                                {p.memo && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-sm font-semibold ${prevOwner ? 'text-amber-700' : 'text-[var(--warm-dark)]'}`}>
+                                  {p.actualAmount.toLocaleString()}원
+                                </span>
+                                {canEdit && (
+                                  <button onClick={() => handleDeletePayment(p.id)}
+                                    className="text-xs text-red-600 hover:text-red-700 transition-colors">
+                                    ✕
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
                 </div>
 
                 {/* 납부일 임시 조정 */}
@@ -861,7 +879,19 @@ export default function RoomsClient({
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs text-[var(--warm-muted)]">금액</label>
-                      <MoneyInput name="amount" defaultValue={selectedRoom.expected} placeholder="0원" />
+                      <MoneyInput name="amount" value={payAmount} onChange={setPayAmount} placeholder="0원" />
+                      <div className="flex gap-1 mt-1">
+                        <button type="button" onClick={() => setPayAmount(selectedRoom.expected)}
+                          className="flex-1 py-1 text-xs bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg text-[var(--warm-mid)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors truncate px-1">
+                          이용료 {selectedRoom.expected.toLocaleString()}
+                        </button>
+                        {selectedRoom.depositAmount > 0 && (
+                          <button type="button" onClick={() => setPayAmount(selectedRoom.depositAmount)}
+                            className="flex-1 py-1 text-xs bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg text-[var(--warm-mid)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors truncate px-1">
+                            보증금 {selectedRoom.depositAmount.toLocaleString()}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="space-y-1">

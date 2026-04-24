@@ -52,11 +52,11 @@ export type PreviewResult = {
   conflicts: Conflict[]
   hasPaymentSheet: boolean
   counts: {
-    rooms:    { new: number; conflict: number }
-    tenants:  { new: number; conflict: number }
+    rooms:    { new: number; conflict: number; autoSkipped: number }
+    tenants:  { new: number; conflict: number; autoSkipped: number }
     expenses: { new: number; conflict: number; autoSkipped: number }
     incomes:  { new: number; conflict: number; autoSkipped: number }
-    settings: { new: number; conflict: number }
+    settings: { new: number; conflict: number; autoSkipped: number }
     requests: { new: number; autoSkipped: number; noTenant: number }
   }
 }

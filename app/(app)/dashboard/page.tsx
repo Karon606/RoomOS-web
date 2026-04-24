@@ -78,6 +78,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     recentPaymentsRaw,
     unpaidLeasesRaw,
     tenantRequestsRaw,
+    waitingTourLeases,
   ] = await Promise.all([
     prisma.leaseTerm.findMany({
       where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
@@ -118,18 +119,20 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       orderBy: { moveInDate: 'asc' },
     }),
-    // 퇴실예정 알림
+    // 퇴실예정 알림 — CHECKOUT_PENDING은 날짜 무관하게 모두, ACTIVE는 범위 내만
     prisma.leaseTerm.findMany({
       where: {
         propertyId,
-        status: { in: ['CHECKOUT_PENDING', 'ACTIVE'] },
-        expectedMoveOut: { gte: alertFrom, lte: alertTo },
+        OR: [
+          { status: 'CHECKOUT_PENDING' },
+          { status: 'ACTIVE', expectedMoveOut: { gte: alertFrom, lte: alertTo } },
+        ],
       },
       include: {
         tenant: { select: { name: true } },
         room:   { select: { roomNo: true } },
       },
-      orderBy: { expectedMoveOut: 'asc' },
+      orderBy: { expectedMoveOut: { sort: 'asc', nulls: 'last' } },
     }),
     // 6개월 트렌드
     prisma.paymentRecord.findMany({
@@ -233,6 +236,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         tenantId: true,
         tenant: { select: { name: true } },
       },
+    }),
+    // 투어 대기 알림
+    prisma.leaseTerm.findMany({
+      where: { propertyId, status: 'WAITING_TOUR' },
+      include: {
+        tenant: { select: { name: true } },
+        room:   { select: { roomNo: true } },
+      },
+      orderBy: { tourDate: { sort: 'asc', nulls: 'last' } },
     }),
   ])
 
@@ -355,7 +367,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const unpaidLeases = unpaidLeasesRaw
     .filter(l => (paymentByLease[l.id] ?? 0) < l.rentAmount)
     .map(l => ({
-      roomNo:       l.room.roomNo,
+      roomNo:       l.room?.roomNo ?? '?',
       tenantName:   l.tenant.name,
       tenantId:     l.tenant.id,
       leaseId:      l.id,
@@ -369,7 +381,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   for (const l of moveInLeases) {
     const days = daysUntil(l.moveInDate!)
     alertItems.push({
-      text:      `${l.tenant.name}님 ${l.room.roomNo}호 입실 예정`,
+      text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}입실 예정`,
       link:      '/tenants',
       dotColor:  '#3b82f6',
       timeLabel: dayLabel(days),
@@ -377,12 +389,22 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
 
   for (const l of moveOutLeases) {
-    const days = daysUntil(l.expectedMoveOut!)
+    const timeLabel = l.expectedMoveOut ? dayLabel(daysUntil(l.expectedMoveOut)) : '날짜 미정'
     alertItems.push({
-      text:      `${l.tenant.name}님 ${l.room.roomNo}호 퇴실 예정`,
+      text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}퇴실 예정`,
       link:      '/tenants',
       dotColor:  '#eab308',
-      timeLabel: dayLabel(days),
+      timeLabel,
+    })
+  }
+
+  for (const l of waitingTourLeases) {
+    const timeLabel = l.tourDate ? dayLabel(daysUntil(l.tourDate)) : '일정 미정'
+    alertItems.push({
+      text:      `${l.tenant.name}님${l.room?.roomNo ? ` ${l.room.roomNo}호` : ''} 투어 예정`,
+      link:      '/tenants',
+      dotColor:  '#a855f7',
+      timeLabel,
     })
   }
 
@@ -410,7 +432,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   // ── 최근 납입 완료 ────────────────────────────────────────────
   const activityItems: DashboardData['activity'] = recentPaymentsRaw.map(p => ({
-    text:      `${p.tenant.name}님 ${p.leaseTerm.room.roomNo}호 납입 완료`,
+    text:      `${p.tenant.name}님 ${p.leaseTerm.room?.roomNo ?? '?'}호 납입 완료`,
     timeLabel: relativeTime(p.createdAt),
     dotColor:  '#22c55e',
     link:      `/rooms?month=${p.targetMonth}`,
