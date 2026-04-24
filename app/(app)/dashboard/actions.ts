@@ -50,8 +50,10 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
   const propertyId = await getTrendPropertyId()
   if (!propertyId) return []
 
-  const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { acquisitionDate: true } })
-  const acquisitionDate = prop?.acquisitionDate ? new Date(prop.acquisitionDate) : null
+  const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { acquisitionDate: true, prevOwnerCutoffDate: true } })
+  const acquisitionDate = prop?.prevOwnerCutoffDate
+    ? new Date(prop.prevOwnerCutoffDate)
+    : prop?.acquisitionDate ? new Date(prop.acquisitionDate) : null
 
   const [tyear, tmonth] = targetMonth.split('-').map(Number)
 

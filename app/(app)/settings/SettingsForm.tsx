@@ -19,6 +19,7 @@ type Property = {
   address: string | null
   phone: string | null
   acquisitionDate: Date | null
+  prevOwnerCutoffDate: Date | null
   defaultDeposit: number | null
   defaultCleaningFee: number | null
 }
@@ -74,6 +75,9 @@ export default function SettingsForm({
 
   const acqDate = property?.acquisitionDate
     ? new Date(property.acquisitionDate).toISOString().slice(0, 10)
+    : ''
+  const cutoffDate = property?.prevOwnerCutoffDate
+    ? new Date(property.prevOwnerCutoffDate).toISOString().slice(0, 10)
     : ''
 
   // ── 방타입 ─────────────────────────────────────────────────────
@@ -196,8 +200,14 @@ export default function SettingsForm({
             <Field label="대표 연락처" name="phone" defaultValue={property?.phone ?? ''} />
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">인수 날짜</label>
-              <p className="text-xs text-[var(--warm-muted)]">이 날짜 이전의 미납금은 이월 계산에서 제외됩니다.</p>
+              <p className="text-xs text-[var(--warm-muted)]">실제 영업장을 인수한 날짜입니다.</p>
               <input type="date" name="acquisitionDate" defaultValue={acqDate}
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">이전 원장 귀속 기준일</label>
+              <p className="text-xs text-[var(--warm-muted)]">이 날짜 이전 수납금은 이전 원장 귀속으로 처리됩니다. 비워두면 인수 날짜와 동일.</p>
+              <input type="date" name="prevOwnerCutoffDate" defaultValue={cutoffDate}
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
             </div>
             <div className="grid grid-cols-2 gap-3">

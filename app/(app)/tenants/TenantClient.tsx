@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithGemini, createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests, changeDueDay } from './actions'
-import { savePayment, saveDepositPayment, deletePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
+import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { PhoneInput } from '@/components/ui/PhoneInput'
@@ -321,6 +321,11 @@ export default function TenantClient({
   const [showOverrideForm, setShowOverrideForm] = useState(false)
   const [overrideInput, setOverrideInput] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
+  const [editingPayId, setEditingPayId] = useState<string | null>(null)
+  const [editAmount, setEditAmount] = useState(0)
+  const [editDate, setEditDate] = useState('')
+  const [editPayMethod, setEditPayMethod] = useState('')
+  const [editMemo, setEditMemo] = useState('')
 
   // localStorage에서 열 설정 불러오기
   useEffect(() => {
@@ -562,6 +567,34 @@ export default function TenantClient({
         const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
         setPayHistory(records as PayRecord[])
       }
+      refresh()
+    })
+  }
+
+  const handleUpdatePayRecord = (p: PayRecord) => {
+    setEditingPayId(p.id)
+    setEditAmount(p.actualAmount)
+    setEditDate(new Date(p.payDate).toISOString().slice(0, 10))
+    setEditPayMethod(p.payMethod ?? '')
+    setEditMemo(p.memo ?? '')
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingPayId) return
+    startTransition(async () => {
+      const res = await updatePayment(editingPayId, {
+        actualAmount: editAmount,
+        payDate:      editDate,
+        payMethod:    editPayMethod,
+        memo:         editMemo || undefined,
+      })
+      if (!res.ok) { setError(res.error); return }
+      if (payTarget) {
+        const { records, acquisitionDate } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
+        setPayHistory(records as PayRecord[])
+        setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
+      }
+      setEditingPayId(null)
       refresh()
     })
   }
@@ -1605,21 +1638,57 @@ export default function TenantClient({
                     {depositRecords.length > 0 && (
                       <div className="space-y-2">
                         <p className="text-xs font-medium text-[var(--warm-mid)]">보증금 수납 내역</p>
-                        {depositRecords.map(p => (
-                          <div key={p.id} className="flex items-center justify-between rounded-xl px-3 py-2.5 bg-purple-50 border border-purple-200">
-                            <div>
-                              <p className="text-xs text-purple-600">
-                                {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
-                                <span className="ml-1.5 text-[10px] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>
-                              </p>
+                        {depositRecords.map(p => {
+                          if (editingPayId === p.id) {
+                            return (
+                              <div key={p.id} className="rounded-xl border border-purple-400 bg-purple-50 px-3 py-2.5 space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="space-y-1">
+                                    <p className="text-[10px] text-purple-500">금액</p>
+                                    <input type="text" inputMode="numeric"
+                                      value={editAmount.toLocaleString()}
+                                      onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
+                                      className="w-full bg-white border border-purple-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-purple-400" />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <p className="text-[10px] text-purple-500">납부일</p>
+                                    <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
+                                      className="w-full bg-white border border-purple-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-purple-400" />
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <p className="text-[10px] text-purple-500">납부방법</p>
+                                  <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
+                                    placeholder="계좌이체, 현금…"
+                                    className="w-full bg-white border border-purple-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-purple-400" />
+                                </div>
+                                <div className="flex gap-2 justify-end">
+                                  <button onClick={() => setEditingPayId(null)}
+                                    className="text-xs text-purple-500 hover:text-purple-700 px-3 py-1.5 rounded-lg border border-purple-200 transition-colors">취소</button>
+                                  <button onClick={handleSaveEdit} disabled={isPending}
+                                    className="text-xs text-white bg-purple-500 hover:bg-purple-600 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">저장</button>
+                                </div>
+                              </div>
+                            )
+                          }
+                          return (
+                            <div key={p.id} className="flex items-center justify-between rounded-xl px-3 py-2.5 bg-purple-50 border border-purple-200">
+                              <div>
+                                <p className="text-xs text-purple-600">
+                                  {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
+                                  <span className="ml-1.5 text-[10px] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold text-purple-700">{p.actualAmount.toLocaleString()}원</span>
+                                <button onClick={() => handleUpdatePayRecord(p)}
+                                  className="text-xs text-purple-400 hover:text-purple-600 transition-colors">수정</button>
+                                <button onClick={() => handleDeletePayRecord(p.id)}
+                                  className="text-xs text-red-400 hover:text-red-300 transition-colors">✕</button>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold text-purple-700">{p.actualAmount.toLocaleString()}원</span>
-                              <button onClick={() => handleDeletePayRecord(p.id)}
-                                className="text-xs text-red-400 hover:text-red-300 transition-colors">✕</button>
-                            </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     )}
 
@@ -1629,6 +1698,45 @@ export default function TenantClient({
                         <p className="text-xs font-medium text-[var(--warm-mid)]">납부 내역</p>
                         {regularRecords.map(p => {
                           const prevOwner = isPreAcq(p)
+                          if (editingPayId === p.id) {
+                            return (
+                              <div key={p.id} className={`rounded-xl border px-3 py-2.5 space-y-2 ${prevOwner ? 'border-amber-400 bg-amber-50' : 'border-[var(--coral)] bg-[var(--canvas)]'}`}>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="space-y-1">
+                                    <p className={`text-[10px] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>금액</p>
+                                    <input type="text" inputMode="numeric"
+                                      value={editAmount.toLocaleString()}
+                                      onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
+                                      className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <p className={`text-[10px] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>납부일</p>
+                                    <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
+                                      className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="space-y-1">
+                                    <p className={`text-[10px] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>납부방법</p>
+                                    <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
+                                      placeholder="계좌이체, 현금…"
+                                      className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <p className={`text-[10px] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>메모</p>
+                                    <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
+                                      className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+                                  </div>
+                                </div>
+                                <div className="flex gap-2 justify-end">
+                                  <button onClick={() => setEditingPayId(null)}
+                                    className="text-xs text-[var(--warm-mid)] hover:text-[var(--warm-dark)] px-3 py-1.5 rounded-lg border border-[var(--warm-border)] transition-colors">취소</button>
+                                  <button onClick={handleSaveEdit} disabled={isPending}
+                                    className="text-xs text-white bg-[var(--coral)] hover:bg-[var(--coral-dark)] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">저장</button>
+                                </div>
+                              </div>
+                            )
+                          }
                           return (
                             <div key={p.id} className={`flex items-center justify-between rounded-xl px-3 py-2.5 ${prevOwner ? 'bg-amber-50 border border-amber-200' : 'bg-[var(--canvas)]'}`}>
                               <div>
@@ -1640,6 +1748,8 @@ export default function TenantClient({
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className={`text-sm font-semibold ${prevOwner ? 'text-amber-700' : 'text-[var(--warm-dark)]'}`}>{p.actualAmount.toLocaleString()}원</span>
+                                <button onClick={() => handleUpdatePayRecord(p)}
+                                  className="text-xs text-[var(--warm-mid)] hover:text-[var(--coral)] transition-colors">수정</button>
                                 <button onClick={() => handleDeletePayRecord(p.id)}
                                   className="text-xs text-red-400 hover:text-red-300 transition-colors">✕</button>
                               </div>

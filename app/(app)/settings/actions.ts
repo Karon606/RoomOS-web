@@ -37,6 +37,7 @@ export async function getPropertySettings() {
       address: true,
       phone: true,
       acquisitionDate: true,
+      prevOwnerCutoffDate: true,
       defaultDeposit: true,
       defaultCleaningFee: true,
     },
@@ -251,6 +252,7 @@ export async function updatePropertySettings(formData: FormData) {
   const address           = formData.get('address') as string
   const phone             = formData.get('phone') as string
   const acquisitionDate   = formData.get('acquisitionDate') as string
+  const prevOwnerCutoffDate = formData.get('prevOwnerCutoffDate') as string
   const defaultDeposit    = formData.get('defaultDeposit')
   const defaultCleaningFee = formData.get('defaultCleaningFee')
 
@@ -261,6 +263,7 @@ export async function updatePropertySettings(formData: FormData) {
       address:          address || null,
       phone:            phone || null,
       acquisitionDate:  acquisitionDate ? new Date(acquisitionDate) : null,
+      prevOwnerCutoffDate: prevOwnerCutoffDate ? new Date(prevOwnerCutoffDate) : null,
       defaultDeposit:   defaultDeposit   ? Number(String(defaultDeposit).replace(/[^0-9]/g, ''))   : null,
       defaultCleaningFee: defaultCleaningFee ? Number(String(defaultCleaningFee).replace(/[^0-9]/g, '')) : null,
     },

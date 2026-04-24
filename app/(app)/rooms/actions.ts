@@ -44,9 +44,13 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
   // 영업장 인수 날짜 조회
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
-    select: { acquisitionDate: true },
+    select: { acquisitionDate: true, prevOwnerCutoffDate: true },
   })
   const acquisitionDate = property?.acquisitionDate ?? null
+  // 이전 원장 귀속 기준일 — 별도 설정 없으면 인수일과 동일
+  const cutoffDate: Date | null = property?.prevOwnerCutoffDate
+    ? new Date(property.prevOwnerCutoffDate)
+    : acquisitionDate ? new Date(acquisitionDate) : null
 
 
   const rooms = await prisma.room.findMany({
@@ -134,11 +138,11 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       }
     }
 
-    // 인수일 기준: payDate < acquisitionDate 인 납부금은 이전 원장 귀속
+    // 귀속 기준일(cutoffDate) 이전 납부금은 이전 원장 귀속
     const leaseAllPrev = allPrevPayments.filter(p => p.leaseTermId === lease.id)
-    const prevOperatorPortion = acqDate
+    const prevOperatorPortion = cutoffDate
       ? leaseAllPrev
-          .filter(p => new Date(p.payDate) < acqDate)
+          .filter(p => new Date(p.payDate) < cutoffDate)
           .reduce((s, p) => s + p.actualAmount, 0)
       : 0
 
@@ -146,9 +150,9 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       .reduce((s, p) => s + p.actualAmount, 0) - prevOperatorPortion
 
     // 인수월에 이전 원장 몫 납부가 있었다면 그 달은 현 원장 청구 개월에서 제외
-    const acqMonthPaidToPrev = acqDate
+    const acqMonthPaidToPrev = cutoffDate
       ? leaseAllPrev
-          .filter(p => p.targetMonth === acqMonthStr && new Date(p.payDate) < acqDate)
+          .filter(p => p.targetMonth === acqMonthStr && new Date(p.payDate) < cutoffDate)
           .reduce((s, p) => s + p.actualAmount, 0)
       : 0
     const acqMonthPrePaid = acqMonthPaidToPrev >= expected
@@ -182,13 +186,18 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     }
 
     const leaseCurrentPayments = payments.filter(p => p.leaseTermId === lease.id)
-    // 이번 달이 인수월인 경우 payDate < 인수일 납부금은 이전 원장 몫 제외
-    const currentPreAcq = (acqDate && targetMonth === acqMonthStr)
-      ? leaseCurrentPayments.filter(p => new Date(p.payDate) < acqDate).reduce((s, p) => s + p.actualAmount, 0)
+    // 이번 달이 귀속 기준월인 경우 payDate < cutoffDate 납부금은 이전 원장 몫 제외
+    const cutoffMonthStr = cutoffDate
+      ? `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`
+      : acqMonthStr
+    const currentPreAcq = (cutoffDate && targetMonth === cutoffMonthStr)
+      ? leaseCurrentPayments.filter(p => new Date(p.payDate) < cutoffDate).reduce((s, p) => s + p.actualAmount, 0)
       : 0
     const currentPaidRaw = leaseCurrentPayments.reduce((s, p) => s + p.actualAmount, 0) - currentPreAcq
-    const displayBalance = currentPaidRaw - expected
-    const isPaid = currentPaidRaw >= expected
+    // 이전 원장이 이미 이 달 이용료를 수납했다면 자동 완납 처리
+    const prevPaidThisMonth = !!(cutoffDate && targetMonth === cutoffMonthStr && currentPreAcq >= expected)
+    const displayBalance = prevPaidThisMonth ? 0 : currentPaidRaw - expected
+    const isPaid = prevPaidThisMonth || currentPaidRaw >= expected
 
     return {
       roomId: room.id, roomNo: room.roomNo, type: room.type,
@@ -364,6 +373,43 @@ async function recalculatePayments(
   }
 }
 
+// 수납 기록 수정
+export async function updatePayment(
+  paymentId: string,
+  data: { actualAmount: number; payDate: string; payMethod: string; memo?: string }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const record = await prisma.paymentRecord.findUnique({
+      where: { id: paymentId },
+      select: { leaseTermId: true, targetMonth: true },
+    })
+    if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
+
+    await prisma.paymentRecord.update({
+      where: { id: paymentId },
+      data: {
+        actualAmount: data.actualAmount,
+        payDate:      new Date(data.payDate),
+        payMethod:    data.payMethod,
+        memo:         data.memo || null,
+      },
+    })
+
+    const lease = await prisma.leaseTerm.findUnique({
+      where: { id: record.leaseTermId },
+      select: { rentAmount: true },
+    })
+    if (lease) {
+      await recalculatePayments(record.leaseTermId, record.targetMonth, lease.rentAmount)
+    }
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // 수납 기록 삭제
 export async function deletePayment(paymentId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
@@ -430,8 +476,9 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
     }),
     prisma.property.findUnique({
       where: { id: propertyId },
-      select: { acquisitionDate: true },
+      select: { acquisitionDate: true, prevOwnerCutoffDate: true },
     }),
   ])
-  return { records, acquisitionDate: property?.acquisitionDate ?? null }
+  const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
+  return { records, acquisitionDate: cutoff }
 }

@@ -47,9 +47,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
-    select: { acquisitionDate: true },
+    select: { acquisitionDate: true, prevOwnerCutoffDate: true },
   })
-  const acquisitionDate = property?.acquisitionDate ? new Date(property.acquisitionDate) : null
+  const acquisitionDate = property?.prevOwnerCutoffDate
+    ? new Date(property.prevOwnerCutoffDate)
+    : property?.acquisitionDate ? new Date(property.acquisitionDate) : null
 
   const last6Months = getLast6Months(targetMonth)
   const [tyear, tmonth] = last6Months[0].split('-').map(Number)

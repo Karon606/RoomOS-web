@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
-import { savePayment, saveDepositPayment, deletePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from './actions'
+import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from './actions'
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -183,6 +183,12 @@ export default function RoomsClient({
   const [payAmount, setPayAmount] = useState(0)
   const [payDateVal, setPayDateVal] = useState(new Date().toISOString().slice(0, 10))
   const [isDepositMode, setIsDepositMode] = useState(false)
+  const [loadingHistory, setLoadingHistory] = useState(false)
+  const [editingPayId, setEditingPayId] = useState<string | null>(null)
+  const [editAmount, setEditAmount] = useState(0)
+  const [editDate, setEditDate] = useState('')
+  const [editPayMethod, setEditPayMethod] = useState('')
+  const [editMemo, setEditMemo] = useState('')
   const colMenuRef       = useRef<HTMLDivElement>(null)
   const vacantColMenuRef = useRef<HTMLDivElement>(null)
   const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_WIDTHS)
@@ -301,12 +307,44 @@ export default function RoomsClient({
     setShowOverrideForm(false)
     setOverrideInput('')
     setOverrideReason('')
+    setEditingPayId(null)
+    setPaymentHistory([])
+    setShowPayModal(true)
     if (room.leaseTermId) {
+      setLoadingHistory(true)
       const { records, acquisitionDate } = await getPaymentsByLease(room.leaseTermId, targetMonth)
       setPaymentHistory(records as PaymentRecord[])
       setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
+      setLoadingHistory(false)
     }
-    setShowPayModal(true)
+  }
+
+  const handleUpdatePayment = (p: PaymentRecord) => {
+    setEditingPayId(p.id)
+    setEditAmount(p.actualAmount)
+    setEditDate(new Date(p.payDate).toISOString().slice(0, 10))
+    setEditPayMethod(p.payMethod ?? '')
+    setEditMemo(p.memo ?? '')
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingPayId) return
+    startTransition(async () => {
+      const res = await updatePayment(editingPayId, {
+        actualAmount: editAmount,
+        payDate:      editDate,
+        payMethod:    editPayMethod,
+        memo:         editMemo || undefined,
+      })
+      if (!res.ok) { setError(res.error); return }
+      if (selectedRoom?.leaseTermId) {
+        const { records, acquisitionDate } = await getPaymentsByLease(selectedRoom.leaseTermId, targetMonth)
+        setPaymentHistory(records as PaymentRecord[])
+        setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
+      }
+      setEditingPayId(null)
+      router.refresh()
+    })
   }
 
   const handleSavePayment = async (e: { preventDefault(): void; currentTarget: HTMLFormElement }) => {
@@ -756,20 +794,68 @@ export default function RoomsClient({
                   </div>
 
                   {/* 납부 내역 */}
-                  {paymentHistory.length > 0 && (() => {
+                  {(loadingHistory || paymentHistory.length > 0) && (() => {
                     const isPreAcq = (p: PaymentRecord) => !!(payAcquisitionDate && new Date(p.payDate) < payAcquisitionDate)
                     const prevOwnerPaid = paymentHistory.filter(p => !p.isDeposit && isPreAcq(p)).reduce((s, p) => s + p.actualAmount, 0)
                     return (
                       <div className="space-y-2">
                         <p className="text-xs font-medium text-[var(--warm-mid)]">납부 내역</p>
-                        {prevOwnerPaid > 0 && (
+                        {loadingHistory && (
+                          <div className="flex items-center justify-center py-4">
+                            <div className="w-5 h-5 border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
+                          </div>
+                        )}
+                        {!loadingHistory && prevOwnerPaid > 0 && (
                           <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
                             <p className="text-xs text-amber-700">이전 원장 귀속 (인수일 이전 납부)</p>
                             <p className="text-xs font-semibold text-amber-700">{prevOwnerPaid.toLocaleString()}원</p>
                           </div>
                         )}
-                        {paymentHistory.map(p => {
+                        {!loadingHistory && paymentHistory.map(p => {
                           const prevOwner = !p.isDeposit && isPreAcq(p)
+                          if (editingPayId === p.id) {
+                            return (
+                              <div key={p.id} className="rounded-xl border border-[var(--coral)] bg-[var(--canvas)] px-3 py-2.5 space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="space-y-1">
+                                    <p className="text-[10px] text-[var(--warm-muted)]">금액</p>
+                                    <input type="text" inputMode="numeric"
+                                      value={editAmount.toLocaleString()}
+                                      onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
+                                      className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <p className="text-[10px] text-[var(--warm-muted)]">납부일</p>
+                                    <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
+                                      className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="space-y-1">
+                                    <p className="text-[10px] text-[var(--warm-muted)]">납부방법</p>
+                                    <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
+                                      placeholder="계좌이체, 현금…"
+                                      className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <p className="text-[10px] text-[var(--warm-muted)]">메모</p>
+                                    <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
+                                      className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+                                  </div>
+                                </div>
+                                <div className="flex gap-2 justify-end">
+                                  <button onClick={() => setEditingPayId(null)}
+                                    className="text-xs text-[var(--warm-mid)] hover:text-[var(--warm-dark)] px-3 py-1.5 rounded-lg border border-[var(--warm-border)] transition-colors">
+                                    취소
+                                  </button>
+                                  <button onClick={handleSaveEdit} disabled={isPending}
+                                    className="text-xs text-white bg-[var(--coral)] hover:bg-[var(--coral-dark)] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                                    저장
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          }
                           return (
                             <div key={p.id}
                               className={`flex items-center justify-between rounded-xl px-3 py-2.5 ${
@@ -789,10 +875,16 @@ export default function RoomsClient({
                                   {p.actualAmount.toLocaleString()}원
                                 </span>
                                 {canEdit && (
-                                  <button onClick={() => handleDeletePayment(p.id)}
-                                    className="text-xs text-red-600 hover:text-red-700 transition-colors">
-                                    ✕
-                                  </button>
+                                  <>
+                                    <button onClick={() => handleUpdatePayment(p)}
+                                      className="text-xs text-[var(--warm-mid)] hover:text-[var(--coral)] transition-colors">
+                                      수정
+                                    </button>
+                                    <button onClick={() => handleDeletePayment(p.id)}
+                                      className="text-xs text-red-600 hover:text-red-700 transition-colors">
+                                      ✕
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </div>
