@@ -45,6 +45,7 @@ type PaymentRecord = {
   payMethod: string | null
   memo: string | null
   isPaid: boolean
+  isDeposit: boolean
 }
 
 // ── 열 설정 ──────────────────────────────────────────────────────
@@ -757,7 +758,7 @@ export default function RoomsClient({
                   {/* 납부 내역 */}
                   {paymentHistory.length > 0 && (() => {
                     const isPreAcq = (p: PaymentRecord) => !!(payAcquisitionDate && new Date(p.payDate) < payAcquisitionDate)
-                    const prevOwnerPaid = paymentHistory.filter(isPreAcq).reduce((s, p) => s + p.actualAmount, 0)
+                    const prevOwnerPaid = paymentHistory.filter(p => !p.isDeposit && isPreAcq(p)).reduce((s, p) => s + p.actualAmount, 0)
                     return (
                       <div className="space-y-2">
                         <p className="text-xs font-medium text-[var(--warm-mid)]">납부 내역</p>
@@ -768,19 +769,23 @@ export default function RoomsClient({
                           </div>
                         )}
                         {paymentHistory.map(p => {
-                          const prevOwner = isPreAcq(p)
+                          const prevOwner = !p.isDeposit && isPreAcq(p)
                           return (
                             <div key={p.id}
-                              className={`flex items-center justify-between rounded-xl px-3 py-2.5 ${prevOwner ? 'bg-amber-50 border border-amber-200' : 'bg-[var(--canvas)]'}`}>
+                              className={`flex items-center justify-between rounded-xl px-3 py-2.5 ${
+                                p.isDeposit ? 'bg-purple-50 border border-purple-200' :
+                                prevOwner ? 'bg-amber-50 border border-amber-200' : 'bg-[var(--canvas)]'
+                              }`}>
                               <div>
-                                <p className={`text-xs ${prevOwner ? 'text-amber-600' : 'text-[var(--warm-mid)]'}`}>
+                                <p className={`text-xs ${p.isDeposit ? 'text-purple-600' : prevOwner ? 'text-amber-600' : 'text-[var(--warm-mid)]'}`}>
                                   {p.seqNo}회차 · {fmtDate(p.payDate)} · {p.payMethod ?? '—'}
+                                  {p.isDeposit && <span className="ml-1.5 text-[10px] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>}
                                   {prevOwner && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">이전 원장</span>}
                                 </p>
-                                {p.memo && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
+                                {p.memo && !p.isDeposit && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className={`text-sm font-semibold ${prevOwner ? 'text-amber-700' : 'text-[var(--warm-dark)]'}`}>
+                                <span className={`text-sm font-semibold ${p.isDeposit ? 'text-purple-700' : prevOwner ? 'text-amber-700' : 'text-[var(--warm-dark)]'}`}>
                                   {p.actualAmount.toLocaleString()}원
                                 </span>
                                 {canEdit && (

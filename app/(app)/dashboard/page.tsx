@@ -85,7 +85,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       select: { id: true, rentAmount: true },
     }),
     prisma.paymentRecord.findMany({
-      where: { propertyId, targetMonth },
+      where: { propertyId, targetMonth, isDeposit: false },
       select: { leaseTermId: true, actualAmount: true },
     }),
     prisma.expense.findMany({
@@ -136,7 +136,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }),
     // 6개월 트렌드
     prisma.paymentRecord.findMany({
-      where: { propertyId, targetMonth: { in: last6Months } },
+      where: { propertyId, targetMonth: { in: last6Months }, isDeposit: false },
       select: { targetMonth: true, actualAmount: true },
     }),
     prisma.expense.findMany({

@@ -351,6 +351,7 @@ model PaymentRecord {
   carryOver      Int      @default(0)
   seqNo          Int      @default(1)
   isPaid         Boolean  @default(false)
+  isDeposit      Boolean  @default(false)
   payDate        DateTime @db.Date
   payMethod      String?
   memo           String?

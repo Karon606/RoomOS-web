@@ -68,7 +68,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     },
   })
 
-  const payments = await prisma.paymentRecord.findMany({ where: { propertyId, targetMonth } })
+  const payments = await prisma.paymentRecord.findMany({ where: { propertyId, targetMonth, isDeposit: false } })
 
   // 공실 방의 직전 입주자 (CHECKED_OUT, moveOutDate 최신순)
   const prevLeases = await prisma.leaseTerm.findMany({
@@ -89,6 +89,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     where: {
       propertyId,
       targetMonth: { gte: acqMonthForQuery, lt: targetMonth },
+      isDeposit: false,
     },
   })
 
@@ -312,6 +313,7 @@ export async function saveDepositPayment(data: {
       memo:           data.memo ?? '보증금',
       seqNo:          existingCount + 1,
       isPaid:         false,
+      isDeposit:      true,
       carryOver:      0,
     },
   })
@@ -346,7 +348,7 @@ async function recalculatePayments(
   expectedAmount: number
 ) {
   const records = await prisma.paymentRecord.findMany({
-    where: { leaseTermId, targetMonth },
+    where: { leaseTermId, targetMonth, isDeposit: false },
     orderBy: { payDate: 'asc' },
   })
 

@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { room: { roomNo: 'asc' } },
     })
-    const payments = await prisma.paymentRecord.findMany({ where: { propertyId, targetMonth } })
+    const payments = await prisma.paymentRecord.findMany({ where: { propertyId, targetMonth, isDeposit: false } })
     paymentSheet = leases.map(l => {
       const ps = payments.filter(p => p.leaseTermId === l.id)
       const totalPaid = ps.reduce((s, x) => s + x.actualAmount, 0)

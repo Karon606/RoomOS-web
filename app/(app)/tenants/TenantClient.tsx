@@ -29,6 +29,7 @@ type PaymentRecord = {
 type PayRecord = {
   id: string; seqNo: number; payDate: Date
   actualAmount: number; payMethod: string | null; memo: string | null; isPaid: boolean
+  isDeposit: boolean
 }
 
 type LeaseTerm = {
@@ -1498,7 +1499,8 @@ export default function TenantClient({
       {payTarget && (() => {
         const { tenant, lease } = payTarget
         const adjRecords = payHistory.filter(p => p.memo?.startsWith('[납입일변경]'))
-        const regularRecords = payHistory.filter(p => !p.memo?.startsWith('[납입일변경]'))
+        const depositRecords = payHistory.filter(p => p.isDeposit)
+        const regularRecords = payHistory.filter(p => !p.memo?.startsWith('[납입일변경]') && !p.isDeposit)
         const isPreAcq = (p: PayRecord) => !!(payAcquisitionDate && new Date(p.payDate) < payAcquisitionDate)
         const prevOwnerPaid = regularRecords.filter(isPreAcq).reduce((s, p) => s + p.actualAmount, 0)
         const regularPaid = regularRecords.reduce((s, p) => s + p.actualAmount, 0) - prevOwnerPaid
@@ -1596,6 +1598,28 @@ export default function TenantClient({
                             </div>
                           )
                         })}
+                      </div>
+                    )}
+
+                    {/* 보증금 수납 내역 */}
+                    {depositRecords.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-[var(--warm-mid)]">보증금 수납 내역</p>
+                        {depositRecords.map(p => (
+                          <div key={p.id} className="flex items-center justify-between rounded-xl px-3 py-2.5 bg-purple-50 border border-purple-200">
+                            <div>
+                              <p className="text-xs text-purple-600">
+                                {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
+                                <span className="ml-1.5 text-[10px] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-purple-700">{p.actualAmount.toLocaleString()}원</span>
+                              <button onClick={() => handleDeletePayRecord(p.id)}
+                                className="text-xs text-red-400 hover:text-red-300 transition-colors">✕</button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
 
