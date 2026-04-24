@@ -25,6 +25,7 @@ type RoomRow = {
   leaseTermId: string | null; depositAmount: number; accumulatedUnpaid: number
   isFutureMonth: boolean; baseRent: number; prevTenantName: string | null; prevContact: string | null
   overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
+  moveInDate: string | null
 }
 
 // 핵심 비즈니스 로직 — GAS의 getRoomPaymentStatus 이관
@@ -110,6 +111,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const acqMm       = acqDate ? acqDate.getMonth() + 1 : 1
     const acqMonthStr = `${acqYyyy}-${String(acqMm).padStart(2, '0')}`
 
+    const moveInDate = lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null
+
     if (targetMonth < acqMonthStr) {
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
@@ -126,6 +129,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDay: l.overrideDueDay ?? null,
         overrideDueDayMonth: l.overrideDueDayMonth ?? null,
         overrideDueDayReason: l.overrideDueDayReason ?? null,
+        moveInDate,
       }
     }
 
@@ -172,6 +176,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDay: l.overrideDueDay ?? null,
         overrideDueDayMonth: l.overrideDueDayMonth ?? null,
         overrideDueDayReason: l.overrideDueDayReason ?? null,
+        moveInDate,
       }
     }
 
@@ -199,6 +204,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       overrideDueDay: l.overrideDueDay ?? null,
       overrideDueDayMonth: l.overrideDueDayMonth ?? null,
       overrideDueDayReason: l.overrideDueDayReason ?? null,
+      moveInDate,
     }
   }
 
@@ -221,6 +227,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         prevTenantName: prev?.tenant.name ?? null,
         prevContact: prev?.tenant.contacts[0]?.contactValue ?? null,
         overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null,
+        moveInDate: null,
       }]
     }
 
@@ -271,6 +278,65 @@ export async function savePayment(data: {
 
   // 완납 여부 재계산
   await recalculatePayments(data.leaseTermId, data.targetMonth, data.expectedAmount)
+}
+
+// 보증금 수납 등록 (초과금은 이용료로 분리 저장)
+export async function saveDepositPayment(data: {
+  leaseTermId: string
+  tenantId:    string
+  targetMonth: string
+  depositAmount: number
+  rentAmount:  number
+  totalPaid:   number
+  payDate:     string
+  payMethod:   string
+  memo?:       string
+}) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+
+  const existingCount = await prisma.paymentRecord.count({
+    where: { leaseTermId: data.leaseTermId, targetMonth: data.targetMonth },
+  })
+
+  await prisma.paymentRecord.create({
+    data: {
+      leaseTermId:    data.leaseTermId,
+      tenantId:       data.tenantId,
+      propertyId,
+      targetMonth:    data.targetMonth,
+      expectedAmount: data.depositAmount,
+      actualAmount:   data.depositAmount,
+      payDate:        new Date(data.payDate),
+      payMethod:      data.payMethod,
+      memo:           data.memo ?? '보증금',
+      seqNo:          existingCount + 1,
+      isPaid:         false,
+      carryOver:      0,
+    },
+  })
+
+  const excess = data.totalPaid - data.depositAmount
+  if (excess > 0) {
+    await prisma.paymentRecord.create({
+      data: {
+        leaseTermId:    data.leaseTermId,
+        tenantId:       data.tenantId,
+        propertyId,
+        targetMonth:    data.targetMonth,
+        expectedAmount: data.rentAmount,
+        actualAmount:   excess,
+        payDate:        new Date(data.payDate),
+        payMethod:      data.payMethod,
+        memo:           null,
+        seqNo:          existingCount + 2,
+        isPaid:         false,
+        carryOver:      0,
+      },
+    })
+  }
+
+  await recalculatePayments(data.leaseTermId, data.targetMonth, data.rentAmount)
 }
 
 // 수납 재계산 — GAS의 recalculatePayments 이관

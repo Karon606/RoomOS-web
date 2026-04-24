@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithGemini, createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests, changeDueDay } from './actions'
-import { savePayment, deletePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
+import { savePayment, saveDepositPayment, deletePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { PhoneInput } from '@/components/ui/PhoneInput'
@@ -315,6 +315,8 @@ export default function TenantClient({
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
   const [showPayForm, setShowPayForm] = useState(false)
   const [payAmount, setPayAmount]   = useState(0)
+  const [payDateVal, setPayDateVal] = useState(new Date().toISOString().slice(0, 10))
+  const [isDepositMode, setIsDepositMode] = useState(false)
   const [showOverrideForm, setShowOverrideForm] = useState(false)
   const [overrideInput, setOverrideInput] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
@@ -495,6 +497,8 @@ export default function TenantClient({
   const openPayModal = async (tenant: Tenant, lease: LeaseTerm) => {
     setPayTarget({ tenant, lease })
     setPayAmount(lease.rentAmount)
+    setPayDateVal(new Date().toISOString().slice(0, 10))
+    setIsDepositMode(false)
     setShowPayForm(false)
     setError('')
     const { records, acquisitionDate } = await getPaymentsByLease(lease.id, targetMonth)
@@ -505,26 +509,42 @@ export default function TenantClient({
   const closePayModal = () => {
     setPayTarget(null); setPayHistory([]); setShowPayForm(false); setError('')
     setShowOverrideForm(false); setOverrideInput(''); setOverrideReason('')
+    setIsDepositMode(false); setPayDateVal(new Date().toISOString().slice(0, 10))
   }
 
   const handleSavePayment = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     if (!payTarget) return
     const fd = new FormData(e.currentTarget)
+    const payMethod = fd.get('payMethod') as string
+    const memo = fd.get('memo') as string
     startTransition(async () => {
       try {
-        await savePayment({
-          leaseTermId:    payTarget.lease.id,
-          tenantId:       payTarget.tenant.id,
-          targetMonth,
-          expectedAmount: payTarget.lease.rentAmount,
-          actualAmount:   Number(String(fd.get('amount')).replace(/[^0-9]/g, '')),
-          payDate:        fd.get('payDate') as string,
-          payMethod:      fd.get('payMethod') as string,
-          memo:           fd.get('memo') as string,
-        })
+        if (isDepositMode) {
+          await saveDepositPayment({
+            leaseTermId:   payTarget.lease.id,
+            tenantId:      payTarget.tenant.id,
+            targetMonth,
+            depositAmount: payTarget.lease.depositAmount,
+            rentAmount:    payTarget.lease.rentAmount,
+            totalPaid:     payAmount,
+            payDate:       payDateVal,
+            payMethod,
+            memo:          memo || undefined,
+          })
+        } else {
+          await savePayment({
+            leaseTermId:    payTarget.lease.id,
+            tenantId:       payTarget.tenant.id,
+            targetMonth,
+            expectedAmount: payTarget.lease.rentAmount,
+            actualAmount:   payAmount,
+            payDate:        payDateVal,
+            payMethod,
+            memo,
+          })
+        }
         setShowPayForm(false)
-        // 내역 새로고침
         const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
         setPayHistory(records as PayRecord[])
         refresh()
@@ -1722,26 +1742,45 @@ export default function TenantClient({
                       <div className="space-y-1">
                         <label className="text-xs text-[var(--warm-muted)]">날짜</label>
                         <input type="date" name="payDate"
-                          defaultValue={new Date().toISOString().slice(0, 10)}
+                          value={payDateVal}
+                          onChange={e => setPayDateVal(e.target.value)}
                           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs text-[var(--warm-muted)]">금액</label>
                         <MoneyInput name="amount" value={payAmount} onChange={setPayAmount} placeholder="0원" />
-                        <div className="flex gap-1 mt-1">
-                          <button type="button" onClick={() => setPayAmount(lease.rentAmount)}
-                            className="flex-1 py-1 text-xs bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg text-[var(--warm-mid)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors truncate px-1">
-                            이용료 {lease.rentAmount.toLocaleString()}
-                          </button>
-                          {lease.depositAmount > 0 && (
-                            <button type="button" onClick={() => setPayAmount(lease.depositAmount)}
-                              className="flex-1 py-1 text-xs bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg text-[var(--warm-mid)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors truncate px-1">
-                              보증금 {lease.depositAmount.toLocaleString()}
-                            </button>
-                          )}
-                        </div>
                       </div>
                     </div>
+                    {lease.depositAmount > 0 && (
+                      <div className="space-y-1">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isDepositMode}
+                            onChange={e => {
+                              const checked = e.target.checked
+                              setIsDepositMode(checked)
+                              if (checked) {
+                                setPayAmount(lease.depositAmount)
+                                const mi = lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null
+                                setPayDateVal(mi ?? new Date().toISOString().slice(0, 10))
+                              } else {
+                                setPayDateVal(new Date().toISOString().slice(0, 10))
+                              }
+                            }}
+                            className="w-4 h-4 accent-[var(--coral)]"
+                          />
+                          <span className="text-xs text-[var(--warm-mid)]">
+                            보증금 수납 ({lease.depositAmount.toLocaleString()}원)
+                          </span>
+                        </label>
+                        {isDepositMode && payAmount > lease.depositAmount && (
+                          <p className="text-xs text-emerald-600">
+                            초과금 {(payAmount - lease.depositAmount).toLocaleString()}원 → {targetMonth} 이용료 처리
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <div className="space-y-1">
                       <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
                       <select name="payMethod"

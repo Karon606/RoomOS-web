@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
-import { savePayment, deletePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from './actions'
+import { savePayment, saveDepositPayment, deletePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from './actions'
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -34,6 +34,7 @@ type RoomStatus = {
   overrideDueDay: string | null
   overrideDueDayMonth: string | null
   overrideDueDayReason: string | null
+  moveInDate: string | null
 }
 
 type PaymentRecord = {
@@ -179,6 +180,8 @@ export default function RoomsClient({
   const [overrideInput, setOverrideInput] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
   const [payAmount, setPayAmount] = useState(0)
+  const [payDateVal, setPayDateVal] = useState(new Date().toISOString().slice(0, 10))
+  const [isDepositMode, setIsDepositMode] = useState(false)
   const colMenuRef       = useRef<HTMLDivElement>(null)
   const vacantColMenuRef = useRef<HTMLDivElement>(null)
   const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_WIDTHS)
@@ -290,6 +293,8 @@ export default function RoomsClient({
   const openPayModal = async (room: RoomStatus) => {
     setSelectedRoom(room)
     setPayAmount(room.expected)
+    setPayDateVal(new Date().toISOString().slice(0, 10))
+    setIsDepositMode(false)
     setError('')
     setShowPayForm(false)
     setShowOverrideForm(false)
@@ -308,18 +313,34 @@ export default function RoomsClient({
     if (!selectedRoom?.leaseTermId) return
     setError('')
     const fd = new FormData(e.currentTarget)
+    const payMethod = fd.get('payMethod') as string
+    const memo = fd.get('memo') as string
     startTransition(async () => {
       try {
-        await savePayment({
-          leaseTermId:    selectedRoom.leaseTermId!,
-          tenantId:       selectedRoom.tenantId!,
-          targetMonth,
-          expectedAmount: selectedRoom.expected,
-          actualAmount:   Number(String(fd.get('amount')).replace(/[^0-9]/g, '')),
-          payDate:        fd.get('payDate') as string,
-          payMethod:      fd.get('payMethod') as string,
-          memo:           fd.get('memo') as string,
-        })
+        if (isDepositMode) {
+          await saveDepositPayment({
+            leaseTermId:   selectedRoom.leaseTermId!,
+            tenantId:      selectedRoom.tenantId!,
+            targetMonth,
+            depositAmount: selectedRoom.depositAmount,
+            rentAmount:    selectedRoom.expected,
+            totalPaid:     payAmount,
+            payDate:       payDateVal,
+            payMethod,
+            memo:          memo || undefined,
+          })
+        } else {
+          await savePayment({
+            leaseTermId:    selectedRoom.leaseTermId!,
+            tenantId:       selectedRoom.tenantId!,
+            targetMonth,
+            expectedAmount: selectedRoom.expected,
+            actualAmount:   payAmount,
+            payDate:        payDateVal,
+            payMethod,
+            memo,
+          })
+        }
         setShowPayForm(false)
         setShowPayModal(false)
         router.refresh()
@@ -874,26 +895,44 @@ export default function RoomsClient({
                     <div className="space-y-1">
                       <label className="text-xs text-[var(--warm-muted)]">날짜</label>
                       <input type="date" name="payDate"
-                        defaultValue={new Date().toISOString().slice(0, 10)}
+                        value={payDateVal}
+                        onChange={e => setPayDateVal(e.target.value)}
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs text-[var(--warm-muted)]">금액</label>
                       <MoneyInput name="amount" value={payAmount} onChange={setPayAmount} placeholder="0원" />
-                      <div className="flex gap-1 mt-1">
-                        <button type="button" onClick={() => setPayAmount(selectedRoom.expected)}
-                          className="flex-1 py-1 text-xs bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg text-[var(--warm-mid)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors truncate px-1">
-                          이용료 {selectedRoom.expected.toLocaleString()}
-                        </button>
-                        {selectedRoom.depositAmount > 0 && (
-                          <button type="button" onClick={() => setPayAmount(selectedRoom.depositAmount)}
-                            className="flex-1 py-1 text-xs bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg text-[var(--warm-mid)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors truncate px-1">
-                            보증금 {selectedRoom.depositAmount.toLocaleString()}
-                          </button>
-                        )}
-                      </div>
                     </div>
                   </div>
+                  {selectedRoom.depositAmount > 0 && (
+                    <div className="space-y-1">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isDepositMode}
+                          onChange={e => {
+                            const checked = e.target.checked
+                            setIsDepositMode(checked)
+                            if (checked) {
+                              setPayAmount(selectedRoom.depositAmount)
+                              setPayDateVal(selectedRoom.moveInDate ?? new Date().toISOString().slice(0, 10))
+                            } else {
+                              setPayDateVal(new Date().toISOString().slice(0, 10))
+                            }
+                          }}
+                          className="w-4 h-4 accent-[var(--coral)]"
+                        />
+                        <span className="text-xs text-[var(--warm-mid)]">
+                          보증금 수납 ({selectedRoom.depositAmount.toLocaleString()}원)
+                        </span>
+                      </label>
+                      {isDepositMode && payAmount > selectedRoom.depositAmount && (
+                        <p className="text-xs text-emerald-600">
+                          초과금 {(payAmount - selectedRoom.depositAmount).toLocaleString()}원 → {targetMonth} 이용료 처리
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <div className="space-y-1">
                     <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
                     <select name="payMethod"
