@@ -844,7 +844,7 @@ export default function TenantClient({
                 return (
                   <tr key={tenant.id}
                     onClick={() => { setDetailTenant(tenant); setDetailTab('info') }}
-                    className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer"
+                    className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:opacity-80 transition-colors cursor-pointer"
                   >
                     {/* sticky — 호실 (클릭 시 호실 관리 페이지로) */}
                     <td className="sticky left-0 z-20 bg-[var(--cream)] px-4 py-3 text-sm font-semibold overflow-hidden"

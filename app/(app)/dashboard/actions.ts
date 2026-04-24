@@ -26,12 +26,13 @@ function addMonths(m: string, delta: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-async function fetchRangeData(propertyId: string, startDate: Date, endDate: Date, months?: string[]) {
+async function fetchRangeData(propertyId: string, startDate: Date, endDate: Date, months?: string[], acquisitionDate?: Date | null) {
+  const acqFilter = acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}
   return Promise.all([
     prisma.paymentRecord.findMany({
       where: months
-        ? { propertyId, targetMonth: { in: months }, isDeposit: false }
-        : { propertyId, payDate: { gte: startDate, lte: endDate }, isDeposit: false },
+        ? { propertyId, targetMonth: { in: months }, isDeposit: false, ...acqFilter }
+        : { propertyId, payDate: { gte: acquisitionDate && acquisitionDate > startDate ? acquisitionDate : startDate, lte: endDate }, isDeposit: false },
       select: { targetMonth: true, payDate: true, actualAmount: true },
     }),
     prisma.expense.findMany({
@@ -49,13 +50,16 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
   const propertyId = await getTrendPropertyId()
   if (!propertyId) return []
 
+  const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { acquisitionDate: true } })
+  const acquisitionDate = prop?.acquisitionDate ? new Date(prop.acquisitionDate) : null
+
   const [tyear, tmonth] = targetMonth.split('-').map(Number)
 
   // ── 일간: targetMonth의 날짜별 ───────────────────────────────
   if (range === 'daily') {
     const startDate = new Date(tyear, tmonth - 1, 1)
     const endDate   = new Date(tyear, tmonth, 0)
-    const [payments, expenses, incomes] = await fetchRangeData(propertyId, startDate, endDate)
+    const [payments, expenses, incomes] = await fetchRangeData(propertyId, startDate, endDate, undefined, acquisitionDate)
 
     return Array.from({ length: endDate.getDate() }, (_, i) => {
       const dayStr = ds(new Date(tyear, tmonth - 1, i + 1))
@@ -79,7 +83,7 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
       return { start, end }
     })
 
-    const [payments, expenses, incomes] = await fetchRangeData(propertyId, weeks[0].start, weeks[11].end)
+    const [payments, expenses, incomes] = await fetchRangeData(propertyId, weeks[0].start, weeks[11].end, undefined, acquisitionDate)
     return weeks.map(w => {
       const inW = (d: Date) => d >= w.start && d <= w.end
       const revenue =
@@ -98,7 +102,7 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
     const [fy, fm] = months[0].split('-').map(Number)
     const [ly, lm] = months[months.length - 1].split('-').map(Number)
     const [payments, expenses, incomes] = await fetchRangeData(
-      propertyId, new Date(fy, fm - 1, 1), new Date(ly, lm, 0), months
+      propertyId, new Date(fy, fm - 1, 1), new Date(ly, lm, 0), months, acquisitionDate
     )
     return months.map(m => {
       const [y, mo] = m.split('-').map(Number)
@@ -129,7 +133,7 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
     const [fy, fm] = quarters[0].months[0].split('-').map(Number)
     const [ly, lm] = quarters[7].months[2].split('-').map(Number)
     const [payments, expenses, incomes] = await fetchRangeData(
-      propertyId, new Date(fy, fm - 1, 1), new Date(ly, lm, 0), allMonths
+      propertyId, new Date(fy, fm - 1, 1), new Date(ly, lm, 0), allMonths, acquisitionDate
     )
     return quarters.map(({ year, q, months }) => {
       const [fy2, fm2] = months[0].split('-').map(Number)
@@ -147,7 +151,7 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
   // ── 연간: 연도별 전체 ────────────────────────────────────────
   if (range === 'annual') {
     const [payments, expenses, incomes] = await Promise.all([
-      prisma.paymentRecord.findMany({ where: { propertyId, isDeposit: false }, select: { targetMonth: true, actualAmount: true } }),
+      prisma.paymentRecord.findMany({ where: { propertyId, isDeposit: false, ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}) }, select: { targetMonth: true, actualAmount: true } }),
       prisma.expense.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
       prisma.extraIncome.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
     ])
@@ -167,7 +171,7 @@ export async function getTrendData(range: TrendRange, targetMonth: string): Prom
   // ── 전체: 모든 월 ────────────────────────────────────────────
   if (range === 'all') {
     const [payments, expenses, incomes] = await Promise.all([
-      prisma.paymentRecord.findMany({ where: { propertyId, isDeposit: false }, select: { targetMonth: true, actualAmount: true } }),
+      prisma.paymentRecord.findMany({ where: { propertyId, isDeposit: false, ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}) }, select: { targetMonth: true, actualAmount: true } }),
       prisma.expense.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
       prisma.extraIncome.findMany({ where: { propertyId }, select: { date: true, amount: true } }),
     ])

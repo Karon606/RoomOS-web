@@ -45,6 +45,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const startDate = new Date(year, month - 1, 1)
   const endDate   = new Date(year, month, 0)
 
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { acquisitionDate: true },
+  })
+  const acquisitionDate = property?.acquisitionDate ? new Date(property.acquisitionDate) : null
+
   const last6Months = getLast6Months(targetMonth)
   const [tyear, tmonth] = last6Months[0].split('-').map(Number)
   const trendStartDate  = new Date(tyear, tmonth - 1, 1)
@@ -85,7 +91,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       select: { id: true, rentAmount: true },
     }),
     prisma.paymentRecord.findMany({
-      where: { propertyId, targetMonth, isDeposit: false },
+      where: {
+        propertyId, targetMonth, isDeposit: false,
+        ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}),
+      },
       select: { leaseTermId: true, actualAmount: true },
     }),
     prisma.expense.findMany({
@@ -136,7 +145,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }),
     // 6개월 트렌드
     prisma.paymentRecord.findMany({
-      where: { propertyId, targetMonth: { in: last6Months }, isDeposit: false },
+      where: {
+        propertyId,
+        targetMonth: { in: last6Months },
+        isDeposit: false,
+        ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}),
+      },
       select: { targetMonth: true, actualAmount: true },
     }),
     prisma.expense.findMany({

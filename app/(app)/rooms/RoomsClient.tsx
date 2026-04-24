@@ -528,7 +528,7 @@ export default function RoomsClient({
                 <tr key={room.roomId}
                   onClick={() => !room.isFutureMonth && openPayModal(room)}
                   className={`border-b border-[var(--warm-border)]/50 transition-colors
-                    ${room.isFutureMonth ? 'opacity-50' : 'cursor-pointer hover:bg-[var(--canvas)]/40'}`}>
+                    ${room.isFutureMonth ? 'opacity-50' : 'cursor-pointer hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:scale-[0.995] active:opacity-80'}`}>
 
                   {/* sticky — 호실 */}
                   <td className="px-4 py-4 text-sm font-bold text-[var(--coral)] overflow-hidden sticky left-0 z-20 bg-[var(--cream)]"

@@ -792,7 +792,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
               {/* 월별 수납 현황 + 최근 납입 완료 */}
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3.5">
 
-                <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+                <div className="order-2 lg:order-1 rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
                   <div className="flex items-center justify-between mb-3">
                     <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>월별 수납 현황</h3>
                     <Link href={`/finance?month=${targetMonth}`} style={{ fontSize: 11, color: 'var(--coral)' }}>리포트 →</Link>
@@ -817,7 +817,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
                   </div>
                 </div>
 
-                <div className="rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', minHeight: 160 }}>
+                <div className="order-1 lg:order-2 rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', minHeight: 160 }}>
                   <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
                     <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>납입 완료</h3>
                     <Link href={`/rooms?month=${targetMonth}`} style={{ fontSize: 11, color: 'var(--coral)' }}>전체 →</Link>
