@@ -875,16 +875,17 @@ export default function RoomsClient({
                                   {p.actualAmount.toLocaleString()}원
                                 </span>
                                 {canEdit && (
-                                  <>
+                                  <div className="flex gap-1.5 ml-1">
                                     <button onClick={() => handleUpdatePayment(p)}
-                                      className="text-xs text-[var(--warm-mid)] hover:text-[var(--coral)] transition-colors">
+                                      className="text-[10px] font-medium px-2 py-1 rounded-lg border transition-colors"
+                                      style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
                                       수정
                                     </button>
                                     <button onClick={() => handleDeletePayment(p.id)}
-                                      className="text-xs text-red-600 hover:text-red-700 transition-colors">
-                                      ✕
+                                      className="text-[10px] font-medium px-2 py-1 rounded-lg border border-red-200 text-red-500 transition-colors">
+                                      삭제
                                     </button>
-                                  </>
+                                  </div>
                                 )}
                               </div>
                             </div>

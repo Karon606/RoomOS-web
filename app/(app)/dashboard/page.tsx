@@ -204,6 +204,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         areaPyeong: true,
         areaM2: true,
         baseRent: true,
+        scheduledRent: true,
+        rentUpdateDate: true,
         leaseTerms: {
           where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
           select: { tenant: { select: { name: true } }, status: true },
@@ -222,7 +224,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         targetMonth: true,
         createdAt: true,
         actualAmount: true,
-        tenant: { select: { name: true } },
+        tenant: { select: { id: true, name: true } },
         leaseTerm: { select: { room: { select: { roomNo: true } } } },
       },
       orderBy: { createdAt: 'desc' },
@@ -362,16 +364,18 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   // ── 방 현황 그리드 ───────────────────────────────────────────
   const roomsData = roomsWithTenants.map(r => ({
-    roomNo:     r.roomNo,
-    isVacant:   r.isVacant,
-    type:       r.type,
-    windowType: r.windowType as string | null,
-    direction:  r.direction as string | null,
-    areaPyeong: r.areaPyeong,
-    areaM2:     r.areaM2,
-    baseRent:   r.baseRent,
-    tenantName: r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.tenant.name ?? null,
-    tenantStatus: r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.status ?? null,
+    roomNo:        r.roomNo,
+    isVacant:      r.isVacant,
+    type:          r.type,
+    windowType:    r.windowType as string | null,
+    direction:     r.direction as string | null,
+    areaPyeong:    r.areaPyeong,
+    areaM2:        r.areaM2,
+    baseRent:      r.baseRent,
+    scheduledRent: r.scheduledRent,
+    rentUpdateDate: r.rentUpdateDate ? new Date(r.rentUpdateDate).toISOString().slice(0, 10) : null,
+    tenantName:    r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.tenant.name ?? null,
+    tenantStatus:  r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.status ?? null,
   }))
 
   // ── 미수납 상세 ──────────────────────────────────────────────
@@ -448,10 +452,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   // ── 최근 납입 완료 ────────────────────────────────────────────
   const activityItems: DashboardData['activity'] = recentPaymentsRaw.map(p => ({
-    text:      `${p.tenant.name}님 ${p.leaseTerm.room?.roomNo ?? '?'}호 납입 완료`,
-    timeLabel: relativeTime(p.createdAt),
-    dotColor:  '#22c55e',
-    link:      `/rooms?month=${p.targetMonth}`,
+    text:       `${p.tenant.name}님 ${p.leaseTerm.room?.roomNo ?? '?'}호 납입 완료`,
+    timeLabel:  relativeTime(p.createdAt),
+    dotColor:   '#22c55e',
+    link:       `/tenants?tenantId=${p.tenant.id}&tab=info`,
+    tenantId:   p.tenant.id,
+    tenantName: p.tenant.name,
+    roomNo:     p.leaseTerm.room?.roomNo ?? '?',
+    amount:     p.actualAmount,
   }))
 
   const dashboardData: DashboardData = {

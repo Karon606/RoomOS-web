@@ -27,9 +27,9 @@ export type DashboardData = {
   genderDist:        { label: string; count: number; percent: number }[]
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
-  rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number }[]
+  rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
   alerts:            { text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string }[]
-  activity:          { text: string; timeLabel: string; dotColor: string; link: string }[]
+  activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
   unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; unpaidAmount: number }[]
 }
 
@@ -545,9 +545,25 @@ function RoomDetailPopup({ room, onClose }: { room: DashboardData['rooms'][numbe
             </div>
           )}
           <div className="flex justify-between border-t border-[var(--warm-border)] pt-2 mt-1">
-            <span className="text-[var(--warm-muted)]">기본이용료</span>
+            <span className="text-[var(--warm-muted)]">기본 이용료</span>
             <span className="font-semibold text-[var(--warm-dark)]">{room.baseRent.toLocaleString()}원</span>
           </div>
+          {room.scheduledRent && (
+            <div className="flex justify-between">
+              <span className="text-[var(--warm-muted)]">예약 이용료</span>
+              <span className="font-semibold" style={{ color: 'var(--coral)' }}>
+                {room.scheduledRent.toLocaleString()}원
+                {room.rentUpdateDate && <span className="text-[10px] font-normal ml-1 opacity-70">({room.rentUpdateDate} 적용)</span>}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="px-5 pb-4">
+          <Link href={`/room-manage`}
+            className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-colors"
+            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+            호실 관리에서 보기 →
+          </Link>
         </div>
       </div>
     </div>
@@ -818,28 +834,48 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
                 </div>
 
                 <div className="order-1 lg:order-2 rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', minHeight: 160 }}>
-                  <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
-                    <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>납입 완료</h3>
-                    <Link href={`/rooms?month=${targetMonth}`} style={{ fontSize: 11, color: 'var(--coral)' }}>전체 →</Link>
+                  <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b shrink-0" style={{ borderColor: 'var(--warm-border)' }}>
+                    <div className="flex items-center gap-2">
+                      <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>납입 완료</h3>
+                      <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>최근 30일</span>
+                    </div>
+                    {data.activity.length > 0 && (
+                      <span className="rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
+                        {data.activity.length}건
+                      </span>
+                    )}
                   </div>
-                  <div className="flex-1 overflow-y-auto px-5">
-                    {data.activity.length === 0 ? (
-                      <p className="text-sm text-center py-6" style={{ color: 'var(--warm-muted)' }}>최근 납입 내역 없음</p>
-                    ) : (
-                      data.activity.map((item, i) => (
+                  {data.activity.length === 0 ? (
+                    <p className="text-sm text-center py-8" style={{ color: 'var(--warm-muted)' }}>최근 납입 내역 없음</p>
+                  ) : (
+                    <div className="divide-y" style={{ borderColor: 'var(--warm-border)' }}>
+                      {data.activity.map((item, i) => (
                         <Link
                           key={i}
                           href={item.link}
-                          className="flex items-start gap-2.5 py-[10px] hover:opacity-70 transition-opacity"
-                          style={{ borderBottom: i < data.activity.length - 1 ? '1px solid var(--warm-border)' : 'none' }}
+                          className="flex items-center gap-3 px-5 py-3 hover:opacity-70 transition-opacity active:opacity-50"
                         >
-                          <span className="w-[7px] h-[7px] rounded-full shrink-0 mt-1" style={{ background: item.dotColor }} />
-                          <span className="flex-1 leading-snug" style={{ fontSize: 12, color: 'var(--warm-mid)' }}>{item.text}</span>
-                          <span className="whitespace-nowrap shrink-0" style={{ fontSize: 10, color: 'var(--warm-muted)', fontFamily: 'monospace' }}>{item.timeLabel}</span>
+                          <div
+                            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
+                            style={{ background: 'rgba(34,197,94,0.12)', fontSize: 11, color: '#16a34a' }}
+                          >
+                            {item.tenantName.slice(0, 1)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>
+                              {item.roomNo}호 {item.tenantName}
+                            </p>
+                            <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+                              {item.timeLabel}
+                            </p>
+                          </div>
+                          <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
+                            {Math.round(item.amount / 10000)}만원
+                          </span>
                         </Link>
-                      ))
-                    )}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </>

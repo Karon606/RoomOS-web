@@ -1626,7 +1626,7 @@ export default function TenantClient({
                                   {isExtra ? '-' : '+'}{absAmt.toLocaleString()}원
                                 </span>
                                 <button onClick={() => handleDeletePayRecord(p.id)}
-                                  className="text-xs text-red-400 hover:text-red-300 transition-colors">✕</button>
+                                  className="text-[10px] font-medium px-2 py-1 rounded-lg border border-red-200 text-red-500 transition-colors">삭제</button>
                               </div>
                             </div>
                           )
@@ -1681,10 +1681,16 @@ export default function TenantClient({
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-semibold text-purple-700">{p.actualAmount.toLocaleString()}원</span>
-                                <button onClick={() => handleUpdatePayRecord(p)}
-                                  className="text-xs text-purple-400 hover:text-purple-600 transition-colors">수정</button>
-                                <button onClick={() => handleDeletePayRecord(p.id)}
-                                  className="text-xs text-red-400 hover:text-red-300 transition-colors">✕</button>
+                                <div className="flex gap-1.5 ml-1">
+                                  <button onClick={() => handleUpdatePayRecord(p)}
+                                    className="text-[10px] font-medium px-2 py-1 rounded-lg border border-purple-200 text-purple-500 transition-colors">
+                                    수정
+                                  </button>
+                                  <button onClick={() => handleDeletePayRecord(p.id)}
+                                    className="text-[10px] font-medium px-2 py-1 rounded-lg border border-red-200 text-red-500 transition-colors">
+                                    삭제
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           )
@@ -1748,10 +1754,17 @@ export default function TenantClient({
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className={`text-sm font-semibold ${prevOwner ? 'text-amber-700' : 'text-[var(--warm-dark)]'}`}>{p.actualAmount.toLocaleString()}원</span>
-                                <button onClick={() => handleUpdatePayRecord(p)}
-                                  className="text-xs text-[var(--warm-mid)] hover:text-[var(--coral)] transition-colors">수정</button>
-                                <button onClick={() => handleDeletePayRecord(p.id)}
-                                  className="text-xs text-red-400 hover:text-red-300 transition-colors">✕</button>
+                                <div className="flex gap-1.5 ml-1">
+                                  <button onClick={() => handleUpdatePayRecord(p)}
+                                    className="text-[10px] font-medium px-2 py-1 rounded-lg border transition-colors"
+                                    style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+                                    수정
+                                  </button>
+                                  <button onClick={() => handleDeletePayRecord(p.id)}
+                                    className="text-[10px] font-medium px-2 py-1 rounded-lg border border-red-200 text-red-500 transition-colors">
+                                    삭제
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           )
