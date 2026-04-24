@@ -428,9 +428,21 @@ export default function TenantClient({
     else { setSortKey(key); setSortDir('asc') }
   }
 
+  // ── 새로고침 상태 ────────────────────────────────────────────────
+  // router.refresh()는 void를 반환해서 isPending으로 추적 불가.
+  // initialTenants prop이 교체될 때(= 서버 재요청 완료)를 감지해서 클리어.
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  useEffect(() => {
+    if (isRefreshing) setIsRefreshing(false)
+  }, [initialTenants]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── 액션 핸들러 ─────────────────────────────────────────────────
 
-  const refresh = () => router.refresh()
+  const refresh = useCallback(() => {
+    setIsRefreshing(true)
+    router.refresh()
+  }, [router])
 
   const handleAdd = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
@@ -740,7 +752,19 @@ export default function TenantClient({
           </p>
         </div>
       ) : (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100dvh-310px)]">
+        <div className="relative bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100dvh-310px)]">
+          {/* 저장 후 서버 재요청 완료 전 클릭 차단 오버레이 */}
+          {(isPending || isRefreshing) && (
+            <div className="absolute inset-0 z-40 rounded-2xl bg-[var(--cream)]/60 backdrop-blur-[1px] flex items-center justify-center">
+              <div className="flex items-center gap-2 text-xs text-[var(--warm-muted)]">
+                <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+                업데이트 중...
+              </div>
+            </div>
+          )}
           <table className="w-full" style={{ tableLayout: 'fixed', minWidth: colWidths.roomNo + colWidths.name + visibleCols.reduce((s, c) => s + (colWidths[c.key] ?? 100), 0) }}>
             <thead className="sticky top-0 z-30 bg-[var(--cream)]">
               <tr className="border-b border-[var(--warm-border)]">
