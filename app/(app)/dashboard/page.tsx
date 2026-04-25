@@ -125,7 +125,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         moveInDate: { gte: alertFrom, lte: alertTo },
       },
       include: {
-        tenant: { select: { name: true } },
+        tenant: { select: { name: true, id: true } },
         room:   { select: { roomNo: true } },
       },
       orderBy: { moveInDate: 'asc' },
@@ -140,7 +140,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         ],
       },
       include: {
-        tenant: { select: { name: true } },
+        tenant: { select: { name: true, id: true } },
         room:   { select: { roomNo: true } },
       },
       orderBy: { expectedMoveOut: { sort: 'asc', nulls: 'last' } },
@@ -188,7 +188,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         wishRooms: { not: null },
       },
       include: {
-        tenant: { select: { name: true } },
+        tenant: { select: { name: true, id: true } },
         room:   { select: { roomNo: true } },
       },
     }),
@@ -259,7 +259,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     prisma.leaseTerm.findMany({
       where: { propertyId, status: 'WAITING_TOUR' },
       include: {
-        tenant: { select: { name: true } },
+        tenant: { select: { name: true, id: true } },
         room:   { select: { roomNo: true } },
       },
       orderBy: { tourDate: { sort: 'asc', nulls: 'last' } },
@@ -342,6 +342,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       .filter(no => vacantRoomNos.has(no))
       .map(no => ({
         tenantName: l.tenant.name,
+        tenantId:   l.tenant.id,
         roomNo:     no,
       }))
   })
@@ -424,13 +425,21 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // ── 알림 ────────────────────────────────────────────────────
   const alertItems: DashboardData['alerts'] = []
 
+  const fmtKorDate = (d: Date | string | null | undefined): string | undefined => {
+    if (!d) return undefined
+    const dt = new Date(d)
+    return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일`
+  }
+
   for (const l of moveInLeases) {
     const days = daysUntil(l.moveInDate!)
     alertItems.push({
       text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}입실 예정`,
-      link:      '/tenants',
+      link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  '#3b82f6',
       timeLabel: dayLabel(days),
+      tenantId:  l.tenant.id,
+      detail:    fmtKorDate(l.moveInDate) ? `입실 예정일: ${fmtKorDate(l.moveInDate)}` : undefined,
     })
   }
 
@@ -438,9 +447,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const timeLabel = l.expectedMoveOut ? dayLabel(daysUntil(l.expectedMoveOut)) : '날짜 미정'
     alertItems.push({
       text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}퇴실 예정`,
-      link:      '/tenants',
+      link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  '#eab308',
       timeLabel,
+      tenantId:  l.tenant.id,
+      detail:    l.expectedMoveOut ? `퇴실 예정일: ${fmtKorDate(l.expectedMoveOut)}` : '퇴실 날짜 미정',
     })
   }
 
@@ -448,18 +459,22 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const timeLabel = l.tourDate ? dayLabel(daysUntil(l.tourDate)) : '일정 미정'
     alertItems.push({
       text:      `${l.tenant.name}님${l.room?.roomNo ? ` ${l.room.roomNo}호` : ''} 투어 예정`,
-      link:      '/tenants',
+      link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  '#a855f7',
       timeLabel,
+      tenantId:  l.tenant.id,
+      detail:    l.tourDate ? `투어 예정일: ${fmtKorDate(l.tourDate)}` : '투어 일정 미정',
     })
   }
 
   for (const a of wishRoomAlerts) {
     alertItems.push({
       text:      `${a.tenantName}님 희망 ${a.roomNo}호 공실`,
-      link:      '/tenants',
-      dotColor:  '#a855f7',
+      link:      `/tenants?tenantId=${a.tenantId}`,
+      dotColor:  '#22c55e',
       timeLabel: '지금',
+      tenantId:  a.tenantId,
+      detail:    `${a.tenantName}님이 희망하던 ${a.roomNo}호가 공실 전환되었습니다.`,
     })
   }
 
@@ -473,6 +488,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       dotColor:  '#f4623a',
       timeLabel: daysLeft != null ? (daysLeft <= 0 ? '처리 필요' : `D-${daysLeft}`) : '미처리',
       tenantId:  r.tenantId,
+      detail:    r.content + (r.targetDate ? `\n처리 기한: ${fmtKorDate(r.targetDate)}` : ''),
     })
   }
 

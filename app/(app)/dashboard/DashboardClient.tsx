@@ -29,7 +29,7 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
-  alerts:            { text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string }[]
+  alerts:            { text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string }[]
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
   unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; unpaidAmount: number }[]
 }
@@ -89,11 +89,72 @@ function daysLabel(daysOverdue: number | null): { text: string; color: string } 
   return { text: `D${daysOverdue}`, color: '#eab308' }  // e.g. D-5
 }
 
+// ── 알림 상세 팝업 ───────────────────────────────────────────────
+
+type AlertItem = DashboardData['alerts'][number]
+
+function AlertDetailModal({ alert, onClose, onOpenPayment }: {
+  alert: AlertItem
+  onClose: () => void
+  onOpenPayment: (id: string) => void
+}) {
+  const initial = alert.text.slice(0, 1)
+  const avatarBg = hexToRgba(alert.dotColor, 0.15)
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+        {/* 헤더 */}
+        <div className="flex items-start justify-between px-5 py-4 border-b" style={{ borderColor: DIVIDER_COLOR }}>
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold"
+              style={{ background: avatarBg, fontSize: 14, color: alert.dotColor }}>
+              {initial}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold leading-snug" style={{ color: '#5a4a3a' }}>{alert.text}</p>
+              <span className="inline-block mt-1.5 text-[10px] font-semibold rounded-full px-2 py-0.5"
+                style={{ background: hexToRgba(alert.dotColor, 0.12), color: alert.dotColor }}>
+                {alert.timeLabel}
+              </span>
+            </div>
+          </div>
+          <button onClick={onClose} className="ml-3 shrink-0 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+        </div>
+
+        {/* 상세 내용 */}
+        {alert.detail && (
+          <div className="px-5 py-4">
+            <p className="text-sm whitespace-pre-line leading-relaxed" style={{ color: 'var(--warm-dark)' }}>{alert.detail}</p>
+          </div>
+        )}
+
+        {/* 하단 버튼 */}
+        <div className="px-5 pb-5 pt-2 space-y-2">
+          {alert.tenantId && (
+            <button
+              onClick={() => { onOpenPayment(alert.tenantId!); onClose() }}
+              className="w-full py-2.5 rounded-xl text-sm font-medium transition-opacity hover:opacity-80"
+              style={{ background: 'var(--coral)', color: 'white' }}>
+              수납 관리 보기
+            </button>
+          )}
+          <Link href={alert.link} onClick={onClose}
+            className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-opacity hover:opacity-70"
+            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+            입주자 관리에서 보기 →
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── 알림 스트립 (항상 표시) ──────────────────────────────────────
 
-function AlertsStrip({ alerts, onOpenTenant }: {
+function AlertsStrip({ alerts, onOpenAlert }: {
   alerts: DashboardData['alerts']
-  onOpenTenant: (id: string) => void
+  onOpenAlert: (alert: AlertItem) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   if (alerts.length === 0) return null
@@ -110,37 +171,26 @@ function AlertsStrip({ alerts, onOpenTenant }: {
         </span>
       </div>
       <div>
-        {visible.map((item, i) => {
-          const initial = item.text.slice(0, 1)
-          const avatarBg = hexToRgba(item.dotColor, 0.12)
-          const row = (
-            <div className="flex items-center gap-3 px-5 py-3">
-              <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
-                style={{ background: avatarBg, fontSize: 11, color: item.dotColor }}>
-                {initial}
+        {visible.map((item, i) => (
+          <div key={i} style={{ borderBottom: i < visible.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
+            <button
+              className="w-full text-left hover:opacity-70 active:opacity-50 transition-opacity"
+              onClick={() => onOpenAlert(item)}
+            >
+              <div className="flex items-center gap-3 px-5 py-3">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
+                  style={{ background: hexToRgba(item.dotColor, 0.12), fontSize: 11, color: item.dotColor }}>
+                  {item.text.slice(0, 1)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>{item.text}</p>
+                  <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</p>
+                </div>
+                <span style={{ color: 'var(--warm-muted)', fontSize: 14 }}>›</span>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>{item.text}</p>
-                <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</p>
-              </div>
-              <span style={{ color: 'var(--warm-muted)', fontSize: 14 }}>›</span>
-            </div>
-          )
-          return (
-            <div key={i} style={{ borderBottom: i < visible.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
-              {item.tenantId ? (
-                <button className="w-full text-left hover:opacity-70 active:opacity-50 transition-opacity"
-                  onClick={() => onOpenTenant(item.tenantId!)}>
-                  {row}
-                </button>
-              ) : (
-                <Link href={item.link} className="block hover:opacity-70 active:opacity-50 transition-opacity">
-                  {row}
-                </Link>
-              )}
-            </div>
-          )
-        })}
+            </button>
+          </div>
+        ))}
       </div>
       {alerts.length > ALERTS_LIMIT && (
         <button
@@ -1013,6 +1063,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
   const [tab, setTab]                             = useState<Tab>('overview')
   const [selectedRoom, setSelectedRoom]           = useState<DashboardData['rooms'][number] | null>(null)
   const [dashTenantId, setDashTenantId]           = useState<string | null>(null)
+  const [selectedAlert, setSelectedAlert]         = useState<AlertItem | null>(null)
   const [unpaidExpanded, setUnpaidExpanded]       = useState(false)
   const [activityExpanded, setActivityExpanded]   = useState(false)
 
@@ -1101,7 +1152,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
       </div>
 
       {/* ── 알림 스트립 (항상 표시) ─────────────────────────────── */}
-      <AlertsStrip alerts={data.alerts} onOpenTenant={setDashTenantId} />
+      <AlertsStrip alerts={data.alerts} onOpenAlert={setSelectedAlert} />
 
       {/* ── 탭 섹션 ─────────────────────────────────────────────── */}
       <div>
@@ -1333,6 +1384,13 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
       </div>
 
       {selectedRoom && <RoomDetailPopup room={selectedRoom} onClose={() => setSelectedRoom(null)} />}
+      {selectedAlert && (
+        <AlertDetailModal
+          alert={selectedAlert}
+          onClose={() => setSelectedAlert(null)}
+          onOpenPayment={id => { setSelectedAlert(null); setDashTenantId(id) }}
+        />
+      )}
       {dashTenantId && (
         <DashboardTenantModal
           tenantId={dashTenantId}
