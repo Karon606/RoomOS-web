@@ -661,6 +661,26 @@ function DashboardTenantModal({ tenantId, targetMonth, onClose }: {
   const regularPaid = regularRecords.reduce((s, p) => s + p.actualAmount, 0) - prevOwnerPaid
   const adjNet = adjRecords.reduce((s, p) => s + p.actualAmount, 0)
   const balance = lease ? regularPaid + adjNet - lease.rentAmount : 0
+
+  // 양도인 자동 완납 여부 계산
+  const cutoffDate2 = lease?.property.prevOwnerCutoffDate ?? lease?.property.acquisitionDate ?? null
+  const cutoffMonthStr2 = cutoffDate2
+    ? `${new Date(cutoffDate2).getFullYear()}-${String(new Date(cutoffDate2).getMonth() + 1).padStart(2, '0')}`
+    : null
+  const cutoffDay2 = cutoffDate2 ? new Date(cutoffDate2).getDate() : 0
+  const dueDayNum = lease?.dueDay ? parseInt(lease.dueDay, 10) : 0
+  const isAutoPaidNoBilling = !!(
+    cutoffMonthStr2 && targetMonth === cutoffMonthStr2 &&
+    !isNaN(dueDayNum) && dueDayNum < cutoffDay2 &&
+    regularRecords.length === 0
+  )
+  const getDueDateStr = () => {
+    if (!lease?.dueDay) return ''
+    const [y, m] = targetMonth.split('-').map(Number)
+    if (lease.dueDay === '말') return `${y}년 ${m}월 ${new Date(y, m, 0).getDate()}일`
+    const d = parseInt(lease.dueDay, 10)
+    return isNaN(d) ? '' : `${y}년 ${m}월 ${d}일`
+  }
   const DAYS = ['일', '월', '화', '수', '목', '금', '토']
   const fmtDate = (d: Date | string) => {
     const dt = new Date(d)
@@ -779,8 +799,17 @@ function DashboardTenantModal({ tenantId, targetMonth, onClose }: {
               </div>
 
               {/* 납부 내역 */}
-              {payHistory.length > 0 && (
+              {(payHistory.length > 0 || isAutoPaidNoBilling) && (
                 <div className="space-y-2">
+                  {isAutoPaidNoBilling && (
+                    <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                      <div>
+                        <p className="text-xs font-semibold text-amber-700">양도인 수납</p>
+                        <p className="text-[10px] text-amber-600 mt-0.5">{getDueDateStr()} 납부 (자동)</p>
+                      </div>
+                      <p className="text-xs font-semibold text-amber-700">{lease!.rentAmount.toLocaleString()}원</p>
+                    </div>
+                  )}
                   {depositRecords.length > 0 && (
                     <>
                       <p className="text-xs font-medium text-[var(--warm-mid)]">보증금 수납 내역</p>
@@ -797,7 +826,7 @@ function DashboardTenantModal({ tenantId, targetMonth, onClose }: {
                   )}
                   {prevOwnerPaid > 0 && (
                     <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                      <p className="text-xs text-amber-700">이전 원장 귀속</p>
+                      <p className="text-xs text-amber-700">양도인 귀속</p>
                       <p className="text-xs font-semibold text-amber-700">{prevOwnerPaid.toLocaleString()}원</p>
                     </div>
                   )}
@@ -915,7 +944,7 @@ function DashPayRow({ p, isPreAcq, onEdit, onDelete, color }: {
         <p className={`text-xs ${textColor}`}>
           {p.seqNo}회차 · {fmtD(p.payDate)} · {p.payMethod ?? '—'}
           {color === 'purple' && <span className="ml-1.5 text-[10px] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>}
-          {isPreAcq && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">이전 원장</span>}
+          {isPreAcq && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
         </p>
         {p.memo && !p.isDeposit && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
       </div>

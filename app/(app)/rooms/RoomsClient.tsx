@@ -35,6 +35,7 @@ type RoomStatus = {
   overrideDueDayMonth: string | null
   overrideDueDayReason: string | null
   moveInDate: string | null
+  prevPaidThisMonth: boolean
 }
 
 type PaymentRecord = {
@@ -794,9 +795,18 @@ export default function RoomsClient({
                   </div>
 
                   {/* 납부 내역 */}
-                  {(loadingHistory || paymentHistory.length > 0) && (() => {
+                  {(loadingHistory || paymentHistory.length > 0 || selectedRoom.prevPaidThisMonth) && (() => {
                     const isPreAcq = (p: PaymentRecord) => !!(payAcquisitionDate && new Date(p.payDate) < payAcquisitionDate)
                     const prevOwnerPaid = paymentHistory.filter(p => !p.isDeposit && isPreAcq(p)).reduce((s, p) => s + p.actualAmount, 0)
+                    // 양도인 자동 완납 — 수납 기록 없이 납부일이 귀속 기준일 이전인 경우
+                    const isAutoPaidNoBilling = selectedRoom.prevPaidThisMonth && paymentHistory.filter(p => !p.isDeposit).length === 0
+                    const getDueDate = (dueDay: string | null, month: string) => {
+                      if (!dueDay) return ''
+                      const [y, m] = month.split('-').map(Number)
+                      if (dueDay === '말') return `${y}년 ${m}월 ${new Date(y, m, 0).getDate()}일`
+                      const d = parseInt(dueDay, 10)
+                      return isNaN(d) ? '' : `${y}년 ${m}월 ${d}일`
+                    }
                     return (
                       <div className="space-y-2">
                         <p className="text-xs font-medium text-[var(--warm-mid)]">납부 내역</p>
@@ -805,9 +815,18 @@ export default function RoomsClient({
                             <div className="w-5 h-5 border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
                           </div>
                         )}
+                        {!loadingHistory && isAutoPaidNoBilling && (
+                          <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                            <div>
+                              <p className="text-xs font-semibold text-amber-700">양도인 수납</p>
+                              <p className="text-[10px] text-amber-600 mt-0.5">{getDueDate(selectedRoom.dueDay, targetMonth)} 납부 (자동)</p>
+                            </div>
+                            <p className="text-xs font-semibold text-amber-700">{selectedRoom.expected.toLocaleString()}원</p>
+                          </div>
+                        )}
                         {!loadingHistory && prevOwnerPaid > 0 && (
                           <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                            <p className="text-xs text-amber-700">이전 원장 귀속 (인수일 이전 납부)</p>
+                            <p className="text-xs text-amber-700">양도인 귀속 (인수일 이전 납부)</p>
                             <p className="text-xs font-semibold text-amber-700">{prevOwnerPaid.toLocaleString()}원</p>
                           </div>
                         )}
@@ -866,7 +885,7 @@ export default function RoomsClient({
                                 <p className={`text-xs ${p.isDeposit ? 'text-purple-600' : prevOwner ? 'text-amber-600' : 'text-[var(--warm-mid)]'}`}>
                                   {p.seqNo}회차 · {fmtDate(p.payDate)} · {p.payMethod ?? '—'}
                                   {p.isDeposit && <span className="ml-1.5 text-[10px] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>}
-                                  {prevOwner && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">이전 원장</span>}
+                                  {prevOwner && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
                                 </p>
                                 {p.memo && !p.isDeposit && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
                               </div>

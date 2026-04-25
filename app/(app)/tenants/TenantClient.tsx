@@ -1592,7 +1592,7 @@ export default function TenantClient({
                     </div>
                     {prevOwnerPaid > 0 && (
                       <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                        <p className="text-xs text-amber-700">이전 원장 귀속 (인수일 이전 납부)</p>
+                        <p className="text-xs text-amber-700">양도인 귀속 (인수일 이전 납부)</p>
                         <p className="text-xs font-semibold text-amber-700">{prevOwnerPaid.toLocaleString()}원</p>
                       </div>
                     )}
@@ -1748,7 +1748,7 @@ export default function TenantClient({
                               <div>
                                 <p className={`text-xs ${prevOwner ? 'text-amber-600' : 'text-[var(--warm-mid)]'}`}>
                                   {p.seqNo}회차 · {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
-                                  {prevOwner && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">이전 원장</span>}
+                                  {prevOwner && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
                                 </p>
                                 {p.memo && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
                               </div>

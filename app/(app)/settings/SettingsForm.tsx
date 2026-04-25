@@ -205,8 +205,8 @@ export default function SettingsForm({
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">이전 원장 귀속 기준일</label>
-              <p className="text-xs text-[var(--warm-muted)]">이 날짜 이전 수납금은 이전 원장 귀속으로 처리됩니다. 비워두면 인수 날짜와 동일.</p>
+              <label className="text-xs font-medium text-[var(--warm-mid)]">양도인 귀속 기준일</label>
+              <p className="text-xs text-[var(--warm-muted)]">이 날짜 이전 수납금은 양도인 귀속으로 처리됩니다. 비워두면 인수 날짜와 동일.</p>
               <input type="date" name="prevOwnerCutoffDate" defaultValue={cutoffDate}
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
             </div>

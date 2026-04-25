@@ -286,8 +286,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     return acc
   }, {} as Record<string, number>)
 
-  // 귀속 기준월에 납부일이 기준일 이전인 입주자는 이전 원장 수납으로 자동 완납 처리
-  // (수납 기록이 없어도 납부일 < 귀속 기준일이면 이전 원장이 수납했다고 간주)
+  // 귀속 기준월에 납부일이 기준일 이전인 입주자는 양도인 수납으로 자동 완납 처리
+  // (수납 기록이 없어도 납부일 < 귀속 기준일이면 양도인이 수납했다고 간주)
   const cutoffMonthStr = acquisitionDate
     ? `${acquisitionDate.getFullYear()}-${String(acquisitionDate.getMonth() + 1).padStart(2, '0')}`
     : null
@@ -503,6 +503,26 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     roomNo:     p.leaseTerm.room?.roomNo ?? '?',
     amount:     p.actualAmount,
   }))
+
+  // 양도인 자동 완납 항목 — 수납 기록 없이 납부일이 귀속 기준일 이전인 경우 납입완료 피드에 표시
+  if (cutoffMonthStr && targetMonth === cutoffMonthStr) {
+    const actualPaidLeaseIds = new Set(allMonthPayments.map(p => p.leaseTermId))
+    for (const l of unpaidLeasesRaw) {
+      if (!l.dueDay || actualPaidLeaseIds.has(l.id)) continue
+      const dayNum = parseInt(l.dueDay, 10)
+      if (isNaN(dayNum) || dayNum >= cutoffDay) continue
+      activityItems.unshift({
+        text:       `${l.tenant.name}님 ${l.room?.roomNo ?? '?'}호 납입 완료`,
+        timeLabel:  '양도인 수납',
+        dotColor:   '#f59e0b',
+        link:       `/tenants?tenantId=${l.tenant.id}&tab=info`,
+        tenantId:   l.tenant.id,
+        tenantName: l.tenant.name,
+        roomNo:     l.room?.roomNo ?? '?',
+        amount:     l.rentAmount,
+      })
+    }
+  }
 
   const dashboardData: DashboardData = {
     totalRevenue,

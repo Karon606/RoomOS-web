@@ -25,7 +25,7 @@ type RoomRow = {
   leaseTermId: string | null; depositAmount: number; accumulatedUnpaid: number
   isFutureMonth: boolean; baseRent: number; prevTenantName: string | null; prevContact: string | null
   overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
-  moveInDate: string | null
+  moveInDate: string | null; prevPaidThisMonth: boolean
 }
 
 // 핵심 비즈니스 로직 — GAS의 getRoomPaymentStatus 이관
@@ -47,7 +47,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     select: { acquisitionDate: true, prevOwnerCutoffDate: true },
   })
   const acquisitionDate = property?.acquisitionDate ?? null
-  // 이전 원장 귀속 기준일 — 별도 설정 없으면 인수일과 동일
+  // 양도인 귀속 기준일 — 별도 설정 없으면 인수일과 동일
   const cutoffDate: Date | null = property?.prevOwnerCutoffDate
     ? new Date(property.prevOwnerCutoffDate)
     : acquisitionDate ? new Date(acquisitionDate) : null
@@ -134,11 +134,11 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDay: l.overrideDueDay ?? null,
         overrideDueDayMonth: l.overrideDueDayMonth ?? null,
         overrideDueDayReason: l.overrideDueDayReason ?? null,
-        moveInDate,
+        moveInDate, prevPaidThisMonth: false,
       }
     }
 
-    // 귀속 기준일(cutoffDate) 이전 납부금은 이전 원장 귀속
+    // 귀속 기준일(cutoffDate) 이전 납부금은 양도인 귀속
     const leaseAllPrev = allPrevPayments.filter(p => p.leaseTermId === lease.id)
     const prevOperatorPortion = cutoffDate
       ? leaseAllPrev
@@ -149,7 +149,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const allPrevPaidForCurrentOp = leaseAllPrev
       .reduce((s, p) => s + p.actualAmount, 0) - prevOperatorPortion
 
-    // 인수월에 이전 원장 몫 납부가 있었다면 그 달은 현 원장 청구 개월에서 제외
+    // 인수월에 양도인 몫 납부가 있었다면 그 달은 현 원장 청구 개월에서 제외
     const acqMonthPaidToPrev = cutoffDate
       ? leaseAllPrev
           .filter(p => p.targetMonth === acqMonthStr && new Date(p.payDate) < cutoffDate)
@@ -181,12 +181,12 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDay: l.overrideDueDay ?? null,
         overrideDueDayMonth: l.overrideDueDayMonth ?? null,
         overrideDueDayReason: l.overrideDueDayReason ?? null,
-        moveInDate,
+        moveInDate, prevPaidThisMonth: false,
       }
     }
 
     const leaseCurrentPayments = payments.filter(p => p.leaseTermId === lease.id)
-    // 이번 달이 귀속 기준월인 경우 payDate < cutoffDate 납부금은 이전 원장 몫 제외
+    // 이번 달이 귀속 기준월인 경우 payDate < cutoffDate 납부금은 양도인 몫 제외
     const cutoffMonthStr = cutoffDate
       ? `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`
       : acqMonthStr
@@ -195,9 +195,9 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       ? leaseCurrentPayments.filter(p => new Date(p.payDate) < cutoffDate).reduce((s, p) => s + p.actualAmount, 0)
       : 0
     const currentPaidRaw = leaseCurrentPayments.reduce((s, p) => s + p.actualAmount, 0) - currentPreAcq
-    // 이전 원장이 이미 이달 이용료를 수납한 것으로 처리:
+    // 양도인이 이미 이달 이용료를 수납한 것으로 처리:
     // 1) 귀속 기준일 이전 수납 기록이 expected 이상이거나
-    // 2) 납부일(dueDay)이 귀속 기준일보다 이전 → 이전 원장이 수납했다고 간주 (기록 없어도)
+    // 2) 납부일(dueDay)이 귀속 기준일보다 이전 → 양도인이 수납했다고 간주 (기록 없어도)
     const dueDayBeforeCutoff = !!(cutoffDate && targetMonth === cutoffMonthStr && dueDay < cutoffDay)
     const prevPaidThisMonth = !!(cutoffDate && targetMonth === cutoffMonthStr && (currentPreAcq >= expected || dueDayBeforeCutoff))
     const displayBalance = prevPaidThisMonth ? 0 : currentPaidRaw - expected
@@ -218,7 +218,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       overrideDueDay: l.overrideDueDay ?? null,
       overrideDueDayMonth: l.overrideDueDayMonth ?? null,
       overrideDueDayReason: l.overrideDueDayReason ?? null,
-      moveInDate,
+      moveInDate, prevPaidThisMonth,
     }
   }
 
@@ -241,7 +241,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         prevTenantName: prev?.tenant.name ?? null,
         prevContact: prev?.tenant.contacts[0]?.contactValue ?? null,
         overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null,
-        moveInDate: null,
+        moveInDate: null, prevPaidThisMonth: false,
       }]
     }
 
