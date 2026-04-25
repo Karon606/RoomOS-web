@@ -190,12 +190,16 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const cutoffMonthStr = cutoffDate
       ? `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`
       : acqMonthStr
+    const cutoffDay = cutoffDate ? cutoffDate.getDate() : 0
     const currentPreAcq = (cutoffDate && targetMonth === cutoffMonthStr)
       ? leaseCurrentPayments.filter(p => new Date(p.payDate) < cutoffDate).reduce((s, p) => s + p.actualAmount, 0)
       : 0
     const currentPaidRaw = leaseCurrentPayments.reduce((s, p) => s + p.actualAmount, 0) - currentPreAcq
-    // 이전 원장이 이미 이 달 이용료를 수납했다면 자동 완납 처리
-    const prevPaidThisMonth = !!(cutoffDate && targetMonth === cutoffMonthStr && currentPreAcq >= expected)
+    // 이전 원장이 이미 이달 이용료를 수납한 것으로 처리:
+    // 1) 귀속 기준일 이전 수납 기록이 expected 이상이거나
+    // 2) 납부일(dueDay)이 귀속 기준일보다 이전 → 이전 원장이 수납했다고 간주 (기록 없어도)
+    const dueDayBeforeCutoff = !!(cutoffDate && targetMonth === cutoffMonthStr && dueDay < cutoffDay)
+    const prevPaidThisMonth = !!(cutoffDate && targetMonth === cutoffMonthStr && (currentPreAcq >= expected || dueDayBeforeCutoff))
     const displayBalance = prevPaidThisMonth ? 0 : currentPaidRaw - expected
     const isPaid = prevPaidThisMonth || currentPaidRaw >= expected
 
