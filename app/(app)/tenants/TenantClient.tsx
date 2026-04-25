@@ -1254,14 +1254,12 @@ export default function TenantClient({
                                 <div className="min-w-0">
                                   <label className="block text-[10px] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>요청 날짜</label>
                                   <input type="date" value={newReqDate} onChange={e => setNewReqDate(e.target.value)}
-                                    className="w-full text-[11px] rounded-lg px-2 py-2 min-w-0"
-                                    style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }} />
+                                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-2 text-[11px] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors min-w-0" />
                                 </div>
                                 <div className="min-w-0">
                                   <label className="block text-[10px] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>처리 목표일 (선택)</label>
                                   <input type="date" value={newTargetDate} onChange={e => setNewTargetDate(e.target.value)}
-                                    className="w-full text-[11px] rounded-lg px-2 py-2 min-w-0"
-                                    style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }} />
+                                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-2 text-[11px] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors min-w-0" />
                                 </div>
                               </div>
                               <button onClick={handleCreate} disabled={reqPending || !newContent.trim()}
@@ -1648,19 +1646,19 @@ export default function TenantClient({
                                     <input type="text" inputMode="numeric"
                                       value={editAmount.toLocaleString()}
                                       onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-                                      className="w-full bg-white border border-purple-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-purple-400" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
                                     <p className="text-[10px] text-purple-500">납부일</p>
                                     <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
-                                      className="w-full bg-white border border-purple-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-purple-400" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                 </div>
                                 <div className="space-y-1">
                                   <p className="text-[10px] text-purple-500">납부방법</p>
                                   <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
                                     placeholder="계좌이체, 현금…"
-                                    className="w-full bg-white border border-purple-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-purple-400" />
+                                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                 </div>
                                 <div className="flex gap-2 justify-end">
                                   <button onClick={() => setEditingPayId(null)}
@@ -1713,12 +1711,12 @@ export default function TenantClient({
                                     <input type="text" inputMode="numeric"
                                       value={editAmount.toLocaleString()}
                                       onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-                                      className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
                                     <p className={`text-[10px] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>납부일</p>
                                     <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
-                                      className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
@@ -1726,12 +1724,12 @@ export default function TenantClient({
                                     <p className={`text-[10px] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>납부방법</p>
                                     <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
                                       placeholder="계좌이체, 현금…"
-                                      className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
                                     <p className={`text-[10px] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>메모</p>
                                     <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
-                                      className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                 </div>
                                 <div className="flex gap-2 justify-end">

@@ -5,6 +5,7 @@ import { useState, useTransition, useEffect } from 'react'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { analyzeDashboardWithGemini, getTrendData, type TrendRange, type TrendPoint } from './actions'
 import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment } from '@/app/(app)/rooms/actions'
+import { recordRecurringExpense } from '@/app/(app)/finance/actions'
 
 // ── 타입 ────────────────────────────────────────────────────────
 
@@ -18,6 +19,7 @@ export type DashboardData = {
   paidCount:         number
   unpaidCount:       number
   unpaidAmount:      number
+  totalExpected:     number
   categoryBreakdown: { category: string; amount: number; percent: number }[]
   trend:             { month: string; revenue: number; expense: number; profit: number }[]
   totalRooms:        number
@@ -29,7 +31,7 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
-  alerts:            { text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string }[]
+  alerts:            { text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string }[]
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
   unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; unpaidAmount: number }[]
 }
@@ -93,13 +95,36 @@ function daysLabel(daysOverdue: number | null): { text: string; color: string } 
 
 type AlertItem = DashboardData['alerts'][number]
 
-function AlertDetailModal({ alert, onClose, onOpenPayment }: {
+function AlertDetailModal({ alert, onClose, onOpenPayment, onRecurringRecorded }: {
   alert: AlertItem
   onClose: () => void
   onOpenPayment: (id: string) => void
+  onRecurringRecorded: () => void
 }) {
   const initial = alert.text.slice(0, 1)
   const avatarBg = hexToRgba(alert.dotColor, 0.15)
+  const isRecurring = !!alert.recurringExpenseId
+  const [recAmount, setRecAmount] = useState(alert.recurringAmount ?? 0)
+  const [recDate, setRecDate] = useState(alert.recurringDueDate ?? new Date().toISOString().slice(0, 10))
+  const [recPayMethod, setRecPayMethod] = useState('')
+  const [recPending, startRecTransition] = useTransition()
+  const [recError, setRecError] = useState('')
+  const [recDone, setRecDone] = useState(false)
+
+  const handleRecord = () => {
+    if (!alert.recurringExpenseId) return
+    startRecTransition(async () => {
+      const res = await recordRecurringExpense({
+        recurringExpenseId: alert.recurringExpenseId!,
+        amount: recAmount,
+        date: recDate,
+        payMethod: recPayMethod || undefined,
+      })
+      if (res.ok) { setRecDone(true); onRecurringRecorded() }
+      else setRecError(res.error)
+    })
+  }
+
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden"
@@ -124,14 +149,53 @@ function AlertDetailModal({ alert, onClose, onOpenPayment }: {
 
         {/* 상세 내용 */}
         {alert.detail && (
-          <div className="px-5 py-4">
+          <div className="px-5 py-4 border-b" style={{ borderColor: DIVIDER_COLOR }}>
             <p className="text-sm whitespace-pre-line leading-relaxed" style={{ color: 'var(--warm-dark)' }}>{alert.detail}</p>
+          </div>
+        )}
+
+        {/* 고정 지출 기록 폼 */}
+        {isRecurring && (
+          <div className="px-5 py-4 space-y-3">
+            {recDone ? (
+              <p className="text-sm font-medium text-green-600 text-center py-2">✅ 지출이 기록되었습니다</p>
+            ) : (
+              <>
+                <p className="text-xs font-semibold" style={{ color: 'var(--warm-mid)' }}>지출 기록하기</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium" style={{ color: 'var(--warm-muted)' }}>금액</label>
+                    <input type="text" inputMode="numeric"
+                      value={recAmount.toLocaleString()}
+                      onChange={e => setRecAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[#6366f1] transition-colors" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium" style={{ color: 'var(--warm-muted)' }}>납부일</label>
+                    <input type="date" value={recDate} onChange={e => setRecDate(e.target.value)}
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[#6366f1] transition-colors" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium" style={{ color: 'var(--warm-muted)' }}>결제 수단 (선택)</label>
+                  <input type="text" value={recPayMethod} onChange={e => setRecPayMethod(e.target.value)}
+                    placeholder="계좌이체, 자동이체, 신용카드…"
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[#6366f1] transition-colors" />
+                </div>
+                {recError && <p className="text-xs text-red-500">{recError}</p>}
+                <button onClick={handleRecord} disabled={recPending || !recAmount || !recDate}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
+                  style={{ background: '#6366f1', color: 'white' }}>
+                  {recPending ? '저장 중…' : '지출 기록하기'}
+                </button>
+              </>
+            )}
           </div>
         )}
 
         {/* 하단 버튼 */}
         <div className="px-5 pb-5 pt-2 space-y-2">
-          {alert.tenantId && (
+          {alert.tenantId && !isRecurring && (
             <button
               onClick={() => { onOpenPayment(alert.tenantId!); onClose() }}
               className="w-full py-2.5 rounded-xl text-sm font-medium transition-opacity hover:opacity-80"
@@ -142,7 +206,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment }: {
           <Link href={alert.link} onClick={onClose}
             className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-opacity hover:opacity-70"
             style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-            입주자 관리에서 보기 →
+            {isRecurring ? '지출/기타 수익에서 보기 →' : '입주자 관리에서 보기 →'}
           </Link>
         </div>
       </div>
@@ -184,7 +248,9 @@ function AlertsStrip({ alerts, onOpenAlert }: {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>{item.text}</p>
-                  <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</p>
+                  <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+                    {item.timeLabel}{item.exactDate ? ` · ${item.exactDate}` : ''}
+                  </p>
                 </div>
                 <span style={{ color: 'var(--warm-muted)', fontSize: 14 }}>›</span>
               </div>
@@ -615,6 +681,8 @@ function DashboardTenantModal({ tenantId, targetMonth, onClose }: {
   const [editMemo, setEditMemo] = useState('')
   const [error, setError] = useState('')
   const [isPending, startTransition] = useTransition()
+  const [editingAutoPay, setEditingAutoPay] = useState(false)
+  const [autoPayDate, setAutoPayDate] = useState('')
 
   const reload = async (l: DashLease) => {
     if (!l) return
@@ -801,15 +869,61 @@ function DashboardTenantModal({ tenantId, targetMonth, onClose }: {
               {/* 납부 내역 */}
               {(payHistory.length > 0 || isAutoPaidNoBilling) && (
                 <div className="space-y-2">
-                  {isAutoPaidNoBilling && (
-                    <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
-                      <div>
-                        <p className="text-xs font-semibold text-amber-700">양도인 수납</p>
-                        <p className="text-[10px] text-amber-600 mt-0.5">{getDueDateStr()} 납부 (자동)</p>
+                  {isAutoPaidNoBilling && (() => {
+                    const getAutoDefault = () => {
+                      const [y, m] = targetMonth.split('-').map(Number)
+                      const dd = lease!.dueDay
+                      if (!dd) return `${targetMonth}-01`
+                      if (dd === '말') return `${y}-${String(m).padStart(2,'0')}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`
+                      const d = parseInt(dd, 10)
+                      return isNaN(d) ? `${targetMonth}-01` : `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+                    }
+                    const handleSaveAutoPay = () => {
+                      if (!lease || !autoPayDate) return
+                      startTransition(async () => {
+                        try {
+                          await savePayment({
+                            leaseTermId: lease.id,
+                            tenantId: lease.tenant.id,
+                            targetMonth,
+                            expectedAmount: lease.rentAmount,
+                            actualAmount: lease.rentAmount,
+                            payDate: autoPayDate,
+                            payMethod: '양도인 수납',
+                            memo: '양도인 귀속 수납',
+                          })
+                          setEditingAutoPay(false)
+                          await reload(lease)
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : '저장 실패')
+                        }
+                      })
+                    }
+                    return editingAutoPay ? (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 space-y-2">
+                        <p className="text-xs font-semibold text-amber-700">양도인 수납 — 납부일 직접 입력</p>
+                        <div className="flex gap-2 items-center">
+                          <input type="date" value={autoPayDate} onChange={e => setAutoPayDate(e.target.value)}
+                            className="flex-1 bg-[var(--canvas)] border border-amber-200 rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-amber-500 transition-colors" />
+                          <button onClick={handleSaveAutoPay} disabled={isPending || !autoPayDate}
+                            className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors disabled:opacity-50">저장</button>
+                          <button onClick={() => setEditingAutoPay(false)}
+                            className="px-3 py-1.5 text-xs text-amber-600 rounded-lg border border-amber-200 hover:bg-amber-100 transition-colors">취소</button>
+                        </div>
                       </div>
-                      <p className="text-xs font-semibold text-amber-700">{lease!.rentAmount.toLocaleString()}원</p>
-                    </div>
-                  )}
+                    ) : (
+                      <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                        <div>
+                          <p className="text-xs font-semibold text-amber-700">양도인 수납</p>
+                          <button onClick={() => { setAutoPayDate(getAutoDefault()); setEditingAutoPay(true) }}
+                            className="text-[10px] text-amber-600 mt-0.5 hover:underline text-left">
+                            {getDueDateStr()} 납부 (자동) · <span className="underline">날짜 수정</span>
+                          </button>
+                        </div>
+                        <p className="text-xs font-semibold text-amber-700">{lease!.rentAmount.toLocaleString()}원</p>
+                      </div>
+                    )
+                  })()}
                   {depositRecords.length > 0 && (
                     <>
                       <p className="text-xs font-medium text-[var(--warm-mid)]">보증금 수납 내역</p>
@@ -866,24 +980,24 @@ function DashboardTenantModal({ tenantId, targetMonth, onClose }: {
                       <input type="text" inputMode="numeric"
                         value={payAmount.toLocaleString()}
                         onChange={e => setPayAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-                        className="w-full bg-white border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--coral)]" />
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                     </div>
                     <div className="space-y-1">
                       <p className="text-[10px] text-[var(--warm-muted)]">납부일</p>
                       <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)}
-                        className="w-full bg-white border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--coral)]" />
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <p className="text-[10px] text-[var(--warm-muted)]">납부방법</p>
                       <input name="payMethod" type="text" placeholder="계좌이체, 현금…"
-                        className="w-full bg-white border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--coral)]" />
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                     </div>
                     <div className="space-y-1">
                       <p className="text-[10px] text-[var(--warm-muted)]">메모</p>
                       <input name="memo" type="text"
-                        className="w-full bg-white border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--coral)]" />
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                     </div>
                   </div>
                   {isDepositMode && payAmount > lease!.depositAmount && (
@@ -972,24 +1086,24 @@ function DashEditRow({ editAmount, editDate, editPayMethod, editMemo, setEditAmo
         <div className="space-y-1">
           <p className="text-[10px] text-[var(--warm-muted)]">금액</p>
           <input type="text" inputMode="numeric" value={editAmount.toLocaleString()} onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-            className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
         </div>
         <div className="space-y-1">
           <p className="text-[10px] text-[var(--warm-muted)]">납부일</p>
           <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
-            className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
           <p className="text-[10px] text-[var(--warm-muted)]">납부방법</p>
           <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)} placeholder="계좌이체, 현금…"
-            className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
         </div>
         <div className="space-y-1">
           <p className="text-[10px] text-[var(--warm-muted)]">메모</p>
           <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
-            className="w-full bg-white border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-[var(--coral)]" />
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
         </div>
       </div>
       <div className="flex gap-2 justify-end">
@@ -1102,7 +1216,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
     ? Math.round((cur.revenue - prev.revenue) / prev.revenue * 100)
     : null
 
-  const maxRevenue = Math.max(...data.trend.map(t => t.revenue), 1)
+
 
   // 미수납 정렬: 체납 오래된 순 → 납부일 임박 순
   const sortedUnpaid = [...data.unpaidLeases].sort((a, b) => {
@@ -1185,14 +1299,15 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
 
       {/* ── 탭 섹션 ─────────────────────────────────────────────── */}
       <div>
-        {/* 탭 바 (밑줄 스타일) */}
-        <div className="flex border-b-2 sticky -top-4 md:-top-6 z-10 -mx-1 px-1 pb-0" style={{ borderColor: 'var(--warm-border)', background: 'var(--canvas)' }}>
+        {/* 탭 바 (필 스타일) */}
+        <div className="flex gap-1.5 sticky -top-4 md:-top-6 z-10 pb-2 pt-0.5" style={{ background: 'var(--canvas)' }}>
           {TABS.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className="px-5 py-2.5 text-sm font-medium transition-colors relative whitespace-nowrap"
-              style={tab === t.key
-                ? { color: 'var(--coral)', borderBottom: '2px solid var(--coral)', marginBottom: '-2px' }
-                : { color: 'var(--warm-muted)' }}>
+              className={`px-4 py-2 text-sm font-medium rounded-xl transition-colors whitespace-nowrap ${
+                tab === t.key
+                  ? 'bg-[var(--coral)] text-white'
+                  : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
+              }`}>
               {t.label}
             </button>
           ))}
@@ -1319,28 +1434,58 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
               {/* 월별 수납 현황 + 최근 납입 완료 */}
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3.5">
 
-                <div className="order-2 lg:order-1 rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>월별 수납 현황</h3>
-                    <Link href={`/finance?month=${targetMonth}`} style={{ fontSize: 11, color: 'var(--coral)' }}>리포트 →</Link>
+                <div className="order-2 lg:order-1 rounded-xl p-5 flex flex-col gap-4" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+                  {/* 헤더 */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>수납 진행</h3>
+                      <p style={{ fontSize: 11, color: 'var(--warm-muted)', marginTop: 1 }}>
+                        {parseInt(targetMonth.slice(5))}월 · {data.totalExpected > 0 ? Math.round((data.paidRevenue / data.totalExpected) * 100) : 0}% 수납
+                      </p>
+                    </div>
+                    <Link href={`/rooms?month=${targetMonth}`} style={{ fontSize: 11, color: 'var(--coral)' }}>수납 관리 →</Link>
                   </div>
-                  <div className="space-y-[9px]">
-                    {data.trend.map(t => {
-                      const pct = Math.round((t.revenue / maxRevenue) * 100)
-                      return (
-                        <div key={t.month} className="flex items-center gap-2.5">
-                          <span className="w-7 shrink-0 text-right" style={{ fontSize: '10.5px', color: 'var(--warm-muted)' }}>
-                            {parseInt(t.month.slice(5))}월
-                          </span>
-                          <div className="flex-1 h-[7px] rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.15)' }}>
-                            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'var(--coral)', transition: 'width 0.6s ease' }} />
-                          </div>
-                          <span className="w-14 text-right shrink-0" style={{ fontSize: '10.5px', fontWeight: 600, color: '#5a4a3a', fontFamily: 'monospace' }}>
-                            {Math.round(t.revenue / 10000).toLocaleString()}만
-                          </span>
-                        </div>
-                      )
-                    })}
+
+                  {/* 진행 바 */}
+                  {data.totalExpected > 0 ? (
+                    <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.15)' }}>
+                      <div className="h-full rounded-full transition-all duration-700"
+                        style={{ width: `${Math.min(100, Math.round((data.paidRevenue / data.totalExpected) * 100))}%`, background: 'var(--coral)' }} />
+                    </div>
+                  ) : (
+                    <div className="h-2.5 rounded-full" style={{ background: 'rgba(200,160,120,0.1)' }} />
+                  )}
+
+                  {/* 수치 */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>총 예정액</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#5a4a3a' }}>
+                        {Math.round(data.totalExpected / 10000).toLocaleString()}만원
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--coral)' }} />
+                        <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>수납 완료</span>
+                        <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>{data.paidCount}건</span>
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)' }}>
+                        {Math.round(data.paidRevenue / 10000).toLocaleString()}만원
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#ef4444' }} />
+                        <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>미수납</span>
+                        {data.unpaidCount > 0 && (
+                          <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>{data.unpaidCount}건</span>
+                        )}
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: data.unpaidAmount > 0 ? '#ef4444' : '#5a4a3a' }}>
+                        {data.unpaidAmount > 0 ? `-${Math.round(data.unpaidAmount / 10000).toLocaleString()}만원` : '—'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -1418,6 +1563,7 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
           alert={selectedAlert}
           onClose={() => setSelectedAlert(null)}
           onOpenPayment={id => { setSelectedAlert(null); setDashTenantId(id) }}
+          onRecurringRecorded={() => setSelectedAlert(null)}
         />
       )}
       {dashTenantId && (

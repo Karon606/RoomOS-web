@@ -468,13 +468,13 @@ export default function FinanceClient({
       <h1 className="text-xl font-bold text-[var(--warm-dark)]">지출/기타 수익</h1>
 
       {/* 서브탭 */}
-      <div className="flex gap-1 border-b border-[var(--warm-border)] overflow-x-auto scrollbar-hide">
+      <div className="flex gap-1.5 overflow-x-auto scrollbar-hide">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors rounded-t-xl
+            className={`px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors rounded-xl
               ${tab === t.key
-                ? 'text-[var(--coral)] border-b-2 border-[var(--coral)] bg-[var(--cream)]'
-                : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}>
+                ? 'bg-[var(--coral)] text-white'
+                : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'}`}>
             {t.label}
           </button>
         ))}

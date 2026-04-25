@@ -337,3 +337,43 @@ export async function deactivateFinancialAccount(id: string) {
   await prisma.financialAccount.update({ where: { id }, data: { isActive: false } })
   revalidatePath('/finance')
 }
+
+// ── 고정 지출 기록 ───────────────────────────────────────────────
+
+export async function recordRecurringExpense(data: {
+  recurringExpenseId: string
+  amount: number
+  date: string
+  payMethod?: string
+  memo?: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const recurring = await prisma.recurringExpense.findUnique({
+      where: { id: data.recurringExpenseId },
+      select: { category: true, title: true, payMethod: true },
+    })
+    if (!recurring) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
+
+    await prisma.expense.create({
+      data: {
+        propertyId,
+        date:                new Date(data.date),
+        amount:              data.amount,
+        category:            recurring.category,
+        detail:              recurring.title,
+        payMethod:           data.payMethod ?? recurring.payMethod ?? '계좌이체',
+        memo:                data.memo ?? null,
+        settleStatus:        (data.payMethod ?? recurring.payMethod) === '신용카드' ? 'UNSETTLED' : 'SETTLED',
+        recurringExpenseId:  data.recurringExpenseId,
+      },
+    })
+    revalidatePath('/finance')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (e) {
+    if ((e as any)?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message }
+  }
+}

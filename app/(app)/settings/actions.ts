@@ -272,3 +272,69 @@ export async function updatePropertySettings(formData: FormData) {
   revalidatePath('/settings')
   revalidatePath('/rooms')
 }
+
+// ── 고정 지출 ────────────────────────────────────────────────
+
+export type RecurringExpenseRow = {
+  id: string
+  title: string
+  amount: number
+  category: string
+  dueDay: number
+  payMethod: string | null
+  isAutoDebit: boolean
+  alertDaysBefore: number
+  isActive: boolean
+  memo: string | null
+}
+
+export async function getRecurringExpenses(): Promise<RecurringExpenseRow[]> {
+  const propertyId = await getPropertyId()
+  return prisma.recurringExpense.findMany({
+    where: { propertyId },
+    orderBy: { dueDay: 'asc' },
+    select: { id: true, title: true, amount: true, category: true, dueDay: true, payMethod: true, isAutoDebit: true, alertDaysBefore: true, isActive: true, memo: true },
+  })
+}
+
+export async function addRecurringExpense(data: {
+  title: string; amount: number; category: string; dueDay: number
+  payMethod?: string; isAutoDebit?: boolean; alertDaysBefore?: number; memo?: string
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const rec = await prisma.recurringExpense.create({
+      data: { propertyId, ...data, isActive: true },
+    })
+    revalidatePath('/settings')
+    return { ok: true, id: rec.id }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+export async function updateRecurringExpense(id: string, data: Partial<{
+  title: string; amount: number; category: string; dueDay: number
+  payMethod: string | null; isAutoDebit: boolean; alertDaysBefore: number; isActive: boolean; memo: string | null
+}>): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    await prisma.recurringExpense.update({ where: { id }, data })
+    revalidatePath('/settings')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+export async function deleteRecurringExpense(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    await prisma.recurringExpense.delete({ where: { id } })
+    revalidatePath('/settings')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}

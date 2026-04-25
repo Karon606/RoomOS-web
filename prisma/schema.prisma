@@ -144,6 +144,7 @@ model Property {
   statusLogs        TenantStatusLog[]
   tenantRequests    TenantRequest[]
   marketSurveys     MarketSurvey[]
+  recurringExpenses RecurringExpense[]
 
   @@map("properties")
 }
@@ -400,8 +401,11 @@ model Expense {
   roomId String? @db.Uuid
   room   Room?   @relation(fields: [roomId], references: [id])
 
-  financialAccountId String?           @db.Uuid
-  financialAccount   FinancialAccount? @relation(fields: [financialAccountId], references: [id])
+  financialAccountId   String?            @db.Uuid
+  financialAccount     FinancialAccount?  @relation(fields: [financialAccountId], references: [id])
+
+  recurringExpenseId   String?            @db.Uuid
+  recurringExpense     RecurringExpense?  @relation(fields: [recurringExpenseId], references: [id])
 
   @@index([propertyId, date])
   @@map("expenses")
@@ -526,4 +530,29 @@ model MarketCompetitor {
   marketSurvey   MarketSurvey @relation(fields: [marketSurveyId], references: [id], onDelete: Cascade)
 
   @@map("market_competitors")
+}
+
+// ============================================================
+// [17] RecurringExpense
+// ============================================================
+
+model RecurringExpense {
+  id              String    @id @default(uuid()) @db.Uuid
+  propertyId      String    @db.Uuid
+  property        Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  title           String
+  amount          Int
+  category        String
+  dueDay          Int
+  payMethod       String?
+  isAutoDebit     Boolean   @default(false)
+  alertDaysBefore Int       @default(7)
+  isActive        Boolean   @default(true)
+  memo            String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  expenses        Expense[]
+
+  @@index([propertyId])
+  @@map("recurring_expenses")
 }

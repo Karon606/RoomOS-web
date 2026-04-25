@@ -87,6 +87,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     unpaidLeasesRaw,
     tenantRequestsRaw,
     waitingTourLeases,
+    recurringExpenses,
+    recurringExpensesThisMonth,
   ] = await Promise.all([
     prisma.leaseTerm.findMany({
       where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
@@ -264,6 +266,20 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       orderBy: { tourDate: { sort: 'asc', nulls: 'last' } },
     }),
+    // 고정 지출 목록
+    prisma.recurringExpense.findMany({
+      where: { propertyId, isActive: true },
+      orderBy: { dueDay: 'asc' },
+    }),
+    // 이달 고정 지출 기록 여부
+    prisma.expense.findMany({
+      where: {
+        propertyId,
+        recurringExpenseId: { not: null },
+        date: { gte: startDate, lte: endDate },
+      },
+      select: { recurringExpenseId: true },
+    }),
   ])
 
   // ── 이달 집계 ────────────────────────────────────────────────
@@ -327,6 +343,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const billableLeases = activeLeases.filter(l => l.rentAmount > 0)
   const paidCount      = billableLeases.filter(l => (paymentByLeaseForStatus[l.id] ?? 0) >= l.rentAmount).length
   const unpaidCount    = billableLeases.length - paidCount
+  const totalExpected  = billableLeases.reduce((s, l) => s + l.rentAmount, 0)
 
   const categoryBreakdown = expByCategory.map(c => ({
     category: c.category,
@@ -430,6 +447,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const dt = new Date(d)
     return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일`
   }
+  const fmtShortDate = (d: Date | string | null | undefined): string | undefined => {
+    if (!d) return undefined
+    const dt = new Date(d)
+    return `${dt.getMonth() + 1}월 ${dt.getDate()}일`
+  }
 
   for (const l of moveInLeases) {
     const days = daysUntil(l.moveInDate!)
@@ -440,6 +462,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       timeLabel: dayLabel(days),
       tenantId:  l.tenant.id,
       detail:    fmtKorDate(l.moveInDate) ? `입실 예정일: ${fmtKorDate(l.moveInDate)}` : undefined,
+      exactDate: fmtShortDate(l.moveInDate),
     })
   }
 
@@ -452,6 +475,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       timeLabel,
       tenantId:  l.tenant.id,
       detail:    l.expectedMoveOut ? `퇴실 예정일: ${fmtKorDate(l.expectedMoveOut)}` : '퇴실 날짜 미정',
+      exactDate: fmtShortDate(l.expectedMoveOut),
     })
   }
 
@@ -464,6 +488,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       timeLabel,
       tenantId:  l.tenant.id,
       detail:    l.tourDate ? `투어 예정일: ${fmtKorDate(l.tourDate)}` : '투어 일정 미정',
+      exactDate: fmtShortDate(l.tourDate),
     })
   }
 
@@ -489,6 +514,31 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       timeLabel: daysLeft != null ? (daysLeft <= 0 ? '처리 필요' : `D-${daysLeft}`) : '미처리',
       tenantId:  r.tenantId,
       detail:    r.content + (r.targetDate ? `\n처리 기한: ${fmtKorDate(r.targetDate)}` : ''),
+      exactDate: fmtShortDate(r.targetDate),
+    })
+  }
+
+  // ── 고정 지출 알림 ───────────────────────────────────────────
+  const recordedRecurringIds = new Set(
+    recurringExpensesThisMonth.map(e => e.recurringExpenseId).filter(Boolean)
+  )
+  for (const re of recurringExpenses) {
+    if (recordedRecurringIds.has(re.id)) continue
+    const [y, m] = targetMonth.split('-').map(Number)
+    const dueDate = new Date(y, m - 1, Math.min(re.dueDay, new Date(y, m, 0).getDate()))
+    dueDate.setHours(0, 0, 0, 0)
+    const daysLeft = Math.round((dueDate.getTime() - today.getTime()) / 86400000)
+    if (daysLeft > re.alertDaysBefore) continue
+    alertItems.push({
+      text:                `고정 지출: ${re.title}`,
+      link:                '/finance',
+      dotColor:            '#6366f1',
+      timeLabel:           daysLeft < 0 ? `${Math.abs(daysLeft)}일 경과` : daysLeft === 0 ? '오늘' : `D-${daysLeft}`,
+      exactDate:           fmtShortDate(dueDate),
+      detail:              `${re.amount.toLocaleString()}원 · ${re.category}${re.isAutoDebit ? ' · 자동이체' : ''}${re.memo ? '\n' + re.memo : ''}`,
+      recurringExpenseId:  re.id,
+      recurringAmount:     re.amount,
+      recurringDueDate:    dueDate.toISOString().slice(0, 10),
     })
   }
 
@@ -534,6 +584,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     paidCount,
     unpaidCount,
     unpaidAmount,
+    totalExpected,
     categoryBreakdown,
     trend,
     totalRooms,
