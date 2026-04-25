@@ -153,6 +153,82 @@ export async function deleteIncomeCategory(name: string) {
   revalidatePath('/finance')
 }
 
+// ── 지출 카테고리 ─────────────────────────────────────────────────
+
+const DEFAULT_EXPENSE_CATEGORIES = '관리비,수선유지,세금,인건비,소모품,보증금 반환,기타'
+
+export async function getExpenseCategories(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { expenseCategories: true } as any,
+  })
+  const raw = (property as any)?.expenseCategories ?? DEFAULT_EXPENSE_CATEGORIES
+  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+}
+
+export async function addExpenseCategory(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getExpenseCategories()
+  if (current.includes(name)) return
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { expenseCategories: [...current, name].join(',') } as any,
+  })
+  revalidatePath('/finance')
+  revalidatePath('/settings')
+}
+
+export async function deleteExpenseCategory(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getExpenseCategories()
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { expenseCategories: current.filter(t => t !== name).join(',') } as any,
+  })
+  revalidatePath('/finance')
+  revalidatePath('/settings')
+}
+
+// ── 결제 수단 ─────────────────────────────────────────────────────
+
+const DEFAULT_PAYMENT_METHODS = '계좌이체,신용카드,체크카드,현금'
+
+export async function getPaymentMethods(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { paymentMethods: true } as any,
+  })
+  const raw = (property as any)?.paymentMethods ?? DEFAULT_PAYMENT_METHODS
+  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+}
+
+export async function addPaymentMethod(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getPaymentMethods()
+  if (current.includes(name)) return
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { paymentMethods: [...current, name].join(',') } as any,
+  })
+  revalidatePath('/settings')
+}
+
+export async function deletePaymentMethod(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getPaymentMethods()
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { paymentMethods: current.filter(t => t !== name).join(',') } as any,
+  })
+  revalidatePath('/settings')
+}
+
 // ── 멤버 관리 ─────────────────────────────────────────────────────
 
 export type MemberWithUser = {

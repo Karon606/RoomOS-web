@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react'
 export function MoneyInput({
   name, defaultValue, value, onChange, placeholder
 }: {
-  name: string
+  name?: string
   defaultValue?: number
   value?: number        // controlled: 외부에서 값 주입 시 (호실 선택 자동 입력 등)
   onChange?: (v: number) => void
@@ -32,7 +32,7 @@ export function MoneyInput({
 
   return (
     <div className="relative">
-      <input type="hidden" name={name} value={rawValue} />
+      {name && <input type="hidden" name={name} value={rawValue} />}
       <input
         type="text"
         value={focused ? display : (display ? `${display}원` : '')}

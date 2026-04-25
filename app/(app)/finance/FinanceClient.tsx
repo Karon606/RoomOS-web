@@ -237,7 +237,7 @@ function buildSettleGroups(unsettledExpenses: UnsettledExpense[]): SettleGroup[]
 type Tab = 'expense' | 'income' | 'settle' | 'assets'
 
 export default function FinanceClient({
-  expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, targetMonth,
+  expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth,
 }: {
   expenses: Expense[]
   incomes: Income[]
@@ -245,6 +245,8 @@ export default function FinanceClient({
   unsettledExpenses: UnsettledExpense[]
   settledCardExpenses: UnsettledExpense[]
   incomeCategories: string[]
+  expenseCategories: string[]
+  paymentMethods: string[]
   targetMonth: string
 }) {
   const router = useRouter()
@@ -491,12 +493,12 @@ export default function FinanceClient({
             <select value={expFilter.method} onChange={e => setExpFilter(f => ({ ...f, method: e.target.value }))}
               className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-full px-3 py-1.5 outline-none">
               <option value="all">결제수단 (전체)</option>
-              {PAY_METHODS_EXP.map(m => <option key={m} value={m}>{m}</option>)}
+              {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <select value={expFilter.category} onChange={e => setExpFilter(f => ({ ...f, category: e.target.value }))}
               className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-full px-3 py-1.5 outline-none">
               <option value="all">카테고리 (전체)</option>
-              {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             {financialAccounts.length > 0 && (
               <select value={expFilter.finance} onChange={e => setExpFilter(f => ({ ...f, finance: e.target.value }))}
@@ -1028,7 +1030,7 @@ export default function FinanceClient({
                     <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                     <select name="category" defaultValue={detailExp.category}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                      {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1.5">
@@ -1041,7 +1043,7 @@ export default function FinanceClient({
                     <select name="payMethod" value={editExpMethod}
                       onChange={e => { setEditExpMethod(e.target.value); setEditExpAccId(''); setEditExpAccName('') }}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                      {PAY_METHODS_EXP.map(m => <option key={m} value={m}>{m}</option>)}
+                      {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                   </div>
                   {editExpMethod === '계좌이체' && bankAccounts.length > 0 && (
@@ -1215,7 +1217,7 @@ export default function FinanceClient({
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                   <select name="category"
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                    {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">
@@ -1228,7 +1230,7 @@ export default function FinanceClient({
                   <select name="payMethod" value={addExpMethod}
                     onChange={e => { setAddExpMethod(e.target.value); setAddExpAccId(''); setAddExpAccName('') }}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                    {PAY_METHODS_EXP.map(m => <option key={m} value={m}>{m}</option>)}
+                    {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
                 {addExpMethod === '계좌이체' && bankAccounts.length > 0 && (

@@ -125,6 +125,8 @@ model Property {
   roomTypeOptions    String?   // 방타입 목록 (콤마 구분, 예: "원룸,미니룸,복층")
   windowTypeOptions  String?   // 창문 유형 목록 (콤마 구분, 기본값: "WINDOW,NO_WINDOW")
   incomeCategories   String?   // 부가수익 카테고리 (콤마 구분)
+  expenseCategories  String?   // 지출 카테고리 (콤마 구분)
+  paymentMethods     String?   // 결제 수단 목록 (콤마 구분)
   defaultDeposit   Int?      // 기본 보증금
   defaultCleaningFee Int?    // 기본 청소비
   createdAt        DateTime  @default(now())

@@ -7,6 +7,8 @@ import {
   getRoomTypeOptions, addRoomTypeOption, deleteRoomTypeOption,
   getWindowTypeOptions, addWindowTypeOption, deleteWindowTypeOption,
   getIncomeCategories, addIncomeCategory, deleteIncomeCategory,
+  getExpenseCategories, addExpenseCategory, deleteExpenseCategory,
+  getPaymentMethods, addPaymentMethod, deletePaymentMethod,
   inviteMember, updateMemberRole, removeMember,
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
   type MemberWithUser, type RecurringExpenseRow,
@@ -162,8 +164,37 @@ export default function SettingsForm({
     setIncomeCategs(prev => prev.filter(t => t !== name))
   }
 
+  // ── 지출 카테고리 ────────────────────────────────────────────────
+  const [expenseCategs, setExpenseCategs] = useState<string[]>([])
+  const [newExpenseCateg, setNewExpenseCateg] = useState('')
+  useEffect(() => { getExpenseCategories().then(setExpenseCategs).catch(console.error) }, [])
+  const handleAddExpenseCateg = async () => {
+    const v = newExpenseCateg.trim(); if (!v) return
+    await addExpenseCategory(v)
+    setExpenseCategs(prev => [...prev, v]); setNewExpenseCateg('')
+  }
+  const handleDeleteExpenseCateg = async (name: string) => {
+    if (!confirm(`'${name}' 카테고리를 삭제할까요?`)) return
+    await deleteExpenseCategory(name)
+    setExpenseCategs(prev => prev.filter(t => t !== name))
+  }
+
+  // ── 결제 수단 ────────────────────────────────────────────────────
+  const [payMethods, setPayMethods] = useState<string[]>([])
+  const [newPayMethod, setNewPayMethod] = useState('')
+  useEffect(() => { getPaymentMethods().then(setPayMethods).catch(console.error) }, [])
+  const handleAddPayMethod = async () => {
+    const v = newPayMethod.trim(); if (!v) return
+    await addPaymentMethod(v)
+    setPayMethods(prev => [...prev, v]); setNewPayMethod('')
+  }
+  const handleDeletePayMethod = async (name: string) => {
+    if (!confirm(`'${name}' 결제 수단을 삭제할까요?`)) return
+    await deletePaymentMethod(name)
+    setPayMethods(prev => prev.filter(t => t !== name))
+  }
+
   // ── 고정 지출 ────────────────────────────────────────────────────
-  const EXPENSE_CATS = ['관리비', '수선유지', '세금', '인건비', '소모품', '보증금 반환', '기타']
   const [recurringList, setRecurringList] = useState<RecurringExpenseRow[]>([])
   const [showRecForm, setShowRecForm] = useState(false)
   const [editingRec, setEditingRec] = useState<RecurringExpenseRow | null>(null)
@@ -331,6 +362,28 @@ export default function SettingsForm({
             onDelete={handleDeleteIncomeCateg}
             placeholder="예: 건조기, 세탁기, 자판기..."
           />
+          <OptionSection
+            title="지출 카테고리 관리"
+            description="지출 등록 시 선택할 카테고리입니다. 고정 지출에도 사용됩니다."
+            items={expenseCategs}
+            getLabel={v => v}
+            newValue={newExpenseCateg}
+            onNewValueChange={setNewExpenseCateg}
+            onAdd={handleAddExpenseCateg}
+            onDelete={handleDeleteExpenseCateg}
+            placeholder="예: 임대료, 보험료, 통신비..."
+          />
+          <OptionSection
+            title="결제 수단 관리"
+            description="지출·고정 지출 등록 시 선택할 결제 수단입니다."
+            items={payMethods}
+            getLabel={v => v}
+            newValue={newPayMethod}
+            onNewValueChange={setNewPayMethod}
+            onAdd={handleAddPayMethod}
+            onDelete={handleDeletePayMethod}
+            placeholder="예: 자동이체, 법인카드..."
+          />
 
           {/* 고정 지출 관리 */}
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6 space-y-4">
@@ -357,11 +410,10 @@ export default function SettingsForm({
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
-                    <input type="text" inputMode="numeric"
-                      value={recForm.amount ? Number(recForm.amount.replace(/[^0-9]/g,'')).toLocaleString() : ''}
-                      onChange={e => setRecForm(p => ({ ...p, amount: e.target.value.replace(/[^0-9]/g,'') }))}
-                      placeholder="0"
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                    <MoneyInput
+                      value={Number(recForm.amount) || 0}
+                      onChange={v => setRecForm(p => ({ ...p, amount: String(v) }))}
+                      placeholder="0원" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">납부일 (매월)</label>
@@ -375,7 +427,7 @@ export default function SettingsForm({
                     <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리</label>
                     <select value={recForm.category} onChange={e => setRecForm(p => ({ ...p, category: e.target.value }))}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
-                      {EXPENSE_CATS.map(c => <option key={c} value={c}>{c}</option>)}
+                      {expenseCategs.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1.5">
@@ -387,9 +439,11 @@ export default function SettingsForm({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">결제 수단 (선택)</label>
-                  <input type="text" value={recForm.payMethod} onChange={e => setRecForm(p => ({ ...p, payMethod: e.target.value }))}
-                    placeholder="계좌이체, 자동이체…"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                  <select value={recForm.payMethod} onChange={e => setRecForm(p => ({ ...p, payMethod: e.target.value }))}
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                    <option value="">선택 안 함</option>
+                    {payMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={recForm.isAutoDebit} onChange={e => setRecForm(p => ({ ...p, isAutoDebit: e.target.checked }))} className="accent-[var(--coral)]" />
