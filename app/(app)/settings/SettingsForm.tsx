@@ -522,20 +522,19 @@ export default function SettingsForm({
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리</label>
-                    <select value={recForm.category} onChange={e => setRecForm(p => ({ ...p, category: e.target.value }))}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
-                      {expenseCategs.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">알림 (납부일 N일 전)</label>
-                    <input type="number" min={0} max={30} value={recForm.alertDaysBefore}
-                      onChange={e => setRecForm(p => ({ ...p, alertDaysBefore: e.target.value }))}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
-                  </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리</label>
+                  <select value={recForm.category} onChange={e => setRecForm(p => ({ ...p, category: e.target.value }))}
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                    {expenseCategs.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <p className="text-[10px] text-[var(--warm-muted)]">카테고리 추가·수정은 위 '지출 카테고리 관리'에서 할 수 있습니다.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">알림 (납부일 N일 전)</label>
+                  <input type="number" min={0} max={30} value={recForm.alertDaysBefore}
+                    onChange={e => setRecForm(p => ({ ...p, alertDaysBefore: e.target.value }))}
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">결제 수단 (선택)</label>
@@ -717,7 +716,7 @@ function OptionSection({
   getLabel: (v: string) => string
   newValue: string
   onNewValueChange: (v: string) => void
-  onAdd: () => void
+  onAdd: () => void | Promise<void>
   onDelete: (v: string) => void
   onReorder?: (items: string[]) => void
   onRename?: (oldValue: string, newValue: string) => void
@@ -725,6 +724,16 @@ function OptionSection({
 }) {
   const [editingItem, setEditingItem] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState('')
+  const [isAdding, setIsAdding] = useState(false)
+
+  const trimmed = newValue.trim()
+  const isDuplicate = trimmed !== '' && items.includes(trimmed)
+
+  const handleAdd = async () => {
+    if (isAdding || !trimmed || isDuplicate) return
+    setIsAdding(true)
+    try { await onAdd() } finally { setIsAdding(false) }
+  }
 
   const move = (idx: number, dir: -1 | 1) => {
     if (!onReorder) return
@@ -757,7 +766,7 @@ function OptionSection({
           <p className="text-xs text-[var(--warm-muted)] py-2">항목이 없습니다.</p>
         )}
         {items.map((item, idx) => (
-          <div key={item} className="flex items-center gap-2 bg-[var(--canvas)] rounded-xl px-3 py-2">
+          <div key={`${item}-${idx}`} className="flex items-center gap-2 bg-[var(--canvas)] rounded-xl px-3 py-2">
             {onReorder && editingItem !== item && (
               <div className="flex flex-col gap-0.5 shrink-0">
                 <button
@@ -803,16 +812,23 @@ function OptionSection({
           </div>
         ))}
       </div>
-      <div className="flex gap-2">
-        <input type="text" value={newValue}
-          onChange={e => onNewValueChange(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && onAdd()}
-          placeholder={placeholder ?? '입력...'}
-          className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
-        <button onClick={onAdd}
-          className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
-          등록
-        </button>
+      <div className="space-y-1.5">
+        <div className="flex gap-2">
+          <input type="text" value={newValue}
+            onChange={e => onNewValueChange(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleAdd()}
+            placeholder={placeholder ?? '입력...'}
+            className={`flex-1 bg-[var(--canvas)] border rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none transition-colors ${
+              isDuplicate ? 'border-red-400 focus:border-red-400' : 'border-[var(--warm-border)] focus:border-[var(--coral)]'
+            }`} />
+          <button onClick={handleAdd} disabled={isAdding || !trimmed || isDuplicate}
+            className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50 min-w-[56px]">
+            {isAdding ? '…' : '등록'}
+          </button>
+        </div>
+        {isDuplicate && (
+          <p className="text-[11px] text-red-400">이미 존재하는 항목입니다.</p>
+        )}
       </div>
     </div>
   )
