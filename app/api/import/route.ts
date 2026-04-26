@@ -3,7 +3,6 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import * as XLSX from 'xlsx'
 import { NextRequest, NextResponse } from 'next/server'
-import { WindowType, Direction } from '@prisma/client'
 
 type SheetResult = { imported: number; skipped: number; errors: string[] }
 type Resolutions = Record<string, string>  // conflictId → 'overwrite' | 'keep' | 'archive'
@@ -91,8 +90,8 @@ async function importRooms(rows: Record<string, unknown>[], propertyId: string, 
       const data = {
         type:       str(row['타입']) || null,
         baseRent:   parseNum(row['기본이용료']),
-        windowType: (WINDOW_MAP[str(row['채광'])] as WindowType) || null,
-        direction:  (DIRECTION_MAP[str(row['방향'])] as Direction) || null,
+        windowType: WINDOW_MAP[str(row['채광'])] || null,
+        direction:  DIRECTION_MAP[str(row['방향'])] || null,
         areaPyeong: row['면적(평)'] ? parseNum(row['면적(평)']) : null,
         areaM2:     row['면적(㎡)'] ? parseNum(row['면적(㎡)']) : null,
         memo:       str(row['메모']) || null,

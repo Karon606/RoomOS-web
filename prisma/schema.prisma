@@ -23,22 +23,6 @@ enum UserRole {
   STAFF
 }
 
-enum WindowType {
-  OUTER
-  INNER
-}
-
-enum Direction {
-  NORTH
-  NORTH_EAST
-  EAST
-  SOUTH_EAST
-  SOUTH
-  SOUTH_WEST
-  WEST
-  NORTH_WEST
-}
-
 enum ContactType {
   PHONE
   KAKAO
@@ -124,6 +108,7 @@ model Property {
   prevOwnerCutoffDate  DateTime? @db.Date
   roomTypeOptions    String?   // 방타입 목록 (콤마 구분, 예: "원룸,미니룸,복층")
   windowTypeOptions  String?   // 창문 유형 목록 (콤마 구분, 기본값: "WINDOW,NO_WINDOW")
+  directionOptions   String?   // 방향 목록 (콤마 구분, 예: "북향,동향,남향,서향")
   incomeCategories   String?   // 부가수익 카테고리 (콤마 구분)
   expenseCategories  String?   // 지출 카테고리 (콤마 구분)
   paymentMethods     String?   // 결제 수단 목록 (콤마 구분)
@@ -186,8 +171,8 @@ model Room {
   isVacant   Boolean    @default(true)
   areaPyeong Float?
   areaM2     Float?
-  windowType WindowType?
-  direction  Direction?
+  windowType String?
+  direction  String?
   createdAt     DateTime @default(now())
   updatedAt  DateTime   @updatedAt
 

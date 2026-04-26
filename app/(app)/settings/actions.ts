@@ -116,6 +116,47 @@ export async function deleteWindowTypeOption(name: string) {
   revalidatePath('/room-manage')
 }
 
+// ── 방향 관리 ──────────────────────────────────────────────────────
+
+const DEFAULT_DIRECTION_OPTIONS = '북향,북동향,동향,남동향,남향,남서향,서향,북서향'
+
+export async function getRoomDirectionOptions(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { directionOptions: true } as any,
+  })
+  const raw = (property as any)?.directionOptions ?? DEFAULT_DIRECTION_OPTIONS
+  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+}
+
+export async function addRoomDirectionOption(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getRoomDirectionOptions()
+  if (current.includes(name)) return
+  const updated = [...current, name].join(',')
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { directionOptions: updated } as any,
+  })
+  revalidatePath('/room-manage')
+  revalidatePath('/settings')
+}
+
+export async function deleteRoomDirectionOption(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getRoomDirectionOptions()
+  const updated = current.filter((t: string) => t !== name).join(',')
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { directionOptions: updated } as any,
+  })
+  revalidatePath('/room-manage')
+  revalidatePath('/settings')
+}
+
 // ── 부가수익 카테고리 관리 ──────────────────────────────────────────
 
 export async function getIncomeCategories(): Promise<string[]> {
@@ -194,7 +235,7 @@ export async function deleteExpenseCategory(name: string) {
 
 // ── 순서 변경 ─────────────────────────────────────────────────────
 
-type ReorderableField = 'roomTypeOptions' | 'windowTypeOptions' | 'incomeCategories' | 'expenseCategories' | 'paymentMethods'
+type ReorderableField = 'roomTypeOptions' | 'windowTypeOptions' | 'directionOptions' | 'incomeCategories' | 'expenseCategories' | 'paymentMethods'
 
 export async function reorderOptions(field: ReorderableField, items: string[]): Promise<void> {
   await requireEdit()
@@ -206,6 +247,31 @@ export async function reorderOptions(field: ReorderableField, items: string[]): 
   revalidatePath('/settings')
   if (field === 'incomeCategories' || field === 'expenseCategories' || field === 'paymentMethods') {
     revalidatePath('/finance')
+  }
+  if (field === 'roomTypeOptions' || field === 'windowTypeOptions' || field === 'directionOptions') {
+    revalidatePath('/room-manage')
+  }
+}
+
+export async function renameOption(field: ReorderableField, oldValue: string, newValue: string): Promise<void> {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { [field]: true } as any,
+  })
+  const current: string[] = ((property as any)?.[field] ?? '').split(',').map((s: string) => s.trim()).filter(Boolean)
+  const updated = current.map(v => v === oldValue ? newValue : v).join(',')
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { [field]: updated } as any,
+  })
+  revalidatePath('/settings')
+  if (field === 'incomeCategories' || field === 'expenseCategories' || field === 'paymentMethods') {
+    revalidatePath('/finance')
+  }
+  if (field === 'roomTypeOptions' || field === 'windowTypeOptions' || field === 'directionOptions') {
+    revalidatePath('/room-manage')
   }
 }
 

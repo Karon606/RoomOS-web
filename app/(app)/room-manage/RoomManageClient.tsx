@@ -31,6 +31,7 @@ type Room = {
   leaseTerms: { tenant: { name: string } | null }[]
 }
 
+// 구 enum 값 → 한국어 표시 (마이그레이션 전 데이터 호환)
 const WINDOW_TYPE_LABEL: Record<string, string> = {
   OUTER: '외창', INNER: '내창',
 }
@@ -38,10 +39,13 @@ const DIRECTION_LABEL: Record<string, string> = {
   NORTH: '북향', NORTH_EAST: '북동향', EAST: '동향', SOUTH_EAST: '남동향',
   SOUTH: '남향', SOUTH_WEST: '남서향', WEST: '서향', NORTH_WEST: '북서향',
 }
-const DIRECTION_OPTIONS = Object.entries(DIRECTION_LABEL).map(([value, label]) => ({ value, label }))
 
 function getWindowLabel(val: string) {
   return WINDOW_TYPE_LABEL[val] ?? val
+}
+
+function getDirectionLabel(val: string) {
+  return DIRECTION_LABEL[val] ?? val
 }
 
 function fmtDate(d: Date | string | null | undefined): string {
@@ -53,13 +57,16 @@ export default function RoomManageClient({
   initialRooms,
   roomTypes,
   windowTypes,
+  directions,
 }: {
   initialRooms: Room[]
   roomTypes: string[]
   windowTypes: string[]
+  directions: string[]
 }) {
   const [rooms] = useState(initialRooms)
-  const windowTypeOptions = windowTypes.map(v => ({ value: v, label: getWindowLabel(v) }))
+  const windowTypeOptions  = windowTypes.map(v => ({ value: v, label: getWindowLabel(v) }))
+  const directionOptions   = directions.map(v => ({ value: v, label: getDirectionLabel(v) }))
 
   // 모달 상태
   const [detailRoom, setDetailRoom]   = useState<Room | null>(null)
@@ -275,8 +282,8 @@ export default function RoomManageClient({
                     {(room.windowType || room.direction) && (
                       <p className="text-xs text-[var(--warm-muted)]">
                         {[
-                          room.windowType ? (WINDOW_TYPE_LABEL[room.windowType] ?? room.windowType) : null,
-                          room.direction  ? (DIRECTION_LABEL[room.direction]  ?? room.direction)  : null,
+                          room.windowType ? getWindowLabel(room.windowType) : null,
+                          room.direction  ? getDirectionLabel(room.direction) : null,
                         ].filter(Boolean).join(' · ')}
                       </p>
                     )}
@@ -353,8 +360,8 @@ export default function RoomManageClient({
                       </span>
                     } />
                   )}
-                  {r.windowType && <DetailRow label="창문 타입" value={WINDOW_TYPE_LABEL[r.windowType] ?? r.windowType} />}
-                  {r.direction  && <DetailRow label="방향"     value={DIRECTION_LABEL[r.direction] ?? r.direction} />}
+                  {r.windowType && <DetailRow label="창문 타입" value={getWindowLabel(r.windowType)} />}
+                  {r.direction  && <DetailRow label="방향"     value={getDirectionLabel(r.direction)} />}
                   {(r.areaPyeong || r.areaM2) && (
                     <DetailRow label="면적" value={[
                       r.areaPyeong ? `${r.areaPyeong}평` : '',
@@ -397,8 +404,10 @@ export default function RoomManageClient({
               <MoneyInput name="baseRent" placeholder="0원" />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <SelectField label="창문 타입" name="windowType" options={windowTypeOptions} />
-              <SelectField label="방향" name="direction" options={DIRECTION_OPTIONS} />
+              <SelectField label="창문 타입" name="windowType" options={windowTypeOptions}
+                hint="추가·관리는 환경설정에서 할 수 있습니다." />
+              <SelectField label="방향" name="direction" options={directionOptions}
+                hint="추가·관리는 환경설정에서 할 수 있습니다." />
             </div>
             <AreaInput />
             <Field label="메모" name="memo" placeholder="방 컨디션 메모" />
@@ -471,8 +480,10 @@ export default function RoomManageClient({
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <SelectField label="창문 타입" name="windowType" options={windowTypeOptions} defaultValue={editRoom.windowType ?? ''} />
-              <SelectField label="방향" name="direction" options={DIRECTION_OPTIONS} defaultValue={editRoom.direction ?? ''} />
+              <SelectField label="창문 타입" name="windowType" options={windowTypeOptions} defaultValue={editRoom.windowType ?? ''}
+                hint="추가·관리는 환경설정에서 할 수 있습니다." />
+              <SelectField label="방향" name="direction" options={directionOptions} defaultValue={editRoom.direction ?? ''}
+                hint="추가·관리는 환경설정에서 할 수 있습니다." />
             </div>
             <AreaInput defaultPyeong={editRoom.areaPyeong} defaultM2={editRoom.areaM2} />
             <Field label="메모" name="memo" defaultValue={editRoom.memo ?? ''} />
@@ -574,8 +585,8 @@ function Field({ label, name, placeholder, defaultValue }: {
   )
 }
 
-function SelectField({ label, name, options, defaultValue }: {
-  label: string; name: string; options: { value: string; label: string }[]; defaultValue?: string
+function SelectField({ label, name, options, defaultValue, hint }: {
+  label: string; name: string; options: { value: string; label: string }[]; defaultValue?: string; hint?: string
 }) {
   return (
     <div className="space-y-1.5">
@@ -585,6 +596,7 @@ function SelectField({ label, name, options, defaultValue }: {
         <option value="">선택</option>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
+      {hint && <p className="text-[10px] text-[var(--warm-muted)]">{hint}</p>}
     </div>
   )
 }

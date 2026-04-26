@@ -5,7 +5,6 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { WindowType, Direction } from '@prisma/client'
 import { requireEdit } from '@/lib/role'
 const PHOTO_BUCKET = 'room-photos'
 
@@ -56,12 +55,10 @@ export async function addRoom(formData: FormData): Promise<{ ok: true; id: strin
   })
   if (existing) return { ok: false, error: `${roomNo}호는 이미 존재합니다.` }
 
-  const windowTypeRaw = formData.get('windowType') as string
-  const directionRaw  = formData.get('direction') as string
-  const windowType    = windowTypeRaw ? windowTypeRaw as WindowType : null
-  const direction     = directionRaw  ? directionRaw  as Direction  : null
-  const areaPyeong    = formData.get('areaPyeong') ? Number(formData.get('areaPyeong')) : null
-  const areaM2        = formData.get('areaM2') ? Number(formData.get('areaM2')) : null
+  const windowType = (formData.get('windowType') as string) || null
+  const direction  = (formData.get('direction') as string) || null
+  const areaPyeong = formData.get('areaPyeong') ? Number(formData.get('areaPyeong')) : null
+  const areaM2     = formData.get('areaM2') ? Number(formData.get('areaM2')) : null
 
   const room = await prisma.room.create({
     data: {
@@ -95,12 +92,10 @@ export async function updateRoom(formData: FormData) {
   const type    = formData.get('type') as string
   const baseRent = Number(formData.get('baseRent')) || 0
   const memo    = formData.get('memo') as string
-  const windowTypeRaw = formData.get('windowType') as string
-  const directionRaw  = formData.get('direction') as string
-  const windowType    = windowTypeRaw ? windowTypeRaw as WindowType : null
-  const direction     = directionRaw  ? directionRaw  as Direction  : null
-  const areaPyeong    = formData.get('areaPyeong') ? Number(formData.get('areaPyeong')) : null
-  const areaM2        = formData.get('areaM2') ? Number(formData.get('areaM2')) : null
+  const windowType = (formData.get('windowType') as string) || null
+  const direction  = (formData.get('direction') as string) || null
+  const areaPyeong = formData.get('areaPyeong') ? Number(formData.get('areaPyeong')) : null
+  const areaM2     = formData.get('areaM2') ? Number(formData.get('areaM2')) : null
 
   // 가격 예약 시스템 필드
   const scheduledRentRaw = formData.get('scheduledRent')

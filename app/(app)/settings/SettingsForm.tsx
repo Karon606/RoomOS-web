@@ -6,10 +6,11 @@ import {
   updatePropertySettings,
   getRoomTypeOptions, addRoomTypeOption, deleteRoomTypeOption,
   getWindowTypeOptions, addWindowTypeOption, deleteWindowTypeOption,
+  getRoomDirectionOptions, addRoomDirectionOption, deleteRoomDirectionOption,
   getIncomeCategories, addIncomeCategory, deleteIncomeCategory,
   getExpenseCategories, addExpenseCategory, deleteExpenseCategory,
   getPaymentMethods, addPaymentMethod, deletePaymentMethod,
-  reorderOptions,
+  reorderOptions, renameOption,
   inviteMember, updateMemberRole, removeMember,
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
   type MemberWithUser, type RecurringExpenseRow,
@@ -108,6 +109,11 @@ export default function SettingsForm({
     setRoomTypes(items)
     await reorderOptions('roomTypeOptions', items)
   }
+  const handleRenameRoomType = async (oldVal: string, newVal: string) => {
+    if (!newVal.trim() || newVal === oldVal) return
+    await renameOption('roomTypeOptions', oldVal, newVal.trim())
+    setRoomTypes(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+  }
 
   // ── 창문 유형 ───────────────────────────────────────────────────
   const [windowTypes, setWindowTypes] = useState<string[]>([])
@@ -128,6 +134,37 @@ export default function SettingsForm({
   const handleReorderWindowTypes = async (items: string[]) => {
     setWindowTypes(items)
     await reorderOptions('windowTypeOptions', items)
+  }
+  const handleRenameWindowType = async (oldVal: string, newVal: string) => {
+    if (!newVal.trim() || newVal === oldVal) return
+    await renameOption('windowTypeOptions', oldVal, newVal.trim())
+    setWindowTypes(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+  }
+
+  // ── 방향 ────────────────────────────────────────────────────────
+  const [directions, setDirections] = useState<string[]>([])
+  const [newDirection, setNewDirection] = useState('')
+
+  useEffect(() => { getRoomDirectionOptions().then(setDirections).catch(console.error) }, [])
+
+  const handleAddDirection = async () => {
+    const v = newDirection.trim(); if (!v) return
+    await addRoomDirectionOption(v)
+    setDirections(prev => [...prev, v]); setNewDirection('')
+  }
+  const handleDeleteDirection = async (name: string) => {
+    if (!confirm(`'${name}' 방향을 삭제할까요?`)) return
+    await deleteRoomDirectionOption(name)
+    setDirections(prev => prev.filter(t => t !== name))
+  }
+  const handleReorderDirections = async (items: string[]) => {
+    setDirections(items)
+    await reorderOptions('directionOptions', items)
+  }
+  const handleRenameDirection = async (oldVal: string, newVal: string) => {
+    if (!newVal.trim() || newVal === oldVal) return
+    await renameOption('directionOptions', oldVal, newVal.trim())
+    setDirections(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
   }
 
   // ── 멤버 관리 ──────────────────────────────────────────────────
@@ -179,6 +216,11 @@ export default function SettingsForm({
     setIncomeCategs(items)
     await reorderOptions('incomeCategories', items)
   }
+  const handleRenameIncomeCateg = async (oldVal: string, newVal: string) => {
+    if (!newVal.trim() || newVal === oldVal) return
+    await renameOption('incomeCategories', oldVal, newVal.trim())
+    setIncomeCategs(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+  }
 
   // ── 지출 카테고리 ────────────────────────────────────────────────
   const [expenseCategs, setExpenseCategs] = useState<string[]>([])
@@ -198,6 +240,11 @@ export default function SettingsForm({
     setExpenseCategs(items)
     await reorderOptions('expenseCategories', items)
   }
+  const handleRenameExpenseCateg = async (oldVal: string, newVal: string) => {
+    if (!newVal.trim() || newVal === oldVal) return
+    await renameOption('expenseCategories', oldVal, newVal.trim())
+    setExpenseCategs(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+  }
 
   // ── 결제 수단 ────────────────────────────────────────────────────
   const [payMethods, setPayMethods] = useState<string[]>([])
@@ -216,6 +263,11 @@ export default function SettingsForm({
   const handleReorderPayMethods = async (items: string[]) => {
     setPayMethods(items)
     await reorderOptions('paymentMethods', items)
+  }
+  const handleRenamePayMethod = async (oldVal: string, newVal: string) => {
+    if (!newVal.trim() || newVal === oldVal) return
+    await renameOption('paymentMethods', oldVal, newVal.trim())
+    setPayMethods(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
   }
 
   // ── 고정 지출 ────────────────────────────────────────────────────
@@ -358,6 +410,7 @@ export default function SettingsForm({
             onAdd={handleAddRoomType}
             onDelete={handleDeleteRoomType}
             onReorder={handleReorderRoomTypes}
+            onRename={handleRenameRoomType}
             placeholder="예: 원룸, 투룸, 복층..."
           />
           <OptionSection
@@ -370,7 +423,21 @@ export default function SettingsForm({
             onAdd={handleAddWindowType}
             onDelete={handleDeleteWindowType}
             onReorder={handleReorderWindowTypes}
+            onRename={handleRenameWindowType}
             placeholder="예: 복층창, 루프탑창..."
+          />
+          <OptionSection
+            title="방향 관리"
+            description="호실 등록 시 선택할 수 있는 방향 목록입니다."
+            items={directions}
+            getLabel={v => v}
+            newValue={newDirection}
+            onNewValueChange={setNewDirection}
+            onAdd={handleAddDirection}
+            onDelete={handleDeleteDirection}
+            onReorder={handleReorderDirections}
+            onRename={handleRenameDirection}
+            placeholder="예: 남동향, 남남동향..."
           />
         </div>
       )}
@@ -388,6 +455,7 @@ export default function SettingsForm({
             onAdd={handleAddIncomeCateg}
             onDelete={handleDeleteIncomeCateg}
             onReorder={handleReorderIncomeCategs}
+            onRename={handleRenameIncomeCateg}
             placeholder="예: 건조기, 세탁기, 자판기..."
           />
           <OptionSection
@@ -400,6 +468,7 @@ export default function SettingsForm({
             onAdd={handleAddExpenseCateg}
             onDelete={handleDeleteExpenseCateg}
             onReorder={handleReorderExpenseCategs}
+            onRename={handleRenameExpenseCateg}
             placeholder="예: 임대료, 보험료, 통신비..."
           />
           <OptionSection
@@ -412,6 +481,7 @@ export default function SettingsForm({
             onAdd={handleAddPayMethod}
             onDelete={handleDeletePayMethod}
             onReorder={handleReorderPayMethods}
+            onRename={handleRenamePayMethod}
             placeholder="예: 자동이체, 법인카드..."
           />
 
@@ -639,7 +709,7 @@ export default function SettingsForm({
 }
 
 function OptionSection({
-  title, description, items, getLabel, newValue, onNewValueChange, onAdd, onDelete, onReorder, placeholder,
+  title, description, items, getLabel, newValue, onNewValueChange, onAdd, onDelete, onReorder, onRename, placeholder,
 }: {
   title: string
   description?: string
@@ -650,8 +720,12 @@ function OptionSection({
   onAdd: () => void
   onDelete: (v: string) => void
   onReorder?: (items: string[]) => void
+  onRename?: (oldValue: string, newValue: string) => void
   placeholder?: string
 }) {
+  const [editingItem, setEditingItem] = useState<string | null>(null)
+  const [editingValue, setEditingValue] = useState('')
+
   const move = (idx: number, dir: -1 | 1) => {
     if (!onReorder) return
     const next = [...items]
@@ -659,6 +733,18 @@ function OptionSection({
     if (target < 0 || target >= next.length) return
     ;[next[idx], next[target]] = [next[target], next[idx]]
     onReorder(next)
+  }
+
+  const startEdit = (item: string) => {
+    setEditingItem(item)
+    setEditingValue(item)
+  }
+
+  const saveEdit = () => {
+    if (editingItem !== null) {
+      onRename?.(editingItem, editingValue)
+      setEditingItem(null)
+    }
   }
 
   return (
@@ -672,7 +758,7 @@ function OptionSection({
         )}
         {items.map((item, idx) => (
           <div key={item} className="flex items-center gap-2 bg-[var(--canvas)] rounded-xl px-3 py-2">
-            {onReorder && (
+            {onReorder && editingItem !== item && (
               <div className="flex flex-col gap-0.5 shrink-0">
                 <button
                   onClick={() => move(idx, -1)}
@@ -688,11 +774,32 @@ function OptionSection({
                 </button>
               </div>
             )}
-            <span className="flex-1 text-sm text-[var(--warm-dark)]">{getLabel(item)}</span>
-            <button onClick={() => onDelete(item)}
-              className="shrink-0 text-xs text-red-400 hover:text-red-300 transition-colors px-1">
-              삭제
-            </button>
+            {editingItem === item ? (
+              <>
+                <input
+                  value={editingValue}
+                  onChange={e => setEditingValue(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditingItem(null) }}
+                  autoFocus
+                  className="flex-1 bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-sm text-[var(--warm-dark)] outline-none"
+                />
+                <button onClick={saveEdit}
+                  className="shrink-0 text-[10px] px-2 py-1 rounded-lg text-white transition-colors"
+                  style={{ background: 'var(--coral)' }}>저장</button>
+                <button onClick={() => setEditingItem(null)}
+                  className="shrink-0 text-[10px] px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">취소</button>
+              </>
+            ) : (
+              <>
+                <span className="flex-1 text-sm text-[var(--warm-dark)]">{getLabel(item)}</span>
+                {onRename && (
+                  <button onClick={() => startEdit(item)}
+                    className="shrink-0 text-[10px] px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
+                )}
+                <button onClick={() => onDelete(item)}
+                  className="shrink-0 text-[10px] text-red-400 hover:text-red-300 transition-colors px-1">삭제</button>
+              </>
+            )}
           </div>
         ))}
       </div>
