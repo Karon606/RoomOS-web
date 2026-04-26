@@ -1,4 +1,4 @@
-import { getExpenses, getExtraIncomes, getFinancialAccounts, getUnsettledExpenses, getSettledCardExpenses } from './actions'
+import { getExpenses, getExtraIncomes, getFinancialAccounts, getUnsettledExpenses, getSettledCardExpenses, getRecurringExpensesWithStatus } from './actions'
 import { getIncomeCategories, getExpenseCategories, getPaymentMethods } from '@/app/(app)/settings/actions'
 import FinanceClient from './FinanceClient'
 
@@ -12,7 +12,7 @@ export default async function FinancePage({
   const targetMonth = month ??
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
-  const [expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods] = await Promise.all([
+  const [expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus] = await Promise.all([
     getExpenses(targetMonth),
     getExtraIncomes(targetMonth),
     getFinancialAccounts(),
@@ -21,6 +21,7 @@ export default async function FinancePage({
     getIncomeCategories(),
     getExpenseCategories(),
     getPaymentMethods(),
+    getRecurringExpensesWithStatus(targetMonth),
   ])
 
   return (
@@ -34,6 +35,7 @@ export default async function FinancePage({
       expenseCategories={expenseCategories}
       paymentMethods={paymentMethods}
       targetMonth={targetMonth}
+      recurringExpensesWithStatus={recurringExpensesWithStatus}
     />
   )
 }

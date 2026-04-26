@@ -338,6 +338,84 @@ export async function deactivateFinancialAccount(id: string) {
   revalidatePath('/finance')
 }
 
+// ── 고정 지출 현황 ───────────────────────────────────────────────
+
+export type RecurringExpenseWithStatus = {
+  id: string
+  title: string
+  amount: number
+  category: string
+  dueDay: number
+  payMethod: string | null
+  isAutoDebit: boolean
+  isVariable: boolean
+  memo: string | null
+  // 이번 달 기록 여부
+  recordedExpenseId: string | null
+  recordedAmount: number | null
+  recordedDate: string | null
+  // 변동 항목 과거 평균
+  historicalAvg: number | null
+}
+
+export async function getRecurringExpensesWithStatus(month: string): Promise<RecurringExpenseWithStatus[]> {
+  const propertyId = await getPropertyId()
+  const [year, m] = month.split('-').map(Number)
+  const startDate = new Date(year, m - 1, 1)
+  const endDate   = new Date(year, m, 0)
+
+  const [recurringList, recordedThisMonth] = await Promise.all([
+    prisma.recurringExpense.findMany({
+      where: { propertyId, isActive: true },
+      orderBy: { dueDay: 'asc' },
+    }),
+    prisma.expense.findMany({
+      where: { propertyId, recurringExpenseId: { not: null }, date: { gte: startDate, lte: endDate } },
+      select: { id: true, recurringExpenseId: true, amount: true, date: true },
+    }),
+  ])
+
+  const recordedMap = new Map(recordedThisMonth.map(e => [e.recurringExpenseId!, e]))
+
+  // 변동 항목 과거 평균
+  const variableIds = recurringList.filter(re => (re as any).isVariable).map(re => re.id)
+  const pastExpenses = variableIds.length > 0
+    ? await prisma.expense.findMany({
+        where: { propertyId, recurringExpenseId: { in: variableIds }, date: { lt: startDate } },
+        select: { recurringExpenseId: true, amount: true },
+      })
+    : []
+
+  const varSum: Record<string, number> = {}
+  const varCnt: Record<string, number> = {}
+  for (const e of pastExpenses) {
+    const id = e.recurringExpenseId!
+    varSum[id] = (varSum[id] ?? 0) + e.amount
+    varCnt[id] = (varCnt[id] ?? 0) + 1
+  }
+
+  return recurringList.map(re => {
+    const recorded = recordedMap.get(re.id)
+    const isVar = (re as any).isVariable as boolean
+    const hasAvg = isVar && (varCnt[re.id] ?? 0) >= 2
+    return {
+      id:                re.id,
+      title:             re.title,
+      amount:            re.amount,
+      category:          re.category,
+      dueDay:            re.dueDay,
+      payMethod:         re.payMethod,
+      isAutoDebit:       re.isAutoDebit,
+      isVariable:        isVar,
+      memo:              re.memo,
+      recordedExpenseId: recorded?.id ?? null,
+      recordedAmount:    recorded?.amount ?? null,
+      recordedDate:      recorded ? new Date(recorded.date).toISOString().slice(0, 10) : null,
+      historicalAvg:     hasAvg ? Math.round(varSum[re.id] / varCnt[re.id]) : null,
+    }
+  })
+}
+
 // ── 고정 지출 기록 ───────────────────────────────────────────────
 
 export async function recordRecurringExpense(data: {
