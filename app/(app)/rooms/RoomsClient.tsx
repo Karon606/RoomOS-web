@@ -514,8 +514,8 @@ export default function RoomsClient({
 
         <div className="flex-1" />
 
-        {/* 열 설정 드롭다운 */}
-        <div className="relative" ref={colMenuRef}>
+        {/* 열 설정 드롭다운 — 데스크탑만 */}
+        <div className="hidden sm:block relative" ref={colMenuRef}>
           <button
             onClick={() => setShowColMenu(v => !v)}
             className="px-3 py-1.5 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] text-xs font-medium rounded-xl transition-colors"
@@ -524,8 +524,8 @@ export default function RoomsClient({
           </button>
           {showColMenu && (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowColMenu(false)} />
-              <div className="absolute right-0 mt-2 z-20 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-xl p-3 space-y-2 min-w-[140px]">
+              <div className="fixed inset-0 z-40" onClick={() => setShowColMenu(false)} />
+              <div className="absolute right-0 mt-2 z-50 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-xl p-3 space-y-2 min-w-[140px]">
                 {COL_DEFS.map(col => (
                   <label key={col.key} className="flex items-center gap-2.5 cursor-pointer">
                     <input
@@ -543,8 +543,63 @@ export default function RoomsClient({
         </div>
       </div>
 
-      {/* 수납 현황 테이블 */}
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100dvh-240px)]">
+      {/* 수납 현황 — 모바일 카드 뷰 */}
+      <div className="sm:hidden space-y-2">
+        {sorted.map(room => {
+          const dueInfo = !room.isPaid ? getDueInfo(room.dueDay, targetMonth) : null
+          return (
+            <div key={room.roomId}
+              onClick={() => !room.isFutureMonth && openPayModal(room)}
+              className={`bg-[var(--cream)] border rounded-2xl px-4 py-3.5 transition-colors
+                ${room.isFutureMonth ? 'opacity-50' : 'cursor-pointer active:bg-[var(--canvas)]/60'}
+                ${!room.isPaid ? 'border-red-200' : 'border-[var(--warm-border)]'}`}>
+              {/* 첫 줄: 호실 + 수납상태 */}
+              <div className="flex items-start justify-between">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-base font-bold text-[var(--coral)]">{room.roomNo}호</span>
+                  {room.type && <span className="text-xs text-[var(--warm-muted)]">{room.type}</span>}
+                </div>
+                <div className="flex flex-col items-end gap-0.5">
+                  {room.status === 'NON_RESIDENT' && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-orange-50 text-orange-700 ring-1 ring-orange-200">비거주</span>
+                  )}
+                  <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
+                    ${room.isPaid ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-red-50 text-red-600 ring-1 ring-red-200'}`}>
+                    {room.isPaid ? '완납' : '미납'}
+                  </span>
+                  {!room.isPaid && dueInfo && (
+                    <span className={`text-[10px] font-medium ${dueInfo.days === 0 ? 'text-orange-500' : dueInfo.overdue ? 'text-red-400' : 'text-yellow-600'}`}>
+                      {dueInfo.days === 0 ? '오늘' : dueInfo.overdue ? `${dueInfo.days}일 초과` : `${dueInfo.days}일 후`}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {/* 둘째 줄: 입주자 */}
+              <p className="text-sm font-medium text-[var(--warm-dark)] mt-1">{room.tenantName}</p>
+              {/* 셋째 줄: 월이용료 · 잔액 · 납부일 */}
+              <div className="flex items-center gap-2.5 mt-2 text-xs text-[var(--warm-mid)] flex-wrap">
+                <span className="font-medium text-[var(--warm-dark)]"><MoneyDisplay amount={room.expected} /></span>
+                {room.balance !== 0 && (
+                  <span className={`${room.balance > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    잔액 {room.balance > 0 ? '+' : '-'}<MoneyDisplay amount={Math.abs(room.balance)} />
+                  </span>
+                )}
+                {room.dueDay && (
+                  <span className="text-[var(--warm-muted)]">
+                    {room.dueDay === '말일' ? '매월 말일' : `매월 ${room.dueDay}일`}
+                  </span>
+                )}
+              </div>
+            </div>
+          )
+        })}
+        {sorted.length === 0 && (
+          <p className="text-sm text-[var(--warm-muted)] text-center py-6">해당하는 호실이 없습니다.</p>
+        )}
+      </div>
+
+      {/* 수납 현황 — 데스크탑 테이블 */}
+      <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100dvh-240px)]">
           <table className="w-full" style={{
             tableLayout: 'fixed',
             minWidth: colWidths.roomNo + colWidths.tenantName +
@@ -676,7 +731,8 @@ export default function RoomsClient({
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-[var(--warm-muted)]">공실 {vacants.length}실</h2>
-            <div className="relative" ref={vacantColMenuRef}>
+            {/* 공실 열 설정 — 데스크탑만 */}
+            <div className="hidden sm:block relative" ref={vacantColMenuRef}>
               <button
                 onClick={() => setShowVacantColMenu(v => !v)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors
@@ -685,7 +741,7 @@ export default function RoomsClient({
                 <span>⚙</span> 열 설정
               </button>
               {showVacantColMenu && (
-                <div className="absolute right-0 top-full mt-1.5 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-3 z-20 shadow-xl min-w-[160px] space-y-2">
+                <div className="absolute right-0 top-full mt-1.5 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-3 z-50 shadow-xl min-w-[160px] space-y-2">
                   {VACANT_COL_DEFS.map(col => (
                     <label key={col.key} className="flex items-center gap-2.5 cursor-pointer group">
                       <input type="checkbox" checked={vacantColVis[col.key] ?? false}
@@ -698,7 +754,22 @@ export default function RoomsClient({
               )}
             </div>
           </div>
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-64">
+
+          {/* 공실 — 모바일 카드 */}
+          <div className="sm:hidden grid grid-cols-2 gap-2">
+            {sortedVacants.map(room => (
+              <div key={room.roomId} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl px-4 py-3 space-y-1">
+                <span className="text-sm font-bold text-[var(--warm-mid)]">{room.roomNo}호</span>
+                {room.type && <p className="text-xs text-[var(--warm-muted)]">{room.type}</p>}
+                <p className="text-sm font-semibold text-[var(--warm-dark)]">
+                  {room.baseRent > 0 ? <MoneyDisplay amount={room.baseRent} /> : '—'}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* 공실 — 데스크탑 테이블 */}
+          <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-64">
             <table className="w-full min-w-[400px]">
               <thead className="sticky top-0 z-10 bg-[var(--cream)]">
                 <tr className="border-b border-[var(--warm-border)]">
