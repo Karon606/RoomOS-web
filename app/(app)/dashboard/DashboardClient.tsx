@@ -1391,234 +1391,228 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           {/* ── 현황 탭 ── */}
           {tab === 'overview' && (
             <>
-              {/* 방 현황 + 미수납 현황 */}
+              {/* 방 현황(좌) + 미수납·납입완료(우) */}
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3.5 lg:items-start">
 
-                {/* 방 현황 그리드 */}
-                <div className="rounded-xl p-5 flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-                  <div className="flex items-center justify-between mb-3.5 shrink-0">
-                    <p style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>
-                      방 현황
-                      <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 6 }}>{data.totalRooms}개 호실</span>
-                    </p>
-                    <Link href="/room-manage" style={{ fontSize: 11, color: 'var(--coral)' }}>전체 보기 →</Link>
-                  </div>
-                  {data.rooms.length === 0 ? (
-                    <p className="text-center py-8 text-sm" style={{ color: 'var(--warm-muted)' }}>등록된 호실 없음</p>
-                  ) : (
-                    <>
-                      <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
-                        {data.rooms.map(r => {
-                          const rentMan = r.baseRent > 0 ? `${Math.round(r.baseRent / 10000)}만` : null
-                          return (
-                            <div
-                              key={r.roomNo}
-                              onClick={() => setSelectedRoom(r)}
-                              className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[4px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
-                              style={r.isVacant
-                                ? { background: 'rgba(200,160,120,0.12)', color: 'var(--warm-muted)' }
-                                : { background: 'rgba(244,98,58,0.09)', color: 'var(--coral)' }}
-                            >
-                              <span className="truncate w-full text-center font-bold" style={{ fontSize: 12 }}>{r.roomNo}호</span>
-                              <span style={{ fontSize: 10, fontWeight: 500 }}>{r.isVacant ? '공실' : '입실'}</span>
-                              {rentMan && <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
-                            </div>
-                          )
-                        })}
-                      </div>
-                      <div className="flex gap-3.5 mt-3 shrink-0">
-                        <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
-                          <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(244,98,58,0.25)' }} />입실
-                        </div>
-                        <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
-                          <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(200,160,120,0.25)' }} />공실
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
+                {/* 좌측: 방 현황 + 수납 진행 */}
+                <div className="flex flex-col gap-3.5">
 
-                {/* 이달 미수납 */}
-                <div className="rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-                  <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b shrink-0" style={{ borderColor: DIVIDER_COLOR }}>
-                    <div className="flex items-center gap-2">
-                      <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>이달 미수납</h3>
-                      <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>오늘 기준</span>
+                  {/* 방 현황 그리드 */}
+                  <div className="rounded-xl p-5 flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+                    <div className="flex items-center justify-between mb-3.5 shrink-0">
+                      <p style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>
+                        방 현황
+                        <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 6 }}>{data.totalRooms}개 호실</span>
+                      </p>
+                      <Link href="/room-manage" style={{ fontSize: 11, color: 'var(--coral)' }}>전체 보기 →</Link>
                     </div>
-                    {data.unpaidCount > 0 && (
-                      <span className="rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>
-                        {data.unpaidCount}건
-                      </span>
+                    {data.rooms.length === 0 ? (
+                      <p className="text-center py-8 text-sm" style={{ color: 'var(--warm-muted)' }}>등록된 호실 없음</p>
+                    ) : (
+                      <>
+                        <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+                          {data.rooms.map(r => {
+                            const rentMan = r.baseRent > 0 ? `${Math.round(r.baseRent / 10000)}만` : null
+                            return (
+                              <div
+                                key={r.roomNo}
+                                onClick={() => setSelectedRoom(r)}
+                                className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[4px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
+                                style={r.isVacant
+                                  ? { background: 'rgba(200,160,120,0.12)', color: 'var(--warm-muted)' }
+                                  : { background: 'rgba(244,98,58,0.09)', color: 'var(--coral)' }}
+                              >
+                                <span className="truncate w-full text-center font-bold" style={{ fontSize: 12 }}>{r.roomNo}호</span>
+                                <span style={{ fontSize: 10, fontWeight: 500 }}>{r.isVacant ? '공실' : '입실'}</span>
+                                {rentMan && <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <div className="flex gap-3.5 mt-3 shrink-0">
+                          <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
+                            <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(244,98,58,0.25)' }} />입실
+                          </div>
+                          <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
+                            <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(200,160,120,0.25)' }} />공실
+                          </div>
+                        </div>
+                      </>
                     )}
                   </div>
 
-                  {sortedUnpaid.length === 0 ? (
-                    <p className="text-sm text-center py-8" style={{ color: 'var(--warm-muted)' }}>이달 수납 완료 🎉</p>
-                  ) : (
-                    <>
+                  {/* 수납 진행 */}
+                  <div className="rounded-xl p-5 flex flex-col gap-4" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+                    <div className="flex items-center justify-between">
                       <div>
-                        {visibleUnpaid.map((l, i) => {
-                          const dl = daysLabel(l.daysOverdue)
-                          return (
+                        <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>수납 진행</h3>
+                        <p style={{ fontSize: 11, color: 'var(--warm-muted)', marginTop: 1 }}>
+                          {parseInt(targetMonth.slice(5))}월 · {data.totalExpected > 0 ? Math.round((data.paidRevenue / data.totalExpected) * 100) : 0}% 수납
+                        </p>
+                      </div>
+                      <Link href={`/rooms?month=${targetMonth}`} style={{ fontSize: 11, color: 'var(--coral)' }}>수납 관리 →</Link>
+                    </div>
+                    {data.totalExpected > 0 ? (
+                      <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.15)' }}>
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${Math.min(100, Math.round((data.paidRevenue / data.totalExpected) * 100))}%`, background: 'var(--coral)' }} />
+                      </div>
+                    ) : (
+                      <div className="h-2.5 rounded-full" style={{ background: 'rgba(200,160,120,0.1)' }} />
+                    )}
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>총 예정액</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: '#5a4a3a' }}>
+                          {Math.round(data.totalExpected / 10000).toLocaleString()}만원
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--coral)' }} />
+                          <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>수납 완료</span>
+                          <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>{data.paidCount}건</span>
+                        </div>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)' }}>
+                          {Math.round(data.paidRevenue / 10000).toLocaleString()}만원
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#ef4444' }} />
+                          <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>미수납</span>
+                          {data.unpaidCount > 0 && (
+                            <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>{data.unpaidCount}건</span>
+                          )}
+                        </div>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: data.unpaidAmount > 0 ? '#ef4444' : '#5a4a3a' }}>
+                          {data.unpaidAmount > 0 ? `-${Math.round(data.unpaidAmount / 10000).toLocaleString()}만원` : '—'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>{/* /좌측 */}
+
+                {/* 우측: 이달 미수납 + 납입 완료 (하나의 연결된 카드) */}
+                <div className="rounded-xl overflow-hidden" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+
+                  {/* 이달 미수납 */}
+                  <div>
+                    <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
+                      <div className="flex items-center gap-2">
+                        <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>이달 미수납</h3>
+                        <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>오늘 기준</span>
+                      </div>
+                      {data.unpaidCount > 0 && (
+                        <span className="rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>
+                          {data.unpaidCount}건
+                        </span>
+                      )}
+                    </div>
+                    {sortedUnpaid.length === 0 ? (
+                      <p className="text-sm text-center py-6" style={{ color: 'var(--warm-muted)' }}>이달 수납 완료 🎉</p>
+                    ) : (
+                      <>
+                        <div>
+                          {visibleUnpaid.map((l, i) => {
+                            const dl = daysLabel(l.daysOverdue)
+                            return (
+                              <button
+                                key={i}
+                                onClick={() => setDashTenantId(l.tenantId)}
+                                className="w-full flex items-center gap-3 px-5 py-3 hover:opacity-70 active:opacity-50 transition-opacity text-left"
+                                style={{ borderBottom: i < visibleUnpaid.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}
+                              >
+                                <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
+                                  style={{ background: 'var(--sand)', fontSize: 11, color: '#c08050' }}>
+                                  {l.tenantName.slice(0, 1)}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>{l.roomNo}호 {l.tenantName}</p>
+                                  <p className="text-[10px] font-medium mt-0.5" style={{ color: dl.color }}>{dl.text}</p>
+                                </div>
+                                <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>
+                                  {Math.round(l.unpaidAmount / 10000)}만원
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                        {sortedUnpaid.length > UNPAID_LIMIT && (
+                          <button
+                            onClick={() => setUnpaidExpanded(v => !v)}
+                            className="w-full py-2.5 text-xs font-medium flex items-center justify-center gap-1 hover:opacity-70 transition-opacity"
+                            style={{ borderTop: `1px solid ${DIVIDER_COLOR}`, color: 'var(--warm-muted)' }}
+                          >
+                            {unpaidExpanded
+                              ? <>접기 ↑</>
+                              : <>더보기 <span style={{ color: 'var(--coral)' }}>+{sortedUnpaid.length - UNPAID_LIMIT}</span> ↓</>}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {/* 구분선 */}
+                  <div style={{ borderTop: `2px solid ${DIVIDER_COLOR}` }} />
+
+                  {/* 납입 완료 */}
+                  <div>
+                    <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
+                      <div className="flex items-center gap-2">
+                        <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>납입 완료</h3>
+                        <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>최근 30일</span>
+                      </div>
+                      {data.activity.length > 0 && (
+                        <span className="rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
+                          {data.activity.length}건
+                        </span>
+                      )}
+                    </div>
+                    {data.activity.length === 0 ? (
+                      <p className="text-sm text-center py-6" style={{ color: 'var(--warm-muted)' }}>최근 납입 내역 없음</p>
+                    ) : (
+                      <>
+                        <div>
+                          {(activityExpanded ? data.activity : data.activity.slice(0, ACTIVITY_LIMIT)).map((item, i, arr) => (
                             <button
                               key={i}
-                              onClick={() => setDashTenantId(l.tenantId)}
-                              className="w-full flex items-center gap-3 px-5 py-3 hover:opacity-70 active:opacity-50 transition-opacity text-left"
-                              style={{ borderBottom: i < visibleUnpaid.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}
+                              onClick={() => setDashTenantId(item.tenantId)}
+                              className="w-full flex items-center gap-3 px-5 py-3 hover:opacity-70 transition-opacity active:opacity-50 text-left"
+                              style={{ borderBottom: i < arr.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}
                             >
-                              <div
-                                className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
-                                style={{ background: 'var(--sand)', fontSize: 11, color: '#c08050' }}
-                              >
-                                {l.tenantName.slice(0, 1)}
+                              <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
+                                style={{ background: 'rgba(34,197,94,0.12)', fontSize: 11, color: '#16a34a' }}>
+                                {item.tenantName.slice(0, 1)}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>
-                                  {l.roomNo}호 {l.tenantName}
-                                </p>
-                                <p className="text-[10px] font-medium mt-0.5" style={{ color: dl.color }}>
-                                  {dl.text}
-                                </p>
+                                <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>{item.roomNo}호 {item.tenantName}</p>
+                                <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</p>
                               </div>
-                              <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>
-                                {Math.round(l.unpaidAmount / 10000)}만원
+                              <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
+                                {Math.round(item.amount / 10000)}만원
                               </span>
                             </button>
-                          )
-                        })}
-                      </div>
-                      {sortedUnpaid.length > UNPAID_LIMIT && (
-                        <button
-                          onClick={() => setUnpaidExpanded(v => !v)}
-                          className="w-full py-2.5 text-xs font-medium border-t flex items-center justify-center gap-1 hover:opacity-70 transition-opacity"
-                          style={{ borderColor: DIVIDER_COLOR, color: 'var(--warm-muted)' }}
-                        >
-                          {unpaidExpanded
-                            ? <>접기 ↑</>
-                            : <>더보기 <span style={{ color: 'var(--coral)' }}>+{sortedUnpaid.length - UNPAID_LIMIT}</span> ↓</>}
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* 월별 수납 현황 + 최근 납입 완료 */}
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3.5">
-
-                <div className="order-2 lg:order-1 rounded-xl p-5 flex flex-col gap-4" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-                  {/* 헤더 */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>수납 진행</h3>
-                      <p style={{ fontSize: 11, color: 'var(--warm-muted)', marginTop: 1 }}>
-                        {parseInt(targetMonth.slice(5))}월 · {data.totalExpected > 0 ? Math.round((data.paidRevenue / data.totalExpected) * 100) : 0}% 수납
-                      </p>
-                    </div>
-                    <Link href={`/rooms?month=${targetMonth}`} style={{ fontSize: 11, color: 'var(--coral)' }}>수납 관리 →</Link>
-                  </div>
-
-                  {/* 진행 바 */}
-                  {data.totalExpected > 0 ? (
-                    <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.15)' }}>
-                      <div className="h-full rounded-full transition-all duration-700"
-                        style={{ width: `${Math.min(100, Math.round((data.paidRevenue / data.totalExpected) * 100))}%`, background: 'var(--coral)' }} />
-                    </div>
-                  ) : (
-                    <div className="h-2.5 rounded-full" style={{ background: 'rgba(200,160,120,0.1)' }} />
-                  )}
-
-                  {/* 수치 */}
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>총 예정액</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#5a4a3a' }}>
-                        {Math.round(data.totalExpected / 10000).toLocaleString()}만원
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--coral)' }} />
-                        <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>수납 완료</span>
-                        <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>{data.paidCount}건</span>
-                      </div>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)' }}>
-                        {Math.round(data.paidRevenue / 10000).toLocaleString()}만원
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#ef4444' }} />
-                        <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>미수납</span>
-                        {data.unpaidCount > 0 && (
-                          <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>{data.unpaidCount}건</span>
+                          ))}
+                        </div>
+                        {data.activity.length > ACTIVITY_LIMIT && (
+                          <button
+                            onClick={() => setActivityExpanded(v => !v)}
+                            className="w-full py-2.5 text-xs font-medium flex items-center justify-center gap-1 hover:opacity-70 transition-opacity"
+                            style={{ borderTop: `1px solid ${DIVIDER_COLOR}`, color: 'var(--warm-muted)' }}
+                          >
+                            {activityExpanded
+                              ? <>접기 ↑</>
+                              : <>더보기 <span style={{ color: '#16a34a' }}>+{data.activity.length - ACTIVITY_LIMIT}</span> ↓</>}
+                          </button>
                         )}
-                      </div>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: data.unpaidAmount > 0 ? '#ef4444' : '#5a4a3a' }}>
-                        {data.unpaidAmount > 0 ? `-${Math.round(data.unpaidAmount / 10000).toLocaleString()}만원` : '—'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="order-1 lg:order-2 rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', minHeight: 160 }}>
-                  <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b shrink-0" style={{ borderColor: DIVIDER_COLOR }}>
-                    <div className="flex items-center gap-2">
-                      <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>납입 완료</h3>
-                      <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>최근 30일</span>
-                    </div>
-                    {data.activity.length > 0 && (
-                      <span className="rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
-                        {data.activity.length}건
-                      </span>
+                      </>
                     )}
                   </div>
-                  {data.activity.length === 0 ? (
-                    <p className="text-sm text-center py-8" style={{ color: 'var(--warm-muted)' }}>최근 납입 내역 없음</p>
-                  ) : (
-                    <>
-                      <div>
-                        {(activityExpanded ? data.activity : data.activity.slice(0, ACTIVITY_LIMIT)).map((item, i, arr) => (
-                          <button
-                            key={i}
-                            onClick={() => setDashTenantId(item.tenantId)}
-                            className="w-full flex items-center gap-3 px-5 py-3 hover:opacity-70 transition-opacity active:opacity-50 text-left"
-                            style={{ borderBottom: i < arr.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}
-                          >
-                            <div
-                              className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
-                              style={{ background: 'rgba(34,197,94,0.12)', fontSize: 11, color: '#16a34a' }}
-                            >
-                              {item.tenantName.slice(0, 1)}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>
-                                {item.roomNo}호 {item.tenantName}
-                              </p>
-                              <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
-                                {item.timeLabel}
-                              </p>
-                            </div>
-                            <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
-                              {Math.round(item.amount / 10000)}만원
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                      {data.activity.length > ACTIVITY_LIMIT && (
-                        <button
-                          onClick={() => setActivityExpanded(v => !v)}
-                          className="w-full py-2.5 text-xs font-medium border-t flex items-center justify-center gap-1 hover:opacity-70 transition-opacity"
-                          style={{ borderColor: DIVIDER_COLOR, color: 'var(--warm-muted)' }}
-                        >
-                          {activityExpanded
-                            ? <>접기 ↑</>
-                            : <>더보기 <span style={{ color: '#16a34a' }}>+{data.activity.length - ACTIVITY_LIMIT}</span> ↓</>}
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
+
+                </div>{/* /우측 */}
+
               </div>
             </>
           )}
