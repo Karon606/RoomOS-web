@@ -177,6 +177,7 @@ export default function RoomsClient({
   const [vacantSortDir, setVacantSortDir] = useState<SortDir>('asc')
   const [sortKey, setSortKey] = useState<SortKey>('status')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [search, setSearch] = useState('')
   const [error, setError] = useState('')
   const [isPending, startTransition] = useTransition()
   const [showOverrideForm, setShowOverrideForm] = useState(false)
@@ -300,6 +301,14 @@ export default function RoomsClient({
     }
     return sortDir === 'asc' ? cmp : -cmp
   })
+
+  const q = search.trim().toLowerCase()
+  const displayed = q
+    ? sorted.filter(r =>
+        r.roomNo.toLowerCase().includes(q) ||
+        (r.tenantName ?? '').toLowerCase().includes(q)
+      )
+    : sorted
 
   const openPayModal = async (room: RoomStatus) => {
     setSelectedRoom(room)
@@ -495,6 +504,22 @@ export default function RoomsClient({
         <span className="text-sm text-[var(--warm-muted)]">{targetMonth}</span>
       </div>
 
+      {/* 검색창 */}
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-sm pointer-events-none">🔍</span>
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="호실 번호 또는 입주자 이름 검색"
+          className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl pl-9 pr-4 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
+        />
+        {search && (
+          <button onClick={() => setSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-lg leading-none">×</button>
+        )}
+      </div>
+
       {/* 빠른 필터 + 열 설정 */}
       <div className="flex gap-2 flex-wrap items-center">
         {[
@@ -543,9 +568,34 @@ export default function RoomsClient({
         </div>
       </div>
 
+      {/* 모바일 정렬 칩 */}
+      <div className="sm:hidden flex gap-1.5 overflow-x-auto pb-0.5 -mx-4 px-4">
+        {([
+          { sk: 'status'    as SortKey, label: '수납상태' },
+          { sk: 'roomNo'    as SortKey, label: '호실순' },
+          { sk: 'balance'   as SortKey, label: '잔액' },
+          { sk: 'expected'  as SortKey, label: '이용료' },
+          { sk: 'tenantName'as SortKey, label: '입주자' },
+        ]).map(({ sk, label }) => {
+          const active = sortKey === sk
+          return (
+            <button key={sk}
+              onClick={() => handleSort(sk)}
+              className={`shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                active
+                  ? 'bg-[var(--coral)] text-white'
+                  : 'bg-[var(--canvas)] text-[var(--warm-mid)]'
+              }`}>
+              {label}
+              {active && <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+            </button>
+          )
+        })}
+      </div>
+
       {/* 수납 현황 — 모바일 카드 뷰 */}
       <div className="sm:hidden space-y-2">
-        {sorted.map(room => {
+        {displayed.map(room => {
           const dueInfo = !room.isPaid ? getDueInfo(room.dueDay, targetMonth) : null
           return (
             <div key={room.roomId}
@@ -593,8 +643,10 @@ export default function RoomsClient({
             </div>
           )
         })}
-        {sorted.length === 0 && (
-          <p className="text-sm text-[var(--warm-muted)] text-center py-6">해당하는 호실이 없습니다.</p>
+        {displayed.length === 0 && (
+          <p className="text-sm text-[var(--warm-muted)] text-center py-6">
+            {search ? '검색 결과가 없습니다.' : '해당하는 호실이 없습니다.'}
+          </p>
         )}
       </div>
 
@@ -621,7 +673,7 @@ export default function RoomsClient({
               </tr>
             </thead>
             <tbody>
-              {sorted.map(room => (
+              {displayed.map(room => (
                 <tr key={room.roomId}
                   onClick={() => !room.isFutureMonth && openPayModal(room)}
                   className={`border-b border-[var(--warm-border)]/50 transition-colors
