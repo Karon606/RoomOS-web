@@ -1516,20 +1516,20 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                           {Math.round(data.expectedExpense / 10000).toLocaleString()}만원
                         </span>
                       </div>
-                      <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(239,68,68,0.08)' }}>
+                      <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(59,130,246,0.1)' }}>
                         <div className="h-full rounded-full transition-all duration-700"
                           style={{
                             width: `${data.expectedExpense > 0 ? Math.min(100, Math.round((data.totalExpense / data.expectedExpense) * 100)) : 0}%`,
-                            background: data.totalExpense > data.expectedExpense ? '#ef4444' : '#f97316',
+                            background: data.totalExpense > data.expectedExpense ? '#ef4444' : '#3b82f6',
                           }} />
                       </div>
                       <div className="space-y-1.5 pt-0.5">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#f97316' }} />
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#3b82f6' }} />
                             <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>실제 지출</span>
                           </div>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: data.totalExpense > data.expectedExpense ? '#ef4444' : '#f97316' }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: data.totalExpense > data.expectedExpense ? '#ef4444' : '#3b82f6' }}>
                             {Math.round(data.totalExpense / 10000).toLocaleString()}만원
                           </span>
                         </div>
