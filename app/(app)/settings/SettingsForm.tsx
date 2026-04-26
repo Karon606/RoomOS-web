@@ -9,6 +9,7 @@ import {
   getIncomeCategories, addIncomeCategory, deleteIncomeCategory,
   getExpenseCategories, addExpenseCategory, deleteExpenseCategory,
   getPaymentMethods, addPaymentMethod, deletePaymentMethod,
+  reorderOptions,
   inviteMember, updateMemberRole, removeMember,
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
   type MemberWithUser, type RecurringExpenseRow,
@@ -100,6 +101,10 @@ export default function SettingsForm({
     await deleteRoomTypeOption(name)
     setRoomTypes(prev => prev.filter(t => t !== name))
   }
+  const handleReorderRoomTypes = async (items: string[]) => {
+    setRoomTypes(items)
+    await reorderOptions('roomTypeOptions', items)
+  }
 
   // ── 창문 유형 ───────────────────────────────────────────────────
   const [windowTypes, setWindowTypes] = useState<string[]>([])
@@ -116,6 +121,10 @@ export default function SettingsForm({
     if (!confirm(`'${windowLabel(name)}' 창문 유형을 삭제할까요?`)) return
     await deleteWindowTypeOption(name)
     setWindowTypes(prev => prev.filter(t => t !== name))
+  }
+  const handleReorderWindowTypes = async (items: string[]) => {
+    setWindowTypes(items)
+    await reorderOptions('windowTypeOptions', items)
   }
 
   // ── 멤버 관리 ──────────────────────────────────────────────────
@@ -163,6 +172,10 @@ export default function SettingsForm({
     await deleteIncomeCategory(name)
     setIncomeCategs(prev => prev.filter(t => t !== name))
   }
+  const handleReorderIncomeCategs = async (items: string[]) => {
+    setIncomeCategs(items)
+    await reorderOptions('incomeCategories', items)
+  }
 
   // ── 지출 카테고리 ────────────────────────────────────────────────
   const [expenseCategs, setExpenseCategs] = useState<string[]>([])
@@ -178,6 +191,10 @@ export default function SettingsForm({
     await deleteExpenseCategory(name)
     setExpenseCategs(prev => prev.filter(t => t !== name))
   }
+  const handleReorderExpenseCategs = async (items: string[]) => {
+    setExpenseCategs(items)
+    await reorderOptions('expenseCategories', items)
+  }
 
   // ── 결제 수단 ────────────────────────────────────────────────────
   const [payMethods, setPayMethods] = useState<string[]>([])
@@ -192,6 +209,10 @@ export default function SettingsForm({
     if (!confirm(`'${name}' 결제 수단을 삭제할까요?`)) return
     await deletePaymentMethod(name)
     setPayMethods(prev => prev.filter(t => t !== name))
+  }
+  const handleReorderPayMethods = async (items: string[]) => {
+    setPayMethods(items)
+    await reorderOptions('paymentMethods', items)
   }
 
   // ── 고정 지출 ────────────────────────────────────────────────────
@@ -332,6 +353,7 @@ export default function SettingsForm({
             onNewValueChange={setNewRoomType}
             onAdd={handleAddRoomType}
             onDelete={handleDeleteRoomType}
+            onReorder={handleReorderRoomTypes}
             placeholder="예: 원룸, 투룸, 복층..."
           />
           <OptionSection
@@ -343,6 +365,7 @@ export default function SettingsForm({
             onNewValueChange={setNewWindowType}
             onAdd={handleAddWindowType}
             onDelete={handleDeleteWindowType}
+            onReorder={handleReorderWindowTypes}
             placeholder="예: 복층창, 루프탑창..."
           />
         </div>
@@ -360,6 +383,7 @@ export default function SettingsForm({
             onNewValueChange={setNewIncomeCateg}
             onAdd={handleAddIncomeCateg}
             onDelete={handleDeleteIncomeCateg}
+            onReorder={handleReorderIncomeCategs}
             placeholder="예: 건조기, 세탁기, 자판기..."
           />
           <OptionSection
@@ -371,6 +395,7 @@ export default function SettingsForm({
             onNewValueChange={setNewExpenseCateg}
             onAdd={handleAddExpenseCateg}
             onDelete={handleDeleteExpenseCateg}
+            onReorder={handleReorderExpenseCategs}
             placeholder="예: 임대료, 보험료, 통신비..."
           />
           <OptionSection
@@ -382,6 +407,7 @@ export default function SettingsForm({
             onNewValueChange={setNewPayMethod}
             onAdd={handleAddPayMethod}
             onDelete={handleDeletePayMethod}
+            onReorder={handleReorderPayMethods}
             placeholder="예: 자동이체, 법인카드..."
           />
 
@@ -600,7 +626,7 @@ export default function SettingsForm({
 }
 
 function OptionSection({
-  title, description, items, getLabel, newValue, onNewValueChange, onAdd, onDelete, placeholder,
+  title, description, items, getLabel, newValue, onNewValueChange, onAdd, onDelete, onReorder, placeholder,
 }: {
   title: string
   description?: string
@@ -610,8 +636,18 @@ function OptionSection({
   onNewValueChange: (v: string) => void
   onAdd: () => void
   onDelete: (v: string) => void
+  onReorder?: (items: string[]) => void
   placeholder?: string
 }) {
+  const move = (idx: number, dir: -1 | 1) => {
+    if (!onReorder) return
+    const next = [...items]
+    const target = idx + dir
+    if (target < 0 || target >= next.length) return
+    ;[next[idx], next[target]] = [next[target], next[idx]]
+    onReorder(next)
+  }
+
   return (
     <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
       <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">{title}</h2>
@@ -621,11 +657,27 @@ function OptionSection({
         {items.length === 0 && (
           <p className="text-xs text-[var(--warm-muted)] py-2">항목이 없습니다.</p>
         )}
-        {items.map(item => (
-          <div key={item} className="flex items-center justify-between bg-[var(--canvas)] rounded-xl px-4 py-2.5">
-            <span className="text-sm text-[var(--warm-dark)]">{getLabel(item)}</span>
+        {items.map((item, idx) => (
+          <div key={item} className="flex items-center gap-2 bg-[var(--canvas)] rounded-xl px-3 py-2">
+            {onReorder && (
+              <div className="flex flex-col gap-0.5 shrink-0">
+                <button
+                  onClick={() => move(idx, -1)}
+                  disabled={idx === 0}
+                  className="w-6 h-5 flex items-center justify-center rounded text-[var(--warm-mid)] hover:text-[var(--warm-dark)] disabled:opacity-20 transition-colors text-[10px] leading-none">
+                  ▲
+                </button>
+                <button
+                  onClick={() => move(idx, 1)}
+                  disabled={idx === items.length - 1}
+                  className="w-6 h-5 flex items-center justify-center rounded text-[var(--warm-mid)] hover:text-[var(--warm-dark)] disabled:opacity-20 transition-colors text-[10px] leading-none">
+                  ▼
+                </button>
+              </div>
+            )}
+            <span className="flex-1 text-sm text-[var(--warm-dark)]">{getLabel(item)}</span>
             <button onClick={() => onDelete(item)}
-              className="text-xs text-red-400 hover:text-red-300 transition-colors">
+              className="shrink-0 text-xs text-red-400 hover:text-red-300 transition-colors px-1">
               삭제
             </button>
           </div>

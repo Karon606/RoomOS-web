@@ -192,6 +192,23 @@ export async function deleteExpenseCategory(name: string) {
   revalidatePath('/settings')
 }
 
+// ── 순서 변경 ─────────────────────────────────────────────────────
+
+type ReorderableField = 'roomTypeOptions' | 'windowTypeOptions' | 'incomeCategories' | 'expenseCategories' | 'paymentMethods'
+
+export async function reorderOptions(field: ReorderableField, items: string[]): Promise<void> {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { [field]: items.join(',') } as any,
+  })
+  revalidatePath('/settings')
+  if (field === 'incomeCategories' || field === 'expenseCategories' || field === 'paymentMethods') {
+    revalidatePath('/finance')
+  }
+}
+
 // ── 결제 수단 ─────────────────────────────────────────────────────
 
 const DEFAULT_PAYMENT_METHODS = '계좌이체,신용카드,체크카드,현금'
