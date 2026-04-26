@@ -6,6 +6,7 @@ import { addRoomTypeOption } from '@/app/(app)/settings/actions'
 import { AreaInput } from '@/components/ui/AreaInput'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 type Photo = {
   id: string
@@ -65,6 +66,7 @@ export default function RoomManageClient({
   const [detailRoom, setDetailRoom]   = useState<Room | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editRoom, setEditRoom]         = useState<Room | null>(null)
+  const [rentUpdateDateVal, setRentUpdateDateVal] = useState('')
 
   // 사진
   const [editPhotos, setEditPhotos]           = useState<Photo[]>([])
@@ -89,6 +91,7 @@ export default function RoomManageClient({
     setDetailRoom(null)
     setEditRoom(room)
     setEditPhotos(room.photos)
+    setRentUpdateDateVal(room.rentUpdateDate ? new Date(room.rentUpdateDate).toISOString().slice(0, 10) : '')
     setError('')
   }
 
@@ -479,9 +482,8 @@ export default function RoomManageClient({
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-[var(--warm-mid)]">적용 예정일</label>
-                <input type="date" name="rentUpdateDate"
-                  defaultValue={editRoom.rentUpdateDate ? fmtDate(editRoom.rentUpdateDate) : ''}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                <DatePicker name="rentUpdateDate" value={rentUpdateDateVal} onChange={setRentUpdateDateVal}
+                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">

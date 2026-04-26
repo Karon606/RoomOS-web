@@ -12,6 +12,7 @@ import {
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -262,6 +263,7 @@ export default function FinanceClient({
   // ── 지출 탭 상태 ─────────────────────────────────────────────
   const [expFilter, setExpFilter] = useState({ method: 'all', category: 'all', finance: 'all' })
   const [showAddExp, setShowAddExp]       = useState(false)
+  const [addExpDate, setAddExpDate]       = useState(() => new Date().toISOString().slice(0, 10))
   const [detailExp, setDetailExp]         = useState<Expense | null>(null)
   const [detailExpEdit, setDetailExpEdit] = useState(false)
   const [addExpMethod, setAddExpMethod]   = useState('계좌이체')
@@ -270,16 +272,19 @@ export default function FinanceClient({
   const [editExpMethod, setEditExpMethod]   = useState('계좌이체')
   const [editExpAccId, setEditExpAccId]     = useState('')
   const [editExpAccName, setEditExpAccName] = useState('')
+  const [editExpDate, setEditExpDate]       = useState('')
 
   // ── 수익 탭 상태 ─────────────────────────────────────────────
   const [incFilter, setIncFilter] = useState({ method: 'all', category: 'all' })
   const [showAddInc, setShowAddInc]       = useState(false)
+  const [addIncDate, setAddIncDate]       = useState(() => new Date().toISOString().slice(0, 10))
   const [detailInc, setDetailInc]         = useState<Income | null>(null)
   const [detailIncEdit, setDetailIncEdit] = useState(false)
   const [addIncMethod, setAddIncMethod]   = useState('계좌이체')
   const [addIncAccId, setAddIncAccId]     = useState('')
   const [editIncMethod, setEditIncMethod]   = useState('계좌이체')
   const [editIncAccId, setEditIncAccId]     = useState('')
+  const [editIncDate, setEditIncDate]       = useState('')
 
   // ── 고정 지출 탭 상태 ────────────────────────────────────────
   const [recordingRec, setRecordingRec] = useState<RecurringExpenseWithStatus | null>(null)
@@ -373,7 +378,7 @@ export default function FinanceClient({
     startTransition(async () => {
       const res = await addExpense(fd)
       if (!res.ok) { setError(res.error); return }
-      setShowAddExp(false); router.refresh()
+      setShowAddExp(false); setAddExpDate(new Date().toISOString().slice(0, 10)); router.refresh()
     })
   }
   const handleUpdateExp = (e: React.SyntheticEvent<HTMLFormElement>) => {
@@ -398,7 +403,7 @@ export default function FinanceClient({
     startTransition(async () => {
       const res = await addExtraIncome(fd)
       if (!res.ok) { setError(res.error); return }
-      setShowAddInc(false); router.refresh()
+      setShowAddInc(false); setAddIncDate(new Date().toISOString().slice(0, 10)); router.refresh()
     })
   }
   const handleUpdateInc = (e: React.SyntheticEvent<HTMLFormElement>) => {
@@ -892,9 +897,8 @@ export default function FinanceClient({
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1">
                             <label className="text-xs text-[var(--warm-muted)]">날짜</label>
-                            <input type="date" value={recRecDate}
-                              onChange={e => setRecRecDate(e.target.value)}
-                              className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                            <DatePicker value={recRecDate} onChange={setRecRecDate}
+                              className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
                           </div>
                           <div className="space-y-1">
                             <label className="text-xs text-[var(--warm-muted)]">
@@ -1210,6 +1214,7 @@ export default function FinanceClient({
                   <div className="flex-1" />
                   <button onClick={() => {
                     setDetailExpEdit(true)
+                    setEditExpDate(toDateInput(detailExp.date))
                     setEditExpMethod(detailExp.payMethod ?? '계좌이체')
                     setEditExpAccId(detailExp.financialAccountId ?? '')
                     setEditExpAccName(detailExp.financeName ?? '')
@@ -1227,8 +1232,8 @@ export default function FinanceClient({
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
-                      <input type="date" name="date" defaultValue={toDateInput(detailExp.date)} required
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                      <DatePicker name="date" value={editExpDate} onChange={setEditExpDate}
+                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
@@ -1331,6 +1336,7 @@ export default function FinanceClient({
                   <div className="flex-1" />
                   <button onClick={() => {
                     setDetailIncEdit(true)
+                    setEditIncDate(toDateInput(detailInc.date))
                     setEditIncMethod(detailInc.payMethod ?? '계좌이체')
                     setEditIncAccId(detailInc.financialAccountId ?? '')
                     setError('')
@@ -1346,8 +1352,8 @@ export default function FinanceClient({
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
-                      <input type="date" name="date" defaultValue={toDateInput(detailInc.date)} required
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                      <DatePicker name="date" value={editIncDate} onChange={setEditIncDate}
+                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
@@ -1414,8 +1420,8 @@ export default function FinanceClient({
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
-                    <input type="date" name="date" defaultValue={new Date().toISOString().slice(0, 10)} required
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                    <DatePicker name="date" value={addExpDate} onChange={setAddExpDate}
+                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
@@ -1502,8 +1508,8 @@ export default function FinanceClient({
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
-                    <input type="date" name="date" defaultValue={new Date().toISOString().slice(0, 10)} required
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                    <DatePicker name="date" value={addIncDate} onChange={setAddIncDate}
+                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>

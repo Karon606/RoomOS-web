@@ -1253,13 +1253,13 @@ export default function TenantClient({
                               <div className="flex flex-col xs:grid xs:grid-cols-2 gap-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
                                 <div className="min-w-0">
                                   <label className="block text-[10px] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>요청 날짜</label>
-                                  <input type="date" value={newReqDate} onChange={e => setNewReqDate(e.target.value)}
-                                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-2 text-[11px] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors min-w-0" />
+                                  <DatePicker value={newReqDate} onChange={setNewReqDate}
+                                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-2 text-[11px] text-[var(--warm-dark)] min-w-0" />
                                 </div>
                                 <div className="min-w-0">
                                   <label className="block text-[10px] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>처리 목표일 (선택)</label>
-                                  <input type="date" value={newTargetDate} onChange={e => setNewTargetDate(e.target.value)}
-                                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-2 text-[11px] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors min-w-0" />
+                                  <DatePicker value={newTargetDate} onChange={setNewTargetDate}
+                                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-2 text-[11px] text-[var(--warm-dark)] min-w-0" />
                                 </div>
                               </div>
                               <button onClick={handleCreate} disabled={reqPending || !newContent.trim()}
@@ -1650,8 +1650,8 @@ export default function TenantClient({
                                   </div>
                                   <div className="space-y-1">
                                     <p className="text-[10px] text-purple-500">납부일</p>
-                                    <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                                    <DatePicker value={editDate} onChange={setEditDate}
+                                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
                                   </div>
                                 </div>
                                 <div className="space-y-1">
@@ -1715,8 +1715,8 @@ export default function TenantClient({
                                   </div>
                                   <div className="space-y-1">
                                     <p className={`text-[10px] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>납부일</p>
-                                    <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                                    <DatePicker value={editDate} onChange={setEditDate}
+                                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
                                   </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
@@ -1886,10 +1886,8 @@ export default function TenantClient({
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-xs text-[var(--warm-muted)]">날짜</label>
-                        <input type="date" name="payDate"
-                          value={payDateVal}
-                          onChange={e => setPayDateVal(e.target.value)}
-                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                        <DatePicker name="payDate" value={payDateVal} onChange={setPayDateVal}
+                          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs text-[var(--warm-muted)]">금액</label>
@@ -2381,14 +2379,25 @@ function FormSection({ title, children }: { title: string; children: React.React
   )
 }
 
+function DateFieldInner({ name, defaultValue, placeholder }: { name: string; defaultValue?: string; placeholder?: string }) {
+  const [val, setVal] = useState(defaultValue ?? '')
+  return (
+    <DatePicker name={name} value={val} onChange={setVal} placeholder={placeholder ?? '날짜 선택'}
+      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+  )
+}
+
 function Field({ label, name, type = 'text', placeholder, defaultValue, required }: {
   label: string; name: string; type?: string; placeholder?: string; defaultValue?: string; required?: boolean
 }) {
   return (
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
-      <input type={type} name={name} defaultValue={defaultValue} placeholder={placeholder} required={required}
-        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors" />
+      {type === 'date'
+        ? <DateFieldInner name={name} defaultValue={defaultValue} placeholder={placeholder} />
+        : <input type={type} name={name} defaultValue={defaultValue} placeholder={placeholder} required={required}
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors" />
+      }
     </div>
   )
 }

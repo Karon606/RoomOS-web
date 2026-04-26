@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useState, useTransition, useEffect } from 'react'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { analyzeDashboardWithGemini, getTrendData, type TrendRange, type TrendPoint } from './actions'
 import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment } from '@/app/(app)/rooms/actions'
 import { recordRecurringExpense } from '@/app/(app)/finance/actions'
@@ -217,8 +218,8 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>날짜 *</label>
-                <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                <DatePicker value={date} onChange={setDate}
+                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
               </div>
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
@@ -983,8 +984,10 @@ function DashboardTenantModal({ tenantId, targetMonth, onClose }: {
                       <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 space-y-2">
                         <p className="text-xs font-semibold text-amber-700">양도인 수납 — 납부일 직접 입력</p>
                         <div className="flex gap-2 items-center">
-                          <input type="date" value={autoPayDate} onChange={e => setAutoPayDate(e.target.value)}
-                            className="flex-1 bg-[var(--canvas)] border border-amber-200 rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-amber-500 transition-colors" />
+                          <div className="flex-1">
+                            <DatePicker value={autoPayDate} onChange={setAutoPayDate}
+                              className="bg-[var(--canvas)] border border-amber-200 rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
+                          </div>
                           <button onClick={handleSaveAutoPay} disabled={isPending || !autoPayDate}
                             className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors disabled:opacity-50">저장</button>
                           <button onClick={() => setEditingAutoPay(false)}
@@ -1064,8 +1067,8 @@ function DashboardTenantModal({ tenantId, targetMonth, onClose }: {
                     </div>
                     <div className="space-y-1">
                       <p className="text-[10px] text-[var(--warm-muted)]">납부일</p>
-                      <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)}
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                      <DatePicker value={payDate} onChange={setPayDate}
+                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -1170,8 +1173,8 @@ function DashEditRow({ editAmount, editDate, editPayMethod, editMemo, setEditAmo
         </div>
         <div className="space-y-1">
           <p className="text-[10px] text-[var(--warm-muted)]">납부일</p>
-          <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+          <DatePicker value={editDate} onChange={setEditDate}
+            className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2">

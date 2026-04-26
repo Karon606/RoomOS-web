@@ -17,6 +17,7 @@ import {
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { PhoneInput } from '@/components/ui/PhoneInput'
+import { DatePicker } from '@/components/ui/DatePicker'
 
 type Property = {
   id: string
@@ -84,6 +85,8 @@ export default function SettingsForm({
   const cutoffDate = property?.prevOwnerCutoffDate
     ? new Date(property.prevOwnerCutoffDate).toISOString().slice(0, 10)
     : ''
+  const [acqDateVal, setAcqDateVal]         = useState(acqDate)
+  const [cutoffDateVal, setCutoffDateVal]   = useState(cutoffDate)
 
   // ── 방타입 ─────────────────────────────────────────────────────
   const [roomTypes, setRoomTypes] = useState<string[]>([])
@@ -315,14 +318,14 @@ export default function SettingsForm({
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">인수 날짜</label>
               <p className="text-xs text-[var(--warm-muted)]">실제 영업장을 인수한 날짜입니다.</p>
-              <input type="date" name="acquisitionDate" defaultValue={acqDate}
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+              <DatePicker name="acquisitionDate" value={acqDateVal} onChange={setAcqDateVal}
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">양도인 귀속 기준일</label>
               <p className="text-xs text-[var(--warm-muted)]">이 날짜 이전 수납금은 양도인 귀속으로 처리됩니다. 비워두면 인수 날짜와 동일.</p>
-              <input type="date" name="prevOwnerCutoffDate" defaultValue={cutoffDate}
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+              <DatePicker name="prevOwnerCutoffDate" value={cutoffDateVal} onChange={setCutoffDateVal}
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
