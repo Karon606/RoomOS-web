@@ -219,19 +219,19 @@ export default function SettingsForm({
   const [recurringList, setRecurringList] = useState<RecurringExpenseRow[]>([])
   const [showRecForm, setShowRecForm] = useState(false)
   const [editingRec, setEditingRec] = useState<RecurringExpenseRow | null>(null)
-  const [recForm, setRecForm] = useState({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, alertDaysBefore: '7', memo: '' })
+  const [recForm, setRecForm] = useState({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', memo: '' })
   const [recPending, startRecTransition] = useTransition()
 
   useEffect(() => { getRecurringExpenses().then(setRecurringList).catch(console.error) }, [])
 
   const openNewRec = () => {
     setEditingRec(null)
-    setRecForm({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, alertDaysBefore: '7', memo: '' })
+    setRecForm({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', memo: '' })
     setShowRecForm(true)
   }
   const openEditRec = (r: RecurringExpenseRow) => {
     setEditingRec(r)
-    setRecForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', isAutoDebit: r.isAutoDebit, alertDaysBefore: r.alertDaysBefore.toString(), memo: r.memo ?? '' })
+    setRecForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), memo: r.memo ?? '' })
     setShowRecForm(true)
   }
   const handleSaveRec = () => {
@@ -242,6 +242,7 @@ export default function SettingsForm({
       dueDay: parseInt(recForm.dueDay) || 25,
       payMethod: recForm.payMethod || undefined,
       isAutoDebit: recForm.isAutoDebit,
+      isVariable: recForm.isVariable,
       alertDaysBefore: parseInt(recForm.alertDaysBefore) || 7,
       memo: recForm.memo || undefined,
     }
@@ -471,10 +472,19 @@ export default function SettingsForm({
                     {payMethods.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={recForm.isAutoDebit} onChange={e => setRecForm(p => ({ ...p, isAutoDebit: e.target.checked }))} className="accent-[var(--coral)]" />
-                  <span className="text-xs text-[var(--warm-dark)]">자동이체 항목</span>
-                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={recForm.isAutoDebit} onChange={e => setRecForm(p => ({ ...p, isAutoDebit: e.target.checked }))} className="accent-[var(--coral)]" />
+                    <span className="text-xs text-[var(--warm-dark)]">자동이체 항목</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={recForm.isVariable} onChange={e => setRecForm(p => ({ ...p, isVariable: e.target.checked }))} className="accent-[var(--coral)]" />
+                    <div>
+                      <span className="text-xs text-[var(--warm-dark)]">변동 금액</span>
+                      <p className="text-[10px] text-[var(--warm-muted)] leading-tight mt-0.5">전기·수도 등 매달 금액이 달라지는 항목</p>
+                    </div>
+                  </label>
+                </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">메모 (선택)</label>
                   <input type="text" value={recForm.memo} onChange={e => setRecForm(p => ({ ...p, memo: e.target.value }))}

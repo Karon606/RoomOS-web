@@ -293,6 +293,42 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const totalExpense = expenses.reduce((s, e) => s + e.amount, 0)
   const totalDeposit = depositAgg._sum.depositAmount ?? 0
 
+  // ── 예상 지출 계산 ────────────────────────────────────────────
+  // 변동 항목의 과거 기록 배치 조회
+  const variableRecIds = recurringExpenses.filter(re => (re as any).isVariable).map(re => re.id)
+  const [variablePastExpenses, nonRecurringPast] = await Promise.all([
+    variableRecIds.length > 0
+      ? prisma.expense.findMany({
+          where: { propertyId, recurringExpenseId: { in: variableRecIds }, date: { lt: startDate } },
+          select: { recurringExpenseId: true, amount: true },
+        })
+      : Promise.resolve([]),
+    prisma.expense.aggregate({
+      where: { propertyId, recurringExpenseId: null, date: { gte: new Date(year, month - 4, 1), lt: startDate } },
+      _sum: { amount: true },
+    }),
+  ])
+
+  // 변동 항목별 평균 맵 (2개월 이상 기록 있을 때만)
+  const varSumMap: Record<string, number> = {}
+  const varCntMap: Record<string, number> = {}
+  for (const e of variablePastExpenses) {
+    const id = e.recurringExpenseId!
+    varSumMap[id] = (varSumMap[id] ?? 0) + e.amount
+    varCntMap[id] = (varCntMap[id] ?? 0) + 1
+  }
+  const variableAvgMap: Record<string, number> = {}
+  for (const id of variableRecIds) {
+    if ((varCntMap[id] ?? 0) >= 2) variableAvgMap[id] = Math.round(varSumMap[id] / varCntMap[id])
+  }
+
+  let expectedExpense = 0
+  for (const re of recurringExpenses) {
+    const isVar = (re as any).isVariable as boolean
+    expectedExpense += (isVar && variableAvgMap[re.id] !== undefined) ? variableAvgMap[re.id] : re.amount
+  }
+  expectedExpense += Math.round((nonRecurringPast._sum.amount ?? 0) / 3)
+
   // 완납 여부 판단: cutoff 이전 납부도 포함 (수익 계산과 별개)
   const allMonthPayments = await prisma.paymentRecord.findMany({
     where: { propertyId, targetMonth, isDeposit: false },
@@ -537,11 +573,13 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       timeLabel:           daysLeft < 0 ? `${Math.abs(daysLeft)}일 경과` : daysLeft === 0 ? '오늘' : `D-${daysLeft}`,
       exactDate:           fmtShortDate(dueDate),
       detail:              `${re.amount.toLocaleString()}원 · ${re.category}${re.isAutoDebit ? ' · 자동이체' : ''}${re.memo ? '\n' + re.memo : ''}`,
-      recurringExpenseId:  re.id,
-      recurringAmount:     re.amount,
-      recurringDueDate:    dueDate.toISOString().slice(0, 10),
-      recurringCategory:   re.category,
-      recurringPayMethod:  re.payMethod ?? undefined,
+      recurringExpenseId:    re.id,
+      recurringAmount:       re.amount,
+      recurringDueDate:      dueDate.toISOString().slice(0, 10),
+      recurringCategory:     re.category,
+      recurringPayMethod:    re.payMethod ?? undefined,
+      recurringIsVariable:   (re as any).isVariable as boolean,
+      recurringHistoricalAvg: variableAvgMap[re.id],
     })
   }
 
@@ -600,6 +638,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     jobDist:         toDistribution(jobMap),
     rooms:           roomsData,
     alerts:          alertItems,
+    expectedExpense,
     activity:        activityItems,
     unpaidLeases,
   }

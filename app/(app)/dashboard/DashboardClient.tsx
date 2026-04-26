@@ -31,7 +31,8 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
-  alerts:            { text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string }[]
+  alerts:            { text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number }[]
+  expectedExpense:   number
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
   unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; unpaidAmount: number }[]
 }
@@ -171,7 +172,8 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
   onClose: () => void
   onDone: () => void
 }) {
-  const [amount, setAmount]       = useState(alert.recurringAmount ?? 0)
+  const suggestedAmount = alert.recurringIsVariable && alert.recurringHistoricalAvg ? alert.recurringHistoricalAvg : (alert.recurringAmount ?? 0)
+  const [amount, setAmount]       = useState(suggestedAmount)
   const [date, setDate]           = useState(alert.recurringDueDate ?? new Date().toISOString().slice(0, 10))
   const [payMethod, setPayMethod] = useState(alert.recurringPayMethod ?? '')
   const [detail, setDetail]       = useState('')
@@ -219,7 +221,14 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
                   className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>금액 *</label>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>금액 *</label>
+                  {alert.recurringIsVariable && alert.recurringHistoricalAvg && (
+                    <span className="text-[10px] rounded-full px-1.5 py-0.5" style={{ background: 'rgba(99,102,241,0.1)', color: '#6366f1' }}>
+                      평균 {Math.round(alert.recurringHistoricalAvg / 10000).toLocaleString()}만원
+                    </span>
+                  )}
+                </div>
                 <input type="text" inputMode="numeric"
                   value={amount ? amount.toLocaleString() : ''}
                   onChange={e => setAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
@@ -1441,53 +1450,96 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                     )}
                   </div>
 
-                  {/* 수납 진행 */}
-                  <div className="rounded-xl p-5 flex flex-col gap-4" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+                  {/* 이달 손익 현황 */}
+                  <div className="rounded-xl p-5 flex flex-col gap-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>수납 진행</h3>
+                        <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>이달 손익 현황</h3>
                         <p style={{ fontSize: 11, color: 'var(--warm-muted)', marginTop: 1 }}>
-                          {parseInt(targetMonth.slice(5))}월 · {data.totalExpected > 0 ? Math.round((data.paidRevenue / data.totalExpected) * 100) : 0}% 수납
+                          {parseInt(targetMonth.slice(5))}월 예상 순이익 {data.totalExpected > 0 || data.expectedExpense > 0
+                            ? `${Math.round((data.totalExpected - data.expectedExpense) / 10000).toLocaleString()}만원`
+                            : '—'}
                         </p>
                       </div>
                       <Link href={`/rooms?month=${targetMonth}`} style={{ fontSize: 11, color: 'var(--coral)' }}>수납 관리 →</Link>
                     </div>
-                    {data.totalExpected > 0 ? (
-                      <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.15)' }}>
-                        <div className="h-full rounded-full transition-all duration-700"
-                          style={{ width: `${Math.min(100, Math.round((data.paidRevenue / data.totalExpected) * 100))}%`, background: 'var(--coral)' }} />
-                      </div>
-                    ) : (
-                      <div className="h-2.5 rounded-full" style={{ background: 'rgba(200,160,120,0.1)' }} />
-                    )}
-                    <div className="space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>총 예정액</span>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: '#5a4a3a' }}>
+
+                    {/* ── 매출 섹션 ── */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>예상 매출</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>
                           {Math.round(data.totalExpected / 10000).toLocaleString()}만원
                         </span>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--coral)' }} />
-                          <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>수납 완료</span>
-                          <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>{data.paidCount}건</span>
+                      <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.15)' }}>
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${data.totalExpected > 0 ? Math.min(100, Math.round((data.paidRevenue / data.totalExpected) * 100)) : 0}%`, background: 'var(--coral)' }} />
+                      </div>
+                      <div className="space-y-1.5 pt-0.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--coral)' }} />
+                            <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>수납 완료</span>
+                            <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>{data.paidCount}건</span>
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)' }}>
+                            {Math.round(data.paidRevenue / 10000).toLocaleString()}만원
+                          </span>
                         </div>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)' }}>
-                          {Math.round(data.paidRevenue / 10000).toLocaleString()}만원
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'rgba(200,160,120,0.4)' }} />
+                            <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>미수납</span>
+                            {data.unpaidCount > 0 && (
+                              <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>{data.unpaidCount}건</span>
+                            )}
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: data.unpaidAmount > 0 ? '#ef4444' : 'var(--warm-muted)' }}>
+                            {data.unpaidAmount > 0 ? `-${Math.round(data.unpaidAmount / 10000).toLocaleString()}만원` : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 구분선 */}
+                    <div style={{ borderTop: `1px solid ${DIVIDER_COLOR}` }} />
+
+                    {/* ── 지출 섹션 ── */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>예상 지출</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>
+                          {Math.round(data.expectedExpense / 10000).toLocaleString()}만원
                         </span>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#ef4444' }} />
-                          <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>미수납</span>
-                          {data.unpaidCount > 0 && (
-                            <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>{data.unpaidCount}건</span>
-                          )}
+                      <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(239,68,68,0.08)' }}>
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{
+                            width: `${data.expectedExpense > 0 ? Math.min(100, Math.round((data.totalExpense / data.expectedExpense) * 100)) : 0}%`,
+                            background: data.totalExpense > data.expectedExpense ? '#ef4444' : '#f97316',
+                          }} />
+                      </div>
+                      <div className="space-y-1.5 pt-0.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#f97316' }} />
+                            <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>실제 지출</span>
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: data.totalExpense > data.expectedExpense ? '#ef4444' : '#f97316' }}>
+                            {Math.round(data.totalExpense / 10000).toLocaleString()}만원
+                          </span>
                         </div>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: data.unpaidAmount > 0 ? '#ef4444' : '#5a4a3a' }}>
-                          {data.unpaidAmount > 0 ? `-${Math.round(data.unpaidAmount / 10000).toLocaleString()}만원` : '—'}
-                        </span>
+                        <div className="flex items-center justify-between">
+                          <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>
+                            {data.totalExpense <= data.expectedExpense ? '절감 예상' : '초과'}
+                          </span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: data.totalExpense <= data.expectedExpense ? '#16a34a' : '#ef4444' }}>
+                            {data.expectedExpense > 0
+                              ? `${data.totalExpense <= data.expectedExpense ? '-' : '+'}${Math.round(Math.abs(data.expectedExpense - data.totalExpense) / 10000).toLocaleString()}만원`
+                              : '—'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>

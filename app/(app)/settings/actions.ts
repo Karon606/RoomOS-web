@@ -376,6 +376,7 @@ export type RecurringExpenseRow = {
   dueDay: number
   payMethod: string | null
   isAutoDebit: boolean
+  isVariable: boolean
   alertDaysBefore: number
   isActive: boolean
   memo: string | null
@@ -386,13 +387,13 @@ export async function getRecurringExpenses(): Promise<RecurringExpenseRow[]> {
   return prisma.recurringExpense.findMany({
     where: { propertyId },
     orderBy: { dueDay: 'asc' },
-    select: { id: true, title: true, amount: true, category: true, dueDay: true, payMethod: true, isAutoDebit: true, alertDaysBefore: true, isActive: true, memo: true },
+    select: { id: true, title: true, amount: true, category: true, dueDay: true, payMethod: true, isAutoDebit: true, isVariable: true, alertDaysBefore: true, isActive: true, memo: true },
   })
 }
 
 export async function addRecurringExpense(data: {
   title: string; amount: number; category: string; dueDay: number
-  payMethod?: string; isAutoDebit?: boolean; alertDaysBefore?: number; memo?: string
+  payMethod?: string; isAutoDebit?: boolean; isVariable?: boolean; alertDaysBefore?: number; memo?: string
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -409,7 +410,7 @@ export async function addRecurringExpense(data: {
 
 export async function updateRecurringExpense(id: string, data: Partial<{
   title: string; amount: number; category: string; dueDay: number
-  payMethod: string | null; isAutoDebit: boolean; alertDaysBefore: number; isActive: boolean; memo: string | null
+  payMethod: string | null; isAutoDebit: boolean; isVariable: boolean; alertDaysBefore: number; isActive: boolean; memo: string | null
 }>): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
