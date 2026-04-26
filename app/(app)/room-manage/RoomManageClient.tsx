@@ -2,7 +2,6 @@
 
 import { useState, useTransition, useRef } from 'react'
 import { addRoom, updateRoom, deleteRoom, uploadRoomPhoto, deleteRoomPhoto } from './actions'
-import { addRoomTypeOption } from '@/app/(app)/settings/actions'
 import { AreaInput } from '@/components/ui/AreaInput'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -75,7 +74,6 @@ export default function RoomManageClient({
 
   // 기타
   const [types, setTypes]   = useState<string[]>(roomTypes)
-  const [newType, setNewType] = useState('')
   const [error, setError]   = useState('')
   const [isPending, startTransition] = useTransition()
   const photoInputRef    = useRef<HTMLInputElement>(null)
@@ -205,21 +203,7 @@ export default function RoomManageClient({
         <option value="">선택</option>
         {types.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
-      <div className="flex gap-2">
-        <input type="text" value={newType} onChange={e => setNewType(e.target.value)}
-          placeholder="새 방타입 추가..."
-          className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
-        <button type="button"
-          onClick={async () => {
-            if (!newType.trim()) return
-            await addRoomTypeOption(newType.trim())
-            setTypes(prev => [...prev, newType.trim()])
-            setNewType('')
-          }}
-          className="px-3 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-xs rounded-xl transition-colors">
-          등록
-        </button>
-      </div>
+      <p className="text-[10px] text-[var(--warm-muted)]">방 타입 추가·관리는 환경설정에서 할 수 있습니다.</p>
     </div>
   )
 
@@ -555,8 +539,10 @@ function Modal({ title, children, onClose }: {
   title: string; children: React.ReactNode; onClose: () => void
 }) {
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+      onClick={onClose}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[90vh]"
+        onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] flex-shrink-0">
           <h2 className="text-base font-bold text-[var(--warm-dark)]">{title}</h2>
           <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors text-xl leading-none">✕</button>
