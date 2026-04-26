@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma'
 import { Suspense } from 'react'
 import DataButtons from '@/components/DataButtons'
 import DashboardClient, { type DashboardData } from './DashboardClient'
+import { getPaymentMethods } from '@/app/(app)/settings/actions'
 
 // ── 헬퍼 ──────────────────────────────────────────────────────
 
@@ -539,6 +540,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       recurringExpenseId:  re.id,
       recurringAmount:     re.amount,
       recurringDueDate:    dueDate.toISOString().slice(0, 10),
+      recurringCategory:   re.category,
+      recurringPayMethod:  re.payMethod ?? undefined,
     })
   }
 
@@ -625,7 +628,10 @@ export default async function DashboardPage({
     select: { name: true },
   })
 
-  const dashboardData = await getDashboardData(propertyId, targetMonth)
+  const [dashboardData, paymentMethods] = await Promise.all([
+    getDashboardData(propertyId, targetMonth),
+    getPaymentMethods(),
+  ])
 
   return (
     <div className="space-y-3.5">
@@ -639,7 +645,7 @@ export default async function DashboardPage({
       </div>
 
       {/* ── 대시보드 ──────────────────────────────────────────── */}
-      <DashboardClient data={dashboardData} targetMonth={targetMonth} />
+      <DashboardClient data={dashboardData} targetMonth={targetMonth} paymentMethods={paymentMethods} />
 
     </div>
   )

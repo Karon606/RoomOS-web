@@ -31,7 +31,7 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
-  alerts:            { text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string }[]
+  alerts:            { text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string }[]
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
   unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; unpaidAmount: number }[]
 }
@@ -95,35 +95,15 @@ function daysLabel(daysOverdue: number | null): { text: string; color: string } 
 
 type AlertItem = DashboardData['alerts'][number]
 
-function AlertDetailModal({ alert, onClose, onOpenPayment, onRecurringRecorded }: {
+function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   alert: AlertItem
   onClose: () => void
   onOpenPayment: (id: string) => void
-  onRecurringRecorded: () => void
+  onStartRecord: (alert: AlertItem) => void
 }) {
   const initial = alert.text.slice(0, 1)
   const avatarBg = hexToRgba(alert.dotColor, 0.15)
   const isRecurring = !!alert.recurringExpenseId
-  const [recAmount, setRecAmount] = useState(alert.recurringAmount ?? 0)
-  const [recDate, setRecDate] = useState(alert.recurringDueDate ?? new Date().toISOString().slice(0, 10))
-  const [recPayMethod, setRecPayMethod] = useState('')
-  const [recPending, startRecTransition] = useTransition()
-  const [recError, setRecError] = useState('')
-  const [recDone, setRecDone] = useState(false)
-
-  const handleRecord = () => {
-    if (!alert.recurringExpenseId) return
-    startRecTransition(async () => {
-      const res = await recordRecurringExpense({
-        recurringExpenseId: alert.recurringExpenseId!,
-        amount: recAmount,
-        date: recDate,
-        payMethod: recPayMethod || undefined,
-      })
-      if (res.ok) { setRecDone(true); onRecurringRecorded() }
-      else setRecError(res.error)
-    })
-  }
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -140,7 +120,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onRecurringRecorded }
               <p className="text-sm font-bold leading-snug" style={{ color: '#5a4a3a' }}>{alert.text}</p>
               <span className="inline-block mt-1.5 text-[10px] font-semibold rounded-full px-2 py-0.5"
                 style={{ background: hexToRgba(alert.dotColor, 0.12), color: alert.dotColor }}>
-                {alert.timeLabel}
+                {alert.timeLabel}{alert.exactDate ? ` · ${alert.exactDate}` : ''}
               </span>
             </div>
           </div>
@@ -149,52 +129,21 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onRecurringRecorded }
 
         {/* 상세 내용 */}
         {alert.detail && (
-          <div className="px-5 py-4 border-b" style={{ borderColor: DIVIDER_COLOR }}>
+          <div className="px-5 py-4" style={{ borderBottom: isRecurring || alert.tenantId ? `1px solid ${DIVIDER_COLOR}` : undefined }}>
             <p className="text-sm whitespace-pre-line leading-relaxed" style={{ color: 'var(--warm-dark)' }}>{alert.detail}</p>
           </div>
         )}
 
-        {/* 고정 지출 기록 폼 */}
-        {isRecurring && (
-          <div className="px-5 py-4 space-y-3">
-            {recDone ? (
-              <p className="text-sm font-medium text-green-600 text-center py-2">✅ 지출이 기록되었습니다</p>
-            ) : (
-              <>
-                <p className="text-xs font-semibold" style={{ color: 'var(--warm-mid)' }}>지출 기록하기</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-medium" style={{ color: 'var(--warm-muted)' }}>금액</label>
-                    <input type="text" inputMode="numeric"
-                      value={recAmount.toLocaleString()}
-                      onChange={e => setRecAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[#6366f1] transition-colors" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-medium" style={{ color: 'var(--warm-muted)' }}>납부일</label>
-                    <input type="date" value={recDate} onChange={e => setRecDate(e.target.value)}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[#6366f1] transition-colors" />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-medium" style={{ color: 'var(--warm-muted)' }}>결제 수단 (선택)</label>
-                  <input type="text" value={recPayMethod} onChange={e => setRecPayMethod(e.target.value)}
-                    placeholder="계좌이체, 자동이체, 신용카드…"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[#6366f1] transition-colors" />
-                </div>
-                {recError && <p className="text-xs text-red-500">{recError}</p>}
-                <button onClick={handleRecord} disabled={recPending || !recAmount || !recDate}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
-                  style={{ background: '#6366f1', color: 'white' }}>
-                  {recPending ? '저장 중…' : '지출 기록하기'}
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
         {/* 하단 버튼 */}
-        <div className="px-5 pb-5 pt-2 space-y-2">
+        <div className="px-5 pb-5 pt-4 space-y-2">
+          {isRecurring && (
+            <button
+              onClick={() => { onStartRecord(alert); onClose() }}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
+              style={{ background: 'var(--coral)', color: 'white' }}>
+              지출 기록하기
+            </button>
+          )}
           {alert.tenantId && !isRecurring && (
             <button
               onClick={() => { onOpenPayment(alert.tenantId!); onClose() }}
@@ -209,6 +158,128 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onRecurringRecorded }
             {isRecurring ? '지출/기타 수익에서 보기 →' : '입주자 관리에서 보기 →'}
           </Link>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 고정 지출 기록 폼 모달 ────────────────────────────────────────
+
+function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
+  alert: AlertItem
+  paymentMethods: string[]
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [amount, setAmount]       = useState(alert.recurringAmount ?? 0)
+  const [date, setDate]           = useState(alert.recurringDueDate ?? new Date().toISOString().slice(0, 10))
+  const [payMethod, setPayMethod] = useState(alert.recurringPayMethod ?? '')
+  const [detail, setDetail]       = useState('')
+  const [memo, setMemo]           = useState('')
+  const [pending, startTransition] = useTransition()
+  const [error, setError]         = useState('')
+  const [done, setDone]           = useState(false)
+
+  const handleSubmit = () => {
+    if (!alert.recurringExpenseId) return
+    startTransition(async () => {
+      const res = await recordRecurringExpense({
+        recurringExpenseId: alert.recurringExpenseId!,
+        amount,
+        date,
+        payMethod: payMethod || undefined,
+        memo: memo || undefined,
+      })
+      if (res.ok) { setDone(true); setTimeout(onDone, 800) }
+      else setError(res.error)
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+        {/* 헤더 */}
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: DIVIDER_COLOR }}>
+          <p className="text-sm font-bold" style={{ color: 'var(--warm-dark)' }}>지출 등록</p>
+          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+        </div>
+
+        {done ? (
+          <div className="px-5 py-10 text-center">
+            <p className="text-sm font-semibold text-green-600">✅ 지출이 기록되었습니다</p>
+          </div>
+        ) : (
+          <div className="px-5 py-4 space-y-3">
+            {/* 날짜 + 금액 */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>날짜 *</label>
+                <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>금액 *</label>
+                <input type="text" inputMode="numeric"
+                  value={amount ? amount.toLocaleString() : ''}
+                  onChange={e => setAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
+                  placeholder="0원"
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+              </div>
+            </div>
+
+            {/* 카테고리 (읽기 전용) */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>카테고리</label>
+              <div className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm"
+                style={{ color: 'var(--warm-muted)' }}>
+                {alert.recurringCategory ?? '—'}
+              </div>
+            </div>
+
+            {/* 세부 항목 */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>세부 항목</label>
+              <input type="text" value={detail} onChange={e => setDetail(e.target.value)}
+                placeholder="세부 내용"
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+            </div>
+
+            {/* 결제 수단 */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>결제수단</label>
+              <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                <option value="">선택 안 함</option>
+                {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+
+            {/* 메모 */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>메모</label>
+              <input type="text" value={memo} onChange={e => setMemo(e.target.value)}
+                placeholder="메모 (선택)"
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+            </div>
+
+            {error && <p className="text-xs text-red-500">{error}</p>}
+
+            {/* 버튼 */}
+            <div className="flex gap-2 pt-1">
+              <button onClick={onClose}
+                className="flex-1 py-2.5 rounded-xl text-sm border transition-colors"
+                style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+                취소
+              </button>
+              <button onClick={handleSubmit} disabled={pending || !amount || !date}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
+                style={{ background: 'var(--coral)', color: 'white' }}>
+                {pending ? '저장 중…' : '저장'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1202,11 +1273,12 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'ai',       label: '✦ AI 분석' },
 ]
 
-export default function DashboardClient({ data, targetMonth }: { data: DashboardData; targetMonth: string }) {
+export default function DashboardClient({ data, targetMonth, paymentMethods }: { data: DashboardData; targetMonth: string; paymentMethods: string[] }) {
   const [tab, setTab]                             = useState<Tab>('overview')
   const [selectedRoom, setSelectedRoom]           = useState<DashboardData['rooms'][number] | null>(null)
   const [dashTenantId, setDashTenantId]           = useState<string | null>(null)
   const [selectedAlert, setSelectedAlert]         = useState<AlertItem | null>(null)
+  const [recordingAlert, setRecordingAlert]       = useState<AlertItem | null>(null)
   const [unpaidExpanded, setUnpaidExpanded]       = useState(false)
   const [activityExpanded, setActivityExpanded]   = useState(false)
 
@@ -1563,7 +1635,15 @@ export default function DashboardClient({ data, targetMonth }: { data: Dashboard
           alert={selectedAlert}
           onClose={() => setSelectedAlert(null)}
           onOpenPayment={id => { setSelectedAlert(null); setDashTenantId(id) }}
-          onRecurringRecorded={() => setSelectedAlert(null)}
+          onStartRecord={alert => { setSelectedAlert(null); setRecordingAlert(alert) }}
+        />
+      )}
+      {recordingAlert && (
+        <RecurringExpenseFormModal
+          alert={recordingAlert}
+          paymentMethods={paymentMethods}
+          onClose={() => setRecordingAlert(null)}
+          onDone={() => setRecordingAlert(null)}
         />
       )}
       {dashTenantId && (
