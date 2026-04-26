@@ -1516,7 +1516,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                           {Math.round(data.expectedExpense / 10000).toLocaleString()}만원
                         </span>
                       </div>
-                      <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.15)' }}>
+                      <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.4)' }}>
                         <div className="h-full rounded-full transition-all duration-700"
                           style={{
                             width: `${data.expectedExpense > 0 ? Math.min(100, Math.round((data.totalExpense / data.expectedExpense) * 100)) : 0}%`,
