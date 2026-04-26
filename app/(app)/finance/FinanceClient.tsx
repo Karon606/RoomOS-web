@@ -473,6 +473,14 @@ export default function FinanceClient({
   const monthLabel = `${yyyy}년 ${parseInt(mm)}월`
 
   const recUnrecordedCount = recurringExpensesWithStatus.filter(r => !r.recordedExpenseId).length
+
+  // ── 상단 요약 위젯 계산 ──────────────────────────────────────
+  const normalExpTotal   = expenses.reduce((s, e) => s + e.amount, 0)
+  const recRecordedTotal = recurringExpensesWithStatus.filter(r => r.recordedExpenseId).reduce((s, r) => s + (r.recordedAmount ?? 0), 0)
+  const recPendingTotal  = recurringExpensesWithStatus.filter(r => !r.recordedExpenseId).reduce((s, r) => s + (r.historicalAvg ?? r.amount), 0)
+  const totalExpectedExp = normalExpTotal + recRecordedTotal + recPendingTotal
+  const totalIncomeSum   = incomes.reduce((s, i) => s + i.amount, 0)
+  const expectedProfit   = totalIncomeSum - totalExpectedExp
   const TABS: { key: Tab; label: string }[] = [
     { key: 'recurring', label: `고정 지출${recUnrecordedCount > 0 ? ` (${recUnrecordedCount})` : ''}` },
     { key: 'expense', label: '지출 내역' },
@@ -486,6 +494,82 @@ export default function FinanceClient({
 
       {/* 헤더 */}
       <h1 className="text-xl font-bold text-[var(--warm-dark)]">지출/기타 수익</h1>
+
+      {/* ── 월간 요약 위젯 ── */}
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+        {/* 상단: 지출 / 부가수익 */}
+        <div className="grid grid-cols-2 divide-x divide-[var(--warm-border)]">
+
+          {/* 전체 예상 지출 */}
+          <div className="px-5 py-4 space-y-2">
+            <p className="text-xs font-medium text-[var(--warm-muted)]">전체 예상 지출</p>
+            <p className="text-xl font-bold text-[var(--warm-dark)] font-mono">
+              <MoneyDisplay amount={totalExpectedExp} prefix="-" />
+            </p>
+            <div className="space-y-1 pt-1 border-t border-[var(--warm-border)]">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[var(--warm-muted)]">일반 지출</span>
+                <span className="text-[var(--warm-dark)] font-medium font-mono">
+                  <MoneyDisplay amount={normalExpTotal} />
+                </span>
+              </div>
+              {(recRecordedTotal > 0 || recPendingTotal > 0) && (
+                <>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[var(--warm-muted)]">고정 지출 (기록됨)</span>
+                    <span className="text-[var(--warm-dark)] font-medium font-mono">
+                      <MoneyDisplay amount={recRecordedTotal} />
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[var(--warm-muted)]">고정 지출 (예정)</span>
+                      {recPendingTotal > 0 && (
+                        <span className="text-[9px] bg-amber-400/15 text-amber-600 px-1.5 py-0.5 rounded-full font-medium">
+                          {recUnrecordedCount}건 미기록
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-amber-600 font-medium font-mono">
+                      <MoneyDisplay amount={recPendingTotal} />
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* 부가수익 */}
+          <div className="px-5 py-4 space-y-2">
+            <p className="text-xs font-medium text-[var(--warm-muted)]">부가 수익 합계</p>
+            <p className="text-xl font-bold text-[var(--warm-dark)] font-mono">
+              <MoneyDisplay amount={totalIncomeSum} prefix="+" />
+            </p>
+            <div className="pt-1 border-t border-[var(--warm-border)]">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[var(--warm-muted)]">수익 건수</span>
+                <span className="text-[var(--warm-dark)] font-medium">{incomes.length}건</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 하단: 예상 손익 */}
+        <div className="px-5 py-3 border-t border-[var(--warm-border)]"
+          style={{ background: expectedProfit >= 0 ? 'rgba(200,160,120,0.06)' : 'rgba(244,98,58,0.05)' }}>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-[var(--warm-muted)]">
+              {monthLabel} 예상 손익
+              <span className="ml-1.5 text-[9px] opacity-70">(부가수익 − 전체 지출)</span>
+            </span>
+            <span className="text-sm font-bold font-mono"
+              style={{ color: expectedProfit >= 0 ? 'var(--warm-dark)' : 'var(--coral)' }}>
+              {expectedProfit >= 0 ? '+' : ''}<MoneyDisplay amount={Math.abs(expectedProfit)} />
+              {expectedProfit < 0 && <span className="ml-1 text-xs font-normal opacity-70">적자</span>}
+            </span>
+          </div>
+        </div>
+      </div>
 
       {/* 서브탭 */}
       <div className="flex gap-1.5 overflow-x-auto scrollbar-hide">
