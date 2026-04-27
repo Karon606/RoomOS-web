@@ -777,19 +777,19 @@ export default function FinanceClient({
                       return (
                         <div key={`rec-${r.id}`}
                           onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.payMethod ?? '계좌이체'); setRecError('') }}
-                          className="bg-amber-50/60 border-2 border-dashed border-amber-300 rounded-2xl p-4 cursor-pointer active:opacity-70 transition-opacity">
+                          className="bg-[var(--cream)] border border-[var(--warm-border)] border-l-[3px] border-l-amber-400 rounded-2xl p-4 cursor-pointer hover:bg-[var(--canvas)] active:opacity-70 transition-colors">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-xs text-[var(--warm-muted)]">{item.dateStr.slice(5).replace('-', '/')} 납부일</span>
                             <div className="flex items-center gap-1.5">
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 ring-1 ring-amber-300 font-medium">
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 ring-1 ring-amber-200 font-medium">
                                 {r.isAutoDebit ? '자동이체 확인' : '지출 확인 필요'}
                               </span>
                               <div className="text-right">
-                                <span className="text-sm font-bold text-amber-700">
+                                <span className="text-sm font-bold text-red-500">
                                   <MoneyDisplay amount={expectedAmt} prefix="-" />
                                 </span>
                                 {r.isVariable && (
-                                  <p className="text-[9px] text-blue-500 mt-0.5">
+                                  <p className="text-[9px] text-blue-400 mt-0.5">
                                     {r.historicalAvg ? '과거 평균 기준 예상치' : '예상치'}
                                   </p>
                                 )}
@@ -797,12 +797,12 @@ export default function FinanceClient({
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 ring-1 ring-amber-200 font-medium">고정</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 ring-1 ring-amber-200 font-medium">고정</span>
                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20">{r.category}</span>
                             {r.payMethod && <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{r.payMethod}</span>}
-                            {r.isVariable && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 ring-1 ring-blue-200">변동</span>}
+                            {r.isVariable && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-500 ring-1 ring-blue-100">변동</span>}
                           </div>
-                          <p className="text-xs text-amber-800 font-medium">{r.title}{r.memo ? ` · ${r.memo}` : ''}</p>
+                          <p className="text-xs text-[var(--warm-dark)] font-medium">{r.title}{r.memo ? ` · ${r.memo}` : ''}</p>
                         </div>
                       )
                     })}
@@ -861,8 +861,9 @@ export default function FinanceClient({
                           return (
                             <tr key={`rec-${r.id}`}
                               onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.payMethod ?? '계좌이체'); setRecError('') }}
-                              className="border-b border-amber-200 bg-amber-50/40 hover:bg-amber-50/70 transition-colors cursor-pointer">
-                              <td className="px-4 py-3 text-xs text-amber-700 overflow-hidden">
+                              className="border-b border-[var(--warm-border)] bg-[var(--canvas)]/40 hover:bg-[var(--canvas)] transition-colors cursor-pointer"
+                              style={{ boxShadow: 'inset 3px 0 0 #fbbf24' }}>
+                              <td className="px-4 py-3 text-xs text-[var(--warm-muted)] overflow-hidden">
                                 <span className="truncate block">{item.dateStr.slice(5).replace('-', '/')} 납부</span>
                               </td>
                               <td className="px-4 py-3 overflow-hidden">
@@ -870,25 +871,25 @@ export default function FinanceClient({
                               </td>
                               <td className="px-4 py-3 overflow-hidden">
                                 <div className="flex items-center gap-1">
-                                  <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700 ring-1 ring-amber-200 whitespace-nowrap font-medium">고정</span>
+                                  <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-600 ring-1 ring-amber-200 whitespace-nowrap font-medium">고정</span>
                                   <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20 whitespace-nowrap">{r.category}</span>
                                 </div>
                               </td>
-                              <td className="px-4 py-3 text-sm text-amber-800 overflow-hidden">
+                              <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
                                 <span className="truncate block font-medium">{r.title}</span>
                               </td>
                               <td className="px-4 py-3 overflow-hidden">
-                                <span className="text-sm font-semibold text-amber-700 truncate block">
+                                <span className="text-sm font-semibold text-red-500 truncate block">
                                   <MoneyDisplay amount={expectedAmt} prefix="-" />
                                 </span>
                                 {r.isVariable && (
-                                  <span className="text-[9px] text-blue-500">
+                                  <span className="text-[9px] text-blue-400">
                                     {r.historicalAvg ? '과거 평균 기준 예상치' : '예상치'}
                                   </span>
                                 )}
                               </td>
                               <td className="px-4 py-3 overflow-hidden">
-                                <span className="inline-flex items-center text-xs px-2 py-1 rounded-full font-medium ring-1 whitespace-nowrap bg-amber-100 text-amber-700 ring-amber-300">
+                                <span className="inline-flex items-center text-xs px-2 py-1 rounded-full font-medium ring-1 whitespace-nowrap bg-amber-50 text-amber-600 ring-amber-200">
                                   {r.isAutoDebit ? '자동이체 확인' : '확인 필요'}
                                 </span>
                               </td>
