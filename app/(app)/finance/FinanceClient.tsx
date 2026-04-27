@@ -1316,51 +1316,60 @@ export default function FinanceClient({
             {financialAccounts.length === 0 ? (
               <EmptyState label="등록된 자산이 없습니다" />
             ) : (
-              <div className="divide-y divide-gray-800">
-                {financialAccounts.map(a => (
-                  <div key={a.id} className="px-5 py-4 flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium
-                          ${a.type === 'BANK_ACCOUNT'
-                            ? 'bg-blue-500/15 text-blue-400'
-                            : a.type === 'CREDIT_CARD'
-                            ? 'bg-red-500/15 text-red-400'
-                            : 'bg-yellow-500/15 text-yellow-400'}`}>
-                          {ACCOUNT_TYPE_LABEL[a.type]}
-                        </span>
-                        <BrandLogo name={a.brand} size={16} />
-                        <span className="text-sm font-medium text-[var(--warm-dark)]">{accName(a)}</span>
-                        {a.identifier && (
-                          <span className="text-xs text-[var(--warm-muted)]">
-                            {a.type === 'BANK_ACCOUNT' ? a.identifier : `···${a.identifier}`}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-[var(--warm-muted)] mt-0.5 space-x-2">
-                        {a.owner && <span>{a.owner}</span>}
-                        {a.payDay && <span>결제일: {displayDay(a.payDay)}</span>}
-                        {a.cutOffDay && <span>기준일: {displayDay(a.cutOffDay)}</span>}
-                        {a.linkedAccount && <span>출금: {accName(a.linkedAccount)}</span>}
+              <div>
+                {(
+                  [
+                    { type: 'BANK_ACCOUNT', label: '은행계좌' },
+                    { type: 'CREDIT_CARD',  label: '신용카드' },
+                    { type: 'DEBIT_CARD',   label: '체크카드' },
+                  ] as const
+                ).map(({ type, label }) => {
+                  const group = financialAccounts.filter(a => a.type === type)
+                  if (group.length === 0) return null
+                  return (
+                    <div key={type} className="border-b border-[var(--warm-border)] last:border-0">
+                      <p className="px-5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--warm-muted)]">{label}</p>
+                      <div className="divide-y divide-[var(--warm-border)]/50">
+                        {group.map(a => (
+                          <div key={a.id} className="px-5 py-3.5 flex items-center gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <BrandLogo name={a.brand} size={16} />
+                                <span className="text-sm font-medium text-[var(--warm-dark)]">{accName(a)}</span>
+                                {a.identifier && (
+                                  <span className="text-xs text-[var(--warm-muted)]">
+                                    {a.type === 'BANK_ACCOUNT' ? a.identifier : `···${a.identifier}`}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-[var(--warm-muted)] mt-0.5 space-x-2">
+                                {a.owner && <span>{a.owner}</span>}
+                                {a.payDay && <span>결제일: {displayDay(a.payDay)}</span>}
+                                {a.cutOffDay && <span>기준일: {displayDay(a.cutOffDay)}</span>}
+                                {a.linkedAccount && <span>출금: {accName(a.linkedAccount)}</span>}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => { setEditingAcc(a); setAssetType(a.type); setAssetBrand(a.brand ?? ''); setAssetFormKey(k => k + 1) }}
+                              className="text-xs text-[var(--coral)] px-3 py-1.5 bg-[var(--coral)]/10 rounded-lg transition-colors shrink-0">
+                              수정
+                            </button>
+                            <button
+                              onClick={() => handleDeactivateAsset(a.id)}
+                              className="text-xs text-amber-400 hover:text-amber-300 px-3 py-1.5 bg-amber-500/10 rounded-lg transition-colors shrink-0">
+                              해지
+                            </button>
+                            <button
+                              onClick={() => handleDeleteAsset(a.id)}
+                              className="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 bg-red-500/10 rounded-lg transition-colors shrink-0">
+                              삭제
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                    <button
-                      onClick={() => { setEditingAcc(a); setAssetType(a.type); setAssetBrand(a.brand ?? ''); setAssetFormKey(k => k + 1) }}
-                      className="text-xs text-[var(--coral)] px-3 py-1.5 bg-[var(--coral)]/10 rounded-lg transition-colors shrink-0">
-                      수정
-                    </button>
-                    <button
-                      onClick={() => handleDeactivateAsset(a.id)}
-                      className="text-xs text-amber-400 hover:text-amber-300 px-3 py-1.5 bg-amber-500/10 rounded-lg transition-colors shrink-0">
-                      해지
-                    </button>
-                    <button
-                      onClick={() => handleDeleteAsset(a.id)}
-                      className="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 bg-red-500/10 rounded-lg transition-colors shrink-0">
-                      삭제
-                    </button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
