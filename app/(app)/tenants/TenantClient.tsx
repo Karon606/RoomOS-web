@@ -1949,11 +1949,15 @@ export default function TenantClient({
                                   onChange={e => {
                                     const v = e.target.value
                                     const n = Number(v)
-                                    if (/^[ㅁ마말]/.test(v) || (!isNaN(n) && n >= 30 && v.trim() !== '')) {
+                                    if (/[ㅁ마말]/.test(v) || (!isNaN(n) && n >= 30 && v.trim() !== '')) {
                                       setOverrideInput('말일')
                                     } else {
                                       setOverrideInput(v)
                                     }
+                                  }}
+                                  onCompositionEnd={e => {
+                                    const v = (e.target as HTMLInputElement).value
+                                    if (/[ㅁ마말]/.test(v)) setOverrideInput('말일')
                                   }}
                                   placeholder="예: 20, 말일"
                                   className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-amber-500"
