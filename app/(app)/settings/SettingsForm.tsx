@@ -545,7 +545,7 @@ export default function SettingsForm({
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                   <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
                     이 항목이 실제로 <strong>내 부담</strong>이 되는 첫 날짜입니다.<br />
-                    예) 인터넷 요금 결제일이 25일이고 4월25일분이 3월 사용분이면, 이전 원장이 부담하는 마지막 청구가 4월 → 내 부담 시작은 <strong>5월 청구분(5월25일)</strong>부터이므로 2026-05-25 입력.<br />
+                    예) 인터넷 요금 결제일이 25일이고 4월25일분이 3월 사용분이면, 양도인이 부담하는 마지막 청구가 4월 → 내 부담 시작은 <strong>5월 청구분(5월25일)</strong>부터이므로 2026-05-25 입력.<br />
                     입력하지 않으면 즉시 활성화됩니다.
                   </p>
                 </div>
