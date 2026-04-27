@@ -59,6 +59,19 @@ type NaverItem = {
   link: string
 }
 
+// ── Label maps (구 enum → 한국어, 마이그레이션 전 데이터 호환) ──
+
+const WINDOW_TYPE_LABEL: Record<string, string> = {
+  OUTER: '외창', INNER: '내창',
+}
+const DIRECTION_LABEL: Record<string, string> = {
+  NORTH: '북향', NORTH_EAST: '북동향', EAST: '동향', SOUTH_EAST: '남동향',
+  SOUTH: '남향', SOUTH_WEST: '남서향', WEST: '서향', NORTH_WEST: '북서향',
+}
+
+function getWindowLabel(val: string) { return WINDOW_TYPE_LABEL[val] ?? val }
+function getDirectionLabel(val: string) { return DIRECTION_LABEL[val] ?? val }
+
 // ── Helpers ───────────────────────────────────────────────────
 
 function parseRoomPrices(raw: unknown): RoomPrice[] {
@@ -162,11 +175,17 @@ function CompetitorModal({
   onClose,
   onSave,
   isPending,
+  roomTypes,
+  windowTypes,
+  directions,
 }: {
   initial?: CompetitorFormData
   onClose: () => void
   onSave: (data: CompetitorFormData) => void
   isPending: boolean
+  roomTypes: string[]
+  windowTypes: string[]
+  directions: string[]
 }) {
   const [form, setForm] = useState<CompetitorFormData>(initial ?? emptyForm())
 
@@ -196,6 +215,16 @@ function CompetitorModal({
     color: 'var(--warm-dark)',
     width: '100%',
     outline: 'none',
+  }
+
+  const selectStyle: React.CSSProperties = {
+    ...inputStyle,
+    appearance: 'none',
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 10px center',
+    paddingRight: 28,
+    cursor: 'pointer',
   }
 
   const labelStyle: React.CSSProperties = {
@@ -269,35 +298,70 @@ function CompetitorModal({
                 + 행 추가
               </button>
             </div>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3">
               {form.roomPrices.map((row, i) => (
-                <div key={i} className="flex gap-2 items-center">
-                  <input
-                    style={{ ...inputStyle, width: '35%' }}
-                    placeholder="타입"
-                    value={row.type}
-                    onChange={e => setPriceRow(i, 'type', e.target.value)}
-                  />
-                  <input
-                    style={{ ...inputStyle, width: '35%' }}
-                    type="number"
-                    placeholder="단가"
-                    value={row.price || ''}
-                    onChange={e => setPriceRow(i, 'price', e.target.value)}
-                  />
-                  <input
-                    style={{ ...inputStyle, width: '25%' }}
-                    placeholder="메모"
-                    value={row.memo ?? ''}
-                    onChange={e => setPriceRow(i, 'memo', e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removePriceRow(i)}
-                    style={{ color: '#b91c1c', fontSize: 18, lineHeight: 1, flexShrink: 0 }}
-                  >
-                    ×
-                  </button>
+                <div
+                  key={i}
+                  style={{
+                    border: '1px solid var(--warm-border)',
+                    borderRadius: 12,
+                    padding: '10px 12px',
+                    background: 'var(--canvas)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                  }}
+                >
+                  {/* 타입 선택 행 */}
+                  <div className="flex gap-2 items-center">
+                    <select
+                      style={{ ...selectStyle, flex: 2 }}
+                      value={row.type}
+                      onChange={e => setPriceRow(i, 'type', e.target.value)}
+                    >
+                      <option value="">방타입 선택</option>
+                      {roomTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <select
+                      style={{ ...selectStyle, flex: 1 }}
+                      value={row.windowType ?? ''}
+                      onChange={e => setPriceRow(i, 'windowType', e.target.value)}
+                    >
+                      <option value="">창타입</option>
+                      {windowTypes.map(w => <option key={w} value={w}>{getWindowLabel(w)}</option>)}
+                    </select>
+                    <select
+                      style={{ ...selectStyle, flex: 1 }}
+                      value={row.direction ?? ''}
+                      onChange={e => setPriceRow(i, 'direction', e.target.value)}
+                    >
+                      <option value="">방향</option>
+                      {directions.map(d => <option key={d} value={d}>{getDirectionLabel(d)}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => removePriceRow(i)}
+                      style={{ color: '#b91c1c', fontSize: 18, lineHeight: 1, flexShrink: 0 }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {/* 단가 + 메모 행 */}
+                  <div className="flex gap-2">
+                    <input
+                      style={{ ...inputStyle, flex: 1 }}
+                      type="number"
+                      placeholder="단가 (원)"
+                      value={row.price || ''}
+                      onChange={e => setPriceRow(i, 'price', e.target.value)}
+                    />
+                    <input
+                      style={{ ...inputStyle, flex: 1 }}
+                      placeholder="메모"
+                      value={row.memo ?? ''}
+                      onChange={e => setPriceRow(i, 'memo', e.target.value)}
+                    />
+                  </div>
                 </div>
               ))}
             </div>
@@ -428,9 +492,15 @@ function NaverSearchPanel({
 export default function MarketClient({
   property,
   initialSurveys,
+  roomTypes,
+  windowTypes,
+  directions,
 }: {
   property: Property
   initialSurveys: Survey[]
+  roomTypes: string[]
+  windowTypes: string[]
+  directions: string[]
 }) {
   const [surveys, setSurveys] = useState<Survey[]>(initialSurveys)
   const [tab, setTab] = useState<'current' | 'history'>('current')
@@ -456,7 +526,7 @@ export default function MarketClient({
   // History selected
   const [historySelected, setHistorySelected] = useState<Survey | null>(null)
 
-  const roomTypes = aggregateRoomTypes(property.rooms)
+  const myRoomTypes = aggregateRoomTypes(property.rooms)
 
   // ── 새 조사 시작 ─────────────────────────────────────────────
   const handleNewSurvey = () => {
@@ -588,7 +658,7 @@ export default function MarketClient({
           property: { name: property.name, address: property.address },
           competitors,
           strategy,
-          roomTypes,
+          roomTypes: myRoomTypes,
         }),
       })
       const json = await res.json() as { result?: string; error?: string }
@@ -735,11 +805,11 @@ export default function MarketClient({
               {/* My Property */}
               <div style={card}>
                 <p style={sectionTitle}>내 영업장 현황</p>
-                {roomTypes.length === 0 ? (
+                {myRoomTypes.length === 0 ? (
                   <p style={{ fontSize: 13, color: 'var(--warm-muted)' }}>등록된 호실이 없습니다.</p>
                 ) : (
                   <div className="flex flex-wrap gap-3">
-                    {roomTypes.map(rt => (
+                    {myRoomTypes.map(rt => (
                       <div
                         key={rt.type}
                         className="rounded-xl"
@@ -876,7 +946,11 @@ export default function MarketClient({
                                     color: 'var(--warm-dark)',
                                   }}
                                 >
-                                  {p.type}: {fmtMoney(p.price)}
+                                  {[
+                                    p.type,
+                                    p.windowType ? getWindowLabel(p.windowType) : null,
+                                    p.direction  ? getDirectionLabel(p.direction)  : null,
+                                  ].filter(Boolean).join(' · ')}: {fmtMoney(p.price)}
                                   {p.memo ? ` (${p.memo})` : ''}
                                 </span>
                               ))}
@@ -1144,7 +1218,11 @@ export default function MarketClient({
                                       color: 'var(--warm-dark)',
                                     }}
                                   >
-                                    {p.type}: {fmtMoney(p.price)}
+                                    {[
+                                      p.type,
+                                      p.windowType ? getWindowLabel(p.windowType) : null,
+                                      p.direction  ? getDirectionLabel(p.direction)  : null,
+                                    ].filter(Boolean).join(' · ')}: {fmtMoney(p.price)}
                                   </span>
                                 ))}
                               </div>
@@ -1236,6 +1314,9 @@ export default function MarketClient({
           }}
           onSave={handleSaveCompetitor}
           isPending={isPending}
+          roomTypes={roomTypes}
+          windowTypes={windowTypes}
+          directions={directions}
         />
       )}
     </div>
