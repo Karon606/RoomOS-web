@@ -312,7 +312,7 @@ export default function RoomsClient({
 
   const openPayModal = async (room: RoomStatus) => {
     setSelectedRoom(room)
-    setPayAmount(room.expected)
+    setPayAmount(room.balance < 0 ? -room.balance : room.expected)
     setPayDateVal(new Date().toISOString().slice(0, 10))
     setIsDepositMode(false)
     setError('')
