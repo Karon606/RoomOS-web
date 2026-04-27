@@ -322,6 +322,7 @@ export default function TenantClient({
   const [confirmClearOverride, setConfirmClearOverride] = useState(false)
   const [overrideInput, setOverrideInput] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
+  const overrideInputRef = useRef<HTMLInputElement>(null)
   const [editingPayId, setEditingPayId] = useState<string | null>(null)
   const [editAmount, setEditAmount] = useState(0)
   const [editDate, setEditDate] = useState('')
@@ -1958,13 +1959,15 @@ export default function TenantClient({
                                 <label className="text-xs text-[var(--warm-muted)]">조정 납부일</label>
                                 <input
                                   type="text"
+                                  ref={overrideInputRef}
                                   defaultValue={overrideInput}
                                   key={`override-${lease.id}-${showOverrideForm}`}
                                   onInput={e => {
                                     const el = e.currentTarget as HTMLInputElement
                                     const v = el.value
-                                    const n = Number(v)
-                                    if (/[ㅁ마말]/.test(v) || (!isNaN(n) && n >= 30 && v.trim() !== '')) {
+                                    const trimmed = v.trim()
+                                    const n = Number(trimmed)
+                                    if (/[ㅁ마말]/.test(v) || (trimmed !== '' && !isNaN(n) && n >= 30)) {
                                       el.value = '말일'
                                       setOverrideInput('말일')
                                     } else {
@@ -1973,7 +1976,10 @@ export default function TenantClient({
                                   }}
                                   onCompositionEnd={e => {
                                     const el = e.currentTarget as HTMLInputElement
-                                    if (/[ㅁ마말]/.test(el.value)) {
+                                    const v = el.value
+                                    const trimmed = v.trim()
+                                    const n = Number(trimmed)
+                                    if (/[ㅁ마말]/.test(v) || (trimmed !== '' && !isNaN(n) && n >= 30)) {
                                       el.value = '말일'
                                       setOverrideInput('말일')
                                     }
@@ -1995,16 +2001,18 @@ export default function TenantClient({
                             </div>
                             <button
                               type="button"
-                              disabled={isPending || !overrideInput.trim()}
+                              disabled={isPending || !(overrideInputRef.current?.value.trim() || overrideInput.trim())}
                               onClick={() => {
+                                const val = overrideInputRef.current?.value.trim() || overrideInput.trim()
+                                if (!val) return
                                 startTransition(async () => {
-                                  await setDueDayOverride(lease.id, targetMonth, overrideInput.trim(), overrideReason.trim())
+                                  await setDueDayOverride(lease.id, targetMonth, val, overrideReason.trim())
                                   setShowOverrideForm(false)
                                   refresh()
                                 })
                               }}
                               className="w-full py-1.5 bg-amber-600 hover:bg-amber-500 text-[var(--warm-dark)] text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
-                              {isPending ? '저장 중...' : `${targetMonth} 납부일을 ${overrideInput || '?'}일로 조정`}
+                              {isPending ? '저장 중...' : `${targetMonth} 납부일을 ${overrideInputRef.current?.value.trim() || overrideInput || '?'}일로 조정`}
                             </button>
                           </div>
                         )}
