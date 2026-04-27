@@ -730,16 +730,16 @@ export default function TenantClient({
         {/* 구분선 */}
         <div className="flex-1" />
 
-        {/* 검색 */}
+        {/* 검색 — 데스크탑 */}
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="이름, 호실, 국적, 직업 검색..."
-          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-4 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors w-56"
+          className="hidden sm:block bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-4 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors w-56"
         />
 
-        {/* 열 설정 */}
-        <div className="relative">
+        {/* 열 설정 — 데스크탑 */}
+        <div className="relative hidden sm:block">
           <button
             onClick={() => setShowColMenu(v => !v)}
             className="px-3 py-1.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] text-sm rounded-xl transition-colors"
@@ -765,6 +765,45 @@ export default function TenantClient({
             </>
           )}
         </div>
+      </div>
+
+      {/* 모바일 검색바 */}
+      <div className="sm:hidden relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-sm">🔍</span>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="이름, 호실, 국적, 직업 검색"
+          className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl pl-9 pr-8 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
+        />
+        {search && (
+          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-base leading-none">×</button>
+        )}
+      </div>
+
+      {/* 모바일 정렬 칩 */}
+      <div className="sm:hidden flex gap-1.5 overflow-x-auto pb-0.5 -mx-4 px-4">
+        {([
+          { sk: 'status'        as SortKey, label: '상태' },
+          { sk: 'roomNo'        as SortKey, label: '호실순' },
+          { sk: 'name'          as SortKey, label: '이름' },
+          { sk: 'rentAmount'    as SortKey, label: '이용료' },
+          { sk: 'depositAmount' as SortKey, label: '보증금' },
+          { sk: 'dueDay'        as SortKey, label: '납부일' },
+          { sk: 'stayPeriod'    as SortKey, label: '거주기간' },
+          { sk: 'moveInDate'    as SortKey, label: '입실일' },
+        ]).map(({ sk, label }) => {
+          const active = sortKey === sk
+          return (
+            <button key={sk} onClick={() => handleSort(sk)}
+              className={`shrink-0 flex items-center gap-0.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                active ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)]'
+              }`}
+            >
+              {label}{active ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+            </button>
+          )
+        })}
       </div>
 
       {/* 에러 */}
@@ -804,16 +843,84 @@ export default function TenantClient({
         </div>
       )}
 
-      {/* 테이블 */}
+      {/* 모바일 카드 뷰 */}
       {sorted.length === 0 ? (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-12 text-center">
+        <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-12 text-center">
           <p className="text-4xl mb-3">👤</p>
           <p className="text-[var(--warm-dark)] font-medium">
             {search.trim() ? '검색 결과가 없습니다' : '입주자가 없습니다'}
           </p>
         </div>
       ) : (
-        <div className="relative bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100dvh-310px)]">
+        <div className="sm:hidden space-y-2">
+          {sorted.map(tenant => {
+            const lease   = tenant.leaseTerms[0]
+            const primary = tenant.contacts.find(c => c.isPrimary) ?? tenant.contacts[0]
+            const status  = lease?.status ?? ''
+            const stayPeriod = calcStayPeriod(lease?.moveInDate, lease?.moveOutDate ?? undefined)
+            return (
+              <div key={tenant.id}
+                onClick={() => { setDetailTenant(tenant); setDetailTab('info') }}
+                className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 cursor-pointer active:opacity-70 transition-opacity"
+              >
+                {/* 첫 줄: 호실 + 이름 + 상태 */}
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-[var(--coral)]">{lease?.room?.roomNo ?? '—'}호</span>
+                    <span className="text-sm font-semibold text-[var(--warm-dark)]">{tenant.name}</span>
+                  </div>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[status] ?? 'bg-[var(--canvas)] text-[var(--warm-muted)]'}`}>
+                    {STATUS_LABEL[status] ?? status}
+                  </span>
+                </div>
+                {/* 연락처 */}
+                {primary && (
+                  <p className="text-xs text-[var(--warm-muted)] mb-2">{formatPhone(primary.contactValue)}</p>
+                )}
+                {/* 이용료 · 납부일 */}
+                <div className="flex items-center gap-2 text-xs flex-wrap">
+                  <span className="text-[var(--warm-muted)]">월이용료</span>
+                  <span className="font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={lease?.rentAmount ?? 0} /></span>
+                  <span className="text-[var(--warm-border)]">·</span>
+                  <span className="text-[var(--warm-muted)]">납부일</span>
+                  <span className="font-medium text-[var(--warm-dark)]">{fmtDueDay(lease?.dueDay)}</span>
+                </div>
+                {/* 보증금 · 거주기간 */}
+                {((lease?.depositAmount ?? 0) > 0 || lease?.moveInDate) && (
+                  <div className="flex items-center gap-2 text-xs flex-wrap mt-1">
+                    {(lease?.depositAmount ?? 0) > 0 && (
+                      <>
+                        <span className="text-[var(--warm-muted)]">보증금</span>
+                        <span className="font-medium text-[var(--warm-dark)]"><MoneyDisplay amount={lease!.depositAmount} /></span>
+                      </>
+                    )}
+                    {(lease?.depositAmount ?? 0) > 0 && lease?.moveInDate && (
+                      <span className="text-[var(--warm-border)]">·</span>
+                    )}
+                    {lease?.moveInDate && (
+                      <>
+                        <span className="text-[var(--warm-muted)]">거주기간</span>
+                        <span className="font-medium text-[var(--warm-dark)]">{stayPeriod}</span>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* 데스크탑 테이블 */}
+      {sorted.length === 0 ? (
+        <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-12 text-center">
+          <p className="text-4xl mb-3">👤</p>
+          <p className="text-[var(--warm-dark)] font-medium">
+            {search.trim() ? '검색 결과가 없습니다' : '입주자가 없습니다'}
+          </p>
+        </div>
+      ) : (
+        <div className="hidden sm:block relative bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100dvh-310px)]">
           {/* 저장 후 서버 재요청 완료 전 클릭 차단 오버레이 */}
           {(isPending || isRefreshing) && (
             <div className="absolute inset-0 z-40 rounded-2xl bg-[var(--cream)]/60 backdrop-blur-[1px] flex items-center justify-center">

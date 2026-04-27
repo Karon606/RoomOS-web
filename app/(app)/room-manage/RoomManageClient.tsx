@@ -68,6 +68,11 @@ export default function RoomManageClient({
   const windowTypeOptions  = windowTypes.map(v => ({ value: v, label: getWindowLabel(v) }))
   const directionOptions   = directions.map(v => ({ value: v, label: getDirectionLabel(v) }))
 
+  // 검색 · 정렬
+  const [search, setSearch]     = useState('')
+  const [sortKey, setSortKey]   = useState<'roomNo' | 'baseRent' | 'vacancy'>('roomNo')
+  const [sortDir, setSortDir]   = useState<'asc' | 'desc'>('asc')
+
   // 모달 상태
   const [detailRoom, setDetailRoom]   = useState<Room | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -87,6 +92,33 @@ export default function RoomManageClient({
   const addPhotoInputRef = useRef<HTMLInputElement>(null)
 
   const currentTenant = (room: Room) => room.leaseTerms[0]?.tenant?.name ?? null
+
+  // 검색 · 정렬 적용
+  const handleSortRoom = (key: typeof sortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc') }
+  }
+
+  const filteredRooms = (() => {
+    const q = search.trim().toLowerCase()
+    const base = q
+      ? rooms.filter(r =>
+          r.roomNo.toLowerCase().includes(q) ||
+          (currentTenant(r) ?? '').toLowerCase().includes(q) ||
+          (r.type ?? '').toLowerCase().includes(q)
+        )
+      : rooms
+    return [...base].sort((a, b) => {
+      const dir = sortDir === 'asc' ? 1 : -1
+      if (sortKey === 'vacancy') {
+        const av = a.isVacant ? 1 : 0
+        const bv = b.isVacant ? 1 : 0
+        return dir * (av - bv)
+      }
+      if (sortKey === 'baseRent') return dir * (a.baseRent - b.baseRent)
+      return dir * a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true })
+    })
+  })()
 
   // ── 핸들러 ────────────────────────────────────────────────────────
 
@@ -223,13 +255,53 @@ export default function RoomManageClient({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">호실 관리</h1>
-          <p className="text-sm text-[var(--warm-muted)] mt-0.5">전체 {rooms.length}실</p>
+          <p className="text-sm text-[var(--warm-muted)] mt-0.5">
+            전체 {rooms.length}실
+            <span className="mx-1.5 text-[var(--warm-border)]">·</span>
+            거주중 {rooms.filter(r => !r.isVacant).length}실
+            <span className="mx-1.5 text-[var(--warm-border)]">·</span>
+            공실 {rooms.filter(r => r.isVacant).length}실
+          </p>
         </div>
         <button
           onClick={() => { setShowAddModal(true); setError('') }}
           className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
           + 호실 등록
         </button>
+      </div>
+
+      {/* 검색바 */}
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-sm">🔍</span>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="호실 번호, 입주자 이름, 방 타입 검색"
+          className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl pl-9 pr-8 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
+        />
+        {search && (
+          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-base leading-none">×</button>
+        )}
+      </div>
+
+      {/* 정렬 칩 */}
+      <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-4 px-4 sm:mx-0 sm:px-0">
+        {([
+          { sk: 'roomNo'  as const, label: '호실순' },
+          { sk: 'vacancy' as const, label: '공실' },
+          { sk: 'baseRent'as const, label: '이용료' },
+        ]).map(({ sk, label }) => {
+          const active = sortKey === sk
+          return (
+            <button key={sk} onClick={() => handleSortRoom(sk)}
+              className={`shrink-0 flex items-center gap-0.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                active ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)]'
+              }`}
+            >
+              {label}{active ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+            </button>
+          )
+        })}
       </div>
 
       {/* 에러 */}
@@ -240,15 +312,15 @@ export default function RoomManageClient({
       )}
 
       {/* 호실 그리드 */}
-      {rooms.length === 0 ? (
+      {filteredRooms.length === 0 ? (
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-12 text-center">
           <p className="text-4xl mb-3">🏠</p>
-          <p className="text-[var(--warm-dark)] font-medium">등록된 호실이 없습니다</p>
-          <p className="text-sm text-[var(--warm-muted)] mt-1">호실 등록 버튼을 눌러 시작하세요</p>
+          <p className="text-[var(--warm-dark)] font-medium">{search ? '검색 결과가 없습니다' : '등록된 호실이 없습니다'}</p>
+          {!search && <p className="text-sm text-[var(--warm-muted)] mt-1">호실 등록 버튼을 눌러 시작하세요</p>}
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-          {rooms.map(room => {
+          {filteredRooms.map(room => {
             const tenant = currentTenant(room)
             const thumb  = room.photos[0]
             return (
