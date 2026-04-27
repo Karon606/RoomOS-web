@@ -195,9 +195,12 @@ function CompetitorModal({
   const setPriceRow = (i: number, k: keyof RoomPrice, v: string | number) =>
     setForm(f => ({
       ...f,
-      roomPrices: f.roomPrices.map((row, idx) =>
-        idx === i ? { ...row, [k]: k === 'price' ? Number(v) : v } : row,
-      ),
+      roomPrices: f.roomPrices.map((row, idx) => {
+        if (idx !== i) return row
+        if (k === 'price') return { ...row, [k]: Number(v) }
+        if (k === 'areaPyeong') return { ...row, areaPyeong: v === '' ? undefined : Number(v) }
+        return { ...row, [k]: v }
+      }),
     }))
 
   const addPriceRow = () =>
@@ -345,6 +348,29 @@ function CompetitorModal({
                     >
                       ×
                     </button>
+                  </div>
+                  {/* 크기 + 면적 행 */}
+                  <div className="flex gap-2">
+                    <select
+                      style={{ ...selectStyle, flex: 1 }}
+                      value={row.sizeCategory ?? ''}
+                      onChange={e => setPriceRow(i, 'sizeCategory', e.target.value)}
+                    >
+                      <option value="">크기</option>
+                      <option value="소">소 (~1평)</option>
+                      <option value="중">중 (~1.6평)</option>
+                      <option value="대">대 (~2평)</option>
+                      <option value="특대">특대 (~3평+)</option>
+                    </select>
+                    <input
+                      style={{ ...inputStyle, flex: 1 }}
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      placeholder="면적 (평)"
+                      value={row.areaPyeong ?? ''}
+                      onChange={e => setPriceRow(i, 'areaPyeong', e.target.value)}
+                    />
                   </div>
                   {/* 단가 + 메모 행 */}
                   <div className="flex gap-2">
@@ -950,6 +976,9 @@ export default function MarketClient({
                                     p.type,
                                     p.windowType ? getWindowLabel(p.windowType) : null,
                                     p.direction  ? getDirectionLabel(p.direction)  : null,
+                                    p.sizeCategory || p.areaPyeong
+                                      ? [p.sizeCategory, p.areaPyeong ? `${p.areaPyeong}평` : null].filter(Boolean).join(' ')
+                                      : null,
                                   ].filter(Boolean).join(' · ')}: {fmtMoney(p.price)}
                                   {p.memo ? ` (${p.memo})` : ''}
                                 </span>
@@ -1222,6 +1251,9 @@ export default function MarketClient({
                                       p.type,
                                       p.windowType ? getWindowLabel(p.windowType) : null,
                                       p.direction  ? getDirectionLabel(p.direction)  : null,
+                                      p.sizeCategory || p.areaPyeong
+                                        ? [p.sizeCategory, p.areaPyeong ? `${p.areaPyeong}평` : null].filter(Boolean).join(' ')
+                                        : null,
                                     ].filter(Boolean).join(' · ')}: {fmtMoney(p.price)}
                                   </span>
                                 ))}
