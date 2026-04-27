@@ -742,9 +742,10 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
 type DashLease = Awaited<ReturnType<typeof getTenantLeaseForDashboard>>
 type DashPayRecord = { id: string; seqNo: number; actualAmount: number; payDate: Date; payMethod: string | null; memo: string | null; isDeposit: boolean }
 
-function DashboardTenantModal({ tenantId, targetMonth, onClose }: {
+function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose }: {
   tenantId: string
   targetMonth: string
+  paymentMethods: string[]
   onClose: () => void
 }) {
   const [lease, setLease] = useState<DashLease>(null)
@@ -1074,8 +1075,11 @@ function DashboardTenantModal({ tenantId, targetMonth, onClose }: {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <p className="text-[10px] text-[var(--warm-muted)]">납부방법</p>
-                      <input name="payMethod" type="text" placeholder="계좌이체, 현금…"
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                      <select name="payMethod"
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                        <option value="">선택 안 함</option>
+                        {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
                     </div>
                     <div className="space-y-1">
                       <p className="text-[10px] text-[var(--warm-muted)]">메모</p>
@@ -1109,14 +1113,20 @@ function DashboardTenantModal({ tenantId, targetMonth, onClose }: {
           )}
         </div>
 
-        {/* 하단 — 입주자 관리에서 보기 */}
+        {/* 하단 — 바로가기 버튼 */}
         {!loading && lease && (
-          <div className="px-6 py-3 border-t shrink-0" style={{ borderColor: 'var(--warm-border)' }}>
+          <div className="px-6 py-3 border-t shrink-0 flex gap-2" style={{ borderColor: 'var(--warm-border)' }}>
+            <Link href={`/rooms?month=${targetMonth}`}
+              onClick={onClose}
+              className="flex-1 text-center text-xs font-medium py-2 rounded-xl border transition-colors"
+              style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+              수납 관리 →
+            </Link>
             <Link href={`/tenants?tenantId=${lease.tenant.id}&tab=info`}
               onClick={onClose}
-              className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-colors"
+              className="flex-1 text-center text-xs font-medium py-2 rounded-xl border transition-colors"
               style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-              입주자 관리에서 보기 →
+              입주자 관리 →
             </Link>
           </div>
         )}
@@ -1740,6 +1750,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         <DashboardTenantModal
           tenantId={dashTenantId}
           targetMonth={targetMonth}
+          paymentMethods={paymentMethods}
           onClose={() => setDashTenantId(null)}
         />
       )}
