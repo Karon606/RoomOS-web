@@ -1898,6 +1898,84 @@ export default function FinanceClient({
         </div>
       </div>
     )}
+    {/* ── 고정 지출 기록 모달 ────────────────────────────────────────── */}
+    {recordingRec && (
+      <div
+        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+        onClick={e => { if (e.target === e.currentTarget) { setRecordingRec(null); setRecError('') } }}>
+        <div className="bg-[var(--cream)] rounded-2xl w-full max-w-sm shadow-2xl border border-[var(--warm-border)]">
+          {/* 헤더 */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">지출 기록</h2>
+              <p className="text-xs text-[var(--warm-muted)] mt-0.5">{recordingRec.title}</p>
+            </div>
+            <button onClick={() => { setRecordingRec(null); setRecError('') }}
+              className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-lg leading-none transition-colors">✕</button>
+          </div>
+          {/* 폼 */}
+          <div className="p-5 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-[var(--warm-muted)]">날짜</label>
+                <DatePicker value={recRecDate} onChange={setRecRecDate}
+                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-[var(--warm-muted)]">
+                  금액
+                  {recordingRec.historicalAvg && (
+                    <span className="ml-1 text-blue-400 text-[10px]">평균 {recordingRec.historicalAvg.toLocaleString()}원</span>
+                  )}
+                </label>
+                <MoneyInput value={recRecAmount} onChange={v => setRecRecAmount(v)} placeholder="0원" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-[var(--warm-muted)]">결제수단</label>
+                <select value={recRecPayMethod} onChange={e => setRecRecPayMethod(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                  {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                  {!paymentMethods.includes('계좌이체') && <option value="계좌이체">계좌이체</option>}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-[var(--warm-muted)]">메모</label>
+                <input type="text" value={recRecMemo} onChange={e => setRecRecMemo(e.target.value)}
+                  placeholder="선택 입력"
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+              </div>
+            </div>
+            {recError && <p className="text-red-400 text-xs">{recError}</p>}
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => { setRecordingRec(null); setRecError('') }}
+                className="flex-1 px-4 py-2.5 bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)] text-sm rounded-xl">취소</button>
+              <button type="button"
+                disabled={isPending || !recRecDate || recRecAmount <= 0}
+                onClick={() => {
+                  setRecError('')
+                  startTransition(async () => {
+                    const res = await recordRecurringExpense({
+                      recurringExpenseId: recordingRec.id,
+                      amount: recRecAmount,
+                      date: recRecDate,
+                      payMethod: recRecPayMethod || undefined,
+                      memo: recRecMemo || undefined,
+                    })
+                    if (!res.ok) { setRecError(res.error); return }
+                    setRecordingRec(null)
+                    router.refresh()
+                  })
+                }}
+                className="flex-1 px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-semibold rounded-xl disabled:opacity-60 transition-opacity">
+                {isPending ? '저장 중...' : '기록 저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   )
 }
