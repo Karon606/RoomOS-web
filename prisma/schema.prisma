@@ -537,6 +537,7 @@ model RecurringExpense {
   alertDaysBefore Int       @default(7)
   isActive        Boolean   @default(true)
   activeSince     DateTime? @db.Date
+  priorYearAmount Int?
   memo            String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

@@ -113,7 +113,7 @@ const WINDOW_LABEL: Record<string, string> = {
 function getDueInfo(dueDay: string | null, targetMonth: string): { days: number; overdue: boolean } | null {
   if (!dueDay) return null
   const [yyyy, mm] = targetMonth.split('-').map(Number)
-  const dayNum = dueDay === '말일'
+  const dayNum = dueDay.includes('말')
     ? new Date(yyyy, mm, 0).getDate()
     : parseInt(dueDay)
   if (isNaN(dayNum)) return null

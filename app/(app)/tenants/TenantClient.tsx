@@ -448,6 +448,11 @@ export default function TenantClient({
 
   useEffect(() => {
     if (isRefreshing) setIsRefreshing(false)
+    setDetailTenant(prev => {
+      if (!prev) return prev
+      const updated = initialTenants.find(t => t.id === prev.id)
+      return updated ?? prev
+    })
   }, [initialTenants]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 액션 핸들러 ─────────────────────────────────────────────────
@@ -1893,7 +1898,7 @@ export default function TenantClient({
                             <span className="text-xs font-semibold text-amber-300">납부일 임시 조정</span>
                             {isOverrideActive && (
                               <span className="text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full">
-                                {targetMonth} · {lease.overrideDueDay}일로 적용 중
+                                {targetMonth} · {lease.overrideDueDay?.includes('말') ? '말일' : `${lease.overrideDueDay}일`}로 적용 중
                               </span>
                             )}
                           </div>
@@ -1928,7 +1933,7 @@ export default function TenantClient({
 
                         {isOverrideActive && !showOverrideForm && (
                           <p className="text-xs text-[var(--warm-muted)]">
-                            기준 {fmtDueDay(lease.dueDay)} → 이번달 {lease.overrideDueDay}일
+                            기준 {fmtDueDay(lease.dueDay)} → 이번달 {lease.overrideDueDay?.includes('말') ? '말일' : `${lease.overrideDueDay}일`}
                             {lease.overrideDueDayReason ? ` · ${lease.overrideDueDayReason}` : ''}
                           </p>
                         )}
@@ -1941,7 +1946,15 @@ export default function TenantClient({
                                 <input
                                   type="text"
                                   value={overrideInput}
-                                  onChange={e => setOverrideInput(e.target.value)}
+                                  onChange={e => {
+                                    const v = e.target.value
+                                    const n = Number(v)
+                                    if (/^[ㅁ마말]/.test(v) || (!isNaN(n) && n >= 30 && v.trim() !== '')) {
+                                      setOverrideInput('말일')
+                                    } else {
+                                      setOverrideInput(v)
+                                    }
+                                  }}
                                   placeholder="예: 20, 말일"
                                   className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-amber-500"
                                 />

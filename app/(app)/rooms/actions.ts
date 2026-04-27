@@ -109,7 +109,9 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const effectiveDueDay = (l.overrideDueDayMonth === targetMonth && l.overrideDueDay)
       ? l.overrideDueDay
       : lease.dueDay
-    const dueDay = effectiveDueDay ? Number(effectiveDueDay) : 1
+    const dueDay = effectiveDueDay
+      ? (effectiveDueDay.includes('말') ? 31 : Number(effectiveDueDay))
+      : 1
 
     const acqDate     = acquisitionDate ? new Date(acquisitionDate) : null
     const acqYyyy     = acqDate ? acqDate.getFullYear() : 2000
@@ -458,6 +460,8 @@ export async function setDueDayOverride(
   })
   const { revalidatePath } = await import('next/cache')
   revalidatePath('/tenants')
+  revalidatePath('/rooms')
+  revalidatePath('/dashboard')
 }
 
 export async function clearDueDayOverride(leaseTermId: string) {
@@ -468,6 +472,8 @@ export async function clearDueDayOverride(leaseTermId: string) {
   })
   const { revalidatePath } = await import('next/cache')
   revalidatePath('/tenants')
+  revalidatePath('/rooms')
+  revalidatePath('/dashboard')
 }
 
 // 수납 내역 조회
