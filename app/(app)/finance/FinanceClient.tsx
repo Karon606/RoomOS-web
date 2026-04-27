@@ -1976,9 +1976,8 @@ export default function FinanceClient({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">활성화 시작일 (선택)</label>
-                  <input type="date" value={recMgmtForm.activeSince}
-                    onChange={e => setRecMgmtForm(p => ({ ...p, activeSince: e.target.value }))}
-                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                  <DatePicker value={recMgmtForm.activeSince} onChange={v => setRecMgmtForm(p => ({ ...p, activeSince: v }))}
+                    className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
                   <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
                     이 항목이 실제로 내 부담이 되는 첫 날짜입니다. 입력하지 않으면 즉시 활성화됩니다.<br />
                     예) 인터넷 요금 결제일 25일이 양도인 부담이면, 다음 달부터 내 부담 → 다음달 25일 입력.
