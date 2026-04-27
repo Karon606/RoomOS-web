@@ -78,6 +78,11 @@ export async function deleteSurvey(surveyId: string): Promise<{ ok: boolean }> {
 
 export type RoomPrice = { type: string; price: number; memo?: string; windowType?: string; direction?: string; sizeCategory?: string; areaPyeong?: number; areaM2?: number; hasDeposit?: boolean; deposit?: number }
 
+export type CompetitorRow = {
+  id: string; name: string; address: string; naverPlaceUrl: string | null
+  roomPrices: unknown; notes: string | null; createdAt: Date; updatedAt: Date; marketSurveyId: string
+}
+
 export async function addCompetitor(
   surveyId: string,
   data: {
@@ -87,11 +92,11 @@ export async function addCompetitor(
     roomPrices: RoomPrice[]
     notes?: string
   },
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; competitor?: CompetitorRow; error?: string }> {
   try {
     await requireEdit()
     await getPropertyId()
-    await prisma.marketCompetitor.create({
+    const competitor = await prisma.marketCompetitor.create({
       data: {
         marketSurveyId: surveyId,
         name: data.name.trim(),
@@ -102,10 +107,10 @@ export async function addCompetitor(
       },
     })
     revalidatePath('/market-analysis')
-    return { ok: true }
+    return { ok: true, competitor }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
-    return { ok: false }
+    return { ok: false, error: (err as Error).message }
   }
 }
 
@@ -118,7 +123,7 @@ export async function updateCompetitor(
     roomPrices: RoomPrice[]
     notes?: string
   },
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; error?: string }> {
   try {
     await requireEdit()
     await getPropertyId()
@@ -136,7 +141,7 @@ export async function updateCompetitor(
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
-    return { ok: false }
+    return { ok: false, error: (err as Error).message }
   }
 }
 

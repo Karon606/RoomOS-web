@@ -9,7 +9,7 @@ import {
   deleteCompetitor,
   deleteSurvey,
 } from './actions'
-import type { RoomPrice } from './actions'
+import type { RoomPrice, CompetitorRow } from './actions'
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -175,6 +175,7 @@ function CompetitorModal({
   onClose,
   onSave,
   isPending,
+  saveError,
   roomTypes,
   windowTypes,
   directions,
@@ -183,6 +184,7 @@ function CompetitorModal({
   onClose: () => void
   onSave: (data: CompetitorFormData) => void
   isPending: boolean
+  saveError?: string
   roomTypes: string[]
   windowTypes: string[]
   directions: string[]
@@ -476,17 +478,24 @@ function CompetitorModal({
 
         {/* Footer */}
         <div
-          className="flex justify-end gap-2 shrink-0"
+          className="flex flex-col gap-2 shrink-0"
           style={{ padding: '12px 20px', borderTop: '1px solid var(--warm-border)' }}
         >
-          <Btn variant="secondary" onClick={onClose}>취소</Btn>
-          <Btn
-            variant="primary"
-            disabled={isPending || !form.name.trim() || !form.address.trim()}
-            onClick={() => onSave(form)}
-          >
-            {isPending ? '저장 중...' : '저장'}
-          </Btn>
+          {saveError && (
+            <div style={{ fontSize: 13, color: '#b91c1c', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, padding: '8px 12px' }}>
+              {saveError}
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Btn variant="secondary" onClick={onClose}>취소</Btn>
+            <Btn
+              variant="primary"
+              disabled={isPending || !form.name.trim() || !form.address.trim()}
+              onClick={() => onSave(form)}
+            >
+              {isPending ? '저장 중...' : '저장'}
+            </Btn>
+          </div>
         </div>
       </div>
     </div>
@@ -609,6 +618,7 @@ export default function MarketClient({
   const [showCompetitorModal, setShowCompetitorModal] = useState(false)
   const [editingCompetitor, setEditingCompetitor] = useState<Competitor | null>(null)
   const [prefillForm, setPrefillForm] = useState<Partial<CompetitorFormData> | null>(null)
+  const [competitorSaveError, setCompetitorSaveError] = useState('')
 
   // Naver search
   const [showNaverSearch, setShowNaverSearch] = useState(false)
@@ -642,8 +652,16 @@ export default function MarketClient({
   }
 
   // ── 경쟁업체 저장 ─────────────────────────────────────────────
+  const closeCompetitorModal = () => {
+    setShowCompetitorModal(false)
+    setEditingCompetitor(null)
+    setPrefillForm(null)
+    setCompetitorSaveError('')
+  }
+
   const handleSaveCompetitor = (form: CompetitorFormData) => {
     if (!activeSurvey) return
+    setCompetitorSaveError('')
     startTransition(async () => {
       if (editingCompetitor) {
         const res = await updateCompetitor(editingCompetitor.id, {
@@ -668,6 +686,9 @@ export default function MarketClient({
                 : s,
             ),
           )
+          closeCompetitorModal()
+        } else {
+          setCompetitorSaveError(res.error ?? '저장에 실패했습니다. 다시 시도해주세요.')
         }
       } else {
         const res = await addCompetitor(activeSurvey.id, {
@@ -677,31 +698,19 @@ export default function MarketClient({
           roomPrices: form.roomPrices,
           notes: form.notes || undefined,
         })
-        if (res.ok) {
-          // reload from server by adding optimistic entry
-          const fake: Competitor = {
-            id: `tmp-${Date.now()}`,
-            name: form.name,
-            address: form.address,
-            naverPlaceUrl: form.naverPlaceUrl || null,
-            roomPrices: form.roomPrices,
-            notes: form.notes || null,
-            marketSurveyId: activeSurvey.id,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          }
+        if (res.ok && res.competitor) {
           setSurveys(prev =>
             prev.map(s =>
               s.id === activeSurvey.id
-                ? { ...s, competitors: [...s.competitors, fake] }
+                ? { ...s, competitors: [...s.competitors, res.competitor as Competitor] }
                 : s,
             ),
           )
+          closeCompetitorModal()
+        } else {
+          setCompetitorSaveError(res.error ?? '저장에 실패했습니다. 다시 시도해주세요.')
         }
       }
-      setShowCompetitorModal(false)
-      setEditingCompetitor(null)
-      setPrefillForm(null)
     })
   }
 
@@ -1419,13 +1428,10 @@ export default function MarketClient({
                 }
               : undefined
           }
-          onClose={() => {
-            setShowCompetitorModal(false)
-            setEditingCompetitor(null)
-            setPrefillForm(null)
-          }}
+          onClose={closeCompetitorModal}
           onSave={handleSaveCompetitor}
           isPending={isPending}
+          saveError={competitorSaveError}
           roomTypes={roomTypes}
           windowTypes={windowTypes}
           directions={directions}
