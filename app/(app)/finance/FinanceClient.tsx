@@ -620,8 +620,51 @@ export default function FinanceClient({
             </button>
           </div>
 
-          {/* 지출 목록 */}
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100vh-340px)]">
+          {/* 지출 목록 — 모바일 카드 */}
+          {filteredExpenses.length === 0 ? (
+            <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-10 text-center">
+              <EmptyState label="지출 내역이 없습니다" />
+            </div>
+          ) : (
+            <div className="sm:hidden space-y-2">
+              {filteredExpenses.map(e => (
+                <div key={e.id}
+                  onClick={() => { setDetailExp(e); setDetailExpEdit(false); setError('') }}
+                  className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 cursor-pointer active:opacity-70 transition-opacity">
+                  {/* 날짜 + 금액 + 정산상태 */}
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-[var(--warm-muted)]">{fmtDate(e.date)}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ring-1
+                        ${e.settleStatus === 'UNSETTLED' ? 'bg-red-50 text-red-600 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
+                        {e.settleStatus === 'UNSETTLED' ? '미정산' : '정산완료'}
+                      </span>
+                      <span className="text-sm font-bold text-red-500"><MoneyDisplay amount={e.amount} prefix="-" /></span>
+                    </div>
+                  </div>
+                  {/* 카테고리 + 결제수단 */}
+                  <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20">{e.category}</span>
+                    {e.payMethod && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{e.payMethod}</span>
+                    )}
+                    {e.financialAccount && (
+                      <span className="text-[10px] text-[var(--warm-muted)]">{accName(e.financialAccount)}</span>
+                    )}
+                  </div>
+                  {/* 세부항목 · 메모 */}
+                  {(e.detail || e.memo) && (
+                    <p className="text-xs text-[var(--warm-dark)] truncate">
+                      {[e.detail, e.memo].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 지출 목록 — 데스크탑 테이블 */}
+          <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100vh-340px)]">
             {filteredExpenses.length === 0 ? (
               <EmptyState label="지출 내역이 없습니다" />
             ) : (
@@ -706,7 +749,45 @@ export default function FinanceClient({
             </button>
           </div>
 
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100vh-340px)]">
+          {/* 부가 수익 목록 — 모바일 카드 */}
+          {filteredIncomes.length === 0 ? (
+            <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-10 text-center">
+              <EmptyState label="부가 수익 내역이 없습니다" />
+            </div>
+          ) : (
+            <div className="sm:hidden space-y-2">
+              {filteredIncomes.map(i => (
+                <div key={i.id}
+                  onClick={() => { setDetailInc(i); setDetailIncEdit(false); setError('') }}
+                  className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 cursor-pointer active:opacity-70 transition-opacity">
+                  {/* 날짜 + 금액 */}
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-[var(--warm-muted)]">{fmtDate(i.date)}</span>
+                    <span className="text-sm font-bold text-emerald-600"><MoneyDisplay amount={i.amount} prefix="+" /></span>
+                  </div>
+                  {/* 카테고리 + 입금수단 */}
+                  <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">{i.category}</span>
+                    {i.payMethod && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{i.payMethod}</span>
+                    )}
+                    {i.financialAccount && (
+                      <span className="text-[10px] text-[var(--warm-muted)]">{accName(i.financialAccount)}</span>
+                    )}
+                  </div>
+                  {/* 세부항목 · 메모 */}
+                  {(i.detail || i.memo) && (
+                    <p className="text-xs text-[var(--warm-dark)] truncate">
+                      {[i.detail, i.memo].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 부가 수익 목록 — 데스크탑 테이블 */}
+          <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100vh-340px)]">
             {filteredIncomes.length === 0 ? (
               <EmptyState label="부가 수익 내역이 없습니다" />
             ) : (
