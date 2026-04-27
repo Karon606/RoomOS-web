@@ -351,6 +351,7 @@ export type RecurringExpenseWithStatus = {
   isVariable: boolean
   alertDaysBefore: number
   activeSince: string | null
+  isPending: boolean        // activeSince가 이번 달 이후 → 아직 활성화 전
   memo: string | null
   // 이번 달 기록 여부
   recordedExpenseId: string | null
@@ -377,17 +378,13 @@ export async function getRecurringExpensesWithStatus(month: string): Promise<Rec
     }),
   ])
 
-  // activeSince 필터: 해당 월의 마지막 날 기준으로 아직 활성화 전이면 제외
-  const recurringList = allRecurring.filter(re => {
-    const as = (re as any).activeSince as Date | null
-    if (!as) return true
-    return new Date(as) <= endDate
-  })
+  // activeSince: 이번 달 마지막 날보다 미래면 isPending=true (목록엔 표시하되 기록 불가)
+  const recurringList = allRecurring
 
   const recordedMap = new Map(recordedThisMonth.map(e => [e.recurringExpenseId!, e]))
 
-  // 변동 항목 과거 평균
-  const variableIds = recurringList.filter(re => (re as any).isVariable).map(re => re.id)
+  // 변동 항목 과거 평균 (isPending 항목 제외)
+  const variableIds = recurringList.filter(re => (re as any).isVariable && !(new Date((re as any).activeSince ?? 0) > endDate)).map(re => re.id)
   const pastExpenses = variableIds.length > 0
     ? await prisma.expense.findMany({
         where: { propertyId, recurringExpenseId: { in: variableIds }, date: { lt: startDate } },
@@ -408,6 +405,7 @@ export async function getRecurringExpensesWithStatus(month: string): Promise<Rec
     const isVar = (re as any).isVariable as boolean
     const hasAvg = isVar && (varCnt[re.id] ?? 0) >= 2
     const as = (re as any).activeSince as Date | null
+    const isPending = !!(as && new Date(as) > endDate)
     return {
       id:                re.id,
       title:             re.title,
@@ -419,10 +417,11 @@ export async function getRecurringExpensesWithStatus(month: string): Promise<Rec
       isVariable:        isVar,
       alertDaysBefore:   re.alertDaysBefore,
       activeSince:       as ? new Date(as).toISOString().slice(0, 10) : null,
+      isPending,
       memo:              re.memo,
-      recordedExpenseId: recorded?.id ?? null,
-      recordedAmount:    recorded?.amount ?? null,
-      recordedDate:      recorded ? new Date(recorded.date).toISOString().slice(0, 10) : null,
+      recordedExpenseId: isPending ? null : (recorded?.id ?? null),
+      recordedAmount:    isPending ? null : (recorded?.amount ?? null),
+      recordedDate:      isPending ? null : (recorded ? new Date(recorded.date).toISOString().slice(0, 10) : null),
       historicalAvg:     hasAvg ? Math.round(varSum[re.id] / varCnt[re.id]) : null,
     }
   })

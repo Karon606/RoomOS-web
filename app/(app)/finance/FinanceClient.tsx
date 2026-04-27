@@ -554,12 +554,14 @@ export default function FinanceClient({
   const [yyyy, mm] = targetMonth.split('-')
   const monthLabel = `${yyyy}년 ${parseInt(mm)}월`
 
-  const recUnrecordedCount = recurringExpensesWithStatus.filter(r => !r.recordedExpenseId).length
+  const activeRecs       = recurringExpensesWithStatus.filter(r => !r.isPending)
+  const pendingRecs      = recurringExpensesWithStatus.filter(r => r.isPending)
+  const recUnrecordedCount = activeRecs.filter(r => !r.recordedExpenseId).length
 
   // ── 상단 요약 위젯 계산 ──────────────────────────────────────
   const normalExpTotal   = expenses.reduce((s, e) => s + e.amount, 0)
-  const recRecordedTotal = recurringExpensesWithStatus.filter(r => r.recordedExpenseId).reduce((s, r) => s + (r.recordedAmount ?? 0), 0)
-  const recPendingTotal  = recurringExpensesWithStatus.filter(r => !r.recordedExpenseId).reduce((s, r) => s + (r.historicalAvg ?? r.amount), 0)
+  const recRecordedTotal = activeRecs.filter(r => r.recordedExpenseId).reduce((s, r) => s + (r.recordedAmount ?? 0), 0)
+  const recPendingTotal  = activeRecs.filter(r => !r.recordedExpenseId).reduce((s, r) => s + (r.historicalAvg ?? r.amount), 0)
   const totalExpectedExp = normalExpTotal + recRecordedTotal + recPendingTotal
   const totalIncomeSum   = incomes.reduce((s, i) => s + i.amount, 0)
   const expectedProfit   = totalIncomeSum - totalExpectedExp
@@ -1050,18 +1052,18 @@ export default function FinanceClient({
           {/* 헤더 + 요약 + 관리 버튼 */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-4 text-xs flex-1">
-              {recurringExpensesWithStatus.length > 0 && (
+              {activeRecs.length > 0 && (
                 <>
                   <span className="flex items-center gap-1.5 text-[var(--warm-muted)]">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-                    기록완료 {recurringExpensesWithStatus.filter(r => r.recordedExpenseId).length}건
+                    기록완료 {activeRecs.filter(r => r.recordedExpenseId).length}건
                   </span>
                   <span className="flex items-center gap-1.5 text-[var(--warm-muted)]">
                     <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
                     미기록 {recUnrecordedCount}건
                   </span>
                   <span className="ml-auto text-sm font-bold text-red-400 font-mono">
-                    합계: <MoneyDisplay amount={recurringExpensesWithStatus.reduce((s, r) => s + (r.historicalAvg ?? r.amount), 0)} />
+                    합계: <MoneyDisplay amount={activeRecs.reduce((s, r) => s + (r.historicalAvg ?? r.amount), 0)} />
                   </span>
                 </>
               )}
@@ -1078,11 +1080,11 @@ export default function FinanceClient({
               <button onClick={openRecMgmt} className="mt-2 text-[var(--coral)] text-xs underline">+ 항목 추가하기</button>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-4">
 
-              {/* ── 모바일 카드 목록 ── */}
+              {/* ── 모바일 카드 목록 (활성) ── */}
               <div className="sm:hidden space-y-2">
-                {recurringExpensesWithStatus.map(rec => {
+                {activeRecs.map(rec => {
                   const isRecorded = !!rec.recordedExpenseId
                   const expectedAmt = rec.historicalAvg ?? rec.amount
                   const isRecording = recordingRec?.id === rec.id
@@ -1193,7 +1195,7 @@ export default function FinanceClient({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--warm-border)]/50">
-                      {recurringExpensesWithStatus.map(rec => {
+                      {activeRecs.map(rec => {
                         const isRecorded = !!rec.recordedExpenseId
                         const expectedAmt = rec.historicalAvg ?? rec.amount
                         const isRecording = recordingRec?.id === rec.id
@@ -1334,11 +1336,11 @@ export default function FinanceClient({
                       <tr className="border-t-2 border-[var(--warm-border)] bg-[var(--canvas)]/50">
                         <td colSpan={4} className="px-4 py-3 text-xs font-semibold text-[var(--warm-mid)]">합계</td>
                         <td className="px-3 py-3 text-right text-sm font-bold text-[var(--warm-dark)]">
-                          <MoneyDisplay amount={recurringExpensesWithStatus.reduce((s, r) => s + (r.historicalAvg ?? r.amount), 0)} />
+                          <MoneyDisplay amount={activeRecs.reduce((s, r) => s + (r.historicalAvg ?? r.amount), 0)} />
                         </td>
                         <td className="px-3 py-3 text-right text-sm font-bold text-emerald-400">
-                          {recurringExpensesWithStatus.some(r => r.recordedExpenseId)
-                            ? <MoneyDisplay amount={recurringExpensesWithStatus.filter(r => r.recordedExpenseId).reduce((s, r) => s + (r.recordedAmount ?? 0), 0)} />
+                          {activeRecs.some(r => r.recordedExpenseId)
+                            ? <MoneyDisplay amount={activeRecs.filter(r => r.recordedExpenseId).reduce((s, r) => s + (r.recordedAmount ?? 0), 0)} />
                             : <span className="text-[var(--warm-muted)] font-normal">—</span>}
                         </td>
                         <td />
@@ -1347,6 +1349,59 @@ export default function FinanceClient({
                   </table>
                 </div>
               </div>
+
+              {/* ── 활성화 예정 항목 ── */}
+              {pendingRecs.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-[var(--warm-muted)] px-1">활성화 예정 — 아직 내 부담이 아닌 항목</p>
+                  {/* 모바일 카드 */}
+                  <div className="sm:hidden space-y-2">
+                    {pendingRecs.map(rec => (
+                      <div key={rec.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 opacity-50">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs text-[var(--warm-muted)]">매월 {rec.dueDay}일{rec.isAutoDebit ? ' · 자동이체' : ''}</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 ring-1 ring-blue-200 font-medium">{rec.activeSince?.slice(0, 7)} 활성화</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20">{rec.category}</span>
+                          {rec.payMethod && <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{rec.payMethod}</span>}
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs text-[var(--warm-dark)] font-medium">{rec.title}</p>
+                          <span className="text-sm font-bold text-[var(--warm-muted)]"><MoneyDisplay amount={rec.amount} prefix="-" /></span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* 데스크톱 테이블 */}
+                  <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden opacity-60">
+                    <table className="w-full min-w-[600px]">
+                      <tbody className="divide-y divide-[var(--warm-border)]/50">
+                        {pendingRecs.map(rec => (
+                          <tr key={rec.id} className="bg-[var(--canvas)]/30">
+                            <td className="px-4 py-3 text-sm text-[var(--warm-muted)] w-16">{rec.dueDay}일</td>
+                            <td className="px-3 py-3">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm text-[var(--warm-muted)]">{rec.title}</span>
+                                {rec.isVariable && <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-full">변동</span>}
+                                {rec.isAutoDebit && <span className="text-[10px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded-full">자동</span>}
+                              </div>
+                              {rec.memo && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">{rec.memo}</p>}
+                            </td>
+                            <td className="px-3 py-3 text-xs text-[var(--warm-muted)] w-24">{rec.category}</td>
+                            <td className="px-3 py-3 text-xs text-[var(--warm-muted)] w-24">{rec.payMethod ?? '—'}</td>
+                            <td className="px-3 py-3 text-right text-sm text-[var(--warm-muted)] w-28"><MoneyDisplay amount={rec.amount} /></td>
+                            <td className="px-3 py-3 text-right w-28"><span className="text-xs text-[var(--warm-muted)]">—</span></td>
+                            <td className="px-4 py-3 text-center w-20">
+                              <span className="text-[10px] font-semibold text-blue-500 bg-blue-500/10 px-2 py-1 rounded-lg">{rec.activeSince?.slice(0, 7)} 활성화</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
