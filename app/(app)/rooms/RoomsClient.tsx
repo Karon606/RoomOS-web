@@ -571,11 +571,16 @@ export default function RoomsClient({
       {/* 모바일 정렬 칩 */}
       <div className="sm:hidden flex gap-1.5 overflow-x-auto pb-0.5 -mx-4 px-4">
         {([
-          { sk: 'status'    as SortKey, label: '수납상태' },
-          { sk: 'roomNo'    as SortKey, label: '호실순' },
-          { sk: 'balance'   as SortKey, label: '잔액' },
-          { sk: 'expected'  as SortKey, label: '이용료' },
-          { sk: 'tenantName'as SortKey, label: '입주자' },
+          { sk: 'status'        as SortKey, label: '수납상태' },
+          { sk: 'roomNo'        as SortKey, label: '호실순' },
+          { sk: 'balance'       as SortKey, label: '잔액' },
+          { sk: 'expected'      as SortKey, label: '이용료' },
+          { sk: 'totalPaid'     as SortKey, label: '총납부액' },
+          { sk: 'tenantName'    as SortKey, label: '입주자' },
+          { sk: 'depositAmount' as SortKey, label: '보증금' },
+          { sk: 'contact'       as SortKey, label: '연락처' },
+          { sk: 'type'          as SortKey, label: '타입' },
+          { sk: 'windowType'    as SortKey, label: '창문' },
         ]).map(({ sk, label }) => {
           const active = sortKey === sk
           return (
