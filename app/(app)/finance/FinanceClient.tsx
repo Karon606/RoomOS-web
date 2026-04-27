@@ -9,6 +9,10 @@ import {
   recordRecurringExpense,
   type RecurringExpenseWithStatus,
 } from './actions'
+import {
+  getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
+  type RecurringExpenseRow,
+} from '@/app/(app)/settings/actions'
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -294,6 +298,84 @@ export default function FinanceClient({
   const [recRecPayMethod, setRecRecPayMethod] = useState('')
   const [recError, setRecError]         = useState('')
 
+  // ── 고정 지출 관리 모달 상태 ─────────────────────────────────
+  const [showRecMgmt, setShowRecMgmt]   = useState(false)
+  const [recMgmtList, setRecMgmtList]   = useState<RecurringExpenseRow[]>([])
+  const [recMgmtLoading, setRecMgmtLoading] = useState(false)
+  const [editingRecMgmt, setEditingRecMgmt] = useState<RecurringExpenseRow | null>(null)
+  const [showRecMgmtForm, setShowRecMgmtForm] = useState(false)
+  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: '', memo: '' })
+  const [recMgmtPending, startRecMgmtTransition] = useTransition()
+  const [recMgmtError, setRecMgmtError] = useState('')
+
+  const openRecMgmt = async () => {
+    setShowRecMgmt(true)
+    setShowRecMgmtForm(false)
+    setEditingRecMgmt(null)
+    setRecMgmtError('')
+    setRecMgmtLoading(true)
+    const list = await getRecurringExpenses()
+    setRecMgmtList(list)
+    setRecMgmtLoading(false)
+  }
+  const openNewRecMgmt = () => {
+    setEditingRecMgmt(null)
+    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: '', memo: '' })
+    setShowRecMgmtForm(true)
+    setRecMgmtError('')
+  }
+  const openEditRecMgmt = (r: RecurringExpenseRow) => {
+    setEditingRecMgmt(r)
+    setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', memo: r.memo ?? '' })
+    setShowRecMgmtForm(true)
+    setRecMgmtError('')
+  }
+  const handleSaveRecMgmt = () => {
+    const data = {
+      title: recMgmtForm.title.trim(),
+      amount: Number(recMgmtForm.amount.replace(/[^0-9]/g, '')),
+      category: recMgmtForm.category,
+      dueDay: parseInt(recMgmtForm.dueDay) || 25,
+      payMethod: recMgmtForm.payMethod || undefined,
+      isAutoDebit: recMgmtForm.isAutoDebit,
+      isVariable: recMgmtForm.isVariable,
+      alertDaysBefore: parseInt(recMgmtForm.alertDaysBefore) || 7,
+      activeSince: recMgmtForm.activeSince || undefined,
+      memo: recMgmtForm.memo || undefined,
+    }
+    startRecMgmtTransition(async () => {
+      let res: { ok: boolean; error?: string }
+      if (editingRecMgmt) {
+        res = await updateRecurringExpense(editingRecMgmt.id, data)
+      } else {
+        res = await addRecurringExpense(data)
+      }
+      if (!res.ok) { setRecMgmtError((res as any).error ?? '저장 실패'); return }
+      const list = await getRecurringExpenses()
+      setRecMgmtList(list)
+      setShowRecMgmtForm(false)
+      setEditingRecMgmt(null)
+      router.refresh()
+    })
+  }
+  const handleDeleteRecMgmt = (id: string, title: string) => {
+    if (!confirm(`'${title}' 고정 지출을 삭제할까요?`)) return
+    startRecMgmtTransition(async () => {
+      await deleteRecurringExpense(id)
+      const list = await getRecurringExpenses()
+      setRecMgmtList(list)
+      router.refresh()
+    })
+  }
+  const handleToggleRecMgmt = (r: RecurringExpenseRow) => {
+    startRecMgmtTransition(async () => {
+      await updateRecurringExpense(r.id, { isActive: !r.isActive })
+      const list = await getRecurringExpenses()
+      setRecMgmtList(list)
+      router.refresh()
+    })
+  }
+
   // ── 자산 탭 상태 ─────────────────────────────────────────────
   const [editingAcc, setEditingAcc]     = useState<FinancialAccount | null>(null)
   const [assetType, setAssetType]       = useState('BANK_ACCOUNT')
@@ -490,6 +572,7 @@ export default function FinanceClient({
   ]
 
   return (
+    <>
     <div className="space-y-5">
 
       {/* 헤더 */}
@@ -964,219 +1047,305 @@ export default function FinanceClient({
       {tab === 'recurring' && (
         <div className="space-y-4">
 
-          {/* 헤더 + 요약 */}
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <h2 className="text-sm font-semibold text-[var(--warm-mid)]">{monthLabel} 고정 지출 현황</h2>
-            {recurringExpensesWithStatus.length > 0 && (
-              <div className="flex items-center gap-4 text-xs">
-                <span className="flex items-center gap-1.5 text-[var(--warm-muted)]">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-                  기록완료 {recurringExpensesWithStatus.filter(r => r.recordedExpenseId).length}건
-                </span>
-                <span className="flex items-center gap-1.5 text-[var(--warm-muted)]">
-                  <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
-                  미기록 {recUnrecordedCount}건
-                </span>
-              </div>
-            )}
+          {/* 헤더 + 요약 + 관리 버튼 */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-4 text-xs flex-1">
+              {recurringExpensesWithStatus.length > 0 && (
+                <>
+                  <span className="flex items-center gap-1.5 text-[var(--warm-muted)]">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                    기록완료 {recurringExpensesWithStatus.filter(r => r.recordedExpenseId).length}건
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[var(--warm-muted)]">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+                    미기록 {recUnrecordedCount}건
+                  </span>
+                  <span className="ml-auto text-sm font-bold text-red-400 font-mono">
+                    합계: <MoneyDisplay amount={recurringExpensesWithStatus.reduce((s, r) => s + (r.historicalAvg ?? r.amount), 0)} />
+                  </span>
+                </>
+              )}
+            </div>
+            <button onClick={openRecMgmt}
+              className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
+              + 항목 관리
+            </button>
           </div>
 
           {recurringExpensesWithStatus.length === 0 ? (
             <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-10 text-center text-sm text-[var(--warm-muted)]">
               등록된 고정 지출이 없습니다.<br />
-              <span className="text-xs">환경설정 &gt; 고정 지출에서 항목을 추가하세요.</span>
+              <button onClick={openRecMgmt} className="mt-2 text-[var(--coral)] text-xs underline">+ 항목 추가하기</button>
             </div>
           ) : (
-            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+            <div className="space-y-2">
 
-              {/* 표 헤더 */}
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[600px]">
-                  <thead>
-                    <tr className="border-b border-[var(--warm-border)]">
-                      <th className="text-left text-xs font-medium text-[var(--warm-muted)] px-4 py-3 w-16">납부일</th>
-                      <th className="text-left text-xs font-medium text-[var(--warm-muted)] px-3 py-3">항목</th>
-                      <th className="text-left text-xs font-medium text-[var(--warm-muted)] px-3 py-3 w-24">카테고리</th>
-                      <th className="text-left text-xs font-medium text-[var(--warm-muted)] px-3 py-3 w-24">결제수단</th>
-                      <th className="text-right text-xs font-medium text-[var(--warm-muted)] px-3 py-3 w-28">예상 금액</th>
-                      <th className="text-right text-xs font-medium text-[var(--warm-muted)] px-3 py-3 w-28">실제 금액</th>
-                      <th className="text-center text-xs font-medium text-[var(--warm-muted)] px-4 py-3 w-20">상태</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--warm-border)]/50">
-                    {recurringExpensesWithStatus.map(rec => {
-                      const isRecorded = !!rec.recordedExpenseId
-                      const expectedAmt = rec.historicalAvg ?? rec.amount
-                      const isRecording = recordingRec?.id === rec.id
+              {/* ── 모바일 카드 목록 ── */}
+              <div className="sm:hidden space-y-2">
+                {recurringExpensesWithStatus.map(rec => {
+                  const isRecorded = !!rec.recordedExpenseId
+                  const expectedAmt = rec.historicalAvg ?? rec.amount
+                  const isRecording = recordingRec?.id === rec.id
+                  return (
+                    <div key={rec.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+                      <div className="p-4">
+                        {/* 납부일 + 금액 + 상태 */}
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs text-[var(--warm-muted)]">매월 {rec.dueDay}일{rec.isAutoDebit ? ' · 자동이체' : ''}</span>
+                          <div className="flex items-center gap-1.5">
+                            {isRecorded ? (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 font-medium">기록완료</span>
+                            ) : (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 font-medium">미기록</span>
+                            )}
+                            <span className="text-sm font-bold text-red-500"><MoneyDisplay amount={isRecorded ? rec.recordedAmount! : expectedAmt} prefix="-" /></span>
+                          </div>
+                        </div>
+                        {/* 카테고리 + 배지 */}
+                        <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20">{rec.category}</span>
+                          {rec.payMethod && <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{rec.payMethod}</span>}
+                          {rec.isVariable && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 ring-1 ring-blue-200">변동</span>}
+                        </div>
+                        {/* 항목명 + 기록일 */}
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs text-[var(--warm-dark)] font-medium">{rec.title}{rec.memo ? ` · ${rec.memo}` : ''}</p>
+                          {isRecorded && <p className="text-[10px] text-[var(--warm-muted)]">{rec.recordedDate?.slice(5).replace('-', '/')} 기록</p>}
+                        </div>
+                        {!isRecorded && (
+                          <button
+                            onClick={() => {
+                              setRecordingRec(rec)
+                              setRecRecAmount(rec.historicalAvg ?? rec.amount)
+                              setRecRecDate(`${targetMonth}-${String(rec.dueDay).padStart(2, '0')}`)
+                              setRecRecMemo(rec.memo ?? '')
+                              setRecRecPayMethod(rec.payMethod ?? '계좌이체')
+                              setRecError('')
+                            }}
+                            className="mt-3 w-full text-xs font-semibold text-[var(--coral)] bg-[var(--coral)]/10 hover:bg-[var(--coral)]/20 py-1.5 rounded-xl transition-colors">
+                            지출 기록하기
+                          </button>
+                        )}
+                      </div>
+                      {/* 인라인 기록 폼 */}
+                      {isRecording && (
+                        <div className="px-4 py-4 bg-[var(--canvas)] border-t border-[var(--warm-border)] space-y-3">
+                          <p className="text-xs font-semibold text-[var(--warm-mid)]">지출 기록 — {rec.title}</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-xs text-[var(--warm-muted)]">날짜</label>
+                              <DatePicker value={recRecDate} onChange={setRecRecDate}
+                                className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs text-[var(--warm-muted)]">
+                                금액{rec.historicalAvg && <span className="ml-1 text-blue-400 text-[10px]">평균 {rec.historicalAvg.toLocaleString()}원</span>}
+                              </label>
+                              <MoneyInput value={recRecAmount} onChange={v => setRecRecAmount(v)} placeholder="0원" />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-xs text-[var(--warm-muted)]">결제수단</label>
+                              <select value={recRecPayMethod} onChange={e => setRecRecPayMethod(e.target.value)}
+                                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                                {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                                {!paymentMethods.includes('계좌이체') && <option value="계좌이체">계좌이체</option>}
+                              </select>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs text-[var(--warm-muted)]">메모</label>
+                              <input type="text" value={recRecMemo} onChange={e => setRecRecMemo(e.target.value)}
+                                placeholder="선택 입력"
+                                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                            </div>
+                          </div>
+                          {recError && <p className="text-red-400 text-xs">{recError}</p>}
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => { setRecordingRec(null); setRecError('') }}
+                              className="px-4 py-2 bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-mid)] text-sm rounded-xl">취소</button>
+                            <button type="button" disabled={isPending || !recRecDate || recRecAmount <= 0}
+                              onClick={() => { setRecError(''); startTransition(async () => { const res = await recordRecurringExpense({ recurringExpenseId: rec.id, amount: recRecAmount, date: recRecDate, payMethod: recRecPayMethod || undefined, memo: recRecMemo || undefined }); if (!res.ok) { setRecError(res.error); return }; setRecordingRec(null); router.refresh() }) }}
+                              className="px-5 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl disabled:opacity-60">
+                              {isPending ? '저장 중...' : '기록 저장'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
 
-                      return (
-                        <>
-                          <tr key={rec.id}
-                            className={`transition-colors ${isRecorded ? 'bg-emerald-500/5' : 'hover:bg-[var(--canvas)]/60'}`}>
-
-                            {/* 납부일 */}
-                            <td className="px-4 py-3 text-sm font-medium text-[var(--warm-dark)]">
-                              {rec.dueDay}일
-                            </td>
-
-                            {/* 항목명 + 배지 */}
-                            <td className="px-3 py-3">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-sm font-semibold text-[var(--warm-dark)]">{rec.title}</span>
-                                {rec.isVariable && (
-                                  <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-full">변동</span>
-                                )}
-                                {rec.isAutoDebit && (
-                                  <span className="text-[10px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded-full">자동</span>
-                                )}
-                              </div>
-                              {rec.memo && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">{rec.memo}</p>}
-                            </td>
-
-                            {/* 카테고리 */}
-                            <td className="px-3 py-3 text-xs text-[var(--warm-mid)]">{rec.category}</td>
-
-                            {/* 결제수단 */}
-                            <td className="px-3 py-3 text-xs text-[var(--warm-mid)]">{rec.payMethod ?? '—'}</td>
-
-                            {/* 예상 금액 */}
-                            <td className="px-3 py-3 text-right">
-                              <span className="text-sm font-medium text-[var(--warm-dark)]">
-                                <MoneyDisplay amount={expectedAmt} />
-                              </span>
-                              {rec.historicalAvg && (
-                                <p className="text-[9px] text-blue-400 mt-0.5">과거 평균</p>
-                              )}
-                            </td>
-
-                            {/* 실제 금액 */}
-                            <td className="px-3 py-3 text-right">
-                              {isRecorded ? (
-                                <>
-                                  <span className="text-sm font-semibold text-emerald-400">
-                                    <MoneyDisplay amount={rec.recordedAmount!} />
-                                  </span>
-                                  <p className="text-[9px] text-[var(--warm-muted)] mt-0.5">
-                                    {rec.recordedDate?.slice(5).replace('-', '/')}
-                                  </p>
-                                </>
-                              ) : (
-                                <span className="text-xs text-[var(--warm-muted)]">—</span>
-                              )}
-                            </td>
-
-                            {/* 상태 / 액션 */}
-                            <td className="px-4 py-3 text-center">
-                              {isRecorded ? (
-                                <span className="text-[10px] font-semibold text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-lg">완료</span>
-                              ) : (
-                                <button
-                                  onClick={() => {
-                                    setRecordingRec(rec)
-                                    setRecRecAmount(rec.historicalAvg ?? rec.amount)
-                                    setRecRecDate(`${targetMonth}-${String(rec.dueDay).padStart(2, '0')}`)
-                                    setRecRecMemo(rec.memo ?? '')
-                                    setRecRecPayMethod(rec.payMethod ?? '계좌이체')
-                                    setRecError('')
-                                  }}
-                                  className="text-[10px] font-semibold text-[var(--coral)] bg-[var(--coral)]/10 hover:bg-[var(--coral)]/20 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap">
-                                  기록
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-
-                          {/* 인라인 기록 폼 — 해당 행 바로 아래 */}
-                          {isRecording && (
-                            <tr key={`${rec.id}-form`}>
-                              <td colSpan={7} className="px-4 py-4 bg-[var(--canvas)]">
-                                <div className="space-y-3 max-w-lg">
-                                  <p className="text-xs font-semibold text-[var(--warm-mid)]">지출 기록 — {rec.title}</p>
-                                  <div className="grid grid-cols-2 gap-3">
-                                    <div className="space-y-1">
-                                      <label className="text-xs text-[var(--warm-muted)]">날짜</label>
-                                      <DatePicker value={recRecDate} onChange={setRecRecDate}
-                                        className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
-                                    </div>
-                                    <div className="space-y-1">
-                                      <label className="text-xs text-[var(--warm-muted)]">
-                                        금액
-                                        {rec.historicalAvg && (
-                                          <span className="ml-1.5 text-blue-400 text-[10px]">평균 {rec.historicalAvg.toLocaleString()}원</span>
-                                        )}
-                                      </label>
-                                      <MoneyInput value={recRecAmount} onChange={v => setRecRecAmount(v)} placeholder="0원" />
-                                    </div>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-3">
-                                    <div className="space-y-1">
-                                      <label className="text-xs text-[var(--warm-muted)]">결제수단</label>
-                                      <select value={recRecPayMethod} onChange={e => setRecRecPayMethod(e.target.value)}
-                                        className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                                        {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
-                                        {!paymentMethods.includes('계좌이체') && <option value="계좌이체">계좌이체</option>}
-                                      </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                      <label className="text-xs text-[var(--warm-muted)]">메모</label>
-                                      <input type="text" value={recRecMemo} onChange={e => setRecRecMemo(e.target.value)}
-                                        placeholder="선택 입력"
-                                        className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
-                                    </div>
-                                  </div>
-                                  {recError && <p className="text-red-400 text-xs">{recError}</p>}
-                                  <div className="flex gap-2">
-                                    <button type="button"
-                                      onClick={() => { setRecordingRec(null); setRecError('') }}
-                                      className="px-4 py-2 bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-mid)] text-sm rounded-xl">
-                                      취소
-                                    </button>
-                                    <button type="button"
-                                      disabled={isPending || !recRecDate || recRecAmount <= 0}
-                                      onClick={() => {
-                                        setRecError('')
-                                        startTransition(async () => {
-                                          const res = await recordRecurringExpense({
-                                            recurringExpenseId: rec.id,
-                                            amount: recRecAmount,
-                                            date: recRecDate,
-                                            payMethod: recRecPayMethod || undefined,
-                                            memo: recRecMemo || undefined,
-                                          })
-                                          if (!res.ok) { setRecError(res.error); return }
-                                          setRecordingRec(null)
-                                          router.refresh()
-                                        })
-                                      }}
-                                      className="px-5 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl disabled:opacity-60">
-                                      {isPending ? '저장 중...' : '기록 저장'}
-                                    </button>
-                                  </div>
+              {/* ── 데스크톱 테이블 ── */}
+              <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[600px]">
+                    <thead>
+                      <tr className="border-b border-[var(--warm-border)]">
+                        <th className="text-left text-xs font-medium text-[var(--warm-muted)] px-4 py-3 w-16">납부일</th>
+                        <th className="text-left text-xs font-medium text-[var(--warm-muted)] px-3 py-3">항목</th>
+                        <th className="text-left text-xs font-medium text-[var(--warm-muted)] px-3 py-3 w-24">카테고리</th>
+                        <th className="text-left text-xs font-medium text-[var(--warm-muted)] px-3 py-3 w-24">결제수단</th>
+                        <th className="text-right text-xs font-medium text-[var(--warm-muted)] px-3 py-3 w-28">예상 금액</th>
+                        <th className="text-right text-xs font-medium text-[var(--warm-muted)] px-3 py-3 w-28">실제 금액</th>
+                        <th className="text-center text-xs font-medium text-[var(--warm-muted)] px-4 py-3 w-20">상태</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--warm-border)]/50">
+                      {recurringExpensesWithStatus.map(rec => {
+                        const isRecorded = !!rec.recordedExpenseId
+                        const expectedAmt = rec.historicalAvg ?? rec.amount
+                        const isRecording = recordingRec?.id === rec.id
+                        return (
+                          <>
+                            <tr key={rec.id}
+                              className={`transition-colors ${isRecorded ? 'bg-emerald-500/5' : 'hover:bg-[var(--canvas)]/60'}`}>
+                              <td className="px-4 py-3 text-sm font-medium text-[var(--warm-dark)]">{rec.dueDay}일</td>
+                              <td className="px-3 py-3">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-sm font-semibold text-[var(--warm-dark)]">{rec.title}</span>
+                                  {rec.isVariable && (
+                                    <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-full">변동</span>
+                                  )}
+                                  {rec.isAutoDebit && (
+                                    <span className="text-[10px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded-full">자동</span>
+                                  )}
                                 </div>
+                                {rec.memo && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">{rec.memo}</p>}
+                              </td>
+                              <td className="px-3 py-3 text-xs text-[var(--warm-mid)]">{rec.category}</td>
+                              <td className="px-3 py-3 text-xs text-[var(--warm-mid)]">{rec.payMethod ?? '—'}</td>
+                              <td className="px-3 py-3 text-right">
+                                <span className="text-sm font-medium text-[var(--warm-dark)]">
+                                  <MoneyDisplay amount={expectedAmt} />
+                                </span>
+                                {rec.historicalAvg && (
+                                  <p className="text-[9px] text-blue-400 mt-0.5">과거 평균</p>
+                                )}
+                              </td>
+                              <td className="px-3 py-3 text-right">
+                                {isRecorded ? (
+                                  <>
+                                    <span className="text-sm font-semibold text-emerald-400">
+                                      <MoneyDisplay amount={rec.recordedAmount!} />
+                                    </span>
+                                    <p className="text-[9px] text-[var(--warm-muted)] mt-0.5">
+                                      {rec.recordedDate?.slice(5).replace('-', '/')}
+                                    </p>
+                                  </>
+                                ) : (
+                                  <span className="text-xs text-[var(--warm-muted)]">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {isRecorded ? (
+                                  <span className="text-[10px] font-semibold text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-lg">완료</span>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      setRecordingRec(rec)
+                                      setRecRecAmount(rec.historicalAvg ?? rec.amount)
+                                      setRecRecDate(`${targetMonth}-${String(rec.dueDay).padStart(2, '0')}`)
+                                      setRecRecMemo(rec.memo ?? '')
+                                      setRecRecPayMethod(rec.payMethod ?? '계좌이체')
+                                      setRecError('')
+                                    }}
+                                    className="text-[10px] font-semibold text-[var(--coral)] bg-[var(--coral)]/10 hover:bg-[var(--coral)]/20 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap">
+                                    기록
+                                  </button>
+                                )}
                               </td>
                             </tr>
-                          )}
-                        </>
-                      )
-                    })}
-                  </tbody>
-
-                  {/* 표 하단 합계 행 */}
-                  <tfoot>
-                    <tr className="border-t-2 border-[var(--warm-border)] bg-[var(--canvas)]/50">
-                      <td colSpan={4} className="px-4 py-3 text-xs font-semibold text-[var(--warm-mid)]">합계</td>
-                      <td className="px-3 py-3 text-right text-sm font-bold text-[var(--warm-dark)]">
-                        <MoneyDisplay amount={recurringExpensesWithStatus.reduce((s, r) => s + (r.historicalAvg ?? r.amount), 0)} />
-                      </td>
-                      <td className="px-3 py-3 text-right text-sm font-bold text-emerald-400">
-                        {recurringExpensesWithStatus.some(r => r.recordedExpenseId)
-                          ? <MoneyDisplay amount={recurringExpensesWithStatus.filter(r => r.recordedExpenseId).reduce((s, r) => s + (r.recordedAmount ?? 0), 0)} />
-                          : <span className="text-[var(--warm-muted)] font-normal">—</span>}
-                      </td>
-                      <td />
-                    </tr>
-                  </tfoot>
-                </table>
+                            {isRecording && (
+                              <tr key={`${rec.id}-form`}>
+                                <td colSpan={7} className="px-4 py-4 bg-[var(--canvas)]">
+                                  <div className="space-y-3 max-w-lg">
+                                    <p className="text-xs font-semibold text-[var(--warm-mid)]">지출 기록 — {rec.title}</p>
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div className="space-y-1">
+                                        <label className="text-xs text-[var(--warm-muted)]">날짜</label>
+                                        <DatePicker value={recRecDate} onChange={setRecRecDate}
+                                          className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <label className="text-xs text-[var(--warm-muted)]">
+                                          금액
+                                          {rec.historicalAvg && (
+                                            <span className="ml-1.5 text-blue-400 text-[10px]">평균 {rec.historicalAvg.toLocaleString()}원</span>
+                                          )}
+                                        </label>
+                                        <MoneyInput value={recRecAmount} onChange={v => setRecRecAmount(v)} placeholder="0원" />
+                                      </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div className="space-y-1">
+                                        <label className="text-xs text-[var(--warm-muted)]">결제수단</label>
+                                        <select value={recRecPayMethod} onChange={e => setRecRecPayMethod(e.target.value)}
+                                          className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                                          {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                                          {!paymentMethods.includes('계좌이체') && <option value="계좌이체">계좌이체</option>}
+                                        </select>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <label className="text-xs text-[var(--warm-muted)]">메모</label>
+                                        <input type="text" value={recRecMemo} onChange={e => setRecRecMemo(e.target.value)}
+                                          placeholder="선택 입력"
+                                          className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                                      </div>
+                                    </div>
+                                    {recError && <p className="text-red-400 text-xs">{recError}</p>}
+                                    <div className="flex gap-2">
+                                      <button type="button"
+                                        onClick={() => { setRecordingRec(null); setRecError('') }}
+                                        className="px-4 py-2 bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-mid)] text-sm rounded-xl">
+                                        취소
+                                      </button>
+                                      <button type="button"
+                                        disabled={isPending || !recRecDate || recRecAmount <= 0}
+                                        onClick={() => {
+                                          setRecError('')
+                                          startTransition(async () => {
+                                            const res = await recordRecurringExpense({
+                                              recurringExpenseId: rec.id,
+                                              amount: recRecAmount,
+                                              date: recRecDate,
+                                              payMethod: recRecPayMethod || undefined,
+                                              memo: recRecMemo || undefined,
+                                            })
+                                            if (!res.ok) { setRecError(res.error); return }
+                                            setRecordingRec(null)
+                                            router.refresh()
+                                          })
+                                        }}
+                                        className="px-5 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl disabled:opacity-60">
+                                        {isPending ? '저장 중...' : '기록 저장'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-[var(--warm-border)] bg-[var(--canvas)]/50">
+                        <td colSpan={4} className="px-4 py-3 text-xs font-semibold text-[var(--warm-mid)]">합계</td>
+                        <td className="px-3 py-3 text-right text-sm font-bold text-[var(--warm-dark)]">
+                          <MoneyDisplay amount={recurringExpensesWithStatus.reduce((s, r) => s + (r.historicalAvg ?? r.amount), 0)} />
+                        </td>
+                        <td className="px-3 py-3 text-right text-sm font-bold text-emerald-400">
+                          {recurringExpensesWithStatus.some(r => r.recordedExpenseId)
+                            ? <MoneyDisplay amount={recurringExpensesWithStatus.filter(r => r.recordedExpenseId).reduce((s, r) => s + (r.recordedAmount ?? 0), 0)} />
+                            : <span className="text-[var(--warm-muted)] font-normal">—</span>}
+                        </td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -1752,6 +1921,152 @@ export default function FinanceClient({
       )}
 
     </div>
+
+    {/* ── 고정 지출 관리 모달 ────────────────────────────────────── */}
+
+    {showRecMgmt && (
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) { setShowRecMgmt(false); setShowRecMgmtForm(false) } }}>
+        <div className="bg-[var(--cream)] rounded-2xl w-full max-w-lg max-h-[90dvh] flex flex-col shadow-2xl border border-[var(--warm-border)]">
+          {/* 모달 헤더 */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">고정 지출 관리</h2>
+              <p className="text-xs text-[var(--warm-muted)] mt-0.5">매월 반복 지출 항목을 추가·수정·삭제합니다.</p>
+            </div>
+            <button onClick={() => { setShowRecMgmt(false); setShowRecMgmtForm(false) }}
+              className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none px-1">×</button>
+          </div>
+
+          <div className="overflow-y-auto flex-1 p-5 space-y-4">
+            {/* 추가/수정 폼 */}
+            {showRecMgmtForm ? (
+              <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
+                <p className="text-xs font-semibold text-[var(--warm-dark)]">{editingRecMgmt ? '고정 지출 수정' : '고정 지출 추가'}</p>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">항목명 *</label>
+                  <input type="text" value={recMgmtForm.title} onChange={e => setRecMgmtForm(p => ({ ...p, title: e.target.value }))}
+                    placeholder="예: 건물 임대료, 관리비"
+                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
+                    <MoneyInput value={Number(recMgmtForm.amount) || 0} onChange={v => setRecMgmtForm(p => ({ ...p, amount: String(v) }))} placeholder="0원" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">납부일 (매월)</label>
+                    <input type="number" min={1} max={31} value={recMgmtForm.dueDay}
+                      onChange={e => setRecMgmtForm(p => ({ ...p, dueDay: e.target.value }))}
+                      className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리</label>
+                  <select value={recMgmtForm.category} onChange={e => setRecMgmtForm(p => ({ ...p, category: e.target.value }))}
+                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                    {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">알림 (납부일 N일 전)</label>
+                  <input type="number" min={0} max={30} value={recMgmtForm.alertDaysBefore}
+                    onChange={e => setRecMgmtForm(p => ({ ...p, alertDaysBefore: e.target.value }))}
+                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                  <p className="text-[10px] text-[var(--warm-muted)]">자동이체 항목은 주말·공휴일이면 다음 영업일 기준으로 알림이 계산됩니다.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">활성화 시작일 (선택)</label>
+                  <input type="date" value={recMgmtForm.activeSince}
+                    onChange={e => setRecMgmtForm(p => ({ ...p, activeSince: e.target.value }))}
+                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                  <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
+                    이 항목이 실제로 내 부담이 되는 첫 날짜입니다. 입력하지 않으면 즉시 활성화됩니다.<br />
+                    예) 인터넷 요금 결제일 25일이 이전 원장 부담이면, 다음 달부터 내 부담 → 다음달 25일 입력.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">결제 수단 (선택)</label>
+                  <select value={recMgmtForm.payMethod} onChange={e => setRecMgmtForm(p => ({ ...p, payMethod: e.target.value }))}
+                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                    <option value="">선택 안 함</option>
+                    {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={recMgmtForm.isAutoDebit} onChange={e => setRecMgmtForm(p => ({ ...p, isAutoDebit: e.target.checked }))} className="accent-[var(--coral)]" />
+                    <span className="text-xs text-[var(--warm-dark)]">자동이체</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={recMgmtForm.isVariable} onChange={e => setRecMgmtForm(p => ({ ...p, isVariable: e.target.checked }))} className="accent-[var(--coral)]" />
+                    <div>
+                      <span className="text-xs text-[var(--warm-dark)]">변동 금액</span>
+                      <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">전기·수도 등 매달 달라지는 항목</p>
+                    </div>
+                  </label>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">메모 (선택)</label>
+                  <input type="text" value={recMgmtForm.memo} onChange={e => setRecMgmtForm(p => ({ ...p, memo: e.target.value }))}
+                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                </div>
+                {recMgmtError && <p className="text-red-400 text-xs">{recMgmtError}</p>}
+                <div className="flex gap-2 pt-1">
+                  <button onClick={() => { setShowRecMgmtForm(false); setEditingRecMgmt(null); setRecMgmtError('') }}
+                    className="flex-1 py-2 text-sm rounded-xl border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>
+                  <button onClick={handleSaveRecMgmt} disabled={recMgmtPending || !recMgmtForm.title.trim() || !recMgmtForm.amount}
+                    className="flex-1 py-2 text-sm font-medium rounded-xl text-white disabled:opacity-50"
+                    style={{ background: 'var(--coral)' }}>
+                    {recMgmtPending ? '저장 중…' : '저장'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={openNewRecMgmt}
+                className="w-full py-2.5 text-sm font-medium rounded-xl border border-dashed border-[var(--coral)] text-[var(--coral)] hover:bg-[var(--coral)]/5 transition-colors">
+                + 새 항목 추가
+              </button>
+            )}
+
+            {/* 목록 */}
+            {recMgmtLoading ? (
+              <p className="text-xs text-[var(--warm-muted)] text-center py-4">불러오는 중...</p>
+            ) : recMgmtList.length === 0 && !showRecMgmtForm ? (
+              <p className="text-sm text-[var(--warm-muted)] text-center py-3">등록된 고정 지출이 없습니다.</p>
+            ) : (
+              <div className="space-y-2">
+                {recMgmtList.map(r => (
+                  <div key={r.id} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 border border-[var(--warm-border)] ${r.isActive ? 'bg-[var(--canvas)]' : 'bg-[var(--canvas)] opacity-50'}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{r.title}</p>
+                        {r.isAutoDebit && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">자동이체</span>}
+                        {!r.isActive && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">비활성</span>}
+                        {r.activeSince && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600">{r.activeSince.slice(0, 7)}부터</span>}
+                      </div>
+                      <p className="text-xs text-[var(--warm-muted)] mt-0.5">
+                        매월 {r.dueDay}일 · {r.amount.toLocaleString()}원 · {r.category}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => handleToggleRecMgmt(r)}
+                        className="text-[10px] px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                        {r.isActive ? '비활성' : '활성화'}
+                      </button>
+                      <button onClick={() => openEditRecMgmt(r)}
+                        className="text-[10px] px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
+                      <button onClick={() => handleDeleteRecMgmt(r.id, r.title)}
+                        className="text-[10px] px-2 py-1 rounded-lg border border-red-200 text-red-400 hover:text-red-600 transition-colors">삭제</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
 

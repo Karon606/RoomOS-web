@@ -274,19 +274,19 @@ export default function SettingsForm({
   const [recurringList, setRecurringList] = useState<RecurringExpenseRow[]>([])
   const [showRecForm, setShowRecForm] = useState(false)
   const [editingRec, setEditingRec] = useState<RecurringExpenseRow | null>(null)
-  const [recForm, setRecForm] = useState({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', memo: '' })
+  const [recForm, setRecForm] = useState({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: '', memo: '' })
   const [recPending, startRecTransition] = useTransition()
 
   useEffect(() => { getRecurringExpenses().then(setRecurringList).catch(console.error) }, [])
 
   const openNewRec = () => {
     setEditingRec(null)
-    setRecForm({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', memo: '' })
+    setRecForm({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: '', memo: '' })
     setShowRecForm(true)
   }
   const openEditRec = (r: RecurringExpenseRow) => {
     setEditingRec(r)
-    setRecForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), memo: r.memo ?? '' })
+    setRecForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', memo: r.memo ?? '' })
     setShowRecForm(true)
   }
   const handleSaveRec = () => {
@@ -299,13 +299,14 @@ export default function SettingsForm({
       isAutoDebit: recForm.isAutoDebit,
       isVariable: recForm.isVariable,
       alertDaysBefore: parseInt(recForm.alertDaysBefore) || 7,
+      activeSince: recForm.activeSince || undefined,
       memo: recForm.memo || undefined,
     }
     if (!data.title || !data.amount) return
     startRecTransition(async () => {
       if (editingRec) {
         await updateRecurringExpense(editingRec.id, data)
-        setRecurringList(prev => prev.map(r => r.id === editingRec.id ? { ...r, ...data, payMethod: data.payMethod ?? null, memo: data.memo ?? null } : r))
+        setRecurringList(prev => prev.map(r => r.id === editingRec.id ? { ...r, ...data, payMethod: data.payMethod ?? null, memo: data.memo ?? null, activeSince: data.activeSince ?? null } : r))
       } else {
         const res = await addRecurringExpense(data)
         if (res.ok) {
@@ -535,6 +536,18 @@ export default function SettingsForm({
                   <input type="number" min={0} max={30} value={recForm.alertDaysBefore}
                     onChange={e => setRecForm(p => ({ ...p, alertDaysBefore: e.target.value }))}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                  <p className="text-[10px] text-[var(--warm-muted)]">자동이체 항목은 주말·공휴일이면 다음 영업일 기준으로 알림이 계산됩니다.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">활성화 시작일 (선택)</label>
+                  <input type="date" value={recForm.activeSince}
+                    onChange={e => setRecForm(p => ({ ...p, activeSince: e.target.value }))}
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                  <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
+                    이 항목이 실제로 <strong>내 부담</strong>이 되는 첫 날짜입니다.<br />
+                    예) 인터넷 요금 결제일이 25일이고 4월25일분이 3월 사용분이면, 이전 원장이 부담하는 마지막 청구가 4월 → 내 부담 시작은 <strong>5월 청구분(5월25일)</strong>부터이므로 2026-05-25 입력.<br />
+                    입력하지 않으면 즉시 활성화됩니다.
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">결제 수단 (선택)</label>

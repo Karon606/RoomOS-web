@@ -237,7 +237,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     prisma.leaseTerm.findMany({
       where: {
         propertyId,
-        status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] },
+        status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] },
         rentAmount: { gt: 0 },
       },
       select: {
@@ -564,26 +564,58 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
 
   // ── 고정 지출 알림 ───────────────────────────────────────────
+
+  // 한국 공휴일 (연도별 정적 목록 — 주말 대체공휴일 포함)
+  const KR_HOLIDAYS: Record<string, string[]> = {
+    '2025': ['2025-01-01','2025-01-28','2025-01-29','2025-01-30','2025-03-01','2025-05-05','2025-05-06','2025-06-06','2025-08-15','2025-10-03','2025-10-06','2025-10-07','2025-10-08','2025-10-09','2025-12-25'],
+    '2026': ['2026-01-01','2026-01-28','2026-01-29','2026-01-30','2026-03-01','2026-03-02','2026-05-05','2026-05-25','2026-06-06','2026-08-17','2026-09-24','2026-09-25','2026-09-28','2026-10-05','2026-10-09','2026-12-25'],
+  }
+
+  function getEffectiveTransferDate(baseDate: Date): Date {
+    const d = new Date(baseDate)
+    const yearKey = String(d.getFullYear())
+    const holidays = new Set(KR_HOLIDAYS[yearKey] ?? [])
+    while (true) {
+      const dow = d.getDay()
+      const iso = d.toISOString().slice(0, 10)
+      if (dow === 0) { d.setDate(d.getDate() + 1); continue }  // 일요일 → +1
+      if (dow === 6) { d.setDate(d.getDate() + 2); continue }  // 토요일 → +2
+      if (holidays.has(iso)) { d.setDate(d.getDate() + 1); continue } // 공휴일 → +1
+      break
+    }
+    return d
+  }
+
   const recordedRecurringIds = new Set(
     recurringExpensesThisMonth.map(e => e.recurringExpenseId).filter(Boolean)
   )
   for (const re of recurringExpenses) {
     if (recordedRecurringIds.has(re.id)) continue
+    // activeSince 필터
+    const activeSince = (re as any).activeSince as Date | null
+    if (activeSince && new Date(activeSince) > endDate) continue
+
     const [y, m] = targetMonth.split('-').map(Number)
-    const dueDate = new Date(y, m - 1, Math.min(re.dueDay, new Date(y, m, 0).getDate()))
-    dueDate.setHours(0, 0, 0, 0)
-    const daysLeft = Math.round((dueDate.getTime() - today.getTime()) / 86400000)
+    const nominalDate = new Date(y, m - 1, Math.min(re.dueDay, new Date(y, m, 0).getDate()))
+    nominalDate.setHours(0, 0, 0, 0)
+    // 자동이체인 경우 실제 이체일(주말/공휴일 다음 영업일) 기준으로 알림 계산
+    const effectiveDate = re.isAutoDebit ? getEffectiveTransferDate(new Date(nominalDate)) : nominalDate
+    effectiveDate.setHours(0, 0, 0, 0)
+    const daysLeft = Math.round((effectiveDate.getTime() - today.getTime()) / 86400000)
     if (daysLeft > re.alertDaysBefore) continue
+    const shiftedNote = re.isAutoDebit && effectiveDate.getTime() !== nominalDate.getTime()
+      ? ` (실제이체 ${fmtShortDate(effectiveDate)})`
+      : ''
     alertItems.push({
       text:                `고정 지출: ${re.title}`,
       link:                '/finance',
       dotColor:            '#6366f1',
       timeLabel:           daysLeft < 0 ? `${Math.abs(daysLeft)}일 경과` : daysLeft === 0 ? '오늘' : `D-${daysLeft}`,
-      exactDate:           fmtShortDate(dueDate),
-      detail:              `${re.amount.toLocaleString()}원 · ${re.category}${re.isAutoDebit ? ' · 자동이체' : ''}${re.memo ? '\n' + re.memo : ''}`,
+      exactDate:           fmtShortDate(effectiveDate),
+      detail:              `${re.amount.toLocaleString()}원 · ${re.category}${re.isAutoDebit ? ' · 자동이체' + shiftedNote : ''}${re.memo ? '\n' + re.memo : ''}`,
       recurringExpenseId:    re.id,
       recurringAmount:       re.amount,
-      recurringDueDate:      dueDate.toISOString().slice(0, 10),
+      recurringDueDate:      effectiveDate.toISOString().slice(0, 10),
       recurringCategory:     re.category,
       recurringPayMethod:    re.payMethod ?? undefined,
       recurringIsVariable:   (re as any).isVariable as boolean,

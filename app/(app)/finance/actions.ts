@@ -349,6 +349,8 @@ export type RecurringExpenseWithStatus = {
   payMethod: string | null
   isAutoDebit: boolean
   isVariable: boolean
+  alertDaysBefore: number
+  activeSince: string | null
   memo: string | null
   // 이번 달 기록 여부
   recordedExpenseId: string | null
@@ -364,7 +366,7 @@ export async function getRecurringExpensesWithStatus(month: string): Promise<Rec
   const startDate = new Date(year, m - 1, 1)
   const endDate   = new Date(year, m, 0)
 
-  const [recurringList, recordedThisMonth] = await Promise.all([
+  const [allRecurring, recordedThisMonth] = await Promise.all([
     prisma.recurringExpense.findMany({
       where: { propertyId, isActive: true },
       orderBy: { dueDay: 'asc' },
@@ -374,6 +376,13 @@ export async function getRecurringExpensesWithStatus(month: string): Promise<Rec
       select: { id: true, recurringExpenseId: true, amount: true, date: true },
     }),
   ])
+
+  // activeSince 필터: 해당 월의 마지막 날 기준으로 아직 활성화 전이면 제외
+  const recurringList = allRecurring.filter(re => {
+    const as = (re as any).activeSince as Date | null
+    if (!as) return true
+    return new Date(as) <= endDate
+  })
 
   const recordedMap = new Map(recordedThisMonth.map(e => [e.recurringExpenseId!, e]))
 
@@ -398,6 +407,7 @@ export async function getRecurringExpensesWithStatus(month: string): Promise<Rec
     const recorded = recordedMap.get(re.id)
     const isVar = (re as any).isVariable as boolean
     const hasAvg = isVar && (varCnt[re.id] ?? 0) >= 2
+    const as = (re as any).activeSince as Date | null
     return {
       id:                re.id,
       title:             re.title,
@@ -407,6 +417,8 @@ export async function getRecurringExpensesWithStatus(month: string): Promise<Rec
       payMethod:         re.payMethod,
       isAutoDebit:       re.isAutoDebit,
       isVariable:        isVar,
+      alertDaysBefore:   re.alertDaysBefore,
+      activeSince:       as ? new Date(as).toISOString().slice(0, 10) : null,
       memo:              re.memo,
       recordedExpenseId: recorded?.id ?? null,
       recordedAmount:    recorded?.amount ?? null,

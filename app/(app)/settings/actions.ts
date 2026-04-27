@@ -445,27 +445,36 @@ export type RecurringExpenseRow = {
   isVariable: boolean
   alertDaysBefore: number
   isActive: boolean
+  activeSince: string | null
   memo: string | null
 }
 
 export async function getRecurringExpenses(): Promise<RecurringExpenseRow[]> {
   const propertyId = await getPropertyId()
-  return prisma.recurringExpense.findMany({
+  const list = await prisma.recurringExpense.findMany({
     where: { propertyId },
     orderBy: { dueDay: 'asc' },
-    select: { id: true, title: true, amount: true, category: true, dueDay: true, payMethod: true, isAutoDebit: true, isVariable: true, alertDaysBefore: true, isActive: true, memo: true },
+    select: { id: true, title: true, amount: true, category: true, dueDay: true, payMethod: true, isAutoDebit: true, isVariable: true, alertDaysBefore: true, isActive: true, activeSince: true, memo: true },
   })
+  return list.map(r => ({
+    ...r,
+    activeSince: r.activeSince ? new Date(r.activeSince).toISOString().slice(0, 10) : null,
+  }))
 }
 
 export async function addRecurringExpense(data: {
   title: string; amount: number; category: string; dueDay: number
-  payMethod?: string; isAutoDebit?: boolean; isVariable?: boolean; alertDaysBefore?: number; memo?: string
+  payMethod?: string; isAutoDebit?: boolean; isVariable?: boolean; alertDaysBefore?: number; activeSince?: string; memo?: string
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
+    const { activeSince, ...rest } = data
     const rec = await prisma.recurringExpense.create({
-      data: { propertyId, ...data, isActive: true },
+      data: {
+        propertyId, ...rest, isActive: true,
+        activeSince: activeSince ? new Date(activeSince) : null,
+      },
     })
     revalidatePath('/settings')
     return { ok: true, id: rec.id }
@@ -476,11 +485,16 @@ export async function addRecurringExpense(data: {
 
 export async function updateRecurringExpense(id: string, data: Partial<{
   title: string; amount: number; category: string; dueDay: number
-  payMethod: string | null; isAutoDebit: boolean; isVariable: boolean; alertDaysBefore: number; isActive: boolean; memo: string | null
+  payMethod: string | null; isAutoDebit: boolean; isVariable: boolean; alertDaysBefore: number; isActive: boolean; activeSince: string | null; memo: string | null
 }>): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    await prisma.recurringExpense.update({ where: { id }, data })
+    const { activeSince, ...rest } = data
+    const updateData: Record<string, unknown> = { ...rest }
+    if ('activeSince' in data) {
+      updateData.activeSince = activeSince ? new Date(activeSince) : null
+    }
+    await prisma.recurringExpense.update({ where: { id }, data: updateData })
     revalidatePath('/settings')
     return { ok: true }
   } catch (e) {
