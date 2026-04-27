@@ -71,7 +71,23 @@ JSON 권장 단가는 다음 형식: {"권장단가": [{"type": "방타입", "pr
 
     if (!geminiRes.ok) {
       const errText = await geminiRes.text()
-      return NextResponse.json({ error: `Gemini API 오류: ${geminiRes.status} ${errText}` }, { status: 502 })
+      let friendlyMsg: string
+      try {
+        const errJson = JSON.parse(errText) as { error?: { message?: string; status?: string } }
+        const status = geminiRes.status
+        if (status === 503) {
+          friendlyMsg = 'AI 서버가 일시적으로 과부하 상태입니다. 잠시 후 다시 시도해주세요.'
+        } else if (status === 429) {
+          friendlyMsg = 'AI 요청 한도에 도달했습니다. 잠시 후 다시 시도해주세요.'
+        } else if (status === 400) {
+          friendlyMsg = `요청 형식 오류: ${errJson.error?.message ?? '알 수 없는 오류'}`
+        } else {
+          friendlyMsg = errJson.error?.message ?? `AI 분석 오류 (${status})`
+        }
+      } catch {
+        friendlyMsg = `AI 분석 오류 (${geminiRes.status})`
+      }
+      return NextResponse.json({ error: friendlyMsg }, { status: 502 })
     }
 
     const geminiJson = await geminiRes.json()
