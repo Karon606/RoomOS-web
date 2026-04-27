@@ -192,15 +192,55 @@ function CompetitorModal({
   const setField = <K extends keyof CompetitorFormData>(k: K, v: CompetitorFormData[K]) =>
     setForm(f => ({ ...f, [k]: v }))
 
+  const PYEONG_TO_M2 = 3.30579
+
   const setPriceRow = (i: number, k: keyof RoomPrice, v: string | number) =>
     setForm(f => ({
       ...f,
       roomPrices: f.roomPrices.map((row, idx) => {
         if (idx !== i) return row
-        if (k === 'price') return { ...row, [k]: Number(v) }
-        if (k === 'areaPyeong') return { ...row, areaPyeong: v === '' ? undefined : Number(v) }
+        if (k === 'price' || k === 'deposit') return { ...row, [k]: v === '' ? undefined : Number(v) }
+        if (k === 'areaM2' || k === 'areaPyeong') return { ...row, [k]: v === '' ? undefined : Number(v) }
         return { ...row, [k]: v }
       }),
+    }))
+
+  const setAreaPyeong = (i: number, val: string) => {
+    const num = parseFloat(val)
+    setForm(f => ({
+      ...f,
+      roomPrices: f.roomPrices.map((row, idx) => {
+        if (idx !== i) return row
+        return {
+          ...row,
+          areaPyeong: val === '' || isNaN(num) ? undefined : num,
+          areaM2: val === '' || isNaN(num) ? undefined : parseFloat((num * PYEONG_TO_M2).toFixed(2)),
+        }
+      }),
+    }))
+  }
+
+  const setAreaM2 = (i: number, val: string) => {
+    const num = parseFloat(val)
+    setForm(f => ({
+      ...f,
+      roomPrices: f.roomPrices.map((row, idx) => {
+        if (idx !== i) return row
+        return {
+          ...row,
+          areaM2: val === '' || isNaN(num) ? undefined : num,
+          areaPyeong: val === '' || isNaN(num) ? undefined : parseFloat((num / PYEONG_TO_M2).toFixed(2)),
+        }
+      }),
+    }))
+  }
+
+  const toggleDeposit = (i: number, checked: boolean) =>
+    setForm(f => ({
+      ...f,
+      roomPrices: f.roomPrices.map((row, idx) =>
+        idx !== i ? row : { ...row, hasDeposit: checked, deposit: checked ? row.deposit : undefined }
+      ),
     }))
 
   const addPriceRow = () =>
@@ -352,7 +392,7 @@ function CompetitorModal({
                   {/* 크기 + 면적 행 */}
                   <div className="flex gap-2">
                     <select
-                      style={{ ...selectStyle, flex: 1 }}
+                      style={{ ...selectStyle, flex: '0 0 auto', width: '30%' }}
                       value={row.sizeCategory ?? ''}
                       onChange={e => setPriceRow(i, 'sizeCategory', e.target.value)}
                     >
@@ -365,11 +405,20 @@ function CompetitorModal({
                     <input
                       style={{ ...inputStyle, flex: 1 }}
                       type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="평"
+                      value={row.areaPyeong ?? ''}
+                      onChange={e => setAreaPyeong(i, e.target.value)}
+                    />
+                    <input
+                      style={{ ...inputStyle, flex: 1 }}
+                      type="number"
                       step="0.1"
                       min="0"
-                      placeholder="면적 (평)"
-                      value={row.areaPyeong ?? ''}
-                      onChange={e => setPriceRow(i, 'areaPyeong', e.target.value)}
+                      placeholder="m²"
+                      value={row.areaM2 ?? ''}
+                      onChange={e => setAreaM2(i, e.target.value)}
                     />
                   </div>
                   {/* 단가 + 메모 행 */}
@@ -387,6 +436,27 @@ function CompetitorModal({
                       value={row.memo ?? ''}
                       onChange={e => setPriceRow(i, 'memo', e.target.value)}
                     />
+                  </div>
+                  {/* 보증금 행 */}
+                  <div className="flex items-center gap-3">
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: 'var(--warm-dark)', flexShrink: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={row.hasDeposit ?? false}
+                        onChange={e => toggleDeposit(i, e.target.checked)}
+                        style={{ accentColor: 'var(--coral)', width: 15, height: 15 }}
+                      />
+                      보증금
+                    </label>
+                    {row.hasDeposit && (
+                      <input
+                        style={{ ...inputStyle, flex: 1 }}
+                        type="number"
+                        placeholder="보증금 (원)"
+                        value={row.deposit ?? ''}
+                        onChange={e => setPriceRow(i, 'deposit', e.target.value)}
+                      />
+                    )}
                   </div>
                 </div>
               ))}
@@ -976,10 +1046,15 @@ export default function MarketClient({
                                     p.type,
                                     p.windowType ? getWindowLabel(p.windowType) : null,
                                     p.direction  ? getDirectionLabel(p.direction)  : null,
-                                    p.sizeCategory || p.areaPyeong
-                                      ? [p.sizeCategory, p.areaPyeong ? `${p.areaPyeong}평` : null].filter(Boolean).join(' ')
+                                    p.sizeCategory || p.areaPyeong || p.areaM2
+                                      ? [
+                                          p.sizeCategory,
+                                          p.areaPyeong ? `${p.areaPyeong}평` : null,
+                                          p.areaM2 ? `${p.areaM2}㎡` : null,
+                                        ].filter(Boolean).join('/')
                                       : null,
                                   ].filter(Boolean).join(' · ')}: {fmtMoney(p.price)}
+                                  {p.hasDeposit && p.deposit ? ` + 보증금 ${fmtMoney(p.deposit)}` : p.hasDeposit ? ' + 보증금 있음' : ''}
                                   {p.memo ? ` (${p.memo})` : ''}
                                 </span>
                               ))}
@@ -1251,10 +1326,15 @@ export default function MarketClient({
                                       p.type,
                                       p.windowType ? getWindowLabel(p.windowType) : null,
                                       p.direction  ? getDirectionLabel(p.direction)  : null,
-                                      p.sizeCategory || p.areaPyeong
-                                        ? [p.sizeCategory, p.areaPyeong ? `${p.areaPyeong}평` : null].filter(Boolean).join(' ')
+                                      p.sizeCategory || p.areaPyeong || p.areaM2
+                                        ? [
+                                            p.sizeCategory,
+                                            p.areaPyeong ? `${p.areaPyeong}평` : null,
+                                            p.areaM2 ? `${p.areaM2}㎡` : null,
+                                          ].filter(Boolean).join('/')
                                         : null,
                                     ].filter(Boolean).join(' · ')}: {fmtMoney(p.price)}
+                                    {p.hasDeposit && p.deposit ? ` + 보증금 ${fmtMoney(p.deposit)}` : p.hasDeposit ? ' + 보증금 있음' : ''}
                                   </span>
                                 ))}
                               </div>

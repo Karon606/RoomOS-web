@@ -76,7 +76,7 @@ export async function deleteSurvey(surveyId: string): Promise<{ ok: boolean }> {
 
 // ── 경쟁업체 ─────────────────────────────────────────────────
 
-export type RoomPrice = { type: string; price: number; memo?: string; windowType?: string; direction?: string; sizeCategory?: string; areaPyeong?: number }
+export type RoomPrice = { type: string; price: number; memo?: string; windowType?: string; direction?: string; sizeCategory?: string; areaPyeong?: number; areaM2?: number; hasDeposit?: boolean; deposit?: number }
 
 export async function addCompetitor(
   surveyId: string,
