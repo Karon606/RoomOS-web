@@ -319,6 +319,7 @@ export default function TenantClient({
   const [payDateVal, setPayDateVal] = useState(new Date().toISOString().slice(0, 10))
   const [isDepositMode, setIsDepositMode] = useState(false)
   const [showOverrideForm, setShowOverrideForm] = useState(false)
+  const [confirmClearOverride, setConfirmClearOverride] = useState(false)
   const [overrideInput, setOverrideInput] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
   const [editingPayId, setEditingPayId] = useState<string | null>(null)
@@ -519,7 +520,7 @@ export default function TenantClient({
 
   const closePayModal = () => {
     setPayTarget(null); setPayHistory([]); setShowPayForm(false); setError('')
-    setShowOverrideForm(false); setOverrideInput(''); setOverrideReason('')
+    setShowOverrideForm(false); setOverrideInput(''); setOverrideReason(''); setConfirmClearOverride(false)
     setIsDepositMode(false); setPayDateVal(new Date().toISOString().slice(0, 10))
   }
 
@@ -1904,19 +1905,31 @@ export default function TenantClient({
                           </div>
                           <div className="flex items-center gap-2">
                             {isOverrideActive && !showOverrideForm && (
-                              <button
-                                type="button"
-                                disabled={isPending}
-                                onClick={() => {
-                                  if (!confirm('납부일 조정을 해제하시겠습니까?')) return
-                                  startTransition(async () => {
-                                    await clearDueDayOverride(lease.id)
-                                    refresh()
-                                  })
-                                }}
-                                className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40">
-                                해제
-                              </button>
+                              confirmClearOverride ? (
+                                <>
+                                  <span className="text-xs text-[var(--warm-muted)]">정말 해제할까요?</span>
+                                  <button type="button" onClick={() => setConfirmClearOverride(false)}
+                                    className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">취소</button>
+                                  <button
+                                    type="button"
+                                    disabled={isPending}
+                                    onClick={() => {
+                                      setConfirmClearOverride(false)
+                                      startTransition(async () => {
+                                        await clearDueDayOverride(lease.id)
+                                        refresh()
+                                      })
+                                    }}
+                                    className="text-xs text-red-400 hover:text-red-300 font-semibold disabled:opacity-40">
+                                    {isPending ? '해제 중...' : '해제'}
+                                  </button>
+                                </>
+                              ) : (
+                                <button type="button" onClick={() => setConfirmClearOverride(true)}
+                                  className="text-xs text-red-400 hover:text-red-300">
+                                  해제
+                                </button>
+                              )
                             )}
                             <button
                               type="button"
