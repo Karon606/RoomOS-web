@@ -319,65 +319,63 @@ export default function RoomManageClient({
           {!search && <p className="text-sm text-[var(--warm-muted)] mt-1">호실 등록 버튼을 눌러 시작하세요</p>}
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+        <div className="space-y-2">
           {filteredRooms.map(room => {
             const tenant = currentTenant(room)
             const thumb  = room.photos[0]
             return (
               <div key={room.id}
                 onClick={() => { setDetailRoom(room); setError('') }}
-                className={`bg-[var(--cream)] border rounded-2xl overflow-hidden cursor-pointer hover:border-[var(--warm-border)] transition-colors
+                className={`bg-[var(--cream)] border rounded-2xl overflow-hidden cursor-pointer active:opacity-70 transition-opacity flex items-stretch
                   ${room.isVacant ? 'border-[var(--warm-border)]' : 'border-[var(--coral)]/40'}`}>
-                {/* 썸네일 */}
-                {thumb ? (
-                  <div className="h-28 bg-[var(--canvas)]">
-                    <img src={thumb.storageUrl} alt={`${room.roomNo}호`} className="w-full h-full object-cover" />
-                  </div>
-                ) : (
-                  <div className="h-28 bg-[var(--canvas)] flex items-center justify-center">
-                    <span className="text-3xl opacity-20">🏠</span>
-                  </div>
-                )}
                 {/* 정보 */}
-                <div className="p-3 space-y-1.5">
-                  <div className="flex items-start justify-between">
-                    <span className="text-base font-bold text-[var(--warm-dark)]">{room.roomNo}호</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium
+                <div className="flex-1 p-4 min-w-0 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-bold text-[var(--coral)]">{room.roomNo}호</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0
                       ${room.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'}`}>
                       {room.isVacant ? '공실' : '거주중'}
                     </span>
                   </div>
-                  <p className="text-xs text-[var(--warm-mid)] truncate">{tenant ?? '—'}</p>
-                  <div className="space-y-0.5">
-                    {room.type && <p className="text-xs text-[var(--warm-muted)]">{room.type}</p>}
-                    {/* 창문 · 방향 */}
-                    {(room.windowType || room.direction) && (
-                      <p className="text-xs text-[var(--warm-muted)]">
-                        {[
-                          room.windowType ? getWindowLabel(room.windowType) : null,
-                          room.direction  ? getDirectionLabel(room.direction) : null,
-                        ].filter(Boolean).join(' · ')}
-                      </p>
-                    )}
-                    {/* 면적 */}
-                    {(room.areaPyeong || room.areaM2) && (
-                      <p className="text-xs text-[var(--warm-muted)]">
-                        {[
-                          room.areaPyeong ? `${room.areaPyeong}평` : null,
-                          room.areaM2     ? `${room.areaM2}㎡`    : null,
-                        ].filter(Boolean).join(' / ')}
-                      </p>
-                    )}
+                  {tenant && <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant}</p>}
+                  <div className="space-y-0.5 pt-0.5">
+                    <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-[var(--warm-muted)]">
+                      {room.type && <span>{room.type}</span>}
+                      {(room.windowType || room.direction) && (
+                        <span>
+                          {[
+                            room.windowType ? getWindowLabel(room.windowType) : null,
+                            room.direction  ? getDirectionLabel(room.direction) : null,
+                          ].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
+                      {(room.areaPyeong || room.areaM2) && (
+                        <span>
+                          {[
+                            room.areaPyeong ? `${room.areaPyeong}평` : null,
+                            room.areaM2     ? `${room.areaM2}㎡`    : null,
+                          ].filter(Boolean).join(' / ')}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></p>
                     {room.scheduledRent != null && (
-                      <p className="text-xs text-amber-400">
+                      <p className="text-xs text-amber-500">
                         → <MoneyDisplay amount={room.scheduledRent} />
-                        {room.rentUpdateDate && (
-                          <span className="text-[var(--warm-muted)] ml-1">({fmtDate(room.rentUpdateDate)})</span>
-                        )}
+                        {room.rentUpdateDate && <span className="text-[var(--warm-muted)] ml-1">({fmtDate(room.rentUpdateDate)})</span>}
                       </p>
                     )}
                   </div>
+                </div>
+                {/* 썸네일 (오른쪽) */}
+                <div className="w-24 sm:w-28 shrink-0 bg-[var(--canvas)]">
+                  {thumb ? (
+                    <img src={thumb.storageUrl} alt={`${room.roomNo}호`} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <span className="text-3xl opacity-20">🏠</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )
@@ -407,20 +405,23 @@ export default function RoomManageClient({
                 <button onClick={closeDetail} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
               </div>
 
-              {/* 바디 */}
-              <div className="flex-1 overflow-y-auto">
-                {/* 사진 */}
-                {r.photos.length > 0 && (
-                  <div className="flex gap-2 p-4 overflow-x-auto">
+              {/* 사진 슬라이더 — 모달 상단, 스크롤 고정 영역 */}
+              {r.photos.length > 0 && (
+                <div className="shrink-0 border-b border-[var(--warm-border)]">
+                  <div className="flex gap-2 overflow-x-auto px-4 py-3"
+                    style={{ scrollbarWidth: 'none' }}>
                     {r.photos.map(p => (
                       <img key={p.id} src={p.storageUrl} alt=""
-                        className="h-36 w-36 object-cover rounded-xl shrink-0" />
+                        className="h-44 w-44 object-cover rounded-xl shrink-0" />
                     ))}
                   </div>
-                )}
+                </div>
+              )}
 
+              {/* 바디 */}
+              <div className="flex-1 overflow-y-auto">
                 {/* 정보 */}
-                <div className="px-6 pb-6 space-y-2.5">
+                <div className="px-6 py-5 space-y-2.5">
                   <DetailRow label="입주자"    value={tenant ?? '공실'} />
                   {r.type && <DetailRow label="방 타입" value={r.type} />}
                   <DetailRow label="기본 이용료" value={<MoneyDisplay amount={r.baseRent} />} />
