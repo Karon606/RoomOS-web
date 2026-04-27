@@ -1958,19 +1958,25 @@ export default function TenantClient({
                                 <label className="text-xs text-[var(--warm-muted)]">조정 납부일</label>
                                 <input
                                   type="text"
-                                  value={overrideInput}
-                                  onChange={e => {
-                                    const v = e.target.value
+                                  defaultValue={overrideInput}
+                                  key={`override-${lease.id}-${showOverrideForm}`}
+                                  onInput={e => {
+                                    const el = e.currentTarget as HTMLInputElement
+                                    const v = el.value
                                     const n = Number(v)
                                     if (/[ㅁ마말]/.test(v) || (!isNaN(n) && n >= 30 && v.trim() !== '')) {
+                                      el.value = '말일'
                                       setOverrideInput('말일')
                                     } else {
                                       setOverrideInput(v)
                                     }
                                   }}
                                   onCompositionEnd={e => {
-                                    const v = (e.target as HTMLInputElement).value
-                                    if (/[ㅁ마말]/.test(v)) setOverrideInput('말일')
+                                    const el = e.currentTarget as HTMLInputElement
+                                    if (/[ㅁ마말]/.test(el.value)) {
+                                      el.value = '말일'
+                                      setOverrideInput('말일')
+                                    }
                                   }}
                                   placeholder="예: 20, 말일"
                                   className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-amber-500"
