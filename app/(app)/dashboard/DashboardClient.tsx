@@ -1477,16 +1477,16 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                       </div>
                       <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.15)' }}>
                         <div className="h-full rounded-full transition-all duration-700"
-                          style={{ width: `${data.totalExpected > 0 ? Math.min(100, Math.round((data.paidRevenue / data.totalExpected) * 100)) : 0}%`, background: 'var(--coral)' }} />
+                          style={{ width: `${data.totalExpected > 0 ? Math.min(100, Math.round((data.paidRevenue / data.totalExpected) * 100)) : 0}%`, background: 'var(--sun)' }} />
                       </div>
                       <div className="space-y-1.5 pt-0.5">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--coral)' }} />
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--sun)' }} />
                             <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>수납 완료</span>
-                            <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>{data.paidCount}건</span>
+                            <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: 'rgba(251,191,36,0.15)', color: 'var(--sun)' }}>{data.paidCount}건</span>
                           </div>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)' }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sun)' }}>
                             {Math.round(data.paidRevenue / 10000).toLocaleString()}만원
                           </span>
                         </div>
@@ -1516,20 +1516,20 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                           {Math.round(data.expectedExpense / 10000).toLocaleString()}만원
                         </span>
                       </div>
-                      <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.4)' }}>
+                      <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.15)' }}>
                         <div className="h-full rounded-full transition-all duration-700"
                           style={{
                             width: `${data.expectedExpense > 0 ? Math.min(100, Math.round((data.totalExpense / data.expectedExpense) * 100)) : 0}%`,
-                            background: 'var(--sun)',
+                            background: 'var(--warm-mid)',
                           }} />
                       </div>
                       <div className="space-y-1.5 pt-0.5">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--sun)' }} />
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--warm-mid)' }} />
                             <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>실제 지출</span>
                           </div>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sun)' }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--warm-mid)' }}>
                             {Math.round(data.totalExpense / 10000).toLocaleString()}만원
                           </span>
                         </div>
@@ -1545,6 +1545,47 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         </div>
                       </div>
                     </div>
+
+                    {/* 구분선 */}
+                    <div style={{ borderTop: `1px solid ${DIVIDER_COLOR}` }} />
+
+                    {/* ── 순이익 섹션 ── */}
+                    {(() => {
+                      const expectedNet = data.totalExpected - data.expectedExpense
+                      const currentNet  = data.paidRevenue - data.totalExpense
+                      const pct = expectedNet > 0 ? Math.max(0, Math.min(100, Math.round((currentNet / expectedNet) * 100))) : 0
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>예상 순이익</span>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>
+                              {expectedNet !== 0 ? `${Math.round(expectedNet / 10000).toLocaleString()}만원` : '—'}
+                            </span>
+                          </div>
+                          <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(244,98,58,0.1)', outline: '1px solid rgba(244,98,58,0.25)', outlineOffset: '-1px' }}>
+                            <div className="h-full rounded-full transition-all duration-700"
+                              style={{ width: `${pct}%`, background: 'var(--coral)' }} />
+                          </div>
+                          <div className="space-y-1.5 pt-0.5">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--coral)' }} />
+                                <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>현재 순이익</span>
+                              </div>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: currentNet >= 0 ? 'var(--coral)' : '#ef4444' }}>
+                                {currentNet >= 0 ? '+' : ''}{Math.round(currentNet / 10000).toLocaleString()}만원
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>달성률</span>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--warm-mid)' }}>
+                                {expectedNet > 0 ? `${pct.toLocaleString()}%` : '—'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </div>
 
                 </div>{/* /좌측 */}
