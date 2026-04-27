@@ -784,10 +784,16 @@ export default function FinanceClient({
                               <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 ring-1 ring-amber-300 font-medium">
                                 {r.isAutoDebit ? '자동이체 확인' : '지출 확인 필요'}
                               </span>
-                              <span className="text-sm font-bold text-amber-700">
-                                <MoneyDisplay amount={expectedAmt} prefix="-" />
-                                {r.isVariable && <span className="text-[9px] ml-1 font-normal">예상</span>}
-                              </span>
+                              <div className="text-right">
+                                <span className="text-sm font-bold text-amber-700">
+                                  <MoneyDisplay amount={expectedAmt} prefix="-" />
+                                </span>
+                                {r.isVariable && (
+                                  <p className="text-[9px] text-blue-500 mt-0.5">
+                                    {r.historicalAvg ? '과거 평균 기준 예상치' : '예상치'}
+                                  </p>
+                                )}
+                              </div>
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
@@ -874,8 +880,12 @@ export default function FinanceClient({
                               <td className="px-4 py-3 overflow-hidden">
                                 <span className="text-sm font-semibold text-amber-700 truncate block">
                                   <MoneyDisplay amount={expectedAmt} prefix="-" />
-                                  {r.isVariable && <span className="text-[9px] ml-1 font-normal text-amber-500">예상</span>}
                                 </span>
+                                {r.isVariable && (
+                                  <span className="text-[9px] text-blue-500">
+                                    {r.historicalAvg ? '과거 평균 기준 예상치' : '예상치'}
+                                  </span>
+                                )}
                               </td>
                               <td className="px-4 py-3 overflow-hidden">
                                 <span className="inline-flex items-center text-xs px-2 py-1 rounded-full font-medium ring-1 whitespace-nowrap bg-amber-100 text-amber-700 ring-amber-300">
