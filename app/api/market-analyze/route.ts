@@ -58,23 +58,28 @@ ${competitorsText}
 응답은 한국어로, 실용적이고 구체적으로 해주세요.
 JSON 권장 단가는 다음 형식: {"권장단가": [{"type": "방타입", "price": 숫자, "reason": "이유"}]}`
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-        }),
-      }
-    )
+    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+    const requestBody = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text()
+    let geminiRes: Response | null = null
+    let usedModel = models[0]
+
+    for (const model of models) {
+      usedModel = model
+      geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: requestBody },
+      )
+      if (geminiRes.ok || geminiRes.status !== 503) break
+      // 503이면 다음 모델로 폴백
+    }
+
+    if (!geminiRes!.ok) {
+      const errText = await geminiRes!.text()
       let friendlyMsg: string
       try {
-        const errJson = JSON.parse(errText) as { error?: { message?: string; status?: string } }
-        const status = geminiRes.status
+        const errJson = JSON.parse(errText) as { error?: { message?: string } }
+        const status = geminiRes!.status
         if (status === 503) {
           friendlyMsg = 'AI 서버가 일시적으로 과부하 상태입니다. 잠시 후 다시 시도해주세요.'
         } else if (status === 429) {
@@ -85,15 +90,15 @@ JSON 권장 단가는 다음 형식: {"권장단가": [{"type": "방타입", "pr
           friendlyMsg = errJson.error?.message ?? `AI 분석 오류 (${status})`
         }
       } catch {
-        friendlyMsg = `AI 분석 오류 (${geminiRes.status})`
+        friendlyMsg = `AI 분석 오류 (${geminiRes!.status})`
       }
       return NextResponse.json({ error: friendlyMsg }, { status: 502 })
     }
 
-    const geminiJson = await geminiRes.json()
+    const geminiJson = await geminiRes!.json()
     const text: string = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text ?? 'AI 분석 결과를 가져올 수 없습니다.'
 
-    return NextResponse.json({ result: text })
+    return NextResponse.json({ result: text, model: usedModel })
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message ?? '오류가 발생했습니다.' }, { status: 500 })
   }
