@@ -244,6 +244,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         id: true,
         rentAmount: true,
         dueDay: true,
+        overrideDueDay: true,
+        overrideDueDayMonth: true,
         room: { select: { roomNo: true } },
         tenant: { select: { id: true, name: true } },
       },
@@ -347,12 +349,18 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const cutoffDay = acquisitionDate ? acquisitionDate.getDate() : 0
   if (cutoffMonthStr && targetMonth === cutoffMonthStr) {
     for (const l of unpaidLeasesRaw) {
-      if (!l.dueDay) continue
-      const dayNum = parseInt(l.dueDay, 10)
+      const eff = effectiveDueDay(l)
+      if (!eff) continue
+      const dayNum = parseInt(eff, 10)
       if (!isNaN(dayNum) && dayNum < cutoffDay) {
         paymentByLeaseForStatus[l.id] = l.rentAmount
       }
     }
+  }
+
+  function effectiveDueDay(l: { dueDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null }): string | null {
+    if (l.overrideDueDay && l.overrideDueDayMonth === targetMonth) return l.overrideDueDay
+    return l.dueDay
   }
 
   function calcDaysOverdue(dueDay: string | null): number | null {
@@ -472,7 +480,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       tenantName:   l.tenant.name,
       tenantId:     l.tenant.id,
       leaseId:      l.id,
-      daysOverdue:  calcDaysOverdue(l.dueDay),
+      daysOverdue:  calcDaysOverdue(effectiveDueDay(l)),
       unpaidAmount: Math.max(0, l.rentAmount - (paymentByLeaseForStatus[l.id] ?? 0)),
     }))
 
