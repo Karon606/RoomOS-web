@@ -27,6 +27,7 @@ type Expense = {
   detail: string | null; memo: string | null; payMethod: string | null
   settleStatus: string; financeName: string | null
   financialAccountId: string | null; financialAccount: FAcc | null
+  roomId: string | null; room: { id: string; roomNo: string } | null
 }
 
 type Income = {
@@ -244,7 +245,7 @@ function buildSettleGroups(unsettledExpenses: UnsettledExpense[]): SettleGroup[]
 type Tab = 'expense' | 'income' | 'settle' | 'assets'
 
 export default function FinanceClient({
-  expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus,
+  expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms,
 }: {
   expenses: Expense[]
   incomes: Income[]
@@ -256,6 +257,7 @@ export default function FinanceClient({
   paymentMethods: string[]
   targetMonth: string
   recurringExpensesWithStatus: RecurringExpenseWithStatus[]
+  rooms: { id: string; roomNo: string }[]
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('expense')
@@ -277,6 +279,8 @@ export default function FinanceClient({
   const [editExpAccId, setEditExpAccId]     = useState('')
   const [editExpAccName, setEditExpAccName] = useState('')
   const [editExpDate, setEditExpDate]       = useState('')
+  const [addExpRoomId, setAddExpRoomId]     = useState('')
+  const [editExpRoomId, setEditExpRoomId]   = useState('')
 
   // ── 수익 탭 상태 ─────────────────────────────────────────────
   const [incFilter, setIncFilter] = useState({ method: 'all', category: 'all' })
@@ -1400,6 +1404,7 @@ export default function FinanceClient({
                   <DetailRow label="카테고리"    value={detailExp.category} />
                   <DetailRow label="세부 항목"   value={detailExp.detail ?? '—'} />
                   <DetailRow label="금액"        value={<span className="text-red-400 font-semibold"><MoneyDisplay amount={detailExp.amount} prefix="-" /></span>} />
+                  {detailExp.room && <DetailRow label="대상 호실" value={`${detailExp.room.roomNo}호`} />}
                   <DetailRow label="결제수단"    value={detailExp.payMethod ?? '—'} />
                   {detailExp.financeName && <DetailRow label="금융사" value={detailExp.financeName} />}
                   <DetailRow label="정산상태"    value={
@@ -1425,6 +1430,7 @@ export default function FinanceClient({
                     setEditExpMethod(detailExp.payMethod ?? '계좌이체')
                     setEditExpAccId(detailExp.financialAccountId ?? '')
                     setEditExpAccName(detailExp.financeName ?? '')
+                    setEditExpRoomId(detailExp.roomId ?? '')
                     setError('')
                   }}
                     className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">수정</button>
@@ -1435,6 +1441,7 @@ export default function FinanceClient({
                 <input type="hidden" name="id" value={detailExp.id} />
                 <input type="hidden" name="financialAccountId" value={editExpAccId} />
                 <input type="hidden" name="financeName" value={editExpAccName} />
+                <input type="hidden" name="roomId" value={editExpRoomId} />
                 <div className="flex-1 overflow-y-auto p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
@@ -1486,6 +1493,16 @@ export default function FinanceClient({
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                         <option value="">선택 안함</option>
                         {cardAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {rooms.length > 0 && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">대상 호실 (선택)</label>
+                      <select value={editExpRoomId} onChange={e => setEditExpRoomId(e.target.value)}
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                        <option value="">선택 안함</option>
+                        {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
                       </select>
                     </div>
                   )}
@@ -1623,6 +1640,7 @@ export default function FinanceClient({
             <form onSubmit={handleAddExp} className="flex flex-col flex-1 overflow-hidden">
               <input type="hidden" name="financialAccountId" value={addExpAccId} />
               <input type="hidden" name="financeName" value={addExpAccName} />
+              <input type="hidden" name="roomId" value={addExpRoomId} />
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -1674,6 +1692,16 @@ export default function FinanceClient({
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       <option value="">선택 안함</option>
                       {cardAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+                    </select>
+                  </div>
+                )}
+                {rooms.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">대상 호실 (선택)</label>
+                    <select value={addExpRoomId} onChange={e => setAddExpRoomId(e.target.value)}
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                      <option value="">선택 안함</option>
+                      {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
                     </select>
                   </div>
                 )}

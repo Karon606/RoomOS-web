@@ -21,6 +21,15 @@ function parseAmount(raw: FormDataEntryValue | null): number {
   return Number(String(raw ?? '').replace(/[^0-9]/g, '')) || 0
 }
 
+export async function getRoomList() {
+  const propertyId = await getPropertyId()
+  return prisma.room.findMany({
+    where: { propertyId },
+    select: { id: true, roomNo: true },
+    orderBy: { roomNo: 'asc' },
+  })
+}
+
 // ── 지출 ────────────────────────────────────────────────────────
 
 export async function getExpenses(targetMonth: string) {
@@ -32,7 +41,10 @@ export async function getExpenses(targetMonth: string) {
       date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
     },
     orderBy: { date: 'desc' },
-    include: { financialAccount: { select: { brand: true, alias: true } } },
+    include: {
+      financialAccount: { select: { brand: true, alias: true } },
+      room: { select: { id: true, roomNo: true } },
+    },
   })
 }
 
@@ -95,6 +107,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const payMethod = formData.get('payMethod') as string
     const financialAccountId = formData.get('financialAccountId') as string
     const financeName        = formData.get('financeName') as string
+    const roomId             = formData.get('roomId') as string
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
@@ -109,6 +122,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
         financialAccountId: financialAccountId || null,
         financeName:        financeName || null,
         settleStatus:       payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED',
+        roomId:             roomId || null,
       },
     })
     revalidatePath('/finance')
@@ -131,6 +145,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
     const payMethod = formData.get('payMethod') as string
     const financialAccountId = formData.get('financialAccountId') as string
     const financeName        = formData.get('financeName') as string
+    const roomId             = formData.get('roomId') as string
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
@@ -145,6 +160,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
         financialAccountId: financialAccountId || null,
         financeName:        financeName || null,
         settleStatus:       payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED',
+        roomId:             roomId || null,
       },
     })
     revalidatePath('/finance')

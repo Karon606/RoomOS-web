@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useState, useTransition, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { analyzeDashboardWithGemini, getTrendData, type TrendRange, type TrendPoint } from './actions'
@@ -742,11 +743,12 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
 type DashLease = Awaited<ReturnType<typeof getTenantLeaseForDashboard>>
 type DashPayRecord = { id: string; seqNo: number; actualAmount: number; payDate: Date; payMethod: string | null; memo: string | null; isDeposit: boolean }
 
-function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose }: {
+function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, onPaymentDone }: {
   tenantId: string
   targetMonth: string
   paymentMethods: string[]
   onClose: () => void
+  onPaymentDone?: () => void
 }) {
   const [lease, setLease] = useState<DashLease>(null)
   const [payHistory, setPayHistory] = useState<DashPayRecord[]>([])
@@ -872,6 +874,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose }
         setShowForm(false)
         setIsDepositMode(false)
         await reload(lease)
+        onPaymentDone?.()
       } catch (err: unknown) { setError((err as Error).message) }
     })
   }
@@ -1296,6 +1299,7 @@ const TABS: { key: Tab; label: string }[] = [
 ]
 
 export default function DashboardClient({ data, targetMonth, paymentMethods }: { data: DashboardData; targetMonth: string; paymentMethods: string[] }) {
+  const router = useRouter()
   const [tab, setTab]                             = useState<Tab>('overview')
   const [selectedRoom, setSelectedRoom]           = useState<DashboardData['rooms'][number] | null>(null)
   const [dashTenantId, setDashTenantId]           = useState<string | null>(null)
@@ -1333,9 +1337,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'rgba(255,252,247,0.6)', marginBottom: 8 }}>
             이달 수입
           </p>
-          <p style={{ fontSize: 26, fontWeight: 700, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
-            {Math.round(data.totalRevenue / 10000).toLocaleString()}
-            <small style={{ fontSize: 13, fontWeight: 400, color: 'rgba(255,252,247,0.6)', marginLeft: 2 }}>만</small>
+          <p style={{ fontSize: 22, fontWeight: 700, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+            {data.totalRevenue.toLocaleString()}
+            <small style={{ fontSize: 12, fontWeight: 400, color: 'rgba(255,252,247,0.6)', marginLeft: 2 }}>원</small>
           </p>
           <p style={{ fontSize: 11, color: 'rgba(255,252,247,0.55)' }}>
             {revChange != null && (
@@ -1366,9 +1370,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             이번 달 지출
           </p>
-          <p style={{ fontSize: 26, fontWeight: 700, color: '#5a4a3a', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
-            {Math.round(data.totalExpense / 10000).toLocaleString()}
-            <small style={{ fontSize: 13, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>만</small>
+          <p style={{ fontSize: 22, fontWeight: 700, color: '#5a4a3a', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+            {data.totalExpense.toLocaleString()}
+            <small style={{ fontSize: 12, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
           <p style={{ fontSize: 11, color: 'var(--warm-muted)' }}>이달 지출 합계</p>
         </div>
@@ -1378,9 +1382,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             미납 금액
           </p>
-          <p style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.unpaidCount > 0 ? '#ef4444' : '#5a4a3a' }}>
-            {Math.round(data.unpaidAmount / 10000).toLocaleString()}
-            <small style={{ fontSize: 13, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>만</small>
+          <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.unpaidCount > 0 ? '#ef4444' : '#5a4a3a' }}>
+            {data.unpaidAmount.toLocaleString()}
+            <small style={{ fontSize: 12, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
           <p style={{ fontSize: 11, color: 'var(--warm-muted)' }}>
             <em style={{ fontStyle: 'normal', color: data.unpaidCount > 0 ? 'var(--coral)' : 'var(--warm-muted)' }}>{data.unpaidCount}명</em> 미납
@@ -1562,7 +1566,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                     {/* ── 순이익 섹션 ── */}
                     {(() => {
                       const expectedNet = data.totalExpected - data.expectedExpense
-                      const currentNet  = data.paidRevenue - data.totalExpense
+                      const currentNet  = data.netProfit
                       const pct = expectedNet > 0 ? Math.max(0, Math.min(100, Math.round((currentNet / expectedNet) * 100))) : 0
                       return (
                         <div className="space-y-2">
@@ -1752,6 +1756,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           targetMonth={targetMonth}
           paymentMethods={paymentMethods}
           onClose={() => setDashTenantId(null)}
+          onPaymentDone={() => router.refresh()}
         />
       )}
     </div>
