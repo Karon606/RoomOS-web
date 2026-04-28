@@ -44,6 +44,7 @@ export async function getExpenses(targetMonth: string) {
     include: {
       financialAccount: { select: { brand: true, alias: true } },
       room: { select: { id: true, roomNo: true } },
+      recurringExpense: { select: { isVariable: true } },
     },
   })
 }

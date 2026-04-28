@@ -28,6 +28,7 @@ type Expense = {
   settleStatus: string; financeName: string | null
   financialAccountId: string | null; financialAccount: FAcc | null
   roomId: string | null; room: { id: string; roomNo: string } | null
+  recurringExpenseId: string | null; recurringExpense: { isVariable: boolean } | null
 }
 
 type Income = {
@@ -564,7 +565,7 @@ export default function FinanceClient({
   const recUnrecordedCount = activeRecs.filter(r => !r.recordedExpenseId).length
 
   // ── 상단 요약 위젯 계산 ──────────────────────────────────────
-  const normalExpTotal   = expenses.reduce((s, e) => s + e.amount, 0)
+  const normalExpTotal   = expenses.filter(e => !e.recurringExpenseId).reduce((s, e) => s + e.amount, 0)
   const recRecordedTotal = activeRecs.filter(r => r.recordedExpenseId).reduce((s, r) => s + (r.recordedAmount ?? 0), 0)
   const recPendingTotal  = activeRecs.filter(r => !r.recordedExpenseId).reduce((s, r) => s + (r.historicalAvg ?? r.amount), 0)
   const totalExpectedExp = normalExpTotal + recRecordedTotal + recPendingTotal
@@ -767,6 +768,8 @@ export default function FinanceClient({
                             </div>
                             <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
                               <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20">{e.category}</span>
+                              {e.recurringExpenseId && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 ring-1 ring-amber-200 font-medium">고정</span>}
+                              {e.recurringExpense?.isVariable && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-500 ring-1 ring-blue-100">변동</span>}
                               {e.payMethod && <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{e.payMethod}</span>}
                               {e.financialAccount && <span className="text-[10px] text-[var(--warm-muted)]">{accName(e.financialAccount)}</span>}
                             </div>
@@ -847,7 +850,11 @@ export default function FinanceClient({
                                   {e.financialAccount && <div className="text-xs text-[var(--warm-muted)] mt-0.5 truncate">{accName(e.financialAccount)}</div>}
                                 </td>
                                 <td className="px-4 py-3 overflow-hidden">
-                                  <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20 whitespace-nowrap">{e.category}</span>
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20 whitespace-nowrap">{e.category}</span>
+                                    {e.recurringExpenseId && <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-600 ring-1 ring-amber-200 whitespace-nowrap font-medium">고정</span>}
+                                    {e.recurringExpense?.isVariable && <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-500 ring-1 ring-blue-100 whitespace-nowrap">변동</span>}
+                                  </div>
                                 </td>
                                 <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden"><span className="truncate block">{e.detail ?? '—'}</span></td>
                                 <td className="px-4 py-3 text-sm font-semibold text-red-500 overflow-hidden"><span className="truncate block"><MoneyDisplay amount={e.amount} prefix="-" /></span></td>
