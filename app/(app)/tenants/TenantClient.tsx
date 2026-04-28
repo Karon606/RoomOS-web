@@ -1907,39 +1907,40 @@ export default function TenantClient({
                           <div className="flex items-center gap-2">
                             {isOverrideActive && !showOverrideForm && (
                               confirmClearOverride ? (
-                                <>
-                                  <span className="text-xs text-[var(--warm-muted)]">정말 해제할까요?</span>
+                                <div className="flex items-center gap-2 bg-red-500/10 border border-red-400/30 rounded-lg px-2.5 py-1.5">
+                                  <span className="text-xs text-red-300">정말 삭제할까요?</span>
                                   <button type="button" onClick={() => setConfirmClearOverride(false)}
-                                    className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">취소</button>
+                                    className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-1.5 py-0.5 rounded">취소</button>
                                   <button
                                     type="button"
                                     disabled={isPending}
                                     onClick={() => {
+                                      const leaseId = lease.id
                                       setConfirmClearOverride(false)
                                       setDetailTenant(prev => {
                                         if (!prev) return prev
                                         return {
                                           ...prev,
                                           leaseTerms: prev.leaseTerms.map(lt =>
-                                            lt.id === lease.id
+                                            lt.id === leaseId
                                               ? { ...lt, overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null }
                                               : lt
                                           ),
                                         }
                                       })
                                       startTransition(async () => {
-                                        await clearDueDayOverride(lease.id)
+                                        await clearDueDayOverride(leaseId)
                                         refresh()
                                       })
                                     }}
-                                    className="text-xs text-red-400 hover:text-red-300 font-semibold disabled:opacity-40">
-                                    {isPending ? '해제 중...' : '해제'}
+                                    className="text-xs bg-red-500 hover:bg-red-400 active:bg-red-600 text-white font-semibold px-2 py-0.5 rounded disabled:opacity-40">
+                                    삭제
                                   </button>
-                                </>
+                                </div>
                               ) : (
                                 <button type="button" onClick={() => setConfirmClearOverride(true)}
-                                  className="text-xs text-red-400 hover:text-red-300">
-                                  해제
+                                  className="text-xs text-red-400 hover:text-red-300 border border-red-400/40 rounded px-2 py-0.5 transition-colors">
+                                  삭제
                                 </button>
                               )
                             )}
@@ -2012,24 +2013,26 @@ export default function TenantClient({
                                 const val = overrideInputVal.current || overrideInput.trim()
                                 if (!val) return
                                 const reason = overrideReason.trim()
+                                const leaseId = lease.id
+                                // 즉시 UI 업데이트 (서버 응답 기다리지 않음)
+                                setShowOverrideForm(false)
+                                setDetailTenant(prev => {
+                                  if (!prev) return prev
+                                  return {
+                                    ...prev,
+                                    leaseTerms: prev.leaseTerms.map(lt =>
+                                      lt.id === leaseId
+                                        ? { ...lt, overrideDueDay: val, overrideDueDayMonth: targetMonth, overrideDueDayReason: reason || null }
+                                        : lt
+                                    ),
+                                  }
+                                })
                                 startTransition(async () => {
-                                  await setDueDayOverride(lease.id, targetMonth, val, reason)
-                                  setDetailTenant(prev => {
-                                    if (!prev) return prev
-                                    return {
-                                      ...prev,
-                                      leaseTerms: prev.leaseTerms.map(lt =>
-                                        lt.id === lease.id
-                                          ? { ...lt, overrideDueDay: val, overrideDueDayMonth: targetMonth, overrideDueDayReason: reason || null }
-                                          : lt
-                                      ),
-                                    }
-                                  })
-                                  setShowOverrideForm(false)
+                                  await setDueDayOverride(leaseId, targetMonth, val, reason)
                                   refresh()
                                 })
                               }}
-                              className="w-full py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
+                              className="w-full py-2 bg-amber-500 active:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40">
                               {isPending ? '저장 중...' : `${targetMonth} 납부일을 ${overrideInput || '?'}일로 조정`}
                             </button>
                           </div>
