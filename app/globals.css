@@ -28,7 +28,7 @@
   --color-warm-border:  var(--warm-border);
   --color-warm-muted:   var(--warm-muted);
   --color-sand:         var(--sand);
-  --font-sans: 'Plus Jakarta Sans', sans-serif;
+  --font-sans: var(--font-plus-jakarta-sans, 'Plus Jakarta Sans', sans-serif);
 }
 
 /* ── Base ─────────────────────────────────────────────────────── */
@@ -45,7 +45,7 @@ html {
 body {
   background: var(--cream);
   color: var(--warm-dark);
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-family: var(--font-plus-jakarta-sans, 'Plus Jakarta Sans', sans-serif);
   overflow: hidden;
   height: 100%;
 }
