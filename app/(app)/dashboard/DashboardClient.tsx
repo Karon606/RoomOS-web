@@ -1565,7 +1565,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
 
                     {/* ── 순이익 섹션 ── */}
                     {(() => {
-                      const expectedNet = data.totalExpected - data.expectedExpense
+                      const expectedNet = data.totalExpected - data.totalExpense
                       const currentNet  = data.netProfit
                       const pct = expectedNet > 0 ? Math.max(0, Math.min(100, Math.round((currentNet / expectedNet) * 100))) : 0
                       return (
