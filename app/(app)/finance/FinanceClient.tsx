@@ -762,7 +762,7 @@ export default function FinanceClient({
                                   ${e.settleStatus === 'UNSETTLED' ? 'bg-red-50 text-red-600 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
                                   {e.settleStatus === 'UNSETTLED' ? '미정산' : '정산완료'}
                                 </span>
-                                <span className="text-sm font-bold text-red-500"><MoneyDisplay amount={e.amount} prefix="-" /></span>
+                                <span className="text-sm font-bold text-red-500"><MoneyDisplay amount={e.amount} prefix="-" alwaysFull /></span>
                               </div>
                             </div>
                             <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
@@ -994,7 +994,7 @@ export default function FinanceClient({
                   {/* 날짜 + 금액 */}
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs text-[var(--warm-muted)]">{fmtDate(i.date)}</span>
-                    <span className="text-sm font-bold text-emerald-600"><MoneyDisplay amount={i.amount} prefix="+" /></span>
+                    <span className="text-sm font-bold text-emerald-600"><MoneyDisplay amount={i.amount} prefix="+" alwaysFull /></span>
                   </div>
                   {/* 카테고리 + 입금수단 */}
                   <div className="flex items-center gap-1.5 flex-wrap mb-1.5">

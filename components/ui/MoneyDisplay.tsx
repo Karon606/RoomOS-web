@@ -13,10 +13,12 @@ export function MoneyDisplay({
   amount,
   className,
   prefix,
+  alwaysFull,
 }: {
   amount: number
   className?: string
   prefix?: string
+  alwaysFull?: boolean
 }) {
   const pre     = prefix ?? ''
   const full    = `${pre}${amount.toLocaleString()}원`
@@ -25,12 +27,13 @@ export function MoneyDisplay({
   const [text, setText] = useState(full)
 
   useEffect(() => {
+    if (alwaysFull) { setText(full); return }
     const mq = window.matchMedia('(min-width: 768px)')
     setText(mq.matches ? full : compact)
     const handler = (e: MediaQueryListEvent) => setText(e.matches ? full : compact)
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
-  }, [full, compact])
+  }, [full, compact, alwaysFull])
 
   return <span className={`whitespace-nowrap ${className ?? ''}`}>{text}</span>
 }
