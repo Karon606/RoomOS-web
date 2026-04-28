@@ -1171,6 +1171,7 @@ export default function RoomsClient({
                               value={overrideInput}
                               onChange={e => {
                                 const v = e.target.value
+                                if (v.length < overrideInput.length) { setOverrideInput(v); return }
                                 const trimmed = v.trim()
                                 const n = Number(trimmed)
                                 if (/[ㅁ마말]/.test(v) || (trimmed !== '' && !isNaN(n) && n >= 30)) {
@@ -1208,7 +1209,7 @@ export default function RoomsClient({
                             })
                           }}
                           className="w-full py-2 bg-amber-500 active:bg-amber-600 hover:bg-amber-400 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors">
-                          {isPending ? '저장 중...' : `${targetMonth} 납부일을 ${overrideInput || '?'}일로 조정`}
+                          {isPending ? '저장 중...' : `${targetMonth} 납부일을 ${overrideInput.includes('말') ? '말일' : `${overrideInput || '?'}일`}로 조정`}
                         </button>
                       </div>
                     )}

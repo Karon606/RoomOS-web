@@ -1976,6 +1976,7 @@ export default function TenantClient({
                                   value={overrideInput}
                                   onChange={e => {
                                     const v = e.target.value
+                                    if (v.length < overrideInput.length) { overrideInputVal.current = v; setOverrideInput(v); return }
                                     const trimmed = v.trim()
                                     const n = Number(trimmed)
                                     const converted = (/[ㅁ마말]/.test(v) || (trimmed !== '' && !isNaN(n) && n >= 30)) ? '말일' : v
@@ -2033,7 +2034,7 @@ export default function TenantClient({
                                 })
                               }}
                               className="w-full py-2 bg-amber-500 active:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40">
-                              {isPending ? '저장 중...' : `${targetMonth} 납부일을 ${overrideInput || '?'}일로 조정`}
+                              {isPending ? '저장 중...' : `${targetMonth} 납부일을 ${overrideInput.includes('말') ? '말일' : `${overrideInput || '?'}일`}로 조정`}
                             </button>
                           </div>
                         )}
