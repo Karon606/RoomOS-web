@@ -181,6 +181,7 @@ export default function RoomsClient({
   const [error, setError] = useState('')
   const [isPending, startTransition] = useTransition()
   const [showOverrideForm, setShowOverrideForm] = useState(false)
+  const [confirmClearOverride, setConfirmClearOverride] = useState(false)
   const [overrideInput, setOverrideInput] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
   const [payAmount, setPayAmount] = useState(0)
@@ -318,6 +319,7 @@ export default function RoomsClient({
     setError('')
     setShowPayForm(false)
     setShowOverrideForm(false)
+    setConfirmClearOverride(false)
     setOverrideInput('')
     setOverrideReason('')
     setEditingPayId(null)
@@ -1099,41 +1101,62 @@ export default function RoomsClient({
                 </div>
 
                 {/* 납부일 임시 조정 */}
-                {selectedRoom.leaseTermId && (
+                {selectedRoom.leaseTermId && (() => {
+                  const isOverrideActive = selectedRoom.overrideDueDayMonth === targetMonth && !!selectedRoom.overrideDueDay
+                  const overrideLabel = selectedRoom.overrideDueDay?.includes('말') ? '말일' : `${selectedRoom.overrideDueDay}일`
+                  return (
                   <div className="border-t border-amber-200 px-6 py-3 shrink-0 bg-amber-50">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-xs font-medium text-amber-400">납부일 임시 조정</p>
-                        {selectedRoom.overrideDueDayMonth === targetMonth && selectedRoom.overrideDueDay ? (
+                        {isOverrideActive ? (
                           <p className="text-xs text-amber-700 mt-0.5">
-                            이번 달 납부일: <span className="font-bold">{selectedRoom.overrideDueDay}일</span>
+                            이번 달 납부일: <span className="font-bold">{overrideLabel}</span>
                             {selectedRoom.overrideDueDayReason && ` (${selectedRoom.overrideDueDayReason})`}
                           </p>
                         ) : (
                           <p className="text-xs text-[var(--warm-muted)] mt-0.5">이번 달 임시 조정 없음</p>
                         )}
                       </div>
-                      <div className="flex gap-1.5">
-                        {canEdit && selectedRoom.overrideDueDayMonth === targetMonth && selectedRoom.overrideDueDay && (
-                          <button
-                            onClick={() => startTransition(async () => {
-                              await clearDueDayOverride(selectedRoom.leaseTermId!)
-                              setShowOverrideForm(false)
-                              router.refresh()
-                            })}
-                            className="text-xs text-red-600 hover:text-red-700 px-2 py-1 rounded-lg border border-red-200 hover:border-red-400 transition-colors">
-                            해제
-                          </button>
+                      <div className="flex items-center gap-1.5">
+                        {canEdit && isOverrideActive && !showOverrideForm && (
+                          confirmClearOverride ? (
+                            <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-lg px-2 py-1">
+                              <span className="text-xs text-red-500">정말 삭제할까요?</span>
+                              <button type="button" onClick={() => setConfirmClearOverride(false)}
+                                className="text-xs text-gray-400 hover:text-gray-600">취소</button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const leaseTermId = selectedRoom.leaseTermId!
+                                  setConfirmClearOverride(false)
+                                  setSelectedRoom(prev => prev ? { ...prev, overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null } : prev)
+                                  startTransition(async () => {
+                                    await clearDueDayOverride(leaseTermId)
+                                    router.refresh()
+                                  })
+                                }}
+                                className="text-xs bg-red-500 hover:bg-red-400 text-white font-semibold px-1.5 py-0.5 rounded">
+                                삭제
+                              </button>
+                            </div>
+                          ) : (
+                            <button type="button" onClick={() => setConfirmClearOverride(true)}
+                              className="text-xs text-red-500 hover:text-red-600 px-2 py-1 rounded-lg border border-red-200 hover:border-red-400 transition-colors">
+                              삭제
+                            </button>
+                          )
                         )}
                         {canEdit && (
                           <button
                             onClick={() => {
                               setShowOverrideForm(v => !v)
-                              setOverrideInput(selectedRoom.overrideDueDayMonth === targetMonth ? (selectedRoom.overrideDueDay ?? '') : '')
-                              setOverrideReason(selectedRoom.overrideDueDayMonth === targetMonth ? (selectedRoom.overrideDueDayReason ?? '') : '')
+                              setConfirmClearOverride(false)
+                              setOverrideInput(isOverrideActive ? (selectedRoom.overrideDueDay ?? '') : '')
+                              setOverrideReason(isOverrideActive ? (selectedRoom.overrideDueDayReason ?? '') : '')
                             }}
                             className="text-xs text-amber-600 hover:text-amber-700 px-2 py-1 rounded-lg border border-amber-200 hover:border-amber-400 transition-colors">
-                            {showOverrideForm ? '닫기' : (selectedRoom.overrideDueDayMonth === targetMonth && selectedRoom.overrideDueDay ? '수정' : '조정하기')}
+                            {showOverrideForm ? '닫기' : (isOverrideActive ? '수정' : '조정하기')}
                           </button>
                         )}
                       </div>
@@ -1144,9 +1167,22 @@ export default function RoomsClient({
                           <div className="flex-1 space-y-1">
                             <label className="text-xs text-[var(--warm-muted)]">조정 납부일</label>
                             <input
-                              type="text" inputMode="numeric" placeholder="예: 15 또는 말일"
+                              type="text" inputMode="text" placeholder="예: 20, 말일"
                               value={overrideInput}
-                              onChange={e => setOverrideInput(e.target.value)}
+                              onChange={e => {
+                                const v = e.target.value
+                                const trimmed = v.trim()
+                                const n = Number(trimmed)
+                                if (/[ㅁ마말]/.test(v) || (trimmed !== '' && !isNaN(n) && n >= 30)) {
+                                  setOverrideInput('말일')
+                                } else {
+                                  setOverrideInput(v)
+                                }
+                              }}
+                              onCompositionEnd={e => {
+                                const v = (e.currentTarget as HTMLInputElement).value
+                                if (/[ㅁ마말]/.test(v)) setOverrideInput('말일')
+                              }}
                               className="w-full bg-[var(--canvas)] border border-amber-200 rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-amber-500" />
                           </div>
                           <div className="flex-1 space-y-1">
@@ -1160,18 +1196,25 @@ export default function RoomsClient({
                         </div>
                         <button
                           disabled={!overrideInput.trim() || isPending}
-                          onClick={() => startTransition(async () => {
-                            await setDueDayOverride(selectedRoom.leaseTermId!, targetMonth, overrideInput.trim(), overrideReason.trim() || undefined)
+                          onClick={() => {
+                            const val = overrideInput.trim()
+                            const reason = overrideReason.trim()
+                            const leaseTermId = selectedRoom.leaseTermId!
                             setShowOverrideForm(false)
-                            router.refresh()
-                          })}
-                          className="w-full py-1.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-[var(--warm-dark)] text-xs font-medium rounded-lg transition-colors">
-                          저장
+                            setSelectedRoom(prev => prev ? { ...prev, overrideDueDay: val, overrideDueDayMonth: targetMonth, overrideDueDayReason: reason || null } : prev)
+                            startTransition(async () => {
+                              await setDueDayOverride(leaseTermId, targetMonth, val, reason || undefined)
+                              router.refresh()
+                            })
+                          }}
+                          className="w-full py-2 bg-amber-500 active:bg-amber-600 hover:bg-amber-400 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors">
+                          {isPending ? '저장 중...' : `${targetMonth} 납부일을 ${overrideInput || '?'}일로 조정`}
                         </button>
                       </div>
                     )}
                   </div>
-                )}
+                  )
+                })()}
 
                 {/* 읽기 전용 푸터 */}
                 {canEdit && (
