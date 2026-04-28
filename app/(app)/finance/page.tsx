@@ -1,4 +1,4 @@
-import { getExpenses, getExtraIncomes, getFinancialAccounts, getUnsettledExpenses, getSettledCardExpenses, getRecurringExpensesWithStatus, getRoomList } from './actions'
+import { getExpenses, getExtraIncomes, getFinancialAccounts, getUnsettledExpenses, getSettledCardExpenses, getRecurringExpensesWithStatus, getRoomList, getExpenseCategoryTotals } from './actions'
 import { getIncomeCategories, getExpenseCategories, getPaymentMethods } from '@/app/(app)/settings/actions'
 import FinanceClient from './FinanceClient'
 
@@ -12,7 +12,12 @@ export default async function FinancePage({
   const targetMonth = month ??
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
-  const [expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus, rooms] = await Promise.all([
+  const [y, m] = targetMonth.split('-').map(Number)
+  const prevMonthDate = new Date(y, m - 2, 1)
+  const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`
+  const lastYearMonth = `${y - 1}-${String(m).padStart(2, '0')}`
+
+  const [expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus, rooms, prevMonthTotals, lastYearTotals] = await Promise.all([
     getExpenses(targetMonth),
     getExtraIncomes(targetMonth),
     getFinancialAccounts(),
@@ -23,6 +28,8 @@ export default async function FinancePage({
     getPaymentMethods(),
     getRecurringExpensesWithStatus(targetMonth),
     getRoomList(),
+    getExpenseCategoryTotals(prevMonth),
+    getExpenseCategoryTotals(lastYearMonth),
   ])
 
   return (
@@ -38,6 +45,10 @@ export default async function FinancePage({
       targetMonth={targetMonth}
       recurringExpensesWithStatus={recurringExpensesWithStatus}
       rooms={rooms}
+      prevMonth={prevMonth}
+      prevMonthTotals={prevMonthTotals}
+      lastYearMonth={lastYearMonth}
+      lastYearTotals={lastYearTotals}
     />
   )
 }

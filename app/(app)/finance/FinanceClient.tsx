@@ -65,6 +65,16 @@ type SettleGroup = {
 // ── Constants ────────────────────────────────────────────────────
 
 const EXPENSE_CATEGORIES = ['관리비', '수선유지', '세금', '인건비', '소모품', '보증금 반환', '기타']
+
+const CATEGORY_COLORS: Record<string, string> = {
+  '관리비':      '#F4623A',
+  '수선유지':    '#F59E0B',
+  '세금':        '#6366F1',
+  '인건비':      '#10B981',
+  '소모품':      '#3B82F6',
+  '보증금 반환': '#8B5CF6',
+  '기타':        '#9CA3AF',
+}
 const PAY_METHODS_EXP    = ['계좌이체', '신용카드', '체크카드', '현금', '기타']
 const PAY_METHODS_INC    = ['계좌이체', '현금', '기타']
 const ACCOUNT_TYPE_LABEL: Record<string, string> = {
@@ -177,6 +187,72 @@ function BrandLogo({ name, size = 18 }: { name: string; size?: number }) {
   )
 }
 
+// ── Chart Components ─────────────────────────────────────────────
+
+function DonutChart({
+  segments, centerLabel, centerSub, size = 130, strokeWidth = 20,
+}: {
+  segments: { value: number; color: string }[]
+  centerLabel?: string; centerSub?: string; size?: number; strokeWidth?: number
+}) {
+  const r = (size - strokeWidth) / 2
+  const cx = size / 2; const cy = size / 2
+  const C = 2 * Math.PI * r
+  const total = segments.reduce((s, seg) => s + seg.value, 0)
+  let cumulativeAngle = -90
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {total === 0 ? (
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e8ddd2" strokeWidth={strokeWidth} />
+      ) : (
+        segments.filter(s => s.value > 0).map((seg, i) => {
+          const pct = seg.value / total
+          const dashLength = pct * C
+          const angle = cumulativeAngle
+          cumulativeAngle += pct * 360
+          return (
+            <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={seg.color}
+              strokeWidth={strokeWidth}
+              strokeDasharray={`${dashLength} ${C - dashLength}`}
+              transform={`rotate(${angle}, ${cx}, ${cy})`} />
+          )
+        })
+      )}
+      {centerLabel && <text x={cx} y={cy + 5} textAnchor="middle" fontSize="13" fontWeight="700" fill="#5a4a3a">{centerLabel}</text>}
+      {centerSub && <text x={cx} y={cy + 19} textAnchor="middle" fontSize="10" fill="#a89888">{centerSub}</text>}
+    </svg>
+  )
+}
+
+function StackedBar({
+  segments, total, maxTotal, label,
+}: {
+  segments: { category: string; amount: number }[]
+  total: number; maxTotal: number; label: string
+}) {
+  const barPct = maxTotal > 0 ? (total / maxTotal) * 100 : 0
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] text-[var(--warm-muted)] w-14 shrink-0 leading-tight">{label}</span>
+      <div className="flex-1 bg-[var(--canvas)] rounded-full h-4 overflow-hidden">
+        {total > 0 ? (
+          <div className="h-full flex rounded-full overflow-hidden" style={{ width: `${barPct}%` }}>
+            {segments.filter(s => s.amount > 0).map((s, i) => (
+              <div key={i}
+                style={{ background: CATEGORY_COLORS[s.category] ?? '#9CA3AF', width: `${(s.amount / total) * 100}%` }} />
+            ))}
+          </div>
+        ) : (
+          <div className="h-full w-0" />
+        )}
+      </div>
+      <span className="text-[11px] font-medium text-[var(--warm-dark)] font-mono w-16 text-right shrink-0">
+        {total > 0 ? `${Math.round(total / 10000).toLocaleString()}만원` : '—'}
+      </span>
+    </div>
+  )
+}
+
 // ── Helpers ──────────────────────────────────────────────────────
 
 function toDateInput(d: Date | string | null | undefined) {
@@ -245,8 +321,10 @@ function buildSettleGroups(unsettledExpenses: UnsettledExpense[]): SettleGroup[]
 
 type Tab = 'expense' | 'income' | 'settle' | 'assets'
 
+type CategoryTotal = { category: string; total: number }
+
 export default function FinanceClient({
-  expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms,
+  expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals,
 }: {
   expenses: Expense[]
   incomes: Income[]
@@ -259,6 +337,10 @@ export default function FinanceClient({
   targetMonth: string
   recurringExpensesWithStatus: RecurringExpenseWithStatus[]
   rooms: { id: string; roomNo: string }[]
+  prevMonth: string
+  prevMonthTotals: CategoryTotal[]
+  lastYearMonth: string
+  lastYearTotals: CategoryTotal[]
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('expense')
@@ -558,7 +640,6 @@ export default function FinanceClient({
 
   // ── 서브탭 UI ────────────────────────────────────────────────
   const [yyyy, mm] = targetMonth.split('-')
-  const monthLabel = `${yyyy}년 ${parseInt(mm)}월`
 
   const activeRecs       = recurringExpensesWithStatus.filter(r => !r.isPending)
   const pendingRecs      = recurringExpensesWithStatus.filter(r => r.isPending)
@@ -570,7 +651,36 @@ export default function FinanceClient({
   const recPendingTotal  = activeRecs.filter(r => !r.recordedExpenseId).reduce((s, r) => s + (r.historicalAvg ?? r.amount), 0)
   const totalExpectedExp = normalExpTotal + recRecordedTotal + recPendingTotal
   const totalIncomeSum   = incomes.reduce((s, i) => s + i.amount, 0)
-  const expectedProfit   = totalIncomeSum - totalExpectedExp
+
+  // ── 카테고리별 차트 데이터 ─────────────────────────────────
+  const currentCatMap: Record<string, number> = {}
+  for (const e of expenses) currentCatMap[e.category] = (currentCatMap[e.category] ?? 0) + e.amount
+  const prevCatMap: Record<string, number> = {}
+  for (const t of prevMonthTotals) prevCatMap[t.category] = t.total
+  const lastYearCatMap: Record<string, number> = {}
+  for (const t of lastYearTotals) lastYearCatMap[t.category] = t.total
+
+  // 이번 달에 등장한 카테고리 기준 정렬 (금액 내림차순)
+  const allCats = Array.from(new Set([
+    ...Object.keys(currentCatMap),
+    ...Object.keys(prevCatMap),
+    ...Object.keys(lastYearCatMap),
+  ])).sort((a, b) => (currentCatMap[b] ?? 0) - (currentCatMap[a] ?? 0))
+
+  const currentTotal = Object.values(currentCatMap).reduce((s, v) => s + v, 0)
+  const prevTotal    = Object.values(prevCatMap).reduce((s, v) => s + v, 0)
+  const lastYearTotal = Object.values(lastYearCatMap).reduce((s, v) => s + v, 0)
+  const maxTotal = Math.max(currentTotal, prevTotal, lastYearTotal)
+
+  const donutSegments = allCats.map(cat => ({
+    value: currentCatMap[cat] ?? 0,
+    color: CATEGORY_COLORS[cat] ?? '#9CA3AF',
+  }))
+
+  const fmtMonthLabel = (m: string) => {
+    const [y, mo] = m.split('-')
+    return `${y.slice(2)}년 ${parseInt(mo)}월`
+  }
   const TABS: { key: Tab; label: string }[] = [
     { key: 'expense', label: `지출 내역${recUnrecordedCount > 0 ? ` (고정 ${recUnrecordedCount}건 미확인)` : ''}` },
     { key: 'income',  label: '부가 수익' },
@@ -644,22 +754,61 @@ export default function FinanceClient({
           </div>
         </div>
 
-        {/* 하단: 예상 손익 */}
-        <div className="px-5 py-3 border-t border-[var(--warm-border)]"
-          style={{ background: expectedProfit >= 0 ? 'rgba(200,160,120,0.06)' : 'rgba(244,98,58,0.05)' }}>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[var(--warm-muted)]">
-              {monthLabel} 예상 손익
-              <span className="ml-1.5 text-[9px] opacity-70">(부가수익 − 전체 지출)</span>
-            </span>
-            <span className="text-sm font-bold font-mono"
-              style={{ color: expectedProfit >= 0 ? 'var(--warm-dark)' : 'var(--coral)' }}>
-              {expectedProfit >= 0 ? '+' : ''}<MoneyDisplay amount={Math.abs(expectedProfit)} />
-              {expectedProfit < 0 && <span className="ml-1 text-xs font-normal opacity-70">적자</span>}
-            </span>
+      </div>
+
+      {/* ── 카테고리별 지출 분석 ── */}
+      {currentTotal > 0 && (
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5 space-y-4">
+          <p className="text-sm font-semibold text-[var(--warm-dark)]">카테고리별 지출 분석</p>
+
+          {/* 도넛 + 범례 */}
+          <div className="flex items-start gap-4">
+            <DonutChart
+              segments={donutSegments}
+              centerLabel={`${Math.round(currentTotal / 10000).toLocaleString()}만`}
+              centerSub="총 지출"
+              size={120}
+              strokeWidth={18}
+            />
+            <div className="flex-1 space-y-2 pt-1">
+              {allCats.filter(cat => (currentCatMap[cat] ?? 0) > 0).map(cat => {
+                const amt = currentCatMap[cat] ?? 0
+                const pct = currentTotal > 0 ? Math.round((amt / currentTotal) * 100) : 0
+                return (
+                  <div key={cat} className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CATEGORY_COLORS[cat] ?? '#9CA3AF' }} />
+                    <span className="text-xs text-[var(--warm-muted)] flex-1 truncate">{cat}</span>
+                    <span className="text-xs font-medium text-[var(--warm-dark)] font-mono shrink-0">
+                      {Math.round(amt / 10000).toLocaleString()}만
+                    </span>
+                    <span className="text-[10px] text-[var(--warm-muted)] w-7 text-right shrink-0">{pct}%</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 월별 비교 막대 */}
+          <div className="pt-3 border-t border-[var(--warm-border)] space-y-2.5">
+            <p className="text-xs font-medium text-[var(--warm-muted)]">월별 비교</p>
+            <StackedBar
+              segments={allCats.map(cat => ({ category: cat, amount: currentCatMap[cat] ?? 0 }))}
+              total={currentTotal} maxTotal={maxTotal}
+              label={fmtMonthLabel(targetMonth)}
+            />
+            <StackedBar
+              segments={allCats.map(cat => ({ category: cat, amount: prevCatMap[cat] ?? 0 }))}
+              total={prevTotal} maxTotal={maxTotal}
+              label={fmtMonthLabel(prevMonth)}
+            />
+            <StackedBar
+              segments={allCats.map(cat => ({ category: cat, amount: lastYearCatMap[cat] ?? 0 }))}
+              total={lastYearTotal} maxTotal={maxTotal}
+              label={fmtMonthLabel(lastYearMonth)}
+            />
           </div>
         </div>
-      </div>
+      )}
 
       {/* 서브탭 */}
       <div className="flex gap-1.5 overflow-x-auto scrollbar-hide">

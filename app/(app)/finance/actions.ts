@@ -21,6 +21,21 @@ function parseAmount(raw: FormDataEntryValue | null): number {
   return Number(String(raw ?? '').replace(/[^0-9]/g, '')) || 0
 }
 
+export async function getExpenseCategoryTotals(targetMonth: string): Promise<{ category: string; total: number }[]> {
+  const propertyId = await getPropertyId()
+  const [yyyy, mm] = targetMonth.split('-').map(Number)
+  const rows = await prisma.expense.findMany({
+    where: {
+      propertyId,
+      date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
+    },
+    select: { category: true, amount: true },
+  })
+  const map: Record<string, number> = {}
+  for (const r of rows) map[r.category] = (map[r.category] ?? 0) + r.amount
+  return Object.entries(map).map(([category, total]) => ({ category, total }))
+}
+
 export async function getRoomList() {
   const propertyId = await getPropertyId()
   return prisma.room.findMany({
