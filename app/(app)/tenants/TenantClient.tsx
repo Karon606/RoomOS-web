@@ -1916,6 +1916,17 @@ export default function TenantClient({
                                     disabled={isPending}
                                     onClick={() => {
                                       setConfirmClearOverride(false)
+                                      setDetailTenant(prev => {
+                                        if (!prev) return prev
+                                        return {
+                                          ...prev,
+                                          leaseTerms: prev.leaseTerms.map(lt =>
+                                            lt.id === lease.id
+                                              ? { ...lt, overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null }
+                                              : lt
+                                          ),
+                                        }
+                                      })
                                       startTransition(async () => {
                                         await clearDueDayOverride(lease.id)
                                         refresh()
@@ -2018,7 +2029,7 @@ export default function TenantClient({
                                   refresh()
                                 })
                               }}
-                              className="w-full py-1.5 bg-amber-600 hover:bg-amber-500 text-[var(--warm-dark)] text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
+                              className="w-full py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
                               {isPending ? '저장 중...' : `${targetMonth} 납부일을 ${overrideInput || '?'}일로 조정`}
                             </button>
                           </div>
@@ -2453,7 +2464,16 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             <input
               type="text"
               value={dueDayDisp}
-              onChange={e => setDueDayDisp(e.target.value)}
+              onChange={e => {
+                const v = e.target.value
+                const stripped = v.replace(/일$/, '').trim()
+                const n = Number(stripped)
+                if (/[ㅁ마말]/.test(v) || (stripped !== '' && !isNaN(n) && n >= 30)) {
+                  setDueDayRaw('말일'); setDueDayDisp('말일')
+                } else {
+                  setDueDayDisp(v)
+                }
+              }}
               onFocus={() => setDueDayDisp(prev => prev.replace(/일$/, ''))}
               onBlur={() => applyDueDay(dueDayDisp)}
               placeholder="15일, 말일 등"
