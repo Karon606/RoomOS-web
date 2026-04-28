@@ -322,7 +322,7 @@ export default function TenantClient({
   const [confirmClearOverride, setConfirmClearOverride] = useState(false)
   const [overrideInput, setOverrideInput] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
-  const overrideInputRef = useRef<HTMLInputElement>(null)
+  const overrideInputVal = useRef('')
   const [editingPayId, setEditingPayId] = useState<string | null>(null)
   const [editAmount, setEditAmount] = useState(0)
   const [editDate, setEditDate] = useState('')
@@ -521,7 +521,7 @@ export default function TenantClient({
 
   const closePayModal = () => {
     setPayTarget(null); setPayHistory([]); setShowPayForm(false); setError('')
-    setShowOverrideForm(false); setOverrideInput(''); setOverrideReason(''); setConfirmClearOverride(false)
+    setShowOverrideForm(false); overrideInputVal.current = ''; setOverrideInput(''); setOverrideReason(''); setConfirmClearOverride(false)
     setIsDepositMode(false); setPayDateVal(new Date().toISOString().slice(0, 10))
   }
 
@@ -1936,7 +1936,9 @@ export default function TenantClient({
                               type="button"
                               onClick={() => {
                                 setShowOverrideForm(v => !v)
-                                setOverrideInput(isOverrideActive ? (lease.overrideDueDay ?? '') : '')
+                                const initVal = isOverrideActive ? (lease.overrideDueDay ?? '') : ''
+                                overrideInputVal.current = initVal
+                                setOverrideInput(initVal)
                                 setOverrideReason(isOverrideActive ? (lease.overrideDueDayReason ?? '') : '')
                               }}
                               className="text-xs text-amber-400 hover:text-amber-300 transition-colors">
@@ -1959,28 +1961,21 @@ export default function TenantClient({
                                 <label className="text-xs text-[var(--warm-muted)]">조정 납부일</label>
                                 <input
                                   type="text"
-                                  ref={overrideInputRef}
-                                  defaultValue={overrideInput}
-                                  key={`override-${lease.id}-${showOverrideForm}`}
-                                  onInput={e => {
-                                    const el = e.currentTarget as HTMLInputElement
-                                    const v = el.value
+                                  value={overrideInput}
+                                  onChange={e => {
+                                    const v = e.target.value
                                     const trimmed = v.trim()
                                     const n = Number(trimmed)
-                                    if (/[ㅁ마말]/.test(v) || (trimmed !== '' && !isNaN(n) && n >= 30)) {
-                                      el.value = '말일'
-                                      setOverrideInput('말일')
-                                    } else {
-                                      setOverrideInput(v)
-                                    }
+                                    const converted = (/[ㅁ마말]/.test(v) || (trimmed !== '' && !isNaN(n) && n >= 30)) ? '말일' : v
+                                    overrideInputVal.current = converted
+                                    setOverrideInput(converted)
                                   }}
                                   onCompositionEnd={e => {
-                                    const el = e.currentTarget as HTMLInputElement
-                                    const v = el.value
+                                    const v = (e.currentTarget as HTMLInputElement).value
                                     const trimmed = v.trim()
                                     const n = Number(trimmed)
                                     if (/[ㅁ마말]/.test(v) || (trimmed !== '' && !isNaN(n) && n >= 30)) {
-                                      el.value = '말일'
+                                      overrideInputVal.current = '말일'
                                       setOverrideInput('말일')
                                     }
                                   }}
@@ -2001,18 +1996,30 @@ export default function TenantClient({
                             </div>
                             <button
                               type="button"
-                              disabled={isPending || !(overrideInputRef.current?.value.trim() || overrideInput.trim())}
+                              disabled={isPending || !overrideInput.trim()}
                               onClick={() => {
-                                const val = overrideInputRef.current?.value.trim() || overrideInput.trim()
+                                const val = overrideInputVal.current || overrideInput.trim()
                                 if (!val) return
+                                const reason = overrideReason.trim()
                                 startTransition(async () => {
-                                  await setDueDayOverride(lease.id, targetMonth, val, overrideReason.trim())
+                                  await setDueDayOverride(lease.id, targetMonth, val, reason)
+                                  setDetailTenant(prev => {
+                                    if (!prev) return prev
+                                    return {
+                                      ...prev,
+                                      leaseTerms: prev.leaseTerms.map(lt =>
+                                        lt.id === lease.id
+                                          ? { ...lt, overrideDueDay: val, overrideDueDayMonth: targetMonth, overrideDueDayReason: reason || null }
+                                          : lt
+                                      ),
+                                    }
+                                  })
                                   setShowOverrideForm(false)
                                   refresh()
                                 })
                               }}
                               className="w-full py-1.5 bg-amber-600 hover:bg-amber-500 text-[var(--warm-dark)] text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
-                              {isPending ? '저장 중...' : `${targetMonth} 납부일을 ${overrideInputRef.current?.value.trim() || overrideInput || '?'}일로 조정`}
+                              {isPending ? '저장 중...' : `${targetMonth} 납부일을 ${overrideInput || '?'}일로 조정`}
                             </button>
                           </div>
                         )}
