@@ -1581,32 +1581,46 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                       <p className="text-center py-8 text-sm" style={{ color: 'var(--warm-muted)' }}>등록된 호실 없음</p>
                     ) : (
                       <>
-                        <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
-                          {data.rooms.map(r => {
-                            const rentMan = r.baseRent > 0 ? `${Math.round(r.baseRent / 10000)}만` : null
-                            return (
-                              <div
-                                key={r.roomNo}
-                                onClick={() => setSelectedRoom(r)}
-                                className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[4px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
-                                style={r.isVacant
-                                  ? { background: 'rgba(200,160,120,0.12)', color: 'var(--warm-muted)' }
-                                  : { background: 'rgba(244,98,58,0.09)', color: 'var(--coral)' }}
-                              >
-                                <span className="truncate w-full text-center font-bold" style={{ fontSize: 12 }}>{r.roomNo}호</span>
-                                <span style={{ fontSize: 10, fontWeight: 500 }}>{r.isVacant ? '공실' : '입실'}</span>
-                                {rentMan && <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
-                              </div>
-                            )
-                          })}
-                        </div>
-                        <div className="flex gap-3.5 mt-3 shrink-0">
+                        {/* 범례 */}
+                        <div className="flex gap-3.5 mb-3 shrink-0">
                           <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
-                            <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(244,98,58,0.25)' }} />입실
+                            <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(244,98,58,0.35)' }} />납부완료
+                          </div>
+                          <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
+                            <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(234,179,8,0.45)' }} />미납
                           </div>
                           <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
                             <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(200,160,120,0.25)' }} />공실
                           </div>
+                        </div>
+                        <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+                          {(() => {
+                            const unpaidRooms = new Set(data.unpaidLeases.map(l => l.roomNo))
+                            return data.rooms.map(r => {
+                              const isUnpaid = !r.isVacant && unpaidRooms.has(r.roomNo)
+                              const rentMan = r.baseRent > 0 ? `${Math.round(r.baseRent / 10000)}만` : null
+                              const nameParts = r.tenantName?.split(' ') ?? []
+                              const displayName = r.isVacant
+                                ? '공실'
+                                : nameParts.length >= 2 ? nameParts[1] : (r.tenantName ?? '거주중')
+                              return (
+                                <div
+                                  key={r.roomNo}
+                                  onClick={() => setSelectedRoom(r)}
+                                  className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[3px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
+                                  style={r.isVacant
+                                    ? { background: 'rgba(200,160,120,0.12)', color: 'var(--warm-muted)' }
+                                    : isUnpaid
+                                      ? { background: 'rgba(234,179,8,0.18)', color: '#a16207' }
+                                      : { background: 'rgba(244,98,58,0.09)', color: 'var(--coral)' }}
+                                >
+                                  <span className="truncate w-full text-center font-bold" style={{ fontSize: 11 }}>{r.roomNo}호</span>
+                                  <span className="truncate w-full text-center" style={{ fontSize: 10, fontWeight: 500 }}>{displayName}</span>
+                                  {rentMan && <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
+                                </div>
+                              )
+                            })
+                          })()}
                         </div>
                       </>
                     )}
