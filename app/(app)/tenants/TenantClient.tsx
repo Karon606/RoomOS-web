@@ -2082,6 +2082,8 @@ export default function TenantClient({
                                 <DatePicker
                                   value={overrideDateInput}
                                   onChange={setOverrideDateInput}
+                                  minDate={`${targetMonth}-01`}
+                                  maxDate={`${targetMonth}-${String(new Date(parseInt(targetMonth.slice(0,4)), parseInt(targetMonth.slice(5,7)), 0).getDate()).padStart(2,'0')}`}
                                   className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] focus:border-amber-500"
                                 />
                               </div>
