@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithGemini, createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests, changeDueDay } from './actions'
+import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithGemini, createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests, changeDueDay, recordDepositReturn } from './actions'
 import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -294,6 +294,9 @@ export default function TenantClient({
   const [roomDetailId, setRoomDetailId]   = useState<string | null>(null)
   const [error, setError]               = useState('')
   const [deleteTarget, setDeleteTarget]   = useState<{ id: string; name: string } | null>(null)
+  const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; fromDetail: boolean } | null>(null)
+  const [depositReturnAmt, setDepositReturnAmt] = useState(0)
+  const [depositReturnDate, setDepositReturnDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [filter, setFilter]             = useState<'active' | 'past'>('active')
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
   const [pastFilter, setPastFilter]     = useState<PastFilter>('all')
@@ -319,10 +322,9 @@ export default function TenantClient({
   const [payDateVal, setPayDateVal] = useState(new Date().toISOString().slice(0, 10))
   const [isDepositMode, setIsDepositMode] = useState(false)
   const [showOverrideForm, setShowOverrideForm] = useState(false)
+  const [overrideDateInput, setOverrideDateInput] = useState('')
   const [confirmClearOverride, setConfirmClearOverride] = useState(false)
-  const [overrideInput, setOverrideInput] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
-  const overrideInputVal = useRef('')
   const [editingPayId, setEditingPayId] = useState<string | null>(null)
   const [editAmount, setEditAmount] = useState(0)
   const [editDate, setEditDate] = useState('')
@@ -474,9 +476,23 @@ export default function TenantClient({
     })
   }
 
+  const openDepositRefundModal = (fd: FormData, fromDetail: boolean) => {
+    const tenantName    = fd.get('name') as string || '입주자'
+    const depositAmount = Number(fd.get('depositAmount')) || 0
+    setDepositReturnAmt(depositAmount)
+    setDepositReturnDate(new Date().toISOString().slice(0, 10))
+    setDepositRefundModal({ fd, tenantName, depositAmount, fromDetail })
+  }
+
   const handleUpdate = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
+    const status         = fd.get('status') as string
+    const depositAmount  = Number(fd.get('depositAmount')) || 0
+    if (status === 'CHECKED_OUT' && depositAmount > 0) {
+      openDepositRefundModal(fd, false)
+      return
+    }
     startTransition(async () => {
       const res = await updateTenant(fd)
       if (!res.ok) { setError(res.error); return }
@@ -488,6 +504,12 @@ export default function TenantClient({
   const handleUpdateFromDetail = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
+    const status         = fd.get('status') as string
+    const depositAmount  = Number(fd.get('depositAmount')) || 0
+    if (status === 'CHECKED_OUT' && depositAmount > 0) {
+      openDepositRefundModal(fd, true)
+      return
+    }
     startTransition(async () => {
       const res = await updateTenant(fd)
       if (!res.ok) { setError(res.error); return }
@@ -507,6 +529,26 @@ export default function TenantClient({
   }
 
 
+  const handleDepositRefundConfirm = () => {
+    if (!depositRefundModal) return
+    const { fd, tenantName, depositAmount, fromDetail } = depositRefundModal
+    startTransition(async () => {
+      const refundRes = await recordDepositReturn({
+        depositAmount,
+        returnedAmount: depositReturnAmt,
+        date: depositReturnDate,
+        tenantName,
+      })
+      if (!refundRes.ok) { setError(refundRes.error); return }
+      const updateRes = await updateTenant(fd)
+      if (!updateRes.ok) { setError(updateRes.error); return }
+      setDepositRefundModal(null)
+      if (fromDetail) { setDetailTenant(null); setDetailEditMode(false) }
+      else setEditTenant(null)
+      refresh()
+    })
+  }
+
   const openPayModal = async (tenant: Tenant, lease: LeaseTerm) => {
     setPayTarget({ tenant, lease })
     setPayAmount(lease.rentAmount)
@@ -521,7 +563,7 @@ export default function TenantClient({
 
   const closePayModal = () => {
     setPayTarget(null); setPayHistory([]); setShowPayForm(false); setError('')
-    setShowOverrideForm(false); overrideInputVal.current = ''; setOverrideInput(''); setOverrideReason(''); setConfirmClearOverride(false)
+    setShowOverrideForm(false); setOverrideDateInput(''); setOverrideReason(''); setConfirmClearOverride(false)
     setIsDepositMode(false); setPayDateVal(new Date().toISOString().slice(0, 10))
   }
 
@@ -844,6 +886,57 @@ export default function TenantClient({
                 disabled={isPending}
                 className="flex-1 py-2.5 rounded-xl text-sm bg-red-500 hover:bg-red-600 text-white font-medium transition-colors disabled:opacity-50">
                 {isPending ? '삭제 중...' : '영구 삭제'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 보증금 반환 처리 모달 */}
+      {depositRefundModal && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
+          <div className="bg-[var(--cream)] rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-[var(--warm-dark)]">보증금 반환 처리</h2>
+              <button onClick={() => setDepositRefundModal(null)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+            </div>
+            <div className="bg-[var(--canvas)] rounded-xl p-3 text-sm text-[var(--warm-dark)]">
+              <span className="text-[var(--warm-muted)]">보증금 </span>
+              <span className="font-semibold">{depositRefundModal.depositAmount.toLocaleString()}원</span>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">반환 금액</label>
+              <MoneyInput value={depositReturnAmt} onChange={setDepositReturnAmt} placeholder="0원" />
+              <div className="flex gap-2 mt-1">
+                <button type="button"
+                  onClick={() => setDepositReturnAmt(depositRefundModal.depositAmount)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 transition-colors">
+                  전액 반환
+                </button>
+                <button type="button"
+                  onClick={() => setDepositReturnAmt(0)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 ring-1 ring-red-200 hover:bg-red-100 transition-colors">
+                  미반환
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">반환일</label>
+              <DatePicker value={depositReturnDate} onChange={setDepositReturnDate}
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+            </div>
+            {depositRefundModal.depositAmount - depositReturnAmt > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs text-amber-700 leading-relaxed">
+                미수취 <span className="font-semibold">{(depositRefundModal.depositAmount - depositReturnAmt).toLocaleString()}원</span>은 기타 수익(보증금)으로 자동 등록됩니다.
+              </div>
+            )}
+            {error && <p className="text-red-400 text-sm">{error}</p>}
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => setDepositRefundModal(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">취소</button>
+              <button type="button" onClick={handleDepositRefundConfirm} disabled={isPending}
+                className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--coral)] hover:opacity-90 text-white font-medium transition-opacity disabled:opacity-60">
+                {isPending ? '처리 중...' : '퇴실 처리'}
               </button>
             </div>
           </div>
@@ -1947,11 +2040,26 @@ export default function TenantClient({
                             <button
                               type="button"
                               onClick={() => {
-                                setShowOverrideForm(v => !v)
-                                const initVal = isOverrideActive ? (lease.overrideDueDay ?? '') : ''
-                                overrideInputVal.current = initVal
-                                setOverrideInput(initVal)
-                                setOverrideReason(isOverrideActive ? (lease.overrideDueDayReason ?? '') : '')
+                                const opening = !showOverrideForm
+                                setShowOverrideForm(opening)
+                                if (opening) {
+                                  // 기존 조정값이 있으면 해당 날짜로, 없으면 이번 달 기준 납부일로 초기화
+                                  const existingDay = isOverrideActive ? lease.overrideDueDay : null
+                                  const baseDay = existingDay ?? lease.dueDay ?? null
+                                  let initDate = ''
+                                  if (baseDay) {
+                                    if (baseDay.includes('말')) {
+                                      const [y, m] = targetMonth.split('-').map(Number)
+                                      const last = new Date(y, m, 0).getDate()
+                                      initDate = `${targetMonth}-${String(last).padStart(2, '0')}`
+                                    } else {
+                                      const n = parseInt(baseDay)
+                                      if (!isNaN(n)) initDate = `${targetMonth}-${String(n).padStart(2, '0')}`
+                                    }
+                                  }
+                                  setOverrideDateInput(initDate || new Date().toISOString().slice(0, 10))
+                                  setOverrideReason(isOverrideActive ? (lease.overrideDueDayReason ?? '') : '')
+                                }
                               }}
                               className="text-xs text-amber-400 hover:text-amber-300 transition-colors">
                               {showOverrideForm ? '닫기' : isOverrideActive ? '수정' : '조정하기'}
@@ -1971,29 +2079,10 @@ export default function TenantClient({
                             <div className="flex gap-2">
                               <div className="flex-1 space-y-1">
                                 <label className="text-xs text-[var(--warm-muted)]">조정 납부일</label>
-                                <input
-                                  type="text"
-                                  value={overrideInput}
-                                  onChange={e => {
-                                    const v = e.target.value
-                                    if (v.length < overrideInput.length) { overrideInputVal.current = v; setOverrideInput(v); return }
-                                    const trimmed = v.trim()
-                                    const n = Number(trimmed)
-                                    const converted = (/[ㅁ마말]/.test(v) || (trimmed !== '' && !isNaN(n) && n >= 30)) ? '말일' : v
-                                    overrideInputVal.current = converted
-                                    setOverrideInput(converted)
-                                  }}
-                                  onCompositionEnd={e => {
-                                    const v = (e.currentTarget as HTMLInputElement).value
-                                    const trimmed = v.trim()
-                                    const n = Number(trimmed)
-                                    if (/[ㅁ마말]/.test(v) || (trimmed !== '' && !isNaN(n) && n >= 30)) {
-                                      overrideInputVal.current = '말일'
-                                      setOverrideInput('말일')
-                                    }
-                                  }}
-                                  placeholder="예: 20, 말일"
-                                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-amber-500"
+                                <DatePicker
+                                  value={overrideDateInput}
+                                  onChange={setOverrideDateInput}
+                                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] focus:border-amber-500"
                                 />
                               </div>
                               <div className="flex-1 space-y-1">
@@ -2009,13 +2098,15 @@ export default function TenantClient({
                             </div>
                             <button
                               type="button"
-                              disabled={isPending || !overrideInput.trim()}
+                              disabled={isPending || !overrideDateInput}
                               onClick={() => {
-                                const val = overrideInputVal.current || overrideInput.trim()
-                                if (!val) return
+                                if (!overrideDateInput) return
+                                const d = new Date(overrideDateInput)
+                                const dayNum = d.getDate()
+                                const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+                                const val = dayNum >= lastDay ? '말일' : String(dayNum)
                                 const reason = overrideReason.trim()
                                 const leaseId = lease.id
-                                // 즉시 UI 업데이트 (서버 응답 기다리지 않음)
                                 setShowOverrideForm(false)
                                 setDetailTenant(prev => {
                                   if (!prev) return prev
@@ -2034,7 +2125,14 @@ export default function TenantClient({
                                 })
                               }}
                               className="w-full py-2 bg-amber-500 active:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40">
-                              {isPending ? '저장 중...' : `${targetMonth} 납부일을 ${overrideInput.includes('말') ? '말일' : `${overrideInput || '?'}일`}로 조정`}
+                              {isPending ? '저장 중...' : (() => {
+                                if (!overrideDateInput) return '날짜를 선택하세요'
+                                const d = new Date(overrideDateInput)
+                                const dayNum = d.getDate()
+                                const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+                                const label = dayNum >= lastDay ? '말일' : `${dayNum}일`
+                                return `${targetMonth} 납부일을 ${label}로 조정`
+                              })()}
                             </button>
                           </div>
                         )}

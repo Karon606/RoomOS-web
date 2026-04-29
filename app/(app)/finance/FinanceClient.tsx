@@ -6,7 +6,7 @@ import {
   addExtraIncome, updateExtraIncome, deleteExtraIncome,
   settleCardExpenses, unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
-  recordRecurringExpense,
+  recordRecurringExpense, uploadExpenseReceipt,
   type RecurringExpenseWithStatus,
 } from './actions'
 import {
@@ -30,6 +30,7 @@ type Expense = {
   financialAccountId: string | null; financialAccount: FAcc | null
   roomId: string | null; room: { id: string; roomNo: string } | null
   recurringExpenseId: string | null; recurringExpense: { isVariable: boolean } | null
+  receiptUrl: string | null
 }
 
 type Income = {
@@ -362,6 +363,9 @@ export default function FinanceClient({
   const [editExpDate, setEditExpDate]       = useState('')
   const [addExpRoomId, setAddExpRoomId]     = useState('')
   const [editExpRoomId, setEditExpRoomId]   = useState('')
+  const [addReceiptUrl, setAddReceiptUrl]   = useState('')
+  const [editReceiptUrl, setEditReceiptUrl] = useState('')
+  const [receiptUploading, setReceiptUploading] = useState(false)
 
   // ── 수익 탭 상태 ─────────────────────────────────────────────
   const [incFilter, setIncFilter] = useState({ method: 'all', category: 'all' })
@@ -550,13 +554,22 @@ export default function FinanceClient({
 
   // ── 핸들러 ───────────────────────────────────────────────────
 
+  const handleReceiptUpload = async (file: File, setter: (url: string) => void) => {
+    setReceiptUploading(true)
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await uploadExpenseReceipt(fd)
+    if (res.ok) setter(res.url)
+    setReceiptUploading(false)
+  }
+
   const handleAddExp = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
       const res = await addExpense(fd)
       if (!res.ok) { setError(res.error); return }
-      setShowAddExp(false); setAddExpDate(new Date().toISOString().slice(0, 10)); router.refresh()
+      setShowAddExp(false); setAddExpDate(new Date().toISOString().slice(0, 10)); setAddReceiptUrl(''); router.refresh()
     })
   }
   const handleUpdateExp = (e: React.SyntheticEvent<HTMLFormElement>) => {
@@ -935,9 +948,12 @@ export default function FinanceClient({
                               {e.payMethod && <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{e.payMethod}</span>}
                               {e.financialAccount && <span className="text-[10px] text-[var(--warm-muted)]">{accName(e.financialAccount)}</span>}
                             </div>
-                            {(e.detail || e.memo) && (
-                              <p className="text-xs text-[var(--warm-dark)] truncate">{[e.detail, e.memo].filter(Boolean).join(' · ')}</p>
-                            )}
+                            <div className="flex items-center gap-1.5">
+                              {(e.detail || e.memo) && (
+                                <p className="text-xs text-[var(--warm-dark)] truncate">{[e.detail, e.memo].filter(Boolean).join(' · ')}</p>
+                              )}
+                              {e.receiptUrl && <span className="text-[10px] shrink-0">🧾</span>}
+                            </div>
                           </div>
                         )
                       }
@@ -1018,7 +1034,12 @@ export default function FinanceClient({
                                     {e.recurringExpense?.isVariable && <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-500 ring-1 ring-blue-100 whitespace-nowrap">변동</span>}
                                   </div>
                                 </td>
-                                <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden"><span className="truncate block">{e.detail ?? '—'}</span></td>
+                                <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="truncate">{e.detail ?? '—'}</span>
+                                    {e.receiptUrl && <span className="shrink-0 text-xs">🧾</span>}
+                                  </div>
+                                </td>
                                 <td className="px-4 py-3 text-sm font-semibold text-red-500 overflow-hidden"><span className="truncate block"><MoneyDisplay amount={e.amount} prefix="-" /></span></td>
                                 <td className="px-4 py-3 overflow-hidden">
                                   <span className={`inline-flex items-center text-xs px-2 py-1 rounded-full font-medium ring-1 whitespace-nowrap
@@ -1592,6 +1613,14 @@ export default function FinanceClient({
                     </span>
                   } />
                   {detailExp.memo && <DetailRow label="메모" value={detailExp.memo} />}
+                  {detailExp.receiptUrl && (
+                    <div className="pt-2">
+                      <p className="text-xs text-[var(--warm-muted)] mb-1.5">영수증</p>
+                      <a href={detailExp.receiptUrl} target="_blank" rel="noopener noreferrer">
+                        <img src={detailExp.receiptUrl} className="rounded-xl border border-[var(--warm-border)] w-full max-h-48 object-contain" alt="영수증" />
+                      </a>
+                    </div>
+                  )}
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <button onClick={() => handleDeleteExp(detailExp.id)} disabled={isPending}
@@ -1610,6 +1639,7 @@ export default function FinanceClient({
                     setEditExpAccId(detailExp.financialAccountId ?? '')
                     setEditExpAccName(detailExp.financeName ?? '')
                     setEditExpRoomId(detailExp.roomId ?? '')
+                    setEditReceiptUrl(detailExp.receiptUrl ?? '')
                     setError('')
                   }}
                     className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">수정</button>
@@ -1689,6 +1719,23 @@ export default function FinanceClient({
                     <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
                     <input type="text" name="memo" defaultValue={detailExp.memo ?? ''}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">영수증</label>
+                    <input type="hidden" name="receiptUrl" value={editReceiptUrl} />
+                    <div className="flex items-center gap-2">
+                      <label className="flex-1 flex items-center justify-center gap-1.5 bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2 cursor-pointer hover:border-[var(--coral)] transition-colors">
+                        <span className="text-lg">📎</span>
+                        <span className="text-xs text-[var(--warm-muted)]">{receiptUploading ? '업로드 중...' : editReceiptUrl ? '파일 변경' : '파일 선택'}</span>
+                        <input type="file" accept="image/*,application/pdf" className="hidden" disabled={receiptUploading}
+                          onChange={async e => { const f = e.target.files?.[0]; if (f) await handleReceiptUpload(f, setEditReceiptUrl) }} />
+                      </label>
+                      {editReceiptUrl && (
+                        <a href={editReceiptUrl} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                          <img src={editReceiptUrl} className="w-12 h-12 rounded-xl object-cover border border-[var(--warm-border)]" alt="영수증" />
+                        </a>
+                      )}
+                    </div>
                   </div>
                   {error && <p className="text-red-400 text-sm">{error}</p>}
                 </div>
@@ -1888,6 +1935,23 @@ export default function FinanceClient({
                   <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
                   <input type="text" name="memo" placeholder="메모 (선택)"
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">영수증</label>
+                  <input type="hidden" name="receiptUrl" value={addReceiptUrl} />
+                  <div className="flex items-center gap-2">
+                    <label className="flex-1 flex items-center justify-center gap-1.5 bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2 cursor-pointer hover:border-[var(--coral)] transition-colors">
+                      <span className="text-lg">📎</span>
+                      <span className="text-xs text-[var(--warm-muted)]">{receiptUploading ? '업로드 중...' : addReceiptUrl ? '파일 변경' : '파일 선택'}</span>
+                      <input type="file" accept="image/*,application/pdf" className="hidden" disabled={receiptUploading}
+                        onChange={async e => { const f = e.target.files?.[0]; if (f) await handleReceiptUpload(f, setAddReceiptUrl) }} />
+                    </label>
+                    {addReceiptUrl && (
+                      <a href={addReceiptUrl} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                        <img src={addReceiptUrl} className="w-12 h-12 rounded-xl object-cover border border-[var(--warm-border)]" alt="영수증" />
+                      </a>
+                    )}
+                  </div>
                 </div>
                 {error && <p className="text-red-400 text-sm">{error}</p>}
               </div>

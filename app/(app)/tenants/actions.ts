@@ -378,6 +378,37 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
   }
 }
 
+// 퇴실 시 보증금 미반환분 기타 수익 등록
+export async function recordDepositReturn(params: {
+  depositAmount: number
+  returnedAmount: number
+  date: string
+  tenantName: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const unreturned = params.depositAmount - params.returnedAmount
+    if (unreturned > 0) {
+      await prisma.extraIncome.create({
+        data: {
+          propertyId,
+          date:      new Date(params.date),
+          amount:    unreturned,
+          category:  '보증금',
+          detail:    `${params.tenantName} 퇴실 — 보증금 미반환분`,
+          payMethod: '현금',
+        },
+      })
+      revalidatePath('/finance')
+    }
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // 입실 처리 (입실예정 → 거주중)
 export async function moveInTenant(leaseTermId: string, tenantId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {

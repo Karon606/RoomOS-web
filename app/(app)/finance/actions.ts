@@ -111,6 +111,29 @@ export async function getSettledCardExpenses(targetMonth?: string) {
   })
 }
 
+const RECEIPT_BUCKET = 'receipts'
+
+export async function uploadExpenseReceipt(formData: FormData): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const file = formData.get('receipt') as File
+    if (!file || file.size === 0) return { ok: false, error: '파일이 없습니다.' }
+    if (!file.type.startsWith('image/')) return { ok: false, error: '이미지 파일만 업로드 가능합니다.' }
+    if (file.size > 10 * 1024 * 1024) return { ok: false, error: '파일 크기는 10MB 이하여야 합니다.' }
+    const supabase = await createClient()
+    const ext = file.name.split('.').pop() ?? 'jpg'
+    const path = `${propertyId}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+    const arrayBuffer = await file.arrayBuffer()
+    const { error } = await supabase.storage.from(RECEIPT_BUCKET).upload(path, new Uint8Array(arrayBuffer), { contentType: file.type })
+    if (error) return { ok: false, error: `업로드 실패: ${error.message}` }
+    const { data: { publicUrl } } = supabase.storage.from(RECEIPT_BUCKET).getPublicUrl(path)
+    return { ok: true, url: publicUrl }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 export async function addExpense(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -124,6 +147,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const financialAccountId = formData.get('financialAccountId') as string
     const financeName        = formData.get('financeName') as string
     const roomId             = formData.get('roomId') as string
+    const receiptUrl         = formData.get('receiptUrl') as string
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
@@ -137,6 +161,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
         payMethod:          payMethod || '계좌이체',
         financialAccountId: financialAccountId || null,
         financeName:        financeName || null,
+        receiptUrl:         receiptUrl || null,
         settleStatus:       payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED',
         roomId:             roomId || null,
       },
@@ -162,6 +187,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
     const financialAccountId = formData.get('financialAccountId') as string
     const financeName        = formData.get('financeName') as string
     const roomId             = formData.get('roomId') as string
+    const receiptUrl         = formData.get('receiptUrl') as string
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
@@ -177,6 +203,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
         financeName:        financeName || null,
         settleStatus:       payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED',
         roomId:             roomId || null,
+        ...(receiptUrl !== null && receiptUrl !== undefined ? { receiptUrl: receiptUrl || null } : {}),
       },
     })
     revalidatePath('/finance')
