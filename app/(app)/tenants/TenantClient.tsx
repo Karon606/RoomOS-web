@@ -1985,6 +1985,11 @@ export default function TenantClient({
                   {/* 납부일 임시 조정 — 항상 보이는 영역 */}
                   {(() => {
                     const isOverrideActive = lease.overrideDueDayMonth === targetMonth && !!lease.overrideDueDay
+                    const fmtOvr = (v: string | null | undefined) => {
+                      if (!v) return ''
+                      if (v.includes('-')) { const d = new Date(v + 'T00:00:00'); return `${d.getMonth()+1}월 ${d.getDate()}일` }
+                      return v.includes('말') ? '말일' : `${v}일`
+                    }
                     return (
                       <div className="border-t border-amber-500/20 bg-amber-500/5 px-6 py-3 space-y-2 shrink-0">
                         <div className="flex items-center justify-between">
@@ -1993,7 +1998,7 @@ export default function TenantClient({
                             <span className="text-xs font-semibold text-amber-300">납부일 임시 조정</span>
                             {isOverrideActive && (
                               <span className="text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full">
-                                {targetMonth} · {lease.overrideDueDay?.includes('말') ? '말일' : `${lease.overrideDueDay}일`}로 적용 중
+                                {targetMonth} · {fmtOvr(lease.overrideDueDay)}로 적용 중
                               </span>
                             )}
                           </div>
@@ -2043,16 +2048,24 @@ export default function TenantClient({
                                 const opening = !showOverrideForm
                                 setShowOverrideForm(opening)
                                 if (opening) {
-                                  // 기존 조정값이 있으면 해당 날짜로, 없으면 이번 달 기준 납부일로 초기화
-                                  const existingDay = isOverrideActive ? lease.overrideDueDay : null
-                                  const baseDay = existingDay ?? lease.dueDay ?? null
+                                  const existingVal = isOverrideActive ? lease.overrideDueDay : null
                                   let initDate = ''
-                                  if (baseDay) {
-                                    if (baseDay.includes('말')) {
+                                  if (existingVal) {
+                                    if (existingVal.includes('-')) {
+                                      initDate = existingVal
+                                    } else if (existingVal.includes('말')) {
                                       const [y, m] = targetMonth.split('-').map(Number)
-                                      const last = new Date(y, m, 0).getDate()
-                                      initDate = `${targetMonth}-${String(last).padStart(2, '0')}`
+                                      initDate = `${targetMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
                                     } else {
+                                      const n = parseInt(existingVal)
+                                      if (!isNaN(n)) initDate = `${targetMonth}-${String(n).padStart(2, '0')}`
+                                    }
+                                  } else {
+                                    const baseDay = lease.dueDay
+                                    if (baseDay?.includes('말')) {
+                                      const [y, m] = targetMonth.split('-').map(Number)
+                                      initDate = `${targetMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+                                    } else if (baseDay) {
                                       const n = parseInt(baseDay)
                                       if (!isNaN(n)) initDate = `${targetMonth}-${String(n).padStart(2, '0')}`
                                     }
@@ -2069,7 +2082,7 @@ export default function TenantClient({
 
                         {isOverrideActive && !showOverrideForm && (
                           <p className="text-xs text-[var(--warm-muted)]">
-                            기준 {fmtDueDay(lease.dueDay)} → 이번달 {lease.overrideDueDay?.includes('말') ? '말일' : `${lease.overrideDueDay}일`}
+                            기준 {fmtDueDay(lease.dueDay)} → 이번달 {fmtOvr(lease.overrideDueDay)}
                             {lease.overrideDueDayReason ? ` · ${lease.overrideDueDayReason}` : ''}
                           </p>
                         )}
@@ -2083,7 +2096,6 @@ export default function TenantClient({
                                   value={overrideDateInput}
                                   onChange={setOverrideDateInput}
                                   minDate={`${targetMonth}-01`}
-                                  maxDate={`${targetMonth}-${String(new Date(parseInt(targetMonth.slice(0,4)), parseInt(targetMonth.slice(5,7)), 0).getDate()).padStart(2,'0')}`}
                                   className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] focus:border-amber-500"
                                 />
                               </div>
@@ -2103,10 +2115,16 @@ export default function TenantClient({
                               disabled={isPending || !overrideDateInput}
                               onClick={() => {
                                 if (!overrideDateInput) return
-                                const d = new Date(overrideDateInput)
-                                const dayNum = d.getDate()
-                                const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
-                                const val = dayNum >= lastDay ? '말일' : String(dayNum)
+                                const d = new Date(overrideDateInput + 'T00:00:00')
+                                const selectedYM = overrideDateInput.slice(0, 7)
+                                let val: string
+                                if (selectedYM !== targetMonth) {
+                                  val = overrideDateInput
+                                } else {
+                                  const dayNum = d.getDate()
+                                  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+                                  val = dayNum >= lastDay ? '말일' : String(dayNum)
+                                }
                                 const reason = overrideReason.trim()
                                 const leaseId = lease.id
                                 setShowOverrideForm(false)
@@ -2129,7 +2147,12 @@ export default function TenantClient({
                               className="w-full py-2 bg-amber-500 active:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40">
                               {isPending ? '저장 중...' : (() => {
                                 if (!overrideDateInput) return '날짜를 선택하세요'
-                                const d = new Date(overrideDateInput)
+                                const selectedYM = overrideDateInput.slice(0, 7)
+                                if (selectedYM !== targetMonth) {
+                                  const d2 = new Date(overrideDateInput + 'T00:00:00')
+                                  return `${d2.getMonth() + 1}월 ${d2.getDate()}일로 조정`
+                                }
+                                const d = new Date(overrideDateInput + 'T00:00:00')
                                 const dayNum = d.getDate()
                                 const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
                                 const label = dayNum >= lastDay ? '말일' : `${dayNum}일`
