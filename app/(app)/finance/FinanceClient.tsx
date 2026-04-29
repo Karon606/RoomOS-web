@@ -318,7 +318,7 @@ type Tab = 'expense' | 'income' | 'settle' | 'assets'
 type CategoryTotal = { category: string; total: number }
 
 export default function FinanceClient({
-  expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals,
+  expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate,
 }: {
   expenses: Expense[]
   incomes: Income[]
@@ -335,6 +335,7 @@ export default function FinanceClient({
   prevMonthTotals: CategoryTotal[]
   lastYearMonth: string
   lastYearTotals: CategoryTotal[]
+  acquisitionDate: string | null
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('expense')
@@ -401,7 +402,10 @@ export default function FinanceClient({
   }
   const openNewRecMgmt = () => {
     setEditingRecMgmt(null)
-    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: '', priorYearAmount: '', memo: '' })
+    const defaultActiveSince = acquisitionDate
+      ? new Date(acquisitionDate).toISOString().slice(0, 10)
+      : ''
+    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: defaultActiveSince, priorYearAmount: '', memo: '' })
     setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
