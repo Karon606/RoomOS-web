@@ -281,7 +281,7 @@ export default function SettingsForm({
 
   const openNewRec = () => {
     setEditingRec(null)
-    setRecForm({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: '', memo: '' })
+    setRecForm({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: acqDate ?? '', memo: '' })
     setShowRecForm(true)
   }
   const openEditRec = (r: RecurringExpenseRow) => {
