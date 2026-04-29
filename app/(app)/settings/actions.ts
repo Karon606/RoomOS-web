@@ -237,6 +237,29 @@ export async function deleteExpenseCategory(name: string) {
 
 type ReorderableField = 'roomTypeOptions' | 'windowTypeOptions' | 'directionOptions' | 'incomeCategories' | 'expenseCategories' | 'paymentMethods'
 
+const FIELD_DEFAULTS: Record<ReorderableField, string> = {
+  roomTypeOptions:   '원룸,미니룸',
+  windowTypeOptions: 'OUTER,INNER',
+  directionOptions:  '북향,북동향,동향,남동향,남향,남서향,서향,북서향',
+  incomeCategories:  '건조기,세탁기,자판기,이자수익,기타',
+  expenseCategories: '부식비,소모품비,폐기물 처리비,수선유지비,공과금,마케팅/광고비,인건비,청소용역비,관리비,임대료,통신/렌탈/보험료,세금/수수료',
+  paymentMethods:    '계좌이체,신용카드,체크카드,현금',
+}
+
+export async function resetOptionsToDefault(field: ReorderableField): Promise<string[]> {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const defaultVal = FIELD_DEFAULTS[field]
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { [field]: defaultVal } as any,
+  })
+  revalidatePath('/settings')
+  if (['incomeCategories', 'expenseCategories', 'paymentMethods'].includes(field)) revalidatePath('/finance')
+  if (['roomTypeOptions', 'windowTypeOptions', 'directionOptions'].includes(field)) revalidatePath('/room-manage')
+  return defaultVal.split(',').map(s => s.trim()).filter(Boolean)
+}
+
 export async function reorderOptions(field: ReorderableField, items: string[]): Promise<void> {
   await requireEdit()
   const propertyId = await getPropertyId()

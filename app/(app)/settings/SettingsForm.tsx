@@ -10,7 +10,7 @@ import {
   getIncomeCategories, addIncomeCategory, deleteIncomeCategory,
   getExpenseCategories, addExpenseCategory, deleteExpenseCategory,
   getPaymentMethods, addPaymentMethod, deletePaymentMethod,
-  reorderOptions, renameOption,
+  reorderOptions, renameOption, resetOptionsToDefault,
   inviteMember, updateMemberRole, removeMember,
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
   type MemberWithUser, type RecurringExpenseRow,
@@ -114,6 +114,10 @@ export default function SettingsForm({
     await renameOption('roomTypeOptions', oldVal, newVal.trim())
     setRoomTypes(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
   }
+  const handleResetRoomTypes = async () => {
+    if (!confirm('방타입을 기본값(원룸, 미니룸)으로 초기화할까요?')) return
+    setRoomTypes(await resetOptionsToDefault('roomTypeOptions'))
+  }
 
   // ── 창문 유형 ───────────────────────────────────────────────────
   const [windowTypes, setWindowTypes] = useState<string[]>([])
@@ -140,6 +144,10 @@ export default function SettingsForm({
     await renameOption('windowTypeOptions', oldVal, newVal.trim())
     setWindowTypes(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
   }
+  const handleResetWindowTypes = async () => {
+    if (!confirm('창문 유형을 기본값(외창, 내창)으로 초기화할까요?')) return
+    setWindowTypes(await resetOptionsToDefault('windowTypeOptions'))
+  }
 
   // ── 방향 ────────────────────────────────────────────────────────
   const [directions, setDirections] = useState<string[]>([])
@@ -165,6 +173,10 @@ export default function SettingsForm({
     if (!newVal.trim() || newVal === oldVal) return
     await renameOption('directionOptions', oldVal, newVal.trim())
     setDirections(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+  }
+  const handleResetDirections = async () => {
+    if (!confirm('방향을 기본값(북향~북서향 8방위)으로 초기화할까요?')) return
+    setDirections(await resetOptionsToDefault('directionOptions'))
   }
 
   // ── 멤버 관리 ──────────────────────────────────────────────────
@@ -221,6 +233,10 @@ export default function SettingsForm({
     await renameOption('incomeCategories', oldVal, newVal.trim())
     setIncomeCategs(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
   }
+  const handleResetIncomeCategs = async () => {
+    if (!confirm('부가수익 카테고리를 기본값으로 초기화할까요?')) return
+    setIncomeCategs(await resetOptionsToDefault('incomeCategories'))
+  }
 
   // ── 지출 카테고리 ────────────────────────────────────────────────
   const [expenseCategs, setExpenseCategs] = useState<string[]>([])
@@ -245,6 +261,10 @@ export default function SettingsForm({
     await renameOption('expenseCategories', oldVal, newVal.trim())
     setExpenseCategs(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
   }
+  const handleResetExpenseCategs = async () => {
+    if (!confirm('지출 카테고리를 기본값으로 초기화할까요?')) return
+    setExpenseCategs(await resetOptionsToDefault('expenseCategories'))
+  }
 
   // ── 결제 수단 ────────────────────────────────────────────────────
   const [payMethods, setPayMethods] = useState<string[]>([])
@@ -268,6 +288,10 @@ export default function SettingsForm({
     if (!newVal.trim() || newVal === oldVal) return
     await renameOption('paymentMethods', oldVal, newVal.trim())
     setPayMethods(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+  }
+  const handleResetPayMethods = async () => {
+    if (!confirm('결제 수단을 기본값(계좌이체, 신용카드, 체크카드, 현금)으로 초기화할까요?')) return
+    setPayMethods(await resetOptionsToDefault('paymentMethods'))
   }
 
   // ── 고정 지출 ────────────────────────────────────────────────────
@@ -412,6 +436,7 @@ export default function SettingsForm({
             onDelete={handleDeleteRoomType}
             onReorder={handleReorderRoomTypes}
             onRename={handleRenameRoomType}
+            onReset={handleResetRoomTypes}
             placeholder="예: 원룸, 투룸, 복층..."
           />
           <OptionSection
@@ -425,6 +450,7 @@ export default function SettingsForm({
             onDelete={handleDeleteWindowType}
             onReorder={handleReorderWindowTypes}
             onRename={handleRenameWindowType}
+            onReset={handleResetWindowTypes}
             placeholder="예: 복층창, 루프탑창..."
           />
           <OptionSection
@@ -438,6 +464,7 @@ export default function SettingsForm({
             onDelete={handleDeleteDirection}
             onReorder={handleReorderDirections}
             onRename={handleRenameDirection}
+            onReset={handleResetDirections}
             placeholder="예: 남동향, 남남동향..."
           />
         </div>
@@ -457,6 +484,7 @@ export default function SettingsForm({
             onDelete={handleDeleteIncomeCateg}
             onReorder={handleReorderIncomeCategs}
             onRename={handleRenameIncomeCateg}
+            onReset={handleResetIncomeCategs}
             placeholder="예: 건조기, 세탁기, 자판기..."
           />
           <OptionSection
@@ -470,6 +498,7 @@ export default function SettingsForm({
             onDelete={handleDeleteExpenseCateg}
             onReorder={handleReorderExpenseCategs}
             onRename={handleRenameExpenseCateg}
+            onReset={handleResetExpenseCategs}
             placeholder="예: 임대료, 보험료, 통신비..."
           />
           <OptionSection
@@ -483,6 +512,7 @@ export default function SettingsForm({
             onDelete={handleDeletePayMethod}
             onReorder={handleReorderPayMethods}
             onRename={handleRenamePayMethod}
+            onReset={handleResetPayMethods}
             placeholder="예: 자동이체, 법인카드..."
           />
 
@@ -720,7 +750,7 @@ export default function SettingsForm({
 }
 
 function OptionSection({
-  title, description, items, getLabel, newValue, onNewValueChange, onAdd, onDelete, onReorder, onRename, placeholder,
+  title, description, items, getLabel, newValue, onNewValueChange, onAdd, onDelete, onReorder, onRename, onReset, placeholder,
 }: {
   title: string
   description?: string
@@ -732,6 +762,7 @@ function OptionSection({
   onDelete: (v: string) => void
   onReorder?: (items: string[]) => void
   onRename?: (oldValue: string, newValue: string) => void
+  onReset?: () => void | Promise<void>
   placeholder?: string
 }) {
   const [editingItem, setEditingItem] = useState<string | null>(null)
@@ -770,7 +801,15 @@ function OptionSection({
 
   return (
     <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
-      <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">{title}</h2>
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <h2 className="text-sm font-semibold text-[var(--warm-dark)]">{title}</h2>
+        {onReset && (
+          <button onClick={onReset}
+            className="shrink-0 text-[11px] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] border border-[var(--warm-border)] rounded-lg px-2 py-0.5 transition-colors">
+            기본값으로 초기화
+          </button>
+        )}
+      </div>
       {description && <p className="text-xs text-[var(--warm-muted)] mb-4">{description}</p>}
       {!description && <div className="mb-4" />}
       <div className="space-y-2 mb-4">
