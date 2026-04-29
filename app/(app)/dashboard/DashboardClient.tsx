@@ -1651,8 +1651,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                       <div>
                         <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>이달 손익 현황</h3>
                         <p style={{ fontSize: 11, color: 'var(--warm-muted)', marginTop: 1 }}>
-                          {parseInt(targetMonth.slice(5))}월 예상 순이익 {data.totalExpected > 0 || data.expectedExpense > 0
-                            ? `${Math.round((data.totalExpected - data.expectedExpense) / 10000).toLocaleString()}만원`
+                          {parseInt(targetMonth.slice(5))}월 예상 순이익 {data.netProfit + data.unpaidAmount !== 0
+                            ? `${Math.round((data.netProfit + data.unpaidAmount) / 10000).toLocaleString()}만원`
                             : '—'}
                         </p>
                       </div>
@@ -1745,7 +1745,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
 
                     {/* ── 순이익 섹션 ── */}
                     {(() => {
-                      const expectedNet = data.totalExpected - data.expectedExpense
+                      const expectedNet = data.netProfit + data.unpaidAmount
                       const currentNet  = data.netProfit
                       const pct = expectedNet > 0 ? Math.max(0, Math.min(100, Math.round((currentNet / expectedNet) * 100))) : 0
                       return (
