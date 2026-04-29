@@ -85,25 +85,55 @@ export async function GET(request: NextRequest) {
   let paymentSheet: object[]
 
   if (scope === 'month') {
-    const leases = await prisma.leaseTerm.findMany({
-      where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-      include: {
-        room: { select: { roomNo: true } },
-        tenant: {
-          select: {
-            name: true,
-            contacts: { where: { isPrimary: true }, take: 1, select: { contactValue: true } },
+    const [leases, payments, property] = await Promise.all([
+      prisma.leaseTerm.findMany({
+        where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        include: {
+          room: { select: { roomNo: true } },
+          tenant: {
+            select: {
+              name: true,
+              contacts: { where: { isPrimary: true }, take: 1, select: { contactValue: true } },
+            },
           },
         },
-      },
-      orderBy: { room: { roomNo: 'asc' } },
-    })
-    const payments = await prisma.paymentRecord.findMany({ where: { propertyId, targetMonth, isDeposit: false } })
+        orderBy: { room: { roomNo: 'asc' } },
+      }),
+      prisma.paymentRecord.findMany({ where: { propertyId, targetMonth, isDeposit: false } }),
+      prisma.property.findUnique({
+        where: { id: propertyId },
+        select: { acquisitionDate: true, prevOwnerCutoffDate: true },
+      }),
+    ])
+
+    const cutoffDate: Date | null = property?.prevOwnerCutoffDate
+      ? new Date(property.prevOwnerCutoffDate)
+      : property?.acquisitionDate ? new Date(property.acquisitionDate) : null
+    const cutoffMonthStr = cutoffDate
+      ? `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`
+      : null
+    const cutoffDay = cutoffDate?.getDate() ?? 0
+
     paymentSheet = leases.map(l => {
       const ps = payments.filter(p => p.leaseTermId === l.id)
       const totalPaid = ps.reduce((s, x) => s + x.actualAmount, 0)
       const effectiveDueDay =
         l.overrideDueDayMonth === targetMonth && l.overrideDueDay ? l.overrideDueDay : l.dueDay
+
+      // 양도인 귀속 여부 판단 (actions.ts의 prevPaidThisMonth와 동일 로직)
+      let prevPaidThisMonth = false
+      if (cutoffDate && cutoffMonthStr && targetMonth === cutoffMonthStr) {
+        const preAcqPaid = ps.filter(p => new Date(p.payDate) < cutoffDate).reduce((s, p) => s + p.actualAmount, 0)
+        const dueDayNum = effectiveDueDay?.includes('-')
+          ? new Date(effectiveDueDay + 'T00:00:00').getDate()
+          : effectiveDueDay?.includes('말') ? 31 : Number(effectiveDueDay ?? '1')
+        const dueDayBeforeCutoff = dueDayNum < cutoffDay
+        prevPaidThisMonth = preAcqPaid >= l.rentAmount || dueDayBeforeCutoff
+      }
+
+      const balance = prevPaidThisMonth ? 0 : totalPaid - l.rentAmount
+      const isPaid  = prevPaidThisMonth || totalPaid >= l.rentAmount
+
       return {
         '호실':        l.room?.roomNo ?? '',
         '입주자명':    l.tenant.name,
@@ -111,10 +141,10 @@ export async function GET(request: NextRequest) {
         '이용료':      l.rentAmount,
         '보증금':      l.depositAmount,
         '총 수납액':   totalPaid,
-        '잔액':        totalPaid - l.rentAmount,
+        '잔액':        balance,
         '납부일':      effectiveDueDay ? `매월 ${effectiveDueDay}일` : '',
         '납부방법':    l.payMethod ?? '',
-        '상태':        totalPaid >= l.rentAmount ? '완납' : '미수납',
+        '상태':        isPaid ? '완납' : '미수납',
         '계약상태':    STATUS_LABEL[l.status] ?? l.status,
         '입실일':      fmtDate(l.moveInDate),
         '퇴실 예정일': fmtDate(l.expectedMoveOut),
