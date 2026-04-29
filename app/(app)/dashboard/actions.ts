@@ -257,7 +257,7 @@ ${trendText}
 `.trim()
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -268,7 +268,12 @@ ${trendText}
     }
   )
 
-  if (!res.ok) return `[오류] Gemini API 응답 실패 (${res.status})`
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '')
+    return `[오류] Gemini API 응답 실패 (${res.status})${errBody ? ': ' + errBody.slice(0, 200) : ''}`
+  }
   const json = await res.json()
-  return json.candidates?.[0]?.content?.parts?.[0]?.text ?? '분석 결과를 가져올 수 없습니다.'
+  const parts: { text?: string; thought?: boolean }[] = json.candidates?.[0]?.content?.parts ?? []
+  const text = parts.find(p => p.text && !p.thought)?.text ?? parts.find(p => p.text)?.text
+  return text ?? '분석 결과를 가져올 수 없습니다.'
 }

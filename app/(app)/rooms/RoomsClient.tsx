@@ -139,13 +139,23 @@ function getEffectiveDueInfo(room: RoomStatus, targetMonth: string): ReturnType<
 // ── 정렬 ─────────────────────────────────────────────────────────
 
 type SortKey = 'roomNo' | 'type' | 'windowType' | 'tenantName' | 'contact'
-             | 'depositAmount' | 'expected' | 'totalPaid' | 'balance' | 'status'
+             | 'depositAmount' | 'expected' | 'totalPaid' | 'balance' | 'status' | 'dueDay'
 type SortDir = 'asc' | 'desc'
 
 function getDueSortValue(room: RoomStatus, targetMonth: string): number {
   const info = getEffectiveDueInfo(room, targetMonth)
   if (!info) return 0
   return info.overdue ? info.days : -info.days
+}
+
+function getEffectiveDueDayNum(room: RoomStatus, targetMonth: string): number {
+  const isOverrideActive = room.overrideDueDayMonth === targetMonth && !!room.overrideDueDay
+  const effectiveDay = isOverrideActive ? room.overrideDueDay : room.dueDay
+  if (!effectiveDay) return 99
+  if (effectiveDay.includes('-')) return parseInt(effectiveDay.split('-')[2]) || 99
+  if (effectiveDay.includes('말')) return 31
+  const d = parseInt(effectiveDay)
+  return isNaN(d) ? 99 : d
 }
 
 function getSortValue(room: RoomStatus, key: SortKey, targetMonth: string): string | number {
@@ -160,6 +170,7 @@ function getSortValue(room: RoomStatus, key: SortKey, targetMonth: string): stri
     case 'totalPaid':     return room.totalPaid
     case 'balance':       return room.balance
     case 'status':        return getDueSortValue(room, targetMonth)
+    case 'dueDay':        return getEffectiveDueDayNum(room, targetMonth)
     default:              return ''
   }
 }
@@ -596,6 +607,7 @@ export default function RoomsClient({
         {([
           { sk: 'status'        as SortKey, label: '수납상태' },
           { sk: 'roomNo'        as SortKey, label: '호실순' },
+          { sk: 'dueDay'        as SortKey, label: '납부일' },
           { sk: 'balance'       as SortKey, label: '잔액' },
           { sk: 'expected'      as SortKey, label: '이용료' },
           { sk: 'totalPaid'     as SortKey, label: '총납부액' },
