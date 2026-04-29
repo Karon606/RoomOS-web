@@ -322,7 +322,7 @@ type Tab = 'expense' | 'income' | 'settle' | 'assets'
 type CategoryTotal = { category: string; total: number }
 
 export default function FinanceClient({
-  expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate,
+  expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions,
 }: {
   expenses: Expense[]
   incomes: Income[]
@@ -340,6 +340,7 @@ export default function FinanceClient({
   lastYearMonth: string
   lastYearTotals: CategoryTotal[]
   acquisitionDate: string | null
+  detailSuggestions: string[]
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('expense')
