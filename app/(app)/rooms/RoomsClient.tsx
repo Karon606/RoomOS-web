@@ -1112,7 +1112,12 @@ export default function RoomsClient({
                 {/* 납부일 임시 조정 */}
                 {selectedRoom.leaseTermId && (() => {
                   const isOverrideActive = selectedRoom.overrideDueDayMonth === targetMonth && !!selectedRoom.overrideDueDay
-                  const overrideLabel = selectedRoom.overrideDueDay?.includes('말') ? '말일' : `${selectedRoom.overrideDueDay}일`
+                  const fmtOvr = (v: string | null | undefined) => {
+                    if (!v) return ''
+                    if (v.includes('-')) { const d = new Date(v + 'T00:00:00'); return `${d.getMonth()+1}월 ${d.getDate()}일` }
+                    return v.includes('말') ? '말일' : `${v}일`
+                  }
+                  const overrideLabel = fmtOvr(selectedRoom.overrideDueDay)
                   return (
                   <div className="border-t border-amber-200 px-6 py-3 shrink-0 bg-amber-50">
                     <div className="flex items-center justify-between">
@@ -1163,15 +1168,24 @@ export default function RoomsClient({
                               setShowOverrideForm(opening)
                               setConfirmClearOverride(false)
                               if (opening) {
-                                const existingDay = isOverrideActive ? selectedRoom.overrideDueDay : null
-                                const baseDay = existingDay ?? selectedRoom.dueDay ?? null
+                                const existingVal = isOverrideActive ? selectedRoom.overrideDueDay : null
                                 let initDate = ''
-                                if (baseDay) {
-                                  if (baseDay.includes('말')) {
+                                if (existingVal) {
+                                  if (existingVal.includes('-')) {
+                                    initDate = existingVal  // 이미 full date
+                                  } else if (existingVal.includes('말')) {
                                     const [y, m] = targetMonth.split('-').map(Number)
-                                    const last = new Date(y, m, 0).getDate()
-                                    initDate = `${targetMonth}-${String(last).padStart(2, '0')}`
+                                    initDate = `${targetMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
                                   } else {
+                                    const n = parseInt(existingVal)
+                                    if (!isNaN(n)) initDate = `${targetMonth}-${String(n).padStart(2, '0')}`
+                                  }
+                                } else {
+                                  const baseDay = selectedRoom.dueDay
+                                  if (baseDay?.includes('말')) {
+                                    const [y, m] = targetMonth.split('-').map(Number)
+                                    initDate = `${targetMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+                                  } else if (baseDay) {
                                     const n = parseInt(baseDay)
                                     if (!isNaN(n)) initDate = `${targetMonth}-${String(n).padStart(2, '0')}`
                                   }
@@ -1195,7 +1209,6 @@ export default function RoomsClient({
                               value={overrideDateInput}
                               onChange={setOverrideDateInput}
                               minDate={`${targetMonth}-01`}
-                              maxDate={`${targetMonth}-${String(new Date(parseInt(targetMonth.slice(0,4)), parseInt(targetMonth.slice(5,7)), 0).getDate()).padStart(2,'0')}`}
                               className="bg-[var(--canvas)] border border-amber-200 rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] focus:border-amber-500"
                             />
                           </div>
@@ -1212,10 +1225,16 @@ export default function RoomsClient({
                           disabled={!overrideDateInput || isPending}
                           onClick={() => {
                             if (!overrideDateInput) return
-                            const d = new Date(overrideDateInput)
-                            const dayNum = d.getDate()
-                            const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
-                            const val = dayNum >= lastDay ? '말일' : String(dayNum)
+                            const selectedMonth = overrideDateInput.slice(0, 7)
+                            let val: string
+                            if (selectedMonth === targetMonth) {
+                              const d = new Date(overrideDateInput + 'T00:00:00')
+                              const dayNum = d.getDate()
+                              const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+                              val = dayNum >= lastDay ? '말일' : String(dayNum)
+                            } else {
+                              val = overrideDateInput  // cross-month: full date 저장
+                            }
                             const reason = overrideReason.trim()
                             const leaseTermId = selectedRoom.leaseTermId!
                             setShowOverrideForm(false)
@@ -1228,11 +1247,15 @@ export default function RoomsClient({
                           className="w-full py-2 bg-amber-500 active:bg-amber-600 hover:bg-amber-400 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors">
                           {isPending ? '저장 중...' : (() => {
                             if (!overrideDateInput) return '날짜를 선택하세요'
-                            const d = new Date(overrideDateInput)
+                            const selectedMonth = overrideDateInput.slice(0, 7)
+                            if (selectedMonth !== targetMonth) {
+                              const d = new Date(overrideDateInput + 'T00:00:00')
+                              return `${targetMonth} 납부일을 ${d.getMonth()+1}월 ${d.getDate()}일로 조정`
+                            }
+                            const d = new Date(overrideDateInput + 'T00:00:00')
                             const dayNum = d.getDate()
                             const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
-                            const label = dayNum >= lastDay ? '말일' : `${dayNum}일`
-                            return `${targetMonth} 납부일을 ${label}로 조정`
+                            return `${targetMonth} 납부일을 ${dayNum >= lastDay ? '말일' : `${dayNum}일`}로 조정`
                           })()}
                         </button>
                       </div>

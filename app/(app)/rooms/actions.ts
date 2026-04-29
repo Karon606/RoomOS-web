@@ -109,9 +109,14 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const effectiveDueDay = (l.overrideDueDayMonth === targetMonth && l.overrideDueDay)
       ? l.overrideDueDay
       : lease.dueDay
-    const dueDay = effectiveDueDay
-      ? (effectiveDueDay.includes('말') ? 31 : Number(effectiveDueDay))
-      : 1
+    // overrideDueDay가 full date("YYYY-MM-DD")이면 day만 추출, 다른 달이면 말일 취급(cutoff 비교용)
+    const overrideIsFullDate = effectiveDueDay?.includes('-')
+    const overrideIsDiffMonth = overrideIsFullDate && !effectiveDueDay!.startsWith(targetMonth)
+    const dueDay = overrideIsDiffMonth
+      ? 99
+      : overrideIsFullDate
+        ? new Date(effectiveDueDay! + 'T00:00:00').getDate()
+        : effectiveDueDay?.includes('말') ? 31 : Number(effectiveDueDay ?? '1')
 
     const acqDate     = acquisitionDate ? new Date(acquisitionDate) : null
     const acqYyyy     = acqDate ? acqDate.getFullYear() : 2000
@@ -211,7 +216,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       isVacant: false, tenantId: lease.tenant.id,
       tenantName: lease.tenant.name,
       contact: lease.tenant.contacts[0]?.contactValue ?? null,
-      status: lease.status, expected, dueDay: effectiveDueDay,
+      status: lease.status, expected, dueDay: overrideIsFullDate ? lease.dueDay : effectiveDueDay,
       currentPaid: currentPaidRaw, carryOver: carryBalance,
       totalPaid: currentPaidRaw, balance: displayBalance, isPaid,
       leaseTermId: lease.id, depositAmount: lease.depositAmount,
