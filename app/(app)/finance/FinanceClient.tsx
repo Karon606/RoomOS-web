@@ -556,10 +556,12 @@ export default function FinanceClient({
 
   const handleReceiptUpload = async (file: File, setter: (url: string) => void) => {
     setReceiptUploading(true)
+    setError('')
     const fd = new FormData()
-    fd.append('file', file)
+    fd.append('receipt', file)
     const res = await uploadExpenseReceipt(fd)
     if (res.ok) setter(res.url)
+    else setError(res.error)
     setReceiptUploading(false)
   }
 
@@ -1723,19 +1725,19 @@ export default function FinanceClient({
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">영수증</label>
                     <input type="hidden" name="receiptUrl" value={editReceiptUrl} />
-                    <div className="flex items-center gap-2">
-                      <label className="flex-1 flex items-center justify-center gap-1.5 bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2 cursor-pointer hover:border-[var(--coral)] transition-colors">
-                        <span className="text-lg">📎</span>
-                        <span className="text-xs text-[var(--warm-muted)]">{receiptUploading ? '업로드 중...' : editReceiptUrl ? '파일 변경' : '파일 선택'}</span>
-                        <input type="file" accept="image/*,application/pdf" className="hidden" disabled={receiptUploading}
-                          onChange={async e => { const f = e.target.files?.[0]; if (f) await handleReceiptUpload(f, setEditReceiptUrl) }} />
-                      </label>
-                      {editReceiptUrl && (
-                        <a href={editReceiptUrl} target="_blank" rel="noopener noreferrer" className="shrink-0">
-                          <img src={editReceiptUrl} className="w-12 h-12 rounded-xl object-cover border border-[var(--warm-border)]" alt="영수증" />
-                        </a>
-                      )}
-                    </div>
+                    <label className="flex items-center justify-center gap-1.5 w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2 cursor-pointer hover:border-[var(--coral)] transition-colors">
+                      <span className="text-lg">📎</span>
+                      <span className="text-xs text-[var(--warm-muted)]">{receiptUploading ? '업로드 중...' : editReceiptUrl ? '파일 변경' : '파일 선택'}</span>
+                      <input type="file" accept="image/*,application/pdf" className="hidden" disabled={receiptUploading}
+                        onChange={async e => { const f = e.target.files?.[0]; if (f) await handleReceiptUpload(f, setEditReceiptUrl) }} />
+                    </label>
+                    {editReceiptUrl && (
+                      <div className="relative">
+                        <img src={editReceiptUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
+                        <button type="button" onClick={() => setEditReceiptUrl('')}
+                          className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none">✕</button>
+                      </div>
+                    )}
                   </div>
                   {error && <p className="text-red-400 text-sm">{error}</p>}
                 </div>
@@ -1939,19 +1941,19 @@ export default function FinanceClient({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">영수증</label>
                   <input type="hidden" name="receiptUrl" value={addReceiptUrl} />
-                  <div className="flex items-center gap-2">
-                    <label className="flex-1 flex items-center justify-center gap-1.5 bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2 cursor-pointer hover:border-[var(--coral)] transition-colors">
-                      <span className="text-lg">📎</span>
-                      <span className="text-xs text-[var(--warm-muted)]">{receiptUploading ? '업로드 중...' : addReceiptUrl ? '파일 변경' : '파일 선택'}</span>
-                      <input type="file" accept="image/*,application/pdf" className="hidden" disabled={receiptUploading}
-                        onChange={async e => { const f = e.target.files?.[0]; if (f) await handleReceiptUpload(f, setAddReceiptUrl) }} />
-                    </label>
-                    {addReceiptUrl && (
-                      <a href={addReceiptUrl} target="_blank" rel="noopener noreferrer" className="shrink-0">
-                        <img src={addReceiptUrl} className="w-12 h-12 rounded-xl object-cover border border-[var(--warm-border)]" alt="영수증" />
-                      </a>
-                    )}
-                  </div>
+                  <label className="flex items-center justify-center gap-1.5 w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2 cursor-pointer hover:border-[var(--coral)] transition-colors">
+                    <span className="text-lg">📎</span>
+                    <span className="text-xs text-[var(--warm-muted)]">{receiptUploading ? '업로드 중...' : addReceiptUrl ? '파일 변경' : '파일 선택'}</span>
+                    <input type="file" accept="image/*,application/pdf" className="hidden" disabled={receiptUploading}
+                      onChange={async e => { const f = e.target.files?.[0]; if (f) await handleReceiptUpload(f, setAddReceiptUrl) }} />
+                  </label>
+                  {addReceiptUrl && (
+                    <div className="relative">
+                      <img src={addReceiptUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
+                      <button type="button" onClick={() => setAddReceiptUrl('')}
+                        className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none">✕</button>
+                    </div>
+                  )}
                 </div>
                 {error && <p className="text-red-400 text-sm">{error}</p>}
               </div>
