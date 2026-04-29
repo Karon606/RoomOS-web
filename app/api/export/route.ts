@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
   if (scope === 'month') {
     const [leases, payments, property] = await Promise.all([
       prisma.leaseTerm.findMany({
-        where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
         include: {
           room: { select: { roomNo: true } },
           tenant: {
@@ -184,16 +184,16 @@ export async function GET(request: NextRequest) {
     },
   }
 
-  // ── 입주자관리 (현재 입주자: ACTIVE/RESERVED/CHECKOUT_PENDING) ───
+  // ── 입주자관리 (현재 입주자: ACTIVE/RESERVED/CHECKOUT_PENDING/NON_RESIDENT) ───
   const activeTenants = await prisma.tenant.findMany({
     where: {
       propertyId,
-      leaseTerms: { some: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } } },
+      leaseTerms: { some: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } } },
     },
     include: {
       contacts: contactSelect,
       leaseTerms: {
-        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
         include: { room: { select: { roomNo: true } } },
         orderBy: { createdAt: 'desc' },
         take: 1,
