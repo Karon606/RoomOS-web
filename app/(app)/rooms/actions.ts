@@ -499,6 +499,30 @@ export async function getTenantLeaseForDashboard(tenantId: string) {
   })
 }
 
+export async function getTenantQuickInfo(tenantId: string) {
+  const supabase = await createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return null
+  return prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: {
+      id: true, name: true, gender: true, nationality: true,
+      job: true, birthdate: true, memo: true,
+      contacts: { select: { contactType: true, contactValue: true }, take: 3 },
+      leaseTerms: {
+        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        select: {
+          id: true, status: true, rentAmount: true, depositAmount: true,
+          dueDay: true, moveInDate: true, moveOutDate: true, expectedMoveOut: true,
+          room: { select: { roomNo: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      },
+    },
+  })
+}
+
 export async function getPaymentsByLease(leaseTermId: string, targetMonth: string) {
   const propertyId = await getPropertyId()
   const [records, property] = await Promise.all([

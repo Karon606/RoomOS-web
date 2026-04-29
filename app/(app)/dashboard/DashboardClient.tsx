@@ -7,7 +7,7 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { analyzeDashboardWithGemini, getTrendData, type TrendRange, type TrendPoint } from './actions'
 import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS } from '@/lib/chartColors'
-import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment } from '@/app/(app)/rooms/actions'
+import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment, getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { recordRecurringExpense } from '@/app/(app)/finance/actions'
 
 // ── 타입 ────────────────────────────────────────────────────────
@@ -1203,7 +1203,12 @@ function DashEditRow({ editAmount, editDate, editPayMethod, editMemo, setEditAmo
 
 // ── 방 상세 팝업 ─────────────────────────────────────────────────
 
-function RoomDetailPopup({ room, onClose }: { room: DashboardData['rooms'][number]; onClose: () => void }) {
+function RoomDetailPopup({ room, onClose, onOpenPayment, onOpenTenantInfo }: {
+  room: DashboardData['rooms'][number]
+  onClose: () => void
+  onOpenPayment: (tenantId: string) => void
+  onOpenTenantInfo: (tenantId: string) => void
+}) {
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
       onClick={onClose}>
@@ -1266,20 +1271,161 @@ function RoomDetailPopup({ room, onClose }: { room: DashboardData['rooms'][numbe
             </div>
           )}
         </div>
-        <div className="px-5 pb-4 flex flex-col gap-2">
-          <Link href={`/rooms?roomNo=${encodeURIComponent(room.roomNo)}`}
-            className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-colors"
-            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-            호실 관리에서 보기 →
-          </Link>
-          {room.tenantId && (
-            <Link href={`/tenants?tenantId=${encodeURIComponent(room.tenantId)}`}
-              className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-colors"
+        {room.tenantId && (
+          <div className="px-5 pb-4 flex flex-col gap-2">
+            <button
+              onClick={() => { onOpenPayment(room.tenantId!); onClose() }}
+              className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-colors hover:bg-[var(--canvas)]"
               style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-              입주자 관리에서 보기 →
-            </Link>
-          )}
+              호실 수납 관리 →
+            </button>
+            <button
+              onClick={() => { onOpenTenantInfo(room.tenantId!); onClose() }}
+              className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-colors hover:bg-[var(--canvas)]"
+              style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+              입주자 정보 보기 →
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── 입주자 빠른 정보 모달 ─────────────────────────────────────────
+
+type TenantQuickInfo = Awaited<ReturnType<typeof getTenantQuickInfo>>
+
+const GENDER_LABEL_KO: Record<string, string> = { MALE: '남성', FEMALE: '여성', OTHER: '기타', UNKNOWN: '미기재' }
+const CONTACT_LABEL: Record<string, string> = { PHONE: '전화', EMAIL: '이메일', KAKAO: '카카오', OTHER: '기타' }
+const LEASE_STATUS_LABEL: Record<string, string> = { ACTIVE: '거주중', RESERVED: '입실 예정', CHECKOUT_PENDING: '퇴실 예정' }
+
+function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: () => void }) {
+  const [info, setInfo] = useState<TenantQuickInfo>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      const data = await getTenantQuickInfo(tenantId)
+      if (!cancelled) { setInfo(data); setLoading(false) }
+    })()
+    return () => { cancelled = true }
+  }, [tenantId])
+
+  const lease = info?.leaseTerms?.[0] ?? null
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[var(--cream)] rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
+          <span className="text-base font-bold text-[var(--warm-dark)]">
+            {loading ? '불러오는 중…' : (info?.name ?? '입주자 정보')}
+          </span>
+          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-lg leading-none">✕</button>
         </div>
+
+        {loading ? (
+          <div className="px-5 py-8 text-center text-sm text-[var(--warm-muted)]">불러오는 중…</div>
+        ) : !info ? (
+          <div className="px-5 py-8 text-center text-sm text-[var(--warm-muted)]">입주자 정보를 찾을 수 없습니다.</div>
+        ) : (
+          <div className="px-5 py-4 space-y-2 text-sm max-h-[70vh] overflow-y-auto">
+            {/* 기본 정보 */}
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-1">기본 정보</p>
+            {info.gender && (
+              <div className="flex justify-between">
+                <span className="text-[var(--warm-muted)]">성별</span>
+                <span className="text-[var(--warm-dark)]">{GENDER_LABEL_KO[info.gender] ?? info.gender}</span>
+              </div>
+            )}
+            {info.birthdate && (
+              <div className="flex justify-between">
+                <span className="text-[var(--warm-muted)]">생년월일</span>
+                <span className="text-[var(--warm-dark)]">{new Date(info.birthdate).toLocaleDateString('ko-KR')}</span>
+              </div>
+            )}
+            {info.nationality && (
+              <div className="flex justify-between">
+                <span className="text-[var(--warm-muted)]">국적</span>
+                <span className="text-[var(--warm-dark)]">{info.nationality}</span>
+              </div>
+            )}
+            {info.job && (
+              <div className="flex justify-between">
+                <span className="text-[var(--warm-muted)]">직업</span>
+                <span className="text-[var(--warm-dark)]">{info.job}</span>
+              </div>
+            )}
+
+            {/* 연락처 */}
+            {info.contacts.length > 0 && (
+              <>
+                <div className="border-t border-[var(--warm-border)] pt-2 mt-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-2">연락처</p>
+                  {info.contacts.map((c, i) => (
+                    <div key={i} className="flex justify-between mb-1">
+                      <span className="text-[var(--warm-muted)]">{CONTACT_LABEL[c.contactType] ?? c.contactType}</span>
+                      <span className="text-[var(--warm-dark)] font-medium">{c.contactValue}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* 계약 정보 */}
+            {lease && (
+              <div className="border-t border-[var(--warm-border)] pt-2 mt-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-2">계약 정보</p>
+                <div className="flex justify-between mb-1">
+                  <span className="text-[var(--warm-muted)]">호실</span>
+                  <span className="text-[var(--warm-dark)] font-medium">{lease.room?.roomNo}호</span>
+                </div>
+                <div className="flex justify-between mb-1">
+                  <span className="text-[var(--warm-muted)]">상태</span>
+                  <span className="text-[var(--warm-dark)]">{LEASE_STATUS_LABEL[lease.status] ?? lease.status}</span>
+                </div>
+                <div className="flex justify-between mb-1">
+                  <span className="text-[var(--warm-muted)]">이용료</span>
+                  <span className="font-semibold text-[var(--warm-dark)]">{lease.rentAmount.toLocaleString()}원</span>
+                </div>
+                {lease.depositAmount > 0 && (
+                  <div className="flex justify-between mb-1">
+                    <span className="text-[var(--warm-muted)]">보증금</span>
+                    <span className="text-[var(--warm-dark)]">{lease.depositAmount.toLocaleString()}원</span>
+                  </div>
+                )}
+                {lease.dueDay && (
+                  <div className="flex justify-between mb-1">
+                    <span className="text-[var(--warm-muted)]">납부일</span>
+                    <span className="text-[var(--warm-dark)]">매월 {lease.dueDay}일</span>
+                  </div>
+                )}
+                {lease.moveInDate && (
+                  <div className="flex justify-between mb-1">
+                    <span className="text-[var(--warm-muted)]">입실일</span>
+                    <span className="text-[var(--warm-dark)]">{new Date(lease.moveInDate).toLocaleDateString('ko-KR')}</span>
+                  </div>
+                )}
+                {(lease.expectedMoveOut ?? lease.moveOutDate) && (
+                  <div className="flex justify-between mb-1">
+                    <span className="text-[var(--warm-muted)]">퇴실(예정)</span>
+                    <span className="text-[var(--warm-dark)]">{new Date((lease.expectedMoveOut ?? lease.moveOutDate)!).toLocaleDateString('ko-KR')}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 메모 */}
+            {info.memo && (
+              <div className="border-t border-[var(--warm-border)] pt-2 mt-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-1">메모</p>
+                <p className="text-xs text-[var(--warm-dark)] whitespace-pre-wrap">{info.memo}</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1301,6 +1447,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
   const [tab, setTab]                             = useState<Tab>('overview')
   const [selectedRoom, setSelectedRoom]           = useState<DashboardData['rooms'][number] | null>(null)
   const [dashTenantId, setDashTenantId]           = useState<string | null>(null)
+  const [tenantInfoId, setTenantInfoId]           = useState<string | null>(null)
   const [selectedAlert, setSelectedAlert]         = useState<AlertItem | null>(null)
   const [recordingAlert, setRecordingAlert]       = useState<AlertItem | null>(null)
   const [unpaidExpanded, setUnpaidExpanded]       = useState(false)
@@ -1731,7 +1878,14 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         </div>
       </div>
 
-      {selectedRoom && <RoomDetailPopup room={selectedRoom} onClose={() => setSelectedRoom(null)} />}
+      {selectedRoom && (
+        <RoomDetailPopup
+          room={selectedRoom}
+          onClose={() => setSelectedRoom(null)}
+          onOpenPayment={id => { setSelectedRoom(null); setDashTenantId(id) }}
+          onOpenTenantInfo={id => { setSelectedRoom(null); setTenantInfoId(id) }}
+        />
+      )}
       {selectedAlert && (
         <AlertDetailModal
           alert={selectedAlert}
@@ -1755,6 +1909,12 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           paymentMethods={paymentMethods}
           onClose={() => setDashTenantId(null)}
           onPaymentDone={() => router.refresh()}
+        />
+      )}
+      {tenantInfoId && (
+        <TenantQuickModal
+          tenantId={tenantInfoId}
+          onClose={() => setTenantInfoId(null)}
         />
       )}
     </div>
