@@ -28,7 +28,7 @@ export type DashboardData = {
   totalRooms:        number
   vacantRooms:       number
   occupiedRooms:     number
-  statusCounts:      { active: number; reserved: number; checkout: number; nonResident: number }
+  statusCounts:      { active: number; reserved: number; checkout: number; nonResident: number; waitingTour: number }
   totalTenants:      number
   genderDist:        { label: string; count: number; percent: number }[]
   nationalityDist:   { label: string; count: number; percent: number }[]
@@ -602,12 +602,13 @@ function TenantsTab({ data }: { data: DashboardData }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard label="전체 입주자"  value={`${data.totalTenants}명`}               sub="현재 계약 기준" />
-        <StatCard label="거주중"       value={`${data.statusCounts.active}명`}         sub="ACTIVE"        colorStyle={{ color: STATUS_COLORS.active }} />
-        <StatCard label="입실 예정"    value={`${data.statusCounts.reserved}명`}       sub="RESERVED"      colorStyle={{ color: STATUS_COLORS.reserved }} />
-        <StatCard label="퇴실 예정"    value={`${data.statusCounts.checkout}명`}       sub="CHECKOUT"      colorStyle={{ color: STATUS_COLORS.checkout }} />
-        <StatCard label="비거주자"     value={`${data.statusCounts.nonResident}명`}    sub="NON_RESIDENT"  colorStyle={{ color: STATUS_COLORS.nonResident }} />
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <StatCard label={`전체 입주자 (현재 계약 기준)`} value={`${data.totalTenants}명`} sub="" />
+        <StatCard label="거주중"    value={`${data.statusCounts.active}명`}      sub=""  colorStyle={{ color: STATUS_COLORS.active }} />
+        <StatCard label="입실 예정" value={`${data.statusCounts.reserved}명`}    sub=""  colorStyle={{ color: STATUS_COLORS.reserved }} />
+        <StatCard label="퇴실 예정" value={`${data.statusCounts.checkout}명`}    sub=""  colorStyle={{ color: STATUS_COLORS.checkout }} />
+        <StatCard label="비거주자"  value={`${data.statusCounts.nonResident}명`} sub=""  colorStyle={{ color: STATUS_COLORS.nonResident }} />
+        <StatCard label="투어 대기" value={`${data.statusCounts.waitingTour}명`} sub=""  colorStyle={{ color: '#a855f7' }} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1476,39 +1477,28 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
     <div className="space-y-3.5">
 
       {/* ── KPI 카드 ────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
+      <div className="grid grid-cols-2 gap-3.5">
 
-        {/* 이달 수입 */}
-        <div className="rounded-xl" style={{ background: 'var(--coral)', padding: '18px 20px' }}>
+        {/* 당월 수납액 — 상단 full-width */}
+        <div className="col-span-2 rounded-xl" style={{ background: 'var(--coral)', padding: '18px 20px' }}>
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'rgba(255,252,247,0.6)', marginBottom: 8 }}>
-            이달 수입
+            당월 수납액
           </p>
-          <p style={{ fontSize: 22, fontWeight: 700, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
-            {data.totalRevenue.toLocaleString()}
-            <small style={{ fontSize: 12, fontWeight: 400, color: 'rgba(255,252,247,0.6)', marginLeft: 2 }}>원</small>
-          </p>
-          <p style={{ fontSize: 11, color: 'rgba(255,252,247,0.55)' }}>
-            {revChange != null && (
-              <em style={{ fontStyle: 'normal', color: '#fbbf24', marginRight: 3 }}>
-                {revChange >= 0 ? '+' : ''}{revChange}%
-              </em>
-            )}
-            수납액+기타수익
-          </p>
-        </div>
-
-        {/* 입실 현황 */}
-        <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
-          <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
-            입실 현황
-          </p>
-          <p style={{ fontSize: 26, fontWeight: 700, color: '#5a4a3a', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
-            {data.occupiedRooms}
-            <small style={{ fontSize: 13, fontWeight: 400, color: 'var(--warm-muted)' }}> / {data.totalRooms}</small>
-          </p>
-          <p style={{ fontSize: 11, color: 'var(--warm-muted)' }}>
-            공실 <em style={{ fontStyle: 'normal', color: 'var(--coral)' }}>{data.vacantRooms}개</em>
-          </p>
+          <div className="flex items-end justify-between gap-4 flex-wrap">
+            <p style={{ fontSize: 26, fontWeight: 700, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1 }}>
+              {data.totalRevenue.toLocaleString()}
+              <small style={{ fontSize: 13, fontWeight: 400, color: 'rgba(255,252,247,0.6)', marginLeft: 3 }}>원</small>
+            </p>
+            <p style={{ fontSize: 11, color: 'rgba(255,252,247,0.6)', textAlign: 'right', lineHeight: 1.5 }}>
+              {revChange != null && (
+                <em style={{ fontStyle: 'normal', color: '#fbbf24', marginRight: 6 }}>
+                  {revChange >= 0 ? '+' : ''}{revChange}%
+                </em>
+              )}
+              임대수납액+기타수익<br />
+              <span style={{ fontSize: 10, color: 'rgba(255,252,247,0.45)' }}>과입금분은 익월 매출로 귀속</span>
+            </p>
+          </div>
         </div>
 
         {/* 이번 달 지출 */}
@@ -1542,7 +1532,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           const net = data.netProfit
           const isPos = net >= 0
           return (
-            <div className="col-span-2 lg:col-span-1 rounded-xl" style={{ background: isPos ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.07)', border: `1px solid ${isPos ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.2)'}`, padding: '18px 20px' }}>
+            <div className="rounded-xl" style={{ background: isPos ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.07)', border: `1px solid ${isPos ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.2)'}`, padding: '18px 20px' }}>
               <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
                 현재 순이익
               </p>
@@ -1550,10 +1540,24 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                 {isPos ? '+' : ''}{net.toLocaleString()}
                 <small style={{ fontSize: 12, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
               </p>
-              <p style={{ fontSize: 11, color: 'var(--warm-muted)' }}>수입 − 실제 지출</p>
+              <p style={{ fontSize: 11, color: 'var(--warm-muted)' }}>수납 − 실제 지출</p>
             </div>
           )
         })()}
+
+        {/* 입실 현황 */}
+        <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
+          <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
+            입실 현황
+          </p>
+          <p style={{ fontSize: 26, fontWeight: 700, color: '#5a4a3a', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+            {data.occupiedRooms}
+            <small style={{ fontSize: 13, fontWeight: 400, color: 'var(--warm-muted)' }}> / {data.totalRooms}</small>
+          </p>
+          <p style={{ fontSize: 11, color: 'var(--warm-muted)' }}>
+            공실 <em style={{ fontStyle: 'normal', color: 'var(--coral)' }}>{data.vacantRooms}개</em>
+          </p>
+        </div>
       </div>
 
       {/* ── 알림 스트립 (항상 표시) ─────────────────────────────── */}

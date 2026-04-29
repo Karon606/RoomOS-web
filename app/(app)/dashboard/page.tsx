@@ -699,7 +699,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     totalRooms,
     vacantRooms,
     occupiedRooms: totalRooms - vacantRooms,
-    statusCounts: { active: activeCount, reserved: reservedCount, checkout: checkoutCount, nonResident: nonResidentCount },
+    statusCounts: { active: activeCount, reserved: reservedCount, checkout: checkoutCount, nonResident: nonResidentCount, waitingTour: waitingTourLeases.length },
     totalTenants:    activeTenants.length,
     genderDist:      toDistribution(genderMap),
     nationalityDist: toDistribution(nationalityMap),
