@@ -464,6 +464,13 @@ export default function FinanceClient({
   const [assetBrand, setAssetBrand]     = useState('')
   const [assetError, setAssetError]     = useState('')
   const [assetFormKey, setAssetFormKey] = useState(0)
+  const [payDayInput, setPayDayInput]   = useState('')
+  const [cutOffDayInput, setCutOffDayInput] = useState('')
+
+  useEffect(() => {
+    setPayDayInput(editingAcc?.payDay ? displayDay(editingAcc.payDay) : '')
+    setCutOffDayInput(editingAcc?.cutOffDay ? displayDay(editingAcc.cutOffDay) : '')
+  }, [assetFormKey, editingAcc])
 
   useEffect(() => {
     const savedW = loadFinWidths()
@@ -1420,7 +1427,12 @@ export default function FinanceClient({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">결제일</label>
                   <input type="text" name="payDay"
-                    defaultValue={editingAcc?.payDay ? displayDay(editingAcc.payDay) : ''}
+                    value={payDayInput}
+                    onChange={e => setPayDayInput(e.target.value.replace(/일$/, ''))}
+                    onBlur={e => {
+                      const raw = e.target.value.replace(/일$/, '').trim()
+                      if (/^\d+$/.test(raw)) setPayDayInput(raw + '일')
+                    }}
                     placeholder="예: 15, 말일"
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                 </div>
@@ -1430,7 +1442,12 @@ export default function FinanceClient({
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">이용종료일 (결제 기준일)</label>
                     <input type="text" name="cutOffDay"
-                      defaultValue={editingAcc?.cutOffDay ? displayDay(editingAcc.cutOffDay) : ''}
+                      value={cutOffDayInput}
+                      onChange={e => setCutOffDayInput(e.target.value.replace(/일$/, ''))}
+                      onBlur={e => {
+                        const raw = e.target.value.replace(/일$/, '').trim()
+                        if (/^\d+$/.test(raw)) setCutOffDayInput(raw + '일')
+                      }}
                       placeholder="예: 25, 말일"
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   </div>
