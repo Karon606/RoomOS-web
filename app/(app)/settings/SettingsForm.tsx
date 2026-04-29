@@ -299,18 +299,39 @@ export default function SettingsForm({
   const [showRecForm, setShowRecForm] = useState(false)
   const [editingRec, setEditingRec] = useState<RecurringExpenseRow | null>(null)
   const [recForm, setRecForm] = useState({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: '', memo: '' })
+  const [recDueDayDisp, setRecDueDayDisp] = useState('25일')
   const [recPending, startRecTransition] = useTransition()
+
+  const fmtRecDueDay = (d: string) => {
+    const n = parseInt(d, 10)
+    if (isNaN(n) || n <= 0) return d
+    return n >= 30 ? '말일' : `${n}일`
+  }
+  const applyRecDueDay = (input: string) => {
+    const t = input.trim()
+    if (!t) { setRecForm(p => ({ ...p, dueDay: '25' })); setRecDueDayDisp('25일'); return }
+    if (/^[ㅁ마말]/.test(t) || t === '말일') {
+      setRecForm(p => ({ ...p, dueDay: '31' })); setRecDueDayDisp('말일'); return
+    }
+    const n = parseInt(t.replace(/\D/g, ''), 10)
+    if (!isNaN(n) && n > 0) {
+      if (n >= 30) { setRecForm(p => ({ ...p, dueDay: '31' })); setRecDueDayDisp('말일') }
+      else { setRecForm(p => ({ ...p, dueDay: String(n) })); setRecDueDayDisp(`${n}일`) }
+    }
+  }
 
   useEffect(() => { getRecurringExpenses().then(setRecurringList).catch(console.error) }, [])
 
   const openNewRec = () => {
     setEditingRec(null)
     setRecForm({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: acqDate ?? '', memo: '' })
+    setRecDueDayDisp('25일')
     setShowRecForm(true)
   }
   const openEditRec = (r: RecurringExpenseRow) => {
     setEditingRec(r)
     setRecForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', memo: r.memo ?? '' })
+    setRecDueDayDisp(fmtRecDueDay(r.dueDay.toString()))
     setShowRecForm(true)
   }
   const handleSaveRec = () => {
@@ -548,8 +569,22 @@ export default function SettingsForm({
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">납부일 (매월)</label>
-                    <input type="number" min={1} max={31} value={recForm.dueDay}
-                      onChange={e => setRecForm(p => ({ ...p, dueDay: e.target.value }))}
+                    <input
+                      type="text"
+                      value={recDueDayDisp}
+                      onChange={e => {
+                        const v = e.target.value
+                        const stripped = v.replace(/일$/, '').trim()
+                        const n = Number(stripped)
+                        if (/[ㅁ마말]/.test(v) || (stripped !== '' && !isNaN(n) && n >= 30)) {
+                          setRecForm(p => ({ ...p, dueDay: '31' })); setRecDueDayDisp('말일')
+                        } else {
+                          setRecDueDayDisp(v)
+                        }
+                      }}
+                      onFocus={() => setRecDueDayDisp(prev => prev.replace(/일$/, ''))}
+                      onBlur={() => applyRecDueDay(recDueDayDisp)}
+                      placeholder="25일, 말일 등"
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                   </div>
                 </div>
@@ -629,7 +664,7 @@ export default function SettingsForm({
                       {!r.isActive && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">비활성</span>}
                     </div>
                     <p className="text-xs text-[var(--warm-muted)] mt-0.5">
-                      매월 {r.dueDay}일 · {r.amount.toLocaleString()}원 · {r.category} · {r.alertDaysBefore}일 전 알림
+                      매월 {r.dueDay >= 30 ? '말일' : `${r.dueDay}일`} · {r.amount.toLocaleString()}원 · {r.category} · {r.alertDaysBefore}일 전 알림
                     </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
