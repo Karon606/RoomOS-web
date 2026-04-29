@@ -324,6 +324,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     if ((varCntMap[id] ?? 0) >= 2) variableAvgMap[id] = Math.round(varSumMap[id] / varCntMap[id])
   }
 
+  const hasExpenseHistory = (nonRecurringPast._sum.amount ?? 0) > 0
   let expectedExpense = 0
   for (const re of recurringExpenses) {
     const isVar = (re as any).isVariable as boolean
@@ -346,19 +347,20 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     ? `${acquisitionDate.getFullYear()}-${String(acquisitionDate.getMonth() + 1).padStart(2, '0')}`
     : null
   const cutoffDay = acquisitionDate ? acquisitionDate.getDate() : 0
+  const prevOwnerLeaseIds = new Set<string>()
   if (cutoffMonthStr && targetMonth < cutoffMonthStr) {
-    // 인수 이전 월 전체: 모든 임차인이 양도인 몫
     for (const l of unpaidLeasesRaw) {
       paymentByLeaseForStatus[l.id] = l.rentAmount
+      prevOwnerLeaseIds.add(l.id)
     }
   } else if (cutoffMonthStr && targetMonth === cutoffMonthStr) {
-    // 인수 월: 납부일이 기준일 이전인 임차인만 양도인 몫
     for (const l of unpaidLeasesRaw) {
       const eff = effectiveDueDay(l)
       if (!eff) continue
       const dayNum = parseInt(eff, 10)
       if (!isNaN(dayNum) && dayNum < cutoffDay) {
         paymentByLeaseForStatus[l.id] = l.rentAmount
+        prevOwnerLeaseIds.add(l.id)
       }
     }
   }
@@ -371,6 +373,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   function calcDaysOverdue(dueDay: string | null): number | null {
     if (!dueDay) return null
     const todayCopy = new Date(); todayCopy.setHours(0, 0, 0, 0)
+    if (dueDay.includes('-')) {
+      // 다음달 지정 전체 날짜 (YYYY-MM-DD)
+      const dueDate = new Date(dueDay + 'T00:00:00')
+      dueDate.setHours(0, 0, 0, 0)
+      return Math.round((todayCopy.getTime() - dueDate.getTime()) / 86400000)
+    }
     const y = todayCopy.getFullYear()
     const m = todayCopy.getMonth() + 1
     let dayNum: number
@@ -393,7 +401,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const billableLeases = activeLeases.filter(l => l.rentAmount > 0)
   const paidCount      = billableLeases.filter(l => (paymentByLeaseForStatus[l.id] ?? 0) >= l.rentAmount).length
   const unpaidCount    = billableLeases.length - paidCount
-  const totalExpected  = billableLeases.reduce((s, l) => s + l.rentAmount, 0)
+  // 양도인 몫 제외 — 수납완료 + 미수납과 합산이 맞도록
+  const totalExpected  = billableLeases
+    .filter(l => !prevOwnerLeaseIds.has(l.id))
+    .reduce((s, l) => s + l.rentAmount, 0)
 
   const categoryBreakdown = expByCategory.map(c => ({
     category: c.category,
@@ -685,6 +696,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     rooms:           roomsData,
     alerts:          alertItems,
     expectedExpense,
+    hasExpenseHistory,
     activity:        activityItems,
     unpaidLeases,
   }

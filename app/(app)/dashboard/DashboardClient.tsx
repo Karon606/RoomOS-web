@@ -36,6 +36,7 @@ export type DashboardData = {
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
   alerts:            { text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number }[]
   expectedExpense:   number
+  hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
   unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; unpaidAmount: number }[]
 }
@@ -1684,7 +1685,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                     {/* ── 지출 섹션 ── */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between mb-1">
-                        <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>예상 지출</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>
+                          예상 지출{!data.hasExpenseHistory ? <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 4 }}>고정지출 기준</span> : null}
+                        </span>
                         <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>
                           {Math.round(data.expectedExpense / 10000).toLocaleString()}만원
                         </span>

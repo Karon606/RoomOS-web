@@ -112,6 +112,13 @@ const WINDOW_LABEL: Record<string, string> = {
 // 납부일 경과/잔여일 계산
 function getDueInfo(dueDay: string | null, targetMonth: string): { days: number; overdue: boolean } | null {
   if (!dueDay) return null
+  // 다음달 지정 전체 날짜 (YYYY-MM-DD)
+  if (dueDay.includes('-')) {
+    const due   = new Date(dueDay + 'T00:00:00')
+    const today = new Date(); today.setHours(0, 0, 0, 0); due.setHours(0, 0, 0, 0)
+    const diff  = Math.round((today.getTime() - due.getTime()) / 86400000)
+    return { days: Math.abs(diff), overdue: diff > 0 }
+  }
   const [yyyy, mm] = targetMonth.split('-').map(Number)
   const dayNum = dueDay.includes('말')
     ? new Date(yyyy, mm, 0).getDate()
@@ -123,6 +130,12 @@ function getDueInfo(dueDay: string | null, targetMonth: string): { days: number;
   return { days: Math.abs(diff), overdue: diff > 0 }
 }
 
+function getEffectiveDueInfo(room: RoomStatus, targetMonth: string): ReturnType<typeof getDueInfo> {
+  const isOverrideActive = room.overrideDueDayMonth === targetMonth && !!room.overrideDueDay
+  const effectiveDay = isOverrideActive ? room.overrideDueDay : room.dueDay
+  return getDueInfo(effectiveDay, targetMonth)
+}
+
 // ── 정렬 ─────────────────────────────────────────────────────────
 
 type SortKey = 'roomNo' | 'type' | 'windowType' | 'tenantName' | 'contact'
@@ -130,9 +143,8 @@ type SortKey = 'roomNo' | 'type' | 'windowType' | 'tenantName' | 'contact'
 type SortDir = 'asc' | 'desc'
 
 function getDueSortValue(room: RoomStatus, targetMonth: string): number {
-  const info = getDueInfo(room.dueDay, targetMonth)
+  const info = getEffectiveDueInfo(room, targetMonth)
   if (!info) return 0
-  // overdue → positive (15일 초과 = +15), 잔여 → negative (5일 후 = -5)
   return info.overdue ? info.days : -info.days
 }
 
@@ -612,7 +624,7 @@ export default function RoomsClient({
       {/* 수납 현황 — 모바일 카드 뷰 */}
       <div className="sm:hidden space-y-2">
         {displayed.map(room => {
-          const dueInfo = !room.isPaid ? getDueInfo(room.dueDay, targetMonth) : null
+          const dueInfo = !room.isPaid ? getEffectiveDueInfo(room, targetMonth) : null
           return (
             <div key={room.roomId}
               onClick={() => !room.isFutureMonth && openPayModal(room)}
@@ -776,7 +788,7 @@ export default function RoomsClient({
                           {room.isPaid ? '완납' : '미납'}
                         </span>
                         {!room.isPaid && (() => {
-                          const info = getDueInfo(room.dueDay, targetMonth)
+                          const info = getEffectiveDueInfo(room, targetMonth)
                           if (!info) return null
                           if (info.days === 0) return (
                             <span className="text-xs text-orange-600 font-medium">오늘</span>
