@@ -33,7 +33,7 @@ export type DashboardData = {
   genderDist:        { label: string; count: number; percent: number }[]
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
-  rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
+  rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
   alerts:            { text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number }[]
   expectedExpense:   number
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
@@ -1266,12 +1266,19 @@ function RoomDetailPopup({ room, onClose }: { room: DashboardData['rooms'][numbe
             </div>
           )}
         </div>
-        <div className="px-5 pb-4">
-          <Link href={`/room-manage`}
+        <div className="px-5 pb-4 flex flex-col gap-2">
+          <Link href={`/rooms?roomNo=${encodeURIComponent(room.roomNo)}`}
             className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-colors"
             style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
             호실 관리에서 보기 →
           </Link>
+          {room.tenantId && (
+            <Link href={`/tenants?tenantId=${encodeURIComponent(room.tenantId)}`}
+              className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-colors"
+              style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+              입주자 관리에서 보기 →
+            </Link>
+          )}
         </div>
       </div>
     </div>

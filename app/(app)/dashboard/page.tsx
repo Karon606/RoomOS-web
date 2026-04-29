@@ -211,7 +211,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         rentUpdateDate: true,
         leaseTerms: {
           where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
-          select: { tenant: { select: { name: true } }, status: true },
+          select: { tenant: { select: { id: true, name: true } }, status: true },
           orderBy: { createdAt: 'desc' },
         },
       },
@@ -464,6 +464,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     scheduledRent: r.scheduledRent,
     rentUpdateDate: r.rentUpdateDate ? new Date(r.rentUpdateDate).toISOString().slice(0, 10) : null,
     tenantName:    r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.tenant.name ?? null,
+    tenantId:      r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.tenant.id ?? null,
     tenantStatus:  r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.status ?? null,
   }))
 

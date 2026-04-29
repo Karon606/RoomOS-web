@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from './actions'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -163,6 +163,7 @@ export default function RoomsClient({
 }) {
   const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [selectedRoom, setSelectedRoom] = useState<RoomStatus | null>(null)
   const [paymentHistory, setPaymentHistory] = useState<PaymentRecord[]>([])
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
@@ -333,6 +334,14 @@ export default function RoomsClient({
       setLoadingHistory(false)
     }
   }
+
+  // ?roomNo=xxx 딥링크 — 대시보드 팝업에서 넘어올 때 해당 호실 모달 자동 오픈
+  useEffect(() => {
+    const roomNo = searchParams.get('roomNo')
+    if (!roomNo) return
+    const room = roomStatus.find(r => r.roomNo === roomNo)
+    if (room && !room.isFutureMonth) openPayModal(room)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleUpdatePayment = (p: PaymentRecord) => {
     setEditingPayId(p.id)
