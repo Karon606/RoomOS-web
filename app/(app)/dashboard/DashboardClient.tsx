@@ -1482,7 +1482,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         {/* 당월 수납액 — 상단 full-width */}
         <div className="col-span-2 rounded-xl" style={{ background: 'var(--coral)', padding: '18px 20px' }}>
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'rgba(255,252,247,0.6)', marginBottom: 8 }}>
-            당월 수납액
+            당월 매출 현황
           </p>
           <div className="flex items-end justify-between gap-4 flex-wrap">
             <p style={{ fontSize: 26, fontWeight: 700, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1 }}>
