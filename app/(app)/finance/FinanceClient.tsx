@@ -218,16 +218,19 @@ function DonutChart({
 }
 
 function StackedBar({
-  segments, total, maxTotal, label, colorMap,
+  segments, total, maxTotal, label, sublabel, colorMap,
 }: {
   segments: { category: string; amount: number }[]
-  total: number; maxTotal: number; label: string
+  total: number; maxTotal: number; label: string; sublabel?: string
   colorMap: Record<string, string>
 }) {
   const barPct = maxTotal > 0 ? (total / maxTotal) * 100 : 0
   return (
     <div className="flex items-center gap-2">
-      <span className="text-[11px] text-[var(--warm-muted)] w-14 shrink-0 leading-tight">{label}</span>
+      <div className="w-16 shrink-0">
+        <span className="text-[11px] font-medium text-[var(--warm-dark)] leading-tight block">{label}</span>
+        {sublabel && <span className="text-[10px] text-[var(--warm-muted)] leading-tight block">{sublabel}</span>}
+      </div>
       <div className="flex-1 bg-[var(--canvas)] rounded-full h-4 overflow-hidden">
         {total > 0 ? (
           <div className="h-full flex rounded-full overflow-hidden" style={{ width: `${barPct}%` }}>
@@ -771,25 +774,27 @@ export default function FinanceClient({
 
           {/* 도넛 + 범례 */}
           <div className="flex items-start gap-4">
-            <DonutChart
-              segments={donutSegments}
-              centerLabel={`${Math.round(currentTotal / 10000).toLocaleString()}만`}
-              centerSub="총 지출"
-              size={120}
-              strokeWidth={18}
-            />
-            <div className="flex-1 space-y-2 pt-1">
+            <div className="shrink-0">
+              <DonutChart
+                segments={donutSegments}
+                centerLabel={`${Math.round(currentTotal / 10000).toLocaleString()}만`}
+                centerSub="총 지출"
+                size={150}
+                strokeWidth={22}
+              />
+            </div>
+            <div className="flex-1 space-y-2 pt-1 min-w-0">
               {allCats.filter(cat => (currentCatMap[cat] ?? 0) > 0).map(cat => {
                 const amt = currentCatMap[cat] ?? 0
                 const pct = currentTotal > 0 ? Math.round((amt / currentTotal) * 100) : 0
                 return (
-                  <div key={cat} className="flex items-center gap-2">
+                  <div key={cat} className="flex items-center gap-1.5">
                     <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: catColorMap[cat] }} />
-                    <span className="text-xs text-[var(--warm-muted)] flex-1 truncate">{cat}</span>
+                    <span className="text-xs text-[var(--warm-muted)] flex-1 truncate min-w-0">{cat}</span>
                     <span className="text-xs font-medium text-[var(--warm-dark)] font-mono shrink-0">
-                      {Math.round(amt / 10000).toLocaleString()}만
+                      {amt.toLocaleString()}원
                     </span>
-                    <span className="text-[10px] text-[var(--warm-muted)] w-7 text-right shrink-0">{pct}%</span>
+                    <span className="text-[10px] text-[var(--warm-muted)] w-6 text-right shrink-0">{pct}%</span>
                   </div>
                 )
               })}
@@ -802,17 +807,17 @@ export default function FinanceClient({
             <StackedBar
               segments={allCats.map(cat => ({ category: cat, amount: currentCatMap[cat] ?? 0 }))}
               total={currentTotal} maxTotal={maxTotal}
-              label={fmtMonthLabel(targetMonth)} colorMap={catColorMap}
+              label="이달" sublabel={fmtMonthLabel(targetMonth)} colorMap={catColorMap}
             />
             <StackedBar
               segments={allCats.map(cat => ({ category: cat, amount: prevCatMap[cat] ?? 0 }))}
               total={prevTotal} maxTotal={maxTotal}
-              label={fmtMonthLabel(prevMonth)} colorMap={catColorMap}
+              label="지난달" sublabel={fmtMonthLabel(prevMonth)} colorMap={catColorMap}
             />
             <StackedBar
               segments={allCats.map(cat => ({ category: cat, amount: lastYearCatMap[cat] ?? 0 }))}
               total={lastYearTotal} maxTotal={maxTotal}
-              label={fmtMonthLabel(lastYearMonth)} colorMap={catColorMap}
+              label="전년동월" sublabel={fmtMonthLabel(lastYearMonth)} colorMap={catColorMap}
             />
           </div>
         </div>
@@ -1270,22 +1275,22 @@ export default function FinanceClient({
                         {g.billMonth.replace('-', '년 ')}월 청구 총액
                       </span>
                       <span className="text-xl font-bold text-red-400 font-mono">
-                        <MoneyDisplay amount={g.total} />
+                        {g.total.toLocaleString()}원
                       </span>
                     </div>
 
                     {/* 지출 목록 */}
                     <div className="max-h-40 overflow-y-auto space-y-1.5">
                       {g.items.map(item => (
-                        <div key={item.id} className="flex items-center justify-between text-xs">
-                          <span className="text-[var(--warm-mid)]">
+                        <div key={item.id} className="flex items-center justify-between text-xs gap-2">
+                          <span className="text-[var(--warm-mid)] min-w-0 truncate">
                             {new Date(item.date).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
                             &nbsp;
                             <span className="text-[var(--warm-muted)]">{item.category}</span>
                             {item.detail && <span className="text-[var(--warm-muted)]"> · {item.detail}</span>}
                           </span>
-                          <span className="text-[var(--warm-dark)] font-medium font-mono">
-                            <MoneyDisplay amount={item.amount} />
+                          <span className="text-[var(--warm-dark)] font-medium font-mono shrink-0">
+                            {item.amount.toLocaleString()}원
                           </span>
                         </div>
                       ))}
