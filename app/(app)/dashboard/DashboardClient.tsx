@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { analyzeDashboardWithGemini, getTrendData, type TrendRange, type TrendPoint } from './actions'
-import { EXPENSE_CATEGORY_COLORS, CHART_COLORS, GENDER_COLORS, STATUS_COLORS } from '@/lib/chartColors'
+import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS } from '@/lib/chartColors'
 import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment } from '@/app/(app)/rooms/actions'
 import { recordRecurringExpense } from '@/app/(app)/finance/actions'
 
@@ -54,7 +54,6 @@ const DASH_STATUS_LABEL: Record<string, string> = {
 // ── 재무/통계 상수 ───────────────────────────────────────────────
 
 const GENDER_LABEL: Record<string, string> = { MALE: '남성', FEMALE: '여성', OTHER: '기타', UNKNOWN: '미기재' }
-const FALLBACK_COLORS = [...CHART_COLORS]
 const DIST_COLORS = [...CHART_COLORS].slice(0, 6)
 const TREND_RANGES: { key: TrendRange; label: string }[] = [
   { key: 'daily',     label: '일간' },
@@ -452,7 +451,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
   const trendMax = Math.max(...trendPoints.flatMap(t => [t.revenue, t.expense]), 1)
   const categorySegments = data.categoryBreakdown.map((c, i) => ({
     value: c.amount,
-    color: EXPENSE_CATEGORY_COLORS[c.category] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+    color: chartColor(i),
   }))
   const paymentSegments = [
     { value: data.paidCount,   color: '#22c55e' },
@@ -548,7 +547,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               <div className="flex-1 space-y-2.5 min-w-0">
                 {data.categoryBreakdown.map((c, i) => (
                   <div key={i} className="flex items-center gap-2 min-w-0">
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: EXPENSE_CATEGORY_COLORS[c.category] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length] }} />
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: chartColor(i) }} />
                     <span className="text-xs truncate flex-1" style={{ color: 'var(--warm-mid)' }}>{c.category}</span>
                     <span className="text-xs shrink-0" style={{ color: 'var(--warm-dark)' }}>{c.percent}%</span>
                   </div>

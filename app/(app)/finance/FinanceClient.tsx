@@ -15,7 +15,7 @@ import {
 } from '@/app/(app)/settings/actions'
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
-import { EXPENSE_CATEGORY_COLORS, CHART_COLORS, chartColor } from '@/lib/chartColors'
+import { chartColor } from '@/lib/chartColors'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 
@@ -67,7 +67,7 @@ type SettleGroup = {
 
 const EXPENSE_CATEGORIES = ['관리비', '수선유지', '세금', '인건비', '소모품', '보증금 반환', '기타']
 
-const CATEGORY_COLORS = EXPENSE_CATEGORY_COLORS
+
 const PAY_METHODS_EXP    = ['계좌이체', '신용카드', '체크카드', '현금', '기타']
 const PAY_METHODS_INC    = ['계좌이체', '현금', '기타']
 const ACCOUNT_TYPE_LABEL: Record<string, string> = {
@@ -218,10 +218,11 @@ function DonutChart({
 }
 
 function StackedBar({
-  segments, total, maxTotal, label,
+  segments, total, maxTotal, label, colorMap,
 }: {
   segments: { category: string; amount: number }[]
   total: number; maxTotal: number; label: string
+  colorMap: Record<string, string>
 }) {
   const barPct = maxTotal > 0 ? (total / maxTotal) * 100 : 0
   return (
@@ -232,7 +233,7 @@ function StackedBar({
           <div className="h-full flex rounded-full overflow-hidden" style={{ width: `${barPct}%` }}>
             {segments.filter(s => s.amount > 0).map((s, i) => (
               <div key={i}
-                style={{ background: CATEGORY_COLORS[s.category] ?? chartColor(0), width: `${(s.amount / total) * 100}%` }} />
+                style={{ background: colorMap[s.category] ?? chartColor(i), width: `${(s.amount / total) * 100}%` }} />
             ))}
           </div>
         ) : (
@@ -653,12 +654,15 @@ export default function FinanceClient({
   const lastYearCatMap: Record<string, number> = {}
   for (const t of lastYearTotals) lastYearCatMap[t.category] = t.total
 
-  // 이번 달에 등장한 카테고리 기준 정렬 (금액 내림차순)
+  // 이번 달 금액 내림차순 정렬 후 순서대로 색상 배정 (이름 매핑 아님)
   const allCats = Array.from(new Set([
     ...Object.keys(currentCatMap),
     ...Object.keys(prevCatMap),
     ...Object.keys(lastYearCatMap),
   ])).sort((a, b) => (currentCatMap[b] ?? 0) - (currentCatMap[a] ?? 0))
+
+  const catColorMap: Record<string, string> = {}
+  allCats.forEach((cat, i) => { catColorMap[cat] = chartColor(i) })
 
   const currentTotal = Object.values(currentCatMap).reduce((s, v) => s + v, 0)
   const prevTotal    = Object.values(prevCatMap).reduce((s, v) => s + v, 0)
@@ -667,7 +671,7 @@ export default function FinanceClient({
 
   const donutSegments = allCats.map(cat => ({
     value: currentCatMap[cat] ?? 0,
-    color: CATEGORY_COLORS[cat] ?? chartColor(0),
+    color: catColorMap[cat],
   }))
 
   const fmtMonthLabel = (m: string) => {
@@ -769,7 +773,7 @@ export default function FinanceClient({
                 const pct = currentTotal > 0 ? Math.round((amt / currentTotal) * 100) : 0
                 return (
                   <div key={cat} className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CATEGORY_COLORS[cat] ?? chartColor(0) }} />
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: catColorMap[cat] }} />
                     <span className="text-xs text-[var(--warm-muted)] flex-1 truncate">{cat}</span>
                     <span className="text-xs font-medium text-[var(--warm-dark)] font-mono shrink-0">
                       {Math.round(amt / 10000).toLocaleString()}만
@@ -787,17 +791,17 @@ export default function FinanceClient({
             <StackedBar
               segments={allCats.map(cat => ({ category: cat, amount: currentCatMap[cat] ?? 0 }))}
               total={currentTotal} maxTotal={maxTotal}
-              label={fmtMonthLabel(targetMonth)}
+              label={fmtMonthLabel(targetMonth)} colorMap={catColorMap}
             />
             <StackedBar
               segments={allCats.map(cat => ({ category: cat, amount: prevCatMap[cat] ?? 0 }))}
               total={prevTotal} maxTotal={maxTotal}
-              label={fmtMonthLabel(prevMonth)}
+              label={fmtMonthLabel(prevMonth)} colorMap={catColorMap}
             />
             <StackedBar
               segments={allCats.map(cat => ({ category: cat, amount: lastYearCatMap[cat] ?? 0 }))}
               total={lastYearTotal} maxTotal={maxTotal}
-              label={fmtMonthLabel(lastYearMonth)}
+              label={fmtMonthLabel(lastYearMonth)} colorMap={catColorMap}
             />
           </div>
         </div>
