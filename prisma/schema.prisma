@@ -372,6 +372,7 @@ model Expense {
   amount       Int
   category     String
   detail       String?
+  vendor       String?
   memo         String?
   payMethod    String?
   settleStatus  SettleStatus @default(SETTLED)

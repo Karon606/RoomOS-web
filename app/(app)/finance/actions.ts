@@ -142,6 +142,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const amount    = parseAmount(formData.get('amount'))
     const category  = formData.get('category') as string
     const detail    = formData.get('detail') as string
+    const vendor    = formData.get('vendor') as string
     const memo      = formData.get('memo') as string
     const payMethod = formData.get('payMethod') as string
     const financialAccountId = formData.get('financialAccountId') as string
@@ -157,6 +158,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
         date:               new Date(date),
         amount, category,
         detail:             detail || null,
+        vendor:             vendor || null,
         memo:               memo || null,
         payMethod:          payMethod || '계좌이체',
         financialAccountId: financialAccountId || null,
@@ -182,6 +184,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
     const amount    = parseAmount(formData.get('amount'))
     const category  = formData.get('category') as string
     const detail    = formData.get('detail') as string
+    const vendor    = formData.get('vendor') as string
     const memo      = formData.get('memo') as string
     const payMethod = formData.get('payMethod') as string
     const financialAccountId = formData.get('financialAccountId') as string
@@ -197,6 +200,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
         date:               new Date(date),
         amount, category,
         detail:             detail || null,
+        vendor:             vendor || null,
         memo:               memo || null,
         payMethod:          payMethod || '계좌이체',
         financialAccountId: financialAccountId || null,
@@ -218,6 +222,22 @@ export async function deleteExpense(id: string) {
   await requireEdit()
   await prisma.expense.delete({ where: { id } })
   revalidatePath('/finance')
+}
+
+export async function getExpenseDetailSuggestions(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const rows = await prisma.expense.findMany({
+    where: { propertyId, detail: { not: null } },
+    select: { detail: true },
+    orderBy: { createdAt: 'desc' },
+    take: 500,
+  })
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const r of rows) {
+    if (r.detail && !seen.has(r.detail)) { seen.add(r.detail); result.push(r.detail) }
+  }
+  return result
 }
 
 export async function settleCardExpenses(ids: string[]) {

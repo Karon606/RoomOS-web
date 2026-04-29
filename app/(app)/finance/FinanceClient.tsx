@@ -25,7 +25,7 @@ type FAcc = { brand: string; alias: string | null }
 
 type Expense = {
   id: string; date: Date; amount: number; category: string
-  detail: string | null; memo: string | null; payMethod: string | null
+  detail: string | null; vendor: string | null; memo: string | null; payMethod: string | null
   settleStatus: string; financeName: string | null
   financialAccountId: string | null; financialAccount: FAcc | null
   roomId: string | null; room: { id: string; roomNo: string } | null

@@ -260,12 +260,6 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
 }
 
 // 수납 등록
-function nextMonth(ym: string, delta = 1): string {
-  const [y, m] = ym.split('-').map(Number)
-  const d = new Date(y, m - 1 + delta, 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
 export async function savePayment(data: {
   leaseTermId: string
   tenantId:    string
@@ -279,7 +273,6 @@ export async function savePayment(data: {
   await requireEdit()
   const propertyId = await getPropertyId()
 
-  const thisMonthAmount = Math.min(data.actualAmount, data.expectedAmount)
   const existingCount = await prisma.paymentRecord.count({
     where: { leaseTermId: data.leaseTermId, targetMonth: data.targetMonth },
   })
@@ -291,7 +284,7 @@ export async function savePayment(data: {
       propertyId,
       targetMonth:    data.targetMonth,
       expectedAmount: data.expectedAmount,
-      actualAmount:   thisMonthAmount,
+      actualAmount:   data.actualAmount,
       payDate:        new Date(data.payDate),
       payMethod:      data.payMethod,
       memo:           data.memo ?? null,
@@ -301,36 +294,6 @@ export async function savePayment(data: {
     },
   })
   await recalculatePayments(data.leaseTermId, data.targetMonth, data.expectedAmount)
-
-  // 과납 → 이후 달에 자동 분배
-  let remaining = data.actualAmount - data.expectedAmount
-  let monthOffset = 1
-  while (remaining > 0) {
-    const futureMonth  = nextMonth(data.targetMonth, monthOffset)
-    const monthAmount  = Math.min(remaining, data.expectedAmount)
-    const futureCount  = await prisma.paymentRecord.count({
-      where: { leaseTermId: data.leaseTermId, targetMonth: futureMonth },
-    })
-    await prisma.paymentRecord.create({
-      data: {
-        leaseTermId:    data.leaseTermId,
-        tenantId:       data.tenantId,
-        propertyId,
-        targetMonth:    futureMonth,
-        expectedAmount: data.expectedAmount,
-        actualAmount:   monthAmount,
-        payDate:        new Date(data.payDate),
-        payMethod:      data.payMethod,
-        memo:           data.memo ? `[선납] ${data.memo}` : '[선납]',
-        seqNo:          futureCount + 1,
-        isPaid:         false,
-        carryOver:      0,
-      },
-    })
-    await recalculatePayments(data.leaseTermId, futureMonth, data.expectedAmount)
-    remaining -= data.expectedAmount
-    monthOffset++
-  }
 }
 
 // 보증금 수납 등록 (초과금은 이용료로 분리 저장)
