@@ -183,7 +183,7 @@ export default function RoomsClient({
   const [isPending, startTransition] = useTransition()
   const [showOverrideForm, setShowOverrideForm] = useState(false)
   const [confirmClearOverride, setConfirmClearOverride] = useState(false)
-  const [overrideInput, setOverrideInput] = useState('')
+  const [overrideDateInput, setOverrideDateInput] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
   const [payAmount, setPayAmount] = useState(0)
   const [payDateVal, setPayDateVal] = useState(new Date().toISOString().slice(0, 10))
@@ -321,7 +321,7 @@ export default function RoomsClient({
     setShowPayForm(false)
     setShowOverrideForm(false)
     setConfirmClearOverride(false)
-    setOverrideInput('')
+    setOverrideDateInput('')
     setOverrideReason('')
     setEditingPayId(null)
     setPaymentHistory([])
@@ -1159,10 +1159,26 @@ export default function RoomsClient({
                         {canEdit && (
                           <button
                             onClick={() => {
-                              setShowOverrideForm(v => !v)
+                              const opening = !showOverrideForm
+                              setShowOverrideForm(opening)
                               setConfirmClearOverride(false)
-                              setOverrideInput(isOverrideActive ? (selectedRoom.overrideDueDay ?? '') : '')
-                              setOverrideReason(isOverrideActive ? (selectedRoom.overrideDueDayReason ?? '') : '')
+                              if (opening) {
+                                const existingDay = isOverrideActive ? selectedRoom.overrideDueDay : null
+                                const baseDay = existingDay ?? selectedRoom.dueDay ?? null
+                                let initDate = ''
+                                if (baseDay) {
+                                  if (baseDay.includes('말')) {
+                                    const [y, m] = targetMonth.split('-').map(Number)
+                                    const last = new Date(y, m, 0).getDate()
+                                    initDate = `${targetMonth}-${String(last).padStart(2, '0')}`
+                                  } else {
+                                    const n = parseInt(baseDay)
+                                    if (!isNaN(n)) initDate = `${targetMonth}-${String(n).padStart(2, '0')}`
+                                  }
+                                }
+                                setOverrideDateInput(initDate || new Date().toISOString().slice(0, 10))
+                                setOverrideReason(isOverrideActive ? (selectedRoom.overrideDueDayReason ?? '') : '')
+                              }
                             }}
                             className="text-xs text-amber-600 hover:text-amber-700 px-2 py-1 rounded-lg border border-amber-200 hover:border-amber-400 transition-colors">
                             {showOverrideForm ? '닫기' : (isOverrideActive ? '수정' : '조정하기')}
@@ -1175,25 +1191,11 @@ export default function RoomsClient({
                         <div className="flex gap-2">
                           <div className="flex-1 space-y-1">
                             <label className="text-xs text-[var(--warm-muted)]">조정 납부일</label>
-                            <input
-                              type="text" inputMode="text" placeholder="예: 20, 말일"
-                              value={overrideInput}
-                              onChange={e => {
-                                const v = e.target.value
-                                if (v.length < overrideInput.length) { setOverrideInput(v); return }
-                                const trimmed = v.trim()
-                                const n = Number(trimmed)
-                                if (/[ㅁ마말]/.test(v) || (trimmed !== '' && !isNaN(n) && n >= 30)) {
-                                  setOverrideInput('말일')
-                                } else {
-                                  setOverrideInput(v)
-                                }
-                              }}
-                              onCompositionEnd={e => {
-                                const v = (e.currentTarget as HTMLInputElement).value
-                                if (/[ㅁ마말]/.test(v)) setOverrideInput('말일')
-                              }}
-                              className="w-full bg-[var(--canvas)] border border-amber-200 rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-amber-500" />
+                            <DatePicker
+                              value={overrideDateInput}
+                              onChange={setOverrideDateInput}
+                              className="bg-[var(--canvas)] border border-amber-200 rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] focus:border-amber-500"
+                            />
                           </div>
                           <div className="flex-1 space-y-1">
                             <label className="text-xs text-[var(--warm-muted)]">사유 (선택)</label>
@@ -1205,9 +1207,13 @@ export default function RoomsClient({
                           </div>
                         </div>
                         <button
-                          disabled={!overrideInput.trim() || isPending}
+                          disabled={!overrideDateInput || isPending}
                           onClick={() => {
-                            const val = overrideInput.trim()
+                            if (!overrideDateInput) return
+                            const d = new Date(overrideDateInput)
+                            const dayNum = d.getDate()
+                            const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+                            const val = dayNum >= lastDay ? '말일' : String(dayNum)
                             const reason = overrideReason.trim()
                             const leaseTermId = selectedRoom.leaseTermId!
                             setShowOverrideForm(false)
@@ -1218,7 +1224,14 @@ export default function RoomsClient({
                             })
                           }}
                           className="w-full py-2 bg-amber-500 active:bg-amber-600 hover:bg-amber-400 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors">
-                          {isPending ? '저장 중...' : `${targetMonth} 납부일을 ${overrideInput.includes('말') ? '말일' : `${overrideInput || '?'}일`}로 조정`}
+                          {isPending ? '저장 중...' : (() => {
+                            if (!overrideDateInput) return '날짜를 선택하세요'
+                            const d = new Date(overrideDateInput)
+                            const dayNum = d.getDate()
+                            const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+                            const label = dayNum >= lastDay ? '말일' : `${dayNum}일`
+                            return `${targetMonth} 납부일을 ${label}로 조정`
+                          })()}
                         </button>
                       </div>
                     )}
