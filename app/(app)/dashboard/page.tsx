@@ -336,6 +336,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const hasExpenseHistory = (nonRecurringPast._sum.amount ?? 0) > 0
   let expectedExpense = 0
   for (const re of recurringExpenses) {
+    const activeSince = (re as any).activeSince as Date | null
+    if (activeSince && new Date(activeSince) > endDate) continue  // 이달 미활성
     const isVar = (re as any).isVariable as boolean
     expectedExpense += (isVar && variableAvgMap[re.id] !== undefined) ? variableAvgMap[re.id] : re.amount
   }

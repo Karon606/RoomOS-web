@@ -1476,7 +1476,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
     <div className="space-y-3.5">
 
       {/* ── KPI 카드 ────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
 
         {/* 이달 수입 */}
         <div className="rounded-xl" style={{ background: 'var(--coral)', padding: '18px 20px' }}>
@@ -1536,6 +1536,24 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             <em style={{ fontStyle: 'normal', color: data.unpaidCount > 0 ? 'var(--coral)' : 'var(--warm-muted)' }}>{data.unpaidCount}명</em> 미납
           </p>
         </div>
+
+        {/* 현재 순이익 */}
+        {(() => {
+          const net = data.netProfit
+          const isPos = net >= 0
+          return (
+            <div className="col-span-2 lg:col-span-1 rounded-xl" style={{ background: isPos ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.07)', border: `1px solid ${isPos ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.2)'}`, padding: '18px 20px' }}>
+              <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
+                현재 순이익
+              </p>
+              <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: isPos ? '#16a34a' : '#ef4444' }}>
+                {isPos ? '+' : ''}{net.toLocaleString()}
+                <small style={{ fontSize: 12, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
+              </p>
+              <p style={{ fontSize: 11, color: 'var(--warm-muted)' }}>수입 − 실제 지출</p>
+            </div>
+          )
+        })()}
       </div>
 
       {/* ── 알림 스트립 (항상 표시) ─────────────────────────────── */}
@@ -1727,7 +1745,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
 
                     {/* ── 순이익 섹션 ── */}
                     {(() => {
-                      const expectedNet = data.totalExpected - data.totalExpense
+                      const expectedNet = data.totalExpected - data.expectedExpense
                       const currentNet  = data.netProfit
                       const pct = expectedNet > 0 ? Math.max(0, Math.min(100, Math.round((currentNet / expectedNet) * 100))) : 0
                       return (
