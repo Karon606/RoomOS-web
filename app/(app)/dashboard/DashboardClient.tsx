@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { analyzeDashboardWithGemini, getTrendData, type TrendRange, type TrendPoint } from './actions'
+import { EXPENSE_CATEGORY_COLORS, CHART_COLORS, GENDER_COLORS, STATUS_COLORS } from '@/lib/chartColors'
 import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment } from '@/app/(app)/rooms/actions'
 import { recordRecurringExpense } from '@/app/(app)/finance/actions'
 
@@ -52,18 +53,9 @@ const DASH_STATUS_LABEL: Record<string, string> = {
 
 // ── 재무/통계 상수 ───────────────────────────────────────────────
 
-const CATEGORY_COLORS: Record<string, string> = {
-  관리비:   '#f4623a',
-  수선유지: '#f97316',
-  세금:     '#ef4444',
-  인건비:   '#a855f7',
-  소모품:   '#22c55e',
-  기타:     '#a89888',
-}
-const FALLBACK_COLORS = ['#f4623a','#f97316','#ef4444','#a855f7','#22c55e','#a89888','#3b82f6','#eab308']
 const GENDER_LABEL: Record<string, string> = { MALE: '남성', FEMALE: '여성', OTHER: '기타', UNKNOWN: '미기재' }
-const GENDER_COLOR: Record<string, string>  = { MALE: '#3b82f6', FEMALE: '#ec4899', OTHER: '#a855f7', UNKNOWN: '#a89888' }
-const DIST_COLORS = ['#f4623a', '#22c55e', '#f97316', '#a855f7', '#eab308', '#a89888']
+const FALLBACK_COLORS = [...CHART_COLORS]
+const DIST_COLORS = [...CHART_COLORS].slice(0, 6)
 const TREND_RANGES: { key: TrendRange; label: string }[] = [
   { key: 'daily',     label: '일간' },
   { key: 'weekly',    label: '주간' },
@@ -460,7 +452,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
   const trendMax = Math.max(...trendPoints.flatMap(t => [t.revenue, t.expense]), 1)
   const categorySegments = data.categoryBreakdown.map((c, i) => ({
     value: c.amount,
-    color: CATEGORY_COLORS[c.category] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+    color: EXPENSE_CATEGORY_COLORS[c.category] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length],
   }))
   const paymentSegments = [
     { value: data.paidCount,   color: '#22c55e' },
@@ -556,7 +548,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               <div className="flex-1 space-y-2.5 min-w-0">
                 {data.categoryBreakdown.map((c, i) => (
                   <div key={i} className="flex items-center gap-2 min-w-0">
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CATEGORY_COLORS[c.category] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length] }} />
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: EXPENSE_CATEGORY_COLORS[c.category] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length] }} />
                     <span className="text-xs truncate flex-1" style={{ color: 'var(--warm-mid)' }}>{c.category}</span>
                     <span className="text-xs shrink-0" style={{ color: 'var(--warm-dark)' }}>{c.percent}%</span>
                   </div>
@@ -601,21 +593,21 @@ function TenantsTab({ data }: { data: DashboardData }) {
   const statusTotal = data.statusCounts.active + data.statusCounts.reserved + data.statusCounts.checkout + data.statusCounts.nonResident
   const occupancySegments = [{ value: data.occupiedRooms, color: '#f4623a' }, { value: data.vacantRooms, color: '#e8ddd2' }]
   const statusSegments = [
-    { value: data.statusCounts.active,      color: '#22c55e' },
-    { value: data.statusCounts.reserved,    color: '#3b82f6' },
-    { value: data.statusCounts.checkout,    color: '#eab308' },
-    { value: data.statusCounts.nonResident, color: '#f59e0b' },
+    { value: data.statusCounts.active,      color: STATUS_COLORS.active },
+    { value: data.statusCounts.reserved,    color: STATUS_COLORS.reserved },
+    { value: data.statusCounts.checkout,    color: STATUS_COLORS.checkout },
+    { value: data.statusCounts.nonResident, color: STATUS_COLORS.nonResident },
   ]
-  const genderSegments = data.genderDist.map(d => ({ value: d.count, color: GENDER_COLOR[d.label] ?? '#a89888' }))
+  const genderSegments = data.genderDist.map(d => ({ value: d.count, color: GENDER_COLORS[d.label] ?? '#a89888' }))
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard label="전체 입주자"  value={`${data.totalTenants}명`}               sub="현재 계약 기준" />
-        <StatCard label="거주중"       value={`${data.statusCounts.active}명`}         sub="ACTIVE"        colorStyle={{ color: '#22c55e' }} />
-        <StatCard label="입실 예정"    value={`${data.statusCounts.reserved}명`}       sub="RESERVED"      colorStyle={{ color: '#3b82f6' }} />
-        <StatCard label="퇴실 예정"    value={`${data.statusCounts.checkout}명`}       sub="CHECKOUT"      colorStyle={{ color: '#eab308' }} />
-        <StatCard label="비거주자"     value={`${data.statusCounts.nonResident}명`}    sub="NON_RESIDENT"  colorStyle={{ color: '#f59e0b' }} />
+        <StatCard label="거주중"       value={`${data.statusCounts.active}명`}         sub="ACTIVE"        colorStyle={{ color: STATUS_COLORS.active }} />
+        <StatCard label="입실 예정"    value={`${data.statusCounts.reserved}명`}       sub="RESERVED"      colorStyle={{ color: STATUS_COLORS.reserved }} />
+        <StatCard label="퇴실 예정"    value={`${data.statusCounts.checkout}명`}       sub="CHECKOUT"      colorStyle={{ color: STATUS_COLORS.checkout }} />
+        <StatCard label="비거주자"     value={`${data.statusCounts.nonResident}명`}    sub="NON_RESIDENT"  colorStyle={{ color: STATUS_COLORS.nonResident }} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -640,7 +632,7 @@ function TenantsTab({ data }: { data: DashboardData }) {
           <div className="flex items-center gap-4">
             <DonutChart segments={statusSegments} centerLabel={`${statusTotal}명`} centerSub="입주자" />
             <div className="space-y-2.5 flex-1">
-              {[{ label: '거주중', count: data.statusCounts.active, color: '#22c55e' }, { label: '입실 예정', count: data.statusCounts.reserved, color: '#3b82f6' }, { label: '퇴실 예정', count: data.statusCounts.checkout, color: '#eab308' }].map(s => (
+              {[{ label: '거주중', count: data.statusCounts.active, color: STATUS_COLORS.active }, { label: '입실 예정', count: data.statusCounts.reserved, color: STATUS_COLORS.reserved }, { label: '퇴실 예정', count: data.statusCounts.checkout, color: STATUS_COLORS.checkout }].map(s => (
                 <div key={s.label} className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} />
                   <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{s.label}</span>
@@ -658,7 +650,7 @@ function TenantsTab({ data }: { data: DashboardData }) {
             <div className="space-y-2.5 flex-1">
               {data.genderDist.map((d, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: GENDER_COLOR[d.label] ?? '#a89888' }} />
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: GENDER_COLORS[d.label] ?? '#a89888' }} />
                   <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{GENDER_LABEL[d.label] ?? d.label}</span>
                   <span className="text-xs font-semibold" style={{ color: 'var(--warm-dark)' }}>{d.count}명</span>
                 </div>

@@ -13,6 +13,18 @@
   --warm-border:  #e8ddd2;
   --warm-muted:   #b0a090;
   --sand:         #f7ead6;
+
+  /* Chart color system — RoomOS Chart Colors design */
+  --chart-1:  #e8893a;
+  --chart-2:  #f4623a;
+  --chart-3:  #d4a847;
+  --chart-4:  #b8c45a;
+  --chart-5:  #6aab7e;
+  --chart-6:  #5aa4b8;
+  --chart-7:  #7b8fc4;
+  --chart-8:  #a87cc0;
+  --chart-9:  #c07a9a;
+  --chart-10: #c09878;
 }
 
 @theme inline {
