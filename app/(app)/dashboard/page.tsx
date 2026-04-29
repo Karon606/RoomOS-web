@@ -286,10 +286,19 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   ])
 
   // ── 이달 집계 ────────────────────────────────────────────────
-  const activeLeaseIds = new Set(activeLeases.map(l => l.id))
-  const paidRevenue    = payments
-    .filter(p => activeLeaseIds.has(p.leaseTermId))
-    .reduce((s, p) => s + p.actualAmount, 0)
+  const activeLeaseIds  = new Set(activeLeases.map(l => l.id))
+  const leaseRentMap    = new Map(activeLeases.map(l => [l.id, l.rentAmount]))
+
+  // 계약당 이달 납부 합계 → 이용료 상한 적용 (과납분은 다음달 수입)
+  const paidByLease: Record<string, number> = {}
+  for (const p of payments) {
+    if (!activeLeaseIds.has(p.leaseTermId)) continue
+    paidByLease[p.leaseTermId] = (paidByLease[p.leaseTermId] ?? 0) + p.actualAmount
+  }
+  const paidRevenue = Object.entries(paidByLease).reduce((s, [id, paid]) => {
+    const rent = leaseRentMap.get(id) ?? 0
+    return s + Math.min(paid, rent)
+  }, 0)
   const extraRevenue = incomes.reduce((s, i) => s + i.amount, 0)
   const totalRevenue = paidRevenue + extraRevenue
   const totalExpense = expenses.reduce((s, e) => s + e.amount, 0)
