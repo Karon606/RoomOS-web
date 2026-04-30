@@ -75,17 +75,17 @@ type ItemCfg   = { label: string; fields: ItemField[] }
 
 const ITEM_PRESETS: Record<string, ItemCfg[]> = {
   '부식비': [
-    { label: '쌀',    fields: [{ key: 'weight', label: '무게', type: 'number', unit: 'kg',  placeholder: '20' }, { key: 'qty', label: '수량', type: 'number', unit: '포대', placeholder: '1' }] },
-    { label: '김치',  fields: [{ key: 'weight', label: '무게', type: 'number', unit: 'kg',  placeholder: '5'  }, { key: 'qty', label: '수량', type: 'number', unit: '포기', placeholder: '1' }] },
-    { label: '라면',  fields: [{ key: 'name',   label: '라면 이름', type: 'text',            placeholder: '신라면' }, { key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '10' }] },
-    { label: '식빵',  fields: [{ key: 'weight', label: '무게', type: 'number', unit: 'g',   placeholder: '500' }, { key: 'qty', label: '수량', type: 'number', unit: '봉',  placeholder: '1'  }] },
+    { label: '쌀',   fields: [{ key: 'measure', label: '무게 (kg)', type: 'number', unit: 'kg',  placeholder: '20'  }, { key: 'qty', label: '수량', type: 'number', unit: '포대', placeholder: '1'  }] },
+    { label: '김치', fields: [{ key: 'measure', label: '무게 (kg)', type: 'number', unit: 'kg',  placeholder: '5'   }, { key: 'qty', label: '수량', type: 'number', unit: '포기', placeholder: '1'  }] },
+    { label: '라면', fields: [{ key: 'name',    label: '라면 이름', type: 'text',                placeholder: '신라면' }, { key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '10' }] },
+    { label: '식빵', fields: [{ key: 'measure', label: '무게 (g)',  type: 'number', unit: 'g',   placeholder: '500' }, { key: 'qty', label: '수량', type: 'number', unit: '봉',  placeholder: '1'  }] },
   ],
   '소모품비': [
-    { label: '물티슈',      fields: [{ key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '10' }] },
-    { label: '키친타월',    fields: [{ key: 'qty', label: '수량', type: 'number', unit: '롤',  placeholder: '6'  }] },
-    { label: '주방세제',    fields: [{ key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '2'  }] },
-    { label: '세탁세제',    fields: [{ key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '1'  }] },
-    { label: '화장실 휴지', fields: [{ key: 'qty', label: '수량', type: 'number', unit: '롤',  placeholder: '30' }] },
+    { label: '물티슈',      fields: [{ key: 'measure', label: '매수 (매)',  type: 'number', unit: '매',  placeholder: '100'  }, { key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '10' }] },
+    { label: '키친타월',    fields: [{ key: 'measure', label: '길이 (m)',   type: 'number', unit: 'm',   placeholder: '20'   }, { key: 'qty', label: '수량', type: 'number', unit: '롤',  placeholder: '6'  }] },
+    { label: '주방세제',    fields: [{ key: 'measure', label: '용량 (ml)',  type: 'number', unit: 'ml',  placeholder: '500'  }, { key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '2'  }] },
+    { label: '세탁세제',    fields: [{ key: 'measure', label: '용량 (ml)',  type: 'number', unit: 'ml',  placeholder: '3000' }, { key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '1'  }] },
+    { label: '화장실 휴지', fields: [{ key: 'measure', label: '길이 (m)',   type: 'number', unit: 'm',   placeholder: '30'   }, { key: 'qty', label: '수량', type: 'number', unit: '롤',  placeholder: '30' }] },
   ],
 }
 
@@ -97,30 +97,26 @@ function fmtPickedItem(item: PickedItem): string {
     const unit = item.values.unit || ''
     return `[${item.label}]${qty ? ` x ${qty}${unit}` : ''}`
   }
-  const presets = Object.values(ITEM_PRESETS).flat()
-  const cfg = presets.find(c => c.label === item.label)
+  const allPresets = Object.values(ITEM_PRESETS).flat()
+  const cfg = allPresets.find(c => c.label === item.label)
   if (!cfg) return `[${item.label}]`
-  if (item.label === '쌀' || item.label === '김치') {
-    const counterUnit = item.label === '쌀' ? '포대' : '포기'
-    const w = item.values.weight, q = item.values.qty
-    return `[${item.label}]${w ? ` ${w}kg` : ''}${q ? ` x ${q}${counterUnit}` : ''}`
-  }
-  if (item.label === '라면') {
-    const n = item.values.name, q = item.values.qty
-    return `[라면${n ? ` ${n}` : ''}]${q ? ` x ${q}개` : ''}`
-  }
-  if (item.label === '식빵') {
-    const w = item.values.weight, q = item.values.qty
-    return `[식빵]${w ? ` ${w}g` : ''}${q ? ` x ${q}봉` : ''}`
-  }
-  const parts = cfg.fields.map(f => {
-    const v = item.values[f.key]
-    if (!v) return ''
-    if (f.key === 'qty' && f.unit) return `x ${v}${f.unit}`
-    if (f.unit) return `${v}${f.unit}`
-    return v
-  }).filter(Boolean)
-  return `[${item.label}]${parts.length ? ' ' + parts.join(' ') : ''}`
+
+  // 라면처럼 name 필드가 있으면 레이블에 포함
+  const nameVal = item.values['name'] || ''
+  const labelStr = nameVal ? `[${item.label} ${nameVal}]` : `[${item.label}]`
+
+  // measure 등 비-qty/비-name 필드 → "500ml" 형태
+  const measureStr = cfg.fields
+    .filter(f => f.key !== 'qty' && f.key !== 'name')
+    .map(f => { const v = item.values[f.key]; return v ? `${v}${f.unit ?? ''}` : '' })
+    .filter(Boolean).join(' ')
+
+  // qty 필드 → "x 3개" 형태
+  const qtyField = cfg.fields.find(f => f.key === 'qty')
+  const qtyVal   = item.values['qty'] || ''
+  const qtyStr   = qtyVal ? `x ${qtyVal}${qtyField?.unit ?? ''}` : ''
+
+  return [labelStr, measureStr, qtyStr].filter(Boolean).join(' ')
 }
 
 function fmtItemsMemo(items: PickedItem[]): string {
