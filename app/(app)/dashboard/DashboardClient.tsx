@@ -712,14 +712,33 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data, targetMonth }),
       })
-      const json = await res.json()
-      if (!res.ok || json.error) {
-        setError(json.error ?? '분석 요청 실패')
-      } else {
-        setAiText(json.text ?? '')
+
+      if (!res.ok) {
+        setError(`분석 요청 실패 (${res.status}): ${await res.text().catch(() => '')}`)
+        return
       }
-    } catch {
+      if (!res.body) {
+        setError('스트림을 읽을 수 없습니다.')
+        return
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let accumulated = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        accumulated += decoder.decode(value, { stream: true })
+        setAiText(accumulated)
+      }
+      // flush remaining bytes
+      const tail = decoder.decode()
+      if (tail) setAiText(prev => prev + tail)
+
+    } catch (e) {
       setError('네트워크 오류가 발생했습니다. 다시 시도해주세요.')
+      console.error('[AI Analysis]', e)
     } finally {
       setIsLoading(false)
     }
@@ -744,7 +763,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
         {!aiText && !isLoading && !error && (
           <div className="text-center py-10 text-sm" style={{ color: 'var(--warm-muted)' }}>버튼을 눌러 이달 재무 현황 AI 분석을 시작하세요</div>
         )}
-        {isLoading && (
+        {isLoading && !aiText && (
           <div className="flex items-center gap-3 py-8 justify-center text-sm" style={{ color: 'var(--coral)' }}>
             <span className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
             Gemini가 재무 데이터를 분석하고 있습니다...
@@ -753,8 +772,11 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
         {error && <p className="text-red-500 text-sm py-4 text-center">{error}</p>}
         {aiText && (
           <div className="rounded-xl p-4" style={{ background: 'var(--coral-pale)', border: '1px solid rgba(244,98,58,0.2)' }}>
-            <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--warm-dark)' }}>{aiText}</div>
-            <button onClick={handleAnalyze} className="mt-3 text-xs" style={{ color: 'var(--coral)' }}>↻ 다시 분석</button>
+            <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--warm-dark)' }}>
+              {aiText}
+              {isLoading && <span className="inline-block w-1.5 h-4 bg-current opacity-70 animate-pulse ml-0.5 align-middle" />}
+            </div>
+            {!isLoading && <button onClick={handleAnalyze} className="mt-3 text-xs" style={{ color: 'var(--coral)' }}>↻ 다시 분석</button>}
           </div>
         )}
       </div>

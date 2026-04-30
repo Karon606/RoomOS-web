@@ -1,11 +1,11 @@
 export const runtime = 'edge'
 
-import { generateText } from 'ai'
+import { streamText } from 'ai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 
 export async function POST(req: Request) {
   const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) return Response.json({ error: 'GEMINI_API_KEY 미설정' }, { status: 500 })
+  if (!apiKey) return new Response('GEMINI_API_KEY 미설정', { status: 500 })
 
   const body = await req.json() as {
     data: {
@@ -36,29 +36,26 @@ export async function POST(req: Request) {
     .map(t => `${t.month} 순수익 ${(t.profit / 10000).toFixed(0)}만원`)
     .join(' / ')
 
-  const prompt = `부동산 임대업 재무 분석가입니다. ${targetMonth} 데이터를 분석하세요.
+  const google = createGoogleGenerativeAI({ apiKey })
 
-수입 ${(data.totalRevenue / 10000).toFixed(0)}만원 / 지출 ${(data.totalExpense / 10000).toFixed(0)}만원 / 순수익 ${(data.netProfit / 10000).toFixed(0)}만원
+  const result = streamText({
+    model: google('gemini-2.5-flash'),
+    system: '당신은 한국 임대업 재무 분석가입니다. 반드시 순수 한국어 일반 텍스트로만 답변하세요. #, ##, ###, **, *, -, ` 등 마크다운 기호를 절대로 사용하지 마세요.',
+    prompt: `${targetMonth} 운영 데이터:
+수입 ${(data.totalRevenue / 10000).toFixed(0)}만원, 지출 ${(data.totalExpense / 10000).toFixed(0)}만원, 순수익 ${(data.netProfit / 10000).toFixed(0)}만원
 수납률 ${paymentRate}% (완납 ${data.paidCount}건, 미납 ${data.unpaidCount}건, 미납액 ${(data.unpaidAmount / 10000).toFixed(0)}만원)
 입주율 ${occupancyRate}% (${data.occupiedRooms}/${data.totalRooms}실)
 주요 지출: ${topCategories || '없음'}
-최근 3개월 추이: ${recentTrend || '데이터 없음'}
+최근 추이: ${recentTrend || '데이터 없음'}
 
-마크다운 기호(#, **, *, - 등) 절대 사용 금지. 일반 텍스트로만 작성.
-아래 3가지를 각 2문장 이내로, 번호와 제목 포함하여 간결하게 작성하세요:
+다음 3가지를 각 2문장 이내로 작성하세요. 번호와 제목만 사용하고 마크다운 기호 금지:
 
 1. 이달 재무 총평
 2. 수납 현황 진단
-3. 핵심 개선 포인트`.trim()
-
-  const google = createGoogleGenerativeAI({ apiKey })
-
-  const { text } = await generateText({
-    model: google('gemini-2.5-flash'),
-    prompt,
+3. 핵심 개선 포인트`,
     maxOutputTokens: 400,
     temperature: 0.4,
   })
 
-  return Response.json({ text })
+  return result.toTextStreamResponse()
 }
