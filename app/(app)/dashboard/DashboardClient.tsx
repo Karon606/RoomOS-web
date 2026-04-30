@@ -6,6 +6,10 @@ import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { getTrendData, type TrendRange, type TrendPoint } from './actions'
+import {
+  AreaChart, Area, BarChart, Bar,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+} from 'recharts'
 import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS } from '@/lib/chartColors'
 import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment, getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { recordRecurringExpense } from '@/app/(app)/finance/actions'
@@ -449,7 +453,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
     })
   }, [trendRange, targetMonth]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const trendMax = Math.max(...trendPoints.flatMap(t => [t.revenue, t.expense]), 1)
+  const isAreaRange = trendRange === 'daily' || trendRange === 'weekly'
   const categorySegments = data.categoryBreakdown.map((c, i) => ({
     value: c.amount,
     color: chartColor(i),
@@ -489,8 +493,8 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>추이</h3>
           <div className="flex gap-4 text-xs" style={{ color: 'var(--warm-muted)' }}>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block" style={{ background: 'var(--coral)' }} />수입</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block" style={{ background: '#ef4444' }} />지출</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: 'var(--coral)' }} />수입</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: '#64748b' }} />지출</span>
           </div>
         </div>
         <div className="flex gap-1 mb-4 flex-wrap">
@@ -505,33 +509,49 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
           ))}
         </div>
         {trendPending ? (
-          <div className="h-36 flex items-center justify-center">
+          <div className="h-44 flex items-center justify-center">
             <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
           </div>
+        ) : isAreaRange ? (
+          /* ── 일간·주간: Area Chart ── */
+          <ResponsiveContainer width="100%" height={176}>
+            <AreaChart data={trendPoints} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gradRev" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="var(--coral)" stopOpacity={0.18} />
+                  <stop offset="95%" stopColor="var(--coral)" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="gradExp" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="#64748b" stopOpacity={0.14} />
+                  <stop offset="95%" stopColor="#64748b" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#a89888' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tickFormatter={v => `${Math.round(v / 10000)}만`} tick={{ fontSize: 10, fill: '#a89888' }} axisLine={false} tickLine={false} width={44} />
+              <Tooltip
+                contentStyle={{ background: '#fff', border: '1px solid #e8ddd2', borderRadius: 8, fontSize: 12 }}
+                formatter={(v, name) => [`${Number(v).toLocaleString()}원`, String(name)]}
+              />
+              <Area type="monotone" dataKey="revenue" name="수입" stroke="var(--coral)" strokeWidth={2} fill="url(#gradRev)" dot={false} activeDot={{ r: 4, fill: 'var(--coral)' }} />
+              <Area type="monotone" dataKey="expense" name="지출" stroke="#64748b" strokeWidth={1.5} strokeDasharray="4 2" fill="url(#gradExp)" dot={false} activeDot={{ r: 4, fill: '#64748b' }} />
+            </AreaChart>
+          </ResponsiveContainer>
         ) : (
-          <div className="overflow-x-auto">
-            <div className="flex items-end gap-1" style={{ minWidth: trendPoints.length > 14 ? `${trendPoints.length * 36}px` : undefined }}>
-              {trendPoints.map((t, i) => {
-                const isLast = i === trendPoints.length - 1
-                const revPct = Math.round((t.revenue / trendMax) * 100)
-                const expPct = Math.round((t.expense / trendMax) * 100)
-                return (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0" style={{ minWidth: trendPoints.length > 14 ? '28px' : undefined }}>
-                    <p className="text-xs font-medium whitespace-nowrap" style={{ color: t.profit >= 0 ? '#22c55e' : '#ef4444' }}>
-                      {t.profit !== 0 ? `${t.profit >= 0 ? '+' : ''}${Math.round(t.profit / 10000)}만` : ''}
-                    </p>
-                    <div className="w-full flex items-end gap-0.5 h-28">
-                      <div className="flex-1 rounded-t-sm" style={{ background: 'var(--coral)', opacity: isLast ? 1 : 0.5, height: `${revPct}%`, minHeight: t.revenue > 0 ? '2px' : '0' }} />
-                      <div className="flex-1 rounded-t-sm" style={{ background: '#ef4444', opacity: isLast ? 1 : 0.5, height: `${expPct}%`, minHeight: t.expense > 0 ? '2px' : '0' }} />
-                    </div>
-                    <p className="text-xs truncate w-full text-center" style={{ color: isLast ? 'var(--warm-dark)' : 'var(--warm-muted)', fontWeight: isLast ? 600 : 400 }}>
-                      {t.label}
-                    </p>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
+          /* ── 월간 이상: Grouped Bar Chart ── */
+          <ResponsiveContainer width="100%" height={176}>
+            <BarChart data={trendPoints} margin={{ top: 4, right: 4, left: -20, bottom: 0 }} barCategoryGap="28%">
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#a89888' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tickFormatter={v => `${Math.round(v / 10000)}만`} tick={{ fontSize: 10, fill: '#a89888' }} axisLine={false} tickLine={false} width={44} />
+              <Tooltip
+                contentStyle={{ background: '#fff', border: '1px solid #e8ddd2', borderRadius: 8, fontSize: 12 }}
+                formatter={(v, name) => [`${Number(v).toLocaleString()}원`, String(name)]}
+              />
+              <Bar dataKey="revenue" name="수입" fill="var(--coral)" radius={[3, 3, 0, 0]} maxBarSize={28} />
+              <Bar dataKey="expense" name="지출" fill="#64748b"       radius={[3, 3, 0, 0]} maxBarSize={28} />
+            </BarChart>
+          </ResponsiveContainer>
         )}
       </div>
 
@@ -1487,92 +1507,99 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
   return (
     <div className="space-y-3.5">
 
-      {/* ── KPI 카드 ────────────────────────────────────────────── */}
+      {/* ── Row 1: 알림 ─────────────────────────────────────────── */}
+      <AlertsStrip alerts={data.alerts} onOpenAlert={setSelectedAlert} />
+
+      {/* ── KPI 카드 (2×3 grid) ──────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3.5">
 
-        {/* 당월 수납액 — 상단 full-width */}
-        <div className="col-span-2 rounded-xl" style={{ background: 'var(--coral)', padding: '18px 20px' }}>
-          <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'rgba(255,252,247,0.6)', marginBottom: 8 }}>
-            당월 매출 현황
+        {/* Row 2 Left: 당월 매출 */}
+        <div className="rounded-xl" style={{ background: 'var(--coral)', padding: '18px 20px' }}>
+          <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,252,247,0.55)', marginBottom: 8 }}>
+            당월 매출
           </p>
-          <div className="flex items-end justify-between gap-4 flex-wrap">
-            <p style={{ fontSize: 26, fontWeight: 700, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1 }}>
-              {data.totalRevenue.toLocaleString()}
-              <small style={{ fontSize: 13, fontWeight: 400, color: 'rgba(255,252,247,0.6)', marginLeft: 3 }}>원</small>
-            </p>
-            <p style={{ fontSize: 11, color: 'rgba(255,252,247,0.6)', textAlign: 'right', lineHeight: 1.5 }}>
-              {revChange != null && (
-                <em style={{ fontStyle: 'normal', color: '#fbbf24', marginRight: 6 }}>
-                  {revChange >= 0 ? '+' : ''}{revChange}%
-                </em>
-              )}
-              임대수납액+기타수익<br />
-              <span style={{ fontSize: 10, color: 'rgba(255,252,247,0.45)' }}>과입금분은 익월 매출로 귀속</span>
-            </p>
-          </div>
-        </div>
-
-        {/* 이번 달 지출 */}
-        <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
-          <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
-            이번 달 지출
+          <p style={{ fontSize: 22, fontWeight: 700, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+            {data.totalRevenue.toLocaleString()}
+            <small style={{ fontSize: 11, fontWeight: 400, color: 'rgba(255,252,247,0.5)', marginLeft: 3 }}>원</small>
           </p>
-          <p style={{ fontSize: 22, fontWeight: 700, color: '#5a4a3a', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
-            {data.totalExpense.toLocaleString()}
-            <small style={{ fontSize: 12, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
-          </p>
-          <p style={{ fontSize: 11, color: 'var(--warm-muted)' }}>이달 지출 합계</p>
-        </div>
-
-        {/* 미납 금액 */}
-        <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
-          <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
-            미납 금액
-          </p>
-          <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.unpaidCount > 0 ? '#ef4444' : '#5a4a3a' }}>
-            {data.unpaidAmount.toLocaleString()}
-            <small style={{ fontSize: 12, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
-          </p>
-          <p style={{ fontSize: 11, color: 'var(--warm-muted)' }}>
-            <em style={{ fontStyle: 'normal', color: data.unpaidCount > 0 ? 'var(--coral)' : 'var(--warm-muted)' }}>{data.unpaidCount}명</em> 미납
+          <p style={{ fontSize: 10.5, color: 'rgba(255,252,247,0.5)', lineHeight: 1.5 }}>
+            수납액+기타수익
+            {revChange != null && (
+              <em style={{ fontStyle: 'normal', color: '#fbbf24', marginLeft: 6 }}>{revChange >= 0 ? '+' : ''}{revChange}%</em>
+            )}
           </p>
         </div>
 
-        {/* 현재 순이익 */}
+        {/* Row 2 Right: 현재 순이익 — 전문적 다크 */}
         {(() => {
           const net = data.netProfit
           const isPos = net >= 0
           return (
-            <div className="rounded-xl" style={{ background: isPos ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.07)', border: `1px solid ${isPos ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.2)'}`, padding: '18px 20px' }}>
-              <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
+            <div className="rounded-xl" style={{ background: '#1c2b3a', padding: '18px 20px' }}>
+              <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(180,210,240,0.45)', marginBottom: 8 }}>
                 현재 순이익
               </p>
-              <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: isPos ? '#16a34a' : '#ef4444' }}>
+              <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: isPos ? '#4ade80' : '#f87171' }}>
                 {isPos ? '+' : ''}{net.toLocaleString()}
-                <small style={{ fontSize: 12, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
+                <small style={{ fontSize: 11, fontWeight: 400, color: 'rgba(180,210,240,0.3)', marginLeft: 2 }}>원</small>
               </p>
-              <p style={{ fontSize: 11, color: 'var(--warm-muted)' }}>수납 − 실제 지출</p>
+              <p style={{ fontSize: 10.5, color: 'rgba(180,210,240,0.4)' }}>수납 − 실제 지출</p>
             </div>
           )
         })()}
 
-        {/* 입실 현황 */}
+        {/* Row 3 Left: 미납 금액 */}
         <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
-          <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
+          <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
+            미납 금액
+          </p>
+          <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.unpaidCount > 0 ? '#ef4444' : '#5a4a3a' }}>
+            {data.unpaidAmount.toLocaleString()}
+            <small style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
+          </p>
+          <p style={{ fontSize: 10.5, color: 'var(--warm-muted)' }}>
+            <em style={{ fontStyle: 'normal', color: data.unpaidCount > 0 ? 'var(--coral)' : 'var(--warm-muted)' }}>{data.unpaidCount}명</em> 미납
+          </p>
+        </div>
+
+        {/* Row 3 Right: 월 지출 */}
+        <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
+          <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
+            월 지출
+          </p>
+          <p style={{ fontSize: 22, fontWeight: 700, color: '#5a4a3a', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+            {data.totalExpense.toLocaleString()}
+            <small style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
+          </p>
+          <p style={{ fontSize: 10.5, color: 'var(--warm-muted)' }}>이달 지출 합계</p>
+        </div>
+
+        {/* Row 4 Left: 보유 보증금 */}
+        <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
+          <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
+            보유 보증금
+          </p>
+          <p style={{ fontSize: 22, fontWeight: 700, color: '#7c3aed', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+            {data.totalDeposit.toLocaleString()}
+            <small style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
+          </p>
+          <p style={{ fontSize: 10.5, color: 'var(--warm-muted)' }}>현재 보증금 합계</p>
+        </div>
+
+        {/* Row 4 Right: 입실 현황 */}
+        <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
+          <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             입실 현황
           </p>
           <p style={{ fontSize: 26, fontWeight: 700, color: '#5a4a3a', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
             {data.occupiedRooms}
             <small style={{ fontSize: 13, fontWeight: 400, color: 'var(--warm-muted)' }}> / {data.totalRooms}</small>
           </p>
-          <p style={{ fontSize: 11, color: 'var(--warm-muted)' }}>
+          <p style={{ fontSize: 10.5, color: 'var(--warm-muted)' }}>
             공실 <em style={{ fontStyle: 'normal', color: 'var(--coral)' }}>{data.vacantRooms}개</em>
           </p>
         </div>
       </div>
-
-      {/* ── 알림 스트립 (항상 표시) ─────────────────────────────── */}
-      <AlertsStrip alerts={data.alerts} onOpenAlert={setSelectedAlert} />
 
       {/* ── 탭 섹션 ─────────────────────────────────────────────── */}
       <div>

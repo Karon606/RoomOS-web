@@ -196,7 +196,7 @@ export async function deleteIncomeCategory(name: string) {
 
 // ── 지출 카테고리 ─────────────────────────────────────────────────
 
-const DEFAULT_EXPENSE_CATEGORIES = '부식비,소모품비,폐기물 처리비,수선유지비,공과금,마케팅/광고비,인건비,청소용역비,관리비,임대료,통신/렌탈/보험료,세금/수수료'
+const DEFAULT_EXPENSE_CATEGORIES = '부식비,소모품비,폐기물 처리비,수선유지비,공과금,마케팅/광고비,인건비,청소용역비,관리비,임대료,통신/렌탈/보험료,세금/수수료,보증금 반환'
 
 export async function getExpenseCategories(): Promise<string[]> {
   const propertyId = await getPropertyId()
@@ -242,7 +242,7 @@ const FIELD_DEFAULTS: Record<ReorderableField, string> = {
   windowTypeOptions: 'OUTER,INNER',
   directionOptions:  '북향,북동향,동향,남동향,남향,남서향,서향,북서향',
   incomeCategories:  '건조기,세탁기,자판기,이자수익,기타',
-  expenseCategories: '부식비,소모품비,폐기물 처리비,수선유지비,공과금,마케팅/광고비,인건비,청소용역비,관리비,임대료,통신/렌탈/보험료,세금/수수료',
+  expenseCategories: '부식비,소모품비,폐기물 처리비,수선유지비,공과금,마케팅/광고비,인건비,청소용역비,관리비,임대료,통신/렌탈/보험료,세금/수수료,보증금 반환',
   paymentMethods:    '계좌이체,신용카드,체크카드,현금',
 }
 
