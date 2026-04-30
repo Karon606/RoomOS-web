@@ -41,6 +41,31 @@ export default function Header({
     localMonthRef.current = searchParamsMonth
   }, [searchParamsMonth])
 
+  // 날짜 롤오버 감지: URL에 month 쿼리가 없을 때 자정이 지나 달이 바뀌면
+  // 서버 컴포넌트가 stale한 상태로 남으므로 router.refresh()로 재요청한다.
+  // 1) 리렌더 시 비교하는 즉시 처리 + 2) 자정 타이머로 자동 처리
+  const prevTodayMonthRef = useRef(todayMonth)
+  useEffect(() => {
+    if (prevTodayMonthRef.current === todayMonth) return
+    prevTodayMonthRef.current = todayMonth
+    if (!searchParams.has('month')) router.refresh()
+  }, [todayMonth, searchParams, router])
+
+  useEffect(() => {
+    const now = new Date()
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5)
+    const ms = nextMidnight.getTime() - now.getTime()
+    const t = setTimeout(() => {
+      const next = todayMonthStr()
+      if (prevTodayMonthRef.current !== next) {
+        prevTodayMonthRef.current = next
+        setLocalMonth(prev => (searchParams.has('month') ? prev : next))
+        if (!searchParams.has('month')) router.refresh()
+      }
+    }, ms)
+    return () => clearTimeout(t)
+  }, [searchParams, router])
+
   useEffect(() => {
     if (!showPicker) return
     const handle = (e: MouseEvent) => {

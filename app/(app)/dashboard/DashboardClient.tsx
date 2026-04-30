@@ -1576,17 +1576,17 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           )
         })()}
 
-        {/* Row 3 Left: 미납 금액 */}
+        {/* Row 3 Left: 누적 미납 금액 (전월 이월분 포함) */}
         <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
-            미납 금액
+            누적 미납
           </p>
           <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.unpaidCount > 0 ? '#ef4444' : '#5a4a3a' }}>
             {data.unpaidAmount.toLocaleString()}
             <small style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
           <p style={{ fontSize: 10.5, color: 'var(--warm-muted)' }}>
-            <em style={{ fontStyle: 'normal', color: data.unpaidCount > 0 ? 'var(--coral)' : 'var(--warm-muted)' }}>{data.unpaidCount}명</em> 미납
+            <em style={{ fontStyle: 'normal', color: data.unpaidCount > 0 ? 'var(--coral)' : 'var(--warm-muted)' }}>{data.unpaidCount}건</em> · 미납 발생 계약
           </p>
         </div>
 

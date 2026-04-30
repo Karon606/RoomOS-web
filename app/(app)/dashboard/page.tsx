@@ -256,6 +256,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         id: true,
         rentAmount: true,
         moveInDate: true,
+        expectedMoveOut: true,
+        status: true,
         dueDay: true,
         overrideDueDay: true,
         overrideDueDayMonth: true,
@@ -327,13 +329,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const totalDeposit = depositAgg._sum.depositAmount ?? 0
 
   // ── 예상 지출 계산 ────────────────────────────────────────────
-  // 변동 항목의 과거 기록 배치 조회
+  // 변동 항목의 과거 기록 배치 조회 (전년 동월 우선, 없으면 과거 평균)
   const variableRecIds = recurringExpenses.filter(re => (re as any).isVariable).map(re => re.id)
+  const priorYearStart = new Date(year - 1, month - 1, 1)
+  const priorYearEnd   = new Date(year - 1, month, 0)
   const [variablePastExpenses, nonRecurringPast] = await Promise.all([
     variableRecIds.length > 0
       ? prisma.expense.findMany({
           where: { propertyId, recurringExpenseId: { in: variableRecIds }, date: { lt: startDate } },
-          select: { recurringExpenseId: true, amount: true },
+          select: { recurringExpenseId: true, amount: true, date: true },
         })
       : Promise.resolve([]),
     prisma.expense.aggregate({
@@ -342,17 +346,27 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }),
   ])
 
-  // 변동 항목별 평균 맵 (2개월 이상 기록 있을 때만)
+  // 전년 동월 합계 / 전체 과거 합계·건수
+  const priorYearSumMap: Record<string, number> = {}
   const varSumMap: Record<string, number> = {}
   const varCntMap: Record<string, number> = {}
   for (const e of variablePastExpenses) {
     const id = e.recurringExpenseId!
     varSumMap[id] = (varSumMap[id] ?? 0) + e.amount
     varCntMap[id] = (varCntMap[id] ?? 0) + 1
+    const d = new Date(e.date)
+    if (d >= priorYearStart && d <= priorYearEnd) {
+      priorYearSumMap[id] = (priorYearSumMap[id] ?? 0) + e.amount
+    }
   }
+  // 변동 항목 예측: 전년 동월 > 과거 평균(2건 이상) > baseline(re.amount)
   const variableAvgMap: Record<string, number> = {}
   for (const id of variableRecIds) {
-    if ((varCntMap[id] ?? 0) >= 2) variableAvgMap[id] = Math.round(varSumMap[id] / varCntMap[id])
+    if (priorYearSumMap[id] !== undefined) {
+      variableAvgMap[id] = priorYearSumMap[id]
+    } else if ((varCntMap[id] ?? 0) >= 2) {
+      variableAvgMap[id] = Math.round(varSumMap[id] / varCntMap[id])
+    }
   }
 
   const hasExpenseHistory = (nonRecurringPast._sum.amount ?? 0) > 0
@@ -531,10 +545,18 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       : targetMonth
     const firstMonth = cutoffMonthStr && leaseStartMonth < cutoffMonthStr ? cutoffMonthStr : leaseStartMonth
     if (firstMonth > targetMonth) continue
+
+    // 퇴실예정 — expectedMoveOut 이후 월은 청구 종료
+    const moveOut = l.expectedMoveOut ? new Date(l.expectedMoveOut) : null
+    const moveOutMonth = moveOut
+      ? `${moveOut.getFullYear()}-${String(moveOut.getMonth() + 1).padStart(2, '0')}`
+      : null
+
     const months = monthRange(firstMonth, targetMonth)
     let cum = 0
     for (const mon of months) {
       if (prevOwnerLeaseIds.has(l.id) && mon === cutoffMonthStr) continue
+      if (moveOutMonth && mon > moveOutMonth) continue
       cum += Math.max(0, l.rentAmount - (payHistMap[l.id]?.[mon] ?? 0))
     }
     unpaidMap[l.id] = cum

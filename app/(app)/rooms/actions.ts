@@ -259,7 +259,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
   })
 }
 
-// 수납 등록
+// 수납 등록 — 과납분은 다음달 record로 자동 분리 저장
 export async function savePayment(data: {
   leaseTermId: string
   tenantId:    string
@@ -273,26 +273,64 @@ export async function savePayment(data: {
   await requireEdit()
   const propertyId = await getPropertyId()
 
+  const existing = await prisma.paymentRecord.aggregate({
+    where: { leaseTermId: data.leaseTermId, targetMonth: data.targetMonth, isDeposit: false },
+    _sum:  { actualAmount: true },
+  })
+  const alreadyPaid       = existing._sum.actualAmount ?? 0
+  const remainingThisMon  = Math.max(0, data.expectedAmount - alreadyPaid)
+  const currentPortion    = Math.min(data.actualAmount, remainingThisMon)
+  const excess            = data.actualAmount - currentPortion
+
   const existingCount = await prisma.paymentRecord.count({
     where: { leaseTermId: data.leaseTermId, targetMonth: data.targetMonth },
   })
 
-  await prisma.paymentRecord.create({
-    data: {
-      leaseTermId:    data.leaseTermId,
-      tenantId:       data.tenantId,
-      propertyId,
-      targetMonth:    data.targetMonth,
-      expectedAmount: data.expectedAmount,
-      actualAmount:   data.actualAmount,
-      payDate:        new Date(data.payDate),
-      payMethod:      data.payMethod,
-      memo:           data.memo ?? null,
-      seqNo:          existingCount + 1,
-      isPaid:         false,
-      carryOver:      0,
-    },
-  })
+  if (currentPortion > 0 || excess === 0) {
+    await prisma.paymentRecord.create({
+      data: {
+        leaseTermId:    data.leaseTermId,
+        tenantId:       data.tenantId,
+        propertyId,
+        targetMonth:    data.targetMonth,
+        expectedAmount: data.expectedAmount,
+        actualAmount:   currentPortion,
+        payDate:        new Date(data.payDate),
+        payMethod:      data.payMethod,
+        memo:           data.memo ?? null,
+        seqNo:          existingCount + 1,
+        isPaid:         false,
+        carryOver:      0,
+      },
+    })
+  }
+
+  if (excess > 0) {
+    const [y, m] = data.targetMonth.split('-').map(Number)
+    const next   = new Date(y, m, 1)
+    const nextMonth = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
+    const nextSeqNo = await prisma.paymentRecord.count({
+      where: { leaseTermId: data.leaseTermId, targetMonth: nextMonth },
+    })
+    await prisma.paymentRecord.create({
+      data: {
+        leaseTermId:    data.leaseTermId,
+        tenantId:       data.tenantId,
+        propertyId,
+        targetMonth:    nextMonth,
+        expectedAmount: data.expectedAmount,
+        actualAmount:   excess,
+        payDate:        new Date(data.payDate),
+        payMethod:      data.payMethod,
+        memo:           `${data.targetMonth} 과납 이월${data.memo ? ` · ${data.memo}` : ''}`,
+        seqNo:          nextSeqNo + 1,
+        isPaid:         false,
+        carryOver:      0,
+      },
+    })
+    await recalculatePayments(data.leaseTermId, nextMonth, data.expectedAmount)
+  }
+
   await recalculatePayments(data.leaseTermId, data.targetMonth, data.expectedAmount)
 }
 
