@@ -56,7 +56,7 @@ export async function getExpenses(targetMonth: string) {
       propertyId,
       date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
     },
-    orderBy: { date: 'desc' },
+    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     include: {
       financialAccount: { select: { brand: true, alias: true } },
       room: { select: { id: true, roomNo: true } },
