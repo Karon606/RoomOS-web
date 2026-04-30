@@ -6,7 +6,7 @@ import {
   addExtraIncome, updateExtraIncome, deleteExtraIncome,
   settleCardExpenses, unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
-  recordRecurringExpense, uploadExpenseReceipt,
+  recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits,
   type RecurringExpenseWithStatus,
 } from './actions'
 import {
@@ -31,6 +31,9 @@ type Expense = {
   roomId: string | null; room: { id: string; roomNo: string } | null
   recurringExpenseId: string | null; recurringExpense: { isVariable: boolean } | null
   receiptUrl: string | null
+  itemLabel: string | null
+  specValue: number | null; specUnit: string | null
+  qtyValue: number | null; qtyUnit: string | null
 }
 
 type Income = {
@@ -70,166 +73,184 @@ const EXPENSE_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비', 
 
 // ── 품목 선택기 설정 ─────────────────────────────────────────────
 
-type ItemField = { key: string; label: string; type: 'text' | 'number'; unit?: string; placeholder?: string }
-type ItemCfg   = { label: string; fields: ItemField[] }
-
-const ITEM_PRESETS: Record<string, ItemCfg[]> = {
-  '부식비': [
-    { label: '쌀',   fields: [{ key: 'measure', label: '무게 (kg)', type: 'number', unit: 'kg',  placeholder: '20'  }, { key: 'qty', label: '수량', type: 'number', unit: '포대', placeholder: '1'  }] },
-    { label: '김치', fields: [{ key: 'measure', label: '무게 (kg)', type: 'number', unit: 'kg',  placeholder: '5'   }, { key: 'qty', label: '수량', type: 'number', unit: '포기', placeholder: '1'  }] },
-    { label: '라면', fields: [{ key: 'name',    label: '라면 이름', type: 'text',                placeholder: '신라면' }, { key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '10' }] },
-    { label: '식빵', fields: [{ key: 'measure', label: '무게 (g)',  type: 'number', unit: 'g',   placeholder: '500' }, { key: 'qty', label: '수량', type: 'number', unit: '봉',  placeholder: '1'  }] },
-  ],
-  '소모품비': [
-    { label: '물티슈',      fields: [{ key: 'measure', label: '매수 (매)',  type: 'number', unit: '매',  placeholder: '100'  }, { key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '10' }] },
-    { label: '키친타월',    fields: [{ key: 'measure', label: '길이 (m)',   type: 'number', unit: 'm',   placeholder: '20'   }, { key: 'qty', label: '수량', type: 'number', unit: '롤',  placeholder: '6'  }] },
-    { label: '주방세제',    fields: [{ key: 'measure', label: '용량 (ml)',  type: 'number', unit: 'ml',  placeholder: '500'  }, { key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '2'  }] },
-    { label: '세탁세제',    fields: [{ key: 'measure', label: '용량 (ml)',  type: 'number', unit: 'ml',  placeholder: '3000' }, { key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '1'  }] },
-    { label: '화장실 휴지', fields: [{ key: 'measure', label: '길이 (m)',   type: 'number', unit: 'm',   placeholder: '30'   }, { key: 'qty', label: '수량', type: 'number', unit: '롤',  placeholder: '30' }] },
-  ],
+const ITEM_PRESETS: Record<string, string[]> = {
+  '부식비':  ['쌀', '김치', '라면', '식빵', '계란', '고추장', '된장'],
+  '소모품비': ['물티슈', '키친타월', '주방세제', '세탁세제', '화장실 휴지', '쓰레기봉투'],
 }
 
-type PickedItem = { label: string; values: Record<string, string>; isCustom?: boolean }
+const SPEC_UNITS = ['kg', 'g', 'ml', 'L', '매', 'm', '장', '개', '인분', '봉지', '알', '권']
+const QTY_UNITS  = ['개', '박스', '롤', '팩', '포대', '망', '단', '봉', '포기', '병', '통', '세트']
 
-function fmtPickedItem(item: PickedItem): string {
-  if (item.isCustom) {
-    const qty  = item.values.qty  || ''
-    const unit = item.values.unit || ''
-    return `[${item.label}]${qty ? ` x ${qty}${unit}` : ''}`
-  }
-  const allPresets = Object.values(ITEM_PRESETS).flat()
-  const cfg = allPresets.find(c => c.label === item.label)
-  if (!cfg) return `[${item.label}]`
-
-  // 라면처럼 name 필드가 있으면 레이블에 포함
-  const nameVal = item.values['name'] || ''
-  const labelStr = nameVal ? `[${item.label} ${nameVal}]` : `[${item.label}]`
-
-  // measure 등 비-qty/비-name 필드 → "500ml" 형태
-  const measureStr = cfg.fields
-    .filter(f => f.key !== 'qty' && f.key !== 'name')
-    .map(f => { const v = item.values[f.key]; return v ? `${v}${f.unit ?? ''}` : '' })
-    .filter(Boolean).join(' ')
-
-  // qty 필드 → "x 3개" 형태
-  const qtyField = cfg.fields.find(f => f.key === 'qty')
-  const qtyVal   = item.values['qty'] || ''
-  const qtyStr   = qtyVal ? `x ${qtyVal}${qtyField?.unit ?? ''}` : ''
-
-  return [labelStr, measureStr, qtyStr].filter(Boolean).join(' ')
+const ITEM_DEFAULTS: Record<string, { specUnit: string; qtyUnit: string }> = {
+  '쌀':         { specUnit: 'kg',  qtyUnit: '포대' },
+  '김치':       { specUnit: 'kg',  qtyUnit: '포기' },
+  '라면':       { specUnit: '개',  qtyUnit: '박스' },
+  '식빵':       { specUnit: 'g',   qtyUnit: '봉' },
+  '계란':       { specUnit: '개',  qtyUnit: '판' },
+  '물티슈':     { specUnit: '매',  qtyUnit: '팩' },
+  '키친타월':   { specUnit: '매',  qtyUnit: '롤' },
+  '주방세제':   { specUnit: 'ml',  qtyUnit: '개' },
+  '세탁세제':   { specUnit: 'ml',  qtyUnit: '개' },
+  '화장실 휴지':{ specUnit: 'm',   qtyUnit: '롤' },
+  '쓰레기봉투': { specUnit: 'L',   qtyUnit: '개' },
 }
 
-function fmtItemsMemo(items: PickedItem[]): string {
-  return items.map(fmtPickedItem).join(', ')
+export type ItemPickState = {
+  label: string
+  specValue: string; specUnit: string
+  qtyValue: string; qtyUnit: string
 }
 
-function ItemSelector({ category, onChange }: { category: string; onChange: (memo: string) => void }) {
+export function fmtItemDetail(d: ItemPickState): string {
+  const spec = d.specValue ? `${d.specValue}${d.specUnit}` : ''
+  const qty  = d.qtyValue  ? `${d.qtyValue}${d.qtyUnit}`  : ''
+  return [`[${d.label}]`, spec, qty && `x ${qty}`].filter(Boolean).join(' ')
+}
+
+function UnitCombobox({ id, value, onChange, options, placeholder }: {
+  id: string; value: string; onChange: (v: string) => void
+  options: string[]; placeholder?: string
+}) {
+  return (
+    <div className="relative flex-1 min-w-0">
+      <input
+        type="text" id={id} list={`${id}-list`} value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+      />
+      <datalist id={`${id}-list`}>
+        {options.map(o => <option key={o} value={o} />)}
+      </datalist>
+    </div>
+  )
+}
+
+function ItemSelector({ category, onChange }: {
+  category: string
+  onChange: (data: ItemPickState | null) => void
+}) {
   const presets = ITEM_PRESETS[category]
-  const [pickedItems, setPickedItems] = useState<PickedItem[]>([])
-  const [activeLabel, setActiveLabel]   = useState<string | null>(null)
-  const [fieldVals, setFieldVals]       = useState<Record<string, string>>({})
-  const [showCustom, setShowCustom]     = useState(false)
-  const [customLabel, setCustomLabel]   = useState('')
-  const [customQty, setCustomQty]       = useState('')
-  const [customUnit, setCustomUnit]     = useState('')
+  const [picked, setPicked]           = useState<ItemPickState | null>(null)
+  const [activeLabel, setActiveLabel] = useState<string | null>(null)
+  const [specValue, setSpecValue]     = useState('')
+  const [specUnit, setSpecUnit]       = useState('')
+  const [qtyValue, setQtyValue]       = useState('')
+  const [qtyUnit, setQtyUnit]         = useState('')
+  const [customLabel, setCustomLabel] = useState('')
+  const [fetching, setFetching]       = useState(false)
 
-  useEffect(() => { setPickedItems([]); setActiveLabel(null); setFieldVals({}); setShowCustom(false) }, [category])
+  useEffect(() => {
+    setPicked(null); setActiveLabel(null)
+    setSpecValue(''); setSpecUnit(''); setQtyValue(''); setQtyUnit('')
+    setCustomLabel('')
+    onChange(null)
+  }, [category])
 
   if (!presets) return null
 
-  const push = (items: PickedItem[]) => { setPickedItems(items); onChange(fmtItemsMemo(items)) }
+  const numCls  = 'w-14 bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  const textCls = 'w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
-  const confirmPreset = () => {
-    if (!activeLabel) return
-    push([...pickedItems, { label: activeLabel, values: { ...fieldVals } }])
-    setActiveLabel(null); setFieldVals({})
+  async function openPreset(label: string) {
+    setActiveLabel(label)
+    setSpecValue(''); setQtyValue('')
+    const def = ITEM_DEFAULTS[label]
+    setSpecUnit(def?.specUnit ?? ''); setQtyUnit(def?.qtyUnit ?? '')
+    setFetching(true)
+    try {
+      const last = await getLastItemUnits(label)
+      if (last?.specUnit) setSpecUnit(last.specUnit)
+      if (last?.qtyUnit)  setQtyUnit(last.qtyUnit)
+    } finally { setFetching(false) }
   }
-  const confirmCustom = () => {
-    if (!customLabel.trim()) return
-    push([...pickedItems, { label: customLabel.trim(), values: { qty: customQty, unit: customUnit }, isCustom: true }])
-    setCustomLabel(''); setCustomQty(''); setCustomUnit(''); setShowCustom(false)
-  }
-  const remove = (idx: number) => push(pickedItems.filter((_, i) => i !== idx))
 
-  const activeCfg = presets.find(c => c.label === activeLabel)
-  const inputCls  = 'w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  function confirm(label: string) {
+    const data: ItemPickState = { label, specValue, specUnit, qtyValue, qtyUnit }
+    setPicked(data); setActiveLabel(null); onChange(data)
+  }
+
+  function clear() {
+    setPicked(null); setActiveLabel(null)
+    setSpecValue(''); setSpecUnit(''); setQtyValue(''); setQtyUnit('')
+    onChange(null)
+  }
+
+  const SpecQtyInputs = ({ idSuffix }: { idSuffix: string }) => (
+    <div className="grid grid-cols-2 gap-2">
+      <div className="space-y-1">
+        <label className="text-[10px] text-[var(--warm-muted)]">규격</label>
+        <div className="flex gap-1">
+          <input type="number" min={0} placeholder="0" value={specValue}
+            onChange={e => setSpecValue(e.target.value)} className={numCls} />
+          <UnitCombobox id={`spec-${idSuffix}`} value={specUnit} onChange={setSpecUnit}
+            options={SPEC_UNITS} placeholder="단위" />
+        </div>
+      </div>
+      <div className="space-y-1">
+        <label className="text-[10px] text-[var(--warm-muted)]">수량</label>
+        <div className="flex gap-1">
+          <input type="number" min={0} placeholder="1" value={qtyValue}
+            onChange={e => setQtyValue(e.target.value)} className={numCls} />
+          <UnitCombobox id={`qty-${idSuffix}`} value={qtyUnit} onChange={setQtyUnit}
+            options={QTY_UNITS} placeholder="단위" />
+        </div>
+      </div>
+    </div>
+  )
 
   return (
     <div className="space-y-2">
-      {pickedItems.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {pickedItems.map((item, idx) => (
-            <span key={idx} className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--coral-pale)] text-[var(--coral)] text-xs rounded-full ring-1 ring-[var(--coral)]/20">
-              {fmtPickedItem(item)}
-              <button type="button" onClick={() => remove(idx)} className="hover:text-red-600 leading-none">×</button>
-            </span>
-          ))}
-        </div>
+      {picked && (
+        <span className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--coral-pale)] text-[var(--coral)] text-xs rounded-full ring-1 ring-[var(--coral)]/20">
+          {fmtItemDetail(picked)}
+          <button type="button" onClick={clear} className="hover:text-red-600 leading-none">×</button>
+        </span>
       )}
 
-      {!activeLabel && !showCustom && (
+      {!picked && !activeLabel && (
         <div className="flex flex-wrap gap-1.5">
-          {presets.map(cfg => (
-            <button key={cfg.label} type="button"
-              onClick={() => { setActiveLabel(cfg.label); setFieldVals({}) }}
+          {presets.map(label => (
+            <button key={label} type="button" onClick={() => openPreset(label)}
               className="px-3 py-1.5 text-xs rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors">
-              + {cfg.label}
+              + {label}
             </button>
           ))}
-          <button type="button" onClick={() => setShowCustom(true)}
+          <button type="button" onClick={() => { setActiveLabel('__custom__'); setSpecUnit(''); setQtyUnit('') }}
             className="px-3 py-1.5 text-xs rounded-xl bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors">
-            + 품목 추가
+            + 직접 입력
           </button>
         </div>
       )}
 
-      {activeLabel && activeCfg && (
+      {activeLabel && activeLabel !== '__custom__' && (
         <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-3 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--warm-dark)]">{activeLabel}</span>
-            <button type="button" onClick={() => { setActiveLabel(null); setFieldVals({}) }}
+            <span className="text-xs font-semibold text-[var(--warm-dark)]">
+              {activeLabel}{fetching && <span className="ml-1 text-[10px] text-[var(--warm-muted)]">단위 불러오는 중…</span>}
+            </span>
+            <button type="button" onClick={() => setActiveLabel(null)}
               className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none">✕</button>
           </div>
-          <div className={`grid gap-2 ${activeCfg.fields.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-            {activeCfg.fields.map(f => (
-              <div key={f.key} className="space-y-1">
-                <label className="text-[10px] text-[var(--warm-muted)]">{f.label}{f.unit ? ` (${f.unit})` : ''}</label>
-                <input type={f.type === 'number' ? 'number' : 'text'} min={f.type === 'number' ? 0 : undefined}
-                  placeholder={f.placeholder ?? ''} value={fieldVals[f.key] ?? ''}
-                  onChange={e => setFieldVals(prev => ({ ...prev, [f.key]: e.target.value }))}
-                  className={inputCls} />
-              </div>
-            ))}
-          </div>
-          <button type="button" onClick={confirmPreset}
-            className="w-full py-1.5 bg-[var(--coral)] hover:opacity-90 text-white text-xs font-medium rounded-lg transition-colors">
-            추가
-          </button>
+          <SpecQtyInputs idSuffix={activeLabel} />
+          <button type="button" onClick={() => confirm(activeLabel)}
+            className="w-full py-1.5 bg-[var(--coral)] hover:opacity-90 text-white text-xs font-medium rounded-lg transition-colors">추가</button>
         </div>
       )}
 
-      {showCustom && (
+      {activeLabel === '__custom__' && (
         <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[var(--warm-dark)]">직접 입력</span>
-            <button type="button" onClick={() => setShowCustom(false)}
+            <button type="button" onClick={() => setActiveLabel(null)}
               className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none">✕</button>
           </div>
           <div className="space-y-1">
             <label className="text-[10px] text-[var(--warm-muted)]">품목명</label>
-            <input type="text" placeholder="예: 고추장" value={customLabel} onChange={e => setCustomLabel(e.target.value)} className={inputCls} />
+            <input type="text" placeholder="예: 고추장" value={customLabel} onChange={e => setCustomLabel(e.target.value)} className={textCls} />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <label className="text-[10px] text-[var(--warm-muted)]">수량</label>
-              <input type="number" min={0} placeholder="1" value={customQty} onChange={e => setCustomQty(e.target.value)} className={inputCls} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] text-[var(--warm-muted)]">단위</label>
-              <input type="text" placeholder="개, 봉, kg…" value={customUnit} onChange={e => setCustomUnit(e.target.value)} className={inputCls} />
-            </div>
-          </div>
-          <button type="button" onClick={confirmCustom}
+          <SpecQtyInputs idSuffix="custom" />
+          <button type="button" onClick={() => { if (customLabel.trim()) confirm(customLabel.trim()) }}
             className="w-full py-1.5 bg-[var(--coral)] hover:opacity-90 text-white text-xs font-medium rounded-lg transition-colors">
             추가
           </button>
@@ -540,8 +561,8 @@ export default function FinanceClient({
   const [receiptUploading, setReceiptUploading] = useState(false)
   const [addExpCategory, setAddExpCategory]   = useState(EXPENSE_CATEGORIES[0])
   const [editExpCategory, setEditExpCategory] = useState('')
-  const [addItemMemo, setAddItemMemo]   = useState('')
-  const [editItemMemo, setEditItemMemo] = useState('')
+  const [addItemData, setAddItemData]   = useState<ItemPickState | null>(null)
+  const [editItemData, setEditItemData] = useState<ItemPickState | null>(null)
 
   // ── 수익 탭 상태 ─────────────────────────────────────────────
   const [incFilter, setIncFilter] = useState({ method: 'all', category: 'all' })
@@ -1060,7 +1081,7 @@ export default function FinanceClient({
               className="px-4 py-2 bg-[var(--canvas)] border border-[var(--warm-border)] hover:border-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
               고정 지출 관리
             </button>
-            <button onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItemMemo(''); setError('') }}
+            <button onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItemData(null); setError('') }}
               className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
               + 지출 등록
             </button>
@@ -1820,7 +1841,13 @@ export default function FinanceClient({
                     setEditExpRoomId(detailExp.roomId ?? '')
                     setEditReceiptUrl(detailExp.receiptUrl ?? '')
                     setEditExpCategory(detailExp.category)
-                    setEditItemMemo('')
+                    setEditItemData(detailExp.itemLabel ? {
+                      label: detailExp.itemLabel,
+                      specValue: detailExp.specValue?.toString() ?? '',
+                      specUnit:  detailExp.specUnit ?? '',
+                      qtyValue:  detailExp.qtyValue?.toString() ?? '',
+                      qtyUnit:   detailExp.qtyUnit ?? '',
+                    } : null)
                     setError('')
                   }}
                     className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">수정</button>
@@ -1847,7 +1874,7 @@ export default function FinanceClient({
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                     <select name="category" value={editExpCategory}
-                      onChange={e => { setEditExpCategory(e.target.value); setEditItemMemo('') }}
+                      onChange={e => { setEditExpCategory(e.target.value); setEditItemData(null) }}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
@@ -1860,17 +1887,24 @@ export default function FinanceClient({
                   {ITEM_PRESETS[editExpCategory] && (
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택</label>
-                      <ItemSelector key={editExpCategory} category={editExpCategory} onChange={setEditItemMemo} />
+                      <ItemSelector key={editExpCategory} category={editExpCategory} onChange={setEditItemData} />
                     </div>
                   )}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
-                    {editItemMemo
-                      ? <input type="text" name="detail" value={editItemMemo} readOnly
+                    {editItemData
+                      ? <input type="text" name="detail" value={fmtItemDetail(editItemData)} readOnly
                           className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
                       : <input type="text" name="detail" defaultValue={detailExp.detail ?? ''} placeholder="세부 내용"
                           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                     }
+                    {editItemData && <>
+                      <input type="hidden" name="itemLabel" value={editItemData.label} />
+                      <input type="hidden" name="specValue" value={editItemData.specValue} />
+                      <input type="hidden" name="specUnit"  value={editItemData.specUnit} />
+                      <input type="hidden" name="qtyValue"  value={editItemData.qtyValue} />
+                      <input type="hidden" name="qtyUnit"   value={editItemData.qtyUnit} />
+                    </>}
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
@@ -2079,7 +2113,7 @@ export default function FinanceClient({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                   <select name="category" value={addExpCategory}
-                    onChange={e => { setAddExpCategory(e.target.value); setAddItemMemo('') }}
+                    onChange={e => { setAddExpCategory(e.target.value); setAddItemData(null) }}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
@@ -2092,17 +2126,24 @@ export default function FinanceClient({
                 {ITEM_PRESETS[addExpCategory] && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택</label>
-                    <ItemSelector key={addExpCategory} category={addExpCategory} onChange={setAddItemMemo} />
+                    <ItemSelector key={addExpCategory} category={addExpCategory} onChange={setAddItemData} />
                   </div>
                 )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
-                  {addItemMemo
-                    ? <input type="text" name="detail" value={addItemMemo} readOnly
+                  {addItemData
+                    ? <input type="text" name="detail" value={fmtItemDetail(addItemData)} readOnly
                         className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
                     : <input type="text" name="detail" placeholder="세부 내용"
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   }
+                  {addItemData && <>
+                    <input type="hidden" name="itemLabel" value={addItemData.label} />
+                    <input type="hidden" name="specValue" value={addItemData.specValue} />
+                    <input type="hidden" name="specUnit"  value={addItemData.specUnit} />
+                    <input type="hidden" name="qtyValue"  value={addItemData.qtyValue} />
+                    <input type="hidden" name="qtyUnit"   value={addItemData.qtyUnit} />
+                  </>}
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>

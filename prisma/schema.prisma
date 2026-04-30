@@ -380,6 +380,11 @@ model Expense {
   financeName   String?
   receiptUrls   String?
   targetRoomId  String?
+  itemLabel    String?
+  specValue    Float?
+  specUnit     String?
+  qtyValue     Float?
+  qtyUnit      String?
   createdAt     DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 

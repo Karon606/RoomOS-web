@@ -129,6 +129,18 @@ export async function uploadExpenseReceipt(formData: FormData): Promise<{ ok: tr
   }
 }
 
+export async function getLastItemUnits(
+  itemLabel: string,
+): Promise<{ specUnit: string | null; qtyUnit: string | null } | null> {
+  const propertyId = await getPropertyId()
+  const row = await prisma.expense.findFirst({
+    where: { propertyId, itemLabel },
+    select: { specUnit: true, qtyUnit: true },
+    orderBy: { createdAt: 'desc' },
+  })
+  return row ?? null
+}
+
 export async function addExpense(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -144,6 +156,11 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const financeName        = formData.get('financeName') as string
     const roomId             = formData.get('roomId') as string
     const receiptUrl         = formData.get('receiptUrl') as string
+    const itemLabel = formData.get('itemLabel') as string
+    const specUnit  = formData.get('specUnit') as string
+    const qtyUnit   = formData.get('qtyUnit') as string
+    const specValueRaw = formData.get('specValue') as string
+    const qtyValueRaw  = formData.get('qtyValue') as string
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
@@ -161,6 +178,11 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
         receiptUrl:         receiptUrl || null,
         settleStatus:       payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED',
         roomId:             roomId || null,
+        itemLabel:          itemLabel || null,
+        specUnit:           specUnit || null,
+        qtyUnit:            qtyUnit || null,
+        specValue:          specValueRaw ? parseFloat(specValueRaw) : null,
+        qtyValue:           qtyValueRaw  ? parseFloat(qtyValueRaw)  : null,
       },
     })
     revalidatePath('/finance')
@@ -186,6 +208,11 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
     const financeName        = formData.get('financeName') as string
     const roomId             = formData.get('roomId') as string
     const receiptUrl         = formData.get('receiptUrl') as string
+    const itemLabel = formData.get('itemLabel') as string
+    const specUnit  = formData.get('specUnit') as string
+    const qtyUnit   = formData.get('qtyUnit') as string
+    const specValueRaw = formData.get('specValue') as string
+    const qtyValueRaw  = formData.get('qtyValue') as string
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
@@ -202,6 +229,11 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
         financeName:        financeName || null,
         settleStatus:       payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED',
         roomId:             roomId || null,
+        itemLabel:          itemLabel || null,
+        specUnit:           specUnit || null,
+        qtyUnit:            qtyUnit || null,
+        specValue:          specValueRaw ? parseFloat(specValueRaw) : null,
+        qtyValue:           qtyValueRaw  ? parseFloat(qtyValueRaw)  : null,
         ...(receiptUrl !== null && receiptUrl !== undefined ? { receiptUrl: receiptUrl || null } : {}),
       },
     })
