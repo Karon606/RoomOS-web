@@ -68,6 +68,181 @@ type SettleGroup = {
 
 const EXPENSE_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비', '수선유지비', '공과금', '마케팅/광고비', '인건비', '청소용역비', '관리비', '임대료', '통신/렌탈/보험료', '세금/수수료', '보증금 반환']
 
+// ── 품목 선택기 설정 ─────────────────────────────────────────────
+
+type ItemField = { key: string; label: string; type: 'text' | 'number'; unit?: string; placeholder?: string }
+type ItemCfg   = { label: string; fields: ItemField[] }
+
+const ITEM_PRESETS: Record<string, ItemCfg[]> = {
+  '부식비': [
+    { label: '쌀',    fields: [{ key: 'weight', label: '무게', type: 'number', unit: 'kg',  placeholder: '20' }, { key: 'qty', label: '수량', type: 'number', unit: '포대', placeholder: '1' }] },
+    { label: '김치',  fields: [{ key: 'weight', label: '무게', type: 'number', unit: 'kg',  placeholder: '5'  }, { key: 'qty', label: '수량', type: 'number', unit: '포기', placeholder: '1' }] },
+    { label: '라면',  fields: [{ key: 'name',   label: '라면 이름', type: 'text',            placeholder: '신라면' }, { key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '10' }] },
+    { label: '식빵',  fields: [{ key: 'weight', label: '무게', type: 'number', unit: 'g',   placeholder: '500' }, { key: 'qty', label: '수량', type: 'number', unit: '봉',  placeholder: '1'  }] },
+  ],
+  '소모품비': [
+    { label: '물티슈',      fields: [{ key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '10' }] },
+    { label: '키친타월',    fields: [{ key: 'qty', label: '수량', type: 'number', unit: '롤',  placeholder: '6'  }] },
+    { label: '주방세제',    fields: [{ key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '2'  }] },
+    { label: '세탁세제',    fields: [{ key: 'qty', label: '수량', type: 'number', unit: '개',  placeholder: '1'  }] },
+    { label: '화장실 휴지', fields: [{ key: 'qty', label: '수량', type: 'number', unit: '롤',  placeholder: '30' }] },
+  ],
+}
+
+type PickedItem = { label: string; values: Record<string, string>; isCustom?: boolean }
+
+function fmtPickedItem(item: PickedItem): string {
+  if (item.isCustom) {
+    const qty  = item.values.qty  || ''
+    const unit = item.values.unit || ''
+    return `[${item.label}]${qty ? ` x ${qty}${unit}` : ''}`
+  }
+  const presets = Object.values(ITEM_PRESETS).flat()
+  const cfg = presets.find(c => c.label === item.label)
+  if (!cfg) return `[${item.label}]`
+  if (item.label === '쌀' || item.label === '김치') {
+    const counterUnit = item.label === '쌀' ? '포대' : '포기'
+    const w = item.values.weight, q = item.values.qty
+    return `[${item.label}]${w ? ` ${w}kg` : ''}${q ? ` x ${q}${counterUnit}` : ''}`
+  }
+  if (item.label === '라면') {
+    const n = item.values.name, q = item.values.qty
+    return `[라면${n ? ` ${n}` : ''}]${q ? ` x ${q}개` : ''}`
+  }
+  if (item.label === '식빵') {
+    const w = item.values.weight, q = item.values.qty
+    return `[식빵]${w ? ` ${w}g` : ''}${q ? ` x ${q}봉` : ''}`
+  }
+  const parts = cfg.fields.map(f => {
+    const v = item.values[f.key]
+    if (!v) return ''
+    if (f.key === 'qty' && f.unit) return `x ${v}${f.unit}`
+    if (f.unit) return `${v}${f.unit}`
+    return v
+  }).filter(Boolean)
+  return `[${item.label}]${parts.length ? ' ' + parts.join(' ') : ''}`
+}
+
+function fmtItemsMemo(items: PickedItem[]): string {
+  return items.map(fmtPickedItem).join(', ')
+}
+
+function ItemSelector({ category, onChange }: { category: string; onChange: (memo: string) => void }) {
+  const presets = ITEM_PRESETS[category]
+  const [pickedItems, setPickedItems] = useState<PickedItem[]>([])
+  const [activeLabel, setActiveLabel]   = useState<string | null>(null)
+  const [fieldVals, setFieldVals]       = useState<Record<string, string>>({})
+  const [showCustom, setShowCustom]     = useState(false)
+  const [customLabel, setCustomLabel]   = useState('')
+  const [customQty, setCustomQty]       = useState('')
+  const [customUnit, setCustomUnit]     = useState('')
+
+  useEffect(() => { setPickedItems([]); setActiveLabel(null); setFieldVals({}); setShowCustom(false) }, [category])
+
+  if (!presets) return null
+
+  const push = (items: PickedItem[]) => { setPickedItems(items); onChange(fmtItemsMemo(items)) }
+
+  const confirmPreset = () => {
+    if (!activeLabel) return
+    push([...pickedItems, { label: activeLabel, values: { ...fieldVals } }])
+    setActiveLabel(null); setFieldVals({})
+  }
+  const confirmCustom = () => {
+    if (!customLabel.trim()) return
+    push([...pickedItems, { label: customLabel.trim(), values: { qty: customQty, unit: customUnit }, isCustom: true }])
+    setCustomLabel(''); setCustomQty(''); setCustomUnit(''); setShowCustom(false)
+  }
+  const remove = (idx: number) => push(pickedItems.filter((_, i) => i !== idx))
+
+  const activeCfg = presets.find(c => c.label === activeLabel)
+  const inputCls  = 'w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+
+  return (
+    <div className="space-y-2">
+      {pickedItems.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {pickedItems.map((item, idx) => (
+            <span key={idx} className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--coral-pale)] text-[var(--coral)] text-xs rounded-full ring-1 ring-[var(--coral)]/20">
+              {fmtPickedItem(item)}
+              <button type="button" onClick={() => remove(idx)} className="hover:text-red-600 leading-none">×</button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {!activeLabel && !showCustom && (
+        <div className="flex flex-wrap gap-1.5">
+          {presets.map(cfg => (
+            <button key={cfg.label} type="button"
+              onClick={() => { setActiveLabel(cfg.label); setFieldVals({}) }}
+              className="px-3 py-1.5 text-xs rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors">
+              + {cfg.label}
+            </button>
+          ))}
+          <button type="button" onClick={() => setShowCustom(true)}
+            className="px-3 py-1.5 text-xs rounded-xl bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors">
+            + 품목 추가
+          </button>
+        </div>
+      )}
+
+      {activeLabel && activeCfg && (
+        <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[var(--warm-dark)]">{activeLabel}</span>
+            <button type="button" onClick={() => { setActiveLabel(null); setFieldVals({}) }}
+              className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none">✕</button>
+          </div>
+          <div className={`grid gap-2 ${activeCfg.fields.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            {activeCfg.fields.map(f => (
+              <div key={f.key} className="space-y-1">
+                <label className="text-[10px] text-[var(--warm-muted)]">{f.label}{f.unit ? ` (${f.unit})` : ''}</label>
+                <input type={f.type === 'number' ? 'number' : 'text'} min={f.type === 'number' ? 0 : undefined}
+                  placeholder={f.placeholder ?? ''} value={fieldVals[f.key] ?? ''}
+                  onChange={e => setFieldVals(prev => ({ ...prev, [f.key]: e.target.value }))}
+                  className={inputCls} />
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={confirmPreset}
+            className="w-full py-1.5 bg-[var(--coral)] hover:opacity-90 text-white text-xs font-medium rounded-lg transition-colors">
+            추가
+          </button>
+        </div>
+      )}
+
+      {showCustom && (
+        <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[var(--warm-dark)]">직접 입력</span>
+            <button type="button" onClick={() => setShowCustom(false)}
+              className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none">✕</button>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] text-[var(--warm-muted)]">품목명</label>
+            <input type="text" placeholder="예: 고추장" value={customLabel} onChange={e => setCustomLabel(e.target.value)} className={inputCls} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-[10px] text-[var(--warm-muted)]">수량</label>
+              <input type="number" min={0} placeholder="1" value={customQty} onChange={e => setCustomQty(e.target.value)} className={inputCls} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-[var(--warm-muted)]">단위</label>
+              <input type="text" placeholder="개, 봉, kg…" value={customUnit} onChange={e => setCustomUnit(e.target.value)} className={inputCls} />
+            </div>
+          </div>
+          <button type="button" onClick={confirmCustom}
+            className="w-full py-1.5 bg-[var(--coral)] hover:opacity-90 text-white text-xs font-medium rounded-lg transition-colors">
+            추가
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 
 const PAY_METHODS_EXP    = ['계좌이체', '신용카드', '체크카드', '현금', '기타']
 const PAY_METHODS_INC    = ['계좌이체', '현금', '기타']
@@ -367,6 +542,10 @@ export default function FinanceClient({
   const [addReceiptUrl, setAddReceiptUrl]   = useState('')
   const [editReceiptUrl, setEditReceiptUrl] = useState('')
   const [receiptUploading, setReceiptUploading] = useState(false)
+  const [addExpCategory, setAddExpCategory]   = useState(EXPENSE_CATEGORIES[0])
+  const [editExpCategory, setEditExpCategory] = useState('')
+  const [addItemMemo, setAddItemMemo]   = useState('')
+  const [editItemMemo, setEditItemMemo] = useState('')
 
   // ── 수익 탭 상태 ─────────────────────────────────────────────
   const [incFilter, setIncFilter] = useState({ method: 'all', category: 'all' })
@@ -885,7 +1064,7 @@ export default function FinanceClient({
               className="px-4 py-2 bg-[var(--canvas)] border border-[var(--warm-border)] hover:border-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
               고정 지출 관리
             </button>
-            <button onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setError('') }}
+            <button onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItemMemo(''); setError('') }}
               className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
               + 지출 등록
             </button>
@@ -952,8 +1131,8 @@ export default function FinanceClient({
                               {e.financialAccount && <span className="text-[10px] text-[var(--warm-muted)]">{accName(e.financialAccount)}</span>}
                             </div>
                             <div className="flex items-center gap-1.5">
-                              {(e.detail || e.memo) && (
-                                <p className="text-xs text-[var(--warm-dark)] truncate">{[e.detail, e.memo].filter(Boolean).join(' · ')}</p>
+                              {(e.vendor || e.detail || e.memo) && (
+                                <p className="text-xs text-[var(--warm-dark)] truncate">{[e.vendor, e.detail, e.memo].filter(Boolean).join(' · ')}</p>
                               )}
                               {e.receiptUrl && <span className="text-[10px] shrink-0">🧾</span>}
                             </div>
@@ -1605,6 +1784,7 @@ export default function FinanceClient({
                 <div className="flex-1 overflow-y-auto p-6 space-y-3">
                   <DetailRow label="날짜"        value={fmtDate(detailExp.date)} />
                   <DetailRow label="카테고리"    value={detailExp.category} />
+                  {detailExp.vendor && <DetailRow label="구매처"   value={detailExp.vendor} />}
                   <DetailRow label="세부 항목"   value={detailExp.detail ?? '—'} />
                   <DetailRow label="금액"        value={<span className="text-red-400 font-semibold"><MoneyDisplay amount={detailExp.amount} prefix="-" /></span>} />
                   {detailExp.room && <DetailRow label="대상 호실" value={`${detailExp.room.roomNo}호`} />}
@@ -1643,6 +1823,8 @@ export default function FinanceClient({
                     setEditExpAccName(detailExp.financeName ?? '')
                     setEditExpRoomId(detailExp.roomId ?? '')
                     setEditReceiptUrl(detailExp.receiptUrl ?? '')
+                    setEditExpCategory(detailExp.category)
+                    setEditItemMemo('')
                     setError('')
                   }}
                     className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">수정</button>
@@ -1668,11 +1850,23 @@ export default function FinanceClient({
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
-                    <select name="category" defaultValue={detailExp.category}
+                    <select name="category" value={editExpCategory}
+                      onChange={e => { setEditExpCategory(e.target.value); setEditItemMemo('') }}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>
+                    <input type="text" name="vendor" defaultValue={detailExp.vendor ?? ''} placeholder="예: 쿠팡, 다이소"
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                  </div>
+                  {ITEM_PRESETS[editExpCategory] && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택</label>
+                      <ItemSelector key={editExpCategory} category={editExpCategory} onChange={setEditItemMemo} />
+                    </div>
+                  )}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                     <input type="text" name="detail" defaultValue={detailExp.detail ?? ''}
@@ -1719,9 +1913,15 @@ export default function FinanceClient({
                     </div>
                   )}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
-                    <input type="text" name="memo" defaultValue={detailExp.memo ?? ''}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">
+                      메모{editItemMemo && <span className="ml-1 text-[10px] text-[var(--coral)] font-normal">품목 선택 결과가 자동 입력됩니다</span>}
+                    </label>
+                    {editItemMemo
+                      ? <input type="text" name="memo" value={editItemMemo} readOnly
+                          className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
+                      : <input type="text" name="memo" defaultValue={detailExp.memo ?? ''}
+                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                    }
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">영수증</label>
@@ -1884,11 +2084,23 @@ export default function FinanceClient({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
-                  <select name="category"
+                  <select name="category" value={addExpCategory}
+                    onChange={e => { setAddExpCategory(e.target.value); setAddItemMemo('') }}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>
+                  <input type="text" name="vendor" placeholder="예: 쿠팡, 다이소"
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                </div>
+                {ITEM_PRESETS[addExpCategory] && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택</label>
+                    <ItemSelector key={addExpCategory} category={addExpCategory} onChange={setAddItemMemo} />
+                  </div>
+                )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                   <input type="text" name="detail" placeholder="세부 내용"
@@ -1935,9 +2147,15 @@ export default function FinanceClient({
                   </div>
                 )}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
-                  <input type="text" name="memo" placeholder="메모 (선택)"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">
+                    메모{addItemMemo && <span className="ml-1 text-[10px] text-[var(--coral)] font-normal">품목 선택 결과가 자동 입력됩니다</span>}
+                  </label>
+                  {addItemMemo
+                    ? <input type="text" name="memo" value={addItemMemo} readOnly
+                        className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
+                    : <input type="text" name="memo" placeholder="메모 (선택)"
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                  }
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">영수증</label>
