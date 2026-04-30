@@ -66,6 +66,17 @@ export default function Header({
     return () => clearTimeout(t)
   }, [searchParams, router])
 
+  // 새 탭·앱 재진입 시: 마지막으로 본 달과 오늘 달이 다르면 즉시 갱신
+  useEffect(() => {
+    const SEEN_KEY = 'roomos_seen_month'
+    const seen = sessionStorage.getItem(SEEN_KEY)
+    if (seen !== todayMonth) {
+      sessionStorage.setItem(SEEN_KEY, todayMonth)
+      if (!searchParams.has('month')) router.refresh()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     if (!showPicker) return
     const handle = (e: MouseEvent) => {

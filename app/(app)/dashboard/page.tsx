@@ -57,6 +57,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const startDate = new Date(year, month - 1, 1)
   const endDate   = new Date(year, month, 0)
 
+  // 미수납·납입완료 위젯은 selected month와 무관하게 항상 "오늘 기준"으로 계산
+  const realToday = new Date()
+  const realTodayMonthStr = `${realToday.getFullYear()}-${String(realToday.getMonth() + 1).padStart(2, '0')}`
+  const isViewingRealMonth = targetMonth === realTodayMonthStr
+
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
     select: { acquisitionDate: true, prevOwnerCutoffDate: true },
@@ -298,11 +303,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       select: { recurringExpenseId: true },
     }),
-    // 누적 미납 계산용 전체 납부 이력
+    // 누적 미납 계산용 전체 납부 이력 — 항상 오늘 기준 월까지
     prisma.paymentRecord.findMany({
       where: {
         propertyId,
-        targetMonth: { lte: targetMonth },
+        targetMonth: { lte: realTodayMonthStr },
         isDeposit: false,
       },
       select: { leaseTermId: true, targetMonth: true, actualAmount: true },
@@ -379,28 +384,36 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
   expectedExpense += Math.round((nonRecurringPast._sum.amount ?? 0) / 3)
 
-  // 완납 여부 판단: cutoff 이전 납부도 포함 (수익 계산과 별개)
+  // 완납 여부 판단: 항상 "오늘 기준 월"의 납부 이력으로 평가
+  // (selected month가 다르면 별도 쿼리, 같으면 재사용)
   const allMonthPayments = await prisma.paymentRecord.findMany({
     where: { propertyId, targetMonth, isDeposit: false },
     select: { leaseTermId: true, actualAmount: true },
   })
-  const paymentByLeaseForStatus = allMonthPayments.reduce((acc, p) => {
+  const realMonthPayments = isViewingRealMonth
+    ? allMonthPayments
+    : await prisma.paymentRecord.findMany({
+        where: { propertyId, targetMonth: realTodayMonthStr, isDeposit: false },
+        select: { leaseTermId: true, actualAmount: true },
+      })
+  const paymentByLeaseForStatus = realMonthPayments.reduce((acc, p) => {
     acc[p.leaseTermId] = (acc[p.leaseTermId] ?? 0) + p.actualAmount
     return acc
   }, {} as Record<string, number>)
 
   // 인수 기준일 이전 월 or 인수월 내 기준일 이전 납부일 → 양도인 몫으로 완납 처리
+  // 미수납·납입완료 위젯이 항상 오늘 기준이므로 cutoff 비교도 realTodayMonthStr로
   const cutoffMonthStr = acquisitionDate
     ? `${acquisitionDate.getFullYear()}-${String(acquisitionDate.getMonth() + 1).padStart(2, '0')}`
     : null
   const cutoffDay = acquisitionDate ? acquisitionDate.getDate() : 0
   const prevOwnerLeaseIds = new Set<string>()
-  if (cutoffMonthStr && targetMonth < cutoffMonthStr) {
+  if (cutoffMonthStr && realTodayMonthStr < cutoffMonthStr) {
     for (const l of unpaidLeasesRaw) {
       paymentByLeaseForStatus[l.id] = l.rentAmount
       prevOwnerLeaseIds.add(l.id)
     }
-  } else if (cutoffMonthStr && targetMonth === cutoffMonthStr) {
+  } else if (cutoffMonthStr && realTodayMonthStr === cutoffMonthStr) {
     for (const l of unpaidLeasesRaw) {
       const eff = effectiveDueDay(l)
       if (!eff) continue
@@ -413,7 +426,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
 
   function effectiveDueDay(l: { dueDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null }): string | null {
-    if (l.overrideDueDay && l.overrideDueDayMonth === targetMonth) return l.overrideDueDay
+    if (l.overrideDueDay && l.overrideDueDayMonth === realTodayMonthStr) return l.overrideDueDay
     return l.dueDay
   }
 
@@ -542,9 +555,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const lMoveIn = l.moveInDate ? new Date(l.moveInDate) : null
     const leaseStartMonth = lMoveIn
       ? `${lMoveIn.getFullYear()}-${String(lMoveIn.getMonth() + 1).padStart(2, '0')}`
-      : targetMonth
+      : realTodayMonthStr
     const firstMonth = cutoffMonthStr && leaseStartMonth < cutoffMonthStr ? cutoffMonthStr : leaseStartMonth
-    if (firstMonth > targetMonth) continue
+    if (firstMonth > realTodayMonthStr) continue
 
     // 퇴실예정 — expectedMoveOut 이후 월은 청구 종료
     const moveOut = l.expectedMoveOut ? new Date(l.expectedMoveOut) : null
@@ -552,7 +565,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       ? `${moveOut.getFullYear()}-${String(moveOut.getMonth() + 1).padStart(2, '0')}`
       : null
 
-    const months = monthRange(firstMonth, targetMonth)
+    const months = monthRange(firstMonth, realTodayMonthStr)
     let cum = 0
     for (const mon of months) {
       if (prevOwnerLeaseIds.has(l.id) && mon === cutoffMonthStr) continue
