@@ -1865,8 +1865,12 @@ export default function FinanceClient({
                   )}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
-                    <input type="text" name="detail" defaultValue={detailExp.detail ?? ''}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                    {editItemMemo
+                      ? <input type="text" name="detail" value={editItemMemo} readOnly
+                          className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
+                      : <input type="text" name="detail" defaultValue={detailExp.detail ?? ''} placeholder="세부 내용"
+                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                    }
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
@@ -1909,15 +1913,9 @@ export default function FinanceClient({
                     </div>
                   )}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">
-                      메모{editItemMemo && <span className="ml-1 text-[10px] text-[var(--coral)] font-normal">품목 선택 결과가 자동 입력됩니다</span>}
-                    </label>
-                    {editItemMemo
-                      ? <input type="text" name="memo" value={editItemMemo} readOnly
-                          className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
-                      : <input type="text" name="memo" defaultValue={detailExp.memo ?? ''}
-                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
-                    }
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
+                    <input type="text" name="memo" defaultValue={detailExp.memo ?? ''} placeholder="메모 (선택)"
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">영수증</label>
@@ -2099,8 +2097,12 @@ export default function FinanceClient({
                 )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
-                  <input type="text" name="detail" placeholder="세부 내용"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                  {addItemMemo
+                    ? <input type="text" name="detail" value={addItemMemo} readOnly
+                        className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
+                    : <input type="text" name="detail" placeholder="세부 내용"
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                  }
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">결제수단</label>
@@ -2143,15 +2145,9 @@ export default function FinanceClient({
                   </div>
                 )}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">
-                    메모{addItemMemo && <span className="ml-1 text-[10px] text-[var(--coral)] font-normal">품목 선택 결과가 자동 입력됩니다</span>}
-                  </label>
-                  {addItemMemo
-                    ? <input type="text" name="memo" value={addItemMemo} readOnly
-                        className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
-                    : <input type="text" name="memo" placeholder="메모 (선택)"
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
-                  }
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
+                  <input type="text" name="memo" placeholder="메모 (선택)"
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">영수증</label>

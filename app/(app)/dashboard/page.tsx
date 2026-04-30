@@ -39,6 +39,17 @@ function relativeTime(date: Date): string {
   return `${Math.floor(diff / 86400000)}일 전`
 }
 
+function monthRange(startMonth: string, endMonth: string): string[] {
+  const result: string[] = []
+  let [y, m] = startMonth.split('-').map(Number)
+  const [ey, em] = endMonth.split('-').map(Number)
+  while (y < ey || (y === ey && m <= em)) {
+    result.push(`${y}-${String(m).padStart(2, '0')}`)
+    m++; if (m > 12) { m = 1; y++ }
+  }
+  return result
+}
+
 // ── 데이터 패칭 ────────────────────────────────────────────────
 
 async function getDashboardData(propertyId: string, targetMonth: string) {
@@ -90,6 +101,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     waitingTourLeases,
     recurringExpenses,
     recurringExpensesThisMonth,
+    allHistoricalPayments,
   ] = await Promise.all([
     prisma.leaseTerm.findMany({
       where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
@@ -243,6 +255,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       select: {
         id: true,
         rentAmount: true,
+        moveInDate: true,
         dueDay: true,
         overrideDueDay: true,
         overrideDueDayMonth: true,
@@ -282,6 +295,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         date: { gte: startDate, lte: endDate },
       },
       select: { recurringExpenseId: true },
+    }),
+    // 누적 미납 계산용 전체 납부 이력
+    prisma.paymentRecord.findMany({
+      where: {
+        propertyId,
+        targetMonth: { lte: targetMonth },
+        isDeposit: false,
+      },
+      select: { leaseTermId: true, targetMonth: true, actualAmount: true },
     }),
   ])
 
@@ -411,7 +433,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   const billableLeases = activeLeases.filter(l => l.rentAmount > 0)
   const paidCount      = billableLeases.filter(l => (paymentByLeaseForStatus[l.id] ?? 0) >= l.rentAmount).length
-  const unpaidCount    = billableLeases.length - paidCount
   // 양도인 몫 제외 — 수납완료 + 미수납과 합산이 맞도록
   const totalExpected  = billableLeases
     .filter(l => !prevOwnerLeaseIds.has(l.id))
@@ -495,22 +516,42 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     tenantStatus:  r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.status ?? null,
   }))
 
-  // ── 미수납 상세 ──────────────────────────────────────────────
-  const unpaidAmount = unpaidLeasesRaw.reduce((sum, l) => {
-    const paid = paymentByLeaseForStatus[l.id] ?? 0
-    return sum + Math.max(0, l.rentAmount - paid)
-  }, 0)
+  // ── 누적 미납 상세 (관점 B: 임대 시작월부터 조회월까지 합산) ──────────
+  const payHistMap: Record<string, Record<string, number>> = {}
+  for (const p of allHistoricalPayments) {
+    if (!payHistMap[p.leaseTermId]) payHistMap[p.leaseTermId] = {}
+    payHistMap[p.leaseTermId][p.targetMonth] = (payHistMap[p.leaseTermId][p.targetMonth] ?? 0) + p.actualAmount
+  }
 
+  const unpaidMap: Record<string, number> = {}
+  for (const l of unpaidLeasesRaw) {
+    const lMoveIn = l.moveInDate ? new Date(l.moveInDate) : null
+    const leaseStartMonth = lMoveIn
+      ? `${lMoveIn.getFullYear()}-${String(lMoveIn.getMonth() + 1).padStart(2, '0')}`
+      : targetMonth
+    const firstMonth = cutoffMonthStr && leaseStartMonth < cutoffMonthStr ? cutoffMonthStr : leaseStartMonth
+    if (firstMonth > targetMonth) continue
+    const months = monthRange(firstMonth, targetMonth)
+    let cum = 0
+    for (const mon of months) {
+      if (prevOwnerLeaseIds.has(l.id) && mon === cutoffMonthStr) continue
+      cum += Math.max(0, l.rentAmount - (payHistMap[l.id]?.[mon] ?? 0))
+    }
+    unpaidMap[l.id] = cum
+  }
+
+  const unpaidAmount = Object.values(unpaidMap).reduce((s, v) => s + v, 0)
   const unpaidLeases = unpaidLeasesRaw
-    .filter(l => (paymentByLeaseForStatus[l.id] ?? 0) < l.rentAmount)
+    .filter(l => (unpaidMap[l.id] ?? 0) > 0)
     .map(l => ({
       roomNo:       l.room?.roomNo ?? '?',
       tenantName:   l.tenant.name,
       tenantId:     l.tenant.id,
       leaseId:      l.id,
       daysOverdue:  calcDaysOverdue(effectiveDueDay(l)),
-      unpaidAmount: Math.max(0, l.rentAmount - (paymentByLeaseForStatus[l.id] ?? 0)),
+      unpaidAmount: unpaidMap[l.id]!,
     }))
+  const unpaidCount = unpaidLeases.length
 
   // ── 알림 ────────────────────────────────────────────────────
   const alertItems: DashboardData['alerts'] = []
