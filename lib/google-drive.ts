@@ -4,13 +4,14 @@ import { Readable } from 'stream'
 const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID!
 
 function getDriveClient() {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
-  if (!raw) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON 환경 변수가 설정되지 않았습니다.')
-  const credentials = JSON.parse(raw)
-  const auth = new google.auth.GoogleAuth({
-    credentials,
-    scopes: ['https://www.googleapis.com/auth/drive'],
-  })
+  const clientId     = process.env.GOOGLE_CLIENT_ID
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error('GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN 환경 변수가 필요합니다.')
+  }
+  const auth = new google.auth.OAuth2(clientId, clientSecret)
+  auth.setCredentials({ refresh_token: refreshToken })
   return google.drive({ version: 'v3', auth })
 }
 
