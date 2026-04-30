@@ -20,3 +20,10 @@ export function kstMonthStr(d: Date = new Date()): string {
   const { year, month } = kstYmd(d)
   return `${year}-${String(month).padStart(2, '0')}`
 }
+
+// "YYYY-MM-DD" KST 날짜 문자열 (date input value용).
+// 클라이언트의 new Date().toISOString()은 UTC라 KST 자정 직후 하루 어긋남.
+export function kstYmdStr(d: Date = new Date()): string {
+  const { year, month, day } = kstYmd(d)
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}

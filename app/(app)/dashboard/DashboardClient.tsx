@@ -13,6 +13,7 @@ import {
 import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS } from '@/lib/chartColors'
 import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment, getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { recordRecurringExpense } from '@/app/(app)/finance/actions'
+import { kstYmdStr } from '@/lib/kstDate'
 
 // ── 타입 ────────────────────────────────────────────────────────
 
@@ -172,7 +173,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
 }) {
   const suggestedAmount = alert.recurringIsVariable && alert.recurringHistoricalAvg ? alert.recurringHistoricalAvg : (alert.recurringAmount ?? 0)
   const [amount, setAmount]       = useState(suggestedAmount)
-  const [date, setDate]           = useState(alert.recurringDueDate ?? new Date().toISOString().slice(0, 10))
+  const [date, setDate]           = useState(alert.recurringDueDate ?? kstYmdStr())
   const [payMethod, setPayMethod] = useState(alert.recurringPayMethod ?? '')
   const [detail, setDetail]       = useState('')
   const [memo, setMemo]           = useState('')
@@ -808,7 +809,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [payAmount, setPayAmount] = useState(0)
-  const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10))
+  const [payDate, setPayDate] = useState(kstYmdStr())
   const [isDepositMode, setIsDepositMode] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editAmount, setEditAmount] = useState(0)
@@ -942,7 +943,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
   const startEdit = (p: DashPayRecord) => {
     setEditingId(p.id)
     setEditAmount(p.actualAmount)
-    setEditDate(new Date(p.payDate).toISOString().slice(0, 10))
+    setEditDate(kstYmdStr(new Date(p.payDate)))
     setEditPayMethod(p.payMethod ?? '')
     setEditMemo(p.memo ?? '')
   }

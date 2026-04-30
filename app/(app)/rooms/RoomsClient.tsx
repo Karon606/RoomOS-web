@@ -7,6 +7,7 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { formatPhone } from '@/lib/formatPhone'
+import { kstYmdStr } from '@/lib/kstDate'
 
 type RoomStatus = {
   roomId: string
@@ -209,7 +210,7 @@ export default function RoomsClient({
   const [overrideDateInput, setOverrideDateInput] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
   const [payAmount, setPayAmount] = useState(0)
-  const [payDateVal, setPayDateVal] = useState(new Date().toISOString().slice(0, 10))
+  const [payDateVal, setPayDateVal] = useState(kstYmdStr())
   const [isDepositMode, setIsDepositMode] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [editingPayId, setEditingPayId] = useState<string | null>(null)
@@ -338,7 +339,7 @@ export default function RoomsClient({
   const openPayModal = async (room: RoomStatus) => {
     setSelectedRoom(room)
     setPayAmount(room.balance < 0 ? -room.balance : room.expected)
-    setPayDateVal(new Date().toISOString().slice(0, 10))
+    setPayDateVal(kstYmdStr())
     setIsDepositMode(false)
     setError('')
     setShowPayForm(false)
@@ -369,7 +370,7 @@ export default function RoomsClient({
   const handleUpdatePayment = (p: PaymentRecord) => {
     setEditingPayId(p.id)
     setEditAmount(p.actualAmount)
-    setEditDate(new Date(p.payDate).toISOString().slice(0, 10))
+    setEditDate(kstYmdStr(new Date(p.payDate)))
     setEditPayMethod(p.payMethod ?? '')
     setEditMemo(p.memo ?? '')
   }
@@ -1214,7 +1215,7 @@ export default function RoomsClient({
                                     if (!isNaN(n)) initDate = `${targetMonth}-${String(n).padStart(2, '0')}`
                                   }
                                 }
-                                setOverrideDateInput(initDate || new Date().toISOString().slice(0, 10))
+                                setOverrideDateInput(initDate || kstYmdStr())
                                 setOverrideReason(isOverrideActive ? (selectedRoom.overrideDueDayReason ?? '') : '')
                               }
                             }}
@@ -1328,9 +1329,9 @@ export default function RoomsClient({
                             setIsDepositMode(checked)
                             if (checked) {
                               setPayAmount(selectedRoom.depositAmount)
-                              setPayDateVal(selectedRoom.moveInDate ?? new Date().toISOString().slice(0, 10))
+                              setPayDateVal(selectedRoom.moveInDate ?? kstYmdStr())
                             } else {
-                              setPayDateVal(new Date().toISOString().slice(0, 10))
+                              setPayDateVal(kstYmdStr())
                             }
                           }}
                           className="w-4 h-4 accent-[var(--coral)]"

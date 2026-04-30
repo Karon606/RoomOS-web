@@ -18,6 +18,7 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { chartColor } from '@/lib/chartColors'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { kstYmdStr } from '@/lib/kstDate'
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -447,7 +448,7 @@ function StackedBar({
 
 function toDateInput(d: Date | string | null | undefined) {
   if (!d) return ''
-  return new Date(d).toISOString().slice(0, 10)
+  return kstYmdStr(new Date(d))
 }
 
 function fmtDate(d: Date | string | null | undefined) {
@@ -544,7 +545,7 @@ export default function FinanceClient({
   // ── 지출 탭 상태 ─────────────────────────────────────────────
   const [expFilter, setExpFilter] = useState({ method: 'all', category: 'all', finance: 'all' })
   const [showAddExp, setShowAddExp]       = useState(false)
-  const [addExpDate, setAddExpDate]       = useState(() => new Date().toISOString().slice(0, 10))
+  const [addExpDate, setAddExpDate]       = useState(() => kstYmdStr())
   const [detailExp, setDetailExp]         = useState<Expense | null>(null)
   const [detailExpEdit, setDetailExpEdit] = useState(false)
   const [addExpMethod, setAddExpMethod]   = useState('계좌이체')
@@ -567,7 +568,7 @@ export default function FinanceClient({
   // ── 수익 탭 상태 ─────────────────────────────────────────────
   const [incFilter, setIncFilter] = useState({ method: 'all', category: 'all' })
   const [showAddInc, setShowAddInc]       = useState(false)
-  const [addIncDate, setAddIncDate]       = useState(() => new Date().toISOString().slice(0, 10))
+  const [addIncDate, setAddIncDate]       = useState(() => kstYmdStr())
   const [detailInc, setDetailInc]         = useState<Income | null>(null)
   const [detailIncEdit, setDetailIncEdit] = useState(false)
   const [addIncMethod, setAddIncMethod]   = useState('계좌이체')
@@ -607,7 +608,7 @@ export default function FinanceClient({
   const openNewRecMgmt = () => {
     setEditingRecMgmt(null)
     const defaultActiveSince = acquisitionDate
-      ? new Date(acquisitionDate).toISOString().slice(0, 10)
+      ? kstYmdStr(new Date(acquisitionDate))
       : ''
     setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: defaultActiveSince, priorYearAmount: '', memo: '' })
     setShowRecMgmtForm(true)
@@ -768,7 +769,7 @@ export default function FinanceClient({
     startTransition(async () => {
       const res = await addExpense(fd)
       if (!res.ok) { setError(res.error); return }
-      setShowAddExp(false); setAddExpDate(new Date().toISOString().slice(0, 10)); setAddReceiptUrl(''); router.refresh()
+      setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); router.refresh()
     })
   }
   const handleUpdateExp = (e: React.SyntheticEvent<HTMLFormElement>) => {
@@ -793,7 +794,7 @@ export default function FinanceClient({
     startTransition(async () => {
       const res = await addExtraIncome(fd)
       if (!res.ok) { setError(res.error); return }
-      setShowAddInc(false); setAddIncDate(new Date().toISOString().slice(0, 10)); router.refresh()
+      setShowAddInc(false); setAddIncDate(kstYmdStr()); router.refresh()
     })
   }
   const handleUpdateInc = (e: React.SyntheticEvent<HTMLFormElement>) => {
@@ -1103,7 +1104,7 @@ export default function FinanceClient({
               ...filteredExpenses.map(e => ({
                 kind: 'expense' as const,
                 exp: e,
-                dateStr: new Date(e.date).toISOString().slice(0, 10),
+                dateStr: kstYmdStr(new Date(e.date)),
               })),
               ...unconfirmedRecs.map(r => ({
                 kind: 'recurring' as const,

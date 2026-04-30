@@ -11,6 +11,7 @@ import { formatPhone } from '@/lib/formatPhone'
 import { CountrySelect, flagByName } from '@/components/ui/CountrySelect'
 import { JobSelect } from '@/components/ui/JobSelect'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { kstYmdStr } from '@/lib/kstDate'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
@@ -143,7 +144,7 @@ type PastFilter = (typeof PAST_FILTERS)[number]['key']
 
 function toDateInput(d: string | Date | null | undefined): string {
   if (!d) return ''
-  return new Date(d).toISOString().slice(0, 10)
+  return kstYmdStr(new Date(d))
 }
 
 function fmtDate(d: string | Date | null | undefined): string {
@@ -285,7 +286,7 @@ export default function TenantClient({
   const [requests, setRequests]               = useState<Awaited<ReturnType<typeof getTenantRequests>>>([])
   const [requestsLoading, setRequestsLoading] = useState(false)
   const [newContent, setNewContent]           = useState('')
-  const [newReqDate, setNewReqDate]           = useState(() => new Date().toISOString().slice(0, 10))
+  const [newReqDate, setNewReqDate]           = useState(() => kstYmdStr())
   const [newTargetDate, setNewTargetDate]     = useState('')
   const [reqPending, startReqTransition]      = useTransition()
   const [showHistory, setShowHistory]         = useState(false)
@@ -296,7 +297,7 @@ export default function TenantClient({
   const [deleteTarget, setDeleteTarget]   = useState<{ id: string; name: string } | null>(null)
   const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; fromDetail: boolean } | null>(null)
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
-  const [depositReturnDate, setDepositReturnDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
   const [filter, setFilter]             = useState<'active' | 'past'>('active')
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
   const [pastFilter, setPastFilter]     = useState<PastFilter>('all')
@@ -319,7 +320,7 @@ export default function TenantClient({
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
   const [showPayForm, setShowPayForm] = useState(false)
   const [payAmount, setPayAmount]   = useState(0)
-  const [payDateVal, setPayDateVal] = useState(new Date().toISOString().slice(0, 10))
+  const [payDateVal, setPayDateVal] = useState(kstYmdStr())
   const [isDepositMode, setIsDepositMode] = useState(false)
   const [showOverrideForm, setShowOverrideForm] = useState(false)
   const [overrideDateInput, setOverrideDateInput] = useState('')
@@ -480,7 +481,7 @@ export default function TenantClient({
     const tenantName    = fd.get('name') as string || '입주자'
     const depositAmount = Number(fd.get('depositAmount')) || 0
     setDepositReturnAmt(depositAmount)
-    setDepositReturnDate(new Date().toISOString().slice(0, 10))
+    setDepositReturnDate(kstYmdStr())
     setDepositRefundModal({ fd, tenantName, depositAmount, fromDetail })
   }
 
@@ -552,7 +553,7 @@ export default function TenantClient({
   const openPayModal = async (tenant: Tenant, lease: LeaseTerm) => {
     setPayTarget({ tenant, lease })
     setPayAmount(lease.rentAmount)
-    setPayDateVal(new Date().toISOString().slice(0, 10))
+    setPayDateVal(kstYmdStr())
     setIsDepositMode(false)
     setShowPayForm(false)
     setError('')
@@ -564,7 +565,7 @@ export default function TenantClient({
   const closePayModal = () => {
     setPayTarget(null); setPayHistory([]); setShowPayForm(false); setError('')
     setShowOverrideForm(false); setOverrideDateInput(''); setOverrideReason(''); setConfirmClearOverride(false)
-    setIsDepositMode(false); setPayDateVal(new Date().toISOString().slice(0, 10))
+    setIsDepositMode(false); setPayDateVal(kstYmdStr())
   }
 
   const handleSavePayment = async (e: React.SyntheticEvent<HTMLFormElement>) => {
@@ -623,7 +624,7 @@ export default function TenantClient({
   const handleUpdatePayRecord = (p: PayRecord) => {
     setEditingPayId(p.id)
     setEditAmount(p.actualAmount)
-    setEditDate(new Date(p.payDate).toISOString().slice(0, 10))
+    setEditDate(kstYmdStr(new Date(p.payDate)))
     setEditPayMethod(p.payMethod ?? '')
     setEditMemo(p.memo ?? '')
   }
@@ -1421,7 +1422,7 @@ export default function TenantClient({
                               targetDate:  newTargetDate || null,
                             })
                             setNewContent(''); setNewTargetDate('')
-                            setNewReqDate(new Date().toISOString().slice(0, 10))
+                            setNewReqDate(kstYmdStr())
                             const updated = await getTenantRequests(detailTenant!.id)
                             setRequests(updated)
                           })
@@ -2070,7 +2071,7 @@ export default function TenantClient({
                                       if (!isNaN(n)) initDate = `${targetMonth}-${String(n).padStart(2, '0')}`
                                     }
                                   }
-                                  setOverrideDateInput(initDate || new Date().toISOString().slice(0, 10))
+                                  setOverrideDateInput(initDate || kstYmdStr())
                                   setOverrideReason(isOverrideActive ? (lease.overrideDueDayReason ?? '') : '')
                                 }
                               }}
@@ -2201,10 +2202,10 @@ export default function TenantClient({
                               setIsDepositMode(checked)
                               if (checked) {
                                 setPayAmount(lease.depositAmount)
-                                const mi = lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null
-                                setPayDateVal(mi ?? new Date().toISOString().slice(0, 10))
+                                const mi = lease.moveInDate ? kstYmdStr(new Date(lease.moveInDate)) : null
+                                setPayDateVal(mi ?? kstYmdStr())
                               } else {
-                                setPayDateVal(new Date().toISOString().slice(0, 10))
+                                setPayDateVal(kstYmdStr())
                               }
                             }}
                             className="w-4 h-4 accent-[var(--coral)]"
