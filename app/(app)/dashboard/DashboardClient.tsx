@@ -454,13 +454,19 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
   }, [trendRange, targetMonth]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const isAreaRange = trendRange === 'daily' || trendRange === 'weekly'
+  // 만원 단위로 사전 변환 — tickFormatter에서 /10000 재연산 불필요
+  const chartData = trendPoints.map(t => ({
+    label: t.label,
+    revenue: Math.round(t.revenue / 10000),
+    expense: Math.round(t.expense / 10000),
+  }))
   const categorySegments = data.categoryBreakdown.map((c, i) => ({
     value: c.amount,
     color: chartColor(i),
   }))
   const paymentSegments = [
-    { value: data.paidCount,   color: '#22c55e' },
-    { value: data.unpaidCount, color: '#ef4444' },
+    { value: data.paidCount,   color: '#f4623a' },
+    { value: data.unpaidCount, color: '#e8ddd2' },
   ]
   const paymentRate = (data.paidCount + data.unpaidCount) > 0
     ? Math.round((data.paidCount / (data.paidCount + data.unpaidCount)) * 100)
@@ -515,7 +521,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
         ) : isAreaRange ? (
           /* ── 일간·주간: Area Chart ── */
           <ResponsiveContainer width="100%" height={176}>
-            <AreaChart data={trendPoints} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+            <AreaChart data={chartData} margin={{ top: 4, right: 8, left: 4, bottom: 0 }}>
               <defs>
                 <linearGradient id="gradRev" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%"  stopColor="var(--coral)" stopOpacity={0.18} />
@@ -528,10 +534,10 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#a89888' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tickFormatter={v => `${Math.round(v / 10000)}만`} tick={{ fontSize: 10, fill: '#a89888' }} axisLine={false} tickLine={false} width={44} />
+              <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: 10, fill: '#a89888' }} axisLine={false} tickLine={false} width={52} />
               <Tooltip
                 contentStyle={{ background: '#fff', border: '1px solid #e8ddd2', borderRadius: 8, fontSize: 12 }}
-                formatter={(v, name) => [`${Number(v).toLocaleString()}원`, String(name)]}
+                formatter={(v, name) => [`${Number(v).toLocaleString()}만원`, String(name)]}
               />
               <Area type="monotone" dataKey="revenue" name="수입" stroke="var(--coral)" strokeWidth={2} fill="url(#gradRev)" dot={false} activeDot={{ r: 4, fill: 'var(--coral)' }} />
               <Area type="monotone" dataKey="expense" name="지출" stroke="#64748b" strokeWidth={1.5} strokeDasharray="4 2" fill="url(#gradExp)" dot={false} activeDot={{ r: 4, fill: '#64748b' }} />
@@ -540,13 +546,13 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
         ) : (
           /* ── 월간 이상: Grouped Bar Chart ── */
           <ResponsiveContainer width="100%" height={176}>
-            <BarChart data={trendPoints} margin={{ top: 4, right: 4, left: -20, bottom: 0 }} barCategoryGap="28%">
+            <BarChart data={chartData} margin={{ top: 4, right: 8, left: 4, bottom: 0 }} barCategoryGap="28%">
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#a89888' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tickFormatter={v => `${Math.round(v / 10000)}만`} tick={{ fontSize: 10, fill: '#a89888' }} axisLine={false} tickLine={false} width={44} />
+              <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: 10, fill: '#a89888' }} axisLine={false} tickLine={false} width={52} />
               <Tooltip
                 contentStyle={{ background: '#fff', border: '1px solid #e8ddd2', borderRadius: 8, fontSize: 12 }}
-                formatter={(v, name) => [`${Number(v).toLocaleString()}원`, String(name)]}
+                formatter={(v, name) => [`${Number(v).toLocaleString()}만원`, String(name)]}
               />
               <Bar dataKey="revenue" name="수입" fill="var(--coral)" radius={[3, 3, 0, 0]} maxBarSize={28} />
               <Bar dataKey="expense" name="지출" fill="#64748b"       radius={[3, 3, 0, 0]} maxBarSize={28} />
@@ -586,14 +592,14 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             </div>
             <div className="flex-1 space-y-3">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-green-500" />
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: '#f4623a' }} />
                 <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>완납</span>
-                <span className="text-sm font-semibold text-green-500">{data.paidCount}건</span>
+                <span className="text-sm font-semibold" style={{ color: '#f4623a' }}>{data.paidCount}건</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-red-500" />
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: '#c4b5a5' }} />
                 <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>미납</span>
-                <span className="text-sm font-semibold text-red-500">{data.unpaidCount}건</span>
+                <span className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>{data.unpaidCount}건</span>
               </div>
               <div className="pt-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
                 <Row label="이달 수납액" value={<MoneyDisplay amount={data.paidRevenue} />} />
