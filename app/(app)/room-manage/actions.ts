@@ -6,7 +6,7 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
-const PHOTO_BUCKET = 'room-photos'
+import { uploadToDrive, deleteFromDrive } from '@/lib/google-drive'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -150,15 +150,11 @@ export async function deleteRoom(id: string): Promise<{ ok: true } | { ok: false
   })
   if (activeLeases > 0) return { ok: false, error: '거주중인 입주자가 있어 삭제할 수 없습니다.' }
 
-  // Storage 파일 정리
-  const photos = await prisma.roomPhoto.findMany({ where: { roomId: id }, select: { storageUrl: true } })
-  if (photos.length > 0) {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const prefix = `${supabaseUrl}/storage/v1/object/public/${PHOTO_BUCKET}/`
-    const paths = photos.map(p => p.storageUrl.replace(prefix, ''))
-    const supabase = await createClient()
-    await supabase.storage.from(PHOTO_BUCKET).remove(paths)
-  }
+  // Drive 파일 정리
+  const photos = await prisma.roomPhoto.findMany({ where: { roomId: id }, select: { driveFileId: true } })
+  await Promise.allSettled(
+    photos.filter(p => p.driveFileId).map(p => deleteFromDrive(p.driveFileId!))
+  )
 
   // 과거 계약 기록 정리 (LeaseTerm → Room FK에 cascade 없어서 수동 처리)
   // 삭제 순서: TenantStatusLog → LeaseTerm (PaymentRecord는 LeaseTerm cascade로 자동 삭제)
@@ -180,13 +176,12 @@ export async function deleteRoom(id: string): Promise<{ ok: true } | { ok: false
   }
 }
 
-// 호실 사진 업로드 (Supabase Storage)
+// 호실 사진 업로드 (Google Drive)
 export async function uploadRoomPhoto(
   formData: FormData
 ): Promise<{ ok: true; id: string; driveFileId: string | null; storageUrl: string; fileName: string | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    const { propertyId } = await getPropertyId()
     const roomId = formData.get('roomId') as string
     const file = formData.get('photo') as File
 
@@ -194,18 +189,10 @@ export async function uploadRoomPhoto(
     if (!file.type.startsWith('image/')) return { ok: false, error: '이미지 파일만 업로드 가능합니다.' }
     if (file.size > 10 * 1024 * 1024) return { ok: false, error: '파일 크기는 10MB 이하여야 합니다.' }
 
-    const supabase = await createClient()
+    const buffer = Buffer.from(await file.arrayBuffer())
     const ext = file.name.split('.').pop() ?? 'jpg'
-    const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
-    const storagePath = `${propertyId}/${roomId}/${uniqueName}`
-
-    const arrayBuffer = await file.arrayBuffer()
-    const { error } = await supabase.storage
-      .from(PHOTO_BUCKET)
-      .upload(storagePath, new Uint8Array(arrayBuffer), { contentType: file.type })
-    if (error) return { ok: false, error: `업로드 실패: ${error.message}` }
-
-    const { data: { publicUrl } } = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(storagePath)
+    const uniqueName = `room_${roomId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+    const { fileId, thumbnailUrl } = await uploadToDrive(buffer, uniqueName, file.type)
 
     const lastPhoto = await prisma.roomPhoto.findFirst({
       where: { roomId },
@@ -216,7 +203,8 @@ export async function uploadRoomPhoto(
     const photo = await prisma.roomPhoto.create({
       data: {
         roomId,
-        storageUrl: publicUrl,
+        storageUrl: thumbnailUrl,
+        driveFileId: fileId,
         fileName: file.name,
         sortOrder: (lastPhoto?.sortOrder ?? 0) + 1,
       },
@@ -230,7 +218,7 @@ export async function uploadRoomPhoto(
   }
 }
 
-// 호실 사진 삭제 (Supabase Storage)
+// 호실 사진 삭제 (Google Drive)
 export async function deleteRoomPhoto(photoId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -238,11 +226,9 @@ export async function deleteRoomPhoto(photoId: string): Promise<{ ok: true } | {
     const photo = await prisma.roomPhoto.findUnique({ where: { id: photoId } })
     if (!photo) return { ok: false, error: '사진을 찾을 수 없습니다.' }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const prefix = `${supabaseUrl}/storage/v1/object/public/${PHOTO_BUCKET}/`
-    const storagePath = photo.storageUrl.replace(prefix, '')
-    const supabase = await createClient()
-    await supabase.storage.from(PHOTO_BUCKET).remove([storagePath])
+    if (photo.driveFileId) {
+      await deleteFromDrive(photo.driveFileId)
+    }
 
     await prisma.roomPhoto.delete({ where: { id: photoId } })
     revalidatePath('/room-manage')
