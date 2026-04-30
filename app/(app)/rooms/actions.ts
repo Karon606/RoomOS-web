@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
+import { kstYmd } from '@/lib/kstDate'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -37,9 +38,9 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
   const prevDate  = new Date(yyyy, mm - 2, 1)
   const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`
 
-  // 조회 시점 필터 — 미래 월은 미납 표시 안 함
-  const now          = new Date()
-  const isFutureMonth = new Date(yyyy, mm - 1, 1) > new Date(now.getFullYear(), now.getMonth(), 1)
+  // 조회 시점 필터 — 미래 월은 미납 표시 안 함 (KST 기준)
+  const kst = kstYmd()
+  const isFutureMonth = (yyyy > kst.year) || (yyyy === kst.year && mm > kst.month)
 
   // 영업장 인수 날짜 조회
   const property = await prisma.property.findUnique({

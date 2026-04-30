@@ -5,6 +5,7 @@ import { Suspense } from 'react'
 import DataButtons from '@/components/DataButtons'
 import DashboardClient, { type DashboardData } from './DashboardClient'
 import { getPaymentMethods } from '@/app/(app)/settings/actions'
+import { kstMonthStr } from '@/lib/kstDate'
 
 // ── 헬퍼 ──────────────────────────────────────────────────────
 
@@ -57,9 +58,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const startDate = new Date(year, month - 1, 1)
   const endDate   = new Date(year, month, 0)
 
-  // 미수납·납입완료 위젯은 selected month와 무관하게 항상 "오늘 기준"으로 계산
-  const realToday = new Date()
-  const realTodayMonthStr = `${realToday.getFullYear()}-${String(realToday.getMonth() + 1).padStart(2, '0')}`
+  // 미수납·납입완료 위젯은 selected month와 무관하게 항상 "오늘 기준"으로 계산 (KST)
+  const realTodayMonthStr = kstMonthStr()
   const isViewingRealMonth = targetMonth === realTodayMonthStr
 
   const property = await prisma.property.findUnique({
@@ -803,9 +803,7 @@ export default async function DashboardPage({
   if (!propertyId) redirect('/property-select')
 
   const { month } = await searchParams
-  const now = new Date()
-  const targetMonth = month ??
-    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const targetMonth = month ?? kstMonthStr()
 
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
