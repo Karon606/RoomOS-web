@@ -38,6 +38,7 @@ type RoomStatus = {
   overrideDueDayReason: string | null
   moveInDate: string | null
   prevPaidThisMonth: boolean
+  firstUnpaidMonth: string | null
 }
 
 type PaymentRecord = {
@@ -132,9 +133,13 @@ function getDueInfo(dueDay: string | null, targetMonth: string): { days: number;
 }
 
 function getEffectiveDueInfo(room: RoomStatus, targetMonth: string): ReturnType<typeof getDueInfo> {
-  const isOverrideActive = room.overrideDueDayMonth === targetMonth && !!room.overrideDueDay
+  // 누적 미납자는 첫 미납월의 dueDay 기준으로 경과일 표시
+  // override는 현재 보고 있는 달에만 적용되므로 firstUnpaidMonth가 다르면 원래 dueDay 사용
+  const dueMonth = room.firstUnpaidMonth ?? targetMonth
+  const isCurrent = dueMonth === targetMonth
+  const isOverrideActive = isCurrent && room.overrideDueDayMonth === targetMonth && !!room.overrideDueDay
   const effectiveDay = isOverrideActive ? room.overrideDueDay : room.dueDay
-  return getDueInfo(effectiveDay, targetMonth)
+  return getDueInfo(effectiveDay, dueMonth)
 }
 
 // ── 정렬 ─────────────────────────────────────────────────────────

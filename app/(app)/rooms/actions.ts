@@ -27,6 +27,8 @@ type RoomRow = {
   isFutureMonth: boolean; baseRent: number; prevTenantName: string | null; prevContact: string | null
   overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
   moveInDate: string | null; prevPaidThisMonth: boolean
+  // 첫 미납월 — 누적 미납이 있다면 그 시작월의 dueDay 기준으로 경과일 표시
+  firstUnpaidMonth: string | null
 }
 
 // 핵심 비즈니스 로직 — GAS의 getRoomPaymentStatus 이관
@@ -143,6 +145,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDayMonth: l.overrideDueDayMonth ?? null,
         overrideDueDayReason: l.overrideDueDayReason ?? null,
         moveInDate, prevPaidThisMonth: false,
+        firstUnpaidMonth: null,
       }
     }
 
@@ -172,6 +175,49 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
 
     const carryBalance = allPrevPaidForCurrentOp - expected * prevMonthsOwed
 
+    const leaseCurrentPayments = payments.filter(p => p.leaseTermId === lease.id)
+    // 이번 달이 귀속 기준월인 경우 payDate < cutoffDate 납부금은 양도인 몫 제외
+    const cutoffMonthStr = cutoffDate
+      ? `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`
+      : acqMonthStr
+    const cutoffDay = cutoffDate ? cutoffDate.getDate() : 0
+    const currentPreAcq = (cutoffDate && targetMonth === cutoffMonthStr)
+      ? leaseCurrentPayments.filter(p => new Date(p.payDate) < cutoffDate).reduce((s, p) => s + p.actualAmount, 0)
+      : 0
+    const currentPaidRaw = leaseCurrentPayments.reduce((s, p) => s + p.actualAmount, 0) - currentPreAcq
+    // 양도인이 이미 이달 이용료를 수납한 것으로 처리:
+    // 1) 귀속 기준일 이전 수납 기록이 expected 이상이거나
+    // 2) 납부일(dueDay)이 귀속 기준일보다 이전 → 양도인이 수납했다고 간주 (기록 없어도)
+    const dueDayBeforeCutoff = !!(cutoffDate && targetMonth === cutoffMonthStr && dueDay < cutoffDay)
+    const prevPaidThisMonth = !!(cutoffDate && targetMonth === cutoffMonthStr && (currentPreAcq >= expected || dueDayBeforeCutoff))
+    const displayBalance = prevPaidThisMonth ? 0 : currentPaidRaw - expected
+    const isPaid = prevPaidThisMonth || currentPaidRaw >= expected
+    // 누적 잔액 — 과거 미납 + 이달 잔액
+    const cumulativeBalance = carryBalance + displayBalance
+
+    // 첫 미납월 찾기 — 인수월부터 현재월까지 순서대로 검사
+    let firstUnpaidMonth: string | null = null
+    {
+      const allForLease = [
+        ...leaseAllPrev,
+        ...leaseCurrentPayments,
+      ].filter(p => !(cutoffDate && new Date(p.payDate) < cutoffDate))
+      const monthSums: Record<string, number> = {}
+      for (const p of allForLease) {
+        monthSums[p.targetMonth] = (monthSums[p.targetMonth] ?? 0) + p.actualAmount
+      }
+      for (let cy = acqYyyy, cmn = acqMm; cy < yyyy || (cy === yyyy && cmn <= mm); ) {
+        const ms = `${cy}-${String(cmn).padStart(2, '0')}`
+        // 인수월 + 양도인 사전수납 처리 시 건너뜀
+        const skip = ms === acqMonthStr && (acqMonthPrePaid || (ms === cutoffMonthStr && dueDayBeforeCutoff))
+        if (!skip) {
+          const paid = monthSums[ms] ?? 0
+          if (paid < expected) { firstUnpaidMonth = ms; break }
+        }
+        cmn++; if (cmn > 12) { cmn = 1; cy++ }
+      }
+    }
+
     if (isFutureMonth) {
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
@@ -190,26 +236,9 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDayMonth: l.overrideDueDayMonth ?? null,
         overrideDueDayReason: l.overrideDueDayReason ?? null,
         moveInDate, prevPaidThisMonth: false,
+        firstUnpaidMonth,
       }
     }
-
-    const leaseCurrentPayments = payments.filter(p => p.leaseTermId === lease.id)
-    // 이번 달이 귀속 기준월인 경우 payDate < cutoffDate 납부금은 양도인 몫 제외
-    const cutoffMonthStr = cutoffDate
-      ? `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`
-      : acqMonthStr
-    const cutoffDay = cutoffDate ? cutoffDate.getDate() : 0
-    const currentPreAcq = (cutoffDate && targetMonth === cutoffMonthStr)
-      ? leaseCurrentPayments.filter(p => new Date(p.payDate) < cutoffDate).reduce((s, p) => s + p.actualAmount, 0)
-      : 0
-    const currentPaidRaw = leaseCurrentPayments.reduce((s, p) => s + p.actualAmount, 0) - currentPreAcq
-    // 양도인이 이미 이달 이용료를 수납한 것으로 처리:
-    // 1) 귀속 기준일 이전 수납 기록이 expected 이상이거나
-    // 2) 납부일(dueDay)이 귀속 기준일보다 이전 → 양도인이 수납했다고 간주 (기록 없어도)
-    const dueDayBeforeCutoff = !!(cutoffDate && targetMonth === cutoffMonthStr && dueDay < cutoffDay)
-    const prevPaidThisMonth = !!(cutoffDate && targetMonth === cutoffMonthStr && (currentPreAcq >= expected || dueDayBeforeCutoff))
-    const displayBalance = prevPaidThisMonth ? 0 : currentPaidRaw - expected
-    const isPaid = prevPaidThisMonth || currentPaidRaw >= expected
 
     return {
       roomId: room.id, roomNo: room.roomNo, type: room.type,
@@ -219,7 +248,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       contact: lease.tenant.contacts[0]?.contactValue ?? null,
       status: lease.status, expected, dueDay: overrideIsFullDate ? lease.dueDay : effectiveDueDay,
       currentPaid: currentPaidRaw, carryOver: carryBalance,
-      totalPaid: currentPaidRaw, balance: displayBalance, isPaid,
+      totalPaid: currentPaidRaw, balance: cumulativeBalance, isPaid,
       leaseTermId: lease.id, depositAmount: lease.depositAmount,
       accumulatedUnpaid: 0, isFutureMonth: false, baseRent: room.baseRent,
       prevTenantName, prevContact,
@@ -227,6 +256,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       overrideDueDayMonth: l.overrideDueDayMonth ?? null,
       overrideDueDayReason: l.overrideDueDayReason ?? null,
       moveInDate, prevPaidThisMonth,
+      firstUnpaidMonth,
     }
   }
 
@@ -250,6 +280,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         prevContact: prev?.tenant.contacts[0]?.contactValue ?? null,
         overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null,
         moveInDate: null, prevPaidThisMonth: false,
+        firstUnpaidMonth: null,
       }]
     }
 
