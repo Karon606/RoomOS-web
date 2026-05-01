@@ -222,7 +222,13 @@ function getSortValue(t: Tenant, key: SortKey): string | number {
     case 'nationality':     return t.nationality ?? ''
     case 'gender':          return GENDER_LABEL[t.gender] ?? ''
     case 'stayPeriod':      return l?.moveInDate ? new Date(l.moveInDate).getTime() : Infinity
-    case 'dueDay':          return parseInt(l?.dueDay ?? '0', 10) || 0
+    case 'dueDay': {
+      const d = l?.dueDay
+      if (!d) return 0
+      if (d.includes('말')) return 32
+      const n = parseInt(d, 10)
+      return n >= 30 ? 32 : (isNaN(n) ? 0 : n)
+    }
     default: return ''
   }
 }

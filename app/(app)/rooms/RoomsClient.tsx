@@ -159,7 +159,7 @@ function getEffectiveDueDayNum(room: RoomStatus, targetMonth: string): number {
   const effectiveDay = isOverrideActive ? room.overrideDueDay : room.dueDay
   if (!effectiveDay) return 99
   if (effectiveDay.includes('-')) return parseInt(effectiveDay.split('-')[2]) || 99
-  if (effectiveDay.includes('말')) return 31
+  if (effectiveDay.includes('말')) return 32
   const d = parseInt(effectiveDay)
   return isNaN(d) ? 99 : d
 }
@@ -714,7 +714,7 @@ export default function RoomsClient({
                 {colVis.expected      && <SortTh label="월 이용료" sk="expected" />}
                 {colVis.totalPaid     && <SortTh label="총납부액"  sk="totalPaid" />}
                 {colVis.balance       && <SortTh label="잔액"      sk="balance" />}
-                {colVis.dueDay        && <ResizableTh label="납부일"    colKey="dueDay" />}
+                {colVis.dueDay        && <SortTh label="납부일"    sk="dueDay" />}
                 {colVis.status        && <SortTh label="수납 상태" sk="status" />}
               </tr>
             </thead>
