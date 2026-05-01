@@ -553,9 +553,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const unpaidMap: Record<string, number> = {}
   for (const l of unpaidLeasesRaw) {
     const lMoveIn = l.moveInDate ? new Date(l.moveInDate) : null
+    // moveInDate가 없으면 cutoff(인수)월 기준으로 — rooms 페이지 로직과 일치
     const leaseStartMonth = lMoveIn
       ? `${lMoveIn.getFullYear()}-${String(lMoveIn.getMonth() + 1).padStart(2, '0')}`
-      : realTodayMonthStr
+      : (cutoffMonthStr ?? realTodayMonthStr)
     const firstMonth = cutoffMonthStr && leaseStartMonth < cutoffMonthStr ? cutoffMonthStr : leaseStartMonth
     if (firstMonth > realTodayMonthStr) continue
 
@@ -565,14 +566,28 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       ? `${moveOut.getFullYear()}-${String(moveOut.getMonth() + 1).padStart(2, '0')}`
       : null
 
+    // 인수월 양도인 자동 처리: dueDay < cutoffDay이면 기록 없어도 양도인이 받았다고 봄
+    const lAny = l as any
+    const effDueDayForAcqMonth = (lAny.overrideDueDayMonth === firstMonth && lAny.overrideDueDay)
+      ? lAny.overrideDueDay
+      : l.dueDay
+    const dueDayNum = parseInt(effDueDayForAcqMonth ?? '99')
+    const acqMonthDueBeforeCutoff =
+      !!(cutoffMonthStr && firstMonth === cutoffMonthStr && !isNaN(dueDayNum) && dueDayNum < cutoffDay)
+
+    // 누적 분배 방식: 총 입금액을 firstMonth부터 차례로 채워가며 남은 부족분 = 누적 미납
     const months = monthRange(firstMonth, realTodayMonthStr)
-    let cum = 0
+    let monthsCount = 0
+    let totalPaid = 0
     for (const mon of months) {
+      if (mon === cutoffMonthStr && acqMonthDueBeforeCutoff) continue
       if (prevOwnerLeaseIds.has(l.id) && mon === cutoffMonthStr) continue
       if (moveOutMonth && mon > moveOutMonth) continue
-      cum += Math.max(0, l.rentAmount - (payHistMap[l.id]?.[mon] ?? 0))
+      monthsCount++
+      totalPaid += payHistMap[l.id]?.[mon] ?? 0
     }
-    unpaidMap[l.id] = cum
+    const totalExpected = monthsCount * l.rentAmount
+    unpaidMap[l.id] = Math.max(0, totalExpected - totalPaid)
   }
 
   const unpaidAmount = Object.values(unpaidMap).reduce((s, v) => s + v, 0)
