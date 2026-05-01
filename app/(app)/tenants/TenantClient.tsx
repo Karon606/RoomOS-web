@@ -227,7 +227,8 @@ function getSortValue(t: Tenant, key: SortKey): string | number {
   }
 }
 
-// 납입일 변경 일할 계산
+// 납입일 변경 일할 계산 — 한 달은 항상 30일로 고정 (실제 월 길이와 무관)
+const PRORATE_BASE_DAYS = 30
 function calcProRata(rentAmount: number, oldDueDay: string | null, newDueDayStr: string, targetMonth: string) {
   const str = newDueDayStr.trim()
   if (!str) return null
@@ -244,7 +245,7 @@ function calcProRata(rentAmount: number, oldDueDay: string | null, newDueDayStr:
   if (oldDay === null || newDay === null) return null
   const diff = newDay - oldDay
   if (diff === 0) return { days: 0, amount: 0, type: 'none' as const }
-  const amount = Math.floor(Math.abs(diff) * rentAmount / daysInMonth)
+  const amount = Math.floor(Math.abs(diff) * rentAmount / PRORATE_BASE_DAYS)
   return { days: Math.abs(diff), amount, type: diff > 0 ? 'extra' as const : 'refund' as const }
 }
 
@@ -1349,7 +1350,7 @@ export default function TenantClient({
                                           ? `납입일 ${calc.days}일 늦어짐 → 추가납부 ${calc.amount.toLocaleString()}원 발생`
                                           : `납입일 ${calc.days}일 빨라짐 → 과입금 ${calc.amount.toLocaleString()}원 환급`}
                                         <span className="block mt-0.5 font-normal" style={{ color: 'var(--warm-muted)' }}>
-                                          월 {lease.rentAmount.toLocaleString()}원 ÷ {(() => { const [y,mo] = targetMonth.split('-').map(Number); return new Date(y,mo,0).getDate() })()}일 × {calc.days}일
+                                          월 {lease.rentAmount.toLocaleString()}원 ÷ {PRORATE_BASE_DAYS}일 × {calc.days}일
                                         </span>
                                       </div>
                                     )}
