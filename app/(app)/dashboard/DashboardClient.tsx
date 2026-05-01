@@ -732,32 +732,15 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let accumulated = ''
-      let buffer = ''
-
-      const parseLine = (line: string) => {
-        // toDataStreamResponse 포맷: 텍스트 델타는 `0:"..."\n`
-        if (line.startsWith('0:')) {
-          try {
-            accumulated += JSON.parse(line.slice(2)) as string
-            setAiText(accumulated)
-          } catch {}
-        } else if (line.startsWith('3:')) {
-          // 스트림 에러 메시지
-          try { setError(JSON.parse(line.slice(2)) as string) } catch {}
-        }
-      }
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-        for (const line of lines) parseLine(line)
+        accumulated += decoder.decode(value, { stream: true })
+        setAiText(accumulated)
       }
-      // 남은 버퍼 처리
-      buffer += decoder.decode()
-      if (buffer) parseLine(buffer)
+      accumulated += decoder.decode()
+      setAiText(accumulated)
 
       if (!accumulated.trim()) {
         setError('분석 결과를 받지 못했습니다. 잠시 후 다시 시도해주세요.')
