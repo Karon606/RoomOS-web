@@ -57,5 +57,7 @@ export async function POST(req: Request) {
     temperature: 0.4,
   })
 
-  return result.toTextStreamResponse()
+  return new Response(result.textStream.pipeThrough(new TextEncoderStream()), {
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+  })
 }

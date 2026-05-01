@@ -736,11 +736,9 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        accumulated += decoder.decode(value, { stream: true })
+        accumulated += decoder.decode(value)
         setAiText(accumulated)
       }
-      accumulated += decoder.decode()
-      setAiText(accumulated)
 
       if (!accumulated.trim()) {
         setError('분석 결과를 받지 못했습니다. 잠시 후 다시 시도해주세요.')
