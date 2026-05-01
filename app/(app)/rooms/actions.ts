@@ -174,8 +174,20 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
           .filter(p => p.targetMonth === acqMonthStr && new Date(p.payDate) < cutoffDate)
           .reduce((s, p) => s + p.actualAmount, 0)
       : 0
-    // 양도인 사전수납으로 간주: 실제 기록이 있거나 dueDay가 cutoff 이전인 경우
-    const acqMonthPrePaid = acqMonthPaidToPrev >= expected || acqMonthDueBeforeCutoff
+    // 인수월에 현 원장 입금 기록(payDate >= cutoffDate)이 있으면 사용자가 직접 그 달을 납부한 것
+    const acqMonthCurrentOpRecords = cutoffDate
+      ? leaseAllPrev
+          .filter(p => p.targetMonth === acqMonthStr && new Date(p.payDate) >= cutoffDate)
+          .reduce((s, p) => s + p.actualAmount, 0)
+      : leaseAllPrev
+          .filter(p => p.targetMonth === acqMonthStr)
+          .reduce((s, p) => s + p.actualAmount, 0)
+    // 양도인 사전수납으로 간주:
+    //  ① 실제 양도인 기록이 expected 이상이거나
+    //  ② dueDay<cutoffDay이면서 사용자 기록이 없는 경우 (있으면 사용자가 직접 납부한 것으로 봄)
+    const acqMonthPrePaid =
+      acqMonthPaidToPrev >= expected ||
+      (acqMonthDueBeforeCutoff && acqMonthCurrentOpRecords === 0)
 
     const [prevYyyy2, prevMm2] = prevMonth.split('-').map(Number)
     let prevMonthsOwed = (prevYyyy2 - acqYyyy) * 12 + (prevMm2 - acqMm) + 1
@@ -194,28 +206,28 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const dueDayBeforeCutoff = !!(cutoffDate && targetMonth === cutoffMonthStr && dueDay < cutoffDay)
     const prevPaidThisMonth = !!(cutoffDate && targetMonth === cutoffMonthStr && (currentPreAcq >= expected || dueDayBeforeCutoff))
     const displayBalance = prevPaidThisMonth ? 0 : currentPaidRaw - expected
-    const isPaid = prevPaidThisMonth || currentPaidRaw >= expected
     // 누적 잔액 — 과거 미납 + 이달 잔액
     const cumulativeBalance = carryBalance + displayBalance
+    // isPaid는 누적 기준 — 이달 분만 채워도 과거 미납이 있으면 미납 표시
+    const isPaid = prevPaidThisMonth || cumulativeBalance >= 0
 
-    // 첫 미납월 찾기 — 인수월부터 현재월까지 순서대로 검사
+    // 첫 미납월 찾기 — 누적 분배 방식: 입금된 총액을 인수월부터 차례대로 채워가며
+    // 첫 부족한 월을 찾음. 사용자가 5월에 입금했더라도 4월 미납이 있으면
+    // 4월 먼저 차감되고 5월이 미납으로 잡힘.
     let firstUnpaidMonth: string | null = null
     {
       const allForLease = [
         ...leaseAllPrev,
         ...leaseCurrentPayments,
       ].filter(p => !(cutoffDate && new Date(p.payDate) < cutoffDate))
-      const monthSums: Record<string, number> = {}
-      for (const p of allForLease) {
-        monthSums[p.targetMonth] = (monthSums[p.targetMonth] ?? 0) + p.actualAmount
-      }
+      const totalPaid = allForLease.reduce((s, p) => s + p.actualAmount, 0)
+      let allocated = 0
       for (let cy = acqYyyy, cmn = acqMm; cy < yyyy || (cy === yyyy && cmn <= mm); ) {
         const ms = `${cy}-${String(cmn).padStart(2, '0')}`
-        // 인수월 + 양도인 사전수납 처리 시 건너뜀 (기록 또는 dueDay<cutoffDay)
         const skip = ms === acqMonthStr && acqMonthPrePaid
         if (!skip) {
-          const paid = monthSums[ms] ?? 0
-          if (paid < expected) { firstUnpaidMonth = ms; break }
+          if (totalPaid - allocated < expected) { firstUnpaidMonth = ms; break }
+          allocated += expected
         }
         cmn++; if (cmn > 12) { cmn = 1; cy++ }
       }
