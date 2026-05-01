@@ -306,7 +306,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
   })
 }
 
-// 수납 등록 — 과납분은 다음달 record로 자동 분리 저장
+// 수납 등록 — 과납분은 재귀적으로 다음달 records로 분배 저장
+// (한 record의 actualAmount는 절대 expectedAmount를 초과하지 않음)
 export async function savePayment(data: {
   leaseTermId: string
   tenantId:    string
@@ -320,65 +321,64 @@ export async function savePayment(data: {
   await requireEdit()
   const propertyId = await getPropertyId()
 
-  const existing = await prisma.paymentRecord.aggregate({
-    where: { leaseTermId: data.leaseTermId, targetMonth: data.targetMonth, isDeposit: false },
-    _sum:  { actualAmount: true },
-  })
-  const alreadyPaid       = existing._sum.actualAmount ?? 0
-  const remainingThisMon  = Math.max(0, data.expectedAmount - alreadyPaid)
-  const currentPortion    = Math.min(data.actualAmount, remainingThisMon)
-  const excess            = data.actualAmount - currentPortion
+  let remaining = data.actualAmount
+  let currentTm = data.targetMonth
+  let isOriginalMonth = true
+  const touchedMonths: string[] = []
 
-  const existingCount = await prisma.paymentRecord.count({
-    where: { leaseTermId: data.leaseTermId, targetMonth: data.targetMonth },
-  })
-
-  if (currentPortion > 0 || excess === 0) {
-    await prisma.paymentRecord.create({
-      data: {
-        leaseTermId:    data.leaseTermId,
-        tenantId:       data.tenantId,
-        propertyId,
-        targetMonth:    data.targetMonth,
-        expectedAmount: data.expectedAmount,
-        actualAmount:   currentPortion,
-        payDate:        new Date(data.payDate),
-        payMethod:      data.payMethod,
-        memo:           data.memo ?? null,
-        seqNo:          existingCount + 1,
-        isPaid:         false,
-        carryOver:      0,
-      },
+  // 안전장치: 최대 24개월까지만 분배 (무한루프 방지)
+  let safety = 24
+  while (remaining > 0 && safety-- > 0) {
+    const existing = await prisma.paymentRecord.aggregate({
+      where: { leaseTermId: data.leaseTermId, targetMonth: currentTm, isDeposit: false },
+      _sum:  { actualAmount: true },
     })
-  }
+    const alreadyPaid      = existing._sum.actualAmount ?? 0
+    const remainingThisMon = Math.max(0, data.expectedAmount - alreadyPaid)
+    const portion          = Math.min(remaining, remainingThisMon)
 
-  if (excess > 0) {
-    const [y, m] = data.targetMonth.split('-').map(Number)
+    // portion이 0이어도 원본 월에 한 번은 record를 남겨야 0원 입력이 흔적 남음
+    // (이 케이스는 원본 월이 이미 완납인 상태에서 추가 입력한 경우 — 다음 달로 이월)
+    if (portion > 0 || (isOriginalMonth && remaining === 0)) {
+      const seqNo = await prisma.paymentRecord.count({
+        where: { leaseTermId: data.leaseTermId, targetMonth: currentTm },
+      })
+      const memo = isOriginalMonth
+        ? (data.memo ?? null)
+        : `${data.targetMonth} 과납 이월${data.memo ? ` · ${data.memo}` : ''}`
+      await prisma.paymentRecord.create({
+        data: {
+          leaseTermId:    data.leaseTermId,
+          tenantId:       data.tenantId,
+          propertyId,
+          targetMonth:    currentTm,
+          expectedAmount: data.expectedAmount,
+          actualAmount:   portion,
+          payDate:        new Date(data.payDate),
+          payMethod:      data.payMethod,
+          memo,
+          seqNo:          seqNo + 1,
+          isPaid:         false,
+          carryOver:      0,
+        },
+      })
+      touchedMonths.push(currentTm)
+    }
+
+    remaining -= portion
+    isOriginalMonth = false
+    if (remaining <= 0) break
+
+    // 다음 달로 이동
+    const [y, m] = currentTm.split('-').map(Number)
     const next   = new Date(y, m, 1)
-    const nextMonth = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
-    const nextSeqNo = await prisma.paymentRecord.count({
-      where: { leaseTermId: data.leaseTermId, targetMonth: nextMonth },
-    })
-    await prisma.paymentRecord.create({
-      data: {
-        leaseTermId:    data.leaseTermId,
-        tenantId:       data.tenantId,
-        propertyId,
-        targetMonth:    nextMonth,
-        expectedAmount: data.expectedAmount,
-        actualAmount:   excess,
-        payDate:        new Date(data.payDate),
-        payMethod:      data.payMethod,
-        memo:           `${data.targetMonth} 과납 이월${data.memo ? ` · ${data.memo}` : ''}`,
-        seqNo:          nextSeqNo + 1,
-        isPaid:         false,
-        carryOver:      0,
-      },
-    })
-    await recalculatePayments(data.leaseTermId, nextMonth, data.expectedAmount)
+    currentTm    = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
   }
 
-  await recalculatePayments(data.leaseTermId, data.targetMonth, data.expectedAmount)
+  // 영향받은 모든 월에 대해 isPaid 재계산
+  for (const tm of touchedMonths) {
+    await recalculatePayments(data.leaseTermId, tm, data.expectedAmount)
+  }
 }
 
 // 보증금 수납 등록 (초과금은 이용료로 분리 저장)
@@ -473,9 +473,23 @@ export async function updatePayment(
     await requireEdit()
     const record = await prisma.paymentRecord.findUnique({
       where: { id: paymentId },
-      select: { leaseTermId: true, targetMonth: true },
+      select: { leaseTermId: true, targetMonth: true, isDeposit: true },
     })
     if (!record) return { ok: false, error: '수납 기록을 찾을 수 없습니다.' }
+
+    const lease = await prisma.leaseTerm.findUnique({
+      where: { id: record.leaseTermId },
+      select: { rentAmount: true },
+    })
+
+    // 인플레이션 가드: 한 record의 금액이 임대료를 초과하지 않도록
+    // (보증금 record는 제외 — 별도 흐름)
+    if (lease && !record.isDeposit && data.actualAmount > lease.rentAmount) {
+      return {
+        ok: false,
+        error: `한 record의 금액은 임대료(${lease.rentAmount.toLocaleString()}원)를 초과할 수 없습니다. 초과분은 별도로 '수납 등록'에서 입력해주세요.`,
+      }
+    }
 
     await prisma.paymentRecord.update({
       where: { id: paymentId },
@@ -487,10 +501,6 @@ export async function updatePayment(
       },
     })
 
-    const lease = await prisma.leaseTerm.findUnique({
-      where: { id: record.leaseTermId },
-      select: { rentAmount: true },
-    })
     if (lease) {
       await recalculatePayments(record.leaseTermId, record.targetMonth, lease.rentAmount)
     }
