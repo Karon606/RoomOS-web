@@ -53,7 +53,7 @@ export async function POST(req: Request) {
 1. 이달 재무 총평
 2. 수납 현황 진단
 3. 핵심 개선 포인트`,
-    maxTokens: 700,
+    maxOutputTokens: 700,
     temperature: 0.4,
     abortSignal: req.signal,
   })
