@@ -201,13 +201,26 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const currentPreAcq = (cutoffDate && targetMonth === cutoffMonthStr)
       ? leaseCurrentPayments.filter(p => new Date(p.payDate) < cutoffDate).reduce((s, p) => s + p.actualAmount, 0)
       : 0
+    // 이번 달 record 중 payDate가 이번 달 시작일 이전 → 선납분(이월액으로 표시)
+    // 양도인 몫(payDate < cutoffDate)은 별도 처리되므로 제외
+    const monthStartDate = new Date(yyyy, mm - 1, 1)
+    const prepaidThisMonth = leaseCurrentPayments
+      .filter(p => {
+        const pd = new Date(p.payDate)
+        if (cutoffDate && pd < cutoffDate) return false
+        return pd < monthStartDate
+      })
+      .reduce((s, p) => s + p.actualAmount, 0)
     const currentPaidRaw = leaseCurrentPayments.reduce((s, p) => s + p.actualAmount, 0) - currentPreAcq
+    const realCurrentPaid = currentPaidRaw - prepaidThisMonth
     // 양도인이 이미 이달 이용료를 수납한 것으로 처리 — targetMonth가 cutoff월일 때만
     const dueDayBeforeCutoff = !!(cutoffDate && targetMonth === cutoffMonthStr && dueDay < cutoffDay)
     const prevPaidThisMonth = !!(cutoffDate && targetMonth === cutoffMonthStr && (currentPreAcq >= expected || dueDayBeforeCutoff))
     const displayBalance = prevPaidThisMonth ? 0 : currentPaidRaw - expected
-    // 누적 잔액 — 과거 미납 + 이달 잔액
+    // 누적 잔액 — 과거 미납 + 이달 잔액 (선납분 포함, 합계는 동일)
     const cumulativeBalance = carryBalance + displayBalance
+    // 화면 표시용 이월액 — 과거분 + 이번 달 선납분
+    const displayCarryOver = carryBalance + prepaidThisMonth
     // isPaid는 누적 기준 — 이달 분만 채워도 과거 미납이 있으면 미납 표시
     const isPaid = prevPaidThisMonth || cumulativeBalance >= 0
 
@@ -262,8 +275,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       tenantName: lease.tenant.name,
       contact: lease.tenant.contacts[0]?.contactValue ?? null,
       status: lease.status, expected, dueDay: overrideIsFullDate ? lease.dueDay : effectiveDueDay,
-      currentPaid: currentPaidRaw, carryOver: carryBalance,
-      totalPaid: currentPaidRaw, balance: cumulativeBalance, isPaid,
+      currentPaid: realCurrentPaid, carryOver: displayCarryOver,
+      totalPaid: realCurrentPaid, balance: cumulativeBalance, isPaid,
       leaseTermId: lease.id, depositAmount: lease.depositAmount,
       accumulatedUnpaid: 0, isFutureMonth: false, baseRent: room.baseRent,
       prevTenantName, prevContact,
