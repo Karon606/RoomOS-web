@@ -303,15 +303,21 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       select: { recurringExpenseId: true },
     }),
-    // 누적 미납 계산용 전체 납부 이력 — 항상 오늘 기준 월까지
-    prisma.paymentRecord.findMany({
-      where: {
-        propertyId,
-        targetMonth: { lte: realTodayMonthStr },
-        isDeposit: false,
-      },
-      select: { leaseTermId: true, targetMonth: true, actualAmount: true },
-    }),
+    // 누적 미납 계산용 — 오늘 기준 월의 마지막 일까지 받은 모든 record (cash-flow)
+    // targetMonth가 미래여도 payDate가 이번 달 안이면 포함됨 (선납 처리)
+    (() => {
+      const [ry, rm] = realTodayMonthStr.split('-').map(Number)
+      const realMonthEnd = new Date(ry, rm, 0)
+      realMonthEnd.setHours(23, 59, 59, 999)
+      return prisma.paymentRecord.findMany({
+        where: {
+          propertyId,
+          isDeposit: false,
+          payDate: { lte: realMonthEnd },
+        },
+        select: { leaseTermId: true, targetMonth: true, actualAmount: true, payDate: true },
+      })
+    })(),
   ])
 
   // ── 이달 집계 ────────────────────────────────────────────────
@@ -543,17 +549,19 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     tenantStatus:  r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.status ?? null,
   }))
 
-  // ── 누적 미납 상세 (관점 B: 임대 시작월부터 조회월까지 합산) ──────────
-  const payHistMap: Record<string, Record<string, number>> = {}
+  // ── 누적 미납 상세 — Cash-flow 기반 (payDate 기준) ──────────
+  // 회계 귀속(targetMonth)과 무관하게, "오늘 기준 월 마지막일까지 받은 돈" vs
+  // "청구 가능 월 수 × 임대료"의 차이로 누적 미납 산출
+  const cashByLease: Record<string, number> = {}
   for (const p of allHistoricalPayments) {
-    if (!payHistMap[p.leaseTermId]) payHistMap[p.leaseTermId] = {}
-    payHistMap[p.leaseTermId][p.targetMonth] = (payHistMap[p.leaseTermId][p.targetMonth] ?? 0) + p.actualAmount
+    // cutoff 이전 (양도인) 제외
+    if (acquisitionDate && new Date(p.payDate) < acquisitionDate) continue
+    cashByLease[p.leaseTermId] = (cashByLease[p.leaseTermId] ?? 0) + p.actualAmount
   }
 
   const unpaidMap: Record<string, number> = {}
   for (const l of unpaidLeasesRaw) {
     const lMoveIn = l.moveInDate ? new Date(l.moveInDate) : null
-    // moveInDate가 없으면 cutoff(인수)월 기준으로 — rooms 페이지 로직과 일치
     const leaseStartMonth = lMoveIn
       ? `${lMoveIn.getFullYear()}-${String(lMoveIn.getMonth() + 1).padStart(2, '0')}`
       : (cutoffMonthStr ?? realTodayMonthStr)
@@ -575,19 +583,18 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const acqMonthDueBeforeCutoff =
       !!(cutoffMonthStr && firstMonth === cutoffMonthStr && !isNaN(dueDayNum) && dueDayNum < cutoffDay)
 
-    // 누적 분배 방식: 총 입금액을 firstMonth부터 차례로 채워가며 남은 부족분 = 누적 미납
+    // 청구 가능 월 수 (acqMonth 자동 처리, 퇴실 후 제외)
     const months = monthRange(firstMonth, realTodayMonthStr)
-    let monthsCount = 0
-    let totalPaid = 0
+    let billableMonths = 0
     for (const mon of months) {
       if (mon === cutoffMonthStr && acqMonthDueBeforeCutoff) continue
       if (prevOwnerLeaseIds.has(l.id) && mon === cutoffMonthStr) continue
       if (moveOutMonth && mon > moveOutMonth) continue
-      monthsCount++
-      totalPaid += payHistMap[l.id]?.[mon] ?? 0
+      billableMonths++
     }
-    const totalExpected = monthsCount * l.rentAmount
-    unpaidMap[l.id] = Math.max(0, totalExpected - totalPaid)
+    const totalExpected = billableMonths * l.rentAmount
+    const totalReceived = cashByLease[l.id] ?? 0
+    unpaidMap[l.id] = Math.max(0, totalExpected - totalReceived)
   }
 
   const unpaidAmount = Object.values(unpaidMap).reduce((s, v) => s + v, 0)
