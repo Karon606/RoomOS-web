@@ -739,12 +739,18 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
         accumulated += decoder.decode(value, { stream: true })
         setAiText(accumulated)
       }
-      // flush remaining bytes
       const tail = decoder.decode()
-      if (tail) setAiText(prev => prev + tail)
+      if (tail) {
+        accumulated += tail
+        setAiText(accumulated)
+      }
+
+      if (!accumulated.trim()) {
+        setError('분석 결과를 받지 못했습니다. 잠시 후 다시 시도해주세요.')
+      }
 
     } catch (e) {
-      setError('네트워크 오류가 발생했습니다. 다시 시도해주세요.')
+      setError('연결 오류가 발생했습니다. 다시 시도해주세요.')
       console.error('[AI Analysis]', e)
     } finally {
       setIsLoading(false)
