@@ -39,7 +39,8 @@ export async function POST(req: Request) {
   const google = createGoogleGenerativeAI({ apiKey })
 
   const result = streamText({
-    model: google('gemini-2.5-flash', { thinkingConfig: { thinkingBudget: 0 } }),
+    model: google('gemini-2.5-flash'),
+    providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } },
     system: '당신은 한국 임대업 재무 분석가입니다. 반드시 순수 한국어 일반 텍스트로만 답변하세요. #, ##, ###, **, *, -, ` 등 마크다운 기호를 절대로 사용하지 마세요.',
     prompt: `${targetMonth} 운영 데이터:
 수입 ${(data.totalRevenue / 10000).toFixed(0)}만원, 지출 ${(data.totalExpense / 10000).toFixed(0)}만원, 순수익 ${(data.netProfit / 10000).toFixed(0)}만원
