@@ -57,22 +57,5 @@ export async function POST(req: Request) {
     temperature: 0.4,
   })
 
-  const encoder = new TextEncoder()
-  const stream = new ReadableStream({
-    async start(controller) {
-      try {
-        for await (const chunk of result.textStream) {
-          controller.enqueue(encoder.encode(chunk))
-        }
-      } catch (err) {
-        controller.error(err)
-      } finally {
-        controller.close()
-      }
-    },
-  })
-
-  return new Response(stream, {
-    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-  })
+  return result.toDataStreamResponse()
 }
