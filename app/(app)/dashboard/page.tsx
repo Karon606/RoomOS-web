@@ -771,15 +771,20 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   for (const a of wishRoomAlerts) {
     const stateLabel = a.isCheckoutPending ? '퇴실 예정' : '공실'
-    const rankLabel  = a.total > 1 ? ` · ${a.rank}/${a.total}순위` : ''
-    const matchPrefix = a.matchedBy === 'conditions' ? '조건 부합' : '희망'
+    const text = a.matchedBy === 'conditions'
+      ? `${a.tenantName}님과 조건이 맞는 ${a.roomNo}호 ${stateLabel}`
+      : `${a.tenantName}님이 희망한 ${a.roomNo}호 ${stateLabel}`
+    const timeLabel = a.total > 1 ? `${a.rank}순위 / ${a.total}명` : '연락 가능'
+    const detail = a.matchedBy === 'conditions'
+      ? `${a.tenantName}님이 원하는 조건과 일치하는 ${a.roomNo}호가 ${stateLabel} 상태입니다.${a.total > 1 ? ` 같은 방을 기다리는 ${a.total}명 중 ${a.rank}번째 순서입니다.` : ''}`
+      : `${a.tenantName}님이 입실을 희망한 ${a.roomNo}호가 ${stateLabel} 상태입니다.${a.total > 1 ? ` 같은 방을 기다리는 ${a.total}명 중 ${a.rank}번째 순서입니다.` : ''}`
     alertItems.push({
-      text:      `${a.tenantName}님 ${matchPrefix} ${a.roomNo}호 ${stateLabel}${rankLabel}`,
+      text,
       link:      `/tenants?tenantId=${a.tenantId}`,
       dotColor:  '#22c55e',
-      timeLabel: a.rank === 1 ? '1순위' : `${a.rank}순위`,
+      timeLabel,
       tenantId:  a.tenantId,
-      detail:    `${a.tenantName}님의 ${a.matchedBy === 'conditions' ? '희망 조건' : '희망 호실'}에 부합하는 ${a.roomNo}호가 ${stateLabel} 상태입니다. (현재 ${a.rank}/${a.total}순위)`,
+      detail,
     })
   }
 
