@@ -939,7 +939,7 @@ export default function RoomsClient({
                 </h2>
                 <p className="text-xs text-[var(--warm-muted)] mt-0.5">
                   예정 {selectedRoom.expected.toLocaleString()}원
-                  {selectedRoom.dueDay && ` · ${selectedRoom.dueDay}일`}
+                  {selectedRoom.dueDay && ` · ${selectedRoom.dueDay.includes('말') ? '말일' : `${selectedRoom.dueDay}일`}`}
                 </p>
               </div>
               <button onClick={() => { setShowPayModal(false); setShowPayForm(false) }}
@@ -949,9 +949,8 @@ export default function RoomsClient({
             {/* ── 읽기 전용 ── */}
             {!showPayForm && (
               <>
-                <div className="flex-1 overflow-y-auto p-6 space-y-5">
+                <div className="flex-1 overflow-y-auto p-6 space-y-3">
                   {/* 잔액 요약 — 현금주의(통장 입금일) 기준. 발생주의 매출은 대시보드 참조 */}
-                  <p className="text-[10px] text-[var(--warm-muted)] -mb-3">총 수납·잔액·이월액은 입금일 기준입니다 (매출은 귀속 월로 별도 인식)</p>
                   <div className="grid grid-cols-3 gap-2">
                     <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
                       <p className="text-xs text-[var(--warm-muted)]">총 수납</p>
@@ -978,6 +977,9 @@ export default function RoomsClient({
                       </p>
                     </div>
                   </div>
+                  <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
+                    총 수납·잔액·이월액은 입금일 기준입니다. 매출은 귀속 월로 별도 인식됩니다.
+                  </p>
 
                   {/* 납부 내역 */}
                   {(loadingHistory || paymentHistory.length > 0 || selectedRoom.prevPaidThisMonth) && (() => {
@@ -1125,7 +1127,9 @@ export default function RoomsClient({
                                   {prevOwner && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
                                   {!p.isDeposit && p.targetMonth !== targetMonth && (
                                     <span className="ml-1.5 text-[10px] font-semibold bg-blue-100 text-blue-700 rounded px-1 py-0.5">
-                                      {p.targetMonth.slice(5)}월분
+                                      {p.targetMonth < targetMonth
+                                        ? `${Number(p.targetMonth.slice(5))}월 미납분 처리`
+                                        : `${Number(p.targetMonth.slice(5))}월 선납`}
                                     </span>
                                   )}
                                 </p>

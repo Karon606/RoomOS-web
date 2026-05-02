@@ -2061,7 +2061,9 @@ export default function TenantClient({
                                   {prevOwner && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
                                   {!p.isDeposit && p.targetMonth !== targetMonth && (
                                     <span className="ml-1.5 text-[10px] font-semibold bg-blue-100 text-blue-700 rounded px-1 py-0.5">
-                                      {p.targetMonth.slice(5)}월분
+                                      {p.targetMonth < targetMonth
+                                        ? `${Number(p.targetMonth.slice(5))}월 미납분 처리`
+                                        : `${Number(p.targetMonth.slice(5))}월 선납`}
                                     </span>
                                   )}
                                 </p>
