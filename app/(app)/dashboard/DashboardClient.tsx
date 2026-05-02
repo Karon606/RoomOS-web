@@ -1952,7 +1952,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 <div className="flex-1 min-w-0">
                                   <p className="text-xs font-semibold truncate flex items-center gap-1" style={{ color: '#5a4a3a' }}>
                                     {l.roomNo}호 {l.tenantName}
-                                    {l.daysOverdue != null && l.daysOverdue >= 30 && (
+                                    {l.daysOverdue != null && l.daysOverdue >= 7 && (
                                       <span className="rounded-full text-[9px] font-bold px-1.5 py-0.5" style={{ background: '#dc2626', color: '#fff' }}>
                                         {l.daysOverdue}일 경과
                                       </span>

@@ -792,10 +792,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     })
   }
 
-  // 미수 회수 지연 — 첫 미납일에서 30일 이상 경과한 lease만 알림으로 강조
+  // 미수 회수 지연 — 첫 미납일에서 7일 이상 경과한 lease 알림으로 강조
+  // (당일·1~6일 단순 지연은 우측 미수납 패널에서 확인. 알림은 1주일 이상 회수 안 된 케이스)
   for (const l of unpaidLeases) {
     const days = l.daysOverdue ?? 0
-    if (days < 30) continue
+    if (days < 7) continue
     alertItems.push({
       category:  'unpaid',
       text:      `${l.tenantName}님 ${l.roomNo}호 미수 회수 지연 — ${days}일 경과`,
