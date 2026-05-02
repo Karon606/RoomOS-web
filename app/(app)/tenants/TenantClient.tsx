@@ -2653,6 +2653,22 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   const activeOnlyStatus = ['ACTIVE', 'CHECKOUT_PENDING'].includes(statusVal)
   const isWaitingTourStatus = statusVal === 'WAITING_TOUR'
 
+  // 보증금/청소비 자동 입력 제외 상태 (계약/납입 단계 이전 — 잘못 저장 방지)
+  const NO_AUTOFILL_STATUSES = ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED', 'NON_RESIDENT']
+  const isNoAutoFill = (s: string) => NO_AUTOFILL_STATUSES.includes(s)
+  const [depositAmountVal, setDepositAmountVal] = useState<number | undefined>(
+    lease?.depositAmount ?? (isNoAutoFill(statusVal) ? undefined : (defaultDeposit ?? undefined))
+  )
+  const [cleaningFeeVal, setCleaningFeeVal] = useState<number | undefined>(
+    lease?.cleaningFee ?? (isNoAutoFill(statusVal) ? undefined : (defaultCleaningFee ?? undefined))
+  )
+  // 신규(lease 없음)일 때 status 변경 시 default 재적용
+  useEffect(() => {
+    if (lease) return
+    setDepositAmountVal(isNoAutoFill(statusVal) ? undefined : (defaultDeposit ?? undefined))
+    setCleaningFeeVal(isNoAutoFill(statusVal) ? undefined : (defaultCleaningFee ?? undefined))
+  }, [statusVal]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // 납부일 상태 — raw 값(숫자 또는 '말일')과 표시 문자열 분리
   const initDueDay = (): { raw: string; disp: string } => {
     const d = lease?.dueDay ?? ''
@@ -2780,14 +2796,24 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">보증금</label>
-            <MoneyInput name="depositAmount" defaultValue={lease?.depositAmount ?? (defaultDeposit ?? undefined)} placeholder="0원" />
+            <MoneyInput
+              name="depositAmount"
+              value={depositAmountVal}
+              onChange={setDepositAmountVal}
+              placeholder="0원"
+            />
           </div>
         </div>
         {/* 청소비 | 입주일 or 입주희망일 */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">청소비</label>
-            <MoneyInput name="cleaningFee" defaultValue={lease?.cleaningFee ?? (defaultCleaningFee ?? undefined)} placeholder="0원" />
+            <MoneyInput
+              name="cleaningFee"
+              value={cleaningFeeVal}
+              onChange={setCleaningFeeVal}
+              placeholder="0원"
+            />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">{moveInLabel}</label>
