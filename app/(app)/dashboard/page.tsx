@@ -792,17 +792,17 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     })
   }
 
-  // 누적 미수 2개월 이상 — 회수 우선순위 높음
+  // 미수 임대료 2개월치 이상 — 회수 우선순위 높음
   for (const l of unpaidLeases) {
     if (l.monthsOverdue < 2) continue
     alertItems.push({
       category:  'unpaid',
-      text:      `${l.tenantName}님 ${l.roomNo}호 누적 미수 ${l.monthsOverdue}개월`,
+      text:      `${l.tenantName}님 ${l.roomNo}호 미수 ${l.monthsOverdue}개월치`,
       link:      `/rooms?tenantId=${l.tenantId}`,
       dotColor:  '#dc2626',
-      timeLabel: `${l.monthsOverdue}개월`,
+      timeLabel: `${l.monthsOverdue}개월치`,
       tenantId:  l.tenantId,
-      detail:    `회수되지 않은 임대료가 ${l.monthsOverdue}개월치(${l.unpaidAmount.toLocaleString()}원) 누적되었습니다. 우선 회수 권장.`,
+      detail:    `회수되지 않은 임대료가 ${l.monthsOverdue}개월치(${l.unpaidAmount.toLocaleString()}원) 쌓여 있습니다. 우선 회수 권장.`,
     })
   }
 

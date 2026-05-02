@@ -1954,7 +1954,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                     {l.roomNo}호 {l.tenantName}
                                     {l.monthsOverdue >= 2 && (
                                       <span className="rounded-full text-[9px] font-bold px-1.5 py-0.5" style={{ background: '#dc2626', color: '#fff' }}>
-                                        {l.monthsOverdue}개월
+                                        {l.monthsOverdue}개월치
                                       </span>
                                     )}
                                   </p>
