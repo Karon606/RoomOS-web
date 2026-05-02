@@ -1952,9 +1952,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 <div className="flex-1 min-w-0">
                                   <p className="text-xs font-semibold truncate flex items-center gap-1" style={{ color: '#5a4a3a' }}>
                                     {l.roomNo}호 {l.tenantName}
-                                    {l.monthsOverdue >= 2 && (
+                                    {l.daysOverdue != null && l.daysOverdue >= 30 && (
                                       <span className="rounded-full text-[9px] font-bold px-1.5 py-0.5" style={{ background: '#dc2626', color: '#fff' }}>
-                                        {l.monthsOverdue}개월치
+                                        {l.daysOverdue}일 경과
                                       </span>
                                     )}
                                   </p>

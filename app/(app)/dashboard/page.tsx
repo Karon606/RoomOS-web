@@ -792,17 +792,18 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     })
   }
 
-  // 미수 임대료 2개월치 이상 — 회수 우선순위 높음
+  // 미수 회수 지연 — 첫 미납일에서 30일 이상 경과한 lease만 알림으로 강조
   for (const l of unpaidLeases) {
-    if (l.monthsOverdue < 2) continue
+    const days = l.daysOverdue ?? 0
+    if (days < 30) continue
     alertItems.push({
       category:  'unpaid',
-      text:      `${l.tenantName}님 ${l.roomNo}호 미수 ${l.monthsOverdue}개월치`,
+      text:      `${l.tenantName}님 ${l.roomNo}호 미수 회수 지연 — ${days}일 경과`,
       link:      `/rooms?tenantId=${l.tenantId}`,
       dotColor:  '#dc2626',
-      timeLabel: `${l.monthsOverdue}개월치`,
+      timeLabel: `${days}일 경과`,
       tenantId:  l.tenantId,
-      detail:    `회수되지 않은 임대료가 ${l.monthsOverdue}개월치(${l.unpaidAmount.toLocaleString()}원) 쌓여 있습니다. 우선 회수 권장.`,
+      detail:    `미수금 ${l.unpaidAmount.toLocaleString()}원이 ${days}일 동안 회수되지 않고 있습니다. 우선 회수 권장.`,
     })
   }
 
