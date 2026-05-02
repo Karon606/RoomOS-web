@@ -33,9 +33,14 @@ export type AnnualSummary = {
   totalExpense: number
   totalProfit: number
   endingUnpaid: number
+  prevYear?: {
+    rows: MonthlyRow[]
+    totalRevenue: number
+    totalProfit: number
+  }
 }
 
-export async function getAnnualReport(year: string): Promise<AnnualSummary> {
+export async function getAnnualReport(year: string, includePrev = true): Promise<AnnualSummary> {
   const { propertyId } = await getPropertyId()
   const yearNum = parseInt(year, 10)
   if (isNaN(yearNum)) throw new Error('잘못된 연도')
@@ -223,6 +228,17 @@ export async function getAnnualReport(year: string): Promise<AnnualSummary> {
     ? (unpaidByMonth[todayMonth] ?? 0)
     : (unpaidByMonth[months[months.length - 1]] ?? 0)
 
+  // 전년도 데이터 (재귀 방지를 위해 includePrev=false로 호출)
+  let prevYear: AnnualSummary['prevYear']
+  if (includePrev) {
+    const prev = await getAnnualReport(String(yearNum - 1), false)
+    prevYear = {
+      rows: prev.rows,
+      totalRevenue: prev.totalRevenue,
+      totalProfit: prev.totalProfit,
+    }
+  }
+
   return {
     year,
     rows,
@@ -231,6 +247,7 @@ export async function getAnnualReport(year: string): Promise<AnnualSummary> {
     totalExpense: rows.reduce((s, r) => s + r.expense, 0),
     totalProfit: rows.reduce((s, r) => s + r.profit, 0),
     endingUnpaid,
+    prevYear,
   }
 }
 

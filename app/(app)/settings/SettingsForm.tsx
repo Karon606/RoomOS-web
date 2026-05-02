@@ -13,6 +13,7 @@ import {
   reorderOptions, renameOption, resetOptionsToDefault,
   inviteMember, updateMemberRole, removeMember,
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
+  exportAllData,
   type MemberWithUser, type RecurringExpenseRow,
 } from './actions'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
@@ -454,6 +455,16 @@ export default function SettingsForm({
             className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
             발생주의 데이터 진단 →
           </a>
+        </div>
+
+        {/* 데이터 백업 */}
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6 mt-4">
+          <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">데이터 백업</h2>
+          <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
+            영업장의 모든 데이터(호실·입주자·계약·수납·지출·기타수익 등)를 JSON 파일로 내려받습니다.
+            정기적으로 백업해두면 사고 시 복구에 활용할 수 있습니다.
+          </p>
+          <BackupButton />
         </div>
         </>
       )}
@@ -943,6 +954,41 @@ function Field({ label, name, defaultValue }: {
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       <input type="text" name={name} defaultValue={defaultValue}
         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+    </div>
+  )
+}
+
+function BackupButton() {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const handleBackup = async () => {
+    setError('')
+    setBusy(true)
+    try {
+      const json = await exportAllData()
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const ts = new Date().toISOString().slice(0, 10)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `roomos-backup-${ts}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError((err as Error).message ?? '백업 실패')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div>
+      <button type="button" onClick={handleBackup} disabled={busy}
+        className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-xl bg-[var(--coral)] hover:opacity-90 text-white transition-opacity disabled:opacity-60">
+        {busy ? '백업 생성 중...' : 'JSON 백업 다운로드'}
+      </button>
+      {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
     </div>
   )
 }

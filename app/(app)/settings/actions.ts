@@ -536,3 +536,41 @@ export async function deleteRecurringExpense(id: string): Promise<{ ok: true } |
     return { ok: false, error: (e as Error).message }
   }
 }
+// 전체 데이터 JSON 백업 — owner만
+export async function exportAllData(): Promise<string> {
+  await requireOwner()
+  const propertyId = await getPropertyId()
+
+  const [property, rooms, tenants, leaseTerms, paymentRecords, expenses, extraIncomes, financialAccounts, recurringExpenses, tenantContacts, tenantStatusLogs, tenantRequests] = await Promise.all([
+    prisma.property.findUnique({ where: { id: propertyId } }),
+    prisma.room.findMany({ where: { propertyId }, include: { photos: true } }),
+    prisma.tenant.findMany({ where: { propertyId } }),
+    prisma.leaseTerm.findMany({ where: { propertyId } }),
+    prisma.paymentRecord.findMany({ where: { propertyId } }),
+    prisma.expense.findMany({ where: { propertyId } }),
+    prisma.extraIncome.findMany({ where: { propertyId } }),
+    prisma.financialAccount.findMany({ where: { propertyId } }),
+    prisma.recurringExpense.findMany({ where: { propertyId } }),
+    prisma.tenantContact.findMany({ where: { tenant: { propertyId } } }),
+    prisma.tenantStatusLog.findMany({ where: { propertyId } }),
+    prisma.tenantRequest.findMany({ where: { propertyId } }),
+  ])
+
+  return JSON.stringify({
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    propertyId,
+    property,
+    rooms,
+    tenants,
+    tenantContacts,
+    leaseTerms,
+    paymentRecords,
+    expenses,
+    extraIncomes,
+    financialAccounts,
+    recurringExpenses,
+    tenantStatusLogs,
+    tenantRequests,
+  }, null, 2)
+}

@@ -84,6 +84,7 @@ export default function ReportClient({ summary, years }: { summary: AnnualSummar
               <tr className="text-left text-xs text-[var(--warm-muted)]">
                 <th className="px-4 py-3 font-medium">월</th>
                 <th className="px-4 py-3 font-medium text-right">매출</th>
+                {summary.prevYear && <th className="px-4 py-3 font-medium text-right">전년 매출 (Δ)</th>}
                 <th className="px-4 py-3 font-medium text-right">기타수익</th>
                 <th className="px-4 py-3 font-medium text-right">지출</th>
                 <th className="px-4 py-3 font-medium text-right">순이익</th>
@@ -96,10 +97,24 @@ export default function ReportClient({ summary, years }: { summary: AnnualSummar
                 const incomeTotal = r.revenue + r.extraIncome
                 const incomePct = (incomeTotal / maxAbs) * 100
                 const expensePct = (r.expense / maxAbs) * 100
+                const prevRow = summary.prevYear?.rows.find(p => p.month.slice(5) === r.month.slice(5))
+                const delta = prevRow ? r.revenue - prevRow.revenue : 0
                 return (
                   <tr key={r.month} className="border-b border-[var(--warm-border)] last:border-b-0">
                     <td className="px-4 py-3 text-[var(--warm-dark)] font-medium">{Number(r.month.slice(5))}월</td>
                     <td className="px-4 py-3 text-right text-[var(--warm-dark)]">{fmt(r.revenue)}</td>
+                    {summary.prevYear && (
+                      <td className="px-4 py-3 text-right">
+                        <div className="text-[var(--warm-mid)] text-xs">{fmt(prevRow?.revenue ?? 0)}</div>
+                        {prevRow && r.revenue > 0 && (
+                          <div className={`text-[10px] mt-0.5 font-semibold ${
+                            delta > 0 ? 'text-emerald-600' : delta < 0 ? 'text-red-500' : 'text-[var(--warm-muted)]'
+                          }`}>
+                            {delta === 0 ? '—' : (delta > 0 ? '▲' : '▼') + ' ' + Math.abs(delta).toLocaleString() + '원'}
+                          </div>
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-right text-[var(--warm-mid)]">{fmt(r.extraIncome)}</td>
                     <td className="px-4 py-3 text-right text-[var(--warm-mid)]">{fmt(r.expense)}</td>
                     <td className={`px-4 py-3 text-right font-semibold ${
@@ -126,6 +141,21 @@ export default function ReportClient({ summary, years }: { summary: AnnualSummar
               <tr className="bg-[var(--canvas)] font-semibold">
                 <td className="px-4 py-3 text-[var(--warm-dark)]">합계</td>
                 <td className="px-4 py-3 text-right text-[var(--warm-dark)]">{fmt(summary.totalRevenue)}</td>
+                {summary.prevYear && (
+                  <td className="px-4 py-3 text-right">
+                    <div className="text-[var(--warm-mid)] text-xs">{fmt(summary.prevYear.totalRevenue)}</div>
+                    {summary.prevYear.totalRevenue > 0 && (() => {
+                      const totalDelta = summary.totalRevenue - summary.prevYear.totalRevenue
+                      return (
+                        <div className={`text-[10px] mt-0.5 font-semibold ${
+                          totalDelta > 0 ? 'text-emerald-600' : totalDelta < 0 ? 'text-red-500' : 'text-[var(--warm-muted)]'
+                        }`}>
+                          {totalDelta === 0 ? '—' : (totalDelta > 0 ? '▲' : '▼') + ' ' + Math.abs(totalDelta).toLocaleString() + '원'}
+                        </div>
+                      )
+                    })()}
+                  </td>
+                )}
                 <td className="px-4 py-3 text-right text-[var(--warm-mid)]">{fmt(summary.totalExtraIncome)}</td>
                 <td className="px-4 py-3 text-right text-[var(--warm-mid)]">{fmt(summary.totalExpense)}</td>
                 <td className={`px-4 py-3 text-right ${summary.totalProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
