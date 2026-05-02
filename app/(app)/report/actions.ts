@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
+import { kstMonthStr } from '@/lib/kstDate'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -159,8 +160,15 @@ export async function getAnnualReport(year: string): Promise<AnnualSummary> {
     return out
   }
 
+  const todayMonth = kstMonthStr()
+
   const unpaidByMonth: Record<string, number> = {}
   for (const month of months) {
+    // 아직 도래하지 않은 미래 월은 청구 자체가 발생 X → 미수 0
+    if (month > todayMonth) {
+      unpaidByMonth[month] = 0
+      continue
+    }
     let total = 0
     for (const l of leases) {
       const lMoveIn = l.moveInDate ? new Date(l.moveInDate) : null
@@ -210,6 +218,11 @@ export async function getAnnualReport(year: string): Promise<AnnualSummary> {
     }
   })
 
+  // endingUnpaid — 현재 연도면 오늘 월 기준, 과거 연도면 12월 기준
+  const endingUnpaid = year === todayMonth.slice(0, 4)
+    ? (unpaidByMonth[todayMonth] ?? 0)
+    : (unpaidByMonth[months[months.length - 1]] ?? 0)
+
   return {
     year,
     rows,
@@ -217,7 +230,7 @@ export async function getAnnualReport(year: string): Promise<AnnualSummary> {
     totalExtraIncome: rows.reduce((s, r) => s + r.extraIncome, 0),
     totalExpense: rows.reduce((s, r) => s + r.expense, 0),
     totalProfit: rows.reduce((s, r) => s + r.profit, 0),
-    endingUnpaid: rows[rows.length - 1]?.unpaidAmount ?? 0,
+    endingUnpaid,
   }
 }
 
