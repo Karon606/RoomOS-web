@@ -15,10 +15,15 @@ async function getPropertyId() {
   return { user, propertyId }
 }
 
+export type SuspectCategory =
+  | 'late-payment'    // payMonth = targetMonth + 1 (다음 달에 받음 → 직전 월 매출일 가능성, 확인 필요)
+  | 'pre-payment'     // payMonth = targetMonth - 1 (직전 달에 받음 → 다음 월 선납 — 정상이지만 확인용)
+  | 'mismatch-other'  // 그 외 월 불일치 (수동 검토 필수)
+
 export type SuspectRecord = {
   id: string
   payDate: string         // "YYYY-MM-DD"
-  payMonth: string        // "YYYY-MM" (payDate가 속한 월)
+  payMonth: string        // payDate가 속한 월
   targetMonth: string     // 현재 저장된 귀속 월
   actualAmount: number
   seqNo: number
@@ -28,18 +33,26 @@ export type SuspectRecord = {
   tenantName: string
   roomNo: string | null
   leaseTermId: string
-  // 분석 카테고리
-  category: 'next-month-early' | 'mismatch-other'
-  // 추정 발생 월 (월 1~10일 입금이면 직전 월일 가능성)
-  inferredAccrualMonth: string | null
+  dueDay: string | null
+  isPrevOwner: boolean    // 양도인 record (payDate < cutoffDate) — 인수월에서만 별도 표시
+  category: SuspectCategory
+  inferredAccrualMonth: string | null  // FIFO 추정 귀속 월
 }
 
 export async function analyzePaymentTargetMonth(): Promise<{
   total: number
   matched: number
+  prevOwnerCount: number
   suspects: SuspectRecord[]
 }> {
   const { propertyId } = await getPropertyId()
+
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { acquisitionDate: true, prevOwnerCutoffDate: true },
+  })
+  const cutoffRaw = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
+  const cutoffDate = cutoffRaw ? new Date(cutoffRaw) : null
 
   const records = await prisma.paymentRecord.findMany({
     where: { propertyId, isDeposit: false },
@@ -48,44 +61,68 @@ export async function analyzePaymentTargetMonth(): Promise<{
       seqNo: true, payMethod: true, memo: true, isDeposit: true,
       leaseTermId: true,
       tenant: { select: { name: true } },
-      leaseTerm: { select: { room: { select: { roomNo: true } } } },
+      leaseTerm: {
+        select: {
+          dueDay: true,
+          room: { select: { roomNo: true } },
+        },
+      },
     },
     orderBy: { payDate: 'desc' },
   })
 
   const suspects: SuspectRecord[] = []
   let matched = 0
+  let prevOwnerCount = 0
+
+  // 월 비교 헬퍼
+  const monthDiff = (a: string, b: string): number => {
+    // a - b in months (positive: a is later)
+    const [ay, am] = a.split('-').map(Number)
+    const [by, bm] = b.split('-').map(Number)
+    return (ay - by) * 12 + (am - bm)
+  }
+  const prevMonthStr = (m: string): string => {
+    const [y, mn] = m.split('-').map(Number)
+    const py = mn === 1 ? y - 1 : y
+    const pm = mn === 1 ? 12 : mn - 1
+    return `${py}-${String(pm).padStart(2, '0')}`
+  }
 
   for (const r of records) {
     const pd = new Date(r.payDate)
     const py = pd.getFullYear()
     const pm = pd.getMonth() + 1
-    const pday = pd.getDate()
     const payMonth = `${py}-${String(pm).padStart(2, '0')}`
 
+    // 양도인 record (인수일 이전 입금) — 별도 카운트, 의심 후보 X
+    const isPrevOwner = !!(cutoffDate && pd < cutoffDate)
+    if (isPrevOwner) {
+      prevOwnerCount++
+      continue
+    }
+
+    // 정상: payMonth === targetMonth
     if (payMonth === r.targetMonth) {
       matched++
       continue
     }
 
-    // 발생주의 의심 케이스 분류
-    // 1) 월 초(1~10일) 입금인데 targetMonth가 그 입금일이 속한 월 → 직전 월 임대료를 늦게 받았을 가능성
-    let category: SuspectRecord['category'] = 'mismatch-other'
+    // 월 불일치 — 카테고리 분류
+    const diff = monthDiff(payMonth, r.targetMonth) // payMonth - targetMonth
+    let category: SuspectCategory
     let inferredAccrualMonth: string | null = null
 
-    const prevYear  = pm === 1 ? py - 1 : py
-    const prevMonth = pm === 1 ? 12 : pm - 1
-    const prevMonthStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}`
-
-    if (pday <= 10 && r.targetMonth === payMonth) {
-      // payMonth와 targetMonth가 같지 않으면 위에서 matched로 빠짐. 실제로는 도달 X
-    }
-
-    // 더 일반적인 케이스: payDate가 다음 달 1~10일이고 targetMonth가 입금월(=다음 달)이면 직전 달 분일 가능성
-    // 즉 targetMonth === payMonth이고 pday가 작은 케이스
-    if (r.targetMonth === payMonth && pday <= 10) {
-      category = 'next-month-early'
-      inferredAccrualMonth = prevMonthStr
+    if (diff === 1) {
+      // 다음 달에 받음 — "지연 입금" 가능성. 회계상 정상이지만 사용자 확인 권장
+      category = 'late-payment'
+      inferredAccrualMonth = prevMonthStr(payMonth)
+    } else if (diff === -1) {
+      // 직전 달에 받음 — "선납" 가능성 (정상)
+      category = 'pre-payment'
+      inferredAccrualMonth = payMonth
+    } else {
+      category = 'mismatch-other'
     }
 
     suspects.push({
@@ -101,45 +138,14 @@ export async function analyzePaymentTargetMonth(): Promise<{
       tenantName: r.tenant.name,
       roomNo: r.leaseTerm.room?.roomNo ?? null,
       leaseTermId: r.leaseTermId,
+      dueDay: r.leaseTerm.dueDay,
+      isPrevOwner: false,
       category,
       inferredAccrualMonth,
     })
   }
 
-  // 추가: payMonth === targetMonth지만 payDate가 월 초(1~10일)인 케이스도 의심 후보로 추가
-  for (const r of records) {
-    const pd = new Date(r.payDate)
-    const pday = pd.getDate()
-    const py = pd.getFullYear()
-    const pm = pd.getMonth() + 1
-    const payMonth = `${py}-${String(pm).padStart(2, '0')}`
-
-    if (payMonth !== r.targetMonth) continue
-    if (pday > 10) continue
-
-    const prevYear  = pm === 1 ? py - 1 : py
-    const prevMonth = pm === 1 ? 12 : pm - 1
-    const prevMonthStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}`
-
-    suspects.push({
-      id: r.id,
-      payDate: r.payDate.toISOString().slice(0, 10),
-      payMonth,
-      targetMonth: r.targetMonth,
-      actualAmount: r.actualAmount,
-      seqNo: r.seqNo,
-      payMethod: r.payMethod,
-      memo: r.memo,
-      isDeposit: r.isDeposit,
-      tenantName: r.tenant.name,
-      roomNo: r.leaseTerm.room?.roomNo ?? null,
-      leaseTermId: r.leaseTermId,
-      category: 'next-month-early',
-      inferredAccrualMonth: prevMonthStr,
-    })
-  }
-
-  // 정렬: 호실/입금일 순
+  // 정렬: 호실 → 입금일
   suspects.sort((a, b) => {
     const ra = a.roomNo ?? ''
     const rb = b.roomNo ?? ''
@@ -147,7 +153,7 @@ export async function analyzePaymentTargetMonth(): Promise<{
     return a.payDate.localeCompare(b.payDate)
   })
 
-  return { total: records.length, matched, suspects }
+  return { total: records.length, matched, prevOwnerCount, suspects }
 }
 
 // 단일 PaymentRecord의 targetMonth를 변경 (사용자 검토 후 수동 적용)
