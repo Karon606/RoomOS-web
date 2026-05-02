@@ -404,6 +404,7 @@ export default function SettingsForm({
 
       {/* 기본정보 탭 */}
       {tab === 'basic' && (
+        <>
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
           <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-4">영업장 기본 정보</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -441,6 +442,20 @@ export default function SettingsForm({
             </button>
           </form>
         </div>
+
+        {/* 데이터 점검 — 발생주의 진단 페이지 링크 */}
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6 mt-4">
+          <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">데이터 점검</h2>
+          <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
+            수납 기록의 입금일(payDate)과 귀속 월(targetMonth)이 회계 기준에 맞게 분류되어 있는지 확인합니다.
+            지연 입금·월 불일치 등 재검토 후보를 보고 직접 귀속 월을 조정할 수 있습니다.
+          </p>
+          <a href="/accrual-check"
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+            발생주의 데이터 진단 →
+          </a>
+        </div>
+        </>
       )}
 
       {/* 호실 설정 탭 */}
