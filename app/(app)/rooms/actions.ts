@@ -356,6 +356,12 @@ async function findFirstUnpaidMonth(
 
 // 수납 등록 — 발생주의 FIFO: 가장 오래된 미수월부터 자동 충당, 과납분은 다음달로 이월
 // (한 record의 actualAmount는 절대 expectedAmount를 초과하지 않음)
+export type SavePaymentResult = {
+  inputMonth: string                                       // 사용자가 입력 시점에 보던 viewMonth
+  startMonth: string                                       // FIFO가 시작한 월 (가장 오래된 미수월)
+  allocations: { targetMonth: string; amount: number }[]   // 각 월에 분배된 금액
+}
+
 export async function savePayment(data: {
   leaseTermId: string
   tenantId:    string
@@ -365,7 +371,7 @@ export async function savePayment(data: {
   payDate:     string
   payMethod:   string
   memo?:       string
-}) {
+}): Promise<SavePaymentResult> {
   await requireEdit()
   const propertyId = await getPropertyId()
 
@@ -375,6 +381,7 @@ export async function savePayment(data: {
   const startTm = currentTm
   let isOriginalMonth = true
   const touchedMonths: string[] = []
+  const allocations: { targetMonth: string; amount: number }[] = []
 
   // 안전장치: 최대 24개월까지만 분배 (무한루프 방지)
   let safety = 24
@@ -413,6 +420,7 @@ export async function savePayment(data: {
         },
       })
       touchedMonths.push(currentTm)
+      if (portion > 0) allocations.push({ targetMonth: currentTm, amount: portion })
     }
 
     remaining -= portion
@@ -429,6 +437,8 @@ export async function savePayment(data: {
   for (const tm of touchedMonths) {
     await recalculatePayments(data.leaseTermId, tm, data.expectedAmount)
   }
+
+  return { inputMonth: data.targetMonth, startMonth: startTm, allocations }
 }
 
 // 보증금 수납 등록 (초과금은 이용료로 분리 저장)

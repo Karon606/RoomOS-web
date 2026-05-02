@@ -630,7 +630,7 @@ export default function TenantClient({
             memo:          memo || undefined,
           })
         } else {
-          await savePayment({
+          const result = await savePayment({
             leaseTermId:    payTarget.lease.id,
             tenantId:       payTarget.tenant.id,
             targetMonth,
@@ -640,6 +640,15 @@ export default function TenantClient({
             payMethod,
             memo,
           })
+          if (result.allocations.length > 0) {
+            const otherMonths = result.allocations.filter(a => a.targetMonth !== result.inputMonth)
+            if (otherMonths.length > 0) {
+              const summary = otherMonths
+                .map(a => `${a.targetMonth.slice(5)}월분 ${a.amount.toLocaleString()}원`)
+                .join(', ')
+              alert(`발생주의 자동 분배:\n${summary}\n\n(미수가 가장 오래된 월부터 자동 충당됩니다)`)
+            }
+          }
         }
         setShowPayForm(false)
         const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
@@ -2280,6 +2289,11 @@ export default function TenantClient({
               {showPayForm && (
                 <form onSubmit={handleSavePayment} className="flex flex-col flex-1 overflow-hidden">
                   <div className="flex-1 overflow-y-auto p-6 space-y-3">
+                    {!isDepositMode && (
+                      <p className="text-[10px] text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed">
+                        미수가 있는 가장 오래된 월부터 자동으로 충당됩니다 (발생주의). 입력 금액이 한 달 이용료를 초과하면 다음 달로 이월됩니다.
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-xs text-[var(--warm-muted)]">날짜</label>
