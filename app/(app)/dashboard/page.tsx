@@ -5,7 +5,7 @@ import { Suspense } from 'react'
 import DataButtons from '@/components/DataButtons'
 import DashboardClient, { type DashboardData } from './DashboardClient'
 import { getPaymentMethods } from '@/app/(app)/settings/actions'
-import { kstMonthStr } from '@/lib/kstDate'
+import { kstMonthStr, kstYmd } from '@/lib/kstDate'
 
 // ── 헬퍼 ──────────────────────────────────────────────────────
 
@@ -467,13 +467,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     return Math.round((todayCopy.getTime() - dueDate.getTime()) / 86400000)
   }
 
-  // 특정 월의 dueDay 기준 today와의 일수 차이
+  // 특정 월의 dueDay 기준 today와의 일수 차이 (KST 기준)
   function calcDaysOverdueForMonth(dueDay: string | null, monthStr: string): number | null {
     if (!dueDay) return null
-    const todayCopy = new Date(); todayCopy.setHours(0, 0, 0, 0)
+    // KST 기준 오늘 (서버 UTC와 시간대 차이로 today가 하루 어긋나는 것 방지)
+    const { year: ty, month: tm, day: td } = kstYmd()
+    const todayCopy = new Date(ty, tm - 1, td)
     if (dueDay.includes('-')) {
-      const dueDate = new Date(dueDay + 'T00:00:00')
-      dueDate.setHours(0, 0, 0, 0)
+      const [yy, mm, dd] = dueDay.split('-').map(Number)
+      const dueDate = new Date(yy, mm - 1, dd)
       return Math.round((todayCopy.getTime() - dueDate.getTime()) / 86400000)
     }
     const [y, m] = monthStr.split('-').map(Number)
@@ -485,7 +487,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       if (isNaN(dayNum) || dayNum < 1) return null
     }
     const dueDate = new Date(y, m - 1, dayNum)
-    dueDate.setHours(0, 0, 0, 0)
     return Math.round((todayCopy.getTime() - dueDate.getTime()) / 86400000)
   }
 
