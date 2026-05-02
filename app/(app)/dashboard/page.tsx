@@ -702,21 +702,13 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       ? `${moveOut.getFullYear()}-${String(moveOut.getMonth() + 1).padStart(2, '0')}`
       : null
 
-    // 인수월 양도인 자동 처리: dueDay < cutoffDay이면 기록 없어도 양도인이 받았다고 봄
-    const lAny = l as any
-    const effDueDayForAcqMonth = (lAny.overrideDueDayMonth === firstMonth && lAny.overrideDueDay)
-      ? lAny.overrideDueDay
-      : l.dueDay
-    const dueDayNum = parseInt(effDueDayForAcqMonth ?? '99')
-    const acqMonthDueBeforeCutoff =
-      !!(cutoffMonthStr && firstMonth === cutoffMonthStr && !isNaN(dueDayNum) && dueDayNum < cutoffDay)
-
-    // 청구 가능 월 수 (acqMonth 자동 처리, 퇴실 후 제외) — viewMonth까지
+    // 청구 가능 월 수 — viewMonth까지
+    // (양도인이 받은 인수월은 prevOwnerLeaseIds로만 skip. dueDay < cutoffDay 자동 가정은 사용 안 함:
+    //  양도인이 실제로 받았다면 양도인 record가 있어야 하고, 없으면 미수로 잡혀야 함)
     const months = monthRange(firstMonth, targetMonth)
     let billableMonths = 0
     const billableMonthList: string[] = []
     for (const mon of months) {
-      if (mon === cutoffMonthStr && acqMonthDueBeforeCutoff) continue
       if (prevOwnerLeaseIds.has(l.id) && mon === cutoffMonthStr) continue
       if (moveOutMonth && mon > moveOutMonth) continue
       billableMonths++
