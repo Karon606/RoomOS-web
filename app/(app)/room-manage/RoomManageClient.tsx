@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useRef } from 'react'
+import { useState, useTransition, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { addRoom, updateRoom, deleteRoom, uploadRoomPhoto, deleteRoomPhoto, applyScheduledRentNow } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
@@ -126,6 +126,9 @@ export default function RoomManageClient({
   const [showAddModal, setShowAddModal] = useState(false)
   const [editRoom, setEditRoom]         = useState<Room | null>(null)
   const [rentUpdateDateVal, setRentUpdateDateVal] = useState('')
+  // 라이트박스 (사진 확대 보기)
+  const [lightboxPhotos, setLightboxPhotos] = useState<Photo[] | null>(null)
+  const [lightboxIndex, setLightboxIndex]   = useState(0)
 
   // 사진
   const [editPhotos, setEditPhotos]           = useState<Photo[]>([])
@@ -603,14 +606,15 @@ export default function RoomManageClient({
                 <button onClick={closeDetail} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
               </div>
 
-              {/* 사진 슬라이더 — 모달 상단, 스크롤 고정 영역 */}
+              {/* 사진 슬라이더 — 클릭하면 확대 라이트박스 */}
               {r.photos.length > 0 && (
                 <div className="shrink-0 border-b border-[var(--warm-border)]">
                   <div className="flex gap-2 overflow-x-auto px-4 py-3"
                     style={{ scrollbarWidth: 'none' }}>
-                    {r.photos.map(p => (
+                    {r.photos.map((p, idx) => (
                       <img key={p.id} src={p.storageUrl} alt=""
-                        className="h-44 w-44 object-cover rounded-xl shrink-0" />
+                        onClick={() => { setLightboxPhotos(r.photos); setLightboxIndex(idx) }}
+                        className="h-44 w-44 object-cover rounded-xl shrink-0 cursor-zoom-in" />
                     ))}
                   </div>
                 </div>
@@ -821,6 +825,16 @@ export default function RoomManageClient({
           </form>
         </Modal>
       )}
+
+      {/* ── 사진 라이트박스 ───────────────────────────────────────── */}
+      {lightboxPhotos && (
+        <Lightbox
+          photos={lightboxPhotos}
+          index={lightboxIndex}
+          onIndexChange={setLightboxIndex}
+          onClose={() => setLightboxPhotos(null)}
+        />
+      )}
     </div>
   )
 }
@@ -878,6 +892,106 @@ function SelectField({ label, name, options, defaultValue, hint }: {
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
       {hint && <p className="text-[10px] text-[var(--warm-muted)]">{hint}</p>}
+    </div>
+  )
+}
+
+// ── 사진 확대 라이트박스 ─────────────────────────────────────────
+
+function Lightbox({ photos, index, onIndexChange, onClose }: {
+  photos: Photo[]
+  index: number
+  onIndexChange: (i: number) => void
+  onClose: () => void
+}) {
+  const total = photos.length
+  const go = (delta: number) => {
+    const next = (index + delta + total) % total
+    onIndexChange(next)
+  }
+
+  // 키보드 ←/→/ESC
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft')  go(-1)
+      if (e.key === 'ArrowRight') go(1)
+      if (e.key === 'Escape')     onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, total])
+
+  // 터치 스와이프
+  const touchStart = useRef<{ x: number; y: number } | null>(null)
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+  }
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStart.current) return
+    const dx = e.changedTouches[0].clientX - touchStart.current.x
+    const dy = e.changedTouches[0].clientY - touchStart.current.y
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      go(dx > 0 ? -1 : 1)
+    }
+    touchStart.current = null
+  }
+
+  const photo = photos[index]
+  if (!photo) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-[300] bg-black/95 flex items-center justify-center select-none"
+      onClick={onClose}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
+      {/* 닫기 */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onClose() }}
+        className="absolute top-4 right-4 text-white/80 hover:text-white text-3xl leading-none w-10 h-10 flex items-center justify-center rounded-full bg-black/40"
+        aria-label="닫기"
+      >
+        ✕
+      </button>
+
+      {/* 인덱스 표시 */}
+      <div className="absolute top-4 left-4 text-white/80 text-sm font-medium px-3 py-1 rounded-full bg-black/40">
+        {index + 1} / {total}
+      </div>
+
+      {/* 좌측 이전 */}
+      {total > 1 && (
+        <button
+          onClick={(e) => { e.stopPropagation(); go(-1) }}
+          className="absolute left-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hidden sm:flex"
+          aria-label="이전"
+        >
+          ‹
+        </button>
+      )}
+
+      {/* 우측 다음 */}
+      {total > 1 && (
+        <button
+          onClick={(e) => { e.stopPropagation(); go(1) }}
+          className="absolute right-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hidden sm:flex"
+          aria-label="다음"
+        >
+          ›
+        </button>
+      )}
+
+      {/* 사진 */}
+      <img
+        key={photo.id}
+        src={photo.storageUrl}
+        alt={photo.fileName ?? ''}
+        onClick={(e) => e.stopPropagation()}
+        className="max-w-[95vw] max-h-[90vh] object-contain"
+        draggable={false}
+      />
     </div>
   )
 }
