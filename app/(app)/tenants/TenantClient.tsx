@@ -147,13 +147,14 @@ function toDateInput(d: string | Date | null | undefined): string {
   return kstYmdStr(new Date(d))
 }
 
-// datetime-local 입력용 (KST 기준 YYYY-MM-DDTHH:mm)
-function toDateTimeLocalInput(d: string | Date | null | undefined): string {
-  if (!d) return ''
+// 일시값을 날짜('YYYY-MM-DD') + 시각('HH:mm')으로 분리
+function splitDateTime(d: string | Date | null | undefined): { date: string; time: string } {
+  if (!d) return { date: '', time: '' }
   const dt = new Date(d)
-  const offset = dt.getTimezoneOffset()
-  const local = new Date(dt.getTime() - offset * 60000)
-  return local.toISOString().slice(0, 16)
+  const date = kstYmdStr(dt)
+  const hh = String(dt.getHours()).padStart(2, '0')
+  const mm = String(dt.getMinutes()).padStart(2, '0')
+  return { date, time: `${hh}:${mm}` }
 }
 
 function fmtDate(d: string | Date | null | undefined): string {
@@ -2481,7 +2482,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
   const [rentAmount, setRentAmount] = useState<number | undefined>(lease?.rentAmount)
   const [tourDateVal, setTourDateVal] = useState(toDateInput(lease?.tourDate))
-  const [inquiryAtVal, setInquiryAtVal] = useState(toDateTimeLocalInput(lease?.inquiryAt))
+  const initialInquiry = splitDateTime(lease?.inquiryAt)
+  const [inquiryDateVal, setInquiryDateVal] = useState(initialInquiry.date)
+  const [inquiryTimeVal, setInquiryTimeVal] = useState(initialInquiry.time)
+  const inquiryAtCombined = inquiryDateVal
+    ? `${inquiryDateVal}T${inquiryTimeVal || '00:00'}`
+    : ''
 
   const handleRoomChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const roomId = e.target.value
@@ -2670,13 +2676,24 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             <label className="text-xs font-medium text-[var(--warm-mid)]">
               입실 문의 일시 <span className="font-normal opacity-60">(예약자 순번 기준)</span>
             </label>
-            <input
-              type="datetime-local"
-              name="inquiryAt"
-              value={inquiryAtVal}
-              onChange={e => setInquiryAtVal(e.target.value)}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
-            />
+            <input type="hidden" name="inquiryAt" value={inquiryAtCombined} />
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <DatePicker
+                  value={inquiryDateVal}
+                  onChange={setInquiryDateVal}
+                  placeholder="문의 날짜 선택"
+                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
+                />
+              </div>
+              <input
+                type="time"
+                value={inquiryTimeVal}
+                onChange={e => setInquiryTimeVal(e.target.value)}
+                disabled={!inquiryDateVal}
+                className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors disabled:opacity-50"
+              />
+            </div>
           </div>
         )}
         {/* 납부일 | 퇴실일(조건부) (아이템 5, 7, 8) */}
