@@ -132,6 +132,34 @@ export default function ReportClient({ summary, years }: { summary: AnnualSummar
         </div>
       </div>
 
+      {/* 카테고리별 지출 비중 */}
+      {summary.expenseByCategory.length > 0 && (
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4">
+          <h3 className="text-sm font-semibold text-[var(--warm-dark)] mb-3">카테고리별 지출 비중</h3>
+          <div className="space-y-2">
+            {summary.expenseByCategory.map(c => {
+              const colors = ['#f4623a', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#06b6d4', '#ef4444', '#94a3b8']
+              const idx = summary.expenseByCategory.indexOf(c)
+              const color = colors[idx % colors.length]
+              return (
+                <div key={c.category} className="flex items-center gap-3">
+                  <span className="text-xs text-[var(--warm-dark)] w-20 shrink-0 truncate">{c.category}</span>
+                  <div className="flex-1 h-5 bg-[var(--canvas)] rounded-full relative overflow-hidden">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full transition-all"
+                      style={{ width: `${c.percent}%`, background: color }}
+                    />
+                  </div>
+                  <span className="text-xs text-[var(--warm-mid)] w-24 text-right shrink-0">
+                    {fmt(c.amount)} <span className="text-[10px] text-[var(--warm-muted)]">({c.percent}%)</span>
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 월별 표 */}
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">

@@ -33,6 +33,7 @@ export type AnnualSummary = {
   totalExpense: number
   totalProfit: number
   endingUnpaid: number
+  expenseByCategory: { category: string; amount: number; percent: number }[]
   prevYear?: {
     rows: MonthlyRow[]
     totalRevenue: number
@@ -100,7 +101,7 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
   const [expenses, incomes] = await Promise.all([
     prisma.expense.findMany({
       where: { propertyId, date: { gte: yearStart, lte: yearEnd } },
-      select: { date: true, amount: true },
+      select: { date: true, amount: true, category: true },
     }),
     prisma.extraIncome.findMany({
       where: { propertyId, date: { gte: yearStart, lte: yearEnd } },
@@ -228,6 +229,21 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
     ? (unpaidByMonth[todayMonth] ?? 0)
     : (unpaidByMonth[months[months.length - 1]] ?? 0)
 
+  // 카테고리별 지출 합계 (연간)
+  const totalExpense = expenses.reduce((s, e) => s + e.amount, 0)
+  const catMap = new Map<string, number>()
+  for (const e of expenses) {
+    const c = e.category || '미분류'
+    catMap.set(c, (catMap.get(c) ?? 0) + e.amount)
+  }
+  const expenseByCategory = Array.from(catMap.entries())
+    .map(([category, amount]) => ({
+      category,
+      amount,
+      percent: totalExpense > 0 ? Math.round((amount / totalExpense) * 100) : 0,
+    }))
+    .sort((a, b) => b.amount - a.amount)
+
   // 전년도 데이터 (재귀 방지를 위해 includePrev=false로 호출)
   let prevYear: AnnualSummary['prevYear']
   if (includePrev) {
@@ -247,6 +263,7 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
     totalExpense: rows.reduce((s, r) => s + r.expense, 0),
     totalProfit: rows.reduce((s, r) => s + r.profit, 0),
     endingUnpaid,
+    expenseByCategory,
     prevYear,
   }
 }
