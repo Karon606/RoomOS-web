@@ -279,6 +279,7 @@ model LeaseTerm {
   wishRooms          String?
   visitRoute         String?
   tourDate           DateTime?          @db.Date
+  inquiryAt          DateTime?          // 입실 문의 일시 (예약자 순번 기준)
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 

@@ -200,14 +200,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       where: { propertyId, isVacant: true },
       select: { roomNo: true },
     }),
-    // 희망 이동 호실 계약
+    // 희망 이동 호실 계약 (예약/투어/거주중/퇴실예정 모두 포함 — 순번 산정 위해 status도 가져옴)
     prisma.leaseTerm.findMany({
       where: {
         propertyId,
-        status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] },
+        status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE'] },
         wishRooms: { not: null },
       },
-      include: {
+      select: {
+        id: true, status: true, wishRooms: true, inquiryAt: true, createdAt: true,
         tenant: { select: { name: true, id: true } },
         room:   { select: { roomNo: true } },
       },
@@ -478,17 +479,58 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }))
 
   // ── 희망 호실 알림 ───────────────────────────────────────────
-  const vacantRoomNos = new Set(vacantRoomList.map(r => r.roomNo))
-  const wishRoomAlerts = wishRoomLeases.flatMap(l => {
+  // "공실"로 간주: 실제 공실(isVacant) + 퇴실 예정(CHECKOUT_PENDING) 호실
+  const checkoutPendingRoomNos = new Set(
+    moveOutLeases.map(l => l.room?.roomNo).filter((x): x is string => !!x)
+  )
+  const targetRoomNos = new Set([
+    ...vacantRoomList.map(r => r.roomNo),
+    ...checkoutPendingRoomNos,
+  ])
+
+  // 호실별 희망자 목록 모으기 — inquiryAt 오름차순(없으면 createdAt) 정렬해 순번 부여
+  type WishCandidate = {
+    tenantName: string; tenantId: string; status: string
+    inquiryAt: Date | null; createdAt: Date
+  }
+  const candidatesByRoom = new Map<string, WishCandidate[]>()
+  for (const l of wishRoomLeases) {
     const wished = (l.wishRooms ?? '').split(',').map(s => s.trim()).filter(Boolean)
-    return wished
-      .filter(no => vacantRoomNos.has(no))
-      .map(no => ({
+    for (const no of wished) {
+      if (!targetRoomNos.has(no)) continue
+      // 본인이 살고 있는 방은 알림 대상 아님
+      if (l.room?.roomNo === no) continue
+      if (!candidatesByRoom.has(no)) candidatesByRoom.set(no, [])
+      candidatesByRoom.get(no)!.push({
         tenantName: l.tenant.name,
         tenantId:   l.tenant.id,
-        roomNo:     no,
-      }))
-  })
+        status:     l.status,
+        inquiryAt:  l.inquiryAt ? new Date(l.inquiryAt) : null,
+        createdAt:  new Date(l.createdAt),
+      })
+    }
+  }
+
+  const wishRoomAlerts: { tenantName: string; tenantId: string; roomNo: string; rank: number; total: number; isCheckoutPending: boolean }[] = []
+  for (const [roomNo, candidates] of candidatesByRoom) {
+    // inquiryAt 우선, 없으면 createdAt 기준 오름차순
+    candidates.sort((a, b) => {
+      const at = a.inquiryAt?.getTime() ?? a.createdAt.getTime()
+      const bt = b.inquiryAt?.getTime() ?? b.createdAt.getTime()
+      return at - bt
+    })
+    const isCheckoutPending = checkoutPendingRoomNos.has(roomNo) && !vacantRoomList.some(r => r.roomNo === roomNo)
+    candidates.forEach((c, idx) => {
+      wishRoomAlerts.push({
+        tenantName: c.tenantName,
+        tenantId:   c.tenantId,
+        roomNo,
+        rank:       idx + 1,
+        total:      candidates.length,
+        isCheckoutPending,
+      })
+    })
+  }
 
   // ── 6개월 트렌드 ─────────────────────────────────────────────
   const trend = last6Months.map(m => {
@@ -664,13 +706,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
 
   for (const a of wishRoomAlerts) {
+    const stateLabel = a.isCheckoutPending ? '퇴실 예정' : '공실'
+    const rankLabel  = a.total > 1 ? ` · ${a.rank}/${a.total}순위` : ''
     alertItems.push({
-      text:      `${a.tenantName}님 희망 ${a.roomNo}호 공실`,
+      text:      `${a.tenantName}님 희망 ${a.roomNo}호 ${stateLabel}${rankLabel}`,
       link:      `/tenants?tenantId=${a.tenantId}`,
       dotColor:  '#22c55e',
-      timeLabel: '지금',
+      timeLabel: a.rank === 1 ? '1순위' : `${a.rank}순위`,
       tenantId:  a.tenantId,
-      detail:    `${a.tenantName}님이 희망하던 ${a.roomNo}호가 공실 전환되었습니다.`,
+      detail:    `${a.tenantName}님이 희망하던 ${a.roomNo}호가 ${stateLabel} 상태입니다. (현재 ${a.rank}/${a.total}순위)`,
     })
   }
 

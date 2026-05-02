@@ -104,6 +104,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const wishRooms           = formData.get('wishRooms') as string
   const visitRoute          = formData.get('visitRoute') as string
   const tourDate            = formData.get('tourDate') as string
+  const inquiryAt           = formData.get('inquiryAt') as string
 
   const roomOptionalStatuses = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] as string[]
   if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
@@ -163,6 +164,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
           moveInDate: moveInDate ? new Date(moveInDate) : null,
           expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
           tourDate: tourDate ? new Date(tourDate) : null,
+          inquiryAt: inquiryAt ? new Date(inquiryAt) : null,
           paymentTiming,
           payMethod: payMethod || null,
           cashReceipt: cashReceipt || null,
@@ -235,6 +237,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
   const wishRooms          = formData.get('wishRooms') as string
   const visitRoute         = formData.get('visitRoute') as string
   const tourDate           = formData.get('tourDate') as string
+  const inquiryAt          = formData.get('inquiryAt') as string
   const applyScheduledRent = formData.get('applyScheduledRent') as string  // '1' = 즉시 적용, '0' = 보류, 비어있음 = 처리 안함
 
   if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
@@ -323,6 +326,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
       moveInDate: moveInDate ? new Date(moveInDate) : null,
       expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
       tourDate: tourDate ? new Date(tourDate) : null,
+      inquiryAt: inquiryAt ? new Date(inquiryAt) : null,
       paymentTiming,
       roomId: newRoomId ?? null,
       payMethod: payMethod || null,

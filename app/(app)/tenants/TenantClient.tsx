@@ -38,7 +38,7 @@ type LeaseTerm = {
   cleaningFee: number; dueDay: string | null
   overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
   moveInDate: string | Date | null; moveOutDate: string | Date | null
-  expectedMoveOut: string | Date | null; tourDate: string | Date | null
+  expectedMoveOut: string | Date | null; tourDate: string | Date | null; inquiryAt: string | Date | null
   paymentTiming: string
   payMethod: string | null; cashReceipt: string | null
   registrationStatus: string; contractUrl: string | null
@@ -145,6 +145,15 @@ type PastFilter = (typeof PAST_FILTERS)[number]['key']
 function toDateInput(d: string | Date | null | undefined): string {
   if (!d) return ''
   return kstYmdStr(new Date(d))
+}
+
+// datetime-local 입력용 (KST 기준 YYYY-MM-DDTHH:mm)
+function toDateTimeLocalInput(d: string | Date | null | undefined): string {
+  if (!d) return ''
+  const dt = new Date(d)
+  const offset = dt.getTimezoneOffset()
+  const local = new Date(dt.getTime() - offset * 60000)
+  return local.toISOString().slice(0, 16)
 }
 
 function fmtDate(d: string | Date | null | undefined): string {
@@ -990,15 +999,11 @@ export default function TenantClient({
               <p className="text-sm text-[var(--warm-mid)] leading-relaxed">
                 <span className="font-semibold text-[var(--warm-dark)]">{rentChangeModal.roomNo}호</span>가 공실로 변경됩니다. 예정된 가격 변동을 즉시 적용할까요?
               </p>
-              <div className="bg-[var(--canvas)] rounded-xl p-3 text-sm space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-[var(--warm-muted)]">기존</span>
-                  <span className="font-semibold text-[var(--warm-dark)]">{rentChangeModal.baseRent.toLocaleString()}원</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--warm-muted)]">{dirLabel}</span>
-                  <span className={`font-semibold ${dirColor}`}>{rentChangeModal.scheduledRent.toLocaleString()}원</span>
-                </div>
+              <div className="bg-[var(--canvas)] rounded-xl px-3 py-2.5 text-sm flex items-center justify-center gap-2 flex-wrap">
+                <span className="text-[var(--warm-muted)]">기존</span>
+                <span className="font-semibold text-[var(--warm-dark)]">{rentChangeModal.baseRent.toLocaleString()}원</span>
+                <span className="text-[var(--warm-muted)]">→</span>
+                <span className={`font-semibold ${dirColor}`}>{dirLabel} {rentChangeModal.scheduledRent.toLocaleString()}원</span>
               </div>
               <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
                 네: 즉시 적용 (예정일 무시) · 아니오: 변경 예정일에 자동 적용
@@ -2476,6 +2481,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
   const [rentAmount, setRentAmount] = useState<number | undefined>(lease?.rentAmount)
   const [tourDateVal, setTourDateVal] = useState(toDateInput(lease?.tourDate))
+  const [inquiryAtVal, setInquiryAtVal] = useState(toDateTimeLocalInput(lease?.inquiryAt))
 
   const handleRoomChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const roomId = e.target.value
@@ -2655,6 +2661,21 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               onChange={setTourDateVal}
               placeholder="투어 예정일 선택"
               className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
+            />
+          </div>
+        )}
+        {/* 입실 문의 일시 (예약/투어 단계 전용 — 예약자 순번 기준) */}
+        {(statusVal === 'RESERVED' || statusVal === 'WAITING_TOUR' || statusVal === 'TOUR_DONE') && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">
+              입실 문의 일시 <span className="font-normal opacity-60">(예약자 순번 기준)</span>
+            </label>
+            <input
+              type="datetime-local"
+              name="inquiryAt"
+              value={inquiryAtVal}
+              onChange={e => setInquiryAtVal(e.target.value)}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
             />
           </div>
         )}
