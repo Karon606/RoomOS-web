@@ -1,0 +1,124 @@
+'use client'
+
+import { useRouter } from 'next/navigation'
+import type { AnnualSummary } from './actions'
+
+const fmt = (n: number) => n === 0 ? '—' : n.toLocaleString('ko-KR') + '원'
+const fmtMan = (n: number) => n === 0 ? '—' : `${Math.round(n / 10000).toLocaleString()}만`
+
+export default function ReportClient({ summary, years }: { summary: AnnualSummary; years: string[] }) {
+  const router = useRouter()
+  const handleYear = (y: string) => router.push(`/report?year=${y}`)
+
+  const maxAbs = Math.max(
+    1,
+    ...summary.rows.map(r => Math.max(r.revenue + r.extraIncome, r.expense))
+  )
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-[var(--warm-dark)]">결산 보고서</h1>
+          <p className="text-xs text-[var(--warm-muted)] mt-0.5">발생주의(매출 인식 월) 기준 연간 손익·미수 현황</p>
+        </div>
+        <select
+          value={summary.year}
+          onChange={e => handleYear(e.target.value)}
+          className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+        >
+          {years.map(y => <option key={y} value={y}>{y}년</option>)}
+        </select>
+      </div>
+
+      {/* 합계 카드 */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <SummaryCard label="총 매출" value={fmt(summary.totalRevenue)} accent="text-[var(--coral)]" />
+        <SummaryCard label="기타 수익" value={fmt(summary.totalExtraIncome)} />
+        <SummaryCard label="총 지출" value={fmt(summary.totalExpense)} />
+        <SummaryCard
+          label="순이익"
+          value={(summary.totalProfit >= 0 ? '+' : '-') + fmt(Math.abs(summary.totalProfit)).replace('원', '원')}
+          accent={summary.totalProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}
+        />
+      </div>
+
+      {/* 월별 표 */}
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-[var(--canvas)] border-b border-[var(--warm-border)]">
+              <tr className="text-left text-xs text-[var(--warm-muted)]">
+                <th className="px-4 py-3 font-medium">월</th>
+                <th className="px-4 py-3 font-medium text-right">매출</th>
+                <th className="px-4 py-3 font-medium text-right">기타수익</th>
+                <th className="px-4 py-3 font-medium text-right">지출</th>
+                <th className="px-4 py-3 font-medium text-right">순이익</th>
+                <th className="px-4 py-3 font-medium text-right">월말 미수</th>
+                <th className="px-4 py-3 font-medium">시각화</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summary.rows.map(r => {
+                const incomeTotal = r.revenue + r.extraIncome
+                const incomePct = (incomeTotal / maxAbs) * 100
+                const expensePct = (r.expense / maxAbs) * 100
+                return (
+                  <tr key={r.month} className="border-b border-[var(--warm-border)] last:border-b-0">
+                    <td className="px-4 py-3 text-[var(--warm-dark)] font-medium">{Number(r.month.slice(5))}월</td>
+                    <td className="px-4 py-3 text-right text-[var(--warm-dark)]">{fmt(r.revenue)}</td>
+                    <td className="px-4 py-3 text-right text-[var(--warm-mid)]">{fmt(r.extraIncome)}</td>
+                    <td className="px-4 py-3 text-right text-[var(--warm-mid)]">{fmt(r.expense)}</td>
+                    <td className={`px-4 py-3 text-right font-semibold ${
+                      r.profit > 0 ? 'text-emerald-600' : r.profit < 0 ? 'text-red-500' : 'text-[var(--warm-muted)]'
+                    }`}>
+                      {r.profit === 0 ? '—' : (r.profit > 0 ? '+' : '-') + Math.abs(r.profit).toLocaleString() + '원'}
+                    </td>
+                    <td className="px-4 py-3 text-right text-amber-600">{r.unpaidAmount > 0 ? fmt(r.unpaidAmount) : '—'}</td>
+                    <td className="px-4 py-3 w-40">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1">
+                          <div className="h-1.5 rounded-full bg-emerald-200" style={{ width: `${incomePct}%` }} />
+                          <span className="text-[10px] text-[var(--warm-muted)]">{fmtMan(incomeTotal)}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="h-1.5 rounded-full bg-rose-200" style={{ width: `${expensePct}%` }} />
+                          <span className="text-[10px] text-[var(--warm-muted)]">{fmtMan(r.expense)}</span>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+              <tr className="bg-[var(--canvas)] font-semibold">
+                <td className="px-4 py-3 text-[var(--warm-dark)]">합계</td>
+                <td className="px-4 py-3 text-right text-[var(--warm-dark)]">{fmt(summary.totalRevenue)}</td>
+                <td className="px-4 py-3 text-right text-[var(--warm-mid)]">{fmt(summary.totalExtraIncome)}</td>
+                <td className="px-4 py-3 text-right text-[var(--warm-mid)]">{fmt(summary.totalExpense)}</td>
+                <td className={`px-4 py-3 text-right ${summary.totalProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {(summary.totalProfit >= 0 ? '+' : '-') + Math.abs(summary.totalProfit).toLocaleString() + '원'}
+                </td>
+                <td className="px-4 py-3 text-right text-amber-600">{fmt(summary.endingUnpaid)}</td>
+                <td className="px-4 py-3"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <p className="text-[11px] text-[var(--warm-muted)] leading-relaxed">
+        매출은 임대 서비스가 제공된 월(targetMonth) 기준으로 인식됩니다. 입금 지연이 있어도 매출은 발생월에 잡히며,
+        '월말 미수'는 그 월말 시점까지 회수되지 않은 채권 누적액입니다.
+      </p>
+    </div>
+  )
+}
+
+function SummaryCard({ label, value, accent }: { label: string; value: string; accent?: string }) {
+  return (
+    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4">
+      <p className="text-xs text-[var(--warm-muted)]">{label}</p>
+      <p className={`text-base font-bold mt-1 ${accent ?? 'text-[var(--warm-dark)]'}`}>{value}</p>
+    </div>
+  )
+}
