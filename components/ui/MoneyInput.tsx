@@ -15,12 +15,13 @@ export function MoneyInput({
   const [display, setDisplay] = useState(init ? init.toLocaleString() : '')
   const [focused, setFocused] = useState(false)
 
-  // 외부 value 변경 시 동기화
+  // controlled 모드(onChange 있음): value가 변경되면 undefined → '' 까지 동기화
+  // uncontrolled 모드(defaultValue만): 첫 마운트 외엔 동기화 안 함
+  const isControlled = onChange !== undefined
   useEffect(() => {
-    if (value !== undefined) {
-      setDisplay(value ? value.toLocaleString() : '')
-    }
-  }, [value])
+    if (!isControlled) return
+    setDisplay(value ? value.toLocaleString() : '')
+  }, [value, isControlled])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.replace(/[^0-9]/g, '')
