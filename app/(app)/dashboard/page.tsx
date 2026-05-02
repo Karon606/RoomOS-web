@@ -308,21 +308,16 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       select: { recurringExpenseId: true },
     }),
-    // 누적 미납 계산용 — 오늘 기준 월의 마지막 일까지 받은 모든 record (cash-flow)
-    // targetMonth가 미래여도 payDate가 이번 달 안이면 포함됨 (선납 처리)
-    (() => {
-      const [ry, rm] = realTodayMonthStr.split('-').map(Number)
-      const realMonthEnd = new Date(ry, rm, 0)
-      realMonthEnd.setHours(23, 59, 59, 999)
-      return prisma.paymentRecord.findMany({
-        where: {
-          propertyId,
-          isDeposit: false,
-          payDate: { lte: realMonthEnd },
-        },
-        select: { leaseTermId: true, targetMonth: true, actualAmount: true, payDate: true },
-      })
-    })(),
+    // 누적 미납 계산용 — 발생주의: targetMonth가 오늘 월 이하인 record만 매출 인식
+    // (미래 targetMonth로 저장된 선납 record는 아직 매출 인식 X)
+    prisma.paymentRecord.findMany({
+      where: {
+        propertyId,
+        isDeposit: false,
+        targetMonth: { lte: realTodayMonthStr },
+      },
+      select: { leaseTermId: true, targetMonth: true, actualAmount: true, payDate: true },
+    }),
   ])
 
   // ── 이달 집계 ────────────────────────────────────────────────
@@ -643,14 +638,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     tenantStatus:  r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.status ?? null,
   }))
 
-  // ── 누적 미납 상세 — Cash-flow 기반 (payDate 기준) ──────────
-  // 회계 귀속(targetMonth)과 무관하게, "오늘 기준 월 마지막일까지 받은 돈" vs
-  // "청구 가능 월 수 × 임대료"의 차이로 누적 미납 산출
-  const cashByLease: Record<string, number> = {}
+  // ── 누적 미납 상세 — 발생주의(targetMonth 기반) ──────────
+  // "오늘 월 이하의 targetMonth로 인식된 매출" vs "청구 가능 월 수 × 임대료"의 차이
+  // (allHistoricalPayments는 이미 targetMonth ≤ realTodayMonthStr 필터됨)
+  const accrualByLease: Record<string, number> = {}
   for (const p of allHistoricalPayments) {
     // cutoff 이전 (양도인) 제외
     if (acquisitionDate && new Date(p.payDate) < acquisitionDate) continue
-    cashByLease[p.leaseTermId] = (cashByLease[p.leaseTermId] ?? 0) + p.actualAmount
+    accrualByLease[p.leaseTermId] = (accrualByLease[p.leaseTermId] ?? 0) + p.actualAmount
   }
 
   const unpaidMap: Record<string, number> = {}
@@ -687,7 +682,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       billableMonths++
     }
     const totalExpected = billableMonths * l.rentAmount
-    const totalReceived = cashByLease[l.id] ?? 0
+    const totalReceived = accrualByLease[l.id] ?? 0
     unpaidMap[l.id] = Math.max(0, totalExpected - totalReceived)
   }
 

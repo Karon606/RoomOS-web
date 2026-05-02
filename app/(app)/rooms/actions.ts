@@ -86,15 +86,14 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     },
   })
 
-  // 조회월 마지막 일 — payDate <= monthEnd인 모든 record를 가져옴
-  // (targetMonth 무관 — 미래 월에 귀속된 선납 record도 포함되어야 cash-flow 계산이 일관됨)
-  const monthEndForQuery = new Date(yyyy, mm, 0)
-  monthEndForQuery.setHours(23, 59, 59, 999)
+  // 발생주의(accrual basis): 귀속 월(targetMonth)이 viewMonth 이하인 모든 record를 가져옴
+  // (선납 record는 targetMonth가 미래라 자동 제외됨 — 발생주의에서는 미래 매출 인식하지 않음)
+  // payDate는 acqMonth 양도인 처리 등에서만 보조적으로 사용
   const allRecordsThruMonth = await prisma.paymentRecord.findMany({
     where: {
       propertyId,
       isDeposit: false,
-      payDate: { lte: monthEndForQuery },
+      targetMonth: { lte: targetMonth },
     },
   })
 
@@ -147,19 +146,14 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       }
     }
 
-    // ── Cash-flow 기반 누적 계산 (targetMonth 무관, payDate만 사용) ──
-    // 회계 귀속월(targetMonth)은 손익 분리에만 쓰이고, 잔액/이월액/총수납은
-    // 실제 받은 시점(payDate)으로 계산. 이렇게 하면 4월에 결제한 5월분 record가
-    // 4월 보기에서도 5월 보기에서도 일관되게 처리됨.
+    // ── 발생주의(Accrual basis) 누적 계산 ──
+    // 매출 인식은 귀속 월(targetMonth) 기준. 잔액/이월액/총수납 모두 targetMonth로 산정.
+    // payDate는 양도인 cutoff 처리(acqMonthPaidToPrev)에서만 보조적으로 사용.
     const cutoffMonthStr = cutoffDate
       ? `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`
       : acqMonthStr
     const cutoffDay = cutoffDate ? cutoffDate.getDate() : 0
     const acqMonthDueBeforeCutoff = !!(cutoffDate && acqMonthStr === cutoffMonthStr && dueDay < cutoffDay)
-
-    const monthStartDate = new Date(yyyy, mm - 1, 1)
-    const monthEndDate = new Date(yyyy, mm, 0)
-    monthEndDate.setHours(23, 59, 59, 999)
 
     const allLeaseRecords = allRecordsThruMonth.filter(p => p.leaseTermId === lease.id)
     // 양도인 몫 (payDate < cutoffDate) — 현 원장 계산에서 제외
@@ -191,20 +185,20 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       cmn++; if (cmn > 12) { cmn = 1; cy++ }
     }
 
-    // 받은 돈 (payDate 기준 cash-flow)
-    const receivedThruMonth = postCutoffRecords.reduce((s, p) => s + p.actualAmount, 0)
-    const receivedThisMonth = postCutoffRecords
-      .filter(p => new Date(p.payDate) >= monthStartDate && new Date(p.payDate) <= monthEndDate)
+    // 받은 돈 (발생주의: targetMonth 기준 매출 인식)
+    const receivedForMonthsThru = postCutoffRecords.reduce((s, p) => s + p.actualAmount, 0)
+    const receivedForThisMonth = postCutoffRecords
+      .filter(p => p.targetMonth === targetMonth)
       .reduce((s, p) => s + p.actualAmount, 0)
-    const receivedBeforeMonth = receivedThruMonth - receivedThisMonth
+    const receivedForMonthsBefore = receivedForMonthsThru - receivedForThisMonth
 
     const billedThru = billableThru * expected
     const billedBefore = billableBefore * expected
 
-    // 표시 필드
-    const cumulativeBalance = receivedThruMonth - billedThru          // 잔액 (누적)
-    const displayCarryOver = receivedBeforeMonth - billedBefore       // 이월액 (이전까지 누적)
-    const realCurrentPaid = receivedThisMonth                          // 총수납 (이번 달 받은 돈)
+    // 표시 필드 (라벨은 기존 유지, 의미만 발생주의로 재정의)
+    const cumulativeBalance = receivedForMonthsThru - billedThru          // 잔액 (누적 미수)
+    const displayCarryOver = receivedForMonthsBefore - billedBefore       // 이월액 (이전까지 누적 미수)
+    const realCurrentPaid = receivedForThisMonth                           // 총수납 (이번 달 매출 인식분)
     const isPaid = cumulativeBalance >= 0
 
     // 모달의 "양도인 자동 완납" 플레이스홀더 — 인수월 보기에서 사용자 record 없을 때만
@@ -215,19 +209,18 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       acqMonthCurrentOpRecords === 0
     )
 
-    // 첫 미납월 — 누적 분배: 받은 돈을 acqMonth부터 차례로 채워가며 첫 부족 월 찾기
+    // 첫 미납월 — 발생주의: 각 월의 targetMonth 합이 expected 미만이면 그 월이 미수 시작
     let firstUnpaidMonth: string | null = null
-    {
-      let allocated = 0
-      for (let cy = acqYyyy, cmn = acqMm; cy < yyyy || (cy === yyyy && cmn <= mm); ) {
-        const ms = `${cy}-${String(cmn).padStart(2, '0')}`
-        const skip = ms === acqMonthStr && acqMonthPrePaid
-        if (!skip) {
-          if (receivedThruMonth - allocated < expected) { firstUnpaidMonth = ms; break }
-          allocated += expected
-        }
-        cmn++; if (cmn > 12) { cmn = 1; cy++ }
+    for (let cy = acqYyyy, cmn = acqMm; cy < yyyy || (cy === yyyy && cmn <= mm); ) {
+      const ms = `${cy}-${String(cmn).padStart(2, '0')}`
+      const skip = ms === acqMonthStr && acqMonthPrePaid
+      if (!skip) {
+        const receivedForMonth = postCutoffRecords
+          .filter(p => p.targetMonth === ms)
+          .reduce((s, p) => s + p.actualAmount, 0)
+        if (receivedForMonth < expected) { firstUnpaidMonth = ms; break }
       }
+      cmn++; if (cmn > 12) { cmn = 1; cy++ }
     }
 
     if (isFutureMonth) {
