@@ -905,9 +905,23 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
   onClose: () => void
 }) {
   const total = photos.length
+  const [mounted, setMounted]   = useState(false)  // 진입 애니메이션 트리거
+  const [drag, setDrag]         = useState(0)      // 현재 드래그 오프셋(px)
+  const [animating, setAnimating] = useState(false) // 손가락 떼고 미끄러질 때 transition on
+  const touchStart = useRef<{ x: number; y: number } | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    // mount 직후 한 프레임 후 mounted=true 로 전환 → fade+scale 진입
+    const t = requestAnimationFrame(() => setMounted(true))
+    return () => cancelAnimationFrame(t)
+  }, [])
+
   const go = (delta: number) => {
     const next = (index + delta + total) % total
+    setAnimating(true)
     onIndexChange(next)
+    setTimeout(() => setAnimating(false), 320)
   }
 
   // 키보드 ←/→/ESC
@@ -922,76 +936,110 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, total])
 
-  // 터치 스와이프
-  const touchStart = useRef<{ x: number; y: number } | null>(null)
+  // 터치 스와이프 — 드래그 중 실시간 이동
   const onTouchStart = (e: React.TouchEvent) => {
     touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+    setAnimating(false)
   }
-  const onTouchEnd = (e: React.TouchEvent) => {
+  const onTouchMove = (e: React.TouchEvent) => {
     if (!touchStart.current) return
-    const dx = e.changedTouches[0].clientX - touchStart.current.x
-    const dy = e.changedTouches[0].clientY - touchStart.current.y
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
-      go(dx > 0 ? -1 : 1)
+    const dx = e.touches[0].clientX - touchStart.current.x
+    const dy = e.touches[0].clientY - touchStart.current.y
+    // 가로 우세 시 사진 따라 이동, 세로 우세는 무시
+    if (Math.abs(dx) > Math.abs(dy)) setDrag(dx)
+  }
+  const onTouchEnd = () => {
+    if (!touchStart.current) { setDrag(0); return }
+    const w = containerRef.current?.offsetWidth ?? window.innerWidth
+    const threshold = Math.max(50, w * 0.15)
+    setAnimating(true)
+    if (Math.abs(drag) > threshold) {
+      go(drag > 0 ? -1 : 1)
     }
+    setDrag(0)
     touchStart.current = null
   }
 
-  const photo = photos[index]
-  if (!photo) return null
+  const handleClose = () => {
+    setMounted(false)
+    setTimeout(onClose, 200)
+  }
+
+  // translateX: 현재 인덱스 위치 + 드래그 오프셋
+  const trackTransform = `translate3d(calc(${-index * 100}% + ${drag}px), 0, 0)`
 
   return (
     <div
-      className="fixed inset-0 z-[300] bg-black/95 flex items-center justify-center select-none"
-      onClick={onClose}
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
+      className={`fixed inset-0 z-[300] flex items-center justify-center select-none transition-[opacity,backdrop-filter] duration-200 ${
+        mounted ? 'opacity-100' : 'opacity-0'
+      }`}
+      style={{ background: 'rgba(0,0,0,0.95)' }}
+      onClick={handleClose}
     >
       {/* 닫기 */}
       <button
-        onClick={(e) => { e.stopPropagation(); onClose() }}
-        className="absolute top-4 right-4 text-white/80 hover:text-white text-3xl leading-none w-10 h-10 flex items-center justify-center rounded-full bg-black/40"
+        onClick={(e) => { e.stopPropagation(); handleClose() }}
+        className="absolute top-4 right-4 z-10 text-white/80 hover:text-white text-3xl leading-none w-10 h-10 flex items-center justify-center rounded-full bg-black/40"
         aria-label="닫기"
       >
         ✕
       </button>
 
-      {/* 인덱스 표시 */}
-      <div className="absolute top-4 left-4 text-white/80 text-sm font-medium px-3 py-1 rounded-full bg-black/40">
+      {/* 인덱스 */}
+      <div className="absolute top-4 left-4 z-10 text-white/80 text-sm font-medium px-3 py-1 rounded-full bg-black/40">
         {index + 1} / {total}
       </div>
 
-      {/* 좌측 이전 */}
+      {/* 좌측 이전 (데스크탑) */}
       {total > 1 && (
         <button
           onClick={(e) => { e.stopPropagation(); go(-1) }}
-          className="absolute left-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hidden sm:flex"
+          className="absolute left-4 top-1/2 -translate-y-1/2 z-10 text-white/80 hover:text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hidden sm:flex"
           aria-label="이전"
         >
           ‹
         </button>
       )}
 
-      {/* 우측 다음 */}
+      {/* 우측 다음 (데스크탑) */}
       {total > 1 && (
         <button
           onClick={(e) => { e.stopPropagation(); go(1) }}
-          className="absolute right-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hidden sm:flex"
+          className="absolute right-4 top-1/2 -translate-y-1/2 z-10 text-white/80 hover:text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hidden sm:flex"
           aria-label="다음"
         >
           ›
         </button>
       )}
 
-      {/* 사진 */}
-      <img
-        key={photo.id}
-        src={photo.storageUrl}
-        alt={photo.fileName ?? ''}
+      {/* 가로 슬라이드 트랙 — 모든 사진을 나란히 두고 translateX로 이동 */}
+      <div
+        ref={containerRef}
+        className={`w-full h-full overflow-hidden ${mounted ? 'scale-100' : 'scale-95'} transition-transform duration-200`}
         onClick={(e) => e.stopPropagation()}
-        className="max-w-[95vw] max-h-[90vh] object-contain"
-        draggable={false}
-      />
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        <div
+          className="flex h-full"
+          style={{
+            transform: trackTransform,
+            transition: animating ? 'transform 320ms cubic-bezier(0.22,1,0.36,1)' : 'none',
+          }}
+        >
+          {photos.map(p => (
+            <div key={p.id} className="w-full h-full shrink-0 flex items-center justify-center px-2">
+              <img
+                src={p.storageUrl}
+                alt={p.fileName ?? ''}
+                className="max-w-[95vw] max-h-[90vh] object-contain pointer-events-none"
+                draggable={false}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
