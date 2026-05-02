@@ -15,7 +15,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
-type Room = { id: string; roomNo: string; baseRent: number; isVacant: boolean; type: string | null; windowType: string | null; direction: string | null; currentLeaseStatus: string | null }
+type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: number | null; isVacant: boolean; type: string | null; windowType: string | null; direction: string | null; currentLeaseStatus: string | null }
 
 type Contact = {
   id: string; contactType: string; contactValue: string
@@ -305,6 +305,7 @@ export default function TenantClient({
   const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; fromDetail: boolean } | null>(null)
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
   const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
+  const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
   const [filter, setFilter]             = useState<'active' | 'past'>('active')
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
   const [pastFilter, setPastFilter]     = useState<PastFilter>('all')
@@ -492,39 +493,62 @@ export default function TenantClient({
     setDepositRefundModal({ fd, tenantName, depositAmount, fromDetail })
   }
 
-  const handleUpdate = async (e: React.SyntheticEvent<HTMLFormElement>) => {
-    e.preventDefault(); setError('')
-    const fd = new FormData(e.currentTarget)
-    const status         = fd.get('status') as string
-    const depositAmount  = Number(fd.get('depositAmount')) || 0
+  // 거주중→공실 변경 시 호실에 예정 가격이 있으면 가격 변동 팝업 표시
+  // 팝업이 떴으면 true 반환(이후 처리는 모달 confirm에서)
+  const tryOpenRentChangeModal = (fd: FormData, fromDetail: boolean): boolean => {
+    const status = fd.get('status') as string
+    const roomId = fd.get('roomId') as string
+    if (status !== 'CHECKED_OUT' && status !== 'CANCELLED') return false
+    if (!roomId) return false
+    const room = rooms.find(r => r.id === roomId)
+    if (!room || room.scheduledRent == null) return false
+    setRentChangeModal({
+      fd, fromDetail,
+      roomNo: room.roomNo,
+      baseRent: room.baseRent,
+      scheduledRent: room.scheduledRent,
+    })
+    return true
+  }
+
+  // 보증금 환불 또는 즉시 업데이트로 진행 (가격 모달 처리 이후 호출)
+  const proceedAfterRentDecision = (fd: FormData, fromDetail: boolean) => {
+    const status        = fd.get('status') as string
+    const depositAmount = Number(fd.get('depositAmount')) || 0
     if (status === 'CHECKED_OUT' && depositAmount > 0) {
-      openDepositRefundModal(fd, false)
+      openDepositRefundModal(fd, fromDetail)
       return
     }
     startTransition(async () => {
       const res = await updateTenant(fd)
       if (!res.ok) { setError(res.error); return }
-      setEditTenant(null); refresh()
+      if (fromDetail) { setDetailTenant(null); setDetailEditMode(false) }
+      else setEditTenant(null)
+      refresh()
     })
+  }
+
+  const handleUpdate = async (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault(); setError('')
+    const fd = new FormData(e.currentTarget)
+    if (tryOpenRentChangeModal(fd, false)) return
+    proceedAfterRentDecision(fd, false)
   }
 
   // 상세 모달 내 편집 저장
   const handleUpdateFromDetail = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
-    const status         = fd.get('status') as string
-    const depositAmount  = Number(fd.get('depositAmount')) || 0
-    if (status === 'CHECKED_OUT' && depositAmount > 0) {
-      openDepositRefundModal(fd, true)
-      return
-    }
-    startTransition(async () => {
-      const res = await updateTenant(fd)
-      if (!res.ok) { setError(res.error); return }
-      setDetailTenant(null)
-      setDetailEditMode(false)
-      refresh()
-    })
+    if (tryOpenRentChangeModal(fd, true)) return
+    proceedAfterRentDecision(fd, true)
+  }
+
+  const handleRentChangeChoice = (apply: boolean) => {
+    if (!rentChangeModal) return
+    const { fd, fromDetail } = rentChangeModal
+    fd.set('applyScheduledRent', apply ? '1' : '0')
+    setRentChangeModal(null)
+    proceedAfterRentDecision(fd, fromDetail)
   }
 
   const handleMoveIn = async (leaseTermId: string, tenantId: string, name: string) => {
@@ -950,6 +974,49 @@ export default function TenantClient({
           </div>
         </div>
       )}
+
+      {/* 가격 변동 적용 확인 모달 */}
+      {rentChangeModal && (() => {
+        const diff = rentChangeModal.scheduledRent - rentChangeModal.baseRent
+        const dirLabel = diff > 0 ? '인상' : diff < 0 ? '인하' : '동결'
+        const dirColor = diff > 0 ? 'text-rose-600' : diff < 0 ? 'text-emerald-600' : 'text-[var(--warm-dark)]'
+        return (
+          <div className="fixed inset-0 bg-black/70 z-[70] flex items-center justify-center p-4">
+            <div className="bg-[var(--cream)] rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-bold text-[var(--warm-dark)]">가격 변동 적용</h2>
+                <button onClick={() => setRentChangeModal(null)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+              </div>
+              <p className="text-sm text-[var(--warm-mid)] leading-relaxed">
+                <span className="font-semibold text-[var(--warm-dark)]">{rentChangeModal.roomNo}호</span>가 공실로 변경됩니다. 예정된 가격 변동을 즉시 적용할까요?
+              </p>
+              <div className="bg-[var(--canvas)] rounded-xl p-3 text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-[var(--warm-muted)]">기존</span>
+                  <span className="font-semibold text-[var(--warm-dark)]">{rentChangeModal.baseRent.toLocaleString()}원</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--warm-muted)]">{dirLabel}</span>
+                  <span className={`font-semibold ${dirColor}`}>{rentChangeModal.scheduledRent.toLocaleString()}원</span>
+                </div>
+              </div>
+              <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
+                네: 즉시 적용 (예정일 무시) · 아니오: 변경 예정일에 자동 적용
+              </p>
+              <div className="flex gap-2 pt-1">
+                <button type="button" onClick={() => handleRentChangeChoice(false)} disabled={isPending}
+                  className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-60">
+                  아니오
+                </button>
+                <button type="button" onClick={() => handleRentChangeChoice(true)} disabled={isPending}
+                  className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--coral)] hover:opacity-90 text-white font-medium transition-opacity disabled:opacity-60">
+                  네, 즉시 적용
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* 모바일 카드 뷰 */}
       {sorted.length === 0 ? (

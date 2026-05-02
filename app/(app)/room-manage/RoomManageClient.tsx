@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useTransition, useRef } from 'react'
-import { addRoom, updateRoom, deleteRoom, uploadRoomPhoto, deleteRoomPhoto } from './actions'
+import { useRouter } from 'next/navigation'
+import { addRoom, updateRoom, deleteRoom, uploadRoomPhoto, deleteRoomPhoto, applyScheduledRentNow } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -88,8 +89,23 @@ export default function RoomManageClient({
   const [types, setTypes]   = useState<string[]>(roomTypes)
   const [error, setError]   = useState('')
   const [isPending, startTransition] = useTransition()
+  const router = useRouter()
   const photoInputRef    = useRef<HTMLInputElement>(null)
   const addPhotoInputRef = useRef<HTMLInputElement>(null)
+
+  const handleApplyScheduledNow = (room: Room) => {
+    if (room.scheduledRent == null) return
+    const diff = room.scheduledRent - room.baseRent
+    const dirLabel = diff > 0 ? '인상' : diff < 0 ? '인하' : '동결'
+    const ok = confirm(`${room.roomNo}호 예정 가격을 즉시 적용할까요?\n\n기존 ${room.baseRent.toLocaleString()}원 → ${dirLabel} ${room.scheduledRent.toLocaleString()}원`)
+    if (!ok) return
+    startTransition(async () => {
+      const res = await applyScheduledRentNow(room.id)
+      if (!res.ok) { setError(res.error); return }
+      setDetailRoom(null)
+      router.refresh()
+    })
+  }
 
   const currentTenant = (room: Room) => room.leaseTerms[0]?.tenant?.name ?? null
 
@@ -426,12 +442,22 @@ export default function RoomManageClient({
                   {r.type && <DetailRow label="방 타입" value={r.type} />}
                   <DetailRow label="기본 이용료" value={<MoneyDisplay amount={r.baseRent} />} />
                   {r.scheduledRent != null && (
-                    <DetailRow label="예약 이용료" value={
-                      <span className="text-amber-400">
-                        <MoneyDisplay amount={r.scheduledRent} />
-                        {r.rentUpdateDate && <span className="text-[var(--warm-muted)] ml-1 text-xs">({fmtDate(r.rentUpdateDate)} 적용)</span>}
-                      </span>
-                    } />
+                    <>
+                      <DetailRow label="예약 이용료" value={
+                        <span className="text-amber-400">
+                          <MoneyDisplay amount={r.scheduledRent} />
+                          {r.rentUpdateDate && <span className="text-[var(--warm-muted)] ml-1 text-xs">({fmtDate(r.rentUpdateDate)} 적용)</span>}
+                        </span>
+                      } />
+                      {r.isVacant && (
+                        <div className="flex justify-end">
+                          <button type="button" onClick={() => handleApplyScheduledNow(r)} disabled={isPending}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 ring-1 ring-amber-200 hover:bg-amber-100 transition-colors disabled:opacity-60">
+                            {isPending ? '적용 중...' : '예정 가격 즉시 적용'}
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                   {r.windowType && <DetailRow label="창문 타입" value={getWindowLabel(r.windowType)} />}
                   {r.direction  && <DetailRow label="방향"     value={getDirectionLabel(r.direction)} />}

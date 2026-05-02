@@ -54,7 +54,7 @@ export async function getRoomsForSelect() {
     where: { propertyId },
     orderBy: { roomNo: 'asc' },
     select: {
-      id: true, roomNo: true, baseRent: true, isVacant: true, type: true, windowType: true, direction: true,
+      id: true, roomNo: true, baseRent: true, scheduledRent: true, isVacant: true, type: true, windowType: true, direction: true,
       leaseTerms: {
         where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] } },
         select: { status: true },
@@ -235,6 +235,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
   const wishRooms          = formData.get('wishRooms') as string
   const visitRoute         = formData.get('visitRoute') as string
   const tourDate           = formData.get('tourDate') as string
+  const applyScheduledRent = formData.get('applyScheduledRent') as string  // '1' = 즉시 적용, '0' = 보류, 비어있음 = 처리 안함
 
   if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
 
@@ -345,16 +346,43 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
     return count > 0
   }
 
+  // 거주중→공실 전환 판정 (scheduledRent 즉시 적용 처리에 사용)
+  let vacatedRoomId: string | null = null
+
   if (newRoomId !== prevRoomId && prevRoomId && wasActiveStatus) {
     const hasOther = await hasOtherActiveInRoom(prevRoomId, leaseTermId)
-    if (!hasOther) await prisma.room.update({ where: { id: prevRoomId }, data: { isVacant: true } })
+    if (!hasOther) {
+      await prisma.room.update({ where: { id: prevRoomId }, data: { isVacant: true } })
+      vacatedRoomId = prevRoomId
+    }
   }
 
   if (isActiveStatus && newRoomId) {
     await prisma.room.update({ where: { id: newRoomId }, data: { isVacant: false } })
   } else if (!isActiveStatus && prevRoomId && wasActiveStatus) {
     const hasOther = await hasOtherActiveInRoom(prevRoomId, leaseTermId)
-    if (!hasOther) await prisma.room.update({ where: { id: prevRoomId }, data: { isVacant: true } })
+    if (!hasOther) {
+      await prisma.room.update({ where: { id: prevRoomId }, data: { isVacant: true } })
+      vacatedRoomId = prevRoomId
+    }
+  }
+
+  // 거주중→공실 변경 + 호실에 예정 가격 보유 + 사용자가 즉시 적용 선택 시 baseRent 갱신
+  if (vacatedRoomId && applyScheduledRent === '1') {
+    const room = await prisma.room.findUnique({
+      where: { id: vacatedRoomId },
+      select: { scheduledRent: true },
+    })
+    if (room?.scheduledRent != null) {
+      await prisma.room.update({
+        where: { id: vacatedRoomId },
+        data: {
+          baseRent:       room.scheduledRent,
+          scheduledRent:  null,
+          rentUpdateDate: null,
+        },
+      })
+    }
   }
 
   if (status !== prevStatus) {

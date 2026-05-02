@@ -289,3 +289,43 @@ export async function applyScheduledRents() {
 
   return { updated: rooms.length }
 }
+
+// ── 단일 호실 즉시 적용 ──────────────────────────────────────────────
+// 공실 상태에서 예정 가격을 즉시 baseRent에 반영. 활성 계약이 있으면 rentAmount도 동기화.
+export async function applyScheduledRentNow(roomId: string): Promise<{ ok: true; newRent: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+
+    const room = await prisma.room.findFirst({
+      where: { id: roomId, propertyId },
+      select: { scheduledRent: true },
+    })
+    if (!room) return { ok: false, error: '호실을 찾을 수 없습니다.' }
+    if (room.scheduledRent == null) return { ok: false, error: '예정 가격이 설정되어 있지 않습니다.' }
+
+    const newRent = room.scheduledRent
+
+    await prisma.room.update({
+      where: { id: roomId },
+      data: {
+        baseRent:       newRent,
+        scheduledRent:  null,
+        rentUpdateDate: null,
+      },
+    })
+
+    await prisma.leaseTerm.updateMany({
+      where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+      data: { rentAmount: newRent },
+    })
+
+    revalidatePath('/room-manage')
+    revalidatePath('/rooms')
+    revalidatePath('/tenants')
+    return { ok: true, newRent }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
