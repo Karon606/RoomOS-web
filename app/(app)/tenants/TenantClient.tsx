@@ -1067,25 +1067,28 @@ export default function TenantClient({
                   <span className="font-medium text-[var(--warm-dark)]">{fmtDueDay(lease?.dueDay)}</span>
                 </div>
                 {/* 보증금 · 거주기간 */}
-                {((lease?.depositAmount ?? 0) > 0 || lease?.moveInDate) && (
-                  <div className="flex items-center gap-2 text-xs flex-wrap mt-1">
-                    {(lease?.depositAmount ?? 0) > 0 && (
-                      <>
-                        <span className="text-[var(--warm-muted)]">보증금</span>
-                        <span className="font-medium text-[var(--warm-dark)]"><MoneyDisplay amount={lease!.depositAmount} /></span>
-                      </>
-                    )}
-                    {(lease?.depositAmount ?? 0) > 0 && lease?.moveInDate && (
-                      <span className="text-[var(--warm-border)]">·</span>
-                    )}
-                    {lease?.moveInDate && (
-                      <>
-                        <span className="text-[var(--warm-muted)]">거주기간</span>
-                        <span className="font-medium text-[var(--warm-dark)]">{stayPeriod}</span>
-                      </>
-                    )}
-                  </div>
-                )}
+                {((lease?.depositAmount ?? 0) > 0 || lease?.moveInDate) && (() => {
+                  const isReservation = lease && ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(lease.status)
+                  return (
+                    <div className="flex items-center gap-2 text-xs flex-wrap mt-1">
+                      {(lease?.depositAmount ?? 0) > 0 && (
+                        <>
+                          <span className="text-[var(--warm-muted)]">보증금</span>
+                          <span className="font-medium text-[var(--warm-dark)]"><MoneyDisplay amount={lease!.depositAmount} /></span>
+                        </>
+                      )}
+                      {(lease?.depositAmount ?? 0) > 0 && lease?.moveInDate && (
+                        <span className="text-[var(--warm-border)]">·</span>
+                      )}
+                      {lease?.moveInDate && (
+                        <>
+                          <span className="text-[var(--warm-muted)]">{isReservation ? '입주 희망일' : '거주기간'}</span>
+                          <span className="font-medium text-[var(--warm-dark)]">{isReservation ? fmtDate(lease.moveInDate) : stayPeriod}</span>
+                        </>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             )
           })}
@@ -1293,26 +1296,33 @@ export default function TenantClient({
               onClick={e => e.stopPropagation()}>
 
               {/* 팝업 헤더 */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <h2 className="text-base font-bold text-[var(--warm-dark)]">
-                    {detailEditMode ? '입주자 정보 수정' : '입주자 상세정보'}
-                  </h2>
-                  {!detailEditMode && (
-                    <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${STATUS_COLOR[status] ?? ''}`}>
-                      {STATUS_LABEL[status] ?? status}
-                    </span>
-                  )}
-                  {!detailEditMode && sched && (() => {
-                    const dd = fmtDDay(sched.date)
-                    if (!dd) return null
-                    const color = sched.label === '입실' ? 'text-blue-400' : 'text-red-400'
-                    return <span className={`text-xs font-bold ${color}`}>{dd}</span>
-                  })()}
+              <div className="flex flex-col gap-2 px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <h2 className="text-base font-bold text-[var(--warm-dark)]">
+                      {detailEditMode ? '입주자 정보 수정' : '입주자 상세정보'}
+                    </h2>
+                    {!detailEditMode && (
+                      <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${STATUS_COLOR[status] ?? ''}`}>
+                        {STATUS_LABEL[status] ?? status}
+                      </span>
+                    )}
+                    {!detailEditMode && sched && (() => {
+                      const dd = fmtDDay(sched.date)
+                      if (!dd) return null
+                      const color = sched.label === '입실' ? 'text-blue-400' : 'text-red-400'
+                      return <span className={`text-xs font-bold ${color}`}>{dd}</span>
+                    })()}
+                  </div>
+                  <div className="flex items-center gap-2 ml-4 shrink-0">
+                    <button onClick={closeDetail} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 ml-4 shrink-0">
-                  <button onClick={closeDetail} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
-                </div>
+                {!detailEditMode && ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(status) && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-[11px] text-amber-700 leading-relaxed">
+                    아직 입주가 확정되지 않은 <span className="font-semibold">{STATUS_LABEL[status] ?? status} 단계</span>입니다. 입주를 확정하려면 하단의 <span className="font-semibold">입실 처리</span> 버튼을 눌러주세요.
+                  </div>
+                )}
               </div>
 
               {/* ── 읽기 전용 모드 ── */}
@@ -1383,8 +1393,13 @@ export default function TenantClient({
                                   </span>
                                 } />
                                 <InfoItem label="납부방식"   value={PT_LABEL[lease.paymentTiming] ?? lease.paymentTiming} />
-                                <InfoItem label="입주일"     value={fmtDate(lease.moveInDate)} />
-                                <InfoItem label="거주기간"   value={calcStayPeriod(lease.moveInDate, lease.moveOutDate ?? undefined)} />
+                                <InfoItem
+                                  label={['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(lease.status) ? '입주 희망일' : '입주일'}
+                                  value={fmtDate(lease.moveInDate)}
+                                />
+                                {!['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(lease.status) && (
+                                  <InfoItem label="거주기간" value={calcStayPeriod(lease.moveInDate, lease.moveOutDate ?? undefined)} />
+                                )}
                                 {lease.expectedMoveOut && <InfoItem label="퇴실 예정일" value={fmtDate(lease.expectedMoveOut)} />}
                                 {lease.moveOutDate && <InfoItem label="퇴실일" value={fmtDate(lease.moveOutDate)} />}
                               </InfoGrid>

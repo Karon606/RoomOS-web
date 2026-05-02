@@ -706,13 +706,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   for (const l of moveInLeases) {
     const days = daysUntil(l.moveInDate!)
+    // RESERVED는 입주 확정 아님 — "입실 희망 (예약)"으로 명확히 표기
     alertItems.push({
-      text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}입실 예정`,
+      text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}입실 희망 (예약)`,
       link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  '#3b82f6',
       timeLabel: dayLabel(days),
       tenantId:  l.tenant.id,
-      detail:    fmtKorDate(l.moveInDate) ? `입실 예정일: ${fmtKorDate(l.moveInDate)}` : undefined,
+      detail:    fmtKorDate(l.moveInDate) ? `입주 희망일: ${fmtKorDate(l.moveInDate)} · 입주 미확정 (예약 단계)` : undefined,
       exactDate: fmtShortDate(l.moveInDate),
     })
   }
