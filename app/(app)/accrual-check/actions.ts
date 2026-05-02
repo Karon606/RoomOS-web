@@ -156,6 +156,24 @@ export async function analyzePaymentTargetMonth(): Promise<{
   return { total: records.length, matched, prevOwnerCount, suspects }
 }
 
+// "지연 입금" 카테고리 record들을 일괄로 추정 귀속 월(직전 월)로 이동
+// 사용자가 진단 페이지에서 한 번에 처리할 수 있도록
+export async function bulkApplyLatePayments(): Promise<{ ok: true; moved: number } | { ok: false; error: string }> {
+  try {
+    const { suspects } = await analyzePaymentTargetMonth()
+    const targets = suspects.filter(s => s.category === 'late-payment' && s.inferredAccrualMonth)
+    let moved = 0
+    for (const s of targets) {
+      const res = await moveRecordTargetMonth(s.id, s.inferredAccrualMonth!)
+      if (res.ok) moved++
+    }
+    return { ok: true, moved }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // 단일 PaymentRecord의 targetMonth를 변경 (사용자 검토 후 수동 적용)
 export async function moveRecordTargetMonth(
   recordId: string,

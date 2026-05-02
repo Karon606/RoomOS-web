@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { moveRecordTargetMonth, type SuspectRecord, type SuspectCategory } from './actions'
+import { moveRecordTargetMonth, bulkApplyLatePayments, type SuspectRecord, type SuspectCategory } from './actions'
 
 type Result = {
   total: number
@@ -68,6 +68,23 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
     'mismatch-other': result.suspects.filter(s => s.category === 'mismatch-other').length,
   }
 
+  const handleBulkLate = () => {
+    if (counts['late-payment'] === 0) return
+    if (!confirm(
+      `지연 입금 ${counts['late-payment']}건을 모두 직전 월로 이동합니다.\n` +
+      `각 기록은 입금일이 속한 월의 직전 월 매출로 재분류됩니다 (입금일/금액은 그대로).\n\n진행할까요?`
+    )) return
+    startTransition(async () => {
+      const res = await bulkApplyLatePayments()
+      if (!res.ok) { setError(res.error); return }
+      setResult(prev => ({
+        ...prev,
+        suspects: prev.suspects.filter(s => s.category !== 'late-payment'),
+      }))
+      router.refresh()
+    })
+  }
+
   return (
     <div className="space-y-4 p-4 max-w-5xl mx-auto">
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5 space-y-2">
@@ -92,7 +109,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
         </div>
       )}
 
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         {([
           { k: 'all',             label: '전체' },
           { k: 'late-payment',    label: '지연 입금' },
@@ -109,6 +126,16 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
             {label}
           </button>
         ))}
+        {counts['late-payment'] > 0 && (
+          <button
+            onClick={handleBulkLate}
+            disabled={isPending}
+            className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500 text-white hover:opacity-90 disabled:opacity-60 transition-opacity"
+            title="지연 입금 record 전체를 직전 월로 한 번에 이동"
+          >
+            {isPending ? '적용 중...' : `지연 입금 ${counts['late-payment']}건 일괄 적용`}
+          </button>
+        )}
       </div>
 
       <div className="space-y-2">

@@ -15,6 +15,22 @@ export default function ReportClient({ summary, years }: { summary: AnnualSummar
     ...summary.rows.map(r => Math.max(r.revenue + r.extraIncome, r.expense))
   )
 
+  // 분기별 합계
+  const quarters = [
+    { q: 1, months: [1, 2, 3] },
+    { q: 2, months: [4, 5, 6] },
+    { q: 3, months: [7, 8, 9] },
+    { q: 4, months: [10, 11, 12] },
+  ].map(({ q, months }) => {
+    const rows = summary.rows.filter(r => months.includes(Number(r.month.slice(5))))
+    return {
+      q,
+      revenue: rows.reduce((s, r) => s + r.revenue, 0),
+      expense: rows.reduce((s, r) => s + r.expense, 0),
+      profit: rows.reduce((s, r) => s + r.profit, 0),
+    }
+  })
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -41,6 +57,23 @@ export default function ReportClient({ summary, years }: { summary: AnnualSummar
           value={(summary.totalProfit >= 0 ? '+' : '-') + fmt(Math.abs(summary.totalProfit)).replace('원', '원')}
           accent={summary.totalProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}
         />
+      </div>
+
+      {/* 분기별 합계 */}
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4">
+        <h3 className="text-sm font-semibold text-[var(--warm-dark)] mb-3">분기별 합계</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {quarters.map(q => (
+            <div key={q.q} className="bg-[var(--canvas)] rounded-xl p-3">
+              <p className="text-xs text-[var(--warm-muted)]">{q.q}분기</p>
+              <p className="text-sm font-bold mt-1 text-[var(--warm-dark)]">{fmt(q.revenue)}</p>
+              <p className="text-[11px] text-[var(--warm-muted)] mt-0.5">지출 {fmt(q.expense)}</p>
+              <p className={`text-[11px] mt-0.5 font-semibold ${q.profit > 0 ? 'text-emerald-600' : q.profit < 0 ? 'text-red-500' : 'text-[var(--warm-muted)]'}`}>
+                {q.profit === 0 ? '—' : (q.profit > 0 ? '+' : '-') + Math.abs(q.profit).toLocaleString() + '원'}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* 월별 표 */}
