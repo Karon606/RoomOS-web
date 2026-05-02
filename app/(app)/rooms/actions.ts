@@ -304,7 +304,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
 }
 
 // 발생주의 FIFO: lease의 가장 오래된 미수월을 찾는다 (없으면 viewMonth 반환)
-// payDate < cutoffDate인 양도인 record는 제외해 계산
+// 양도인 record(payDate < cutoff)도 그 월 매출로 인식 — 양도인이 받았으면 그 월은 완납
 async function findFirstUnpaidMonth(
   leaseTermId: string,
   expectedAmount: number,
@@ -329,15 +329,10 @@ async function findFirstUnpaidMonth(
   let cy = startBase.getFullYear()
   let cmn = startBase.getMonth() + 1
 
-  // acqMonth dueDay < cutoffDay 자동 양도인 처리: 첫 월 skip
-  if (cutoffDate && lease.dueDay && cy === cutoffDate.getFullYear() && cmn === cutoffDate.getMonth() + 1) {
-    const dueDayNum = lease.dueDay.includes('말') ? 31 : parseInt(lease.dueDay, 10)
-    if (!isNaN(dueDayNum) && dueDayNum < cutoffDate.getDate()) {
-      cmn++; if (cmn > 12) { cmn = 1; cy++ }
-    }
-  }
-
   const [vy, vm] = viewMonth.split('-').map(Number)
+  const acqYearMonth = cutoffDate
+    ? { y: cutoffDate.getFullYear(), m: cutoffDate.getMonth() + 1 }
+    : null
 
   while (cy < vy || (cy === vy && cmn <= vm)) {
     const ms = `${cy}-${String(cmn).padStart(2, '0')}`
@@ -345,10 +340,28 @@ async function findFirstUnpaidMonth(
       where: { leaseTermId, targetMonth: ms, isDeposit: false },
       select: { actualAmount: true, payDate: true },
     })
-    const received = records
-      .filter(r => !cutoffDate || new Date(r.payDate) >= cutoffDate)
-      .reduce((s, r) => s + r.actualAmount, 0)
-    if (received < expectedAmount) return ms
+
+    // 인수월(cutoffDate가 속한 달): 양도인 자동 처리 검사
+    if (cutoffDate && acqYearMonth && cy === acqYearMonth.y && cmn === acqYearMonth.m) {
+      const dueDayNum = lease.dueDay?.includes('말') ? 31 : parseInt(lease.dueDay ?? '99', 10)
+      const cutoffDay = cutoffDate.getDate()
+      const opPaid = records
+        .filter(r => new Date(r.payDate) >= cutoffDate)
+        .reduce((s, r) => s + r.actualAmount, 0)
+      const totalPaid = records.reduce((s, r) => s + r.actualAmount, 0)
+      const dueBeforeCutoff = !isNaN(dueDayNum) && dueDayNum < cutoffDay
+      const acqMonthAutoPaid = dueBeforeCutoff && opPaid === 0
+      // 양도인이 받았거나(record 합으로 expected 충족) 자동 처리 조건이면 완납으로 본다
+      if (totalPaid >= expectedAmount || acqMonthAutoPaid) {
+        cmn++; if (cmn > 12) { cmn = 1; cy++ }
+        continue
+      }
+      if (totalPaid < expectedAmount) return ms
+    } else {
+      // 일반 월: 모든 record 합산 (양도인 record는 인수월에만 발생하므로 여긴 영향 없음)
+      const received = records.reduce((s, r) => s + r.actualAmount, 0)
+      if (received < expectedAmount) return ms
+    }
     cmn++; if (cmn > 12) { cmn = 1; cy++ }
   }
   return viewMonth
