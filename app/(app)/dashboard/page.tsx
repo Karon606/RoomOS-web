@@ -212,6 +212,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       select: {
         id: true, status: true, wishRooms: true, wishConditions: true, inquiryAt: true, createdAt: true,
+        moveInDate: true, keepAlertAfterInquiry: true,
         tenant: { select: { name: true, id: true } },
         room:   { select: { roomNo: true } },
       },
@@ -496,10 +497,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
 
   const matchesConditions = (room: TargetRoomInfo, raw: string | null): boolean => {
-    if (!raw) return false
+    if (raw == null) return false
     let cond: { floor?: string; windowType?: string; type?: string; direction?: string }
     try { cond = JSON.parse(raw) } catch { return false }
-    if (!cond || Object.values(cond).every(v => !v)) return false
+    if (!cond) return false
+    // 빈 객체 = 조건 무관 → 모든 빈 방 매칭
     const roomFloor = (() => {
       const n = room.roomNo.replace(/[^0-9]/g, '')
       return n.length >= 3 ? n.slice(0, n.length - 2) : ''
@@ -511,6 +513,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     return true
   }
 
+  // 입주 희망일 경과 시 옵션이 꺼져 있으면 매칭 제외
+  const todayMidnight = new Date()
+  todayMidnight.setHours(0, 0, 0, 0)
+  const isInquiryExpired = (l: { moveInDate: Date | null; keepAlertAfterInquiry: boolean }): boolean => {
+    if (l.keepAlertAfterInquiry) return false
+    if (!l.moveInDate) return false
+    return new Date(l.moveInDate) < todayMidnight
+  }
+
   type WishCandidate = {
     tenantName: string; tenantId: string; status: string
     inquiryAt: Date | null; createdAt: Date
@@ -519,6 +530,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const candidatesByRoom = new Map<string, WishCandidate[]>()
 
   for (const l of wishRoomLeases) {
+    // 입주 희망일이 지난 예약자는 옵션이 켜져 있지 않으면 매칭 제외
+    if (isInquiryExpired(l)) continue
+
     const inquiryAt = l.inquiryAt ? new Date(l.inquiryAt) : null
     const createdAt = new Date(l.createdAt)
 

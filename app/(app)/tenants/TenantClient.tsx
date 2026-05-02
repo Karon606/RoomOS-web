@@ -42,7 +42,7 @@ type LeaseTerm = {
   paymentTiming: string
   payMethod: string | null; cashReceipt: string | null
   registrationStatus: string; contractUrl: string | null
-  wishRooms: string | null; wishConditions: string | null; visitRoute: string | null
+  wishRooms: string | null; wishConditions: string | null; keepAlertAfterInquiry: boolean; visitRoute: string | null
   room: { id: string; roomNo: string } | null
   paymentRecords: PaymentRecord[]
 }
@@ -2396,6 +2396,22 @@ function getFloor(roomNo: string): string {
   return ''
 }
 
+function KeepAlertCheckbox({ defaultValue }: { defaultValue: boolean }) {
+  const [checked, setChecked] = useState(defaultValue)
+  return (
+    <label className="flex items-center gap-2 text-xs text-[var(--warm-mid)] cursor-pointer select-none">
+      <input type="hidden" name="keepAlertAfterInquiry" value={checked ? 'true' : 'false'} />
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={e => setChecked(e.target.checked)}
+        className="w-4 h-4 rounded border-[var(--warm-border)] accent-[var(--coral)]"
+      />
+      <span>입주 희망일이 지나도 알림 유지 <span className="opacity-60">(희망일이 명확하지 않은 경우)</span></span>
+    </label>
+  )
+}
+
 type WishConditionsObj = { floor?: string; windowType?: string; type?: string; direction?: string }
 
 function parseWishConditions(raw: string | null | undefined): WishConditionsObj {
@@ -2457,7 +2473,8 @@ function WishSelector({ rooms, lease, allowConditions }: {
     if (condType)      condObj.type        = condType
     if (condDirection) condObj.direction   = condDirection
   }
-  const wishConditionsValue = mode === 'conditions' && Object.keys(condObj).length > 0 ? JSON.stringify(condObj) : ''
+  // 조건 모드는 빈 객체("{}")라도 저장 — "조건 무관, 모든 빈 방 매칭" 의도
+  const wishConditionsValue = mode === 'conditions' ? JSON.stringify(condObj) : ''
 
   const selCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-2.5 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] w-full'
 
@@ -2790,6 +2807,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
                 className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors disabled:opacity-50"
               />
             </div>
+            <KeepAlertCheckbox defaultValue={lease?.keepAlertAfterInquiry ?? false} />
           </div>
         )}
         {/* 납부일 | 퇴실일(조건부) (아이템 5, 7, 8) */}
