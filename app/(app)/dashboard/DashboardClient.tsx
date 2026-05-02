@@ -39,7 +39,7 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
-  alerts:            { text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number }[]
+  alerts:            { category?: 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
@@ -294,15 +294,49 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
   )
 }
 
-// ── 알림 스트립 (항상 표시) ──────────────────────────────────────
+// ── 알림 스트립 — 카테고리별 그룹핑 (iOS 알림센터 스타일) ────────────
+
+type AlertCat = 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'other'
+const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'moveout', 'movein', 'tour', 'wish', 'request', 'recurring', 'other']
+const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
+  unpaid:    { label: '누적 미수',    color: '#dc2626' },
+  moveout:   { label: '퇴실 예정',    color: '#eab308' },
+  movein:    { label: '입실 희망',    color: '#3b82f6' },
+  tour:      { label: '투어 예정',    color: '#a855f7' },
+  wish:      { label: '희망 호실/조건 매칭', color: '#22c55e' },
+  request:   { label: '요청·컴플레인',color: '#f4623a' },
+  recurring: { label: '고정 지출',    color: '#6366f1' },
+  other:     { label: '기타',         color: '#94a3b8' },
+}
+const COLLAPSE_THRESHOLD = 3   // 이 개수 초과면 기본 접힘
 
 function AlertsStrip({ alerts, onOpenAlert }: {
   alerts: DashboardData['alerts']
   onOpenAlert: (alert: AlertItem) => void
 }) {
-  const [expanded, setExpanded] = useState(false)
+  // 카테고리별 그룹
+  const groups = (() => {
+    const map = new Map<AlertCat, typeof alerts>()
+    for (const a of alerts) {
+      const cat = (a.category ?? 'other') as AlertCat
+      const arr = map.get(cat) ?? []
+      arr.push(a)
+      map.set(cat, arr)
+    }
+    return CATEGORY_ORDER
+      .map(cat => ({ cat, items: map.get(cat) ?? [] }))
+      .filter(g => g.items.length > 0)
+  })()
+
+  // 각 카테고리 펼침 상태 — 항목 N개 이하는 기본 펼침, 초과면 접힘
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {}
+    for (const g of groups) init[g.cat] = g.items.length <= COLLAPSE_THRESHOLD
+    return init
+  })
+
   if (alerts.length === 0) return null
-  const visible = expanded ? alerts : alerts.slice(0, ALERTS_LIMIT)
+
   return (
     <div className="rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
       <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b shrink-0" style={{ borderColor: DIVIDER_COLOR }}>
@@ -314,41 +348,59 @@ function AlertsStrip({ alerts, onOpenAlert }: {
           {alerts.length}건
         </span>
       </div>
-      <div>
-        {visible.map((item, i) => (
-          <div key={i} style={{ borderBottom: i < visible.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
+
+      {groups.map((g, gi) => {
+        const meta = CATEGORY_META[g.cat]
+        const isOpen = expanded[g.cat] ?? false
+        return (
+          <div key={g.cat} style={{ borderBottom: gi < groups.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
+            {/* 카테고리 헤더 */}
             <button
-              className="w-full text-left hover:opacity-70 active:opacity-50 transition-opacity"
-              onClick={() => onOpenAlert(item)}
+              type="button"
+              onClick={() => setExpanded(prev => ({ ...prev, [g.cat]: !isOpen }))}
+              className="w-full flex items-center gap-2 px-5 py-2.5 hover:opacity-80 transition-opacity"
+              style={{ background: 'rgba(0,0,0,0.015)' }}
             >
-              <div className="flex items-center gap-3 px-5 py-3">
-                <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
-                  style={{ background: hexToRgba(item.dotColor, 0.12), fontSize: 11, color: item.dotColor }}>
-                  {item.text.slice(0, 1)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>{item.text}</p>
-                  <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
-                    {item.timeLabel}{item.exactDate ? ` · ${item.exactDate}` : ''}
-                  </p>
-                </div>
-                <span style={{ color: 'var(--warm-muted)', fontSize: 14 }}>›</span>
-              </div>
+              <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: meta.color }} />
+              <span className="text-[11px] font-semibold flex-1 text-left" style={{ color: '#5a4a3a' }}>
+                {meta.label}
+              </span>
+              <span className="text-[10px] font-medium" style={{ color: 'var(--warm-muted)' }}>
+                {g.items.length}건
+              </span>
+              <span className="text-[var(--warm-muted)] text-xs ml-1" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 150ms' }}>›</span>
             </button>
+
+            {/* 항목 리스트 */}
+            {isOpen && (
+              <div>
+                {g.items.map((item, i) => (
+                  <div key={i} style={{ borderTop: i === 0 ? `1px solid ${DIVIDER_COLOR}` : 'none', borderBottom: i < g.items.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
+                    <button
+                      className="w-full text-left hover:opacity-70 active:opacity-50 transition-opacity"
+                      onClick={() => onOpenAlert(item)}
+                    >
+                      <div className="flex items-center gap-3 px-5 py-3">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
+                          style={{ background: hexToRgba(item.dotColor, 0.12), fontSize: 11, color: item.dotColor }}>
+                          {item.text.slice(0, 1)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>{item.text}</p>
+                          <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+                            {item.timeLabel}{item.exactDate ? ` · ${item.exactDate}` : ''}
+                          </p>
+                        </div>
+                        <span style={{ color: 'var(--warm-muted)', fontSize: 14 }}>›</span>
+                      </div>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        ))}
-      </div>
-      {alerts.length > ALERTS_LIMIT && (
-        <button
-          onClick={() => setExpanded(v => !v)}
-          className="w-full py-2.5 text-xs font-medium border-t flex items-center justify-center gap-1 hover:opacity-70 transition-opacity"
-          style={{ borderColor: DIVIDER_COLOR, color: 'var(--warm-muted)' }}
-        >
-          {expanded
-            ? <>접기 ↑</>
-            : <>더보기 <span style={{ color: 'var(--coral)' }}>+{alerts.length - ALERTS_LIMIT}</span> ↓</>}
-        </button>
-      )}
+        )
+      })}
     </div>
   )
 }

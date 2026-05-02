@@ -733,6 +733,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const days = daysUntil(l.moveInDate!)
     // RESERVED는 입주 확정 아님 — "입실 희망 (예약)"으로 명확히 표기
     alertItems.push({
+      category:  'movein',
       text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}입실 희망 (예약)`,
       link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  '#3b82f6',
@@ -746,6 +747,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   for (const l of moveOutLeases) {
     const timeLabel = l.expectedMoveOut ? dayLabel(daysUntil(l.expectedMoveOut)) : '날짜 미정'
     alertItems.push({
+      category:  'moveout',
       text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}퇴실 예정`,
       link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  '#eab308',
@@ -759,6 +761,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   for (const l of waitingTourLeases) {
     const timeLabel = l.tourDate ? dayLabel(daysUntil(l.tourDate)) : '일정 미정'
     alertItems.push({
+      category:  'tour',
       text:      `${l.tenant.name}님${l.room?.roomNo ? ` ${l.room.roomNo}호` : ''} 투어 예정`,
       link:      `/tenants?tenantId=${l.tenant.id}`,
       dotColor:  '#a855f7',
@@ -779,6 +782,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       ? `${a.tenantName}님이 원하는 조건과 일치하는 ${a.roomNo}호가 ${stateLabel} 상태입니다.${a.total > 1 ? ` 같은 방을 기다리는 ${a.total}명 중 ${a.rank}번째 순서입니다.` : ''}`
       : `${a.tenantName}님이 입실을 희망한 ${a.roomNo}호가 ${stateLabel} 상태입니다.${a.total > 1 ? ` 같은 방을 기다리는 ${a.total}명 중 ${a.rank}번째 순서입니다.` : ''}`
     alertItems.push({
+      category:  'wish',
       text,
       link:      `/tenants?tenantId=${a.tenantId}`,
       dotColor:  '#22c55e',
@@ -792,6 +796,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   for (const l of unpaidLeases) {
     if (l.monthsOverdue < 2) continue
     alertItems.push({
+      category:  'unpaid',
       text:      `${l.tenantName}님 ${l.roomNo}호 누적 미수 ${l.monthsOverdue}개월`,
       link:      `/rooms?tenantId=${l.tenantId}`,
       dotColor:  '#dc2626',
@@ -806,6 +811,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       ? Math.round((new Date(r.targetDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
       : null
     alertItems.push({
+      category:  'request',
       text:      `${r.tenant.name}님 요청: ${r.content.slice(0, 28)}${r.content.length > 28 ? '…' : ''}`,
       link:      `/tenants?tenantId=${r.tenantId}&tab=requests`,
       dotColor:  '#f4623a',
@@ -860,6 +866,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       ? ` (실제이체 ${fmtShortDate(effectiveDate)})`
       : ''
     alertItems.push({
+      category:            'recurring',
       text:                `고정 지출: ${re.title}`,
       link:                '/finance',
       dotColor:            '#6366f1',
