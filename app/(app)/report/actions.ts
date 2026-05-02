@@ -62,10 +62,32 @@ export async function getAnnualReport(year: string): Promise<AnnualSummary> {
     select: { targetMonth: true, actualAmount: true, leaseTermId: true, payDate: true },
   })
 
-  const revenueByMonth: Record<string, number> = {}
+  // lease별 임대료 맵 — 매출 계산 시 임대료 상한 적용 (선납 과입금분 매출 미포함)
+  const allLeases = await prisma.leaseTerm.findMany({
+    where: { propertyId },
+    select: { id: true, rentAmount: true },
+  })
+  const rentMap = new Map(allLeases.map(l => [l.id, l.rentAmount]))
+
+  // 월별 × lease별 받은 금액 (양도인 cutoff 이전 record 제외)
+  const receivedByMonthLease: Record<string, Record<string, number>> = {}
+  for (const m of months) receivedByMonthLease[m] = {}
   for (const p of payments) {
-    if (cutoffDate && new Date(p.payDate) < cutoffDate) continue  // 양도인 몫 제외
-    revenueByMonth[p.targetMonth] = (revenueByMonth[p.targetMonth] ?? 0) + p.actualAmount
+    if (cutoffDate && new Date(p.payDate) < cutoffDate) continue
+    const map = receivedByMonthLease[p.targetMonth]
+    if (!map) continue
+    map[p.leaseTermId] = (map[p.leaseTermId] ?? 0) + p.actualAmount
+  }
+
+  // 매출 = sum( min(받은 금액, 임대료) ) — dashboard와 동일 로직
+  const revenueByMonth: Record<string, number> = {}
+  for (const m of months) {
+    let total = 0
+    for (const [leaseId, received] of Object.entries(receivedByMonthLease[m])) {
+      const rent = rentMap.get(leaseId) ?? 0
+      total += Math.min(received, rent)
+    }
+    revenueByMonth[m] = total
   }
 
   // 지출 / 기타수익 — 발생일(date) 기준
