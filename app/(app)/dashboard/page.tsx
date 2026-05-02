@@ -678,6 +678,16 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     accrualByLease[p.leaseTermId] = (accrualByLease[p.leaseTermId] ?? 0) + p.actualAmount
   }
 
+  // 인수월에 사용자가 받은 record(payDate >= cutoff) 합 — 양도인 자동 처리 판정용
+  const opPaidInCutoffMonthByLease: Record<string, number> = {}
+  if (cutoffMonthStr && acquisitionDate) {
+    for (const p of allHistoricalPayments) {
+      if (p.targetMonth !== cutoffMonthStr) continue
+      if (new Date(p.payDate) < acquisitionDate) continue
+      opPaidInCutoffMonthByLease[p.leaseTermId] = (opPaidInCutoffMonthByLease[p.leaseTermId] ?? 0) + p.actualAmount
+    }
+  }
+
   // viewMonth(targetMonth) 기준 누적 미납 — viewMonth가 과거이면 그 월말 시점, 현재/미래면 오늘 시점과 동일
   const accrualByLeaseForView: Record<string, number> = {}
   for (const p of allHistoricalPayments) {
@@ -702,13 +712,23 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       ? `${moveOut.getFullYear()}-${String(moveOut.getMonth() + 1).padStart(2, '0')}`
       : null
 
-    // 청구 가능 월 수 — viewMonth까지
-    // (양도인이 받은 인수월은 prevOwnerLeaseIds로만 skip. dueDay < cutoffDay 자동 가정은 사용 안 함:
-    //  양도인이 실제로 받았다면 양도인 record가 있어야 하고, 없으면 미수로 잡혀야 함)
+    // 인수월 양도인 자동 처리: dueDay < cutoffDay이고 사용자(인수 후) record가 0건일 때만
+    // 자동으로 양도인이 받았다고 가정. 사용자 record가 있으면 그건 사용자가 받은 것이므로 청구 유효.
+    const lAny = l as any
+    const effDueDayForAcqMonth = (lAny.overrideDueDayMonth === firstMonth && lAny.overrideDueDay)
+      ? lAny.overrideDueDay
+      : l.dueDay
+    const dueDayNum = parseInt(effDueDayForAcqMonth ?? '99')
+    const opPaidInCutoff = opPaidInCutoffMonthByLease[l.id] ?? 0
+    const acqMonthAutoPaid =
+      !!(cutoffMonthStr && firstMonth === cutoffMonthStr && !isNaN(dueDayNum) && dueDayNum < cutoffDay && opPaidInCutoff === 0)
+
+    // 청구 가능 월 수 (인수월 자동 양도인 처리, 퇴실 후 제외) — viewMonth까지
     const months = monthRange(firstMonth, targetMonth)
     let billableMonths = 0
     const billableMonthList: string[] = []
     for (const mon of months) {
+      if (mon === cutoffMonthStr && acqMonthAutoPaid) continue
       if (prevOwnerLeaseIds.has(l.id) && mon === cutoffMonthStr) continue
       if (moveOutMonth && mon > moveOutMonth) continue
       billableMonths++
