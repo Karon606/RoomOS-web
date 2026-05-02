@@ -792,18 +792,23 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     })
   }
 
-  // 미수 회수 — 납부일이 경과했는데 회수되지 않은 lease만 알림 (납부일 미래면 미수 아님)
+  // 미수 회수 — 누적 미수가 발생한 모든 lease (회수될 때까지 알림 유지)
+  // 단, 표시는 첫 미납월의 dueDay 기준 경과일로 — 미래 dueDay만 있는 경우는 제외
   for (const l of unpaidLeases) {
-    const days = l.daysOverdue ?? -1
-    if (days < 1) continue  // dueDay가 오늘 또는 미래면 아직 미수 아님
+    const days = l.daysOverdue ?? null
+    // viewMonth dueDay가 미래(음수)인데 unpaidAmount가 있다는 건
+    // 지난 달부터 누적된 미수 → '회수 필요'로 표시 (이번 달 dueDay 도래 전이라도 노출)
+    const isOverdue = days != null && days >= 1
     alertItems.push({
       category:  'unpaid',
-      text:      `${l.tenantName}님 ${l.roomNo}호 미수 회수 지연 — ${days}일 경과`,
+      text:      isOverdue
+        ? `${l.tenantName}님 ${l.roomNo}호 미수 회수 지연 — ${days}일 경과`
+        : `${l.tenantName}님 ${l.roomNo}호 미수 회수 필요`,
       link:      `/rooms?tenantId=${l.tenantId}`,
       dotColor:  '#dc2626',
-      timeLabel: `${days}일 경과`,
+      timeLabel: isOverdue ? `${days}일 경과` : '회수 필요',
       tenantId:  l.tenantId,
-      detail:    `미수금 ${l.unpaidAmount.toLocaleString()}원이 ${days}일 동안 회수되지 않고 있습니다.`,
+      detail:    `미수금 ${l.unpaidAmount.toLocaleString()}원이 ${isOverdue ? `${days}일 동안 ` : ''}회수되지 않고 있습니다.`,
     })
   }
 
