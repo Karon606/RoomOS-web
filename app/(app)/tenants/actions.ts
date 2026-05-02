@@ -102,6 +102,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const registrationStatus  = (formData.get('registrationStatus') as RegistrationStatus) || 'NOT_REPORTED'
   const contractUrl         = formData.get('contractUrl') as string
   const wishRooms           = formData.get('wishRooms') as string
+  const wishConditions      = formData.get('wishConditions') as string
   const visitRoute          = formData.get('visitRoute') as string
   const tourDate            = formData.get('tourDate') as string
   const inquiryAt           = formData.get('inquiryAt') as string
@@ -171,6 +172,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
           registrationStatus,
           contractUrl: contractUrl || null,
           wishRooms: wishRooms || null,
+          wishConditions: wishConditions || null,
           visitRoute: visitRoute || null,
         },
       },
@@ -235,6 +237,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
   const registrationStatus = (formData.get('registrationStatus') as RegistrationStatus) || 'NOT_REPORTED'
   const contractUrl        = formData.get('contractUrl') as string
   const wishRooms          = formData.get('wishRooms') as string
+  const wishConditions     = formData.get('wishConditions') as string
   const visitRoute         = formData.get('visitRoute') as string
   const tourDate           = formData.get('tourDate') as string
   const inquiryAt          = formData.get('inquiryAt') as string
@@ -335,6 +338,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
       contractUrl: contractUrl || null,
       // 호실이 실제로 바뀌면 희망 호실 초기화 (이미 이동했으므로 의미 없음)
       wishRooms: (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishRooms || null),
+      wishConditions: wishConditions || null,
       visitRoute: visitRoute || null,
     },
   })

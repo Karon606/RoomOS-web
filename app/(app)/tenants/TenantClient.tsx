@@ -42,7 +42,7 @@ type LeaseTerm = {
   paymentTiming: string
   payMethod: string | null; cashReceipt: string | null
   registrationStatus: string; contractUrl: string | null
-  wishRooms: string | null; visitRoute: string | null
+  wishRooms: string | null; wishConditions: string | null; visitRoute: string | null
   room: { id: string; roomNo: string } | null
   paymentRecords: PaymentRecord[]
 }
@@ -2381,13 +2381,38 @@ function getFloor(roomNo: string): string {
   return ''
 }
 
-function WishRoomPicker({ rooms, defaultValue }: { rooms: Room[]; defaultValue?: string | null }) {
-  const initial = (defaultValue ?? '').split(',').map(s => s.trim()).filter(Boolean)
-  const [selected, setSelected] = useState<string[]>(initial.slice(0, 5))
+type WishConditionsObj = { floor?: string; windowType?: string; type?: string; direction?: string }
+
+function parseWishConditions(raw: string | null | undefined): WishConditionsObj {
+  if (!raw) return {}
+  try { return JSON.parse(raw) as WishConditionsObj } catch { return {} }
+}
+
+function WishSelector({ rooms, lease, allowConditions }: {
+  rooms: Room[]
+  lease?: LeaseTerm
+  allowConditions: boolean   // 예약/투어 단계에서 true (호실 미지정 + 조건만 입력 가능)
+}) {
+  const initialRooms = (lease?.wishRooms ?? '').split(',').map(s => s.trim()).filter(Boolean)
+  const initialCond  = parseWishConditions(lease?.wishConditions)
+  const initialMode: 'rooms' | 'conditions' =
+    !allowConditions ? 'rooms'
+    : (Object.values(initialCond).some(Boolean) && initialRooms.length === 0 ? 'conditions' : 'rooms')
+
+  const [mode, setMode] = useState<'rooms' | 'conditions'>(initialMode)
+
+  // 호실 모드 상태
+  const [selected, setSelected] = useState<string[]>(initialRooms.slice(0, 5))
   const [floorF, setFloorF]     = useState('')
   const [windowF, setWindowF]   = useState('')
   const [typeF, setTypeF]       = useState('')
   const [directionF, setDirF]   = useState('')
+
+  // 조건 모드 상태
+  const [condFloor, setCondFloor]       = useState(initialCond.floor ?? '')
+  const [condWindow, setCondWindow]     = useState(initialCond.windowType ?? '')
+  const [condType, setCondType]         = useState(initialCond.type ?? '')
+  const [condDirection, setCondDirection] = useState(initialCond.direction ?? '')
 
   const floors     = [...new Set(rooms.map(r => getFloor(r.roomNo)).filter(Boolean))].sort((a, b) => Number(a) - Number(b))
   const windowTypes = [...new Set(rooms.map(r => r.windowType).filter(Boolean))] as string[]
@@ -2408,61 +2433,117 @@ function WishRoomPicker({ rooms, defaultValue }: { rooms: Room[]; defaultValue?:
   }
   const remove = (roomNo: string) => setSelected(prev => prev.filter(r => r !== roomNo))
 
+  // 폼 제출용 hidden 값 — 모드에 따라 한 쪽만 채움
+  const wishRoomsValue = mode === 'rooms' ? selected.join(',') : ''
+  const condObj: WishConditionsObj = {}
+  if (mode === 'conditions') {
+    if (condFloor)     condObj.floor       = condFloor
+    if (condWindow)    condObj.windowType  = condWindow
+    if (condType)      condObj.type        = condType
+    if (condDirection) condObj.direction   = condDirection
+  }
+  const wishConditionsValue = mode === 'conditions' && Object.keys(condObj).length > 0 ? JSON.stringify(condObj) : ''
+
   const selCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-2.5 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] w-full'
 
   return (
     <div className="space-y-2">
       <label className="text-xs font-medium text-[var(--warm-mid)]">
-        입실 희망 호실 <span className="font-normal opacity-60">(최대 5개 · 공실/퇴실 예정 시 대시보드 알림)</span>
+        입실 희망 {allowConditions ? '호실 / 조건' : '호실'} <span className="font-normal opacity-60">(공실/퇴실 예정 시 대시보드 알림)</span>
       </label>
-      <input type="hidden" name="wishRooms" value={selected.join(',')} />
+      <input type="hidden" name="wishRooms"      value={wishRoomsValue} />
+      <input type="hidden" name="wishConditions" value={wishConditionsValue} />
 
-      {/* 필터 */}
-      <div className="grid grid-cols-4 gap-2">
-        <select value={floorF} onChange={e => setFloorF(e.target.value)} className={selCls}>
-          <option value="">층 전체</option>
-          {floors.map(f => <option key={f} value={f}>{f}층</option>)}
-        </select>
-        <select value={windowF} onChange={e => setWindowF(e.target.value)} className={selCls}>
-          <option value="">창문 전체</option>
-          {windowTypes.map(w => <option key={w} value={w}>{WISH_WINDOW_LABEL[w] ?? w}</option>)}
-        </select>
-        <select value={typeF} onChange={e => setTypeF(e.target.value)} className={selCls}>
-          <option value="">타입 전체</option>
-          {types.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select value={directionF} onChange={e => setDirF(e.target.value)} className={selCls}>
-          <option value="">방향 전체</option>
-          {directions.map(d => <option key={d} value={d}>{WISH_DIR_LABEL[d] ?? d}</option>)}
-        </select>
-      </div>
-
-      {/* 호실 선택 */}
-      <select
-        value=""
-        onChange={e => { add(e.target.value); e.target.value = '' }}
-        disabled={selected.length >= 5}
-        className={selCls}
-      >
-        <option value="">호실 선택...</option>
-        {filtered.filter(r => !selected.includes(r.roomNo)).map(r => (
-          <option key={r.id} value={r.roomNo}>
-            {r.roomNo}호{r.isVacant ? ' (공실)' : ''}
-          </option>
-        ))}
-      </select>
-
-      {/* 선택된 순위 칩 */}
-      {selected.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {selected.map((roomNo, i) => (
-            <span key={roomNo} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--coral)]/20 text-[var(--coral)]">
-              {WISH_RANK[i]} {roomNo}호
-              <button type="button" onClick={() => remove(roomNo)}
-                className="leading-none hover:text-red-400 transition-colors">×</button>
-            </span>
-          ))}
+      {allowConditions && (
+        <div className="flex gap-1.5">
+          <button type="button" onClick={() => setMode('rooms')}
+            className={`flex-1 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+              mode === 'rooms' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'
+            }`}>
+            구체적 호실 선택
+          </button>
+          <button type="button" onClick={() => setMode('conditions')}
+            className={`flex-1 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+              mode === 'conditions' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'
+            }`}>
+            조건만 선택
+          </button>
         </div>
+      )}
+
+      {mode === 'rooms' ? (
+        <>
+          {/* 필터 */}
+          <div className="grid grid-cols-4 gap-2">
+            <select value={floorF} onChange={e => setFloorF(e.target.value)} className={selCls}>
+              <option value="">층 전체</option>
+              {floors.map(f => <option key={f} value={f}>{f}층</option>)}
+            </select>
+            <select value={windowF} onChange={e => setWindowF(e.target.value)} className={selCls}>
+              <option value="">창문 전체</option>
+              {windowTypes.map(w => <option key={w} value={w}>{WISH_WINDOW_LABEL[w] ?? w}</option>)}
+            </select>
+            <select value={typeF} onChange={e => setTypeF(e.target.value)} className={selCls}>
+              <option value="">타입 전체</option>
+              {types.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select value={directionF} onChange={e => setDirF(e.target.value)} className={selCls}>
+              <option value="">방향 전체</option>
+              {directions.map(d => <option key={d} value={d}>{WISH_DIR_LABEL[d] ?? d}</option>)}
+            </select>
+          </div>
+
+          {/* 호실 선택 (최대 5개) */}
+          <select
+            value=""
+            onChange={e => { add(e.target.value); e.target.value = '' }}
+            disabled={selected.length >= 5}
+            className={selCls}
+          >
+            <option value="">호실 선택... {allowConditions ? '(선택사항, 최대 5개)' : '(최대 5개)'}</option>
+            {filtered.filter(r => !selected.includes(r.roomNo)).map(r => (
+              <option key={r.id} value={r.roomNo}>
+                {r.roomNo}호{r.isVacant ? ' (공실)' : ''}
+              </option>
+            ))}
+          </select>
+
+          {selected.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {selected.map((roomNo, i) => (
+                <span key={roomNo} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--coral)]/20 text-[var(--coral)]">
+                  {WISH_RANK[i]} {roomNo}호
+                  <button type="button" onClick={() => remove(roomNo)}
+                    className="leading-none hover:text-red-400 transition-colors">×</button>
+                </span>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="text-[11px] text-[var(--warm-muted)] leading-relaxed">
+            지정 항목과 일치하는 방이 공실/퇴실 예정이 되면 대시보드 알림이 표시됩니다. 선택하지 않은 항목은 무시됩니다.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <select value={condFloor} onChange={e => setCondFloor(e.target.value)} className={selCls}>
+              <option value="">층 무관</option>
+              {floors.map(f => <option key={f} value={f}>{f}층</option>)}
+            </select>
+            <select value={condWindow} onChange={e => setCondWindow(e.target.value)} className={selCls}>
+              <option value="">창문 무관</option>
+              {windowTypes.map(w => <option key={w} value={w}>{WISH_WINDOW_LABEL[w] ?? w}</option>)}
+            </select>
+            <select value={condType} onChange={e => setCondType(e.target.value)} className={selCls}>
+              <option value="">타입 무관</option>
+              {types.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select value={condDirection} onChange={e => setCondDirection(e.target.value)} className={selCls}>
+              <option value="">방향 무관</option>
+              {directions.map(d => <option key={d} value={d}>{WISH_DIR_LABEL[d] ?? d}</option>)}
+            </select>
+          </div>
+        </>
       )}
     </div>
   )
@@ -2772,7 +2853,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           </SelectField>
           <Field label="방문 경로" name="visitRoute" defaultValue={lease?.visitRoute ?? ''} placeholder="소개, 네이버 등" />
         </div>
-        <WishRoomPicker rooms={rooms} defaultValue={lease?.wishRooms} />
+        <WishSelector
+          rooms={rooms}
+          lease={lease}
+          allowConditions={statusVal === 'RESERVED' || statusVal === 'WAITING_TOUR' || statusVal === 'TOUR_DONE'}
+        />
         <Field label="계약서 링크" name="contractUrl" type="url" defaultValue={lease?.contractUrl ?? ''} placeholder="https://..." />
       </FormSection>
 

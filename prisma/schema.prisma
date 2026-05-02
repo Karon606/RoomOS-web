@@ -277,6 +277,7 @@ model LeaseTerm {
   registrationStatus RegistrationStatus @default(NOT_REPORTED)
   contractUrl        String?
   wishRooms          String?
+  wishConditions     String?            // JSON: { floor?, windowType?, type?, direction? } — 호실 미지정 예약자용
   visitRoute         String?
   tourDate           DateTime?          @db.Date
   inquiryAt          DateTime?          // 입실 문의 일시 (예약자 순번 기준)

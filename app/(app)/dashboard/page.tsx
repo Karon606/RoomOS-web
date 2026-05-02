@@ -161,7 +161,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       include: {
         tenant: { select: { name: true, id: true } },
-        room:   { select: { roomNo: true } },
+        room:   { select: { roomNo: true, type: true, windowType: true, direction: true } },
       },
       orderBy: { expectedMoveOut: { sort: 'asc', nulls: 'last' } },
     }),
@@ -195,20 +195,23 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       select: { gender: true, nationality: true, job: true },
     }),
-    // 희망 이동 호실용 공실 목록
+    // 희망 이동 호실용 공실 목록 (조건 매칭에 type/windowType/direction 사용)
     prisma.room.findMany({
       where: { propertyId, isVacant: true },
-      select: { roomNo: true },
+      select: { roomNo: true, type: true, windowType: true, direction: true },
     }),
-    // 희망 이동 호실 계약 (예약/투어/거주중/퇴실예정 모두 포함 — 순번 산정 위해 status도 가져옴)
+    // 희망 이동 호실/조건 계약 (예약/투어/거주중/퇴실예정 — 호실 또는 조건 보유자)
     prisma.leaseTerm.findMany({
       where: {
         propertyId,
         status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE'] },
-        wishRooms: { not: null },
+        OR: [
+          { wishRooms: { not: null } },
+          { wishConditions: { not: null } },
+        ],
       },
       select: {
-        id: true, status: true, wishRooms: true, inquiryAt: true, createdAt: true,
+        id: true, status: true, wishRooms: true, wishConditions: true, inquiryAt: true, createdAt: true,
         tenant: { select: { name: true, id: true } },
         room:   { select: { roomNo: true } },
       },
@@ -478,56 +481,91 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     percent:  totalExpense > 0 ? Math.round(((c._sum.amount ?? 0) / totalExpense) * 100) : 0,
   }))
 
-  // ── 희망 호실 알림 ───────────────────────────────────────────
+  // ── 희망 호실/조건 알림 ──────────────────────────────────────
   // "공실"로 간주: 실제 공실(isVacant) + 퇴실 예정(CHECKOUT_PENDING) 호실
-  const checkoutPendingRoomNos = new Set(
-    moveOutLeases.map(l => l.room?.roomNo).filter((x): x is string => !!x)
-  )
-  const targetRoomNos = new Set([
-    ...vacantRoomList.map(r => r.roomNo),
-    ...checkoutPendingRoomNos,
-  ])
+  type TargetRoomInfo = { roomNo: string; type: string | null; windowType: string | null; direction: string | null; isCheckoutPending: boolean }
+  const vacantInfoMap = new Map<string, TargetRoomInfo>()
+  for (const r of vacantRoomList) {
+    vacantInfoMap.set(r.roomNo, { roomNo: r.roomNo, type: r.type, windowType: r.windowType, direction: r.direction, isCheckoutPending: false })
+  }
+  for (const l of moveOutLeases) {
+    const r = l.room
+    if (!r?.roomNo) continue
+    if (vacantInfoMap.has(r.roomNo)) continue
+    vacantInfoMap.set(r.roomNo, { roomNo: r.roomNo, type: r.type, windowType: r.windowType, direction: r.direction, isCheckoutPending: true })
+  }
 
-  // 호실별 희망자 목록 모으기 — inquiryAt 오름차순(없으면 createdAt) 정렬해 순번 부여
+  const matchesConditions = (room: TargetRoomInfo, raw: string | null): boolean => {
+    if (!raw) return false
+    let cond: { floor?: string; windowType?: string; type?: string; direction?: string }
+    try { cond = JSON.parse(raw) } catch { return false }
+    if (!cond || Object.values(cond).every(v => !v)) return false
+    const roomFloor = (() => {
+      const n = room.roomNo.replace(/[^0-9]/g, '')
+      return n.length >= 3 ? n.slice(0, n.length - 2) : ''
+    })()
+    if (cond.floor && cond.floor !== roomFloor) return false
+    if (cond.windowType && cond.windowType !== room.windowType) return false
+    if (cond.type && cond.type !== room.type) return false
+    if (cond.direction && cond.direction !== room.direction) return false
+    return true
+  }
+
   type WishCandidate = {
     tenantName: string; tenantId: string; status: string
     inquiryAt: Date | null; createdAt: Date
+    matchedBy: 'rooms' | 'conditions'
   }
   const candidatesByRoom = new Map<string, WishCandidate[]>()
+
   for (const l of wishRoomLeases) {
+    const inquiryAt = l.inquiryAt ? new Date(l.inquiryAt) : null
+    const createdAt = new Date(l.createdAt)
+
+    // 1) 호실 직접 매칭
     const wished = (l.wishRooms ?? '').split(',').map(s => s.trim()).filter(Boolean)
     for (const no of wished) {
-      if (!targetRoomNos.has(no)) continue
-      // 본인이 살고 있는 방은 알림 대상 아님
+      const info = vacantInfoMap.get(no)
+      if (!info) continue
       if (l.room?.roomNo === no) continue
       if (!candidatesByRoom.has(no)) candidatesByRoom.set(no, [])
       candidatesByRoom.get(no)!.push({
-        tenantName: l.tenant.name,
-        tenantId:   l.tenant.id,
-        status:     l.status,
-        inquiryAt:  l.inquiryAt ? new Date(l.inquiryAt) : null,
-        createdAt:  new Date(l.createdAt),
+        tenantName: l.tenant.name, tenantId: l.tenant.id, status: l.status,
+        inquiryAt, createdAt, matchedBy: 'rooms',
       })
+    }
+
+    // 2) 조건 매칭 — 호실 미지정자가 wishConditions를 등록한 경우, 조건에 부합하는 모든 빈 방에 후보로 등록
+    if (l.wishConditions) {
+      for (const info of vacantInfoMap.values()) {
+        if (!matchesConditions(info, l.wishConditions)) continue
+        if (l.room?.roomNo === info.roomNo) continue
+        // 같은 사람이 호실로도, 조건으로도 매칭되면 중복 방지
+        const list = candidatesByRoom.get(info.roomNo) ?? []
+        if (list.some(c => c.tenantId === l.tenant.id)) continue
+        if (!candidatesByRoom.has(info.roomNo)) candidatesByRoom.set(info.roomNo, [])
+        candidatesByRoom.get(info.roomNo)!.push({
+          tenantName: l.tenant.name, tenantId: l.tenant.id, status: l.status,
+          inquiryAt, createdAt, matchedBy: 'conditions',
+        })
+      }
     }
   }
 
-  const wishRoomAlerts: { tenantName: string; tenantId: string; roomNo: string; rank: number; total: number; isCheckoutPending: boolean }[] = []
+  const wishRoomAlerts: { tenantName: string; tenantId: string; roomNo: string; rank: number; total: number; isCheckoutPending: boolean; matchedBy: 'rooms' | 'conditions' }[] = []
   for (const [roomNo, candidates] of candidatesByRoom) {
-    // inquiryAt 우선, 없으면 createdAt 기준 오름차순
     candidates.sort((a, b) => {
       const at = a.inquiryAt?.getTime() ?? a.createdAt.getTime()
       const bt = b.inquiryAt?.getTime() ?? b.createdAt.getTime()
       return at - bt
     })
-    const isCheckoutPending = checkoutPendingRoomNos.has(roomNo) && !vacantRoomList.some(r => r.roomNo === roomNo)
+    const info = vacantInfoMap.get(roomNo)
     candidates.forEach((c, idx) => {
       wishRoomAlerts.push({
-        tenantName: c.tenantName,
-        tenantId:   c.tenantId,
-        roomNo,
-        rank:       idx + 1,
-        total:      candidates.length,
-        isCheckoutPending,
+        tenantName: c.tenantName, tenantId: c.tenantId, roomNo,
+        rank: idx + 1, total: candidates.length,
+        isCheckoutPending: !!info?.isCheckoutPending,
+        matchedBy: c.matchedBy,
       })
     })
   }
@@ -708,13 +746,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   for (const a of wishRoomAlerts) {
     const stateLabel = a.isCheckoutPending ? '퇴실 예정' : '공실'
     const rankLabel  = a.total > 1 ? ` · ${a.rank}/${a.total}순위` : ''
+    const matchPrefix = a.matchedBy === 'conditions' ? '조건 부합' : '희망'
     alertItems.push({
-      text:      `${a.tenantName}님 희망 ${a.roomNo}호 ${stateLabel}${rankLabel}`,
+      text:      `${a.tenantName}님 ${matchPrefix} ${a.roomNo}호 ${stateLabel}${rankLabel}`,
       link:      `/tenants?tenantId=${a.tenantId}`,
       dotColor:  '#22c55e',
       timeLabel: a.rank === 1 ? '1순위' : `${a.rank}순위`,
       tenantId:  a.tenantId,
-      detail:    `${a.tenantName}님이 희망하던 ${a.roomNo}호가 ${stateLabel} 상태입니다. (현재 ${a.rank}/${a.total}순위)`,
+      detail:    `${a.tenantName}님의 ${a.matchedBy === 'conditions' ? '희망 조건' : '희망 호실'}에 부합하는 ${a.roomNo}호가 ${stateLabel} 상태입니다. (현재 ${a.rank}/${a.total}순위)`,
     })
   }
 
