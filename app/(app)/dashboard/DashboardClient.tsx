@@ -44,6 +44,7 @@ export type DashboardData = {
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
   unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; unpaidAmount: number }[]
+  unpaidRoomNosForView: string[]
 }
 
 // ── 레이블 ──────────────────────────────────────────────────────
@@ -1686,7 +1687,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         </div>
                         <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
                           {(() => {
-                            const unpaidRooms = new Set(data.unpaidLeases.map(l => l.roomNo))
+                            // viewMonth(targetMonth) 기준 미납 호실 — 과거 월에서도 그 월말 시점 미납이 정확히 보임
+                            const unpaidRooms = new Set(data.unpaidRoomNosForView)
                             return data.rooms.map(r => {
                               const isUnpaid = !r.isVacant && unpaidRooms.has(r.roomNo)
                               const rentMan = r.baseRent > 0 ? `${Math.round(r.baseRent / 10000)}만` : null

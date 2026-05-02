@@ -699,6 +699,53 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }))
   const unpaidCount = unpaidLeases.length
 
+  // ── 방 현황 그리드용 — viewMonth(targetMonth) 기준 미납 호실 ──
+  // viewMonth가 과거이면 그 월말 시점 기준, 현재면 unpaidLeases와 동일
+  const unpaidRoomNosForView = (() => {
+    if (targetMonth >= realTodayMonthStr) {
+      return Array.from(new Set(unpaidLeases.map(l => l.roomNo)))
+    }
+    // 과거 월: viewMonth까지 인식한 매출 vs 청구 누적
+    const viewAccrualByLease: Record<string, number> = {}
+    for (const p of allHistoricalPayments) {
+      if (p.targetMonth > targetMonth) continue
+      if (acquisitionDate && new Date(p.payDate) < acquisitionDate) continue
+      viewAccrualByLease[p.leaseTermId] = (viewAccrualByLease[p.leaseTermId] ?? 0) + p.actualAmount
+    }
+    const set = new Set<string>()
+    for (const l of unpaidLeasesRaw) {
+      const lMoveIn = l.moveInDate ? new Date(l.moveInDate) : null
+      const leaseStartMonth = lMoveIn
+        ? `${lMoveIn.getFullYear()}-${String(lMoveIn.getMonth() + 1).padStart(2, '0')}`
+        : (cutoffMonthStr ?? targetMonth)
+      const firstMonth = cutoffMonthStr && leaseStartMonth < cutoffMonthStr ? cutoffMonthStr : leaseStartMonth
+      if (firstMonth > targetMonth) continue
+      const moveOut = l.expectedMoveOut ? new Date(l.expectedMoveOut) : null
+      const moveOutMonth = moveOut
+        ? `${moveOut.getFullYear()}-${String(moveOut.getMonth() + 1).padStart(2, '0')}`
+        : null
+      const lAny = l as any
+      const effDueDayForAcqMonth = (lAny.overrideDueDayMonth === firstMonth && lAny.overrideDueDay)
+        ? lAny.overrideDueDay
+        : l.dueDay
+      const dueDayNum = parseInt(effDueDayForAcqMonth ?? '99')
+      const acqMonthDueBeforeCutoff =
+        !!(cutoffMonthStr && firstMonth === cutoffMonthStr && !isNaN(dueDayNum) && dueDayNum < cutoffDay)
+      const months = monthRange(firstMonth, targetMonth)
+      let billableMonths = 0
+      for (const mon of months) {
+        if (mon === cutoffMonthStr && acqMonthDueBeforeCutoff) continue
+        if (prevOwnerLeaseIds.has(l.id) && mon === cutoffMonthStr) continue
+        if (moveOutMonth && mon > moveOutMonth) continue
+        billableMonths++
+      }
+      const totalExpected = billableMonths * l.rentAmount
+      const totalReceived = viewAccrualByLease[l.id] ?? 0
+      if (totalReceived < totalExpected && l.room?.roomNo) set.add(l.room.roomNo)
+    }
+    return Array.from(set)
+  })()
+
   // ── 알림 ────────────────────────────────────────────────────
   const alertItems: DashboardData['alerts'] = []
 
@@ -901,6 +948,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     hasExpenseHistory,
     activity:        activityItems,
     unpaidLeases,
+    unpaidRoomNosForView,
   }
 
   return dashboardData
