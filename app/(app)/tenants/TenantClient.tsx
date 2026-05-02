@@ -2662,11 +2662,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   const [cleaningFeeVal, setCleaningFeeVal] = useState<number | undefined>(
     lease?.cleaningFee ?? (isNoAutoFill(statusVal) ? undefined : (defaultCleaningFee ?? undefined))
   )
-  // 신규(lease 없음)일 때 status 변경 시 default 재적용
+  // status 변경 시 default 재적용 — 자동입력 제외 상태로 가면 비우고, 그 외로 가면 default 채움
+  // 기존 입주자 수정 시에도 status를 RESERVED 등으로 변경하면 보증금/청소비 자동 비움
   useEffect(() => {
-    if (lease) return
-    setDepositAmountVal(isNoAutoFill(statusVal) ? undefined : (defaultDeposit ?? undefined))
-    setCleaningFeeVal(isNoAutoFill(statusVal) ? undefined : (defaultCleaningFee ?? undefined))
+    setDepositAmountVal(isNoAutoFill(statusVal) ? undefined : (lease?.depositAmount ?? defaultDeposit ?? undefined))
+    setCleaningFeeVal(isNoAutoFill(statusVal) ? undefined : (lease?.cleaningFee ?? defaultCleaningFee ?? undefined))
   }, [statusVal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 납부일 상태 — raw 값(숫자 또는 '말일')과 표시 문자열 분리
@@ -2749,12 +2749,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
               <option value="ACTIVE">거주중</option>
               <option value="CHECKOUT_PENDING">퇴실 예정</option>
+              <option value="CHECKED_OUT">퇴실</option>
               <option value="NON_RESIDENT">비거주자 (명의만)</option>
               <option value="WAITING_TOUR">투어 대기</option>
               <option value="TOUR_DONE">투어 완료</option>
               <option value="RESERVED">예약</option>
-              {tenant && <option value="CHECKED_OUT">퇴실</option>}
-              {tenant && <option value="CANCELLED">취소</option>}
+              <option value="CANCELLED">취소</option>
             </select>
           </div>
           <SelectField label="선납/후납" name="paymentTiming" defaultValue={lease?.paymentTiming ?? 'PREPAID'}>
