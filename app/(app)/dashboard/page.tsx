@@ -792,19 +792,18 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     })
   }
 
-  // 미수 회수 지연 — 첫 미납일에서 7일 이상 경과한 lease 알림으로 강조
-  // (당일·1~6일 단순 지연은 우측 미수납 패널에서 확인. 알림은 1주일 이상 회수 안 된 케이스)
+  // 미수 회수 — 회수될 때까지 계속 알림에 표시 (1년이든 10년이든)
   for (const l of unpaidLeases) {
     const days = l.daysOverdue ?? 0
-    if (days < 7) continue
+    const dayLabel = days >= 1 ? `${days}일 경과` : '미수 발생'
     alertItems.push({
       category:  'unpaid',
-      text:      `${l.tenantName}님 ${l.roomNo}호 미수 회수 지연 — ${days}일 경과`,
+      text:      `${l.tenantName}님 ${l.roomNo}호 미수 ${days >= 1 ? `회수 지연 — ${days}일 경과` : '발생'}`,
       link:      `/rooms?tenantId=${l.tenantId}`,
       dotColor:  '#dc2626',
-      timeLabel: `${days}일 경과`,
+      timeLabel: dayLabel,
       tenantId:  l.tenantId,
-      detail:    `미수금 ${l.unpaidAmount.toLocaleString()}원이 ${days}일 동안 회수되지 않고 있습니다. 우선 회수 권장.`,
+      detail:    `미수금 ${l.unpaidAmount.toLocaleString()}원이 ${days >= 1 ? `${days}일 동안 ` : ''}회수되지 않고 있습니다.`,
     })
   }
 
