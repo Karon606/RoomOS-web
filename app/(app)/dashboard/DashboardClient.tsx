@@ -1681,7 +1681,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         {/* 범례 */}
                         <div className="flex gap-3.5 mb-3 shrink-0">
                           <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
-                            <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(244,98,58,0.35)' }} />납부완료
+                            <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(16,185,129,0.35)' }} />납부완료
                           </div>
                           <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
                             <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(234,179,8,0.45)' }} />미납
@@ -1710,7 +1710,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                     ? { background: 'rgba(200,160,120,0.12)', color: 'var(--warm-muted)' }
                                     : isUnpaid
                                       ? { background: 'rgba(234,179,8,0.18)', color: '#a16207' }
-                                      : { background: 'rgba(244,98,58,0.09)', color: 'var(--coral)' }}
+                                      : { background: 'rgba(16,185,129,0.12)', color: '#047857' }}
                                 >
                                   <span className="truncate w-full text-center font-bold" style={{ fontSize: 11 }}>{r.roomNo}호</span>
                                   <span className="truncate w-full text-center" style={{ fontSize: 10, fontWeight: 500 }}>{displayName}</span>
