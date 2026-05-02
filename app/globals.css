@@ -95,3 +95,16 @@ a, button, [role="button"], input[type="button"], input[type="submit"], input[ty
 ::-webkit-scrollbar-track    { background: transparent; }
 ::-webkit-scrollbar-thumb    { background: var(--warm-border); border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--warm-muted); }
+
+/* ── 인쇄·PDF 모드 ────────────────────────────────────────────── */
+@media print {
+  @page { size: A4; margin: 12mm; }
+  body { background: #fff !important; color: #000 !important; }
+  .no-print, nav, aside, header { display: none !important; }
+  /* 사이드바·헤더 등 레이아웃 요소 제거 */
+  main { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+  .report-page { color: #000 !important; }
+  .report-page * { color: inherit !important; }
+  table { page-break-inside: auto; }
+  tr { page-break-inside: avoid; page-break-after: auto; }
+}

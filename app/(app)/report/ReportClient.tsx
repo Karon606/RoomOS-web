@@ -31,20 +31,76 @@ export default function ReportClient({ summary, years }: { summary: AnnualSummar
     }
   })
 
+  const handleExportCSV = () => {
+    const header = ['월', '매출', '전년 매출', '증감', '기타수익', '지출', '순이익', '월말 미수']
+    const lines: string[][] = [header]
+    for (const r of summary.rows) {
+      const prev = summary.prevYear?.rows.find(p => p.month.slice(5) === r.month.slice(5))
+      const delta = prev ? r.revenue - prev.revenue : ''
+      lines.push([
+        r.month,
+        String(r.revenue),
+        prev ? String(prev.revenue) : '',
+        delta === '' ? '' : String(delta),
+        String(r.extraIncome),
+        String(r.expense),
+        String(r.profit),
+        String(r.unpaidAmount),
+      ])
+    }
+    lines.push([
+      '합계',
+      String(summary.totalRevenue),
+      summary.prevYear ? String(summary.prevYear.totalRevenue) : '',
+      summary.prevYear ? String(summary.totalRevenue - summary.prevYear.totalRevenue) : '',
+      String(summary.totalExtraIncome),
+      String(summary.totalExpense),
+      String(summary.totalProfit),
+      String(summary.endingUnpaid),
+    ])
+    const csv = lines.map(row => row.map(c => `"${c}"`).join(',')).join('\n')
+    // BOM 추가 — 엑셀 한글 인코딩 호환
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `결산보고서-${summary.year}년.csv`
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const handlePrint = () => window.print()
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="space-y-6 report-page">
+      <div className="flex items-center justify-between flex-wrap gap-3 report-header">
         <div>
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">결산 보고서</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">발생주의(매출 인식 월) 기준 연간 손익·미수 현황</p>
         </div>
-        <select
-          value={summary.year}
-          onChange={e => handleYear(e.target.value)}
-          className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
-        >
-          {years.map(y => <option key={y} value={y}>{y}년</option>)}
-        </select>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            className="px-3 py-2 text-sm font-medium rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors no-print"
+          >
+            CSV 다운로드
+          </button>
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="px-3 py-2 text-sm font-medium rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors no-print"
+          >
+            인쇄·PDF
+          </button>
+          <select
+            value={summary.year}
+            onChange={e => handleYear(e.target.value)}
+            className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+          >
+            {years.map(y => <option key={y} value={y}>{y}년</option>)}
+          </select>
+        </div>
       </div>
 
       {/* 합계 카드 */}
