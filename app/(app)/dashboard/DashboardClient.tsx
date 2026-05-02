@@ -43,7 +43,7 @@ export type DashboardData = {
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
-  unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; unpaidAmount: number }[]
+  unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; unpaidAmount: number; monthsOverdue: number }[]
   unpaidRoomNosForView: string[]
 }
 
@@ -1898,7 +1898,14 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   {l.tenantName.slice(0, 1)}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>{l.roomNo}호 {l.tenantName}</p>
+                                  <p className="text-xs font-semibold truncate flex items-center gap-1" style={{ color: '#5a4a3a' }}>
+                                    {l.roomNo}호 {l.tenantName}
+                                    {l.monthsOverdue >= 2 && (
+                                      <span className="rounded-full text-[9px] font-bold px-1.5 py-0.5" style={{ background: '#dc2626', color: '#fff' }}>
+                                        {l.monthsOverdue}개월
+                                      </span>
+                                    )}
+                                  </p>
                                   <p className="text-[10px] font-medium mt-0.5" style={{ color: dl.color }}>{dl.text}</p>
                                 </div>
                                 <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>

@@ -696,14 +696,20 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const unpaidAmount = Object.values(unpaidMap).reduce((s, v) => s + v, 0)
   const unpaidLeases = unpaidLeasesRaw
     .filter(l => (unpaidMap[l.id] ?? 0) > 0)
-    .map(l => ({
-      roomNo:       l.room?.roomNo ?? '?',
-      tenantName:   l.tenant.name,
-      tenantId:     l.tenant.id,
-      leaseId:      l.id,
-      daysOverdue:  calcDaysOverdue(effectiveDueDay(l)),
-      unpaidAmount: unpaidMap[l.id]!,
-    }))
+    .map(l => {
+      const unpaid = unpaidMap[l.id]!
+      // 누적 미수가 임대료 몇 달치인지 (소수점 이하는 올림 — 일부 미납도 1개월로 카운트)
+      const monthsOverdue = l.rentAmount > 0 ? Math.ceil(unpaid / l.rentAmount) : 0
+      return {
+        roomNo:        l.room?.roomNo ?? '?',
+        tenantName:    l.tenant.name,
+        tenantId:      l.tenant.id,
+        leaseId:       l.id,
+        daysOverdue:   calcDaysOverdue(effectiveDueDay(l)),
+        unpaidAmount:  unpaid,
+        monthsOverdue,
+      }
+    })
   const unpaidCount = unpaidLeases.length
 
   // 방 현황 그리드 미납 호실 — unpaidLeases와 동일 (둘 다 viewMonth 기준)
@@ -774,6 +780,19 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       timeLabel: a.rank === 1 ? '1순위' : `${a.rank}순위`,
       tenantId:  a.tenantId,
       detail:    `${a.tenantName}님의 ${a.matchedBy === 'conditions' ? '희망 조건' : '희망 호실'}에 부합하는 ${a.roomNo}호가 ${stateLabel} 상태입니다. (현재 ${a.rank}/${a.total}순위)`,
+    })
+  }
+
+  // 누적 미수 2개월 이상 — 회수 우선순위 높음
+  for (const l of unpaidLeases) {
+    if (l.monthsOverdue < 2) continue
+    alertItems.push({
+      text:      `${l.tenantName}님 ${l.roomNo}호 누적 미수 ${l.monthsOverdue}개월`,
+      link:      `/rooms?tenantId=${l.tenantId}`,
+      dotColor:  '#dc2626',
+      timeLabel: `${l.monthsOverdue}개월`,
+      tenantId:  l.tenantId,
+      detail:    `회수되지 않은 임대료가 ${l.monthsOverdue}개월치(${l.unpaidAmount.toLocaleString()}원) 누적되었습니다. 우선 회수 권장.`,
     })
   }
 
