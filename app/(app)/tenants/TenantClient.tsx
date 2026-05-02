@@ -12,6 +12,7 @@ import { CountrySelect, flagByName } from '@/components/ui/CountrySelect'
 import { JobSelect } from '@/components/ui/JobSelect'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
+import { useUrlState } from '@/lib/useUrlState'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
@@ -320,7 +321,7 @@ export default function TenantClient({
   const [filter, setFilter]             = useState<'active' | 'past'>('active')
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
   const [pastFilter, setPastFilter]     = useState<PastFilter>('all')
-  const [search, setSearch]             = useState('')
+  const [search, setSearch]             = useUrlState('q', '')
   const [sortKey, setSortKey]           = useState<SortKey>('roomNo')
   const [sortDir, setSortDir]           = useState<SortDir>('asc')
   const [colVis, setColVis]             = useState<Record<ColKey, boolean>>(initColVis)

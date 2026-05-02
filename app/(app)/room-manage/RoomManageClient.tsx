@@ -7,6 +7,7 @@ import { AreaInput } from '@/components/ui/AreaInput'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { useUrlState } from '@/lib/useUrlState'
 
 type Photo = {
   id: string
@@ -70,7 +71,7 @@ export default function RoomManageClient({
   const directionOptions   = directions.map(v => ({ value: v, label: getDirectionLabel(v) }))
 
   // 검색 · 정렬
-  const [search, setSearch]     = useState('')
+  const [search, setSearch]     = useUrlState('q', '')
   const [sortKey, setSortKey]   = useState<'roomNo' | 'baseRent' | 'vacancy'>('roomNo')
   const [sortDir, setSortDir]   = useState<'asc' | 'desc'>('asc')
 

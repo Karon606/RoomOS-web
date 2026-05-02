@@ -8,6 +8,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { formatPhone } from '@/lib/formatPhone'
 import { kstYmdStr } from '@/lib/kstDate'
+import { useUrlState } from '@/lib/useUrlState'
 
 type RoomStatus = {
   roomId: string
@@ -224,7 +225,7 @@ export default function RoomsClient({
   const [vacantSortDir, setVacantSortDir] = useState<SortDir>('asc')
   const [sortKey, setSortKey] = useState<SortKey>('status')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useUrlState('q', '')
   const [error, setError] = useState('')
   const [isPending, startTransition] = useTransition()
   const [showOverrideForm, setShowOverrideForm] = useState(false)
