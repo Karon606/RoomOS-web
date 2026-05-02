@@ -45,6 +45,7 @@ type PaymentRecord = {
   id: string
   seqNo: number
   payDate: Date
+  targetMonth: string
   actualAmount: number
   payMethod: string | null
   memo: string | null
@@ -938,7 +939,8 @@ export default function RoomsClient({
             {!showPayForm && (
               <>
                 <div className="flex-1 overflow-y-auto p-6 space-y-5">
-                  {/* 잔액 요약 */}
+                  {/* 잔액 요약 — 현금주의(통장 입금일) 기준. 발생주의 매출은 대시보드 참조 */}
+                  <p className="text-[10px] text-[var(--warm-muted)] -mb-3">총 수납·잔액·이월액은 입금일 기준입니다 (매출은 귀속 월로 별도 인식)</p>
                   <div className="grid grid-cols-3 gap-2">
                     <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
                       <p className="text-xs text-[var(--warm-muted)]">총 수납</p>
@@ -1110,6 +1112,11 @@ export default function RoomsClient({
                                   {p.seqNo}회차 · {fmtDate(p.payDate)} · {p.payMethod ?? '—'}
                                   {p.isDeposit && <span className="ml-1.5 text-[10px] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>}
                                   {prevOwner && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
+                                  {!p.isDeposit && p.targetMonth !== targetMonth && (
+                                    <span className="ml-1.5 text-[10px] font-semibold bg-blue-100 text-blue-700 rounded px-1 py-0.5">
+                                      {p.targetMonth.slice(5)}월분
+                                    </span>
+                                  )}
                                 </p>
                                 {p.memo && !p.isDeposit && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
                               </div>

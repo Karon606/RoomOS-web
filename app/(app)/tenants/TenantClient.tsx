@@ -28,7 +28,7 @@ type PaymentRecord = {
 }
 
 type PayRecord = {
-  id: string; seqNo: number; payDate: Date
+  id: string; seqNo: number; payDate: Date; targetMonth: string
   actualAmount: number; payMethod: string | null; memo: string | null; isPaid: boolean
   isDeposit: boolean
 }
@@ -2050,6 +2050,11 @@ export default function TenantClient({
                                 <p className={`text-xs ${prevOwner ? 'text-amber-600' : 'text-[var(--warm-mid)]'}`}>
                                   {p.seqNo}회차 · {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
                                   {prevOwner && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
+                                  {!p.isDeposit && p.targetMonth !== targetMonth && (
+                                    <span className="ml-1.5 text-[10px] font-semibold bg-blue-100 text-blue-700 rounded px-1 py-0.5">
+                                      {p.targetMonth.slice(5)}월분
+                                    </span>
+                                  )}
                                 </p>
                                 {p.memo && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
                               </div>
