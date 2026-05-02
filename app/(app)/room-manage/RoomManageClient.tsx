@@ -74,6 +74,52 @@ export default function RoomManageClient({
   const [sortKey, setSortKey]   = useState<'roomNo' | 'baseRent' | 'vacancy'>('roomNo')
   const [sortDir, setSortDir]   = useState<'asc' | 'desc'>('asc')
 
+  // 필터
+  type AreaPyeongRange  = '' | '<1' | '1-2' | '2-3' | '3+'
+  type AreaM2Range      = '' | '<3.3' | '3.3-6.6' | '6.6-9.9' | '9.9+'
+  const [showFilters, setShowFilters]         = useState(false)
+  const [filterRoomNo, setFilterRoomNo]       = useState('')
+  const [filterType, setFilterType]           = useState('')
+  const [filterWindowType, setFilterWindowType] = useState('')
+  const [filterDirection, setFilterDirection] = useState('')
+  const [filterAreaPyeong, setFilterAreaPyeong] = useState<AreaPyeongRange>('')
+  const [filterAreaM2, setFilterAreaM2]       = useState<AreaM2Range>('')
+  const [filterRentMin, setFilterRentMin]     = useState<number | undefined>(undefined)
+  const [filterRentMax, setFilterRentMax]     = useState<number | undefined>(undefined)
+
+  const resetFilters = () => {
+    setFilterRoomNo(''); setFilterType(''); setFilterWindowType(''); setFilterDirection('')
+    setFilterAreaPyeong(''); setFilterAreaM2('')
+    setFilterRentMin(undefined); setFilterRentMax(undefined)
+  }
+  const activeFilterCount =
+    (filterRoomNo ? 1 : 0) +
+    (filterType ? 1 : 0) +
+    (filterWindowType ? 1 : 0) +
+    (filterDirection ? 1 : 0) +
+    (filterAreaPyeong ? 1 : 0) +
+    (filterAreaM2 ? 1 : 0) +
+    (filterRentMin != null || filterRentMax != null ? 1 : 0)
+
+  const matchAreaPyeong = (val: number | null): boolean => {
+    if (!filterAreaPyeong) return true
+    if (val == null) return false
+    if (filterAreaPyeong === '<1')   return val < 1
+    if (filterAreaPyeong === '1-2')  return val >= 1 && val < 2
+    if (filterAreaPyeong === '2-3')  return val >= 2 && val < 3
+    if (filterAreaPyeong === '3+')   return val >= 3
+    return true
+  }
+  const matchAreaM2 = (val: number | null): boolean => {
+    if (!filterAreaM2) return true
+    if (val == null) return false
+    if (filterAreaM2 === '<3.3')     return val < 3.3
+    if (filterAreaM2 === '3.3-6.6')  return val >= 3.3 && val < 6.6
+    if (filterAreaM2 === '6.6-9.9')  return val >= 6.6 && val < 9.9
+    if (filterAreaM2 === '9.9+')     return val >= 9.9
+    return true
+  }
+
   // 모달 상태
   const [detailRoom, setDetailRoom]   = useState<Room | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -117,13 +163,25 @@ export default function RoomManageClient({
 
   const filteredRooms = (() => {
     const q = search.trim().toLowerCase()
-    const base = q
-      ? rooms.filter(r =>
+    const roomNoQ = filterRoomNo.trim().toLowerCase()
+    const base = rooms.filter(r => {
+      if (q) {
+        const ok =
           r.roomNo.toLowerCase().includes(q) ||
           (currentTenant(r) ?? '').toLowerCase().includes(q) ||
           (r.type ?? '').toLowerCase().includes(q)
-        )
-      : rooms
+        if (!ok) return false
+      }
+      if (roomNoQ && !r.roomNo.toLowerCase().includes(roomNoQ)) return false
+      if (filterType && r.type !== filterType) return false
+      if (filterWindowType && r.windowType !== filterWindowType) return false
+      if (filterDirection && r.direction !== filterDirection) return false
+      if (!matchAreaPyeong(r.areaPyeong)) return false
+      if (!matchAreaM2(r.areaM2)) return false
+      if (filterRentMin != null && r.baseRent < filterRentMin) return false
+      if (filterRentMax != null && r.baseRent > filterRentMax) return false
+      return true
+    })
     return [...base].sort((a, b) => {
       const dir = sortDir === 'asc' ? 1 : -1
       if (sortKey === 'vacancy') {
@@ -286,19 +344,142 @@ export default function RoomManageClient({
         </button>
       </div>
 
-      {/* 검색바 */}
-      <div className="relative">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-sm">🔍</span>
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="호실 번호, 입주자 이름, 방 타입 검색"
-          className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl pl-9 pr-8 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
-        />
-        {search && (
-          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-base leading-none">×</button>
-        )}
+      {/* 검색바 + 필터 토글 */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-sm">🔍</span>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="호실 번호, 입주자 이름, 방 타입 검색"
+            className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl pl-9 pr-8 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-base leading-none">×</button>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowFilters(v => !v)}
+          className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${
+            showFilters || activeFilterCount > 0
+              ? 'bg-[var(--coral)] text-white'
+              : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]'
+          }`}
+        >
+          필터{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
+        </button>
       </div>
+
+      {/* 필터 패널 */}
+      {showFilters && (
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">호실 번호</label>
+              <input
+                value={filterRoomNo}
+                onChange={e => setFilterRoomNo(e.target.value)}
+                placeholder="예: 401, 5"
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">방 타입</label>
+              <select
+                value={filterType}
+                onChange={e => setFilterType(e.target.value)}
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+              >
+                <option value="">전체</option>
+                {types.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">창문 타입</label>
+              <select
+                value={filterWindowType}
+                onChange={e => setFilterWindowType(e.target.value)}
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+              >
+                <option value="">전체</option>
+                {windowTypeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">방향</label>
+              <select
+                value={filterDirection}
+                onChange={e => setFilterDirection(e.target.value)}
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+              >
+                <option value="">전체</option>
+                {directionOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">면적 (평)</label>
+              <select
+                value={filterAreaPyeong}
+                onChange={e => setFilterAreaPyeong(e.target.value as AreaPyeongRange)}
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+              >
+                <option value="">전체</option>
+                <option value="<1">1평 미만</option>
+                <option value="1-2">1평~2평 미만</option>
+                <option value="2-3">2평~3평 미만</option>
+                <option value="3+">3평 이상</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">면적 (㎡)</label>
+              <select
+                value={filterAreaM2}
+                onChange={e => setFilterAreaM2(e.target.value as AreaM2Range)}
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+              >
+                <option value="">전체</option>
+                <option value="<3.3">3.3㎡ 미만</option>
+                <option value="3.3-6.6">3.3㎡~6.6㎡ 미만</option>
+                <option value="6.6-9.9">6.6㎡~9.9㎡ 미만</option>
+                <option value="9.9+">9.9㎡ 이상</option>
+              </select>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">월 이용료 범위 (원)</label>
+            <div className="flex items-center gap-2">
+              <MoneyInput
+                value={filterRentMin}
+                onChange={v => setFilterRentMin(v && v > 0 ? v : undefined)}
+                placeholder="최소"
+              />
+              <span className="text-[var(--warm-muted)] text-sm">~</span>
+              <MoneyInput
+                value={filterRentMax}
+                onChange={v => setFilterRentMax(v && v > 0 ? v : undefined)}
+                placeholder="최대"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="flex-1 py-2 rounded-xl text-xs bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors"
+            >
+              초기화
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowFilters(false)}
+              className="flex-1 py-2 rounded-xl text-xs bg-[var(--coral)] hover:opacity-90 text-white font-medium transition-opacity"
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 정렬 칩 */}
       <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-4 px-4 sm:mx-0 sm:px-0">
