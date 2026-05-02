@@ -199,6 +199,22 @@ export default function RoomsClient({
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
   const [showPayModal, setShowPayModal] = useState(false)
   const [showPayForm, setShowPayForm] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+
+  // viewMonth 변경 시 stale modal 자동 닫기
+  useEffect(() => {
+    setShowPayModal(false)
+    setShowPayForm(false)
+    setSelectedRoom(null)
+    setPaymentHistory([])
+  }, [targetMonth])
+
+  // 토스트 자동 사라짐
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 5000)
+    return () => clearTimeout(t)
+  }, [toast])
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid'>('all')
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(DEFAULT_VIS)
   const [showColMenu, setShowColMenu] = useState(false)
@@ -439,9 +455,9 @@ export default function RoomsClient({
             const otherMonths = result.allocations.filter(a => a.targetMonth !== inputMonth)
             if (otherMonths.length > 0) {
               const summary = otherMonths
-                .map(a => `${a.targetMonth.slice(5)}월분 ${a.amount.toLocaleString()}원`)
+                .map(a => `${Number(a.targetMonth.slice(5))}월분 ${a.amount.toLocaleString()}원`)
                 .join(', ')
-              alert(`발생주의 자동 분배:\n${summary}\n\n(미수가 가장 오래된 월부터 자동 충당됩니다)`)
+              setToast(`자동 분배: ${summary} (미수가 가장 오래된 월부터 충당)`)
             }
           }
         }
@@ -550,6 +566,15 @@ export default function RoomsClient({
 
   return (
     <div className="space-y-6">
+      {/* 토스트 */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-md w-[calc(100%-2rem)] bg-[var(--warm-dark)] text-white text-xs rounded-xl px-4 py-3 shadow-lg flex items-start gap-2">
+          <span className="text-amber-300 shrink-0">✦</span>
+          <span className="flex-1 leading-relaxed">{toast}</span>
+          <button onClick={() => setToast(null)} className="shrink-0 text-white/60 hover:text-white">✕</button>
+        </div>
+      )}
+
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-[var(--warm-dark)]">수납 관리</h1>

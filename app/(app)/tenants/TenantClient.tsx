@@ -316,6 +316,7 @@ export default function TenantClient({
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
   const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
   const [filter, setFilter]             = useState<'active' | 'past'>('active')
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
   const [pastFilter, setPastFilter]     = useState<PastFilter>('all')
@@ -477,6 +478,13 @@ export default function TenantClient({
       return updated ?? prev
     })
   }, [initialTenants]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 토스트 자동 사라짐
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 5000)
+    return () => clearTimeout(t)
+  }, [toast])
 
   // ── 액션 핸들러 ─────────────────────────────────────────────────
 
@@ -644,9 +652,9 @@ export default function TenantClient({
             const otherMonths = result.allocations.filter(a => a.targetMonth !== result.inputMonth)
             if (otherMonths.length > 0) {
               const summary = otherMonths
-                .map(a => `${a.targetMonth.slice(5)}월분 ${a.amount.toLocaleString()}원`)
+                .map(a => `${Number(a.targetMonth.slice(5))}월분 ${a.amount.toLocaleString()}원`)
                 .join(', ')
-              alert(`발생주의 자동 분배:\n${summary}\n\n(미수가 가장 오래된 월부터 자동 충당됩니다)`)
+              setToast(`자동 분배: ${summary} (미수가 가장 오래된 월부터 충당)`)
             }
           }
         }
@@ -782,6 +790,14 @@ export default function TenantClient({
 
   return (
     <div className="space-y-4">
+      {/* 토스트 */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-md w-[calc(100%-2rem)] bg-[var(--warm-dark)] text-white text-xs rounded-xl px-4 py-3 shadow-lg flex items-start gap-2">
+          <span className="text-amber-300 shrink-0">✦</span>
+          <span className="flex-1 leading-relaxed">{toast}</span>
+          <button onClick={() => setToast(null)} className="shrink-0 text-white/60 hover:text-white">✕</button>
+        </div>
+      )}
 
       {/* 헤더 */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
