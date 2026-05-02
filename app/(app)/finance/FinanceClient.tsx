@@ -108,22 +108,45 @@ export function fmtItemDetail(d: ItemPickState): string {
   return [`[${d.label}]`, spec, qty && `x ${qty}`].filter(Boolean).join(' ')
 }
 
-function UnitCombobox({ id, value, onChange, options, placeholder }: {
-  id: string; value: string; onChange: (v: string) => void
+function UnitCombobox({ value, onChange, options, placeholder }: {
+  value: string; onChange: (v: string) => void
   options: string[]; placeholder?: string
 }) {
+  const [customMode, setCustomMode] = useState(false)
+  const isInOptions = value === '' || options.includes(value)
+  // 외부 value가 옵션에 없으면 자동으로 custom 모드 (수동 입력값)
+  const showCustom = customMode || (!isInOptions && value !== '')
+
+  if (showCustom) {
+    return (
+      <div className="flex flex-1 min-w-0 gap-1">
+        <input
+          type="text" value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder ?? '단위'}
+          className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+          autoFocus
+        />
+        <button type="button" onClick={() => { setCustomMode(false); onChange('') }}
+          className="px-1.5 text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">✕</button>
+      </div>
+    )
+  }
+
   return (
-    <div className="relative flex-1 min-w-0">
-      <input
-        type="text" id={id} list={`${id}-list`} value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
-      />
-      <datalist id={`${id}-list`}>
-        {options.map(o => <option key={o} value={o} />)}
-      </datalist>
-    </div>
+    <select
+      value={value}
+      onChange={e => {
+        const v = e.target.value
+        if (v === '__custom__') { setCustomMode(true); onChange('') }
+        else onChange(v)
+      }}
+      className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+    >
+      <option value="">{placeholder ?? '단위'}</option>
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
+      <option value="__custom__">기타(직접 입력)</option>
+    </select>
   )
 }
 
@@ -140,17 +163,19 @@ function ItemSelector({ category, onChange }: {
   const [qtyUnit, setQtyUnit]         = useState('')
   const [customLabel, setCustomLabel] = useState('')
   const [fetching, setFetching]       = useState(false)
+  const [prevUnits, setPrevUnits]     = useState<{ specUnit: string | null; qtyUnit: string | null } | null>(null)
 
   useEffect(() => {
     setPicked(null); setActiveLabel(null)
     setSpecValue(''); setSpecUnit(''); setQtyValue(''); setQtyUnit('')
-    setCustomLabel('')
+    setCustomLabel(''); setPrevUnits(null)
     onChange(null)
   }, [category])
 
   if (!presets) return null
 
-  const numCls  = 'w-14 bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  // 숫자 input — 화살표 spinner 숨김, 모바일에서 숫자 키패드
+  const numCls  = 'w-16 bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
   const textCls = 'w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   async function openPreset(label: string) {
@@ -158,11 +183,15 @@ function ItemSelector({ category, onChange }: {
     setSpecValue(''); setQtyValue('')
     const def = ITEM_DEFAULTS[label]
     setSpecUnit(def?.specUnit ?? ''); setQtyUnit(def?.qtyUnit ?? '')
+    setPrevUnits(null)
     setFetching(true)
     try {
       const last = await getLastItemUnits(label)
-      if (last?.specUnit) setSpecUnit(last.specUnit)
-      if (last?.qtyUnit)  setQtyUnit(last.qtyUnit)
+      if (last) {
+        setPrevUnits(last)
+        if (last.specUnit) setSpecUnit(last.specUnit)
+        if (last.qtyUnit)  setQtyUnit(last.qtyUnit)
+      }
     } finally { setFetching(false) }
   }
 
@@ -177,24 +206,34 @@ function ItemSelector({ category, onChange }: {
     onChange(null)
   }
 
-  const SpecQtyInputs = ({ idSuffix }: { idSuffix: string }) => (
-    <div className="grid grid-cols-2 gap-2">
-      <div className="space-y-1">
-        <label className="text-[10px] text-[var(--warm-muted)]">규격</label>
-        <div className="flex gap-1">
-          <input type="number" min={0} placeholder="0" value={specValue}
-            onChange={e => setSpecValue(e.target.value)} className={numCls} />
-          <UnitCombobox id={`spec-${idSuffix}`} value={specUnit} onChange={setSpecUnit}
-            options={SPEC_UNITS} placeholder="단위" />
+  const SpecQtyInputs = () => (
+    <div className="space-y-2">
+      {prevUnits && (prevUnits.specUnit || prevUnits.qtyUnit) && (
+        <p className="text-[10px] text-[var(--warm-muted)]">
+          직전 사용:{' '}
+          {prevUnits.specUnit && <span className="text-[var(--warm-mid)]">규격 {prevUnits.specUnit}</span>}
+          {prevUnits.specUnit && prevUnits.qtyUnit && <span className="mx-1">·</span>}
+          {prevUnits.qtyUnit && <span className="text-[var(--warm-mid)]">수량 {prevUnits.qtyUnit}</span>}
+        </p>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <label className="text-[10px] text-[var(--warm-muted)]">규격</label>
+          <div className="flex gap-1">
+            <input type="text" inputMode="decimal" placeholder="0" value={specValue}
+              onChange={e => setSpecValue(e.target.value.replace(/[^0-9.]/g, ''))} className={numCls} />
+            <UnitCombobox value={specUnit} onChange={setSpecUnit}
+              options={SPEC_UNITS} placeholder="단위" />
+          </div>
         </div>
-      </div>
-      <div className="space-y-1">
-        <label className="text-[10px] text-[var(--warm-muted)]">수량</label>
-        <div className="flex gap-1">
-          <input type="number" min={0} placeholder="1" value={qtyValue}
-            onChange={e => setQtyValue(e.target.value)} className={numCls} />
-          <UnitCombobox id={`qty-${idSuffix}`} value={qtyUnit} onChange={setQtyUnit}
-            options={QTY_UNITS} placeholder="단위" />
+        <div className="space-y-1">
+          <label className="text-[10px] text-[var(--warm-muted)]">수량</label>
+          <div className="flex gap-1">
+            <input type="text" inputMode="decimal" placeholder="1" value={qtyValue}
+              onChange={e => setQtyValue(e.target.value.replace(/[^0-9.]/g, ''))} className={numCls} />
+            <UnitCombobox value={qtyUnit} onChange={setQtyUnit}
+              options={QTY_UNITS} placeholder="단위" />
+          </div>
         </div>
       </div>
     </div>
@@ -233,7 +272,7 @@ function ItemSelector({ category, onChange }: {
             <button type="button" onClick={() => setActiveLabel(null)}
               className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none">✕</button>
           </div>
-          <SpecQtyInputs idSuffix={activeLabel} />
+          <SpecQtyInputs />
           <button type="button" onClick={() => confirm(activeLabel)}
             className="w-full py-1.5 bg-[var(--coral)] hover:opacity-90 text-white text-xs font-medium rounded-lg transition-colors">추가</button>
         </div>
@@ -250,7 +289,7 @@ function ItemSelector({ category, onChange }: {
             <label className="text-[10px] text-[var(--warm-muted)]">품목명</label>
             <input type="text" placeholder="예: 고추장" value={customLabel} onChange={e => setCustomLabel(e.target.value)} className={textCls} />
           </div>
-          <SpecQtyInputs idSuffix="custom" />
+          <SpecQtyInputs />
           <button type="button" onClick={() => { if (customLabel.trim()) confirm(customLabel.trim()) }}
             className="w-full py-1.5 bg-[var(--coral)] hover:opacity-90 text-white text-xs font-medium rounded-lg transition-colors">
             추가
