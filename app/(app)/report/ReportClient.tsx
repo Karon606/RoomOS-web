@@ -234,15 +234,19 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                 )}
               </div>
               <div className="space-y-1 pt-1">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-2">
                   <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">수익</span>
-                  <div className="h-1.5 rounded-full bg-emerald-200 flex-1 max-w-full" style={{ width: `${incomePct}%`, minWidth: incomeTotal > 0 ? '4px' : 0 }} />
-                  <span className="text-[10px] text-[var(--warm-muted)] tabular-nums">{fmtMan(incomeTotal)}</span>
+                  <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, incomePct)}%`, minWidth: incomeTotal > 0 ? 2 : 0, background: '#6aab7e' }} />
+                  </div>
+                  <span className="text-[10px] text-[var(--warm-muted)] tabular-nums w-12 text-right shrink-0">{fmtMan(incomeTotal)}</span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-2">
                   <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">지출</span>
-                  <div className="h-1.5 rounded-full bg-rose-200 flex-1 max-w-full" style={{ width: `${expensePct}%`, minWidth: r.expense > 0 ? '4px' : 0 }} />
-                  <span className="text-[10px] text-[var(--warm-muted)] tabular-nums">{fmtMan(r.expense)}</span>
+                  <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, expensePct)}%`, minWidth: r.expense > 0 ? 2 : 0, background: 'var(--coral)' }} />
+                  </div>
+                  <span className="text-[10px] text-[var(--warm-muted)] tabular-nums w-12 text-right shrink-0">{fmtMan(r.expense)}</span>
                 </div>
               </div>
             </div>
@@ -327,15 +331,19 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                       {r.profit === 0 ? '—' : (r.profit > 0 ? '+' : '-') + Math.abs(r.profit).toLocaleString() + '원'}
                     </td>
                     <td className="px-4 py-3 text-right text-amber-600">{r.unpaidAmount > 0 ? fmt(r.unpaidAmount) : '—'}</td>
-                    <td className="px-4 py-3 w-40">
+                    <td className="px-4 py-3 w-44">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-1">
-                          <div className="h-1.5 rounded-full bg-emerald-200" style={{ width: `${incomePct}%` }} />
-                          <span className="text-[10px] text-[var(--warm-muted)]">{fmtMan(incomeTotal)}</span>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${Math.min(100, incomePct)}%`, minWidth: incomeTotal > 0 ? 2 : 0, background: '#6aab7e' }} />
+                          </div>
+                          <span className="text-[10px] text-[var(--warm-muted)] tabular-nums w-10 text-right shrink-0">{fmtMan(incomeTotal)}</span>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <div className="h-1.5 rounded-full bg-rose-200" style={{ width: `${expensePct}%` }} />
-                          <span className="text-[10px] text-[var(--warm-muted)]">{fmtMan(r.expense)}</span>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${Math.min(100, expensePct)}%`, minWidth: r.expense > 0 ? 2 : 0, background: 'var(--coral)' }} />
+                          </div>
+                          <span className="text-[10px] text-[var(--warm-muted)] tabular-nums w-10 text-right shrink-0">{fmtMan(r.expense)}</span>
                         </div>
                       </div>
                     </td>
