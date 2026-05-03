@@ -6,6 +6,7 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
+import { TRACKED_CATEGORIES, type InventoryRow, type TimelineEntry } from './constants'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -15,24 +16,6 @@ async function getPropertyId() {
   const propertyId = cookieStore.get('selected_property_id')?.value
   if (!propertyId) redirect('/property-select')
   return propertyId
-}
-
-export const TRACKED_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비'] as const
-
-export type InventoryRow = {
-  id: string
-  category: string
-  label: string
-  specUnit: string | null
-  qtyUnit: string | null
-  isArchived: boolean
-  lastCheckDate: Date | null
-  lastRemainingQty: number | null
-  currentStock: number | null              // lastCheck 시점 + 이후 입고 (구매 + 무상)
-  avgDaily: number | null                  // 최근 90일 평균 소모/일
-  daysUntilEmpty: number | null            // currentStock / avgDaily
-  lastPeriodConsumption: number | null     // 가장 최근 두 점검 사이 소모량
-  lastPeriodDays: number | null
 }
 
 // ── 카테고리·라벨 매칭으로 그 기간의 구매량 합계
@@ -134,11 +117,6 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
 }
 
 // ── 단일 품목 상세 — 점검 + 구매 + 무상 입수 타임라인
-export type TimelineEntry =
-  | { type: 'check';    id: string; date: Date; remainingQty: number; memo: string | null }
-  | { type: 'purchase'; id: string; date: Date; qtyValue: number; qtyUnit: string | null; amount: number; vendor: string | null; memo: string | null }
-  | { type: 'addition'; id: string; date: Date; addedQty: number; source: string | null; memo: string | null }
-
 export async function getInventoryDetail(trackedItemId: string): Promise<{
   item: { id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; memo: string | null }
   timeline: TimelineEntry[]

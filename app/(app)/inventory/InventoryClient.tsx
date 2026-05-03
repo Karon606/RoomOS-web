@@ -4,10 +4,8 @@ import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
+import { type InventoryRow, type TimelineEntry, TRACKED_CATEGORIES } from './constants'
 import {
-  type InventoryRow,
-  type TimelineEntry,
-  TRACKED_CATEGORIES,
   getInventoryDetail,
   createTrackedItem,
   archiveTrackedItem,
