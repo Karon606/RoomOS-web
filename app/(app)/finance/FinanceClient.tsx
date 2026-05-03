@@ -78,8 +78,14 @@ const EXPENSE_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비', 
 
 const ITEM_PRESETS: Record<string, string[]> = {
   '부식비':  ['쌀', '김치', '라면', '식빵', '계란', '고추장', '된장'],
-  '소모품비': ['물티슈', '키친타월', '주방세제', '세탁세제', '화장실 휴지'],
-  '폐기물 처리비': ['종량제쓰레기봉투', '재활용품수거봉투', '음식물쓰레기봉투', '음식물쓰레기 배출 스티커'],
+  // 사이즈·포장 타입이 다르면 별도 카드로 추적되도록 라벨에 명시
+  '소모품비': ['물티슈', '키친타월 (롤)', '키친타월 (팝업)', '주방세제', '세탁세제', '화장실 휴지'],
+  '폐기물 처리비': [
+    '음식물쓰레기봉투 5L', '음식물쓰레기봉투 10L', '음식물쓰레기봉투 20L',
+    '재활용품수거봉투 20L', '재활용품수거봉투 50L', '재활용품수거봉투 100L',
+    '종량제쓰레기봉투 10L', '종량제쓰레기봉투 20L', '종량제쓰레기봉투 50L', '종량제쓰레기봉투 100L',
+    '음식물쓰레기 배출 스티커',
+  ],
 }
 
 const SPEC_UNITS = ['kg', 'g', 'ml', 'L', '매', 'm', '장', '개', '인분', '봉지', '알', '권']
@@ -92,13 +98,22 @@ const ITEM_DEFAULTS: Record<string, { specUnit: string; qtyUnit: string }> = {
   '식빵':       { specUnit: 'g',   qtyUnit: '봉' },
   '계란':       { specUnit: '개',  qtyUnit: '판' },
   '물티슈':     { specUnit: '매',  qtyUnit: '팩' },
-  '키친타월':   { specUnit: '매',  qtyUnit: '롤' },
+  '키친타월':       { specUnit: '매',  qtyUnit: '롤' },
+  '키친타월 (롤)':  { specUnit: '매',  qtyUnit: '롤' },
+  '키친타월 (팝업)':{ specUnit: '매',  qtyUnit: '팩' },
   '주방세제':   { specUnit: 'ml',  qtyUnit: '개' },
   '세탁세제':   { specUnit: 'ml',  qtyUnit: '개' },
   '화장실 휴지':{ specUnit: 'm',   qtyUnit: '롤' },
-  '종량제쓰레기봉투':         { specUnit: 'L', qtyUnit: '매' },
-  '재활용품수거봉투':         { specUnit: 'L', qtyUnit: '매' },
-  '음식물쓰레기봉투':         { specUnit: 'L', qtyUnit: '매' },
+  '음식물쓰레기봉투 5L':  { specUnit: 'L', qtyUnit: '매' },
+  '음식물쓰레기봉투 10L': { specUnit: 'L', qtyUnit: '매' },
+  '음식물쓰레기봉투 20L': { specUnit: 'L', qtyUnit: '매' },
+  '재활용품수거봉투 20L':  { specUnit: 'L', qtyUnit: '매' },
+  '재활용품수거봉투 50L':  { specUnit: 'L', qtyUnit: '매' },
+  '재활용품수거봉투 100L': { specUnit: 'L', qtyUnit: '매' },
+  '종량제쓰레기봉투 10L':  { specUnit: 'L', qtyUnit: '매' },
+  '종량제쓰레기봉투 20L':  { specUnit: 'L', qtyUnit: '매' },
+  '종량제쓰레기봉투 50L':  { specUnit: 'L', qtyUnit: '매' },
+  '종량제쓰레기봉투 100L': { specUnit: 'L', qtyUnit: '매' },
   '음식물쓰레기 배출 스티커': { specUnit: 'L', qtyUnit: '매' },
 }
 

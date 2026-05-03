@@ -467,7 +467,22 @@ export async function deleteStockAddition(id: string): Promise<{ ok: true } | { 
 }
 
 // ── 기존 지출 내역에서 (category, itemLabel, qtyUnit) 자동 시드
-export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; created: number } | { ok: false; error: string }> {
+// 같은 (category, label) 안에서 spec/qtyUnit 변형이 여럿이면 sub-label을 붙여 별도 카드로 추적.
+// 예) 음식물쓰레기봉투 5L vs 10L → 별도 카드 / 키친타월 (롤) vs (팩) → 별도 카드
+function deriveSubLabel(base: string, specValue: number | null, specUnit: string | null, qtyUnit: string | null): string {
+  // 이미 라벨에 사이즈/타입이 있으면 그대로
+  if (/\d+\s*(L|ml|g|kg|매|개|m)\b/.test(base) || /\([^)]+\)/.test(base)) return base
+  const parts: string[] = []
+  if (specValue && specValue > 0 && specUnit) {
+    parts.push(`${specValue}${specUnit}`)
+  }
+  if (qtyUnit) {
+    parts.push(`(${qtyUnit})`)
+  }
+  return parts.length > 0 ? `${base} ${parts.join(' ')}` : base
+}
+
+export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; created: number; migrated: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -477,33 +492,85 @@ export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; create
         category: { in: TRACKED_CATEGORIES as unknown as string[] },
         itemLabel: { not: null },
       },
-      select: { category: true, itemLabel: true, specUnit: true, qtyUnit: true },
+      select: { id: true, category: true, itemLabel: true, specValue: true, specUnit: true, qtyUnit: true },
     })
-    const seen = new Set<string>()
-    let created = 0
+
+    // 1) 5-tuple로 그룹: (category, itemLabel, specValue, specUnit, qtyUnit)
+    type GroupKey = string
+    type Group = {
+      category: string; baseLabel: string
+      specValue: number | null; specUnit: string | null; qtyUnit: string | null
+      expenseIds: string[]
+    }
+    const groups = new Map<GroupKey, Group>()
     for (const r of rows) {
       if (!r.itemLabel) continue
-      const key = `${r.category}::${r.itemLabel}`
-      if (seen.has(key)) continue
-      seen.add(key)
+      const key = `${r.category}|${r.itemLabel}|${r.specValue ?? ''}|${r.specUnit ?? ''}|${r.qtyUnit ?? ''}`
+      let g = groups.get(key)
+      if (!g) {
+        g = {
+          category: r.category, baseLabel: r.itemLabel,
+          specValue: r.specValue ?? null, specUnit: r.specUnit ?? null, qtyUnit: r.qtyUnit ?? null,
+          expenseIds: [],
+        }
+        groups.set(key, g)
+      }
+      g.expenseIds.push(r.id)
+    }
+
+    // 2) 같은 (category, baseLabel) 안에 그룹이 여럿이면 sub-label 부여
+    const byBase = new Map<string, Group[]>()
+    for (const g of groups.values()) {
+      const k = `${g.category}|${g.baseLabel}`
+      if (!byBase.has(k)) byBase.set(k, [])
+      byBase.get(k)!.push(g)
+    }
+    const finalLabel = new Map<Group, string>()
+    for (const [, list] of byBase) {
+      if (list.length === 1) {
+        finalLabel.set(list[0], list[0].baseLabel)
+        continue
+      }
+      for (const g of list) {
+        finalLabel.set(g, deriveSubLabel(g.baseLabel, g.specValue, g.specUnit, g.qtyUnit))
+      }
+    }
+
+    // 3) TrackedItem 생성/조회 + expense itemLabel 마이그레이션
+    let created = 0
+    let migrated = 0
+    for (const g of groups.values()) {
+      const label = finalLabel.get(g) ?? g.baseLabel
       const existing = await prisma.trackedItem.findUnique({
-        where: { propertyId_category_label: { propertyId, category: r.category, label: r.itemLabel } },
+        where: { propertyId_category_label: { propertyId, category: g.category, label } },
       })
-      if (existing) continue
-      await prisma.trackedItem.create({
-        data: {
-          propertyId,
-          category: r.category,
-          label: r.itemLabel,
-          specUnit: r.specUnit,
-          qtyUnit: r.qtyUnit,
-          trackUnit: r.category === '폐기물 처리비' ? 'qty' : 'spec',
-        },
-      })
-      created++
+      if (!existing) {
+        if (existing === null) {
+          await prisma.trackedItem.create({
+            data: {
+              propertyId,
+              category: g.category,
+              label,
+              specUnit: g.specUnit,
+              qtyUnit: g.qtyUnit,
+              trackUnit: g.category === '폐기물 처리비' ? 'qty' : 'spec',
+            },
+          })
+          created++
+        }
+      }
+      // 라벨이 변경된 그룹의 expense rows의 itemLabel을 새 라벨로 업데이트
+      if (label !== g.baseLabel && g.expenseIds.length > 0) {
+        const r = await prisma.expense.updateMany({
+          where: { id: { in: g.expenseIds } },
+          data: { itemLabel: label },
+        })
+        migrated += r.count
+      }
     }
     revalidatePath('/inventory')
-    return { ok: true, created }
+    revalidatePath('/finance')
+    return { ok: true, created, migrated }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

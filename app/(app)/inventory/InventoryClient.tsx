@@ -53,7 +53,10 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
     startTransition(async () => {
       const res = await seedTrackedItemsFromExpenses()
       if (res.ok) {
-        alert(res.created > 0 ? `${res.created}개 품목을 추가했습니다.` : '추가할 품목이 없습니다 (이미 등록됨).')
+        const parts: string[] = []
+        if (res.created > 0) parts.push(`${res.created}개 품목 추가`)
+        if (res.migrated > 0) parts.push(`${res.migrated}개 지출 라벨 정리 (사이즈/포장 변형 분리)`)
+        alert(parts.length > 0 ? parts.join(' · ') : '추가할 품목이 없습니다 (이미 등록됨).')
         router.refresh()
       } else {
         alert(res.error)
