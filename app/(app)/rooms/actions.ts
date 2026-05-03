@@ -698,6 +698,12 @@ export async function getTenantQuickInfo(tenantId: string) {
   })
 }
 
+// 단일 lease의 그 달 RoomRow (수납 상태) — 입주자 페이지에서 인라인 표시용
+export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: string) {
+  const allRows = await getRoomPaymentStatus(targetMonth)
+  return allRows.find(r => r.leaseTermId === leaseTermId) ?? null
+}
+
 export async function getRoomQuickInfo(roomId: string) {
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()

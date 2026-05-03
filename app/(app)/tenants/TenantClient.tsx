@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithGemini, createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests, changeDueDay, recordDepositReturn } from './actions'
-import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
+import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getLeaseSettlementInfo, getRoomQuickInfo } from '@/app/(app)/rooms/actions'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { PhoneInput } from '@/components/ui/PhoneInput'
@@ -296,6 +296,10 @@ export default function TenantClient({
 
   const [showAdd, setShowAdd]             = useState(false)
   const [editTenant, setEditTenant]       = useState<Tenant | null>(null)
+  // 입주자 상세에서 참고용으로 띄우는 인라인 모달 (수납 정보 / 호실 정보)
+  const [detailSettlementLeaseId, setDetailSettlementLeaseId] = useState<string | null>(null)
+  const [detailRoomInfoId, setDetailRoomInfoId]               = useState<string | null>(null)
+  const [returnToTenantId, setReturnToTenantId]               = useState<string | null>(null)
   const [detailTenant, setDetailTenant]   = useState<Tenant | null>(null)
   const [detailEditMode, setDetailEditMode] = useState(false)
   const [detailTab, setDetailTab]         = useState<'info' | 'requests' | 'analysis'>('info')
@@ -1050,6 +1054,49 @@ export default function TenantClient({
         )
       })()}
 
+      {/* 입주자 상세에서 띄우는 인라인 모달 — 수납 정보 */}
+      {detailSettlementLeaseId && (() => {
+        const goBack = () => {
+          const id = returnToTenantId
+          setDetailSettlementLeaseId(null)
+          if (id) {
+            const t = initialTenants.find(tn => tn.id === id)
+            if (t) setDetailTenant(t)
+          }
+          setReturnToTenantId(null)
+        }
+        const close = () => { setDetailSettlementLeaseId(null); setReturnToTenantId(null) }
+        return (
+          <SettlementInfoModal
+            leaseTermId={detailSettlementLeaseId}
+            targetMonth={targetMonth}
+            onClose={close}
+            onBack={returnToTenantId ? goBack : undefined}
+          />
+        )
+      })()}
+
+      {/* 입주자 상세에서 띄우는 인라인 모달 — 호실 정보 */}
+      {detailRoomInfoId && (() => {
+        const goBack = () => {
+          const id = returnToTenantId
+          setDetailRoomInfoId(null)
+          if (id) {
+            const t = initialTenants.find(tn => tn.id === id)
+            if (t) setDetailTenant(t)
+          }
+          setReturnToTenantId(null)
+        }
+        const close = () => { setDetailRoomInfoId(null); setReturnToTenantId(null) }
+        return (
+          <RoomInfoSimpleModal
+            roomId={detailRoomInfoId}
+            onClose={close}
+            onBack={returnToTenantId ? goBack : undefined}
+          />
+        )
+      })()}
+
       {/* 모바일 카드 뷰 */}
       {sorted.length === 0 ? (
         <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-12 text-center">
@@ -1751,15 +1798,31 @@ export default function TenantClient({
                     </div>
 
                     {/* 읽기 전용 푸터 */}
-                    <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
+                    <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0 flex-wrap">
                       <button onClick={() => handleDelete(t.id, t.name)} disabled={isPending}
-                        className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm rounded-xl transition-colors disabled:opacity-40">
+                        className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
                         삭제
                       </button>
+                      {lease?.id && (
+                        <button
+                          type="button"
+                          onClick={() => { setReturnToTenantId(t.id); setDetailSettlementLeaseId(lease.id); setDetailTenant(null) }}
+                          className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                          수납 정보
+                        </button>
+                      )}
+                      {lease?.room?.id && (
+                        <button
+                          type="button"
+                          onClick={() => { setReturnToTenantId(t.id); setDetailRoomInfoId(lease.room!.id); setDetailTenant(null) }}
+                          className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                          호실 정보
+                        </button>
+                      )}
                       <div className="flex-1" />
                       {status === 'RESERVED' && (
                         <button onClick={() => handleMoveIn(lease!.id, t.id, t.name)} disabled={isPending}
-                          className="px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-sm rounded-xl transition-colors disabled:opacity-40">
+                          className="px-3 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
                           입실 처리
                         </button>
                       )}
@@ -3035,6 +3098,159 @@ function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
     <div>
       <p className="text-xs text-[var(--warm-muted)]">{label}</p>
       <p className="text-sm text-[var(--warm-dark)] mt-0.5">{value}</p>
+    </div>
+  )
+}
+
+// ── 수납 정보 인라인 모달 (입주자 상세에서 띄움) ──────────────────
+function SettlementInfoModal({
+  leaseTermId, targetMonth, onClose, onBack,
+}: {
+  leaseTermId: string
+  targetMonth: string
+  onClose: () => void
+  onBack?: () => void
+}) {
+  const router = useRouter()
+  const [info, setInfo] = useState<Awaited<ReturnType<typeof getLeaseSettlementInfo>> | null>(null)
+  useEffect(() => {
+    getLeaseSettlementInfo(leaseTermId, targetMonth).then(setInfo)
+  }, [leaseTermId, targetMonth])
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[88vh]"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+          <div className="flex items-center gap-2.5">
+            {onBack && (
+              <button onClick={onBack}
+                className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors"
+                title="입주자 정보로 돌아가기">‹</button>
+            )}
+            <h2 className="text-base font-bold text-[var(--warm-dark)]">
+              {info ? `${info.roomNo}호 — ${info.tenantName ?? ''}` : '수납 정보'}
+            </h2>
+          </div>
+          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+        </div>
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
+          {!info ? (
+            <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
+          ) : (
+            <>
+              <p className="text-[10px] text-[var(--warm-muted)]">총 수납·잔액·이월액은 입금일 기준입니다. 매출은 귀속 월로 별도 인식됩니다.</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+                  <p className="text-xs text-[var(--warm-muted)]">총 수납</p>
+                  <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]">{info.totalPaid.toLocaleString()}원</p>
+                </div>
+                <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+                  <p className="text-xs text-[var(--warm-muted)]">잔액</p>
+                  <p className={`text-sm font-bold mt-0.5 ${info.balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {info.balance > 0 ? `+${info.balance.toLocaleString()}원` : info.balance < 0 ? `-${Math.abs(info.balance).toLocaleString()}원` : '0원'}
+                  </p>
+                </div>
+                <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
+                  <p className="text-xs text-[var(--warm-muted)]">이월액</p>
+                  <p className="text-sm font-bold mt-0.5 text-[var(--coral)]">
+                    {info.carryOver !== 0
+                      ? `${info.carryOver > 0 ? '+' : '-'}${Math.abs(info.carryOver).toLocaleString()}원`
+                      : '0원'}
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between"><span className="text-[var(--warm-muted)]">월 이용료</span><span className="text-[var(--warm-dark)]">{info.expected.toLocaleString()}원</span></div>
+                {info.dueDay && <div className="flex justify-between"><span className="text-[var(--warm-muted)]">납부일</span><span className="text-[var(--warm-dark)]">{info.dueDay.includes('말') ? '매월 말일' : `매월 ${info.dueDay}일`}</span></div>}
+              </div>
+            </>
+          )}
+        </div>
+        <div className="border-t border-[var(--warm-border)] px-6 py-3 flex justify-end shrink-0">
+          <button
+            type="button"
+            onClick={() => router.push(`/rooms?month=${targetMonth}`)}
+            className="px-4 py-2 text-xs font-medium rounded-xl bg-[var(--coral)] hover:opacity-90 text-white transition-colors">
+            수납 관리로 이동
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 호실 정보 인라인 모달 (입주자 상세에서 띄움) ──────────────────
+function RoomInfoSimpleModal({
+  roomId, onClose, onBack,
+}: {
+  roomId: string
+  onClose: () => void
+  onBack?: () => void
+}) {
+  const router = useRouter()
+  const [info, setInfo] = useState<Awaited<ReturnType<typeof getRoomQuickInfo>> | null>(null)
+  useEffect(() => { getRoomQuickInfo(roomId).then(setInfo) }, [roomId])
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+          <div className="flex items-center gap-2.5">
+            {onBack && (
+              <button onClick={onBack}
+                className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors"
+                title="입주자 정보로 돌아가기">‹</button>
+            )}
+            <h2 className="text-base font-bold text-[var(--warm-dark)]">{info?.roomNo}호</h2>
+            {info && (
+              <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
+                ${info.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'}`}>
+                {info.isVacant ? '공실' : '거주중'}
+              </span>
+            )}
+          </div>
+          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+        </div>
+        <div className="overflow-y-auto flex-1">
+          {!info ? (
+            <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
+          ) : (
+            <>
+              {info.photos.length > 0 && (
+                <div className="border-b border-[var(--warm-border)] flex gap-2 overflow-x-auto px-4 py-3" style={{ scrollbarWidth: 'none' }}>
+                  {info.photos.map(p => (
+                    <img key={p.id} src={p.storageUrl} alt="" className="h-32 w-32 object-cover rounded-xl shrink-0" />
+                  ))}
+                </div>
+              )}
+              <div className="px-6 py-5 space-y-1.5 text-sm">
+                <div className="flex justify-between py-1.5 border-b border-[var(--warm-border)]/50"><span className="text-xs text-[var(--warm-muted)]">입주자</span><span className="text-[var(--warm-dark)]">{info.leaseTerms[0]?.tenant?.name ?? '공실'}</span></div>
+                {info.type && <div className="flex justify-between py-1.5 border-b border-[var(--warm-border)]/50"><span className="text-xs text-[var(--warm-muted)]">방 타입</span><span className="text-[var(--warm-dark)]">{info.type}</span></div>}
+                <div className="flex justify-between py-1.5 border-b border-[var(--warm-border)]/50"><span className="text-xs text-[var(--warm-muted)]">기본 이용료</span><span className="text-[var(--warm-dark)]">{info.baseRent.toLocaleString()}원</span></div>
+                {info.scheduledRent != null && (
+                  <div className="flex justify-between py-1.5 border-b border-[var(--warm-border)]/50">
+                    <span className="text-xs text-[var(--warm-muted)]">예약 이용료</span>
+                    <span className="text-amber-600">{info.scheduledRent.toLocaleString()}원{info.rentUpdateDate ? ` (${new Date(info.rentUpdateDate).toISOString().slice(0, 10)} 적용)` : ''}</span>
+                  </div>
+                )}
+                {info.windowType && <div className="flex justify-between py-1.5 border-b border-[var(--warm-border)]/50"><span className="text-xs text-[var(--warm-muted)]">창문</span><span className="text-[var(--warm-dark)]">{info.windowType === 'OUTER' ? '외창' : info.windowType === 'INNER' ? '내창' : info.windowType}</span></div>}
+                {info.direction && <div className="flex justify-between py-1.5 border-b border-[var(--warm-border)]/50"><span className="text-xs text-[var(--warm-muted)]">방향</span><span className="text-[var(--warm-dark)]">{info.direction}</span></div>}
+                {info.memo && <div className="flex justify-between py-1.5"><span className="text-xs text-[var(--warm-muted)]">메모</span><span className="text-[var(--warm-dark)]">{info.memo}</span></div>}
+              </div>
+            </>
+          )}
+        </div>
+        <div className="border-t border-[var(--warm-border)] px-6 py-3 flex justify-end shrink-0">
+          <button
+            type="button"
+            onClick={() => router.push(`/room-manage?roomId=${roomId}`)}
+            className="px-4 py-2 text-xs font-medium rounded-xl bg-[var(--coral)] hover:opacity-90 text-white transition-colors">
+            호실 관리로 이동
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
