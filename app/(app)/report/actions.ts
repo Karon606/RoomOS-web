@@ -403,7 +403,9 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
         return true
       })
       if (occLease) {
-        revenue += occLease.rentAmount > 0 ? Math.min(occLease.rentAmount, rent) : rent
+        // 가격 인상 예정(scheduledRent + rentUpdateDate)이 있으면 그 월의 호실 임대료(rent) 사용.
+        // lease.rentAmount는 계약 시점 금액이라 미래 인상이 반영 안 되어 있음 — 무시.
+        revenue += rent
         occupied++
       } else {
         vacant++
