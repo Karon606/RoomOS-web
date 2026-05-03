@@ -1469,11 +1469,19 @@ export default function RoomsClient({
 
       {/* 입주자 정보 인라인 모달 — 닫으면 원래 수납 모달 그대로 */}
       {tenantInfoId && (
-        <TenantInfoModal tenantId={tenantInfoId} onClose={() => setTenantInfoId(null)} />
+        <TenantInfoModal
+          tenantId={tenantInfoId}
+          onClose={() => setTenantInfoId(null)}
+          onBack={selectedRoom ? () => { setTenantInfoId(null); setShowPayModal(true) } : undefined}
+        />
       )}
       {/* 호실 정보 인라인 모달 */}
       {roomInfoId && (
-        <RoomInfoModal roomId={roomInfoId} onClose={() => setRoomInfoId(null)} />
+        <RoomInfoModal
+          roomId={roomInfoId}
+          onClose={() => setRoomInfoId(null)}
+          onBack={selectedRoom ? () => { setRoomInfoId(null); setShowPayModal(true) } : undefined}
+        />
       )}
     </div>
   )
@@ -1484,7 +1492,7 @@ const STATUS_LABEL_RC: Record<string, string> = {
   ACTIVE: '거주중', RESERVED: '예약', CHECKOUT_PENDING: '퇴실 예정',
   CHECKED_OUT: '퇴실', NON_RESIDENT: '비거주자', WAITING_TOUR: '투어 대기', TOUR_DONE: '투어 완료', CANCELLED: '취소',
 }
-function TenantInfoModal({ tenantId, onClose }: { tenantId: string; onClose: () => void }) {
+function TenantInfoModal({ tenantId, onClose, onBack }: { tenantId: string; onClose: () => void; onBack?: () => void }) {
   const router = useRouter()
   const [info, setInfo] = useState<Awaited<ReturnType<typeof getTenantQuickInfo>> | null>(null)
   useEffect(() => {
@@ -1498,6 +1506,13 @@ function TenantInfoModal({ tenantId, onClose }: { tenantId: string; onClose: () 
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
           <div className="flex items-center gap-2.5">
+            {onBack && (
+              <button onClick={onBack}
+                className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors"
+                title="수납 정보로 돌아가기">
+                ‹
+              </button>
+            )}
             <h2 className="text-base font-bold text-[var(--warm-dark)]">입주자 상세정보</h2>
             {statusLabel && (
               <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
@@ -1573,7 +1588,7 @@ function InfoCol({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 // ── 호실 정보 인라인 모달 (호실 관리 페이지와 동일 디자인) ────────────
-function RoomInfoModal({ roomId, onClose }: { roomId: string; onClose: () => void }) {
+function RoomInfoModal({ roomId, onClose, onBack }: { roomId: string; onClose: () => void; onBack?: () => void }) {
   const router = useRouter()
   const [info, setInfo] = useState<Awaited<ReturnType<typeof getRoomQuickInfo>> | null>(null)
   useEffect(() => {
@@ -1585,6 +1600,13 @@ function RoomInfoModal({ roomId, onClose }: { roomId: string; onClose: () => voi
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
           <div className="flex items-center gap-2.5">
+            {onBack && (
+              <button onClick={onBack}
+                className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors"
+                title="수납 정보로 돌아가기">
+                ‹
+              </button>
+            )}
             <h2 className="text-base font-bold text-[var(--warm-dark)]">{info?.roomNo}호</h2>
             {info && (
               <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
