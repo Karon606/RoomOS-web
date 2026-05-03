@@ -592,7 +592,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }
   }
 
-  const wishRoomAlerts: { tenantName: string; tenantId: string; roomNo: string; rank: number; total: number; isCheckoutPending: boolean; matchedBy: 'rooms' | 'conditions' }[] = []
+  type WishGroupedAlert = {
+    roomNo: string
+    isCheckoutPending: boolean
+    candidates: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]
+  }
+  const wishGroupedAlerts: WishGroupedAlert[] = []
   for (const [roomNo, candidates] of candidatesByRoom) {
     candidates.sort((a, b) => {
       const at = a.inquiryAt?.getTime() ?? a.createdAt.getTime()
@@ -600,15 +605,18 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       return at - bt
     })
     const info = vacantInfoMap.get(roomNo)
-    candidates.forEach((c, idx) => {
-      wishRoomAlerts.push({
-        tenantName: c.tenantName, tenantId: c.tenantId, roomNo,
-        rank: idx + 1, total: candidates.length,
-        isCheckoutPending: !!info?.isCheckoutPending,
+    wishGroupedAlerts.push({
+      roomNo,
+      isCheckoutPending: !!info?.isCheckoutPending,
+      candidates: candidates.map((c, idx) => ({
+        tenantId: c.tenantId,
+        tenantName: c.tenantName,
+        rank: idx + 1,
         matchedBy: c.matchedBy,
-      })
+      })),
     })
   }
+  wishGroupedAlerts.sort((a, b) => a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true }))
 
   // ── 6개월 트렌드 ─────────────────────────────────────────────
   const trend = last6Months.map(m => {
@@ -834,23 +842,47 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     })
   }
 
-  for (const a of wishRoomAlerts) {
-    const stateLabel = a.isCheckoutPending ? '퇴실 예정' : '공실'
-    const text = a.matchedBy === 'conditions'
-      ? `${a.tenantName}님과 조건이 맞는 ${a.roomNo}호 ${stateLabel}`
-      : `${a.tenantName}님이 희망한 ${a.roomNo}호 ${stateLabel}`
-    const timeLabel = a.total > 1 ? `${a.rank}순위 / ${a.total}명` : '연락 가능'
-    const detail = a.matchedBy === 'conditions'
-      ? `${a.tenantName}님이 원하는 조건과 일치하는 ${a.roomNo}호가 ${stateLabel} 상태입니다.${a.total > 1 ? ` 같은 방을 기다리는 ${a.total}명 중 ${a.rank}번째 순서입니다.` : ''}`
-      : `${a.tenantName}님이 입실을 희망한 ${a.roomNo}호가 ${stateLabel} 상태입니다.${a.total > 1 ? ` 같은 방을 기다리는 ${a.total}명 중 ${a.rank}번째 순서입니다.` : ''}`
+  for (const g of wishGroupedAlerts) {
+    if (g.candidates.length === 0) continue
+    const stateLabel = g.isCheckoutPending ? '퇴실 예정' : '공실'
+    if (g.candidates.length === 1) {
+      const c = g.candidates[0]
+      const text = c.matchedBy === 'conditions'
+        ? `${c.tenantName}님과 조건이 맞는 ${g.roomNo}호 ${stateLabel}`
+        : `${c.tenantName}님이 희망한 ${g.roomNo}호 ${stateLabel}`
+      const detail = c.matchedBy === 'conditions'
+        ? `${c.tenantName}님이 원하는 조건과 일치하는 ${g.roomNo}호가 ${stateLabel} 상태입니다.`
+        : `${c.tenantName}님이 입실을 희망한 ${g.roomNo}호가 ${stateLabel} 상태입니다.`
+      alertItems.push({
+        category:  'wish',
+        text,
+        link:      `/tenants?tenantId=${c.tenantId}`,
+        dotColor:  '#22c55e',
+        timeLabel: '연락 가능',
+        tenantId:  c.tenantId,
+        detail,
+      })
+      continue
+    }
+
+    const text = `${g.roomNo}호 ${stateLabel} — 매칭 후보 ${g.candidates.length}명`
+    const detail = g.candidates
+      .map(c => `${c.rank}순위 ${c.tenantName}님 · ${c.matchedBy === 'conditions' ? '조건 매칭' : '호실 지정'}`)
+      .join('\n')
     alertItems.push({
       category:  'wish',
       text,
-      link:      `/tenants?tenantId=${a.tenantId}`,
+      link:      `/room-manage`,
       dotColor:  '#22c55e',
-      timeLabel,
-      tenantId:  a.tenantId,
+      timeLabel: `후보 ${g.candidates.length}명`,
       detail,
+      wishCandidates: g.candidates.map(c => ({
+        tenantId: c.tenantId,
+        tenantName: c.tenantName,
+        rank: c.rank,
+        matchedBy: c.matchedBy,
+      })),
+      wishRoomNo: g.roomNo,
     })
   }
 

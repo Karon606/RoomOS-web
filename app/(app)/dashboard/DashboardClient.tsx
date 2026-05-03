@@ -39,7 +39,7 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
-  alerts:            { category?: 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number }[]
+  alerts:            { category?: 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
@@ -128,11 +128,42 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
           <button onClick={onClose} className="ml-3 shrink-0 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
         </div>
 
-        {/* 상세 내용 */}
-        {alert.detail && (
-          <div className="px-5 py-4" style={{ borderBottom: isRecurring || alert.tenantId ? `1px solid ${DIVIDER_COLOR}` : undefined }}>
-            <p className="text-sm whitespace-pre-line leading-relaxed" style={{ color: 'var(--warm-dark)' }}>{alert.detail}</p>
+        {/* 후보 리스트 (희망 호실/조건 매칭 그룹) */}
+        {alert.wishCandidates && alert.wishCandidates.length > 0 ? (
+          <div className="px-5 py-4 space-y-2" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
+            <p className="text-[11px] font-semibold" style={{ color: 'var(--warm-muted)' }}>
+              {alert.wishRoomNo ? `${alert.wishRoomNo}호 매칭 후보` : '매칭 후보'} · {alert.wishCandidates.length}명 (등록 순)
+            </p>
+            <div className="space-y-1.5">
+              {alert.wishCandidates.map(c => (
+                <Link
+                  key={c.tenantId}
+                  href={`/tenants?tenantId=${c.tenantId}`}
+                  onClick={onClose}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors hover:bg-[var(--canvas)]"
+                  style={{ borderColor: 'var(--warm-border)' }}
+                >
+                  <span className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[11px] font-bold"
+                    style={{ background: c.rank === 1 ? 'rgba(34,197,94,0.18)' : 'var(--canvas)', color: c.rank === 1 ? '#16a34a' : 'var(--warm-mid)' }}>
+                    {c.rank}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--warm-dark)' }}>{c.tenantName}님</p>
+                    <p className="text-[10px] mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+                      {c.matchedBy === 'conditions' ? '조건 매칭' : '호실 지정'}
+                    </p>
+                  </div>
+                  <span style={{ color: 'var(--warm-muted)', fontSize: 14 }}>›</span>
+                </Link>
+              ))}
+            </div>
           </div>
+        ) : (
+          alert.detail && (
+            <div className="px-5 py-4" style={{ borderBottom: isRecurring || alert.tenantId ? `1px solid ${DIVIDER_COLOR}` : undefined }}>
+              <p className="text-sm whitespace-pre-line leading-relaxed" style={{ color: 'var(--warm-dark)' }}>{alert.detail}</p>
+            </div>
+          )
         )}
 
         {/* 하단 버튼 */}
@@ -156,7 +187,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
           <Link href={alert.link} onClick={onClose}
             className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-opacity hover:opacity-70"
             style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-            {isRecurring ? '지출/기타 수익에서 보기 →' : '입주자 관리에서 보기 →'}
+            {isRecurring ? '지출/기타 수익에서 보기 →' : alert.wishCandidates && alert.wishCandidates.length > 0 ? '호실 관리로 이동 →' : '입주자 관리에서 보기 →'}
           </Link>
         </div>
       </div>
