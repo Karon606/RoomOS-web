@@ -1343,16 +1343,30 @@ export default function RoomsClient({
                 })()}
 
                 {/* 읽기 전용 푸터 */}
-                {canEdit && (
-                  <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                    <div className="flex-1" />
+                <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0 flex-wrap">
+                  {selectedRoom.tenantId && (
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/tenants?tenantId=${selectedRoom.tenantId}`)}
+                      className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                      입주자 정보 →
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/room-manage?roomId=${selectedRoom.roomId}`)}
+                    className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                    호실 정보 →
+                  </button>
+                  <div className="flex-1" />
+                  {canEdit && (
                     <button
                       onClick={() => { setShowPayForm(true); setError('') }}
-                      className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
+                      className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
                       수납 등록
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </>
             )}
 

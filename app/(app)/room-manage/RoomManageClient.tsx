@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { addRoom, updateRoom, deleteRoom, uploadRoomPhoto, deleteRoomPhoto, applyScheduledRentNow } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -126,6 +126,15 @@ export default function RoomManageClient({
   const [showAddModal, setShowAddModal] = useState(false)
   const [editRoom, setEditRoom]         = useState<Room | null>(null)
   const [rentUpdateDateVal, setRentUpdateDateVal] = useState('')
+
+  // URL ?roomId=xxx로 진입 시 해당 호실 상세 팝업 자동 열기
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    const roomId = searchParams.get('roomId')
+    if (!roomId) return
+    const found = initialRooms.find(r => r.id === roomId)
+    if (found) setDetailRoom(found)
+  }, [searchParams, initialRooms])
   // 라이트박스 (사진 확대 보기)
   const [lightboxPhotos, setLightboxPhotos] = useState<Photo[] | null>(null)
   const [lightboxIndex, setLightboxIndex]   = useState(0)
