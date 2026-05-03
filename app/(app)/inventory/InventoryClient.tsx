@@ -13,9 +13,11 @@ import {
   getInventoryDetail,
   getPriceHistory,
   getMonthlyInflow,
+  getSameCategoryItems,
   createTrackedItem,
   updateTrackedItem,
   archiveTrackedItem,
+  mergeTrackedItems,
   createStockCheck,
   createStockAddition,
   deleteStockCheck,
@@ -565,6 +567,8 @@ function SettingsForm({ row, onCancel, onDone }: {
           placeholder="예: 쿠팡 / 100매 박스 단위 / 영업장 카드 결제"
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
       </div>
+      {/* 병합 섹션 — 같은 카테고리 다른 카드로 통합 */}
+      <MergeSection currentId={row.id} currentLabel={row.label} category={row.category} onDone={onDone} />
       {error && <p className="text-xs text-red-500">{error}</p>}
       <div className="pt-2 flex gap-2">
         <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>
@@ -573,6 +577,47 @@ function SettingsForm({ row, onCancel, onDone }: {
         </Btn>
       </div>
     </form>
+  )
+}
+
+function MergeSection({ currentId, currentLabel, category, onDone }: {
+  currentId: string; currentLabel: string; category: string; onDone: () => void
+}) {
+  const [siblings, setSiblings] = useState<{ id: string; label: string }[]>([])
+  const [targetId, setTargetId] = useState('')
+  const [pending, setPending] = useState(false)
+  useEffect(() => { getSameCategoryItems(currentId).then(setSiblings) }, [currentId])
+  if (siblings.length === 0) return null
+
+  const target = siblings.find(s => s.id === targetId)
+  const handleMerge = async () => {
+    if (!target) return
+    if (!confirm(`'${currentLabel}'을(를) '${target.label}' 카드로 병합합니다.\n\n· 이 카드의 지출·점검·무상입수 기록이 모두 '${target.label}'로 이전됩니다.\n· 이 카드는 삭제되고, 대상 카드의 수량 단위 필터는 해제(다양한 포장 합산)됩니다.\n\n진행하시겠습니까?`)) return
+    setPending(true)
+    const res = await mergeTrackedItems(currentId, target.id, true)
+    setPending(false)
+    if (!res.ok) { alert(res.error); return }
+    alert(`병합 완료 — 지출 ${res.movedExpenses}건, 점검 ${res.movedChecks}건, 무상입수 ${res.movedAdditions}건`)
+    onDone()
+  }
+
+  return (
+    <div className="space-y-1.5 pt-2 border-t border-[var(--warm-border)]/60">
+      <label className="text-xs font-medium text-[var(--warm-mid)]">다른 카드와 병합</label>
+      <div className="flex gap-2">
+        <select value={targetId} onChange={e => setTargetId(e.target.value)}
+          className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none">
+          <option value="">병합 대상 선택…</option>
+          {siblings.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+        </select>
+        <Btn type="button" variant="danger" size="md" onClick={handleMerge} disabled={!target || pending}>
+          {pending ? '병합 중...' : '병합'}
+        </Btn>
+      </div>
+      <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
+        예: 라면처럼 봉지·박스가 섞여도 한 카드로 합쳐 추적하고 싶을 때. 사이즈가 의미 있는 폐기물 봉투는 분리 유지 권장.
+      </p>
+    </div>
   )
 }
 

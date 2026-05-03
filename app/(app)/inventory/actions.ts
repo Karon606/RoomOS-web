@@ -395,6 +395,89 @@ export async function updateTrackedItem(id: string, data: {
   }
 }
 
+// 같은 카테고리 안의 다른 활성 품목들 — 병합 대상 후보
+export async function getSameCategoryItems(excludeId: string): Promise<{ id: string; label: string }[]> {
+  const propertyId = await getPropertyId()
+  const it = await prisma.trackedItem.findFirst({ where: { id: excludeId, propertyId } })
+  if (!it) return []
+  const list = await prisma.trackedItem.findMany({
+    where: {
+      propertyId,
+      category: it.category,
+      isArchived: false,
+      id: { not: excludeId },
+    },
+    select: { id: true, label: true },
+    orderBy: { label: 'asc' },
+  })
+  return list
+}
+
+// 두 추적 품목을 병합. source의 expense·stockCheck·stockAddition을 target으로 이전.
+// 라면처럼 사이즈가 다양해도 전체 합산하고 싶을 때 사용.
+// looseMatch=true 면 target.qtyUnit 을 null로 만들어 sumPurchases가 qtyUnit 무시하고 매칭.
+export async function mergeTrackedItems(
+  sourceId: string, targetId: string, looseMatch = true,
+): Promise<{ ok: true; movedExpenses: number; movedChecks: number; movedAdditions: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (sourceId === targetId) return { ok: false, error: '같은 품목을 병합할 수 없습니다.' }
+    const [source, target] = await Promise.all([
+      prisma.trackedItem.findFirst({ where: { id: sourceId, propertyId } }),
+      prisma.trackedItem.findFirst({ where: { id: targetId, propertyId } }),
+    ])
+    if (!source || !target) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    if (source.category !== target.category) return { ok: false, error: '같은 카테고리 안에서만 병합할 수 있습니다.' }
+
+    // 1) source 매칭 expense들의 itemLabel을 target.label로 변경
+    //    (qtyUnit/specUnit은 expense 그대로 유지 — 사이즈 정보 보존)
+    const matchSourceExpenses: any = {
+      propertyId, category: source.category, itemLabel: source.label,
+    }
+    if (source.qtyUnit) matchSourceExpenses.qtyUnit = source.qtyUnit
+    const expRes = await prisma.expense.updateMany({
+      where: matchSourceExpenses,
+      data: { itemLabel: target.label },
+    })
+
+    // 2) stockCheck / stockAddition trackedItemId를 target으로 이전
+    const [checkRes, addRes] = await Promise.all([
+      prisma.stockCheck.updateMany({
+        where: { trackedItemId: sourceId },
+        data: { trackedItemId: targetId },
+      }),
+      prisma.stockAddition.updateMany({
+        where: { trackedItemId: sourceId },
+        data: { trackedItemId: targetId },
+      }),
+    ])
+
+    // 3) target 옵션 보정 — looseMatch면 qtyUnit null로 (다양한 포장 합산용)
+    if (looseMatch && target.qtyUnit) {
+      await prisma.trackedItem.update({
+        where: { id: targetId },
+        data: { qtyUnit: null },
+      })
+    }
+
+    // 4) source 삭제
+    await prisma.trackedItem.delete({ where: { id: sourceId } })
+
+    revalidatePath('/inventory')
+    revalidatePath('/finance')
+    return {
+      ok: true,
+      movedExpenses: expRes.count,
+      movedChecks: checkRes.count,
+      movedAdditions: addRes.count,
+    }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 export async function archiveTrackedItem(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
