@@ -49,19 +49,24 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
   const [detailId, setDetailId]       = useState<string | null>(null)
   const [error, setError]             = useState('')
 
-  const handleSeed = () => {
-    startTransition(async () => {
+  const [seedPending, setSeedPending] = useState(false)
+  const handleSeed = async () => {
+    setSeedPending(true)
+    try {
       const res = await seedTrackedItemsFromExpenses()
-      if (res.ok) {
-        const parts: string[] = []
-        if (res.created > 0) parts.push(`${res.created}개 품목 추가`)
-        if (res.migrated > 0) parts.push(`${res.migrated}개 지출 라벨 정리 (사이즈/포장 변형 분리)`)
+      if (!res.ok) { alert(res.error); return }
+      // refresh 먼저 트리거 (alert가 동기 블로킹이라 그 뒤에 두면 모달 닫을 때까지 페이지가 안 갱신됨)
+      router.refresh()
+      const parts: string[] = []
+      if (res.created > 0) parts.push(`${res.created}개 품목 추가`)
+      if (res.migrated > 0) parts.push(`${res.migrated}개 지출 라벨 정리 (사이즈/포장 변형 분리)`)
+      // alert는 다음 tick에 — refresh가 먼저 적용되도록
+      setTimeout(() => {
         alert(parts.length > 0 ? parts.join(' · ') : '추가할 품목이 없습니다 (이미 등록됨).')
-        router.refresh()
-      } else {
-        alert(res.error)
-      }
-    })
+      }, 0)
+    } finally {
+      setSeedPending(false)
+    }
   }
 
   // 카테고리별 그룹
@@ -78,7 +83,7 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">부식·소모품·폐기물 사용량을 점검 기록 기반으로 추적합니다.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={isPending}>지출에서 자동 등록</Btn>
+          <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
           <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
         </div>
       </div>
