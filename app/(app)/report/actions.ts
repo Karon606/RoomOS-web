@@ -459,6 +459,291 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
 }
 
 // 사용 가능한 연도 목록 (paymentRecord 또는 expense 기반)
+// ─────────────────────────────────────────────────────────────────
+// AI 영업장 진단
+// ─────────────────────────────────────────────────────────────────
+
+export type PropertyDiagnostics = {
+  asOfMonth: string                              // "YYYY-MM"
+  occupancyRate: number                          // 0~1
+  totalRooms: number
+  occupiedRooms: number
+  vacantRooms: number
+  unpaidRate: number                             // 미수율 = 누적 미수 / 누적 청구 (12mo)
+  totalUnpaid: number                            // 현재 누적 미수
+  avgDaysOverdue: number                         // 미수 lease들의 평균 경과일
+  avgStayMonths: number | null                   // 종료된 lease의 평균 거주 개월수
+  turnoverPer6mo: number                         // 최근 6개월 퇴실 건수
+  trend12mo: { month: string; revenue: number; expense: number; profit: number; occupancy: number }[]
+  expenseTopCategories: { category: string; amount: number; percent: number }[]
+  rentRange: { min: number; max: number; avg: number }
+  scheduledRentChanges: { roomNo: string; from: number; to: number; effectiveDate: string }[]
+  reservedConfirmedCount: number
+  vacantTooLong: { roomNo: string; vacantSince: string | null }[]   // 30일 이상 공실
+}
+
+async function gatherDiagnostics(): Promise<PropertyDiagnostics> {
+  const { propertyId } = await getPropertyId()
+  const now = new Date()
+  const asOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+
+  // 점유율
+  const [totalRooms, occupiedRooms, vacantRooms] = await Promise.all([
+    prisma.room.count({ where: { propertyId } }),
+    prisma.room.count({ where: { propertyId, isVacant: false } }),
+    prisma.room.count({ where: { propertyId, isVacant: true } }),
+  ])
+  const occupancyRate = totalRooms > 0 ? occupiedRooms / totalRooms : 0
+
+  // 미수율 (최근 12개월)
+  const oneYearAgo = new Date(now); oneYearAgo.setMonth(oneYearAgo.getMonth() - 12)
+  const trendMonths: string[] = []
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now); d.setMonth(d.getMonth() - i)
+    trendMonths.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+
+  const yearPayments = await prisma.paymentRecord.findMany({
+    where: { propertyId, isDeposit: false, targetMonth: { in: trendMonths } },
+    select: { targetMonth: true, expectedAmount: true, actualAmount: true },
+  })
+  const expectedByMonth: Record<string, number> = {}
+  const actualByMonth: Record<string, number> = {}
+  for (const p of yearPayments) {
+    expectedByMonth[p.targetMonth] = (expectedByMonth[p.targetMonth] ?? 0) + p.expectedAmount
+    actualByMonth[p.targetMonth]   = (actualByMonth[p.targetMonth]   ?? 0) + p.actualAmount
+  }
+  const totalExpected = Object.values(expectedByMonth).reduce((s, v) => s + v, 0)
+  const totalActual   = Object.values(actualByMonth).reduce((s, v) => s + v, 0)
+  const unpaidRate    = totalExpected > 0 ? Math.max(0, totalExpected - totalActual) / totalExpected : 0
+
+  // 현재 미수 (active lease들의 누적 미수)
+  const activeLeases = await prisma.leaseTerm.findMany({
+    where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } },
+    select: {
+      id: true, rentAmount: true, dueDay: true, moveInDate: true,
+      paymentRecords: { where: { isDeposit: false }, select: { targetMonth: true, actualAmount: true, expectedAmount: true } },
+    },
+  })
+  let totalUnpaid = 0
+  let overdueDaysAcc = 0
+  let overdueLeaseCount = 0
+  for (const l of activeLeases) {
+    const expected = l.paymentRecords.reduce((s, p) => s + p.expectedAmount, 0)
+    const paid     = l.paymentRecords.reduce((s, p) => s + p.actualAmount, 0)
+    const unpaid = expected - paid
+    if (unpaid > 0) {
+      totalUnpaid += unpaid
+      // 첫 미납월 추정 — 단순화: 미납액 / 월 이용료 * 30
+      if (l.rentAmount > 0) {
+        const days = Math.round((unpaid / l.rentAmount) * 30)
+        overdueDaysAcc += days
+        overdueLeaseCount++
+      }
+    }
+  }
+  const avgDaysOverdue = overdueLeaseCount > 0 ? overdueDaysAcc / overdueLeaseCount : 0
+
+  // 평균 거주기간 (CHECKED_OUT만)
+  const closedLeases = await prisma.leaseTerm.findMany({
+    where: { propertyId, status: 'CHECKED_OUT', moveInDate: { not: null }, moveOutDate: { not: null } },
+    select: { moveInDate: true, moveOutDate: true },
+  })
+  let avgStayMonths: number | null = null
+  if (closedLeases.length > 0) {
+    const total = closedLeases.reduce((s, l) => {
+      const days = (new Date(l.moveOutDate!).getTime() - new Date(l.moveInDate!).getTime()) / 86400000
+      return s + days / 30
+    }, 0)
+    avgStayMonths = total / closedLeases.length
+  }
+
+  // 6개월 퇴실 건수
+  const sixMonthsAgo = new Date(now); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+  const turnoverPer6mo = await prisma.leaseTerm.count({
+    where: { propertyId, moveOutDate: { gte: sixMonthsAgo } },
+  })
+
+  // 12개월 트렌드
+  const trendRevenue = trendMonths.map(m => actualByMonth[m] ?? 0)
+  const monthRanges = trendMonths.map(m => {
+    const [y, mo] = m.split('-').map(Number)
+    return { from: new Date(y, mo - 1, 1), to: new Date(y, mo, 0, 23, 59, 59, 999) }
+  })
+  const expenses12 = await prisma.expense.findMany({
+    where: { propertyId, date: { gte: monthRanges[0].from, lte: monthRanges[11].to } },
+    select: { date: true, amount: true, category: true },
+  })
+  const expenseByMonth: Record<string, number> = {}
+  const categoryAcc: Record<string, number> = {}
+  for (const e of expenses12) {
+    const m = `${new Date(e.date).getFullYear()}-${String(new Date(e.date).getMonth() + 1).padStart(2, '0')}`
+    expenseByMonth[m] = (expenseByMonth[m] ?? 0) + e.amount
+    categoryAcc[e.category] = (categoryAcc[e.category] ?? 0) + e.amount
+  }
+  const totalCatExpense = Object.values(categoryAcc).reduce((s, v) => s + v, 0)
+  const expenseTopCategories = Object.entries(categoryAcc)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([category, amount]) => ({ category, amount, percent: totalCatExpense > 0 ? (amount / totalCatExpense) * 100 : 0 }))
+
+  const trend12mo = trendMonths.map((m, i) => ({
+    month: m,
+    revenue: trendRevenue[i],
+    expense: expenseByMonth[m] ?? 0,
+    profit:  trendRevenue[i] - (expenseByMonth[m] ?? 0),
+    occupancy: occupancyRate, // 정확한 월별 점유는 비용 큼 — 현재 점유로 통일
+  }))
+
+  // 임대료 분포
+  const allActiveRents = await prisma.leaseTerm.findMany({
+    where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] }, rentAmount: { gt: 0 } },
+    select: { rentAmount: true },
+  })
+  const rents = allActiveRents.map(r => r.rentAmount)
+  const rentRange = rents.length > 0
+    ? { min: Math.min(...rents), max: Math.max(...rents), avg: rents.reduce((s, v) => s + v, 0) / rents.length }
+    : { min: 0, max: 0, avg: 0 }
+
+  // 예약된 가격 변경
+  const scheduled = await prisma.room.findMany({
+    where: { propertyId, scheduledRent: { not: null }, rentUpdateDate: { not: null } },
+    select: { roomNo: true, baseRent: true, scheduledRent: true, rentUpdateDate: true },
+  })
+  const scheduledRentChanges = scheduled.map(s => ({
+    roomNo: s.roomNo,
+    from: s.baseRent,
+    to: s.scheduledRent ?? 0,
+    effectiveDate: s.rentUpdateDate ? new Date(s.rentUpdateDate).toISOString().slice(0, 10) : '',
+  }))
+
+  // 예약 확정자 수
+  const reservedConfirmedCount = await prisma.leaseTerm.count({
+    where: { propertyId, status: 'RESERVED', reservationConfirmedAt: { not: null } },
+  })
+
+  // 30일 이상 공실인 호실
+  const thirtyAgo = new Date(now); thirtyAgo.setDate(thirtyAgo.getDate() - 30)
+  const longVacantRooms = await prisma.room.findMany({
+    where: { propertyId, isVacant: true },
+    select: {
+      roomNo: true,
+      leaseTerms: {
+        where: { status: 'CHECKED_OUT' },
+        orderBy: { moveOutDate: 'desc' },
+        take: 1,
+        select: { moveOutDate: true },
+      },
+    },
+  })
+  const vacantTooLong = longVacantRooms
+    .filter(r => {
+      const last = r.leaseTerms[0]?.moveOutDate
+      if (!last) return false
+      return new Date(last) < thirtyAgo
+    })
+    .map(r => ({
+      roomNo: r.roomNo,
+      vacantSince: r.leaseTerms[0]?.moveOutDate ? new Date(r.leaseTerms[0].moveOutDate!).toISOString().slice(0, 10) : null,
+    }))
+
+  return {
+    asOfMonth,
+    occupancyRate, totalRooms, occupiedRooms, vacantRooms,
+    unpaidRate, totalUnpaid, avgDaysOverdue,
+    avgStayMonths, turnoverPer6mo,
+    trend12mo,
+    expenseTopCategories,
+    rentRange,
+    scheduledRentChanges,
+    reservedConfirmedCount,
+    vacantTooLong,
+  }
+}
+
+export async function getPropertyDiagnostics(): Promise<PropertyDiagnostics> {
+  return gatherDiagnostics()
+}
+
+export async function analyzePropertyWithGemini(): Promise<{ ok: true; text: string; data: PropertyDiagnostics } | { ok: false; error: string }> {
+  try {
+    const data = await gatherDiagnostics()
+
+    const trendLines = data.trend12mo.map(t =>
+      `  - ${t.month}: 매출 ${t.revenue.toLocaleString()}원 / 지출 ${t.expense.toLocaleString()}원 / 순이익 ${t.profit.toLocaleString()}원`
+    ).join('\n')
+
+    const catLines = data.expenseTopCategories.map(c =>
+      `  - ${c.category}: ${c.amount.toLocaleString()}원 (${c.percent.toFixed(1)}%)`
+    ).join('\n')
+
+    const scheduledLines = data.scheduledRentChanges.length > 0
+      ? data.scheduledRentChanges.map(s => `  - ${s.roomNo}호: ${s.from.toLocaleString()}원 → ${s.to.toLocaleString()}원 (${s.effectiveDate})`).join('\n')
+      : '  없음'
+
+    const longVacantLines = data.vacantTooLong.length > 0
+      ? data.vacantTooLong.map(v => `  - ${v.roomNo}호 (마지막 퇴실: ${v.vacantSince ?? '미상'})`).join('\n')
+      : '  없음'
+
+    const prompt = `당신은 한국의 공간 대여(고시원/셰어하우스) 운영 전문 컨설턴트 AI입니다. 아래 영업장 진단 데이터를 바탕으로 한국어로 진단 결과를 작성해주세요.
+
+[영업장 현황 (${data.asOfMonth} 기준)]
+- 객실: 총 ${data.totalRooms}실 / 거주중 ${data.occupiedRooms}실 / 공실 ${data.vacantRooms}실 (점유율 ${(data.occupancyRate * 100).toFixed(1)}%)
+- 임대료: 평균 ${Math.round(data.rentRange.avg).toLocaleString()}원 / 최저 ${data.rentRange.min.toLocaleString()}원 / 최고 ${data.rentRange.max.toLocaleString()}원
+- 예약 확정자: ${data.reservedConfirmedCount}명
+
+[수납 건전성]
+- 최근 12개월 미수율: ${(data.unpaidRate * 100).toFixed(1)}%
+- 현재 누적 미수: ${data.totalUnpaid.toLocaleString()}원
+- 미수 입주자 평균 경과일: ${Math.round(data.avgDaysOverdue)}일
+
+[입주자 회전]
+- 최근 6개월 퇴실 건수: ${data.turnoverPer6mo}건
+- 평균 거주기간: ${data.avgStayMonths != null ? data.avgStayMonths.toFixed(1) + '개월' : '데이터 부족'}
+- 30일 이상 공실 호실:
+${longVacantLines}
+
+[12개월 매출/지출 추이]
+${trendLines}
+
+[지출 비중 Top 5]
+${catLines}
+
+[예약된 가격 변경]
+${scheduledLines}
+
+다음 형식으로 작성해주세요 (각 항목 1~2문장씩, 구체적 숫자 인용):
+1. **종합 진단**: 현재 영업장의 전반적 상태
+2. **잘하고 있는 점**: 데이터로 보이는 강점 1~2개
+3. **개선이 필요한 점**: 우선 해결해야 할 약점 1~2개
+4. **실행 제안**: 향후 30일 내 시도해볼 구체 액션 2~3개`
+
+    const apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 1200 },
+        }),
+      }
+    )
+
+    if (!res.ok) return { ok: false, error: `Gemini API 응답 실패 (${res.status})` }
+    const json = await res.json()
+    const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    if (!text) return { ok: false, error: 'AI 분석 결과를 가져올 수 없습니다.' }
+    return { ok: true, text, data }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 export async function getAvailableYears(): Promise<string[]> {
   const { propertyId } = await getPropertyId()
   const [pmtMonths, exps, incs] = await Promise.all([

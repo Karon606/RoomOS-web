@@ -1,15 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import type { AnnualSummary, ForecastSummary } from './actions'
+import type { AnnualSummary, ForecastSummary, PropertyDiagnostics } from './actions'
+import { analyzePropertyWithGemini } from './actions'
 
 const fmt = (n: number) => n === 0 ? '—' : n.toLocaleString('ko-KR') + '원'
 const fmtMan = (n: number) => n === 0 ? '—' : `${Math.round(n / 10000).toLocaleString()}만`
 
 export default function ReportClient({ summary, years, forecast }: { summary: AnnualSummary; years: string[]; forecast: ForecastSummary }) {
   const router = useRouter()
-  const [tab, setTab] = useState<'past' | 'forecast'>('past')
+  const [tab, setTab] = useState<'past' | 'forecast' | 'ai'>('past')
   const handleYear = (y: string) => router.push(`/report?year=${y}`)
 
   const maxAbs = Math.max(
@@ -77,11 +78,15 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
     <div className="space-y-6 report-page">
       <div className="flex items-center justify-between flex-wrap gap-3 report-header">
         <div>
-          <h1 className="text-xl font-bold text-[var(--warm-dark)]">{tab === 'past' ? '결산 보고서' : '예상 보고서'}</h1>
+          <h1 className="text-xl font-bold text-[var(--warm-dark)]">{
+            tab === 'past' ? '결산 보고서' : tab === 'forecast' ? '예상 보고서' : 'AI 영업장 진단'
+          }</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">
             {tab === 'past'
               ? '발생주의(매출 인식 월) 기준 연간 손익·미수 현황'
-              : '향후 6개월 예상 매출·지출·순이익 — 호실 점유 일정 + 전년 동월/3개월 평균 기반'}
+              : tab === 'forecast'
+              ? '향후 6개월 예상 매출·지출·순이익 — 호실 점유 일정 + 전년 동월/3개월 평균 기반'
+              : 'Gemini AI가 점유율·미수·회전율·지출 구조를 분석해 영업장 단위 진단·개선 제안을 제공합니다.'}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -114,10 +119,11 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
       </div>
 
       {/* 탭 */}
-      <div className="flex gap-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-1 max-w-md no-print">
+      <div className="flex gap-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-1 max-w-xl no-print">
         {([
           { k: 'past',     label: '결산 (실적)' },
           { k: 'forecast', label: '예상 (6개월)' },
+          { k: 'ai',       label: 'AI 진단' },
         ] as const).map(t => (
           <button
             key={t.k}
@@ -134,6 +140,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
       </div>
 
       {tab === 'forecast' && <ForecastSection forecast={forecast} />}
+      {tab === 'ai' && <AISection />}
 
       {tab === 'past' && <>
       {/* 합계 카드 */}
@@ -474,4 +481,92 @@ function SummaryCard({ label, value, accent }: { label: string; value: string; a
       <p className={`text-base font-bold mt-1 ${accent ?? 'text-[var(--warm-dark)]'}`}>{value}</p>
     </div>
   )
+}
+
+// ── AI 영업장 진단 섹션 ────────────────────────────────────────────
+function AISection() {
+  const [pending, startTransition] = useTransition()
+  const [text, setText] = useState('')
+  const [data, setData] = useState<PropertyDiagnostics | null>(null)
+  const [error, setError] = useState('')
+
+  const handleAnalyze = () => {
+    setError(''); setText(''); setData(null)
+    startTransition(async () => {
+      const res = await analyzePropertyWithGemini()
+      if (!res.ok) setError(res.error)
+      else { setText(res.text); setData(res.data) }
+    })
+  }
+
+  return (
+    <div className="space-y-4">
+      {!text && !pending && !error && (
+        <div className="bg-[var(--cream)] border border-[var(--coral)]/30 rounded-2xl p-6 text-center space-y-3">
+          <p className="text-2xl">✨</p>
+          <p className="text-sm font-semibold text-[var(--warm-dark)]">Gemini AI 영업장 진단</p>
+          <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
+            현재 점유율·임대료·미수율·12개월 매출 추세·지출 구조·입주자 회전율 등을 종합 분석해<br/>
+            영업장의 강점·약점과 향후 30일 실행 가능한 개선안을 제안합니다.
+          </p>
+          <button
+            onClick={handleAnalyze}
+            className="px-5 py-2.5 bg-[var(--coral)] text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity">
+            진단 시작
+          </button>
+        </div>
+      )}
+
+      {pending && (
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6 text-center space-y-3">
+          <div className="w-6 h-6 mx-auto border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-[var(--coral)] animate-pulse">데이터 수집 + AI 분석 중...</p>
+          <p className="text-[10px] text-[var(--warm-muted)]">10~20초 소요됩니다</p>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 space-y-2">
+          <p className="text-sm font-semibold text-red-500">분석 실패</p>
+          <p className="text-xs text-red-400">{error}</p>
+          <button onClick={handleAnalyze}
+            className="text-xs px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-500 rounded-lg">다시 시도</button>
+        </div>
+      )}
+
+      {data && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <SummaryCard label="점유율" value={`${(data.occupancyRate * 100).toFixed(1)}%`} accent="text-emerald-600" />
+          <SummaryCard label="미수율 (12mo)" value={`${(data.unpaidRate * 100).toFixed(1)}%`} accent={data.unpaidRate > 0.05 ? 'text-red-500' : 'text-[var(--warm-dark)]'} />
+          <SummaryCard label="평균 거주" value={data.avgStayMonths != null ? `${data.avgStayMonths.toFixed(1)}개월` : '—'} />
+          <SummaryCard label="6mo 퇴실" value={`${data.turnoverPer6mo}건`} />
+        </div>
+      )}
+
+      {text && (
+        <div className="bg-[var(--cream)] border border-[var(--coral)]/30 rounded-2xl p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-base">✨</span>
+              <span className="text-sm font-semibold text-[var(--coral)]">AI 진단 결과</span>
+            </div>
+            <button onClick={handleAnalyze}
+              className="text-xs px-3 py-1.5 bg-[var(--coral)] hover:opacity-90 text-white rounded-lg">
+              다시 분석
+            </button>
+          </div>
+          <div className="text-sm text-[var(--warm-dark)] leading-relaxed whitespace-pre-wrap [&_strong]:text-[var(--coral)] [&_strong]:font-semibold"
+               dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 간단한 마크다운 변환 (bold + line breaks)
+function renderMarkdown(text: string): string {
+  return text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n/g, '<br/>')
 }
