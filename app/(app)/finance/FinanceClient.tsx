@@ -669,7 +669,7 @@ export default function FinanceClient({
   const ocrFileRef                          = useRef<HTMLInputElement | null>(null)
   const [editExpCategory, setEditExpCategory] = useState('')
   const [addItems, setAddItems]   = useState<ItemPickState[]>([])
-  const [editItemData, setEditItemData] = useState<ItemPickState | null>(null)
+  const [editItems, setEditItems] = useState<ItemPickState[]>([])
 
   // 영수증 OCR 핸들러 — 사진 → base64 → Gemini → 폼 자동 채움
   const handleReceiptOcr = (file: File) => {
@@ -1992,13 +1992,14 @@ export default function FinanceClient({
                     setEditExpRoomId(detailExp.roomId ?? '')
                     setEditReceiptUrl(detailExp.receiptUrl ?? '')
                     setEditExpCategory(detailExp.category)
-                    setEditItemData(detailExp.itemLabel ? {
+                    setEditItems(detailExp.itemLabel ? [{
                       label: detailExp.itemLabel,
                       specValue: detailExp.specValue?.toString() ?? '',
                       specUnit:  detailExp.specUnit ?? '',
                       qtyValue:  detailExp.qtyValue?.toString() ?? '',
                       qtyUnit:   detailExp.qtyUnit ?? '',
-                    } : null)
+                      amount:    detailExp.amount,
+                    }] : [])
                     setError('')
                   }}
                     className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">수정</button>
@@ -2018,14 +2019,23 @@ export default function FinanceClient({
                         className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
-                      <MoneyInput name="amount" defaultValue={detailExp.amount} placeholder="0원" />
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">
+                        금액 *{editItems.length > 1 && <span className="text-[10px] text-[var(--warm-muted)] font-normal ml-1">(품목 합계 자동)</span>}
+                      </label>
+                      {editItems.length > 1 ? (
+                        <div className="relative">
+                          <input type="hidden" name="amount" value={editItems.reduce((s, it) => s + (it.amount ?? 0), 0)} />
+                          <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
+                            {editItems.reduce((s, it) => s + (it.amount ?? 0), 0).toLocaleString()}원
+                          </div>
+                        </div>
+                      ) : <MoneyInput name="amount" defaultValue={detailExp.amount} placeholder="0원" />}
                     </div>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                     <select name="category" value={editExpCategory}
-                      onChange={e => { setEditExpCategory(e.target.value); setEditItemData(null) }}
+                      onChange={e => { setEditExpCategory(e.target.value); setEditItems([]) }}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
@@ -2037,29 +2047,33 @@ export default function FinanceClient({
                   </div>
                   {ITEM_PRESETS[editExpCategory] && (
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택</label>
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택 <span className="text-[var(--warm-muted)] font-normal">(여러 품목 추가 가능)</span></label>
                       <ItemSelector
                         category={editExpCategory}
-                        allowMulti={false}
-                        value={editItemData ? [editItemData] : []}
-                        onChange={list => setEditItemData(list[list.length - 1] ?? null)}
+                        value={editItems}
+                        onChange={setEditItems}
                       />
                     </div>
                   )}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
-                    {editItemData
-                      ? <input type="text" name="detail" value={fmtItemDetail(editItemData)} readOnly
+                    {editItems.length > 0
+                      ? <input type="text" name="detail" value={fmtItemListDetail(editItems)} readOnly
                           className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
                       : <input type="text" name="detail" defaultValue={detailExp.detail ?? ''} placeholder="세부 내용"
                           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                     }
-                    {editItemData && <>
-                      <input type="hidden" name="itemLabel" value={editItemData.label} />
-                      <input type="hidden" name="specValue" value={editItemData.specValue} />
-                      <input type="hidden" name="specUnit"  value={editItemData.specUnit} />
-                      <input type="hidden" name="qtyValue"  value={editItemData.qtyValue} />
-                      <input type="hidden" name="qtyUnit"   value={editItemData.qtyUnit} />
+                    {editItems.length > 0 && <>
+                      <input type="hidden" name="itemsJson" value={JSON.stringify(editItems)} />
+                      {editItems.length === 1 && (
+                        <>
+                          <input type="hidden" name="itemLabel" value={editItems[0].label} />
+                          <input type="hidden" name="specValue" value={editItems[0].specValue} />
+                          <input type="hidden" name="specUnit"  value={editItems[0].specUnit} />
+                          <input type="hidden" name="qtyValue"  value={editItems[0].qtyValue} />
+                          <input type="hidden" name="qtyUnit"   value={editItems[0].qtyUnit} />
+                        </>
+                      )}
                     </>}
                   </div>
                   <div className="space-y-1.5">

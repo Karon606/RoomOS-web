@@ -350,6 +350,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
 export async function updateExpense(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
+    const propertyId = await getPropertyId()
     const id        = formData.get('id') as string
     const date      = formData.get('date') as string
     const amount    = parseAmount(formData.get('amount'))
@@ -367,8 +368,77 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
     const qtyUnit   = formData.get('qtyUnit') as string
     const specValueRaw = formData.get('specValue') as string
     const qtyValueRaw  = formData.get('qtyValue') as string
+    const itemsJsonRaw = formData.get('itemsJson') as string
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
+
+    const baseSettleStatus: SettleStatus = payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED'
+
+    // 다중 품목 편집: 첫 항목은 현재 row 업데이트, 나머지는 sibling row로 새로 만듦
+    let multiItems: ItemPick[] | null = null
+    if (itemsJsonRaw) {
+      try {
+        const parsed = JSON.parse(itemsJsonRaw)
+        if (Array.isArray(parsed) && parsed.length >= 2) multiItems = parsed
+      } catch { /* fallthrough */ }
+    }
+
+    if (multiItems) {
+      const sum = multiItems.reduce((s, it) => s + (Number(it.amount) || 0), 0)
+      if (Math.abs(sum - amount) > 1) return { ok: false, error: `품목 금액 합계(${sum.toLocaleString()}원)와 총 금액(${amount.toLocaleString()}원)이 일치하지 않습니다.` }
+
+      const first = multiItems[0]
+      const rest  = multiItems.slice(1)
+
+      await prisma.$transaction([
+        prisma.expense.update({
+          where: { id },
+          data: {
+            date:               new Date(date),
+            amount: Number(first.amount) || 0,
+            category,
+            detail:    `[${first.label}]${first.specValue ? ` ${first.specValue}${first.specUnit ?? ''}` : ''}${first.qtyValue ? ` x ${first.qtyValue}${first.qtyUnit ?? ''}` : ''}`,
+            vendor:             vendor || null,
+            memo:               memo || null,
+            payMethod:          payMethod || '계좌이체',
+            financialAccountId: financialAccountId || null,
+            financeName:        financeName || null,
+            settleStatus:       baseSettleStatus,
+            roomId:             roomId || null,
+            itemLabel: first.label,
+            specUnit:  first.specUnit || null,
+            qtyUnit:   first.qtyUnit  || null,
+            specValue: first.specValue ? parseFloat(first.specValue) : null,
+            qtyValue:  first.qtyValue  ? parseFloat(first.qtyValue)  : null,
+            ...(receiptUrl !== null && receiptUrl !== undefined ? { receiptUrl: receiptUrl || null } : {}),
+          },
+        }),
+        ...rest.map(it => prisma.expense.create({
+          data: {
+            propertyId,
+            date:               new Date(date),
+            amount:    Number(it.amount) || 0,
+            category,
+            detail:    `[${it.label}]${it.specValue ? ` ${it.specValue}${it.specUnit ?? ''}` : ''}${it.qtyValue ? ` x ${it.qtyValue}${it.qtyUnit ?? ''}` : ''}`,
+            vendor:             vendor || null,
+            memo:               memo || null,
+            payMethod:          payMethod || '계좌이체',
+            financialAccountId: financialAccountId || null,
+            financeName:        financeName || null,
+            receiptUrl:         receiptUrl || null,
+            settleStatus:       baseSettleStatus,
+            roomId:             roomId || null,
+            itemLabel: it.label,
+            specUnit:  it.specUnit || null,
+            qtyUnit:   it.qtyUnit  || null,
+            specValue: it.specValue ? parseFloat(it.specValue) : null,
+            qtyValue:  it.qtyValue  ? parseFloat(it.qtyValue)  : null,
+          },
+        })),
+      ])
+      revalidatePath('/finance')
+      return { ok: true }
+    }
 
     await prisma.expense.update({
       where: { id },
@@ -381,7 +451,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
         payMethod:          payMethod || '계좌이체',
         financialAccountId: financialAccountId || null,
         financeName:        financeName || null,
-        settleStatus:       payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED',
+        settleStatus:       baseSettleStatus,
         roomId:             roomId || null,
         itemLabel:          itemLabel || null,
         specUnit:           specUnit || null,
