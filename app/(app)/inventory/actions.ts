@@ -150,6 +150,7 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
       qtyUnit: it.qtyUnit,
       alertThresholdDays: it.alertThresholdDays,
       reorderMemo: it.reorderMemo,
+      memo: it.memo,
       isArchived: it.isArchived,
       lastCheckDate: last?.date ?? null,
       lastRemainingQty: last?.remainingQty ?? null,

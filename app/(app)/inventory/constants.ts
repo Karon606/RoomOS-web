@@ -8,6 +8,7 @@ export type InventoryRow = {
   qtyUnit: string | null
   alertThresholdDays: number
   reorderMemo: string | null
+  memo: string | null              // 재고 파악 기준 등 자유 메모
   isArchived: boolean
   lastCheckDate: Date | null
   lastRemainingQty: number | null

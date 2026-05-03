@@ -166,6 +166,11 @@ function InventoryCard({ row, onOpen }: { row: InventoryRow; onOpen: () => void 
           </p>
         </div>
       </div>
+      {row.memo && (
+        <p className="text-[10px] text-[var(--warm-mid)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-2 py-1.5 leading-relaxed whitespace-pre-wrap">
+          📝 {row.memo}
+        </p>
+      )}
       {row.reorderMemo && (
         <p className="text-[10px] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2 py-1.5 leading-relaxed">
           📦 {row.reorderMemo}
@@ -507,6 +512,7 @@ function SettingsForm({ row, onCancel, onDone }: {
 }) {
   const [thresholdDays, setThresholdDays] = useState(String(row.alertThresholdDays))
   const [reorderMemo, setReorderMemo]     = useState(row.reorderMemo ?? '')
+  const [memo, setMemo]                   = useState(row.memo ?? '')
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
 
@@ -519,6 +525,7 @@ function SettingsForm({ row, onCancel, onDone }: {
       const res = await updateTrackedItem(row.id, {
         alertThresholdDays: n,
         reorderMemo: reorderMemo.trim() || null,
+        memo: memo.trim() || null,
       })
       if (!res.ok) { setError(res.error); return }
       onDone()
@@ -534,6 +541,14 @@ function SettingsForm({ row, onCancel, onDone }: {
           onChange={e => setThresholdDays(e.target.value.replace(/[^0-9]/g, ''))}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
         <p className="text-[10px] text-[var(--warm-muted)]">예: 3 → 소진 예상이 3일 이하면 알림</p>
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">재고 파악 기준 메모</label>
+        <textarea value={memo} onChange={e => setMemo(e.target.value)}
+          rows={3}
+          placeholder="예: 창고에 온전히 남아있는 양만 잔량으로 카운트. 주방 쌀통은 제외"
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
+        <p className="text-[10px] text-[var(--warm-muted)]">잔량 점검 시 무엇을 세는지·어디 보관분만 카운트하는지 등 기준을 적어두면 일관성 유지에 도움됩니다.</p>
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">발주 메모</label>
