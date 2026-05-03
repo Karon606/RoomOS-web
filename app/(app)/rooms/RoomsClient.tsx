@@ -41,6 +41,15 @@ type RoomStatus = {
   moveInDate: string | null
   prevPaidThisMonth: boolean
   firstUnpaidMonth: string | null
+  cycleStatus: {
+    type: 'paid' | 'today' | 'overdue'
+    daysToNextDue: number
+    daysOverdue: number
+    nextDueDate: string | null
+    earliestUnpaidDate: string | null
+    requiredCycles: number
+    paidCycles: number
+  } | null
 }
 
 type PaymentRecord = {
@@ -496,8 +505,10 @@ export default function RoomsClient({
   }
 
   // 요약 통계
-  const unpaidCount = occupied.filter(r => !r.isPaid).length
-  const paidCount   = occupied.filter(r => r.isPaid).length
+  // 사이클 기반: 'today' / 'overdue' = 미납, 'paid' = 완납. cycleStatus 없는 행(예약·미래 등)은 제외.
+  const isUnpaidByCycle = (r: RoomStatus) => r.cycleStatus ? r.cycleStatus.type !== 'paid' : !r.isPaid
+  const unpaidCount = occupied.filter(r => r.status !== 'RESERVED' && isUnpaidByCycle(r)).length
+  const paidCount   = occupied.filter(r => r.status !== 'RESERVED' && !isUnpaidByCycle(r)).length
 
   const thCls = 'text-left text-xs text-[var(--warm-muted)] font-medium px-4 py-3'
 
@@ -713,6 +724,30 @@ export default function RoomsClient({
                         )
                       })()}
                     </>
+                  ) : room.cycleStatus ? (
+                    <>
+                      {room.cycleStatus.type === 'paid' && (
+                        <>
+                          <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">완납</span>
+                          {room.cycleStatus.nextDueDate && room.cycleStatus.daysToNextDue > 0 && (
+                            <span className="text-[10px] font-medium text-[var(--warm-muted)]">
+                              D-{room.cycleStatus.daysToNextDue} 납부예정
+                            </span>
+                          )}
+                        </>
+                      )}
+                      {room.cycleStatus.type === 'today' && (
+                        <>
+                          <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">오늘 납부일</span>
+                        </>
+                      )}
+                      {room.cycleStatus.type === 'overdue' && (
+                        <>
+                          <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-red-50 text-red-600 ring-1 ring-red-200">미납</span>
+                          <span className="text-[10px] font-medium text-red-400">{room.cycleStatus.daysOverdue}일 경과</span>
+                        </>
+                      )}
+                    </>
                   ) : (
                     <>
                       <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
@@ -870,6 +905,26 @@ export default function RoomsClient({
                                 </span>
                               )
                             })()}
+                          </>
+                        ) : room.cycleStatus ? (
+                          <>
+                            {room.cycleStatus.type === 'paid' && (
+                              <>
+                                <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">완납</span>
+                                {room.cycleStatus.nextDueDate && room.cycleStatus.daysToNextDue > 0 && (
+                                  <span className="text-xs text-[var(--warm-muted)] font-medium">D-{room.cycleStatus.daysToNextDue} 납부예정</span>
+                                )}
+                              </>
+                            )}
+                            {room.cycleStatus.type === 'today' && (
+                              <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">오늘 납부일</span>
+                            )}
+                            {room.cycleStatus.type === 'overdue' && (
+                              <>
+                                <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-red-50 text-red-600 ring-1 ring-red-200">미납</span>
+                                <span className="text-xs text-red-400 font-medium">{room.cycleStatus.daysOverdue}일 경과</span>
+                              </>
+                            )}
                           </>
                         ) : (
                           <>
