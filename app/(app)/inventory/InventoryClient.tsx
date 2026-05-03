@@ -3,6 +3,10 @@
 import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { Btn } from '@/components/ui/Btn'
+import { Modal, ModalFooterActions } from '@/components/ui/Modal'
+import { Badge } from '@/components/ui/Badge'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { kstYmdStr } from '@/lib/kstDate'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, TRACKED_CATEGORIES } from './constants'
 import {
@@ -70,28 +74,19 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
           <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">부식·소모품·폐기물 사용량을 점검 기록 기반으로 추적합니다.</p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSeed}
-            disabled={isPending}
-            className="px-3 py-2 text-xs rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors disabled:opacity-50">
-            지출에서 자동 등록
-          </button>
-          <button
-            onClick={() => setShowAdd(true)}
-            className="px-3 py-2 text-xs rounded-xl bg-[var(--coral)] text-white hover:opacity-90 transition-opacity">
-            + 품목 추가
-          </button>
+        <div className="flex gap-2 flex-wrap">
+          <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={isPending}>지출에서 자동 등록</Btn>
+          <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
         </div>
       </div>
 
       {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
 
       {rows.length === 0 ? (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-8 text-center space-y-2">
-          <p className="text-sm text-[var(--warm-dark)] font-medium">추적할 품목이 아직 없습니다</p>
-          <p className="text-xs text-[var(--warm-muted)]">'지출에서 자동 등록' 버튼을 누르면 부식·소모품·폐기물 카테고리에서 입력된 품목이 자동 등록됩니다.</p>
-        </div>
+        <EmptyState
+          title="추적할 품목이 아직 없습니다"
+          description="'지출에서 자동 등록' 버튼을 누르면 부식·소모품·폐기물 카테고리에서 입력된 품목이 자동 등록됩니다."
+        />
       ) : (
         grouped.map(g => g.rows.length > 0 && (
           <section key={g.cat} className="space-y-2">
@@ -135,11 +130,7 @@ function InventoryCard({ row, onOpen }: { row: InventoryRow; onOpen: () => void 
           <p className="text-sm font-bold text-[var(--warm-dark)] truncate">{row.label}</p>
           <p className="text-[10px] mt-0.5" style={{ color: tint?.fg }}>{row.category}</p>
         </div>
-        {lowStock && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-red-500/10 text-red-500 shrink-0">
-            소진 임박
-          </span>
-        )}
+        {lowStock && <Badge tone="red" icon="⚠️">소진 임박</Badge>}
       </div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
         <div>
@@ -212,56 +203,48 @@ function AddItemModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[85vh]"
-        onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
-          <h2 className="text-base font-bold text-[var(--warm-dark)]">추적 품목 추가</h2>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+    <Modal open onClose={onClose} title="추적 품목 추가" width="md">
+      <form onSubmit={handleSubmit} id="add-tracked-item-form" className="px-5 sm:px-6 py-4 space-y-3">
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
+          <select value={category} onChange={e => setCategory(e.target.value)}
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none">
+            {TRACKED_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
-        <form onSubmit={handleSubmit} className="overflow-y-auto px-5 py-4 space-y-3 flex-1">
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">품목명 *</label>
+          <input type="text" value={label} onChange={e => setLabel(e.target.value)}
+            placeholder="예: 화장실 휴지"
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
-            <select value={category} onChange={e => setCategory(e.target.value)}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none">
-              {TRACKED_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">품목명 *</label>
-            <input type="text" value={label} onChange={e => setLabel(e.target.value)}
-              placeholder="예: 화장실 휴지"
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">용량 단위</label>
-              <input type="text" value={specUnit} onChange={e => setSpecUnit(e.target.value)} placeholder="m, L, kg"
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">수량 단위</label>
-              <input type="text" value={qtyUnit} onChange={e => setQtyUnit(e.target.value)} placeholder="롤, 매, 포대"
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
-            <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="선택"
+            <label className="text-xs font-medium text-[var(--warm-mid)]">용량 단위</label>
+            <input type="text" value={specUnit} onChange={e => setSpecUnit(e.target.value)} placeholder="m, L, kg"
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
           </div>
-          {error && <p className="text-xs text-red-500">{error}</p>}
-          <div className="pt-2 flex gap-2">
-            <button type="button" onClick={onClose}
-              className="flex-1 py-2.5 bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl">취소</button>
-            <button type="submit" disabled={pending}
-              className="flex-1 py-2.5 bg-[var(--coral)] text-white text-sm font-medium rounded-xl disabled:opacity-60">
-              {pending ? '저장 중...' : '저장'}
-            </button>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">수량 단위</label>
+            <input type="text" value={qtyUnit} onChange={e => setQtyUnit(e.target.value)} placeholder="롤, 매, 포대"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
           </div>
-        </form>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
+          <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="선택"
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
+        </div>
+        {error && <p className="text-xs text-red-500">{error}</p>}
+      </form>
+      <div className="border-t border-[var(--warm-border)] px-5 sm:px-6 py-3">
+        <ModalFooterActions onCancel={onClose}>
+          <Btn type="submit" form="add-tracked-item-form" variant="primary" disabled={pending}>
+            {pending ? '저장 중...' : '저장'}
+          </Btn>
+        </ModalFooterActions>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -312,86 +295,62 @@ function DetailModal({ row, onClose, onChange }: {
     })
   }
 
+  const detailStockUnit = data ? (data.item.trackUnit === 'qty' ? data.item.qtyUnit : (data.item.specUnit ?? data.item.qtyUnit)) : null
+  const isViewMode = mode === 'view' && !!data
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[88vh]"
-        onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)] shrink-0">
-          <div className="min-w-0">
-            <h2 className="text-base font-bold text-[var(--warm-dark)] truncate">{data?.item.label ?? row.label}</h2>
-            <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">{data?.item.category ?? row.category}</p>
-          </div>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+    <Modal
+      open
+      onClose={onClose}
+      width="lg"
+      title={data?.item.label ?? row.label}
+      subtitle={data?.item.category ?? row.category}
+      footer={isViewMode ? (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Btn variant="danger" size="sm" onClick={handleArchive} disabled={pending}>추적 제외</Btn>
+          <Btn variant="secondary" size="sm" onClick={() => setMode('settings')}>설정</Btn>
+          <div className="flex-1" />
+          <Btn variant="secondary" size="sm" onClick={() => setMode('addition')}>+ 무상 입수</Btn>
+          <Btn variant="primary" size="sm" onClick={() => setMode('check')}>재고 점검</Btn>
         </div>
-
-        {!data ? (
-          <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
-        ) : mode === 'check' ? (
-          <CheckForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
-        ) : mode === 'addition' ? (
-          <AdditionForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
-        ) : mode === 'settings' ? (
-          <SettingsForm row={row} onCancel={() => setMode('view')} onDone={() => { setMode('view'); onChange() }} />
-        ) : (
-          <>
-            {/* 탭: 타임라인 / 월별 입수 / 단가 추이 */}
-            <div className="flex gap-1 px-5 pt-3 shrink-0 flex-wrap">
-              <TabBtn active={tab === 'timeline'} onClick={() => setTab('timeline')}>타임라인</TabBtn>
-              <TabBtn active={tab === 'monthly'}  onClick={() => setTab('monthly')}>월별 입수</TabBtn>
-              <TabBtn active={tab === 'price'}    onClick={() => setTab('price')}>단가 추이</TabBtn>
-            </div>
-
-            <div className="overflow-y-auto flex-1 px-5 py-3 space-y-3">
-              {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
-
-              {(() => {
-                const detailStockUnit = data.item.trackUnit === 'qty' ? data.item.qtyUnit : (data.item.specUnit ?? data.item.qtyUnit)
-                return (
-                  <>
-                    {tab === 'timeline' && (
-                      data.timeline.length === 0 ? (
-                        <p className="text-sm text-[var(--warm-muted)] text-center py-6">기록이 없습니다.</p>
-                      ) : (
-                        <ul className="space-y-1.5">
-                          {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} pending={pending} />)}
-                        </ul>
-                      )
-                    )}
-                    {tab === 'monthly' && (
-                      <MonthlyInflowList rows={monthlyInflow} stockUnit={detailStockUnit} />
-                    )}
-                    {tab === 'price' && (
-                      <PriceChart points={priceHistory} unitLabel={detailStockUnit} qtyUnit={data.item.qtyUnit} />
-                    )}
-                  </>
-                )
-              })()}
-            </div>
-            <div className="border-t border-[var(--warm-border)] px-5 py-3 flex gap-2 shrink-0 flex-wrap">
-              <button
-                onClick={handleArchive}
-                disabled={pending}
-                className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg disabled:opacity-40">
-                추적 제외
-              </button>
-              <button onClick={() => setMode('settings')}
-                className="px-3 py-2 bg-[var(--canvas)] border border-[var(--warm-border)] text-xs font-medium rounded-lg text-[var(--warm-dark)] hover:bg-[var(--warm-border)]">
-                설정
-              </button>
-              <div className="flex-1" />
-              <button onClick={() => setMode('addition')}
-                className="px-3 py-2 bg-[var(--canvas)] border border-[var(--warm-border)] text-xs font-medium rounded-lg text-[var(--warm-dark)] hover:bg-[var(--warm-border)]">
-                + 무상 입수
-              </button>
-              <button onClick={() => setMode('check')}
-                className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl">
-                재고 점검
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+      ) : undefined}
+    >
+      {!data ? (
+        <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
+      ) : mode === 'check' ? (
+        <CheckForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
+      ) : mode === 'addition' ? (
+        <AdditionForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
+      ) : mode === 'settings' ? (
+        <SettingsForm row={row} onCancel={() => setMode('view')} onDone={() => { setMode('view'); onChange() }} />
+      ) : (
+        <>
+          <div className="flex gap-1 px-5 sm:px-6 pt-3 flex-wrap">
+            <TabBtn active={tab === 'timeline'} onClick={() => setTab('timeline')}>타임라인</TabBtn>
+            <TabBtn active={tab === 'monthly'}  onClick={() => setTab('monthly')}>월별 입수</TabBtn>
+            <TabBtn active={tab === 'price'}    onClick={() => setTab('price')}>단가 추이</TabBtn>
+          </div>
+          <div className="px-5 sm:px-6 py-3 space-y-3">
+            {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+            {tab === 'timeline' && (
+              data.timeline.length === 0 ? (
+                <p className="text-sm text-[var(--warm-muted)] text-center py-6">기록이 없습니다.</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} pending={pending} />)}
+                </ul>
+              )
+            )}
+            {tab === 'monthly' && (
+              <MonthlyInflowList rows={monthlyInflow} stockUnit={detailStockUnit} />
+            )}
+            {tab === 'price' && (
+              <PriceChart points={priceHistory} unitLabel={detailStockUnit} qtyUnit={data.item.qtyUnit} />
+            )}
+          </div>
+        </>
+      )}
+    </Modal>
   )
 }
 
@@ -587,12 +546,10 @@ function SettingsForm({ row, onCancel, onDone }: {
       </div>
       {error && <p className="text-xs text-red-500">{error}</p>}
       <div className="pt-2 flex gap-2">
-        <button type="button" onClick={onCancel}
-          className="flex-1 py-2.5 bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl">취소</button>
-        <button type="submit" disabled={pending}
-          className="flex-1 py-2.5 bg-[var(--coral)] text-white text-sm font-medium rounded-xl disabled:opacity-60">
+        <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>
+        <Btn type="submit" variant="primary" disabled={pending} fullWidth>
           {pending ? '저장 중...' : '저장'}
-        </button>
+        </Btn>
       </div>
     </form>
   )
@@ -705,12 +662,10 @@ function CheckForm({ item, onCancel, onDone }: {
       </div>
       {error && <p className="text-xs text-red-500">{error}</p>}
       <div className="pt-2 flex gap-2">
-        <button type="button" onClick={onCancel}
-          className="flex-1 py-2.5 bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl">취소</button>
-        <button type="submit" disabled={pending}
-          className="flex-1 py-2.5 bg-[var(--coral)] text-white text-sm font-medium rounded-xl disabled:opacity-60">
+        <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>
+        <Btn type="submit" variant="primary" disabled={pending} fullWidth>
           {pending ? '저장 중...' : '저장'}
-        </button>
+        </Btn>
       </div>
     </form>
   )
@@ -812,12 +767,10 @@ function AdditionForm({ item, onCancel, onDone }: {
       </div>
       {error && <p className="text-xs text-red-500">{error}</p>}
       <div className="pt-2 flex gap-2">
-        <button type="button" onClick={onCancel}
-          className="flex-1 py-2.5 bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl">취소</button>
-        <button type="submit" disabled={pending}
-          className="flex-1 py-2.5 bg-[var(--coral)] text-white text-sm font-medium rounded-xl disabled:opacity-60">
+        <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>
+        <Btn type="submit" variant="primary" disabled={pending} fullWidth>
           {pending ? '저장 중...' : '저장'}
-        </button>
+        </Btn>
       </div>
     </form>
   )
