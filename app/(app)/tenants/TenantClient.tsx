@@ -40,6 +40,7 @@ type LeaseTerm = {
   overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
   moveInDate: string | Date | null; moveOutDate: string | Date | null
   expectedMoveOut: string | Date | null; tourDate: string | Date | null; inquiryAt: string | Date | null
+  reservationConfirmedAt: string | Date | null
   paymentTiming: string
   payMethod: string | null; cashReceipt: string | null
   registrationStatus: string; contractUrl: string | null
@@ -303,7 +304,6 @@ export default function TenantClient({
   const [detailTenant, setDetailTenant]   = useState<Tenant | null>(null)
   const [detailEditMode, setDetailEditMode] = useState(false)
   const [detailTab, setDetailTab]         = useState<'info' | 'requests' | 'analysis'>('info')
-  const [showEditDeleteSheet, setShowEditDeleteSheet] = useState(false)
 
   // 요청사항 탭 상태
   const [requests, setRequests]               = useState<Awaited<ReturnType<typeof getTenantRequests>>>([])
@@ -1343,7 +1343,6 @@ export default function TenantClient({
           setDetailTenant(null); setDetailEditMode(false); setError('')
           setAiText(''); setAiLoading(false)
           setShowDueDayChange(false); setNewDueDayInput('')
-          setShowEditDeleteSheet(false)
         }
 
         const handleAiAnalyze = async () => {
@@ -1801,6 +1800,12 @@ export default function TenantClient({
 
                     {/* 읽기 전용 푸터 */}
                     <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0 flex-wrap">
+                      <button
+                        onClick={() => handleDelete(t.id, t.name)}
+                        disabled={isPending}
+                        className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
+                        삭제
+                      </button>
                       {lease?.id && (
                         <button
                           type="button"
@@ -1825,46 +1830,11 @@ export default function TenantClient({
                         </button>
                       )}
                       <button
-                        onClick={() => setShowEditDeleteSheet(true)}
+                        onClick={() => { setDetailEditMode(true); setDetailTab('info'); setError('') }}
                         className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
-                        수정 및 삭제
+                        수정
                       </button>
                     </div>
-
-                    {/* 수정 및 삭제 액션 시트 (iOS 스타일) */}
-                    {showEditDeleteSheet && (
-                      <div
-                        className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-                        onClick={() => setShowEditDeleteSheet(false)}
-                      >
-                        <div
-                          className="w-full sm:max-w-sm flex flex-col gap-2"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="bg-[var(--paper)] rounded-2xl overflow-hidden border border-[var(--warm-border)] shadow-xl">
-                            <button
-                              type="button"
-                              disabled={isPending}
-                              onClick={() => { setShowEditDeleteSheet(false); handleDelete(t.id, t.name) }}
-                              className="w-full px-4 py-4 text-base font-semibold text-red-500 hover:bg-red-500/5 active:bg-red-500/10 transition-colors disabled:opacity-40 border-b border-[var(--warm-border)]">
-                              삭제
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { setShowEditDeleteSheet(false); setDetailEditMode(true); setDetailTab('info'); setError('') }}
-                              className="w-full px-4 py-4 text-base font-medium text-[var(--coral)] hover:bg-[var(--coral)]/5 active:bg-[var(--coral)]/10 transition-colors">
-                              수정
-                            </button>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setShowEditDeleteSheet(false)}
-                            className="w-full px-4 py-4 text-base font-semibold text-[var(--warm-dark)] bg-[var(--paper)] rounded-2xl border border-[var(--warm-border)] shadow-xl hover:bg-[var(--canvas)] active:bg-[var(--warm-border)] transition-colors">
-                            취소
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </>
               )}
 
@@ -2733,6 +2703,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   const initialInquiry = splitDateTime(lease?.inquiryAt)
   const [inquiryDateVal, setInquiryDateVal] = useState(initialInquiry.date)
   const [inquiryTimeVal, setInquiryTimeVal] = useState(initialInquiry.time)
+  const [reservationConfirmed, setReservationConfirmed] = useState(!!lease?.reservationConfirmedAt)
   const inquiryAtCombined = inquiryDateVal
     ? `${inquiryDateVal}T${inquiryTimeVal || '00:00'}`
     : ''
@@ -2744,11 +2715,11 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
     if (room) setRentAmount(room.baseRent)
   }
 
-  // WAITING_TOUR/TOUR_DONE/RESERVED는 호실 필수 아님
-  const roomIsOptional = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'].includes(statusVal)
-  // ACTIVE, CHECKOUT_PENDING → 입주중 방 비활성화
-  const activeOnlyStatus = ['ACTIVE', 'CHECKOUT_PENDING'].includes(statusVal)
-  const isWaitingTourStatus = statusVal === 'WAITING_TOUR'
+  // WAITING_TOUR/TOUR_DONE/RESERVED는 호실 필수 아님 (단, 예약 확정 시 RESERVED는 호실 필수)
+  const roomIsOptional = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'].includes(statusVal) && !(statusVal === 'RESERVED' && reservationConfirmed)
+  // ACTIVE, CHECKOUT_PENDING + 예약 확정 → 입주중/퇴실예정 방만 비활성화 (공실 + 퇴실예정만 선택 가능)
+  const activeOnlyStatus = ['ACTIVE', 'CHECKOUT_PENDING'].includes(statusVal) || (statusVal === 'RESERVED' && reservationConfirmed)
+  const isWaitingTourStatus = statusVal === 'WAITING_TOUR' || (statusVal === 'RESERVED' && reservationConfirmed)
 
   // 보증금/청소비 자동 입력 제외 상태 (계약/납입 단계 이전 — 잘못 저장 방지)
   const NO_AUTOFILL_STATUSES = ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED', 'NON_RESIDENT']
@@ -2969,6 +2940,27 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               />
             </div>
             <KeepAlertCheckbox defaultValue={lease?.keepAlertAfterInquiry ?? false} />
+          </div>
+        )}
+        {/* 예약 확정 토글 (RESERVED 전용) — 호실/이용료/입주희망일 필수 + 매칭 알림 제외 */}
+        {statusVal === 'RESERVED' && (
+          <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)]/50 px-3 py-2.5 space-y-1.5">
+            <input type="hidden" name="reservationConfirmed" value={reservationConfirmed ? 'true' : 'false'} />
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={reservationConfirmed}
+                onChange={e => setReservationConfirmed(e.target.checked)}
+                className="w-4 h-4 accent-[var(--coral)]"
+              />
+              <span className="text-xs font-medium text-[var(--warm-dark)]">예약 확정</span>
+              {reservationConfirmed && lease?.reservationConfirmedAt && (
+                <span className="text-[10px] text-[var(--warm-muted)]">· {fmtDate(lease.reservationConfirmedAt)}</span>
+              )}
+            </label>
+            <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed pl-6">
+              체크 시 호실/월 이용료/입주 희망일이 필수가 되고, 공실·퇴실 예정 방만 선택할 수 있습니다. 입주 희망일이 도래하면 대시보드 알림에서 거주중 전환을 진행하세요.
+            </p>
           </div>
         )}
         {/* 납부일 | 퇴실일(조건부) (아이템 5, 7, 8) */}

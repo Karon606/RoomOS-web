@@ -136,7 +136,6 @@ export default function RoomManageClient({
   const [detailTenantInfoId, setDetailTenantInfoId] = useState<string | null>(null)
   const [detailSettlementLeaseId, setDetailSettlementLeaseId] = useState<string | null>(null)
   const [returnToRoomId, setReturnToRoomId] = useState<string | null>(null)
-  const [showEditDeleteSheet, setShowEditDeleteSheet] = useState(false)
 
   // URL ?roomId=xxx로 진입 시 해당 호실 상세 팝업 자동 열기
   const searchParams = useSearchParams()
@@ -220,7 +219,7 @@ export default function RoomManageClient({
 
   // ── 핸들러 ────────────────────────────────────────────────────────
 
-  const closeDetail = () => { setDetailRoom(null); setError(''); setShowEditDeleteSheet(false) }
+  const closeDetail = () => { setDetailRoom(null); setError('') }
 
   const openEdit = (room: Room) => {
     setDetailRoom(null)
@@ -679,6 +678,13 @@ export default function RoomManageClient({
 
               {/* 푸터 */}
               <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0 flex-wrap">
+                <button
+                  onClick={() => handleDelete(r.id, r.roomNo)}
+                  disabled={!r.isVacant || isPending}
+                  title={!r.isVacant ? '거주중인 호실은 삭제할 수 없습니다' : ''}
+                  className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                  삭제
+                </button>
                 {r.leaseTerms[0]?.tenant?.id && (
                   <button
                     type="button"
@@ -705,47 +711,11 @@ export default function RoomManageClient({
                 )}
                 <div className="flex-1" />
                 <button
-                  onClick={() => setShowEditDeleteSheet(true)}
+                  onClick={() => openEdit(r)}
                   className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
-                  수정 및 삭제
+                  수정
                 </button>
               </div>
-
-              {/* 수정 및 삭제 액션 시트 (iOS 스타일) */}
-              {showEditDeleteSheet && (
-                <div
-                  className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-                  onClick={() => setShowEditDeleteSheet(false)}
-                >
-                  <div
-                    className="w-full sm:max-w-sm flex flex-col gap-2"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="bg-[var(--paper)] rounded-2xl overflow-hidden border border-[var(--warm-border)] shadow-xl">
-                      <button
-                        type="button"
-                        disabled={!r.isVacant || isPending}
-                        title={!r.isVacant ? '거주중인 호실은 삭제할 수 없습니다' : ''}
-                        onClick={() => { setShowEditDeleteSheet(false); handleDelete(r.id, r.roomNo) }}
-                        className="w-full px-4 py-4 text-base font-semibold text-red-500 hover:bg-red-500/5 active:bg-red-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-b border-[var(--warm-border)]">
-                        삭제{!r.isVacant ? ' (거주중 불가)' : ''}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setShowEditDeleteSheet(false); openEdit(r) }}
-                        className="w-full px-4 py-4 text-base font-medium text-[var(--coral)] hover:bg-[var(--coral)]/5 active:bg-[var(--coral)]/10 transition-colors">
-                        수정
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowEditDeleteSheet(false)}
-                      className="w-full px-4 py-4 text-base font-semibold text-[var(--warm-dark)] bg-[var(--paper)] rounded-2xl border border-[var(--warm-border)] shadow-xl hover:bg-[var(--canvas)] active:bg-[var(--warm-border)] transition-colors">
-                      취소
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )
