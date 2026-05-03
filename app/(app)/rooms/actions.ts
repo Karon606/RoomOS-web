@@ -698,6 +698,32 @@ export async function getTenantQuickInfo(tenantId: string) {
   })
 }
 
+export async function getRoomQuickInfo(roomId: string) {
+  const supabase = await createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return null
+  return prisma.room.findUnique({
+    where: { id: roomId },
+    select: {
+      id: true, roomNo: true, type: true,
+      baseRent: true, scheduledRent: true, rentUpdateDate: true,
+      windowType: true, direction: true,
+      areaPyeong: true, areaM2: true,
+      memo: true, isVacant: true,
+      photos: {
+        select: { id: true, storageUrl: true, fileName: true, driveFileId: true },
+        orderBy: { sortOrder: 'asc' },
+      },
+      leaseTerms: {
+        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        select: { tenant: { select: { name: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      },
+    },
+  })
+}
+
 export async function getPaymentsByLease(leaseTermId: string, targetMonth: string) {
   const propertyId = await getPropertyId()
   // 납부 내역은 payDate 기준 — viewMonth 안에 입금된 모든 record (targetMonth 무관)

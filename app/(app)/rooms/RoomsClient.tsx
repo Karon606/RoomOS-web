@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
-import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from './actions'
+import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getTenantQuickInfo, getRoomQuickInfo } from './actions'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -196,6 +196,9 @@ export default function RoomsClient({
   const router = useRouter()
   const searchParams = useSearchParams()
   const [selectedRoom, setSelectedRoom] = useState<RoomStatus | null>(null)
+  // 입주자/호실 정보 인라인 모달 (수납 모달은 그대로 유지된 채 위에 겹침)
+  const [tenantInfoId, setTenantInfoId] = useState<string | null>(null)
+  const [roomInfoId, setRoomInfoId]     = useState<string | null>(null)
   const [paymentHistory, setPaymentHistory] = useState<PaymentRecord[]>([])
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
   const [showPayModal, setShowPayModal] = useState(false)
@@ -1347,16 +1350,16 @@ export default function RoomsClient({
                   {selectedRoom.tenantId && (
                     <button
                       type="button"
-                      onClick={() => router.push(`/tenants?tenantId=${selectedRoom.tenantId}`)}
+                      onClick={() => setTenantInfoId(selectedRoom.tenantId!)}
                       className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                      입주자 정보 →
+                      입주자 정보
                     </button>
                   )}
                   <button
                     type="button"
-                    onClick={() => router.push(`/room-manage?roomId=${selectedRoom.roomId}`)}
+                    onClick={() => setRoomInfoId(selectedRoom.roomId)}
                     className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                    호실 정보 →
+                    호실 정보
                   </button>
                   <div className="flex-1" />
                   {canEdit && (
@@ -1453,6 +1456,129 @@ export default function RoomsClient({
           </div>
         </div>
       )}
+
+      {/* 입주자 정보 인라인 모달 — 닫으면 원래 수납 모달 그대로 */}
+      {tenantInfoId && (
+        <TenantInfoModal tenantId={tenantInfoId} onClose={() => setTenantInfoId(null)} />
+      )}
+      {/* 호실 정보 인라인 모달 */}
+      {roomInfoId && (
+        <RoomInfoModal roomId={roomInfoId} onClose={() => setRoomInfoId(null)} />
+      )}
+    </div>
+  )
+}
+
+// ── 입주자 정보 인라인 모달 ──────────────────────────────────────
+function TenantInfoModal({ tenantId, onClose }: { tenantId: string; onClose: () => void }) {
+  const [info, setInfo] = useState<Awaited<ReturnType<typeof getTenantQuickInfo>> | null>(null)
+  useEffect(() => {
+    getTenantQuickInfo(tenantId).then(setInfo)
+  }, [tenantId])
+  const lease = info?.leaseTerms?.[0]
+  return (
+    <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[85vh]"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+          <h2 className="text-base font-bold text-[var(--warm-dark)]">입주자 정보</h2>
+          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+        </div>
+        <div className="overflow-y-auto px-6 py-5 space-y-3 flex-1">
+          {!info ? (
+            <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
+          ) : (
+            <div className="space-y-2 text-sm">
+              <Row label="이름" value={info.name} />
+              {info.gender && <Row label="성별" value={info.gender === 'MALE' ? '남' : info.gender === 'FEMALE' ? '여' : '—'} />}
+              {info.nationality && <Row label="국적" value={info.nationality} />}
+              {info.job && <Row label="직업" value={info.job} />}
+              {info.birthdate && <Row label="생년월일" value={new Date(info.birthdate).toISOString().slice(0, 10)} />}
+              {info.contacts && info.contacts.length > 0 && (
+                <Row label="연락처" value={info.contacts.map(c => c.contactValue).join(' / ')} />
+              )}
+              {lease?.room?.roomNo && <Row label="호실" value={`${lease.room.roomNo}호`} />}
+              {lease?.rentAmount && <Row label="월 이용료" value={`${lease.rentAmount.toLocaleString()}원`} />}
+              {lease?.depositAmount ? <Row label="보증금" value={`${lease.depositAmount.toLocaleString()}원`} /> : null}
+              {lease?.dueDay && <Row label="납부일" value={lease.dueDay.includes('말') ? '매월 말일' : `매월 ${lease.dueDay}일`} />}
+              {lease?.moveInDate && <Row label="입주일" value={new Date(lease.moveInDate).toISOString().slice(0, 10)} />}
+              {lease?.expectedMoveOut && <Row label="퇴실 예정일" value={new Date(lease.expectedMoveOut).toISOString().slice(0, 10)} />}
+              {info.memo && <Row label="메모" value={info.memo} />}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 호실 정보 인라인 모달 ────────────────────────────────────────
+function RoomInfoModal({ roomId, onClose }: { roomId: string; onClose: () => void }) {
+  const [info, setInfo] = useState<Awaited<ReturnType<typeof getRoomQuickInfo>> | null>(null)
+  useEffect(() => {
+    getRoomQuickInfo(roomId).then(setInfo)
+  }, [roomId])
+  return (
+    <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[85vh]"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-base font-bold text-[var(--warm-dark)]">{info?.roomNo}호 정보</h2>
+            {info && (
+              <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
+                ${info.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'}`}>
+                {info.isVacant ? '공실' : '거주중'}
+              </span>
+            )}
+          </div>
+          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+        </div>
+        <div className="overflow-y-auto flex-1">
+          {!info ? (
+            <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
+          ) : (
+            <>
+              {info.photos.length > 0 && (
+                <div className="border-b border-[var(--warm-border)] flex gap-2 overflow-x-auto px-4 py-3" style={{ scrollbarWidth: 'none' }}>
+                  {info.photos.map(p => (
+                    <img key={p.id} src={p.storageUrl} alt="" className="h-32 w-32 object-cover rounded-xl shrink-0" />
+                  ))}
+                </div>
+              )}
+              <div className="px-6 py-5 space-y-2 text-sm">
+                <Row label="입주자" value={info.leaseTerms[0]?.tenant?.name ?? '공실'} />
+                {info.type && <Row label="방 타입" value={info.type} />}
+                <Row label="기본 이용료" value={`${info.baseRent.toLocaleString()}원`} />
+                {info.scheduledRent != null && (
+                  <Row
+                    label="예약 이용료"
+                    value={`${info.scheduledRent.toLocaleString()}원${info.rentUpdateDate ? ` (${new Date(info.rentUpdateDate).toISOString().slice(0, 10)} 적용)` : ''}`}
+                  />
+                )}
+                {info.windowType && <Row label="창문" value={info.windowType === 'OUTER' ? '외창' : info.windowType === 'INNER' ? '내창' : info.windowType} />}
+                {info.direction && <Row label="방향" value={info.direction} />}
+                {(info.areaPyeong || info.areaM2) && (
+                  <Row label="면적" value={[
+                    info.areaPyeong ? `${info.areaPyeong}평` : '',
+                    info.areaM2 ? `${info.areaM2}㎡` : '',
+                  ].filter(Boolean).join(' / ')} />
+                )}
+                {info.memo && <Row label="메모" value={info.memo} />}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-1.5 border-b border-[var(--warm-border)]/50 last:border-0">
+      <span className="text-xs text-[var(--warm-muted)] shrink-0">{label}</span>
+      <span className="text-sm text-[var(--warm-dark)] text-right">{value}</span>
     </div>
   )
 }
