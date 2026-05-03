@@ -168,7 +168,10 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
       {/* 카테고리별 지출 비중 */}
       {summary.expenseByCategory.length > 0 && (
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4">
-          <h3 className="text-sm font-semibold text-[var(--warm-dark)] mb-3">카테고리별 지출 비중</h3>
+          <div className="flex items-baseline gap-2 mb-3">
+            <h3 className="text-sm font-semibold text-[var(--warm-dark)]">카테고리별 지출 비중</h3>
+            <span className="text-[11px] text-[var(--warm-muted)]">{summary.year}년 연간 합계 기준</span>
+          </div>
           <div className="space-y-2">
             {summary.expenseByCategory.map(c => {
               const colors = ['#f4623a', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#06b6d4', '#ef4444', '#94a3b8']
