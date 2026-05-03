@@ -216,18 +216,25 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       acqMonthCurrentOpRecords === 0
     )
 
-    // 첫 미납월 — 발생주의: 각 월의 targetMonth 합이 expected 미만이면 그 월이 미수 시작
+    // 첫 미납월 — cash 누적 FIFO: record.targetMonth 무관하게 받은 총액이
+    // 그 월까지의 누적 청구를 충족하는지로 판단. 지연 입금이라도 받은 돈은
+    // 가장 오래된 미수부터 충당 (사용자 멘탈 모델과 일치).
+    // 예: 김영일이 4월말 dueDay 놓치고 5/1에 4월분 28만 입금
+    //   → record가 5월에 저장돼 있어도, 받은 28만이 4월 청구 28만을 충당
+    //   → firstUnpaidMonth = 5월 (5월 dueDay 미래)
     let firstUnpaidMonth: string | null = null
-    for (let cy = acqYyyy, cmn = acqMm; cy < yyyy || (cy === yyyy && cmn <= mm); ) {
-      const ms = `${cy}-${String(cmn).padStart(2, '0')}`
-      const skip = ms === acqMonthStr && acqMonthPrePaid
-      if (!skip) {
-        const receivedForMonth = postCutoffRecords
-          .filter(p => p.targetMonth === ms)
-          .reduce((s, p) => s + p.actualAmount, 0)
-        if (receivedForMonth < expected) { firstUnpaidMonth = ms; break }
+    {
+      const totalReceivedAll = postCutoffRecords.reduce((s, p) => s + p.actualAmount, 0)
+      let cumExpected = 0
+      for (let cy = acqYyyy, cmn = acqMm; cy < yyyy || (cy === yyyy && cmn <= mm); ) {
+        const ms = `${cy}-${String(cmn).padStart(2, '0')}`
+        const skip = ms === acqMonthStr && acqMonthPrePaid
+        if (!skip) {
+          cumExpected += expected
+          if (totalReceivedAll < cumExpected) { firstUnpaidMonth = ms; break }
+        }
+        cmn++; if (cmn > 12) { cmn = 1; cy++ }
       }
-      cmn++; if (cmn > 12) { cmn = 1; cy++ }
     }
 
     if (isFutureMonth) {
