@@ -104,12 +104,19 @@ export type ItemPickState = {
   label: string
   specValue: string; specUnit: string
   qtyValue: string; qtyUnit: string
+  amount?: number   // 다중 품목 입력 시: 이 품목에 할당된 금액 (단일 품목일 때는 미사용)
 }
 
 export function fmtItemDetail(d: ItemPickState): string {
   const spec = d.specValue ? `${d.specValue}${d.specUnit}` : ''
   const qty  = d.qtyValue  ? `${d.qtyValue}${d.qtyUnit}`  : ''
   return [`[${d.label}]`, spec, qty && `x ${qty}`].filter(Boolean).join(' ')
+}
+
+export function fmtItemListDetail(items: ItemPickState[]): string {
+  if (items.length === 0) return ''
+  if (items.length === 1) return fmtItemDetail(items[0])
+  return items.map(d => fmtItemDetail(d)).join(', ')
 }
 
 function UnitCombobox({ value, onChange, options, placeholder }: {
@@ -154,37 +161,45 @@ function UnitCombobox({ value, onChange, options, placeholder }: {
   )
 }
 
-function ItemSelector({ category, onChange }: {
+function ItemSelector({ category, onChange, allowMulti = true, initial }: {
   category: string
-  onChange: (data: ItemPickState | null) => void
+  onChange: (data: ItemPickState[]) => void
+  allowMulti?: boolean
+  initial?: ItemPickState[]
 }) {
   const presets = ITEM_PRESETS[category]
-  const [picked, setPicked]           = useState<ItemPickState | null>(null)
+  const [items, setItems]             = useState<ItemPickState[]>(initial ?? [])
   const [activeLabel, setActiveLabel] = useState<string | null>(null)
   const [specValue, setSpecValue]     = useState('')
   const [specUnit, setSpecUnit]       = useState('')
   const [qtyValue, setQtyValue]       = useState('')
   const [qtyUnit, setQtyUnit]         = useState('')
+  const [amountStr, setAmountStr]     = useState('')   // 다중 품목 입력 시 항목별 금액
   const [customLabel, setCustomLabel] = useState('')
   const [fetching, setFetching]       = useState(false)
   const [prevUnits, setPrevUnits]     = useState<{ specUnit: string | null; qtyUnit: string | null } | null>(null)
 
+  // category 변경 시 초기화 — 단, initial이 주어지면 그대로 유지(편집 모드용)
   useEffect(() => {
-    setPicked(null); setActiveLabel(null)
+    setActiveLabel(null)
     setSpecValue(''); setSpecUnit(''); setQtyValue(''); setQtyUnit('')
+    setAmountStr('')
     setCustomLabel(''); setPrevUnits(null)
-    onChange(null)
-  }, [category])
+    if (initial == null) {
+      setItems([])
+      onChange([])
+    }
+  }, [category]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!presets) return null
 
-  // 숫자 input — 화살표 spinner 숨김, 모바일에서 숫자 키패드
   const numCls  = 'w-16 bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
+  const amtCls  = 'flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
   const textCls = 'w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   async function openPreset(label: string) {
     setActiveLabel(label)
-    setSpecValue(''); setQtyValue('')
+    setSpecValue(''); setQtyValue(''); setAmountStr('')
     const def = ITEM_DEFAULTS[label]
     setSpecUnit(def?.specUnit ?? ''); setQtyUnit(def?.qtyUnit ?? '')
     setPrevUnits(null)
@@ -199,16 +214,28 @@ function ItemSelector({ category, onChange }: {
     } finally { setFetching(false) }
   }
 
-  function confirm(label: string) {
-    const data: ItemPickState = { label, specValue, specUnit, qtyValue, qtyUnit }
-    setPicked(data); setActiveLabel(null); onChange(data)
+  function confirmAdd(label: string) {
+    const amount = amountStr ? Number(amountStr.replace(/[^0-9]/g, '')) : undefined
+    const data: ItemPickState = { label, specValue, specUnit, qtyValue, qtyUnit, amount }
+    const next = [...items, data]
+    setItems(next); onChange(next)
+    // 입력창 비우고 다음 항목 추가 가능 상태로
+    setActiveLabel(null)
+    setSpecValue(''); setQtyValue(''); setAmountStr(''); setCustomLabel('')
   }
 
-  function clear() {
-    setPicked(null); setActiveLabel(null)
-    setSpecValue(''); setSpecUnit(''); setQtyValue(''); setQtyUnit('')
-    onChange(null)
+  function removeItem(idx: number) {
+    const next = items.filter((_, i) => i !== idx)
+    setItems(next); onChange(next)
   }
+
+  function updateItemAmount(idx: number, raw: string) {
+    const amount = raw ? Number(raw.replace(/[^0-9]/g, '')) : undefined
+    const next = items.map((it, i) => i === idx ? { ...it, amount } : it)
+    setItems(next); onChange(next)
+  }
+
+  const totalItemAmount = items.reduce((s, it) => s + (it.amount ?? 0), 0)
 
   const SpecQtyInputs = () => (
     <div className="space-y-2">
@@ -240,19 +267,55 @@ function ItemSelector({ category, onChange }: {
           </div>
         </div>
       </div>
+      {allowMulti && (
+        <div className="space-y-1">
+          <label className="text-[10px] text-[var(--warm-muted)]">금액 <span className="text-[var(--warm-muted)]">(이 품목 분)</span></label>
+          <div className="flex gap-1 items-center">
+            <input type="text" inputMode="numeric"
+              value={amountStr ? Number(amountStr.replace(/[^0-9]/g, '')).toLocaleString() : ''}
+              onChange={e => setAmountStr(e.target.value.replace(/[^0-9]/g, ''))}
+              placeholder="0"
+              className={amtCls} />
+            <span className="text-[10px] text-[var(--warm-muted)] shrink-0">원</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 
   return (
     <div className="space-y-2">
-      {picked && (
-        <span className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--coral-pale)] text-[var(--coral)] text-xs rounded-full ring-1 ring-[var(--coral)]/20">
-          {fmtItemDetail(picked)}
-          <button type="button" onClick={clear} className="hover:text-red-600 leading-none">×</button>
-        </span>
+      {/* 등록된 품목 칩 리스트 */}
+      {items.length > 0 && (
+        <div className="space-y-1.5">
+          {items.map((it, idx) => (
+            <div key={idx} className="flex items-center gap-2 px-2.5 py-1.5 bg-[var(--coral-pale)] text-[var(--coral)] rounded-xl ring-1 ring-[var(--coral)]/20">
+              <span className="text-xs flex-1 min-w-0 truncate">{fmtItemDetail(it)}</span>
+              {allowMulti && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <input
+                    type="text" inputMode="numeric"
+                    value={it.amount ? it.amount.toLocaleString() : ''}
+                    onChange={e => updateItemAmount(idx, e.target.value)}
+                    placeholder="금액"
+                    className="w-20 bg-[var(--cream)] border border-[var(--coral)]/30 rounded-md px-1.5 py-0.5 text-xs text-[var(--warm-dark)] text-right outline-none focus:border-[var(--coral)]"
+                  />
+                  <span className="text-[10px]">원</span>
+                </div>
+              )}
+              <button type="button" onClick={() => removeItem(idx)} className="hover:text-red-600 leading-none text-sm shrink-0">×</button>
+            </div>
+          ))}
+          {allowMulti && items.length > 1 && (
+            <p className="text-[10px] text-[var(--warm-muted)] text-right">
+              합계 {totalItemAmount.toLocaleString()}원
+            </p>
+          )}
+        </div>
       )}
 
-      {!picked && !activeLabel && (
+      {/* 품목 추가 버튼들 — 다중 모드면 항상, 단일 모드면 비어있을 때만 */}
+      {!activeLabel && (allowMulti || items.length === 0) && (
         <div className="flex flex-wrap gap-1.5">
           {presets.map(label => (
             <button key={label} type="button" onClick={() => openPreset(label)}
@@ -277,7 +340,7 @@ function ItemSelector({ category, onChange }: {
               className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none">✕</button>
           </div>
           {SpecQtyInputs()}
-          <button type="button" onClick={() => confirm(activeLabel)}
+          <button type="button" onClick={() => confirmAdd(activeLabel)}
             className="w-full py-1.5 bg-[var(--coral)] hover:opacity-90 text-white text-xs font-medium rounded-lg transition-colors">추가</button>
         </div>
       )}
@@ -294,7 +357,7 @@ function ItemSelector({ category, onChange }: {
             <input type="text" placeholder="예: 고추장" value={customLabel} onChange={e => setCustomLabel(e.target.value)} className={textCls} />
           </div>
           {SpecQtyInputs()}
-          <button type="button" onClick={() => { if (customLabel.trim()) confirm(customLabel.trim()) }}
+          <button type="button" onClick={() => { if (customLabel.trim()) confirmAdd(customLabel.trim()) }}
             className="w-full py-1.5 bg-[var(--coral)] hover:opacity-90 text-white text-xs font-medium rounded-lg transition-colors">
             추가
           </button>
@@ -605,7 +668,7 @@ export default function FinanceClient({
   const [receiptUploading, setReceiptUploading] = useState(false)
   const [addExpCategory, setAddExpCategory]   = useState(EXPENSE_CATEGORIES[0])
   const [editExpCategory, setEditExpCategory] = useState('')
-  const [addItemData, setAddItemData]   = useState<ItemPickState | null>(null)
+  const [addItems, setAddItems]   = useState<ItemPickState[]>([])
   const [editItemData, setEditItemData] = useState<ItemPickState | null>(null)
 
   // ── 수익 탭 상태 ─────────────────────────────────────────────
@@ -1125,7 +1188,7 @@ export default function FinanceClient({
               className="px-4 py-2 bg-[var(--canvas)] border border-[var(--warm-border)] hover:border-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
               고정 지출 관리
             </button>
-            <button onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItemData(null); setError('') }}
+            <button onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setError('') }}
               className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
               + 지출 등록
             </button>
@@ -1931,7 +1994,13 @@ export default function FinanceClient({
                   {ITEM_PRESETS[editExpCategory] && (
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택</label>
-                      <ItemSelector key={editExpCategory} category={editExpCategory} onChange={setEditItemData} />
+                      <ItemSelector
+                        key={editExpCategory}
+                        category={editExpCategory}
+                        allowMulti={false}
+                        initial={editItemData ? [editItemData] : []}
+                        onChange={list => setEditItemData(list[0] ?? null)}
+                      />
                     </div>
                   )}
                   <div className="space-y-1.5">
@@ -2150,14 +2219,23 @@ export default function FinanceClient({
                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
-                    <MoneyInput name="amount" placeholder="0원" />
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">
+                      금액 *{addItems.length > 1 && <span className="text-[10px] text-[var(--warm-muted)] font-normal ml-1">(품목 합계 자동)</span>}
+                    </label>
+                    {addItems.length > 1 ? (
+                      <div className="relative">
+                        <input type="hidden" name="amount" value={addItems.reduce((s, it) => s + (it.amount ?? 0), 0)} />
+                        <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
+                          {addItems.reduce((s, it) => s + (it.amount ?? 0), 0).toLocaleString()}원
+                        </div>
+                      </div>
+                    ) : <MoneyInput name="amount" placeholder="0원" />}
                   </div>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                   <select name="category" value={addExpCategory}
-                    onChange={e => { setAddExpCategory(e.target.value); setAddItemData(null) }}
+                    onChange={e => { setAddExpCategory(e.target.value); setAddItems([]) }}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
@@ -2169,24 +2247,29 @@ export default function FinanceClient({
                 </div>
                 {ITEM_PRESETS[addExpCategory] && (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택</label>
-                    <ItemSelector key={addExpCategory} category={addExpCategory} onChange={setAddItemData} />
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택 <span className="text-[var(--warm-muted)] font-normal">(여러 품목 추가 가능)</span></label>
+                    <ItemSelector key={addExpCategory} category={addExpCategory} onChange={setAddItems} />
                   </div>
                 )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
-                  {addItemData
-                    ? <input type="text" name="detail" value={fmtItemDetail(addItemData)} readOnly
+                  {addItems.length > 0
+                    ? <input type="text" name="detail" value={fmtItemListDetail(addItems)} readOnly
                         className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
                     : <input type="text" name="detail" placeholder="세부 내용"
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   }
-                  {addItemData && <>
-                    <input type="hidden" name="itemLabel" value={addItemData.label} />
-                    <input type="hidden" name="specValue" value={addItemData.specValue} />
-                    <input type="hidden" name="specUnit"  value={addItemData.specUnit} />
-                    <input type="hidden" name="qtyValue"  value={addItemData.qtyValue} />
-                    <input type="hidden" name="qtyUnit"   value={addItemData.qtyUnit} />
+                  {addItems.length > 0 && <>
+                    <input type="hidden" name="itemsJson" value={JSON.stringify(addItems)} />
+                    {addItems.length === 1 && (
+                      <>
+                        <input type="hidden" name="itemLabel" value={addItems[0].label} />
+                        <input type="hidden" name="specValue" value={addItems[0].specValue} />
+                        <input type="hidden" name="specUnit"  value={addItems[0].specUnit} />
+                        <input type="hidden" name="qtyValue"  value={addItems[0].qtyValue} />
+                        <input type="hidden" name="qtyUnit"   value={addItems[0].qtyUnit} />
+                      </>
+                    )}
                   </>}
                 </div>
                 <div className="space-y-1.5">

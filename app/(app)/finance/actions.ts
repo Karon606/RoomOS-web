@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
 import { uploadToDrive } from '@/lib/google-drive'
+import type { SettleStatus } from '@prisma/client'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -141,6 +142,13 @@ export async function getLastItemUnits(
   return row ?? null
 }
 
+type ItemPick = {
+  label: string
+  specValue?: string; specUnit?: string
+  qtyValue?: string;  qtyUnit?: string
+  amount?: number
+}
+
 export async function addExpense(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -161,23 +169,59 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const qtyUnit   = formData.get('qtyUnit') as string
     const specValueRaw = formData.get('specValue') as string
     const qtyValueRaw  = formData.get('qtyValue') as string
+    const itemsJsonRaw = formData.get('itemsJson') as string
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
+    // 다중 품목: itemsJson 파싱해 N개 행으로 분할
+    let multiItems: ItemPick[] | null = null
+    if (itemsJsonRaw) {
+      try {
+        const parsed = JSON.parse(itemsJsonRaw)
+        if (Array.isArray(parsed) && parsed.length >= 2) multiItems = parsed
+      } catch { /* fallthrough → 단일 row */ }
+    }
+
+    const baseSettleStatus: SettleStatus = payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED'
+    const baseRow = {
+      propertyId,
+      date:               new Date(date),
+      category,
+      vendor:             vendor || null,
+      memo:               memo || null,
+      payMethod:          payMethod || '계좌이체',
+      financialAccountId: financialAccountId || null,
+      financeName:        financeName || null,
+      receiptUrl:         receiptUrl || null,
+      settleStatus:       baseSettleStatus,
+      roomId:             roomId || null,
+    }
+
+    if (multiItems) {
+      // 각 품목 amount 합 = 총 amount 검증 (반올림 1원 허용)
+      const sum = multiItems.reduce((s, it) => s + (Number(it.amount) || 0), 0)
+      if (Math.abs(sum - amount) > 1) return { ok: false, error: `품목 금액 합계(${sum.toLocaleString()}원)와 총 금액(${amount.toLocaleString()}원)이 일치하지 않습니다.` }
+      await prisma.$transaction(multiItems.map(it => prisma.expense.create({
+        data: {
+          ...baseRow,
+          amount:    Number(it.amount) || 0,
+          detail:    `[${it.label}]${it.specValue ? ` ${it.specValue}${it.specUnit ?? ''}` : ''}${it.qtyValue ? ` x ${it.qtyValue}${it.qtyUnit ?? ''}` : ''}`,
+          itemLabel: it.label,
+          specUnit:  it.specUnit || null,
+          qtyUnit:   it.qtyUnit  || null,
+          specValue: it.specValue ? parseFloat(it.specValue) : null,
+          qtyValue:  it.qtyValue  ? parseFloat(it.qtyValue)  : null,
+        },
+      })))
+      revalidatePath('/finance')
+      return { ok: true }
+    }
+
     await prisma.expense.create({
       data: {
-        propertyId,
-        date:               new Date(date),
-        amount, category,
+        ...baseRow,
+        amount,
         detail:             detail || null,
-        vendor:             vendor || null,
-        memo:               memo || null,
-        payMethod:          payMethod || '계좌이체',
-        financialAccountId: financialAccountId || null,
-        financeName:        financeName || null,
-        receiptUrl:         receiptUrl || null,
-        settleStatus:       payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED',
-        roomId:             roomId || null,
         itemLabel:          itemLabel || null,
         specUnit:           specUnit || null,
         qtyUnit:            qtyUnit || null,
