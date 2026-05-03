@@ -196,8 +196,92 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
         </div>
       )}
 
-      {/* 월별 표 */}
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+      {/* 월별 카드 (모바일 전용) */}
+      <div className="space-y-2 sm:hidden print:hidden">
+        {summary.rows.map(r => {
+          const incomeTotal = r.revenue + r.extraIncome
+          const incomePct = (incomeTotal / maxAbs) * 100
+          const expensePct = (r.expense / maxAbs) * 100
+          const prevRow = summary.prevYear?.rows.find(p => p.month.slice(5) === r.month.slice(5))
+          const delta = prevRow ? r.revenue - prevRow.revenue : 0
+          return (
+            <div key={r.month} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 space-y-2.5">
+              <div className="flex items-center justify-between pb-2 border-b border-[var(--warm-border)]/60">
+                <span className="text-sm font-bold text-[var(--warm-dark)]">{Number(r.month.slice(5))}월</span>
+                <span className={`text-sm font-semibold ${
+                  r.profit > 0 ? 'text-emerald-600' : r.profit < 0 ? 'text-red-500' : 'text-[var(--warm-muted)]'
+                }`}>
+                  순이익 {r.profit === 0 ? '—' : (r.profit > 0 ? '+' : '-') + Math.abs(r.profit).toLocaleString() + '원'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                <div className="flex justify-between"><span className="text-[var(--warm-muted)]">매출</span><span className="text-[var(--warm-dark)]">{fmt(r.revenue)}</span></div>
+                <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기타수익</span><span className="text-[var(--warm-mid)]">{fmt(r.extraIncome)}</span></div>
+                <div className="flex justify-between"><span className="text-[var(--warm-muted)]">지출</span><span className="text-[var(--warm-mid)]">{fmt(r.expense)}</span></div>
+                <div className="flex justify-between"><span className="text-[var(--warm-muted)]">월말 미수</span><span className="text-amber-600">{r.unpaidAmount > 0 ? fmt(r.unpaidAmount) : '—'}</span></div>
+                {summary.prevYear && (
+                  <div className="col-span-2 flex justify-between pt-1 border-t border-[var(--warm-border)]/40">
+                    <span className="text-[var(--warm-muted)]">전년 매출</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[var(--warm-mid)]">{fmt(prevRow?.revenue ?? 0)}</span>
+                      {prevRow && r.revenue > 0 && delta !== 0 && (
+                        <span className={`text-[10px] font-semibold ${delta > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                          {(delta > 0 ? '▲' : '▼')} {Math.abs(delta).toLocaleString()}원
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-1 pt-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">수익</span>
+                  <div className="h-1.5 rounded-full bg-emerald-200 flex-1 max-w-full" style={{ width: `${incomePct}%`, minWidth: incomeTotal > 0 ? '4px' : 0 }} />
+                  <span className="text-[10px] text-[var(--warm-muted)] tabular-nums">{fmtMan(incomeTotal)}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">지출</span>
+                  <div className="h-1.5 rounded-full bg-rose-200 flex-1 max-w-full" style={{ width: `${expensePct}%`, minWidth: r.expense > 0 ? '4px' : 0 }} />
+                  <span className="text-[10px] text-[var(--warm-muted)] tabular-nums">{fmtMan(r.expense)}</span>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+        <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-2xl p-4 space-y-2">
+          <div className="flex items-center justify-between pb-2 border-b border-[var(--warm-border)]/60">
+            <span className="text-sm font-bold text-[var(--warm-dark)]">합계</span>
+            <span className={`text-sm font-bold ${summary.totalProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+              {(summary.totalProfit >= 0 ? '+' : '-') + Math.abs(summary.totalProfit).toLocaleString() + '원'}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+            <div className="flex justify-between"><span className="text-[var(--warm-muted)]">매출</span><span className="text-[var(--warm-dark)] font-medium">{fmt(summary.totalRevenue)}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기타수익</span><span className="text-[var(--warm-mid)]">{fmt(summary.totalExtraIncome)}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--warm-muted)]">지출</span><span className="text-[var(--warm-mid)]">{fmt(summary.totalExpense)}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--warm-muted)]">월말 미수</span><span className="text-amber-600">{fmt(summary.endingUnpaid)}</span></div>
+            {summary.prevYear && summary.prevYear.totalRevenue > 0 && (() => {
+              const totalDelta = summary.totalRevenue - summary.prevYear.totalRevenue
+              return (
+                <div className="col-span-2 flex justify-between pt-1 border-t border-[var(--warm-border)]/40">
+                  <span className="text-[var(--warm-muted)]">전년 매출</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-[var(--warm-mid)]">{fmt(summary.prevYear.totalRevenue)}</span>
+                    {totalDelta !== 0 && (
+                      <span className={`text-[10px] font-semibold ${totalDelta > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {(totalDelta > 0 ? '▲' : '▼')} {Math.abs(totalDelta).toLocaleString()}원
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+      </div>
+
+      {/* 월별 표 (sm 이상 / 인쇄) */}
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden hidden sm:block print:block">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-[var(--canvas)] border-b border-[var(--warm-border)]">
@@ -310,7 +394,30 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
           accent={forecast.totalProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}
         />
       </div>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+      {/* 예상 카드 (모바일 전용) */}
+      <div className="space-y-2 sm:hidden print:hidden">
+        {forecast.rows.map(r => (
+          <div key={r.month} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 space-y-2.5">
+            <div className="flex items-center justify-between pb-2 border-b border-[var(--warm-border)]/60">
+              <span className="text-sm font-bold text-[var(--warm-dark)]">{r.month.slice(0, 4)}년 {Number(r.month.slice(5))}월</span>
+              <span className={`text-sm font-semibold ${
+                r.expectedProfit > 0 ? 'text-emerald-600' : r.expectedProfit < 0 ? 'text-red-500' : 'text-[var(--warm-muted)]'
+              }`}>
+                {r.expectedProfit === 0 ? '—' : (r.expectedProfit > 0 ? '+' : '-') + Math.abs(r.expectedProfit).toLocaleString() + '원'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+              <div className="flex justify-between"><span className="text-[var(--warm-muted)]">예상 매출</span><span className="text-[var(--warm-dark)]">{fmt(r.expectedRevenue)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기타 수익</span><span className="text-[var(--warm-mid)]">{fmt(r.expectedExtraIncome)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--warm-muted)]">예상 지출</span><span className="text-[var(--warm-mid)]">{fmt(r.expectedExpense)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--warm-muted)]">점유/공실</span><span className="text-[var(--warm-dark)]">{r.occupiedRooms} / {r.occupiedRooms + r.vacantRooms}</span></div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* 예상 표 (sm 이상 / 인쇄) */}
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden hidden sm:block print:block">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-[var(--canvas)] border-b border-[var(--warm-border)]">
