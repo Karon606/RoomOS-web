@@ -972,7 +972,7 @@ export default function TenantClient({
           <div className="bg-[var(--cream)] rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-[var(--warm-dark)]">보증금 반환 처리</h2>
-              <button onClick={() => setDepositRefundModal(null)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+              <button onClick={() => setDepositRefundModal(null)} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
             </div>
             <div className="bg-[var(--canvas)] rounded-xl p-3 text-sm text-[var(--warm-dark)]">
               <span className="text-[var(--warm-muted)]">보증금 </span>
@@ -1027,7 +1027,7 @@ export default function TenantClient({
             <div className="bg-[var(--cream)] rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-bold text-[var(--warm-dark)]">가격 변동 적용</h2>
-                <button onClick={() => setRentChangeModal(null)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+                <button onClick={() => setRentChangeModal(null)} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
               </div>
               <p className="text-sm text-[var(--warm-mid)] leading-relaxed">
                 <span className="font-semibold text-[var(--warm-dark)]">{rentChangeModal.roomNo}호</span>가 공실로 변경됩니다. 예정된 가격 변동을 즉시 적용할까요?
@@ -1395,7 +1395,7 @@ export default function TenantClient({
                     })()}
                   </div>
                   <div className="flex items-center gap-2 ml-4 shrink-0">
-                    <button onClick={closeDetail} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+                    <button onClick={closeDetail} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
                   </div>
                 </div>
                 {!detailEditMode && ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(status) && (
@@ -1959,7 +1959,7 @@ export default function TenantClient({
                     {targetMonth} · 예정 {lease.rentAmount.toLocaleString()}원
                   </p>
                 </div>
-                <button onClick={closePayModal} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+                <button onClick={closePayModal} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
               </div>
 
               {/* ── 읽기 전용 ── */}
@@ -2025,7 +2025,7 @@ export default function TenantClient({
                                   {isExtra ? '-' : '+'}{absAmt.toLocaleString()}원
                                 </span>
                                 <button onClick={() => handleDeletePayRecord(p.id)}
-                                  className="text-[10px] font-medium px-2 py-1 rounded-lg border border-red-200 text-red-500 transition-colors">삭제</button>
+                                  className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-red-200 text-red-500 transition-colors">삭제</button>
                               </div>
                             </div>
                           )
@@ -2086,7 +2086,7 @@ export default function TenantClient({
                                     수정
                                   </button>
                                   <button onClick={() => handleDeletePayRecord(p.id)}
-                                    className="text-[10px] font-medium px-2 py-1 rounded-lg border border-red-200 text-red-500 transition-colors">
+                                    className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-red-200 text-red-500 transition-colors">
                                     삭제
                                   </button>
                                 </div>
@@ -2167,7 +2167,7 @@ export default function TenantClient({
                                     수정
                                   </button>
                                   <button onClick={() => handleDeletePayRecord(p.id)}
-                                    className="text-[10px] font-medium px-2 py-1 rounded-lg border border-red-200 text-red-500 transition-colors">
+                                    className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-red-200 text-red-500 transition-colors">
                                     삭제
                                   </button>
                                 </div>
@@ -3178,7 +3178,7 @@ function SettlementInfoModal({
               {info ? `${info.roomNo}호 — ${info.tenantName ?? ''}` : '수납 정보'}
             </h2>
           </div>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
           {!info ? (
@@ -3257,7 +3257,7 @@ function RoomInfoSimpleModal({
               </span>
             )}
           </div>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
         <div className="overflow-y-auto flex-1">
           {!info ? (

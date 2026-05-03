@@ -695,13 +695,13 @@ export default function SettingsForm({
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button onClick={() => handleToggleRec(r)}
-                      className="text-[10px] px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                      className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
                       {r.isActive ? '비활성' : '활성화'}
                     </button>
                     <button onClick={() => openEditRec(r)}
-                      className="text-[10px] px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
+                      className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
                     <button onClick={() => handleDeleteRec(r.id, r.title)}
-                      className="text-[10px] px-2 py-1 rounded-lg border border-red-200 text-red-400 hover:text-red-600 transition-colors">삭제</button>
+                      className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-red-200 text-red-400 hover:text-red-600 transition-colors">삭제</button>
                   </div>
                 </div>
               ))}
@@ -908,14 +908,14 @@ function OptionSection({
                   className="shrink-0 text-[10px] px-2 py-1 rounded-lg text-white transition-colors"
                   style={{ background: 'var(--coral)' }}>저장</button>
                 <button onClick={() => setEditingItem(null)}
-                  className="shrink-0 text-[10px] px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">취소</button>
+                  className="shrink-0 text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">취소</button>
               </>
             ) : (
               <>
                 <span className="flex-1 text-sm text-[var(--warm-dark)]">{getLabel(item)}</span>
                 {onRename && (
                   <button onClick={() => startEdit(item)}
-                    className="shrink-0 text-[10px] px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
+                    className="shrink-0 text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
                 )}
                 <button onClick={() => onDelete(item)}
                   className="shrink-0 text-[10px] text-red-400 hover:text-red-300 transition-colors px-1">삭제</button>

@@ -573,7 +573,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
           </div>
         </div>
         <button disabled={pending} onClick={() => onDeleteCheck(entry.id)}
-          className="text-[10px] text-red-400 hover:text-red-600 disabled:opacity-40 shrink-0">삭제</button>
+          className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 shrink-0 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-red-50">삭제</button>
       </li>
     )
   }
@@ -611,7 +611,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
         </div>
       </div>
       <button disabled={pending} onClick={() => onDeleteAddition(entry.id)}
-        className="text-[10px] text-red-400 hover:text-red-600 disabled:opacity-40 shrink-0">삭제</button>
+        className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 shrink-0 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-red-50">삭제</button>
     </li>
   )
 }

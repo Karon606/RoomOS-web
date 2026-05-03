@@ -625,7 +625,7 @@ export default function RoomManageClient({
                     {r.isVacant ? '공실' : '거주중'}
                   </span>
                 </div>
-                <button onClick={closeDetail} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+                <button onClick={closeDetail} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
               </div>
 
               {/* 사진 슬라이더 — 클릭하면 확대 라이트박스 */}
@@ -1136,7 +1136,7 @@ function RoomMgrTenantInfoModal({ tenantId, onClose, onBack }: { tenantId: strin
               </span>
             )}
           </div>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
           {!info ? (
@@ -1233,7 +1233,7 @@ function RoomMgrSettlementInfoModal({
               {info ? `${info.roomNo}호 — ${info.tenantName ?? ''}` : '수납 정보'}
             </h2>
           </div>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
           {!info ? (

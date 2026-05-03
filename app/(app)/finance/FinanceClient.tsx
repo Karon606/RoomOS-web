@@ -1945,7 +1945,7 @@ export default function FinanceClient({
                 {detailExpEdit ? '지출 수정' : '지출 상세'}
               </h2>
               <button onClick={() => { setDetailExp(null); setDetailExpEdit(false) }}
-                className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+                aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
             </div>
 
             {!detailExpEdit ? (
@@ -2168,7 +2168,7 @@ export default function FinanceClient({
                 {detailIncEdit ? '수익 수정' : '수익 상세'}
               </h2>
               <button onClick={() => { setDetailInc(null); setDetailIncEdit(false) }}
-                className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+                aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
             </div>
 
             {!detailIncEdit ? (
@@ -2263,7 +2263,7 @@ export default function FinanceClient({
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
               <h2 className="text-base font-bold text-[var(--warm-dark)]">지출 등록</h2>
-              <button onClick={() => setShowAddExp(false)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+              <button onClick={() => setShowAddExp(false)} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
             </div>
             <form onSubmit={handleAddExp} className="flex flex-col flex-1 overflow-hidden">
               <input type="hidden" name="financialAccountId" value={addExpAccId} />
@@ -2453,7 +2453,7 @@ export default function FinanceClient({
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
               <h2 className="text-base font-bold text-[var(--warm-dark)]">부가 수익 등록</h2>
-              <button onClick={() => setShowAddInc(false)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+              <button onClick={() => setShowAddInc(false)} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
             </div>
             <form onSubmit={handleAddInc} className="flex flex-col flex-1 overflow-hidden">
               <input type="hidden" name="financialAccountId" value={addIncAccId} />
@@ -2645,13 +2645,13 @@ export default function FinanceClient({
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button onClick={() => handleToggleRecMgmt(r)}
-                        className="text-[10px] px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                        className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
                         {r.isActive ? '비활성' : '활성화'}
                       </button>
                       <button onClick={() => openEditRecMgmt(r)}
-                        className="text-[10px] px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
+                        className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
                       <button onClick={() => handleDeleteRecMgmt(r.id, r.title)}
-                        className="text-[10px] px-2 py-1 rounded-lg border border-red-200 text-red-400 hover:text-red-600 transition-colors">삭제</button>
+                        className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-red-200 text-red-400 hover:text-red-600 transition-colors">삭제</button>
                     </div>
                   </div>
                 ))}

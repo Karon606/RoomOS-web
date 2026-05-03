@@ -139,7 +139,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               </span>
             </div>
           </div>
-          <button onClick={onClose} className="ml-3 shrink-0 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="ml-3 shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
 
         {/* 후보 리스트 (희망 호실/조건 매칭 그룹) */}
@@ -261,7 +261,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
         {/* 헤더 */}
         <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: DIVIDER_COLOR }}>
           <p className="text-sm font-bold" style={{ color: 'var(--warm-dark)' }}>지출 등록</p>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
 
         {done ? (
@@ -1089,7 +1089,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
               </p>
             </div>
           )}
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none ml-4">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="ml-4 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
 
         {/* 본문 */}
@@ -1326,8 +1326,8 @@ function DashPayRow({ p, isPreAcq, onEdit, onDelete, color }: {
       <div className="flex items-center gap-2">
         <span className={`text-sm font-semibold ${amountColor}`}>{p.actualAmount.toLocaleString()}원</span>
         <div className="flex gap-1.5 ml-1">
-          <button onClick={() => onEdit(p)} className="text-[10px] font-medium px-2 py-1 rounded-lg border transition-colors" style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>수정</button>
-          <button onClick={() => onDelete(p.id)} className="text-[10px] font-medium px-2 py-1 rounded-lg border border-red-200 text-red-500 transition-colors">삭제</button>
+          <button onClick={() => onEdit(p)} className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border transition-colors" style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>수정</button>
+          <button onClick={() => onDelete(p.id)} className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-red-200 text-red-500 transition-colors">삭제</button>
         </div>
       </div>
     </div>
@@ -1368,8 +1368,8 @@ function DashEditRow({ editAmount, editDate, editPayMethod, editMemo, setEditAmo
         </div>
       </div>
       <div className="flex gap-2 justify-end">
-        <button onClick={onCancel} className="text-xs px-3 py-1.5 rounded-lg border transition-colors" style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>취소</button>
-        <button onClick={onSave} disabled={isPending} className="text-xs text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50" style={{ background: 'var(--coral)' }}>저장</button>
+        <button onClick={onCancel} className="text-xs px-3 py-1.5 min-h-[36px] rounded-lg border transition-colors" style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>취소</button>
+        <button onClick={onSave} disabled={isPending} className="text-xs text-white px-3 py-1.5 min-h-[36px] rounded-lg transition-colors disabled:opacity-50" style={{ background: 'var(--coral)' }}>저장</button>
       </div>
     </div>
   )
