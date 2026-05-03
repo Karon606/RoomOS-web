@@ -149,6 +149,116 @@ type ItemPick = {
   amount?: number
 }
 
+// ── 영수증 OCR (Gemini Vision) ────────────────────────────────────
+export type ReceiptOcrItem = {
+  label: string
+  specValue?: string; specUnit?: string
+  qtyValue?: string;  qtyUnit?: string
+  amount: number
+}
+export type ReceiptOcrResult = {
+  date?: string         // YYYY-MM-DD
+  vendor?: string
+  totalAmount?: number
+  items: ReceiptOcrItem[]
+  category?: string     // AI 추천 카테고리 (보수적)
+}
+
+export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: string): Promise<{ ok: true; data: ReceiptOcrResult } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    await getPropertyId()
+    if (!imageBase64) return { ok: false, error: '이미지 데이터가 비어있습니다.' }
+    const apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
+
+    const prompt = `이 영수증 이미지를 분석해 다음 JSON 스키마로만 응답하세요. 다른 설명, 마크다운, 코드 블록 없이 순수 JSON만 출력:
+
+{
+  "date": "YYYY-MM-DD",          // 결제일. 안 보이면 생략
+  "vendor": "상호명",              // 안 보이면 생략
+  "totalAmount": 12345,           // 합계 금액 (정수, 원)
+  "category": "부식비|소모품비|폐기물 처리비|수선유지비|공과금|마케팅/광고비|인건비|청소용역비|관리비|임대료|통신/렌탈/보험료|세금/수수료|보증금 반환",  // 가장 적합한 1개. 애매하면 생략
+  "items": [
+    {
+      "label": "품목명",
+      "specValue": "300",         // 용량/규격 숫자 (선택)
+      "specUnit": "ml",           // 용량 단위 (선택)
+      "qtyValue": "2",            // 개수 (선택)
+      "qtyUnit": "개",             // 개수 단위 (선택)
+      "amount": 5000              // 이 품목 가격 (정수)
+    }
+  ]
+}
+
+규칙:
+- 부가세/할인/포인트 등 메타 행은 items에 넣지 마세요
+- 한국어 영수증 우선. 가격은 숫자만 (콤마 제거)
+- 품목 가격 합계가 totalAmount와 약간 달라도 OK
+- 영수증으로 보이지 않는 이미지면: { "items": [] } 만 반환`
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: mimeType || 'image/jpeg', data: imageBase64 } },
+            ],
+          }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 1500, responseMimeType: 'application/json' },
+        }),
+      }
+    )
+
+    if (!res.ok) {
+      const errTxt = await res.text()
+      return { ok: false, error: `Gemini API 오류 (${res.status}): ${errTxt.slice(0, 200)}` }
+    }
+    const json = await res.json()
+    const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    if (!text) return { ok: false, error: 'AI 응답이 비어있습니다.' }
+
+    // JSON 파싱 (간혹 코드블록으로 감싸서 오는 경우 대비)
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
+    let parsed: any
+    try {
+      parsed = JSON.parse(cleaned)
+    } catch {
+      return { ok: false, error: 'AI 응답을 JSON으로 해석하지 못했습니다.' }
+    }
+
+    const items: ReceiptOcrItem[] = Array.isArray(parsed.items) ? parsed.items
+      .filter((it: any) => it && typeof it.label === 'string' && it.label.trim())
+      .map((it: any) => ({
+        label: String(it.label).trim(),
+        specValue: it.specValue ? String(it.specValue) : undefined,
+        specUnit:  it.specUnit  ? String(it.specUnit)  : undefined,
+        qtyValue:  it.qtyValue  ? String(it.qtyValue)  : undefined,
+        qtyUnit:   it.qtyUnit   ? String(it.qtyUnit)   : undefined,
+        amount:    Number(it.amount) || 0,
+      }))
+    : []
+
+    return {
+      ok: true,
+      data: {
+        date:        typeof parsed.date === 'string' ? parsed.date : undefined,
+        vendor:      typeof parsed.vendor === 'string' ? parsed.vendor : undefined,
+        totalAmount: typeof parsed.totalAmount === 'number' ? parsed.totalAmount : undefined,
+        category:    typeof parsed.category === 'string' ? parsed.category : undefined,
+        items,
+      },
+    }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 export async function addExpense(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()

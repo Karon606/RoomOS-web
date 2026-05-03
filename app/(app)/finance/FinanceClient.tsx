@@ -7,6 +7,7 @@ import {
   settleCardExpenses, unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
   recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits,
+  analyzeReceiptWithGemini,
   type RecurringExpenseWithStatus,
 } from './actions'
 import {
@@ -161,35 +162,30 @@ function UnitCombobox({ value, onChange, options, placeholder }: {
   )
 }
 
-function ItemSelector({ category, onChange, allowMulti = true, initial }: {
+function ItemSelector({ category, value, onChange, allowMulti = true }: {
   category: string
+  value: ItemPickState[]
   onChange: (data: ItemPickState[]) => void
   allowMulti?: boolean
-  initial?: ItemPickState[]
 }) {
   const presets = ITEM_PRESETS[category]
-  const [items, setItems]             = useState<ItemPickState[]>(initial ?? [])
+  const items = value
   const [activeLabel, setActiveLabel] = useState<string | null>(null)
   const [specValue, setSpecValue]     = useState('')
   const [specUnit, setSpecUnit]       = useState('')
   const [qtyValue, setQtyValue]       = useState('')
   const [qtyUnit, setQtyUnit]         = useState('')
-  const [amountStr, setAmountStr]     = useState('')   // 다중 품목 입력 시 항목별 금액
+  const [amountStr, setAmountStr]     = useState('')
   const [customLabel, setCustomLabel] = useState('')
   const [fetching, setFetching]       = useState(false)
   const [prevUnits, setPrevUnits]     = useState<{ specUnit: string | null; qtyUnit: string | null } | null>(null)
 
-  // category 변경 시 초기화 — 단, initial이 주어지면 그대로 유지(편집 모드용)
+  // category 변경 시 active picker 입력만 초기화 (items는 부모가 관리)
   useEffect(() => {
     setActiveLabel(null)
     setSpecValue(''); setSpecUnit(''); setQtyValue(''); setQtyUnit('')
-    setAmountStr('')
-    setCustomLabel(''); setPrevUnits(null)
-    if (initial == null) {
-      setItems([])
-      onChange([])
-    }
-  }, [category]) // eslint-disable-line react-hooks/exhaustive-deps
+    setAmountStr(''); setCustomLabel(''); setPrevUnits(null)
+  }, [category])
 
   if (!presets) return null
 
@@ -217,22 +213,18 @@ function ItemSelector({ category, onChange, allowMulti = true, initial }: {
   function confirmAdd(label: string) {
     const amount = amountStr ? Number(amountStr.replace(/[^0-9]/g, '')) : undefined
     const data: ItemPickState = { label, specValue, specUnit, qtyValue, qtyUnit, amount }
-    const next = [...items, data]
-    setItems(next); onChange(next)
-    // 입력창 비우고 다음 항목 추가 가능 상태로
+    onChange([...items, data])
     setActiveLabel(null)
     setSpecValue(''); setQtyValue(''); setAmountStr(''); setCustomLabel('')
   }
 
   function removeItem(idx: number) {
-    const next = items.filter((_, i) => i !== idx)
-    setItems(next); onChange(next)
+    onChange(items.filter((_, i) => i !== idx))
   }
 
   function updateItemAmount(idx: number, raw: string) {
     const amount = raw ? Number(raw.replace(/[^0-9]/g, '')) : undefined
-    const next = items.map((it, i) => i === idx ? { ...it, amount } : it)
-    setItems(next); onChange(next)
+    onChange(items.map((it, i) => i === idx ? { ...it, amount } : it))
   }
 
   const totalItemAmount = items.reduce((s, it) => s + (it.amount ?? 0), 0)
@@ -667,9 +659,61 @@ export default function FinanceClient({
   const [editReceiptUrl, setEditReceiptUrl] = useState('')
   const [receiptUploading, setReceiptUploading] = useState(false)
   const [addExpCategory, setAddExpCategory]   = useState(EXPENSE_CATEGORIES[0])
+  // 영수증 OCR (지출 등록 폼)
+  const [addExpVendor, setAddExpVendor]     = useState('')
+  const [addExpAmount, setAddExpAmount]     = useState<number | undefined>(undefined)
+  const [addExpDetail, setAddExpDetail]     = useState('')
+  const [ocrPending, setOcrPending]         = useState(false)
+  const [ocrError, setOcrError]             = useState('')
+  const [ocrPreview, setOcrPreview]         = useState<string | null>(null)
+  const ocrFileRef                          = useRef<HTMLInputElement | null>(null)
   const [editExpCategory, setEditExpCategory] = useState('')
   const [addItems, setAddItems]   = useState<ItemPickState[]>([])
   const [editItemData, setEditItemData] = useState<ItemPickState | null>(null)
+
+  // 영수증 OCR 핸들러 — 사진 → base64 → Gemini → 폼 자동 채움
+  const handleReceiptOcr = (file: File) => {
+    setOcrError('')
+    setOcrPending(true)
+    const reader = new FileReader()
+    reader.onload = async () => {
+      try {
+        const dataUrl = reader.result as string
+        setOcrPreview(dataUrl)
+        const base64 = dataUrl.replace(/^data:[^;]+;base64,/, '')
+        const res = await analyzeReceiptWithGemini(base64, file.type || 'image/jpeg')
+        if (!res.ok) { setOcrError(res.error); setOcrPending(false); return }
+        const d = res.data
+        if (d.date) setAddExpDate(d.date)
+        if (d.vendor) setAddExpVendor(d.vendor)
+        if (d.category && EXPENSE_CATEGORIES.includes(d.category)) setAddExpCategory(d.category)
+        if (d.items.length > 0 && ITEM_PRESETS[d.category ?? '']) {
+          // 다중 품목 — addItems에 주입
+          setAddItems(d.items.map(it => ({
+            label:     it.label,
+            specValue: it.specValue ?? '',
+            specUnit:  it.specUnit  ?? '',
+            qtyValue:  it.qtyValue  ?? '',
+            qtyUnit:   it.qtyUnit   ?? '',
+            amount:    it.amount,
+          })))
+          setAddExpAmount(d.items.reduce((s, it) => s + it.amount, 0))
+        } else {
+          setAddItems([])
+          if (d.totalAmount) setAddExpAmount(d.totalAmount)
+          if (d.items.length > 0) {
+            setAddExpDetail(d.items.map(it => `[${it.label}] ${it.amount.toLocaleString()}원`).join(', '))
+          }
+        }
+        setOcrPending(false)
+      } catch (err) {
+        setOcrError((err as Error).message ?? '영수증 분석 중 오류가 발생했습니다.')
+        setOcrPending(false)
+      }
+    }
+    reader.onerror = () => { setOcrError('이미지를 읽지 못했습니다.'); setOcrPending(false) }
+    reader.readAsDataURL(file)
+  }
 
   // ── 수익 탭 상태 ─────────────────────────────────────────────
   const [incFilter, setIncFilter] = useState({ method: 'all', category: 'all' })
@@ -1188,7 +1232,7 @@ export default function FinanceClient({
               className="px-4 py-2 bg-[var(--canvas)] border border-[var(--warm-border)] hover:border-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
               고정 지출 관리
             </button>
-            <button onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setError('') }}
+            <button onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setOcrPreview(null); setOcrError(''); setError('') }}
               className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
               + 지출 등록
             </button>
@@ -1995,11 +2039,10 @@ export default function FinanceClient({
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택</label>
                       <ItemSelector
-                        key={editExpCategory}
                         category={editExpCategory}
                         allowMulti={false}
-                        initial={editItemData ? [editItemData] : []}
-                        onChange={list => setEditItemData(list[0] ?? null)}
+                        value={editItemData ? [editItemData] : []}
+                        onChange={list => setEditItemData(list[list.length - 1] ?? null)}
                       />
                     </div>
                   )}
@@ -2212,6 +2255,42 @@ export default function FinanceClient({
               <input type="hidden" name="financeName" value={addExpAccName} />
               <input type="hidden" name="roomId" value={addExpRoomId} />
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {/* 영수증 OCR (Gemini Vision) */}
+                <div className="rounded-xl border border-[var(--coral)]/30 bg-[var(--coral)]/5 px-3 py-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span>✨</span>
+                      <span className="text-xs font-semibold text-[var(--coral)]">영수증 사진으로 자동 입력</span>
+                    </div>
+                    <input
+                      ref={ocrFileRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={e => {
+                        const f = e.target.files?.[0]
+                        if (f) handleReceiptOcr(f)
+                        e.target.value = ''
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={ocrPending}
+                      onClick={() => ocrFileRef.current?.click()}
+                      className="text-xs px-3 py-1.5 bg-[var(--coral)] hover:opacity-90 text-white rounded-lg transition-opacity disabled:opacity-50 shrink-0">
+                      {ocrPending ? '분석 중...' : '📷 인식'}
+                    </button>
+                  </div>
+                  {ocrPreview && !ocrPending && (
+                    <div className="flex items-center gap-2">
+                      <img src={ocrPreview} alt="영수증" className="h-12 w-12 object-cover rounded-lg" />
+                      <p className="text-[10px] text-[var(--warm-muted)] flex-1">분석 결과를 폼에 채웠습니다. 필요하면 수정해서 저장하세요.</p>
+                    </div>
+                  )}
+                  {ocrError && <p className="text-[10px] text-red-500">{ocrError}</p>}
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
@@ -2229,7 +2308,7 @@ export default function FinanceClient({
                           {addItems.reduce((s, it) => s + (it.amount ?? 0), 0).toLocaleString()}원
                         </div>
                       </div>
-                    ) : <MoneyInput name="amount" placeholder="0원" />}
+                    ) : <MoneyInput name="amount" value={addExpAmount} onChange={setAddExpAmount} placeholder="0원" />}
                   </div>
                 </div>
                 <div className="space-y-1.5">
@@ -2242,13 +2321,13 @@ export default function FinanceClient({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>
-                  <input type="text" name="vendor" placeholder="예: 쿠팡, 다이소"
+                  <input type="text" name="vendor" value={addExpVendor} onChange={e => setAddExpVendor(e.target.value)} placeholder="예: 쿠팡, 다이소"
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                 </div>
                 {ITEM_PRESETS[addExpCategory] && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택 <span className="text-[var(--warm-muted)] font-normal">(여러 품목 추가 가능)</span></label>
-                    <ItemSelector key={addExpCategory} category={addExpCategory} onChange={setAddItems} />
+                    <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} />
                   </div>
                 )}
                 <div className="space-y-1.5">
@@ -2256,7 +2335,7 @@ export default function FinanceClient({
                   {addItems.length > 0
                     ? <input type="text" name="detail" value={fmtItemListDetail(addItems)} readOnly
                         className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
-                    : <input type="text" name="detail" placeholder="세부 내용"
+                    : <input type="text" name="detail" value={addExpDetail} onChange={e => setAddExpDetail(e.target.value)} placeholder="세부 내용"
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   }
                   {addItems.length > 0 && <>
