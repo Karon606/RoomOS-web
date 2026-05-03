@@ -28,7 +28,7 @@ function daysUntil(date: Date | string): number {
 function dayLabel(days: number): string {
   if (days < 0) return `${Math.abs(days)}일 경과`
   if (days === 0) return '오늘'
-  return `D-${days}`
+  return `D-${days} (${days}일 남음)`
 }
 
 function relativeTime(date: Date): string {

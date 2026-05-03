@@ -532,10 +532,10 @@ function AISection() {
 
       {data && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <SummaryCard label="점유율" value={`${(data.occupancyRate * 100).toFixed(1)}%`} accent="text-emerald-600" />
-          <SummaryCard label="미수율 (12mo)" value={`${(data.unpaidRate * 100).toFixed(1)}%`} accent={data.unpaidRate > 0.05 ? 'text-red-500' : 'text-[var(--warm-dark)]'} />
-          <SummaryCard label="평균 거주" value={data.avgStayMonths != null ? `${data.avgStayMonths.toFixed(1)}개월` : '—'} />
-          <SummaryCard label="6mo 퇴실" value={`${data.turnoverPer6mo}건`} />
+          <SummaryCard label="점유율 (현재)" value={`${(data.occupancyRate * 100).toFixed(1)}%`} accent="text-emerald-600" />
+          <SummaryCard label="미수율 (최근 12개월)" value={`${(data.unpaidRate * 100).toFixed(1)}%`} accent={data.unpaidRate > 0.05 ? 'text-red-500' : 'text-[var(--warm-dark)]'} />
+          <SummaryCard label="평균 거주기간 (퇴실자)" value={data.avgStayMonths != null ? `${data.avgStayMonths.toFixed(1)}개월` : '—'} />
+          <SummaryCard label="퇴실 (최근 6개월)" value={`${data.turnoverPer6mo}건`} />
         </div>
       )}
 

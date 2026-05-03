@@ -88,9 +88,9 @@ function hexToRgba(hex: string, alpha: number) {
 
 function daysLabel(daysOverdue: number | null): { text: string; color: string } {
   if (daysOverdue == null) return { text: '—', color: 'var(--warm-muted)' }
-  if (daysOverdue > 0)  return { text: `${daysOverdue}일 초과`, color: '#ef4444' }
+  if (daysOverdue > 0)  return { text: `${daysOverdue}일 경과`, color: '#ef4444' }
   if (daysOverdue === 0) return { text: '오늘 납부일', color: '#f97316' }
-  return { text: `D${daysOverdue}`, color: '#eab308' }  // e.g. D-5
+  return { text: `D${daysOverdue} (${Math.abs(daysOverdue)}일 남음)`, color: '#eab308' }
 }
 
 // ── 알림 상세 팝업 ───────────────────────────────────────────────
@@ -281,8 +281,9 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
                 <div className="flex items-center gap-1.5">
                   <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>금액 *</label>
                   {alert.recurringIsVariable && alert.recurringHistoricalAvg && (
-                    <span className="text-[10px] rounded-full px-1.5 py-0.5" style={{ background: 'rgba(99,102,241,0.1)', color: '#6366f1' }}>
-                      평균 {Math.round(alert.recurringHistoricalAvg / 10000).toLocaleString()}만원
+                    <span className="text-[10px] rounded-full px-1.5 py-0.5" style={{ background: 'rgba(99,102,241,0.1)', color: '#6366f1' }}
+                      title="과거 동일 항목 결제 기록의 평균">
+                      과거 평균 {Math.round(alert.recurringHistoricalAvg / 10000).toLocaleString()}만원
                     </span>
                   )}
                 </div>
