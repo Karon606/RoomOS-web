@@ -266,7 +266,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
       },
       orderBy: { date: 'desc' },
-      select: { id: true, date: true, qtyValue: true, qtyUnit: true, amount: true, vendor: true, memo: true },
+      select: { id: true, date: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, memo: true },
     }),
   ])
 
@@ -276,6 +276,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
     ...purchases.filter(p => p.qtyValue != null).map(p => ({
       type: 'purchase' as const,
       id: p.id, date: p.date, qtyValue: p.qtyValue ?? 0, qtyUnit: p.qtyUnit,
+      specValue: p.specValue, specUnit: p.specUnit,
       amount: p.amount, vendor: p.vendor, memo: p.memo,
     })),
   ].sort((a, b) => b.date.getTime() - a.date.getTime())

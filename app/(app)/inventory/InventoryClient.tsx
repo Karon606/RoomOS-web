@@ -578,13 +578,20 @@ function TimelineRow({ entry, stockUnit, onDeleteCheck, onDeleteAddition, pendin
     )
   }
   if (entry.type === 'purchase') {
+    // 규격 정보가 있으면 stockUnit 기준 환산량을 우선 표시. 원 포장 단위(qtyValue × qtyUnit)는 보조로 노출
+    const hasSpec = entry.specValue != null && entry.specValue > 0 && entry.specUnit
+    const baseQty = hasSpec ? entry.qtyValue * (entry.specValue ?? 0) : entry.qtyValue
+    const baseUnit = hasSpec ? entry.specUnit : entry.qtyUnit
+    const packLabel = hasSpec
+      ? `${fmtQty(entry.qtyValue, entry.qtyUnit)} × ${entry.specValue}${entry.specUnit}`
+      : null
     return (
       <li className="flex items-center justify-between gap-2 border border-[var(--warm-border)]/60 rounded-xl px-3 py-2">
         <div className="min-w-0 flex items-center gap-2">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
           <div className="min-w-0">
-            <p className="text-xs text-[var(--warm-muted)]">{fmtDate(entry.date)} · 구매 (지출)</p>
-            <p className="text-sm font-medium text-[var(--warm-dark)]">+ {fmtQty(entry.qtyValue, entry.qtyUnit)}{entry.amount > 0 ? ` (${entry.amount.toLocaleString()}원)` : ''}</p>
+            <p className="text-xs text-[var(--warm-muted)]">{fmtDate(entry.date)} · 구매 (지출){packLabel ? ` · ${packLabel}` : ''}</p>
+            <p className="text-sm font-medium text-[var(--warm-dark)]">+ {fmtQty(baseQty, baseUnit)}{entry.amount > 0 ? ` (${entry.amount.toLocaleString()}원)` : ''}</p>
             {(entry.vendor || entry.memo) && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">{entry.vendor ?? ''}{entry.vendor && entry.memo ? ' · ' : ''}{entry.memo ?? ''}</p>}
           </div>
         </div>

@@ -37,5 +37,5 @@ export type MonthlyInflowRow = {
 
 export type TimelineEntry =
   | { type: 'check';    id: string; date: Date; remainingQty: number; memo: string | null }
-  | { type: 'purchase'; id: string; date: Date; qtyValue: number; qtyUnit: string | null; amount: number; vendor: string | null; memo: string | null }
+  | { type: 'purchase'; id: string; date: Date; qtyValue: number; qtyUnit: string | null; specValue: number | null; specUnit: string | null; amount: number; vendor: string | null; memo: string | null }
   | { type: 'addition'; id: string; date: Date; addedQty: number; source: string | null; memo: string | null }
