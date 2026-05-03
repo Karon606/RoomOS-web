@@ -284,6 +284,7 @@ model LeaseTerm {
   tourDate           DateTime?          @db.Date
   inquiryAt          DateTime?          // 입실 문의 일시 (예약자 순번 기준)
   reservationConfirmedAt DateTime?      // 예약 확정 일시 (RESERVED → 확정 단계 진입 시점). null이면 일반 예약, non-null이면 예약 확정
+  isShortTerm        Boolean            @default(false)  // 단기 희망. true면 폼 자동입력(room.baseRent, defaultDeposit/cleaningFee) 건너뛰고 수동 입력 강제
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 

@@ -41,6 +41,7 @@ type LeaseTerm = {
   moveInDate: string | Date | null; moveOutDate: string | Date | null
   expectedMoveOut: string | Date | null; tourDate: string | Date | null; inquiryAt: string | Date | null
   reservationConfirmedAt: string | Date | null
+  isShortTerm: boolean
   paymentTiming: string
   payMethod: string | null; cashReceipt: string | null
   registrationStatus: string; contractUrl: string | null
@@ -1381,6 +1382,11 @@ export default function TenantClient({
                         {STATUS_LABEL[status] ?? status}
                       </span>
                     )}
+                    {!detailEditMode && lease?.isShortTerm && (
+                      <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                        단기
+                      </span>
+                    )}
                     {!detailEditMode && sched && (() => {
                       const dd = fmtDDay(sched.date)
                       if (!dd) return null
@@ -2704,6 +2710,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   const [inquiryDateVal, setInquiryDateVal] = useState(initialInquiry.date)
   const [inquiryTimeVal, setInquiryTimeVal] = useState(initialInquiry.time)
   const [reservationConfirmed, setReservationConfirmed] = useState(!!lease?.reservationConfirmedAt)
+  const [isShortTerm, setIsShortTerm] = useState(!!lease?.isShortTerm)
   const inquiryAtCombined = inquiryDateVal
     ? `${inquiryDateVal}T${inquiryTimeVal || '00:00'}`
     : ''
@@ -2711,6 +2718,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   const handleRoomChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const roomId = e.target.value
     setSelectedRoomId(roomId)
+    if (isShortTerm) return  // 단기 희망: 호실 표준가 자동입력 건너뛰기
     const room = rooms.find(r => r.id === roomId)
     if (room) setRentAmount(room.baseRent)
   }
@@ -2722,20 +2730,20 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   const isWaitingTourStatus = statusVal === 'WAITING_TOUR' || (statusVal === 'RESERVED' && reservationConfirmed)
 
   // 보증금/청소비 자동 입력 제외 상태 (계약/납입 단계 이전 — 잘못 저장 방지)
+  // 단기 희망(isShortTerm)도 모두 수기 입력 → 자동입력 제외
   const NO_AUTOFILL_STATUSES = ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED', 'NON_RESIDENT']
-  const isNoAutoFill = (s: string) => NO_AUTOFILL_STATUSES.includes(s)
+  const isNoAutoFill = (s: string, shortTerm: boolean) => shortTerm || NO_AUTOFILL_STATUSES.includes(s)
   const [depositAmountVal, setDepositAmountVal] = useState<number | undefined>(
-    lease?.depositAmount ?? (isNoAutoFill(statusVal) ? undefined : (defaultDeposit ?? undefined))
+    lease?.depositAmount ?? (isNoAutoFill(statusVal, isShortTerm) ? undefined : (defaultDeposit ?? undefined))
   )
   const [cleaningFeeVal, setCleaningFeeVal] = useState<number | undefined>(
-    lease?.cleaningFee ?? (isNoAutoFill(statusVal) ? undefined : (defaultCleaningFee ?? undefined))
+    lease?.cleaningFee ?? (isNoAutoFill(statusVal, isShortTerm) ? undefined : (defaultCleaningFee ?? undefined))
   )
-  // status 변경 시 default 재적용 — 자동입력 제외 상태로 가면 비우고, 그 외로 가면 default 채움
-  // 기존 입주자 수정 시에도 status를 RESERVED 등으로 변경하면 보증금/청소비 자동 비움
+  // status 또는 단기 토글 변경 시 default 재적용
   useEffect(() => {
-    setDepositAmountVal(isNoAutoFill(statusVal) ? undefined : (lease?.depositAmount ?? defaultDeposit ?? undefined))
-    setCleaningFeeVal(isNoAutoFill(statusVal) ? undefined : (lease?.cleaningFee ?? defaultCleaningFee ?? undefined))
-  }, [statusVal]) // eslint-disable-line react-hooks/exhaustive-deps
+    setDepositAmountVal(isNoAutoFill(statusVal, isShortTerm) ? (lease?.depositAmount ?? undefined) : (lease?.depositAmount ?? defaultDeposit ?? undefined))
+    setCleaningFeeVal(isNoAutoFill(statusVal, isShortTerm) ? (lease?.cleaningFee ?? undefined) : (lease?.cleaningFee ?? defaultCleaningFee ?? undefined))
+  }, [statusVal, isShortTerm]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 납부일 상태 — raw 값(숫자 또는 '말일')과 표시 문자열 분리
   const initDueDay = (): { raw: string; disp: string } => {
@@ -2829,6 +2837,19 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             <option value="PREPAID">선납</option>
             <option value="POSTPAID">후납</option>
           </SelectField>
+        </div>
+
+        {/* 단기 희망 토글 — 체크 시 월 이용료/보증금/청소비 자동 입력 건너뛰고 수동 입력 강제 */}
+        <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)]/50 px-3 py-2.5 space-y-1">
+          <input type="hidden" name="isShortTerm" value={isShortTerm ? 'true' : 'false'} />
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={isShortTerm} onChange={e => setIsShortTerm(e.target.checked)}
+              className="w-4 h-4 accent-[var(--coral)]" />
+            <span className="text-xs font-medium text-[var(--warm-dark)]">단기 희망</span>
+          </label>
+          <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed pl-6">
+            체크 시 호실 선택 후에도 월 이용료/보증금/청소비가 자동 채워지지 않고 모두 수동 입력합니다. 호실의 표준 가격에는 영향이 없으며 퇴실 후 다음 입주자는 다시 자동 채워집니다.
+          </p>
         </div>
 
         {/* 호실 — 상태에 따라 선택 규칙 다름 */}

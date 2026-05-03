@@ -108,6 +108,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const tourDate            = formData.get('tourDate') as string
   const inquiryAt           = formData.get('inquiryAt') as string
   const reservationConfirmed = formData.get('reservationConfirmed') === 'true'
+  const isShortTerm          = formData.get('isShortTerm') === 'true'
 
   const isReservedConfirmed = status === 'RESERVED' && reservationConfirmed
   const roomOptionalStatuses = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] as string[]
@@ -175,6 +176,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
           tourDate: tourDate ? new Date(tourDate) : null,
           inquiryAt: inquiryAt ? new Date(inquiryAt) : null,
           reservationConfirmedAt: isReservedConfirmed ? new Date() : null,
+          isShortTerm,
           paymentTiming,
           payMethod: payMethod || null,
           cashReceipt: cashReceipt || null,
@@ -253,6 +255,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
   const tourDate           = formData.get('tourDate') as string
   const inquiryAt          = formData.get('inquiryAt') as string
   const reservationConfirmed = formData.get('reservationConfirmed') === 'true'
+  const isShortTerm          = formData.get('isShortTerm') === 'true'
   const applyScheduledRent = formData.get('applyScheduledRent') as string  // '1' = 즉시 적용, '0' = 보류, 비어있음 = 처리 안함
 
   const isReservedConfirmed = status === 'RESERVED' && reservationConfirmed
@@ -351,6 +354,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
       reservationConfirmedAt: isReservedConfirmed
         ? (currentLease.reservationConfirmedAt ?? new Date())
         : null,
+      isShortTerm,
       paymentTiming,
       roomId: newRoomId ?? null,
       payMethod: payMethod || null,
