@@ -701,14 +701,30 @@ export default function RoomsClient({
                   {room.status === 'NON_RESIDENT' && (
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-orange-50 text-orange-700 ring-1 ring-orange-200">비거주</span>
                   )}
-                  <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
-                    ${room.isPaid ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-red-50 text-red-600 ring-1 ring-red-200'}`}>
-                    {room.isPaid ? '완납' : '미납'}
-                  </span>
-                  {!room.isPaid && dueInfo && (
-                    <span className={`text-[10px] font-medium ${dueInfo.days === 0 ? 'text-orange-500' : dueInfo.overdue ? 'text-red-400' : 'text-yellow-600'}`}>
-                      {dueInfo.days === 0 ? '오늘' : dueInfo.overdue ? `${dueInfo.days}일 초과` : `${dueInfo.days}일 후`}
-                    </span>
+                  {room.status === 'RESERVED' ? (
+                    <>
+                      <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 ring-1 ring-blue-200">예약</span>
+                      {room.moveInDate && (() => {
+                        const days = Math.round((new Date(room.moveInDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                        return (
+                          <span className="text-[10px] font-medium text-blue-500">
+                            {days > 0 ? `D-${days} 입주 예정` : days === 0 ? '오늘 입주' : `입주 예정일 ${Math.abs(days)}일 경과`}
+                          </span>
+                        )
+                      })()}
+                    </>
+                  ) : (
+                    <>
+                      <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
+                        ${room.isPaid ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-red-50 text-red-600 ring-1 ring-red-200'}`}>
+                        {room.isPaid ? '완납' : '미납'}
+                      </span>
+                      {!room.isPaid && dueInfo && (
+                        <span className={`text-[10px] font-medium ${dueInfo.days === 0 ? 'text-orange-500' : dueInfo.overdue ? 'text-red-400' : 'text-yellow-600'}`}>
+                          {dueInfo.days === 0 ? '오늘' : dueInfo.overdue ? `${dueInfo.days}일 초과` : `${dueInfo.days}일 후`}
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -843,20 +859,36 @@ export default function RoomsClient({
                             비거주
                           </span>
                         )}
-                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium
-                          ${room.isPaid ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-red-50 text-red-600 ring-1 ring-red-200'}`}>
-                          {room.isPaid ? '완납' : '미납'}
-                        </span>
-                        {!room.isPaid && (() => {
-                          const info = getEffectiveDueInfo(room, targetMonth)
-                          if (!info) return null
-                          if (info.days === 0) return (
-                            <span className="text-xs text-orange-600 font-medium">오늘</span>
-                          )
-                          return info.overdue
-                            ? <span className="text-xs text-red-400">{info.days}일 초과</span>
-                            : <span className="text-xs text-yellow-600">{info.days}일 후</span>
-                        })()}
+                        {room.status === 'RESERVED' ? (
+                          <>
+                            <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-blue-50 text-blue-700 ring-1 ring-blue-200">예약</span>
+                            {room.moveInDate && (() => {
+                              const days = Math.round((new Date(room.moveInDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                              return (
+                                <span className="text-xs text-blue-500 font-medium">
+                                  {days > 0 ? `D-${days} 입주 예정` : days === 0 ? '오늘 입주' : `${Math.abs(days)}일 경과`}
+                                </span>
+                              )
+                            })()}
+                          </>
+                        ) : (
+                          <>
+                            <span className={`text-xs px-2.5 py-1 rounded-full font-medium
+                              ${room.isPaid ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-red-50 text-red-600 ring-1 ring-red-200'}`}>
+                              {room.isPaid ? '완납' : '미납'}
+                            </span>
+                            {!room.isPaid && (() => {
+                              const info = getEffectiveDueInfo(room, targetMonth)
+                              if (!info) return null
+                              if (info.days === 0) return (
+                                <span className="text-xs text-orange-600 font-medium">오늘</span>
+                              )
+                              return info.overdue
+                                ? <span className="text-xs text-red-400">{info.days}일 초과</span>
+                                : <span className="text-xs text-yellow-600">{info.days}일 후</span>
+                            })()}
+                          </>
+                        )}
                       </div>
                     </td>
                   )}

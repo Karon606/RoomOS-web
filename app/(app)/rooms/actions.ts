@@ -128,6 +128,30 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
 
     const moveInDate = lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null
 
+    // 예약(RESERVED) 단계는 아직 입주 안 한 상태 → 청구·잔액·미납 계산 제외.
+    // 호실 행은 정상 노출하되 expected/balance 0, isPaid=true로 미납 카운터에서 빠지게 함.
+    // moveInDate는 유지 → UI에서 'D-N 입주 예정' 라벨로 분기 표시.
+    if (lease.status === 'RESERVED') {
+      return {
+        roomId: room.id, roomNo: room.roomNo, type: room.type,
+        windowType: room.windowType ?? null,
+        isVacant: false, tenantId: lease.tenant.id,
+        tenantName: lease.tenant.name,
+        contact: lease.tenant.contacts[0]?.contactValue ?? null,
+        status: 'RESERVED', expected: lease.rentAmount, dueDay: lease.dueDay,
+        currentPaid: 0, carryOver: 0, totalPaid: 0,
+        balance: 0, isPaid: true,
+        leaseTermId: lease.id, depositAmount: lease.depositAmount,
+        accumulatedUnpaid: 0, isFutureMonth, baseRent: room.baseRent,
+        prevTenantName, prevContact,
+        overrideDueDay: l.overrideDueDay ?? null,
+        overrideDueDayMonth: l.overrideDueDayMonth ?? null,
+        overrideDueDayReason: l.overrideDueDayReason ?? null,
+        moveInDate, prevPaidThisMonth: false,
+        firstUnpaidMonth: null,
+      }
+    }
+
     if (targetMonth < acqMonthStr) {
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
