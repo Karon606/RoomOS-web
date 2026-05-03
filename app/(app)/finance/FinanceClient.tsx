@@ -276,7 +276,7 @@ function ItemSelector({ category, onChange }: {
             <button type="button" onClick={() => setActiveLabel(null)}
               className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none">✕</button>
           </div>
-          <SpecQtyInputs />
+          {SpecQtyInputs()}
           <button type="button" onClick={() => confirm(activeLabel)}
             className="w-full py-1.5 bg-[var(--coral)] hover:opacity-90 text-white text-xs font-medium rounded-lg transition-colors">추가</button>
         </div>
@@ -293,7 +293,7 @@ function ItemSelector({ category, onChange }: {
             <label className="text-[10px] text-[var(--warm-muted)]">품목명</label>
             <input type="text" placeholder="예: 고추장" value={customLabel} onChange={e => setCustomLabel(e.target.value)} className={textCls} />
           </div>
-          <SpecQtyInputs />
+          {SpecQtyInputs()}
           <button type="button" onClick={() => { if (customLabel.trim()) confirm(customLabel.trim()) }}
             className="w-full py-1.5 bg-[var(--coral)] hover:opacity-90 text-white text-xs font-medium rounded-lg transition-colors">
             추가
