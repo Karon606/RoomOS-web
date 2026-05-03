@@ -9,6 +9,7 @@ export type InventoryRow = {
   alertThresholdDays: number
   reorderMemo: string | null
   memo: string | null              // 재고 파악 기준 등 자유 메모
+  trackUnit: 'spec' | 'qty'        // 'spec' = qty×spec 환산 (쌀, 물티슈), 'qty' = qty만 (폐기물 봉투)
   isArchived: boolean
   lastCheckDate: Date | null
   lastRemainingQty: number | null

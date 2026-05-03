@@ -122,7 +122,9 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
 function InventoryCard({ row, onOpen }: { row: InventoryRow; onOpen: () => void }) {
   const tint = CATEGORY_TINT[row.category]
   const lowStock = row.daysUntilEmpty != null && row.daysUntilEmpty <= row.alertThresholdDays
-  const stockUnit = row.specUnit ?? row.qtyUnit  // 잔량/소모 단위는 규격 우선
+  // trackUnit='qty' (폐기물 봉투 등): 매 단위 그대로. 'spec': specUnit 우선
+  const stockUnit = row.trackUnit === 'qty' ? row.qtyUnit : (row.specUnit ?? row.qtyUnit)
+  const priceUnit = row.trackUnit === 'qty' ? row.qtyUnit : (row.specUnit ?? row.qtyUnit)
   return (
     <button
       type="button"
@@ -161,7 +163,7 @@ function InventoryCard({ row, onOpen }: { row: InventoryRow; onOpen: () => void 
           <p className="text-[10px] text-[var(--warm-muted)]">평균 단가</p>
           <p className="text-sm font-medium text-[var(--warm-mid)]">
             {row.avgUnitPrice != null
-              ? `${Math.round(row.avgUnitPrice).toLocaleString()}원${row.specUnit ? `/${row.specUnit}` : row.qtyUnit ? `/${row.qtyUnit}` : ''}`
+              ? `${Math.round(row.avgUnitPrice).toLocaleString()}원${priceUnit ? `/${priceUnit}` : ''}`
               : '—'}
           </p>
         </div>
@@ -342,21 +344,28 @@ function DetailModal({ row, onClose, onChange }: {
             <div className="overflow-y-auto flex-1 px-5 py-3 space-y-3">
               {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
 
-              {tab === 'timeline' && (
-                data.timeline.length === 0 ? (
-                  <p className="text-sm text-[var(--warm-muted)] text-center py-6">기록이 없습니다.</p>
-                ) : (
-                  <ul className="space-y-1.5">
-                    {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={data.item.specUnit ?? data.item.qtyUnit} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} pending={pending} />)}
-                  </ul>
+              {(() => {
+                const detailStockUnit = data.item.trackUnit === 'qty' ? data.item.qtyUnit : (data.item.specUnit ?? data.item.qtyUnit)
+                return (
+                  <>
+                    {tab === 'timeline' && (
+                      data.timeline.length === 0 ? (
+                        <p className="text-sm text-[var(--warm-muted)] text-center py-6">기록이 없습니다.</p>
+                      ) : (
+                        <ul className="space-y-1.5">
+                          {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} pending={pending} />)}
+                        </ul>
+                      )
+                    )}
+                    {tab === 'monthly' && (
+                      <MonthlyInflowList rows={monthlyInflow} stockUnit={detailStockUnit} />
+                    )}
+                    {tab === 'price' && (
+                      <PriceChart points={priceHistory} unitLabel={detailStockUnit} qtyUnit={data.item.qtyUnit} />
+                    )}
+                  </>
                 )
-              )}
-              {tab === 'monthly' && (
-                <MonthlyInflowList rows={monthlyInflow} stockUnit={data.item.specUnit ?? data.item.qtyUnit} />
-              )}
-              {tab === 'price' && (
-                <PriceChart points={priceHistory} unitLabel={data.item.specUnit ?? data.item.qtyUnit} qtyUnit={data.item.qtyUnit} />
-              )}
+              })()}
             </div>
             <div className="border-t border-[var(--warm-border)] px-5 py-3 flex gap-2 shrink-0 flex-wrap">
               <button
@@ -513,6 +522,7 @@ function SettingsForm({ row, onCancel, onDone }: {
   const [thresholdDays, setThresholdDays] = useState(String(row.alertThresholdDays))
   const [reorderMemo, setReorderMemo]     = useState(row.reorderMemo ?? '')
   const [memo, setMemo]                   = useState(row.memo ?? '')
+  const [trackUnit, setTrackUnit]         = useState<'spec' | 'qty'>(row.trackUnit)
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
 
@@ -526,6 +536,7 @@ function SettingsForm({ row, onCancel, onDone }: {
         alertThresholdDays: n,
         reorderMemo: reorderMemo.trim() || null,
         memo: memo.trim() || null,
+        trackUnit,
       })
       if (!res.ok) { setError(res.error); return }
       onDone()
@@ -541,6 +552,23 @@ function SettingsForm({ row, onCancel, onDone }: {
           onChange={e => setThresholdDays(e.target.value.replace(/[^0-9]/g, ''))}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
         <p className="text-[10px] text-[var(--warm-muted)]">예: 3 → 소진 예상이 3일 이하면 알림</p>
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">재고 추적 단위</label>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={() => setTrackUnit('spec')}
+            className={`px-3 py-2 text-xs font-medium rounded-xl border transition-colors ${trackUnit === 'spec' ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
+            규격 단위{row.specUnit ? ` (${row.specUnit})` : ''}
+          </button>
+          <button type="button" onClick={() => setTrackUnit('qty')}
+            className={`px-3 py-2 text-xs font-medium rounded-xl border transition-colors ${trackUnit === 'qty' ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
+            수량 단위{row.qtyUnit ? ` (${row.qtyUnit})` : ''}
+          </button>
+        </div>
+        <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
+          규격 단위: 쌀 1포대(20kg) 같이 규격으로 환산해서 추적 (kg, 매, ml).<br/>
+          수량 단위: 종량제봉투 50L짜리 30매처럼 매(개) 단위로만 추적 (사이즈는 라벨에 적기).
+        </p>
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">재고 파악 기준 메모</label>
@@ -570,8 +598,8 @@ function SettingsForm({ row, onCancel, onDone }: {
   )
 }
 
-function TimelineRow({ entry, stockUnit, onDeleteCheck, onDeleteAddition, pending }: {
-  entry: TimelineEntry; stockUnit: string | null
+function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddition, pending }: {
+  entry: TimelineEntry; stockUnit: string | null; trackUnit: 'spec' | 'qty'
   onDeleteCheck: (id: string) => void
   onDeleteAddition: (id: string) => void
   pending: boolean
@@ -593,12 +621,14 @@ function TimelineRow({ entry, stockUnit, onDeleteCheck, onDeleteAddition, pendin
     )
   }
   if (entry.type === 'purchase') {
-    // 규격 정보가 있으면 stockUnit 기준 환산량을 우선 표시. 원 포장 단위(qtyValue × qtyUnit)는 보조로 노출
+    // trackUnit='spec': 규격 환산 우선 (qtyValue × specValue), 단위=specUnit
+    // trackUnit='qty':  qty 그대로 (50L × 30매 → 30매)
     const hasSpec = entry.specValue != null && entry.specValue > 0 && entry.specUnit
-    const baseQty = hasSpec ? entry.qtyValue * (entry.specValue ?? 0) : entry.qtyValue
-    const baseUnit = hasSpec ? entry.specUnit : entry.qtyUnit
+    const useSpec = trackUnit !== 'qty' && hasSpec
+    const baseQty = useSpec ? entry.qtyValue * (entry.specValue ?? 0) : entry.qtyValue
+    const baseUnit = useSpec ? entry.specUnit : entry.qtyUnit
     const packLabel = hasSpec
-      ? `${fmtQty(entry.qtyValue, entry.qtyUnit)} × ${entry.specValue}${entry.specUnit}`
+      ? `${entry.specValue}${entry.specUnit} × ${fmtQty(entry.qtyValue, entry.qtyUnit)}`
       : null
     return (
       <li className="flex items-center justify-between gap-2 border border-[var(--warm-border)]/60 rounded-xl px-3 py-2">
@@ -630,10 +660,10 @@ function TimelineRow({ entry, stockUnit, onDeleteCheck, onDeleteAddition, pendin
 }
 
 function CheckForm({ item, onCancel, onDone }: {
-  item: { id: string; specUnit: string | null; qtyUnit: string | null }
+  item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty' }
   onCancel: () => void; onDone: () => void
 }) {
-  const stockUnit = item.specUnit ?? item.qtyUnit
+  const stockUnit = item.trackUnit === 'qty' ? item.qtyUnit : (item.specUnit ?? item.qtyUnit)
   const [date, setDate] = useState(kstYmdStr())
   const [qty, setQty]   = useState('')
   const [memo, setMemo] = useState('')
@@ -687,10 +717,12 @@ function CheckForm({ item, onCancel, onDone }: {
 }
 
 function AdditionForm({ item, onCancel, onDone }: {
-  item: { id: string; specUnit: string | null; qtyUnit: string | null }
+  item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty' }
   onCancel: () => void; onDone: () => void
 }) {
-  const useSpec = !!(item.specUnit && item.specUnit.trim())
+  // trackUnit='qty': specUnit 있어도 매(qtyUnit) 단위로 단일 입력
+  // trackUnit='spec' & specUnit 있음: 규격 × 수량 두 입력
+  const useSpec = item.trackUnit !== 'qty' && !!(item.specUnit && item.specUnit.trim())
   const [date, setDate]     = useState(kstYmdStr())
   const [specQty, setSpecQty] = useState('')   // 규격 (예: 20)
   const [packQty, setPackQty] = useState('1')  // 수량 (예: 1 포대)

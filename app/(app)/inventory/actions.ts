@@ -76,8 +76,9 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
   for (const it of items) {
     const last = it.stockChecks[0] ?? null
     const prev = it.stockChecks[1] ?? null
-    // 규격 단위(specUnit)가 설정된 품목은 모든 수량 계산을 규격 기준(kg, 매 등)으로 통일
-    const useSpec = !!(it.specUnit && it.specUnit.trim())
+    // trackUnit='spec' (default): 규격 환산 (qtyValue × specValue, unit=specUnit)
+    // trackUnit='qty':            수량 그대로 (qtyValue, unit=qtyUnit) — 폐기물 봉투 등
+    const useSpec = it.trackUnit !== 'qty' && !!(it.specUnit && it.specUnit.trim())
 
     let currentStock: number | null = null
     if (last) {
@@ -125,12 +126,13 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
     let avgUnitPrice: number | null = null
     let lastUnitPrice: number | null = null
     if (recentPurchases.length > 0) {
-      // 각 row의 base_units = qtyValue × specValue (specValue 있으면) else qtyValue
+      // useSpec=true (쌀): base = qtyValue × specValue → 원/kg
+      // useSpec=false (폐기물 봉투): base = qtyValue → 원/매
       let totalAmt = 0
       let totalBase = 0
       for (const p of recentPurchases) {
         const qty = p.qtyValue ?? 0
-        const base = (p.specValue && p.specValue > 0) ? qty * p.specValue : qty
+        const base = useSpec && p.specValue && p.specValue > 0 ? qty * p.specValue : qty
         if (base > 0) {
           totalAmt  += p.amount
           totalBase += base
@@ -138,7 +140,8 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
       }
       avgUnitPrice = totalBase > 0 ? totalAmt / totalBase : null
       const last = recentPurchases[0]
-      const lastBase = (last.specValue && last.specValue > 0) ? (last.qtyValue ?? 0) * last.specValue : (last.qtyValue ?? 0)
+      const lastQty = last.qtyValue ?? 0
+      const lastBase = useSpec && last.specValue && last.specValue > 0 ? lastQty * last.specValue : lastQty
       lastUnitPrice = lastBase > 0 ? last.amount / lastBase : null
     }
 
@@ -151,6 +154,7 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
       alertThresholdDays: it.alertThresholdDays,
       reorderMemo: it.reorderMemo,
       memo: it.memo,
+      trackUnit: (it.trackUnit === 'qty' ? 'qty' : 'spec') as 'spec' | 'qty',
       isArchived: it.isArchived,
       lastCheckDate: last?.date ?? null,
       lastRemainingQty: last?.remainingQty ?? null,
@@ -171,7 +175,7 @@ export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyIn
   const propertyId = await getPropertyId()
   const item = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
   if (!item) return []
-  const useSpec = !!(item.specUnit && item.specUnit.trim())
+  const useSpec = item.trackUnit !== 'qty' && !!(item.specUnit && item.specUnit.trim())
 
   const [purchases, additions] = await Promise.all([
     prisma.expense.findMany({
@@ -231,11 +235,12 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
     select: { date: true, amount: true, qtyValue: true, specValue: true },
     orderBy: { date: 'asc' },
   })
+  const useSpec = item.trackUnit !== 'qty' && !!(item.specUnit && item.specUnit.trim())
   return rows
     .filter(r => r.qtyValue && r.qtyValue > 0)
     .map(r => {
       const qty = r.qtyValue ?? 0
-      const base = (r.specValue && r.specValue > 0) ? qty * r.specValue : qty
+      const base = useSpec && r.specValue && r.specValue > 0 ? qty * r.specValue : qty
       return {
         date: r.date,
         qty,
@@ -247,7 +252,7 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
 
 // ── 단일 품목 상세 — 점검 + 구매 + 무상 입수 타임라인
 export async function getInventoryDetail(trackedItemId: string): Promise<{
-  item: { id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; memo: string | null }
+  item: { id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; memo: string | null; trackUnit: 'spec' | 'qty' }
   timeline: TimelineEntry[]
 } | null> {
   const propertyId = await getPropertyId()
@@ -283,7 +288,11 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
   ].sort((a, b) => b.date.getTime() - a.date.getTime())
 
   return {
-    item: { id: item.id, category: item.category, label: item.label, specUnit: item.specUnit, qtyUnit: item.qtyUnit, memo: item.memo },
+    item: {
+      id: item.id, category: item.category, label: item.label,
+      specUnit: item.specUnit, qtyUnit: item.qtyUnit, memo: item.memo,
+      trackUnit: (item.trackUnit === 'qty' ? 'qty' : 'spec') as 'spec' | 'qty',
+    },
     timeline,
   }
 }
@@ -309,6 +318,8 @@ export async function createTrackedItem(data: {
       return { ok: false, error: '이미 등록된 품목입니다.' }
     }
 
+    // 폐기물 처리비는 기본 trackUnit='qty' (50L 봉투 30매를 1500L 아닌 30매로 트래킹)
+    const defaultTrackUnit = data.category === '폐기물 처리비' ? 'qty' : 'spec'
     const r = await prisma.trackedItem.create({
       data: {
         propertyId,
@@ -317,6 +328,7 @@ export async function createTrackedItem(data: {
         specUnit: data.specUnit || null,
         qtyUnit: data.qtyUnit || null,
         memo: data.memo || null,
+        trackUnit: defaultTrackUnit,
       },
     })
     revalidatePath('/inventory')
@@ -330,6 +342,7 @@ export async function createTrackedItem(data: {
 export async function updateTrackedItem(id: string, data: {
   specUnit?: string | null; qtyUnit?: string | null; memo?: string | null
   alertThresholdDays?: number; reorderMemo?: string | null
+  trackUnit?: 'spec' | 'qty'
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -344,6 +357,7 @@ export async function updateTrackedItem(id: string, data: {
         memo:               data.memo               ?? it.memo,
         alertThresholdDays: data.alertThresholdDays ?? it.alertThresholdDays,
         reorderMemo:        data.reorderMemo        ?? it.reorderMemo,
+        trackUnit:          data.trackUnit          ?? it.trackUnit,
       },
     })
     revalidatePath('/inventory')
@@ -483,6 +497,7 @@ export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; create
           label: r.itemLabel,
           specUnit: r.specUnit,
           qtyUnit: r.qtyUnit,
+          trackUnit: r.category === '폐기물 처리비' ? 'qty' : 'spec',
         },
       })
       created++

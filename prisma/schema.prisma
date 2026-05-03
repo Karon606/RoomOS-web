@@ -573,6 +573,7 @@ model TrackedItem {
   qtyUnit             String?         // 롤, 매, 포대 등
   alertThresholdDays  Int             @default(3)   // 소진 예상이 N일 이하면 대시보드 알림
   reorderMemo         String?                       // 발주처 / 주문 단위 / 비고
+  trackUnit           String          @default("spec") // "spec"=규격(kg/ml/매×qty)으로 추적, "qty"=수량(매/개) 단위로 추적. 폐기물 봉투처럼 50L×30매를 1500L 아닌 30매로 트래킹할 때 'qty'
   isArchived          Boolean         @default(false)
   memo                String?
   createdAt           DateTime        @default(now())
