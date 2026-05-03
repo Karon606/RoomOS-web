@@ -27,8 +27,10 @@ export async function getRooms() {
       photos: { orderBy: { sortOrder: 'asc' } },
       leaseTerms: {
         where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-        include: {
-          tenant: { select: { name: true } },
+        select: {
+          id: true,
+          tenantId: true,
+          tenant: { select: { id: true, name: true } },
         },
         take: 1,
       },
