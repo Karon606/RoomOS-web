@@ -302,19 +302,30 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
   }
 
   // 1) 호실별 baseRent + scheduledRent + 적용 예정일
-  const rooms = await prisma.room.findMany({
-    where: { propertyId },
-    select: {
-      id: true, baseRent: true, scheduledRent: true, rentUpdateDate: true,
-      leaseTerms: {
-        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-        select: {
-          id: true, status: true, rentAmount: true,
-          moveInDate: true, expectedMoveOut: true, moveOutDate: true,
+  const [rooms, property] = await Promise.all([
+    prisma.room.findMany({
+      where: { propertyId },
+      select: {
+        id: true, baseRent: true, scheduledRent: true, rentUpdateDate: true,
+        leaseTerms: {
+          where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+          select: {
+            id: true, status: true, rentAmount: true,
+            moveInDate: true, expectedMoveOut: true, moveOutDate: true,
+          },
         },
       },
-    },
-  })
+    }),
+    prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { acquisitionDate: true, prevOwnerCutoffDate: true },
+    }),
+  ])
+  // 인수월(이 월부터 사용자 데이터). 그 이전은 평균 계산에서 제외해 0 데이터로 인한 왜곡 방지
+  const acqRaw = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
+  const acquisitionMonthStr = acqRaw
+    ? `${new Date(acqRaw).getFullYear()}-${String(new Date(acqRaw).getMonth() + 1).padStart(2, '0')}`
+    : null
 
   // 2) 전년 동월 + 최근 3개월 — 지출/기타수익 평균 산출용
   const last3Months: string[] = (() => {
@@ -363,17 +374,24 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
     incByMonth[k] = (incByMonth[k] ?? 0) + i.amount
   }
 
-  const last3ExpAvg = Math.round(
-    last3Months.reduce((s, m) => s + (expByMonth[m] ?? 0), 0) / 3
-  )
-  const last3IncAvg = Math.round(
-    last3Months.reduce((s, m) => s + (incByMonth[m] ?? 0), 0) / 3
-  )
+  // 인수 전 월(데이터 없는 0)은 평균 계산에서 제외 — 분모도 그만큼 줄어듦
+  const validAvgMonths = acquisitionMonthStr
+    ? last3Months.filter(m => m >= acquisitionMonthStr)
+    : last3Months
+  const last3ExpAvg = validAvgMonths.length > 0
+    ? Math.round(validAvgMonths.reduce((s, m) => s + (expByMonth[m] ?? 0), 0) / validAvgMonths.length)
+    : 0
+  const last3IncAvg = validAvgMonths.length > 0
+    ? Math.round(validAvgMonths.reduce((s, m) => s + (incByMonth[m] ?? 0), 0) / validAvgMonths.length)
+    : 0
 
   const prevYearKey = (m: string): string => {
     const [y, mn] = m.split('-').map(Number)
     return `${y - 1}-${String(mn).padStart(2, '0')}`
   }
+  // 전년 동월 데이터 사용 가능 여부 — 인수월 이전이면 데이터 없으므로 폴백
+  const isPrevYearAvailable = (m: string) =>
+    !acquisitionMonthStr || m >= acquisitionMonthStr
 
   // 3) 월별 예상 매출 — 호실별 점유 여부 + 임대료 변동 반영
   const rows: ForecastRow[] = months.map(month => {
@@ -412,12 +430,13 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
       }
     }
 
-    // 지출: 전년 동월 → 없으면 최근 3개월 평균
-    const py = expByMonth[prevYearKey(month)]
+    // 지출: 전년 동월(인수월 이후만 신뢰) → 없으면 인수 후 최근 3개월 평균
+    const pyKey = prevYearKey(month)
+    const py = isPrevYearAvailable(pyKey) ? expByMonth[pyKey] : undefined
     const expectedExpense = py != null && py > 0 ? py : last3ExpAvg
 
-    // 기타수익: 전년 동월 → 없으면 최근 3개월 평균
-    const pyInc = incByMonth[prevYearKey(month)]
+    // 기타수익: 동일 규칙
+    const pyInc = isPrevYearAvailable(pyKey) ? incByMonth[pyKey] : undefined
     const expectedExtraIncome = pyInc != null && pyInc > 0 ? pyInc : last3IncAvg
 
     return {
