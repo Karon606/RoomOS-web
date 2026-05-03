@@ -76,7 +76,8 @@ const EXPENSE_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비', 
 
 const ITEM_PRESETS: Record<string, string[]> = {
   '부식비':  ['쌀', '김치', '라면', '식빵', '계란', '고추장', '된장'],
-  '소모품비': ['물티슈', '키친타월', '주방세제', '세탁세제', '화장실 휴지', '쓰레기봉투'],
+  '소모품비': ['물티슈', '키친타월', '주방세제', '세탁세제', '화장실 휴지'],
+  '폐기물 처리비': ['종량제쓰레기봉투', '재활용품수거봉투', '음식물쓰레기봉투', '음식물쓰레기 배출 스티커'],
 }
 
 const SPEC_UNITS = ['kg', 'g', 'ml', 'L', '매', 'm', '장', '개', '인분', '봉지', '알', '권']
@@ -93,7 +94,10 @@ const ITEM_DEFAULTS: Record<string, { specUnit: string; qtyUnit: string }> = {
   '주방세제':   { specUnit: 'ml',  qtyUnit: '개' },
   '세탁세제':   { specUnit: 'ml',  qtyUnit: '개' },
   '화장실 휴지':{ specUnit: 'm',   qtyUnit: '롤' },
-  '쓰레기봉투': { specUnit: 'L',   qtyUnit: '개' },
+  '종량제쓰레기봉투':         { specUnit: 'L', qtyUnit: '매' },
+  '재활용품수거봉투':         { specUnit: 'L', qtyUnit: '매' },
+  '음식물쓰레기봉투':         { specUnit: 'L', qtyUnit: '매' },
+  '음식물쓰레기 배출 스티커': { specUnit: 'L', qtyUnit: '매' },
 }
 
 export type ItemPickState = {
