@@ -41,9 +41,10 @@ const NAV_GROUPS = [
   {
     label: '수익/지출',
     items: [
-      { href: '/rooms',   label: '수납 관리',    Icon: IcoFinance },
-      { href: '/finance', label: '지출/기타수익', Icon: IcoWallet  },
-      { href: '/report',  label: '결산 보고서',   Icon: IcoFinance },
+      { href: '/rooms',     label: '수납 관리',     Icon: IcoFinance },
+      { href: '/finance',   label: '지출/기타수익', Icon: IcoWallet  },
+      { href: '/inventory', label: '재고 관리',     Icon: IcoWallet  },
+      { href: '/report',    label: '결산 보고서',   Icon: IcoFinance },
     ],
   },
   {

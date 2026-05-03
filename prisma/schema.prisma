@@ -132,6 +132,7 @@ model Property {
   tenantRequests    TenantRequest[]
   marketSurveys     MarketSurvey[]
   recurringExpenses RecurringExpense[]
+  trackedItems      TrackedItem[]
 
   @@map("properties")
 }
@@ -555,4 +556,58 @@ model RecurringExpense {
 
   @@index([propertyId])
   @@map("recurring_expenses")
+}
+
+// ============================================================
+// [18] TrackedItem — 부식·소모품·폐기물 사용량 추적 대상
+// ============================================================
+
+model TrackedItem {
+  id           String          @id @default(uuid()) @db.Uuid
+  propertyId   String          @db.Uuid
+  property     Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  category     String          // 부식비 / 소모품비 / 폐기물 처리비
+  label        String          // 화장실 휴지, 종량제쓰레기봉투 등
+  specUnit     String?         // m, L, kg 등
+  qtyUnit      String?         // 롤, 매, 포대 등
+  isArchived   Boolean         @default(false)
+  memo         String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  stockChecks  StockCheck[]
+  additions    StockAddition[]
+
+  @@unique([propertyId, category, label])
+  @@index([propertyId, isArchived])
+  @@map("tracked_items")
+}
+
+// 재고 점검 기록 — 특정 시점의 잔량
+model StockCheck {
+  id             String      @id @default(uuid()) @db.Uuid
+  trackedItemId  String      @db.Uuid
+  trackedItem    TrackedItem @relation(fields: [trackedItemId], references: [id], onDelete: Cascade)
+  date           DateTime    @db.Date
+  remainingQty   Float       // qtyUnit 기준 잔량
+  memo           String?
+  createdAt      DateTime    @default(now())
+
+  @@index([trackedItemId, date])
+  @@map("stock_checks")
+}
+
+// 무상 입수/이월 등 — 지출 외 추가 입고
+model StockAddition {
+  id             String      @id @default(uuid()) @db.Uuid
+  trackedItemId  String      @db.Uuid
+  trackedItem    TrackedItem @relation(fields: [trackedItemId], references: [id], onDelete: Cascade)
+  date           DateTime    @db.Date
+  addedQty       Float       // qtyUnit 기준 수량
+  source         String?     // 무상/기증/이월/기타
+  memo           String?
+  createdAt      DateTime    @default(now())
+
+  @@index([trackedItemId, date])
+  @@map("stock_additions")
 }

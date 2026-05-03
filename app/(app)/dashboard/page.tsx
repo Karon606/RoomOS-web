@@ -982,6 +982,26 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     })
   }
 
+  // ── 재고 부족 알림 (소진 예상 D-3 이내) ────────────────────
+  try {
+    const { getInventoryOverview } = await import('@/app/(app)/inventory/actions')
+    const inventoryRows = await getInventoryOverview()
+    for (const r of inventoryRows) {
+      if (r.daysUntilEmpty == null || r.daysUntilEmpty > 3) continue
+      const stockLabel = r.currentStock != null
+        ? `${Math.round(r.currentStock * 100) / 100}${r.qtyUnit ?? ''}`
+        : '잔량 미상'
+      alertItems.push({
+        category:  'inventory',
+        text:      `${r.label} 재고 부족 (${stockLabel} 남음)`,
+        link:      '/inventory',
+        dotColor:  '#d4a847',
+        timeLabel: r.daysUntilEmpty <= 0 ? '소진 임박' : `D-${r.daysUntilEmpty}`,
+        detail:    `${r.category} · ${r.label}\n현재 잔량: ${stockLabel}\n평균 소모: ${r.avgDaily ? `${Math.round(r.avgDaily * 100) / 100}${r.qtyUnit ?? ''}/일` : '—'}\n소진 예상: ${r.daysUntilEmpty}일`,
+      })
+    }
+  } catch { /* inventory 모듈 로드 실패 시 무시 */ }
+
   // ── 고정 지출 알림 ───────────────────────────────────────────
 
   // 한국 공휴일 (연도별 정적 목록 — 주말 대체공휴일 포함)

@@ -40,7 +40,7 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
-  alerts:            { category?: 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null }[]
+  alerts:            { category?: 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
@@ -353,8 +353,8 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
 
 // ── 알림 스트립 — 카테고리별 그룹핑 (iOS 알림센터 스타일) ────────────
 
-type AlertCat = 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'other'
-const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'moveout', 'movein', 'tour', 'wish', 'request', 'recurring', 'other']
+type AlertCat = 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'other'
+const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'moveout', 'movein', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
 const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
   unpaid:    { label: '누적 미수',    color: '#dc2626' },
   moveout:   { label: '퇴실 예정',    color: '#eab308' },
@@ -363,6 +363,7 @@ const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
   wish:      { label: '희망 호실/조건 매칭', color: '#22c55e' },
   request:   { label: '요청·컴플레인',color: '#f4623a' },
   recurring: { label: '고정 지출',    color: '#6366f1' },
+  inventory: { label: '재고 부족',    color: '#d4a847' },
   other:     { label: '기타',         color: '#94a3b8' },
 }
 const COLLAPSE_THRESHOLD = 3   // 이 개수 초과면 기본 접힘
