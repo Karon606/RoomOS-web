@@ -987,7 +987,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const { getInventoryOverview } = await import('@/app/(app)/inventory/actions')
     const inventoryRows = await getInventoryOverview()
     for (const r of inventoryRows) {
-      if (r.daysUntilEmpty == null || r.daysUntilEmpty > 3) continue
+      if (r.daysUntilEmpty == null || r.daysUntilEmpty > r.alertThresholdDays) continue
       const stockLabel = r.currentStock != null
         ? `${Math.round(r.currentStock * 100) / 100}${r.qtyUnit ?? ''}`
         : '잔량 미상'
@@ -997,7 +997,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         link:      '/inventory',
         dotColor:  '#d4a847',
         timeLabel: r.daysUntilEmpty <= 0 ? '소진 임박' : `D-${r.daysUntilEmpty}`,
-        detail:    `${r.category} · ${r.label}\n현재 잔량: ${stockLabel}\n평균 소모: ${r.avgDaily ? `${Math.round(r.avgDaily * 100) / 100}${r.qtyUnit ?? ''}/일` : '—'}\n소진 예상: ${r.daysUntilEmpty}일`,
+        detail:    `${r.category} · ${r.label}\n현재 잔량: ${stockLabel}\n평균 소모: ${r.avgDaily ? `${Math.round(r.avgDaily * 100) / 100}${r.qtyUnit ?? ''}/일` : '—'}\n소진 예상: ${r.daysUntilEmpty}일\n알림 기준: D-${r.alertThresholdDays}${r.reorderMemo ? `\n발주 메모: ${r.reorderMemo}` : ''}`,
       })
     }
   } catch { /* inventory 모듈 로드 실패 시 무시 */ }

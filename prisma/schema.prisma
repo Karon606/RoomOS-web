@@ -563,17 +563,19 @@ model RecurringExpense {
 // ============================================================
 
 model TrackedItem {
-  id           String          @id @default(uuid()) @db.Uuid
-  propertyId   String          @db.Uuid
-  property     Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  category     String          // 부식비 / 소모품비 / 폐기물 처리비
-  label        String          // 화장실 휴지, 종량제쓰레기봉투 등
-  specUnit     String?         // m, L, kg 등
-  qtyUnit      String?         // 롤, 매, 포대 등
-  isArchived   Boolean         @default(false)
-  memo         String?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id                  String          @id @default(uuid()) @db.Uuid
+  propertyId          String          @db.Uuid
+  property            Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  category            String          // 부식비 / 소모품비 / 폐기물 처리비
+  label               String          // 화장실 휴지, 종량제쓰레기봉투 등
+  specUnit            String?         // m, L, kg 등
+  qtyUnit             String?         // 롤, 매, 포대 등
+  alertThresholdDays  Int             @default(3)   // 소진 예상이 N일 이하면 대시보드 알림
+  reorderMemo         String?                       // 발주처 / 주문 단위 / 비고
+  isArchived          Boolean         @default(false)
+  memo                String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
   stockChecks  StockCheck[]
   additions    StockAddition[]

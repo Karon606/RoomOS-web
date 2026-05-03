@@ -6,6 +6,8 @@ export type InventoryRow = {
   label: string
   specUnit: string | null
   qtyUnit: string | null
+  alertThresholdDays: number
+  reorderMemo: string | null
   isArchived: boolean
   lastCheckDate: Date | null
   lastRemainingQty: number | null
@@ -14,6 +16,15 @@ export type InventoryRow = {
   daysUntilEmpty: number | null
   lastPeriodConsumption: number | null
   lastPeriodDays: number | null
+  avgUnitPrice: number | null   // 최근 12개월 구매 평균 단가 (원/qtyUnit)
+  lastUnitPrice: number | null  // 가장 최근 구매의 단가
+}
+
+export type PricePoint = {
+  date: Date
+  unitPrice: number    // amount / qtyValue
+  qty: number
+  amount: number
 }
 
 export type TimelineEntry =

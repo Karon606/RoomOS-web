@@ -6,7 +6,7 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
-import { TRACKED_CATEGORIES, type InventoryRow, type TimelineEntry } from './constants'
+import { TRACKED_CATEGORIES, type InventoryRow, type TimelineEntry, type PricePoint } from './constants'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -97,12 +97,39 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
       ? Math.floor(currentStock / avgDaily)
       : null
 
+    // 최근 12개월 구매 단가 (qtyValue, amount 모두 양수)
+    const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
+    const recentPurchases = await prisma.expense.findMany({
+      where: {
+        propertyId,
+        category: it.category,
+        itemLabel: it.label,
+        ...(it.qtyUnit ? { qtyUnit: it.qtyUnit } : {}),
+        date: { gte: oneYearAgo },
+        qtyValue: { gt: 0 },
+        amount: { gt: 0 },
+      },
+      select: { date: true, amount: true, qtyValue: true },
+      orderBy: { date: 'desc' },
+    })
+    let avgUnitPrice: number | null = null
+    let lastUnitPrice: number | null = null
+    if (recentPurchases.length > 0) {
+      const totalAmt = recentPurchases.reduce((s, p) => s + p.amount, 0)
+      const totalQty = recentPurchases.reduce((s, p) => s + (p.qtyValue ?? 0), 0)
+      avgUnitPrice = totalQty > 0 ? totalAmt / totalQty : null
+      const last = recentPurchases[0]
+      lastUnitPrice = last.qtyValue ? last.amount / last.qtyValue : null
+    }
+
     rows.push({
       id: it.id,
       category: it.category,
       label: it.label,
       specUnit: it.specUnit,
       qtyUnit: it.qtyUnit,
+      alertThresholdDays: it.alertThresholdDays,
+      reorderMemo: it.reorderMemo,
       isArchived: it.isArchived,
       lastCheckDate: last?.date ?? null,
       lastRemainingQty: last?.remainingQty ?? null,
@@ -111,9 +138,38 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
       daysUntilEmpty,
       lastPeriodConsumption,
       lastPeriodDays,
+      avgUnitPrice,
+      lastUnitPrice,
     })
   }
   return rows
+}
+
+// ── 단가 추이 (구매 시점별 unit price)
+export async function getPriceHistory(trackedItemId: string): Promise<PricePoint[]> {
+  const propertyId = await getPropertyId()
+  const item = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
+  if (!item) return []
+  const rows = await prisma.expense.findMany({
+    where: {
+      propertyId,
+      category: item.category,
+      itemLabel: item.label,
+      ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
+      qtyValue: { gt: 0 },
+      amount: { gt: 0 },
+    },
+    select: { date: true, amount: true, qtyValue: true },
+    orderBy: { date: 'asc' },
+  })
+  return rows
+    .filter(r => r.qtyValue && r.qtyValue > 0)
+    .map(r => ({
+      date: r.date,
+      qty: r.qtyValue ?? 0,
+      amount: r.amount,
+      unitPrice: (r.qtyValue && r.qtyValue > 0) ? r.amount / r.qtyValue : 0,
+    }))
 }
 
 // ── 단일 품목 상세 — 점검 + 구매 + 무상 입수 타임라인
@@ -199,6 +255,7 @@ export async function createTrackedItem(data: {
 
 export async function updateTrackedItem(id: string, data: {
   specUnit?: string | null; qtyUnit?: string | null; memo?: string | null
+  alertThresholdDays?: number; reorderMemo?: string | null
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -208,9 +265,11 @@ export async function updateTrackedItem(id: string, data: {
     await prisma.trackedItem.update({
       where: { id },
       data: {
-        specUnit: data.specUnit ?? it.specUnit,
-        qtyUnit:  data.qtyUnit  ?? it.qtyUnit,
-        memo:     data.memo     ?? it.memo,
+        specUnit:           data.specUnit           ?? it.specUnit,
+        qtyUnit:            data.qtyUnit            ?? it.qtyUnit,
+        memo:               data.memo               ?? it.memo,
+        alertThresholdDays: data.alertThresholdDays ?? it.alertThresholdDays,
+        reorderMemo:        data.reorderMemo        ?? it.reorderMemo,
       },
     })
     revalidatePath('/inventory')

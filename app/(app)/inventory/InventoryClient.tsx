@@ -4,10 +4,12 @@ import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
-import { type InventoryRow, type TimelineEntry, TRACKED_CATEGORIES } from './constants'
+import { type InventoryRow, type TimelineEntry, type PricePoint, TRACKED_CATEGORIES } from './constants'
 import {
   getInventoryDetail,
+  getPriceHistory,
   createTrackedItem,
+  updateTrackedItem,
   archiveTrackedItem,
   createStockCheck,
   createStockAddition,
@@ -105,14 +107,20 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
       )}
 
       {showAdd && <AddItemModal onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); router.refresh() }} />}
-      {detailId && <DetailModal trackedItemId={detailId} onClose={() => setDetailId(null)} onChange={() => router.refresh()} />}
+      {detailId && (
+        <DetailModal
+          row={rows.find(r => r.id === detailId) ?? null}
+          onClose={() => setDetailId(null)}
+          onChange={() => router.refresh()}
+        />
+      )}
     </div>
   )
 }
 
 function InventoryCard({ row, onOpen }: { row: InventoryRow; onOpen: () => void }) {
   const tint = CATEGORY_TINT[row.category]
-  const lowStock = row.daysUntilEmpty != null && row.daysUntilEmpty <= 3
+  const lowStock = row.daysUntilEmpty != null && row.daysUntilEmpty <= row.alertThresholdDays
   return (
     <button
       type="button"
@@ -124,7 +132,7 @@ function InventoryCard({ row, onOpen }: { row: InventoryRow; onOpen: () => void 
           <p className="text-[10px] mt-0.5" style={{ color: tint?.fg }}>{row.category}</p>
         </div>
         {lowStock && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-red-500/10 text-red-500">
+          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-red-500/10 text-red-500 shrink-0">
             소진 임박
           </span>
         )}
@@ -144,16 +152,26 @@ function InventoryCard({ row, onOpen }: { row: InventoryRow; onOpen: () => void 
           <p className="text-[10px] text-[var(--warm-muted)]">소진 예상</p>
           <p className="text-sm font-medium text-[var(--warm-mid)]">
             {row.daysUntilEmpty != null ? `${row.daysUntilEmpty}일` : '—'}
+            <span className="text-[10px] text-[var(--warm-muted)] ml-1">/ 알림 D-{row.alertThresholdDays}</span>
           </p>
         </div>
         <div>
-          <p className="text-[10px] text-[var(--warm-muted)]">최근 점검</p>
-          <p className="text-sm font-medium text-[var(--warm-mid)]">{fmtDate(row.lastCheckDate)}</p>
+          <p className="text-[10px] text-[var(--warm-muted)]">평균 단가</p>
+          <p className="text-sm font-medium text-[var(--warm-mid)]">
+            {row.avgUnitPrice != null
+              ? `${Math.round(row.avgUnitPrice).toLocaleString()}원${row.qtyUnit ? `/${row.qtyUnit}` : ''}`
+              : '—'}
+          </p>
         </div>
       </div>
+      {row.reorderMemo && (
+        <p className="text-[10px] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2 py-1.5 leading-relaxed">
+          📦 {row.reorderMemo}
+        </p>
+      )}
       {row.lastPeriodConsumption != null && row.lastPeriodDays != null && (
         <p className="text-[10px] text-[var(--warm-muted)] pt-1.5 border-t border-[var(--warm-border)]/60">
-          최근 {row.lastPeriodDays}일 동안 {fmtQty(row.lastPeriodConsumption, row.qtyUnit)} 소모
+          최근 {row.lastPeriodDays}일 동안 {fmtQty(row.lastPeriodConsumption, row.qtyUnit)} 소모 · 최근 점검 {fmtDate(row.lastCheckDate)}
         </p>
       )}
     </button>
@@ -238,15 +256,22 @@ function AddItemModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
   )
 }
 
-function DetailModal({ trackedItemId, onClose, onChange }: {
-  trackedItemId: string; onClose: () => void; onChange: () => void
+function DetailModal({ row, onClose, onChange }: {
+  row: InventoryRow | null; onClose: () => void; onChange: () => void
 }) {
+  if (!row) return null
+  const trackedItemId = row.id
   const [data, setData] = useState<Awaited<ReturnType<typeof getInventoryDetail>>>(null)
-  const [mode, setMode] = useState<'view' | 'check' | 'addition'>('view')
+  const [priceHistory, setPriceHistory] = useState<PricePoint[]>([])
+  const [mode, setMode] = useState<'view' | 'check' | 'addition' | 'settings'>('view')
+  const [tab, setTab]   = useState<'timeline' | 'price'>('timeline')
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
 
-  const reload = () => getInventoryDetail(trackedItemId).then(setData)
+  const reload = () => Promise.all([
+    getInventoryDetail(trackedItemId).then(setData),
+    getPriceHistory(trackedItemId).then(setPriceHistory),
+  ])
   useEffect(() => { reload() }, [trackedItemId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleArchive = () => {
@@ -282,8 +307,8 @@ function DetailModal({ trackedItemId, onClose, onChange }: {
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)] shrink-0">
           <div className="min-w-0">
-            <h2 className="text-base font-bold text-[var(--warm-dark)] truncate">{data?.item.label ?? '...'}</h2>
-            <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">{data?.item.category}</p>
+            <h2 className="text-base font-bold text-[var(--warm-dark)] truncate">{data?.item.label ?? row.label}</h2>
+            <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">{data?.item.category ?? row.category}</p>
           </div>
           <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none">✕</button>
         </div>
@@ -294,16 +319,29 @@ function DetailModal({ trackedItemId, onClose, onChange }: {
           <CheckForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
         ) : mode === 'addition' ? (
           <AdditionForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
+        ) : mode === 'settings' ? (
+          <SettingsForm row={row} onCancel={() => setMode('view')} onDone={() => { setMode('view'); onChange() }} />
         ) : (
           <>
-            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-3">
+            {/* 탭: 타임라인 / 단가 추이 */}
+            <div className="flex gap-1 px-5 pt-3 shrink-0">
+              <TabBtn active={tab === 'timeline'} onClick={() => setTab('timeline')}>타임라인</TabBtn>
+              <TabBtn active={tab === 'price'} onClick={() => setTab('price')}>단가 추이</TabBtn>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-5 py-3 space-y-3">
               {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
-              {data.timeline.length === 0 ? (
-                <p className="text-sm text-[var(--warm-muted)] text-center py-6">기록이 없습니다.</p>
+
+              {tab === 'timeline' ? (
+                data.timeline.length === 0 ? (
+                  <p className="text-sm text-[var(--warm-muted)] text-center py-6">기록이 없습니다.</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} qtyUnit={data.item.qtyUnit} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} pending={pending} />)}
+                  </ul>
+                )
               ) : (
-                <ul className="space-y-1.5">
-                  {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} qtyUnit={data.item.qtyUnit} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} pending={pending} />)}
-                </ul>
+                <PriceChart points={priceHistory} qtyUnit={data.item.qtyUnit} />
               )}
             </div>
             <div className="border-t border-[var(--warm-border)] px-5 py-3 flex gap-2 shrink-0 flex-wrap">
@@ -312,6 +350,10 @@ function DetailModal({ trackedItemId, onClose, onChange }: {
                 disabled={pending}
                 className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg disabled:opacity-40">
                 추적 제외
+              </button>
+              <button onClick={() => setMode('settings')}
+                className="px-3 py-2 bg-[var(--canvas)] border border-[var(--warm-border)] text-xs font-medium rounded-lg text-[var(--warm-dark)] hover:bg-[var(--warm-border)]">
+                설정
               </button>
               <div className="flex-1" />
               <button onClick={() => setMode('addition')}
@@ -327,6 +369,115 @@ function DetailModal({ trackedItemId, onClose, onChange }: {
         )}
       </div>
     </div>
+  )
+}
+
+function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick}
+      className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${active
+        ? 'bg-[var(--coral)] text-white'
+        : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>
+      {children}
+    </button>
+  )
+}
+
+function PriceChart({ points, qtyUnit }: { points: PricePoint[]; qtyUnit: string | null }) {
+  if (points.length === 0) {
+    return <p className="text-sm text-[var(--warm-muted)] text-center py-8">단가 데이터가 없습니다. 지출 등록 시 금액과 수량이 함께 입력되면 단가가 자동 계산됩니다.</p>
+  }
+  const prices = points.map(p => p.unitPrice)
+  const minP = Math.min(...prices)
+  const maxP = Math.max(...prices)
+  const range = Math.max(1, maxP - minP)
+  const W = 100
+  const H = 40
+  const xs = points.map((_, i) => points.length === 1 ? W / 2 : (i / (points.length - 1)) * W)
+  const ys = points.map(p => H - ((p.unitPrice - minP) / range) * H)
+  const path = points.length === 1
+    ? `M ${xs[0]} ${ys[0]} L ${xs[0]} ${ys[0]}`
+    : xs.map((x, i) => `${i === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${ys[i].toFixed(2)}`).join(' ')
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-[var(--canvas)] rounded-xl p-3 space-y-2">
+        <div className="flex items-center justify-between text-[10px] text-[var(--warm-muted)]">
+          <span>최저 {Math.round(minP).toLocaleString()}원{qtyUnit ? `/${qtyUnit}` : ''}</span>
+          <span>최고 {Math.round(maxP).toLocaleString()}원{qtyUnit ? `/${qtyUnit}` : ''}</span>
+        </div>
+        <svg viewBox={`0 0 ${W} ${H + 4}`} preserveAspectRatio="none" className="w-full h-32">
+          <path d={path} fill="none" stroke="var(--coral)" strokeWidth="0.8" strokeLinejoin="round" strokeLinecap="round" />
+          {xs.map((x, i) => <circle key={i} cx={x} cy={ys[i]} r="0.9" fill="var(--coral)" />)}
+        </svg>
+      </div>
+      <ul className="space-y-1.5">
+        {[...points].reverse().map((p, i) => (
+          <li key={i} className="flex items-center justify-between text-xs px-3 py-2 bg-[var(--cream)] border border-[var(--warm-border)]/60 rounded-xl">
+            <span className="text-[var(--warm-muted)]">{fmtDate(p.date)}</span>
+            <span className="text-[var(--warm-dark)] font-medium">
+              {Math.round(p.unitPrice).toLocaleString()}원{qtyUnit ? `/${qtyUnit}` : ''}
+            </span>
+            <span className="text-[10px] text-[var(--warm-muted)]">
+              {p.qty}{qtyUnit ?? ''} · {p.amount.toLocaleString()}원
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function SettingsForm({ row, onCancel, onDone }: {
+  row: InventoryRow; onCancel: () => void; onDone: () => void
+}) {
+  const [thresholdDays, setThresholdDays] = useState(String(row.alertThresholdDays))
+  const [reorderMemo, setReorderMemo]     = useState(row.reorderMemo ?? '')
+  const [pending, startTransition] = useTransition()
+  const [error, setError] = useState('')
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    const n = parseInt(thresholdDays, 10)
+    if (isNaN(n) || n < 0) { setError('알림 기준은 0 이상이어야 합니다.'); return }
+    startTransition(async () => {
+      const res = await updateTrackedItem(row.id, {
+        alertThresholdDays: n,
+        reorderMemo: reorderMemo.trim() || null,
+      })
+      if (!res.ok) { setError(res.error); return }
+      onDone()
+    })
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
+      <p className="text-xs text-[var(--warm-muted)]">소진 예상일이 알림 기준 이하가 되면 대시보드에 '재고 부족' 알림이 표시됩니다.</p>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">알림 기준 (D-N)</label>
+        <input type="text" inputMode="numeric" value={thresholdDays}
+          onChange={e => setThresholdDays(e.target.value.replace(/[^0-9]/g, ''))}
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+        <p className="text-[10px] text-[var(--warm-muted)]">예: 3 → 소진 예상이 3일 이하면 알림</p>
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">발주 메모</label>
+        <textarea value={reorderMemo} onChange={e => setReorderMemo(e.target.value)}
+          rows={3}
+          placeholder="예: 쿠팡 / 100매 박스 단위 / 영업장 카드 결제"
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
+      </div>
+      {error && <p className="text-xs text-red-500">{error}</p>}
+      <div className="pt-2 flex gap-2">
+        <button type="button" onClick={onCancel}
+          className="flex-1 py-2.5 bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl">취소</button>
+        <button type="submit" disabled={pending}
+          className="flex-1 py-2.5 bg-[var(--coral)] text-white text-sm font-medium rounded-xl disabled:opacity-60">
+          {pending ? '저장 중...' : '저장'}
+        </button>
+      </div>
+    </form>
   )
 }
 
