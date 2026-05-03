@@ -36,7 +36,7 @@ const fmtDate = (d: Date | string | null) => {
 
 export default function InventoryClient({ initialRows }: { initialRows: InventoryRow[] }) {
   const router = useRouter()
-  const [rows] = useState(initialRows)
+  const rows = initialRows
   const [isPending, startTransition] = useTransition()
   const [showAdd, setShowAdd]         = useState(false)
   const [detailId, setDetailId]       = useState<string | null>(null)
