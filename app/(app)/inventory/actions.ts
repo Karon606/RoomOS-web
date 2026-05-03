@@ -19,7 +19,8 @@ async function getPropertyId() {
 }
 
 // ── 카테고리·라벨 매칭으로 그 기간의 구매량 합계
-async function sumPurchases(propertyId: string, category: string, label: string, qtyUnit: string | null, from: Date | null, to: Date | null): Promise<number> {
+// useSpecBase=true 면 qtyValue × specValue (kg, 매 같은 규격 단위) 로 환산
+async function sumPurchases(propertyId: string, category: string, label: string, qtyUnit: string | null, from: Date | null, to: Date | null, useSpecBase: boolean): Promise<number> {
   const where: any = {
     propertyId,
     category,
@@ -31,11 +32,16 @@ async function sumPurchases(propertyId: string, category: string, label: string,
     if (from) where.date.gt = from   // exclusive: prevCheck.date 이후
     if (to)   where.date.lte = to    // inclusive: currCheck.date까지
   }
-  const r = await prisma.expense.aggregate({
-    where,
-    _sum: { qtyValue: true },
-  })
-  return r._sum.qtyValue ?? 0
+  if (!useSpecBase) {
+    const r = await prisma.expense.aggregate({ where, _sum: { qtyValue: true } })
+    return r._sum.qtyValue ?? 0
+  }
+  // 규격 환산: qtyValue × specValue. specValue 없으면 qtyValue 그대로
+  const rows = await prisma.expense.findMany({ where, select: { qtyValue: true, specValue: true } })
+  return rows.reduce((s, r) => {
+    const q = r.qtyValue ?? 0
+    return s + (r.specValue && r.specValue > 0 ? q * r.specValue : q)
+  }, 0)
 }
 
 async function sumAdditions(trackedItemId: string, from: Date | null, to: Date | null): Promise<number> {
@@ -70,10 +76,12 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
   for (const it of items) {
     const last = it.stockChecks[0] ?? null
     const prev = it.stockChecks[1] ?? null
+    // 규격 단위(specUnit)가 설정된 품목은 모든 수량 계산을 규격 기준(kg, 매 등)으로 통일
+    const useSpec = !!(it.specUnit && it.specUnit.trim())
 
     let currentStock: number | null = null
     if (last) {
-      const incomingPurchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, last.date, today)
+      const incomingPurchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, last.date, today, useSpec)
       const incomingAdditions = await sumAdditions(it.id, last.date, today)
       currentStock = last.remainingQty + incomingPurchases + incomingAdditions
     }
@@ -81,7 +89,7 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
     let lastPeriodConsumption: number | null = null
     let lastPeriodDays: number | null = null
     if (last && prev) {
-      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, prev.date, last.date)
+      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, prev.date, last.date, useSpec)
       const additions = await sumAdditions(it.id, prev.date, last.date)
       lastPeriodConsumption = (prev.remainingQty + purchases + additions) - last.remainingQty
       lastPeriodDays = Math.max(1, Math.round((last.date.getTime() - prev.date.getTime()) / 86400000))
@@ -162,6 +170,7 @@ export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyIn
   const propertyId = await getPropertyId()
   const item = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
   if (!item) return []
+  const useSpec = !!(item.specUnit && item.specUnit.trim())
 
   const [purchases, additions] = await Promise.all([
     prisma.expense.findMany({
@@ -172,7 +181,7 @@ export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyIn
         ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
         qtyValue: { gt: 0 },
       },
-      select: { date: true, qtyValue: true, amount: true },
+      select: { date: true, qtyValue: true, specValue: true, amount: true },
     }),
     prisma.stockAddition.findMany({
       where: { trackedItemId },
@@ -189,7 +198,9 @@ export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyIn
     const d = new Date(p.date)
     const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     const r = upsert(m)
-    r.purchaseQty   += p.qtyValue ?? 0
+    const q = p.qtyValue ?? 0
+    const contrib = useSpec && p.specValue && p.specValue > 0 ? q * p.specValue : q
+    r.purchaseQty    += contrib
     r.purchaseAmount += p.amount
   }
   for (const a of additions) {
