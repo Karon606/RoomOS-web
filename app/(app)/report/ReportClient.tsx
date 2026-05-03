@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { AnnualSummary, ForecastSummary, PropertyDiagnostics } from './actions'
 import { analyzePropertyWithGemini } from './actions'
+import { Btn } from '@/components/ui/Btn'
 
 const fmt = (n: number) => n === 0 ? '—' : n.toLocaleString('ko-KR') + '원'
 const fmtMan = (n: number) => n === 0 ? '—' : `${Math.round(n / 10000).toLocaleString()}만`
@@ -509,11 +510,7 @@ function AISection() {
             현재 점유율·임대료·미수율·12개월 매출 추세·지출 구조·입주자 회전율 등을 종합 분석해<br/>
             영업장의 강점·약점과 향후 30일 실행 가능한 개선안을 제안합니다.
           </p>
-          <button
-            onClick={handleAnalyze}
-            className="px-5 py-2.5 bg-[var(--coral)] text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity">
-            진단 시작
-          </button>
+          <Btn variant="primary" size="lg" onClick={handleAnalyze}>진단 시작</Btn>
         </div>
       )}
 
@@ -529,8 +526,7 @@ function AISection() {
         <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 space-y-2">
           <p className="text-sm font-semibold text-red-500">분석 실패</p>
           <p className="text-xs text-red-400">{error}</p>
-          <button onClick={handleAnalyze}
-            className="text-xs px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-500 rounded-lg">다시 시도</button>
+          <Btn variant="danger" size="sm" onClick={handleAnalyze}>다시 시도</Btn>
         </div>
       )}
 
@@ -550,10 +546,7 @@ function AISection() {
               <span className="text-base">✨</span>
               <span className="text-sm font-semibold text-[var(--coral)]">AI 진단 결과</span>
             </div>
-            <button onClick={handleAnalyze}
-              className="text-xs px-3 py-1.5 bg-[var(--coral)] hover:opacity-90 text-white rounded-lg">
-              다시 분석
-            </button>
+            <Btn variant="primary" size="sm" onClick={handleAnalyze}>다시 분석</Btn>
           </div>
           <div className="text-sm text-[var(--warm-dark)] leading-relaxed whitespace-pre-wrap [&_strong]:text-[var(--coral)] [&_strong]:font-semibold"
                dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />

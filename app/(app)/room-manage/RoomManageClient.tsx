@@ -8,6 +8,9 @@ import { AreaInput } from '@/components/ui/AreaInput'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { Btn } from '@/components/ui/Btn'
+import { Modal as SharedModal } from '@/components/ui/Modal'
+import { Badge } from '@/components/ui/Badge'
 import { useUrlState } from '@/lib/useUrlState'
 import { kstMonthStr } from '@/lib/kstDate'
 
@@ -801,14 +804,10 @@ export default function RoomManageClient({
 
             {error && <p className="text-red-400 text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
-              <button type="button" onClick={closeAddModal}
-                className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
-                취소
-              </button>
-              <button type="submit" disabled={isPending}
-                className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+              <Btn type="button" variant="secondary" onClick={closeAddModal} fullWidth>취소</Btn>
+              <Btn type="submit" variant="primary" disabled={isPending} fullWidth>
                 {isPending ? '저장 중...' : `저장${addPhotoPreviews.length > 0 ? ` (사진 ${addPhotoPreviews.length}장)` : ''}`}
-              </button>
+              </Btn>
             </div>
           </form>
         </Modal>
@@ -885,14 +884,10 @@ export default function RoomManageClient({
 
             {error && <p className="text-red-400 text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
-              <button type="button" onClick={closeEdit}
-                className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
-                취소
-              </button>
-              <button type="submit" disabled={isPending}
-                className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+              <Btn type="button" variant="secondary" onClick={closeEdit} fullWidth>취소</Btn>
+              <Btn type="submit" variant="primary" disabled={isPending} fullWidth>
                 {isPending ? '저장 중...' : '저장'}
-              </button>
+              </Btn>
             </div>
           </form>
         </Modal>
@@ -917,17 +912,9 @@ function Modal({ title, children, onClose }: {
   title: string; children: React.ReactNode; onClose: () => void
 }) {
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
-      onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[90vh]"
-        onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] flex-shrink-0">
-          <h2 className="text-base font-bold text-[var(--warm-dark)]">{title}</h2>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors text-xl leading-none">✕</button>
-        </div>
-        <div className="overflow-y-auto px-6 py-5 flex-1">{children}</div>
-      </div>
-    </div>
+    <SharedModal open onClose={onClose} title={title} width="md">
+      <div className="px-5 sm:px-6 py-5">{children}</div>
+    </SharedModal>
   )
 }
 
