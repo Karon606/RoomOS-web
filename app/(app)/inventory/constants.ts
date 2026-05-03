@@ -27,6 +27,14 @@ export type PricePoint = {
   amount: number
 }
 
+export type MonthlyInflowRow = {
+  month: string                // "YYYY-MM"
+  purchaseQty: number
+  additionQty: number
+  totalQty: number
+  purchaseAmount: number
+}
+
 export type TimelineEntry =
   | { type: 'check';    id: string; date: Date; remainingQty: number; memo: string | null }
   | { type: 'purchase'; id: string; date: Date; qtyValue: number; qtyUnit: string | null; amount: number; vendor: string | null; memo: string | null }

@@ -4,10 +4,11 @@ import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
-import { type InventoryRow, type TimelineEntry, type PricePoint, TRACKED_CATEGORIES } from './constants'
+import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, TRACKED_CATEGORIES } from './constants'
 import {
   getInventoryDetail,
   getPriceHistory,
+  getMonthlyInflow,
   createTrackedItem,
   updateTrackedItem,
   archiveTrackedItem,
@@ -159,7 +160,7 @@ function InventoryCard({ row, onOpen }: { row: InventoryRow; onOpen: () => void 
           <p className="text-[10px] text-[var(--warm-muted)]">평균 단가</p>
           <p className="text-sm font-medium text-[var(--warm-mid)]">
             {row.avgUnitPrice != null
-              ? `${Math.round(row.avgUnitPrice).toLocaleString()}원${row.qtyUnit ? `/${row.qtyUnit}` : ''}`
+              ? `${Math.round(row.avgUnitPrice).toLocaleString()}원${row.specUnit ? `/${row.specUnit}` : row.qtyUnit ? `/${row.qtyUnit}` : ''}`
               : '—'}
           </p>
         </div>
@@ -263,14 +264,16 @@ function DetailModal({ row, onClose, onChange }: {
   const trackedItemId = row.id
   const [data, setData] = useState<Awaited<ReturnType<typeof getInventoryDetail>>>(null)
   const [priceHistory, setPriceHistory] = useState<PricePoint[]>([])
+  const [monthlyInflow, setMonthlyInflow] = useState<MonthlyInflowRow[]>([])
   const [mode, setMode] = useState<'view' | 'check' | 'addition' | 'settings'>('view')
-  const [tab, setTab]   = useState<'timeline' | 'price'>('timeline')
+  const [tab, setTab]   = useState<'timeline' | 'monthly' | 'price'>('timeline')
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
 
   const reload = () => Promise.all([
     getInventoryDetail(trackedItemId).then(setData),
     getPriceHistory(trackedItemId).then(setPriceHistory),
+    getMonthlyInflow(trackedItemId).then(setMonthlyInflow),
   ])
   useEffect(() => { reload() }, [trackedItemId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -323,16 +326,17 @@ function DetailModal({ row, onClose, onChange }: {
           <SettingsForm row={row} onCancel={() => setMode('view')} onDone={() => { setMode('view'); onChange() }} />
         ) : (
           <>
-            {/* 탭: 타임라인 / 단가 추이 */}
-            <div className="flex gap-1 px-5 pt-3 shrink-0">
+            {/* 탭: 타임라인 / 월별 입수 / 단가 추이 */}
+            <div className="flex gap-1 px-5 pt-3 shrink-0 flex-wrap">
               <TabBtn active={tab === 'timeline'} onClick={() => setTab('timeline')}>타임라인</TabBtn>
-              <TabBtn active={tab === 'price'} onClick={() => setTab('price')}>단가 추이</TabBtn>
+              <TabBtn active={tab === 'monthly'}  onClick={() => setTab('monthly')}>월별 입수</TabBtn>
+              <TabBtn active={tab === 'price'}    onClick={() => setTab('price')}>단가 추이</TabBtn>
             </div>
 
             <div className="overflow-y-auto flex-1 px-5 py-3 space-y-3">
               {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
 
-              {tab === 'timeline' ? (
+              {tab === 'timeline' && (
                 data.timeline.length === 0 ? (
                   <p className="text-sm text-[var(--warm-muted)] text-center py-6">기록이 없습니다.</p>
                 ) : (
@@ -340,8 +344,12 @@ function DetailModal({ row, onClose, onChange }: {
                     {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} qtyUnit={data.item.qtyUnit} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} pending={pending} />)}
                   </ul>
                 )
-              ) : (
-                <PriceChart points={priceHistory} qtyUnit={data.item.qtyUnit} />
+              )}
+              {tab === 'monthly' && (
+                <MonthlyInflowList rows={monthlyInflow} qtyUnit={data.item.qtyUnit} />
+              )}
+              {tab === 'price' && (
+                <PriceChart points={priceHistory} unitLabel={data.item.specUnit ?? data.item.qtyUnit} qtyUnit={data.item.qtyUnit} />
               )}
             </div>
             <div className="border-t border-[var(--warm-border)] px-5 py-3 flex gap-2 shrink-0 flex-wrap">
@@ -383,7 +391,70 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
   )
 }
 
-function PriceChart({ points, qtyUnit }: { points: PricePoint[]; qtyUnit: string | null }) {
+function MonthlyInflowList({ rows, qtyUnit }: { rows: MonthlyInflowRow[]; qtyUnit: string | null }) {
+  if (rows.length === 0) {
+    return <p className="text-sm text-[var(--warm-muted)] text-center py-8">아직 입수 기록이 없습니다. 지출 등록 또는 무상 입수 추가 시 자동으로 집계됩니다.</p>
+  }
+  const maxQty = Math.max(...rows.map(r => r.totalQty), 1)
+  const totalAll  = rows.reduce((s, r) => s + r.totalQty, 0)
+  const totalAmt  = rows.reduce((s, r) => s + r.purchaseAmount, 0)
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-[var(--canvas)] rounded-xl p-3">
+          <p className="text-[10px] text-[var(--warm-muted)]">전체 입수량</p>
+          <p className="text-sm font-bold text-[var(--warm-dark)] mt-0.5">{Math.round(totalAll * 100) / 100}{qtyUnit ?? ''}</p>
+        </div>
+        <div className="bg-[var(--canvas)] rounded-xl p-3">
+          <p className="text-[10px] text-[var(--warm-muted)]">전체 구매 비용</p>
+          <p className="text-sm font-bold text-[var(--warm-dark)] mt-0.5">{totalAmt.toLocaleString()}원</p>
+        </div>
+      </div>
+      <ul className="space-y-1.5">
+        {rows.map(r => {
+          const purchasePct = (r.purchaseQty / maxQty) * 100
+          const additionPct = (r.additionQty / maxQty) * 100
+          return (
+            <li key={r.month} className="bg-[var(--cream)] border border-[var(--warm-border)]/60 rounded-xl px-3 py-2.5 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-[var(--warm-dark)]">{r.month.slice(0, 4)}년 {Number(r.month.slice(5))}월</span>
+                <span className="text-[var(--warm-dark)]">
+                  {Math.round(r.totalQty * 100) / 100}{qtyUnit ?? ''}
+                </span>
+              </div>
+              <div className="space-y-1">
+                {r.purchaseQty > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">구매</span>
+                    <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, purchasePct)}%`, background: '#6aab7e' }} />
+                    </div>
+                    <span className="text-[10px] text-[var(--warm-muted)] w-20 text-right shrink-0 tabular-nums">
+                      {Math.round(r.purchaseQty * 100) / 100}{qtyUnit ?? ''} · {r.purchaseAmount.toLocaleString()}원
+                    </span>
+                  </div>
+                )}
+                {r.additionQty > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">무상</span>
+                    <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, additionPct)}%`, background: '#d4a847' }} />
+                    </div>
+                    <span className="text-[10px] text-[var(--warm-muted)] w-20 text-right shrink-0 tabular-nums">
+                      {Math.round(r.additionQty * 100) / 100}{qtyUnit ?? ''}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
+function PriceChart({ points, unitLabel, qtyUnit }: { points: PricePoint[]; unitLabel: string | null; qtyUnit: string | null }) {
   if (points.length === 0) {
     return <p className="text-sm text-[var(--warm-muted)] text-center py-8">단가 데이터가 없습니다. 지출 등록 시 금액과 수량이 함께 입력되면 단가가 자동 계산됩니다.</p>
   }
@@ -399,12 +470,13 @@ function PriceChart({ points, qtyUnit }: { points: PricePoint[]; qtyUnit: string
     ? `M ${xs[0]} ${ys[0]} L ${xs[0]} ${ys[0]}`
     : xs.map((x, i) => `${i === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${ys[i].toFixed(2)}`).join(' ')
 
+  const unitSuffix = unitLabel ? `/${unitLabel}` : ''
   return (
     <div className="space-y-3">
       <div className="bg-[var(--canvas)] rounded-xl p-3 space-y-2">
         <div className="flex items-center justify-between text-[10px] text-[var(--warm-muted)]">
-          <span>최저 {Math.round(minP).toLocaleString()}원{qtyUnit ? `/${qtyUnit}` : ''}</span>
-          <span>최고 {Math.round(maxP).toLocaleString()}원{qtyUnit ? `/${qtyUnit}` : ''}</span>
+          <span>최저 {Math.round(minP).toLocaleString()}원{unitSuffix}</span>
+          <span>최고 {Math.round(maxP).toLocaleString()}원{unitSuffix}</span>
         </div>
         <svg viewBox={`0 0 ${W} ${H + 4}`} preserveAspectRatio="none" className="w-full h-32">
           <path d={path} fill="none" stroke="var(--coral)" strokeWidth="0.8" strokeLinejoin="round" strokeLinecap="round" />
@@ -416,7 +488,7 @@ function PriceChart({ points, qtyUnit }: { points: PricePoint[]; qtyUnit: string
           <li key={i} className="flex items-center justify-between text-xs px-3 py-2 bg-[var(--cream)] border border-[var(--warm-border)]/60 rounded-xl">
             <span className="text-[var(--warm-muted)]">{fmtDate(p.date)}</span>
             <span className="text-[var(--warm-dark)] font-medium">
-              {Math.round(p.unitPrice).toLocaleString()}원{qtyUnit ? `/${qtyUnit}` : ''}
+              {Math.round(p.unitPrice).toLocaleString()}원{unitSuffix}
             </span>
             <span className="text-[10px] text-[var(--warm-muted)]">
               {p.qty}{qtyUnit ?? ''} · {p.amount.toLocaleString()}원

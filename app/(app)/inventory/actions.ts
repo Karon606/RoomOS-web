@@ -6,7 +6,7 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
-import { TRACKED_CATEGORIES, type InventoryRow, type TimelineEntry, type PricePoint } from './constants'
+import { TRACKED_CATEGORIES, type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow } from './constants'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -97,7 +97,9 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
       ? Math.floor(currentStock / avgDaily)
       : null
 
-    // 최근 12개월 구매 단가 (qtyValue, amount 모두 양수)
+    // 최근 12개월 구매 단가 — 규격(specValue) 기준 우선, 없으면 수량(qtyValue) 기준
+    // 예: 쌀 20kg × 1포대 60,000원 → 60,000 / (1 × 20) = 3,000원/kg
+    //     물티슈 100매 × 2팩 10,000원 → 10,000 / (2 × 100) = 50원/매
     const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
     const recentPurchases = await prisma.expense.findMany({
       where: {
@@ -109,17 +111,27 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
         qtyValue: { gt: 0 },
         amount: { gt: 0 },
       },
-      select: { date: true, amount: true, qtyValue: true },
+      select: { date: true, amount: true, qtyValue: true, specValue: true, specUnit: true },
       orderBy: { date: 'desc' },
     })
     let avgUnitPrice: number | null = null
     let lastUnitPrice: number | null = null
     if (recentPurchases.length > 0) {
-      const totalAmt = recentPurchases.reduce((s, p) => s + p.amount, 0)
-      const totalQty = recentPurchases.reduce((s, p) => s + (p.qtyValue ?? 0), 0)
-      avgUnitPrice = totalQty > 0 ? totalAmt / totalQty : null
+      // 각 row의 base_units = qtyValue × specValue (specValue 있으면) else qtyValue
+      let totalAmt = 0
+      let totalBase = 0
+      for (const p of recentPurchases) {
+        const qty = p.qtyValue ?? 0
+        const base = (p.specValue && p.specValue > 0) ? qty * p.specValue : qty
+        if (base > 0) {
+          totalAmt  += p.amount
+          totalBase += base
+        }
+      }
+      avgUnitPrice = totalBase > 0 ? totalAmt / totalBase : null
       const last = recentPurchases[0]
-      lastUnitPrice = last.qtyValue ? last.amount / last.qtyValue : null
+      const lastBase = (last.specValue && last.specValue > 0) ? (last.qtyValue ?? 0) * last.specValue : (last.qtyValue ?? 0)
+      lastUnitPrice = lastBase > 0 ? last.amount / lastBase : null
     }
 
     rows.push({
@@ -145,7 +157,52 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
   return rows
 }
 
-// ── 단가 추이 (구매 시점별 unit price)
+// ── 월별 입수량 (구매 + 무상수령 합산, qtyValue 기준)
+export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyInflowRow[]> {
+  const propertyId = await getPropertyId()
+  const item = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
+  if (!item) return []
+
+  const [purchases, additions] = await Promise.all([
+    prisma.expense.findMany({
+      where: {
+        propertyId,
+        category: item.category,
+        itemLabel: item.label,
+        ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
+        qtyValue: { gt: 0 },
+      },
+      select: { date: true, qtyValue: true, amount: true },
+    }),
+    prisma.stockAddition.findMany({
+      where: { trackedItemId },
+      select: { date: true, addedQty: true },
+    }),
+  ])
+
+  const map = new Map<string, MonthlyInflowRow>()
+  const upsert = (m: string) => {
+    if (!map.has(m)) map.set(m, { month: m, purchaseQty: 0, additionQty: 0, totalQty: 0, purchaseAmount: 0 })
+    return map.get(m)!
+  }
+  for (const p of purchases) {
+    const d = new Date(p.date)
+    const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const r = upsert(m)
+    r.purchaseQty   += p.qtyValue ?? 0
+    r.purchaseAmount += p.amount
+  }
+  for (const a of additions) {
+    const d = new Date(a.date)
+    const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    upsert(m).additionQty += a.addedQty
+  }
+  for (const r of map.values()) r.totalQty = r.purchaseQty + r.additionQty
+
+  return Array.from(map.values()).sort((a, b) => b.month.localeCompare(a.month))
+}
+
+// ── 단가 추이 (구매 시점별 unit price) — 규격 기준 우선
 export async function getPriceHistory(trackedItemId: string): Promise<PricePoint[]> {
   const propertyId = await getPropertyId()
   const item = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
@@ -159,17 +216,21 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
       qtyValue: { gt: 0 },
       amount: { gt: 0 },
     },
-    select: { date: true, amount: true, qtyValue: true },
+    select: { date: true, amount: true, qtyValue: true, specValue: true },
     orderBy: { date: 'asc' },
   })
   return rows
     .filter(r => r.qtyValue && r.qtyValue > 0)
-    .map(r => ({
-      date: r.date,
-      qty: r.qtyValue ?? 0,
-      amount: r.amount,
-      unitPrice: (r.qtyValue && r.qtyValue > 0) ? r.amount / r.qtyValue : 0,
-    }))
+    .map(r => {
+      const qty = r.qtyValue ?? 0
+      const base = (r.specValue && r.specValue > 0) ? qty * r.specValue : qty
+      return {
+        date: r.date,
+        qty,
+        amount: r.amount,
+        unitPrice: base > 0 ? r.amount / base : 0,
+      }
+    })
 }
 
 // ── 단일 품목 상세 — 점검 + 구매 + 무상 입수 타임라인
