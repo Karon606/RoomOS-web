@@ -268,6 +268,175 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
   }
 }
 
+// ── 예상(forecast) 보고서 ─────────────────────────────────────────
+
+export type ForecastRow = {
+  month: string                  // "YYYY-MM"
+  expectedRevenue: number        // 호실별 점유·임대료 변동 반영
+  expectedExtraIncome: number    // 전년 동월 또는 최근 3개월 평균
+  expectedExpense: number        // 전년 동월 또는 최근 3개월 평균
+  expectedProfit: number
+  occupiedRooms: number
+  vacantRooms: number
+}
+
+export type ForecastSummary = {
+  rows: ForecastRow[]
+  totalRevenue: number
+  totalExpense: number
+  totalProfit: number
+}
+
+export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummary> {
+  const { propertyId } = await getPropertyId()
+  const today = new Date()
+  const startY = today.getFullYear()
+  const startM = today.getMonth() + 1
+
+  // 대상 월 리스트
+  const months: string[] = []
+  let cy = startY, cmn = startM
+  for (let i = 0; i < monthsAhead; i++) {
+    months.push(`${cy}-${String(cmn).padStart(2, '0')}`)
+    cmn++; if (cmn > 12) { cmn = 1; cy++ }
+  }
+
+  // 1) 호실별 baseRent + scheduledRent + 적용 예정일
+  const rooms = await prisma.room.findMany({
+    where: { propertyId },
+    select: {
+      id: true, baseRent: true, scheduledRent: true, rentUpdateDate: true,
+      leaseTerms: {
+        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        select: {
+          id: true, status: true, rentAmount: true,
+          moveInDate: true, expectedMoveOut: true, moveOutDate: true,
+        },
+      },
+    },
+  })
+
+  // 2) 전년 동월 + 최근 3개월 — 지출/기타수익 평균 산출용
+  const last3Months: string[] = (() => {
+    const arr: string[] = []
+    let y = startY, m = startM - 1
+    if (m < 1) { m = 12; y-- }
+    for (let i = 0; i < 3; i++) {
+      arr.push(`${y}-${String(m).padStart(2, '0')}`)
+      m--; if (m < 1) { m = 12; y-- }
+    }
+    return arr
+  })()
+  const last3Start = new Date(startY, startM - 4, 1)
+  const last3End = new Date(startY, startM - 1, 0); last3End.setHours(23, 59, 59, 999)
+
+  // 전년 1년치 + 최근 3개월
+  const yearBackStart = new Date(startY - 1, startM - 1, 1)
+  const yearBackEnd = new Date(startY, startM + monthsAhead - 1, 0); yearBackEnd.setHours(23, 59, 59, 999)
+
+  const [historicalExpenses, historicalIncomes] = await Promise.all([
+    prisma.expense.findMany({
+      where: {
+        propertyId,
+        date: { gte: yearBackStart, lte: yearBackEnd },
+      },
+      select: { date: true, amount: true },
+    }),
+    prisma.extraIncome.findMany({
+      where: {
+        propertyId,
+        date: { gte: yearBackStart, lte: yearBackEnd },
+      },
+      select: { date: true, amount: true },
+    }),
+  ])
+
+  const monthKeyOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  const expByMonth: Record<string, number> = {}
+  for (const e of historicalExpenses) {
+    const k = monthKeyOf(new Date(e.date))
+    expByMonth[k] = (expByMonth[k] ?? 0) + e.amount
+  }
+  const incByMonth: Record<string, number> = {}
+  for (const i of historicalIncomes) {
+    const k = monthKeyOf(new Date(i.date))
+    incByMonth[k] = (incByMonth[k] ?? 0) + i.amount
+  }
+
+  const last3ExpAvg = Math.round(
+    last3Months.reduce((s, m) => s + (expByMonth[m] ?? 0), 0) / 3
+  )
+  const last3IncAvg = Math.round(
+    last3Months.reduce((s, m) => s + (incByMonth[m] ?? 0), 0) / 3
+  )
+
+  const prevYearKey = (m: string): string => {
+    const [y, mn] = m.split('-').map(Number)
+    return `${y - 1}-${String(mn).padStart(2, '0')}`
+  }
+
+  // 3) 월별 예상 매출 — 호실별 점유 여부 + 임대료 변동 반영
+  const rows: ForecastRow[] = months.map(month => {
+    const [my, mm] = month.split('-').map(Number)
+    const monthStart = new Date(my, mm - 1, 1)
+    const monthEnd = new Date(my, mm, 0); monthEnd.setHours(23, 59, 59, 999)
+
+    let revenue = 0
+    let occupied = 0
+    let vacant = 0
+    for (const r of rooms) {
+      // 임대료: scheduledRent 적용 예정일이 이 월 이전이면 scheduledRent, 아니면 baseRent
+      let rent = r.baseRent
+      if (r.scheduledRent != null && r.rentUpdateDate) {
+        const updateDate = new Date(r.rentUpdateDate)
+        if (updateDate <= monthEnd) rent = r.scheduledRent
+      }
+      // 그 월에 점유될 lease가 하나라도 있는지
+      const occLease = r.leaseTerms.find(l => {
+        const moveIn = l.moveInDate ? new Date(l.moveInDate) : null
+        const moveOut = l.expectedMoveOut ? new Date(l.expectedMoveOut)
+          : (l.moveOutDate ? new Date(l.moveOutDate) : null)
+        // 입주 전이면 X
+        if (moveIn && moveIn > monthEnd) return false
+        // 퇴실 후면 X
+        if (moveOut && moveOut < monthStart) return false
+        return true
+      })
+      if (occLease) {
+        revenue += occLease.rentAmount > 0 ? Math.min(occLease.rentAmount, rent) : rent
+        occupied++
+      } else {
+        vacant++
+      }
+    }
+
+    // 지출: 전년 동월 → 없으면 최근 3개월 평균
+    const py = expByMonth[prevYearKey(month)]
+    const expectedExpense = py != null && py > 0 ? py : last3ExpAvg
+
+    // 기타수익: 전년 동월 → 없으면 최근 3개월 평균
+    const pyInc = incByMonth[prevYearKey(month)]
+    const expectedExtraIncome = pyInc != null && pyInc > 0 ? pyInc : last3IncAvg
+
+    return {
+      month,
+      expectedRevenue: revenue,
+      expectedExtraIncome,
+      expectedExpense,
+      expectedProfit: revenue + expectedExtraIncome - expectedExpense,
+      occupiedRooms: occupied,
+      vacantRooms: vacant,
+    }
+  })
+
+  return {
+    rows,
+    totalRevenue: rows.reduce((s, r) => s + r.expectedRevenue, 0),
+    totalExpense: rows.reduce((s, r) => s + r.expectedExpense, 0),
+    totalProfit: rows.reduce((s, r) => s + r.expectedProfit, 0),
+  }
+}
+
 // 사용 가능한 연도 목록 (paymentRecord 또는 expense 기반)
 export async function getAvailableYears(): Promise<string[]> {
   const { propertyId } = await getPropertyId()

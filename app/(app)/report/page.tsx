@@ -1,4 +1,4 @@
-import { getAnnualReport, getAvailableYears } from './actions'
+import { getAnnualReport, getAvailableYears, getForecastReport } from './actions'
 import ReportClient from './ReportClient'
 import { kstYmd } from '@/lib/kstDate'
 
@@ -11,10 +11,11 @@ export default async function ReportPage({
   const today = kstYmd()
   const targetYear = year ?? String(today.year)
 
-  const [summary, years] = await Promise.all([
+  const [summary, years, forecast] = await Promise.all([
     getAnnualReport(targetYear),
     getAvailableYears(),
+    getForecastReport(6),
   ])
 
-  return <ReportClient summary={summary} years={years} />
+  return <ReportClient summary={summary} years={years} forecast={forecast} />
 }
