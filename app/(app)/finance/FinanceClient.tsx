@@ -16,6 +16,7 @@ import {
 } from '@/app/(app)/settings/actions'
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
+import { Btn } from '@/components/ui/Btn'
 import { chartColor } from '@/lib/chartColors'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -1851,12 +1852,12 @@ export default function FinanceClient({
                 {editingAcc && (
                   <button type="button"
                     onClick={() => { setEditingAcc(null); setAssetType('BANK_ACCOUNT'); setAssetBrand(''); setAssetFormKey(k => k + 1) }}
-                    className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
+                    className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">
                     취소
                   </button>
                 )}
                 <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl border border-transparent transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
                   {isPending ? '저장 중...' : (editingAcc ? '수정 저장' : '등록')}
                 </button>
               </div>
@@ -2142,9 +2143,9 @@ export default function FinanceClient({
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <button type="button" onClick={() => { setDetailExpEdit(false); setError('') }}
-                    className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">취소</button>
+                    className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">취소</button>
                   <button type="submit" disabled={isPending}
-                    className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                    className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl border border-transparent transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
                     {isPending ? '저장 중...' : '저장'}
                   </button>
                 </div>
@@ -2240,9 +2241,9 @@ export default function FinanceClient({
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <button type="button" onClick={() => { setDetailIncEdit(false); setError('') }}
-                    className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">취소</button>
+                    className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">취소</button>
                   <button type="submit" disabled={isPending}
-                    className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                    className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl border border-transparent transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
                     {isPending ? '저장 중...' : '저장'}
                   </button>
                 </div>
@@ -2431,9 +2432,9 @@ export default function FinanceClient({
               </div>
               <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                 <button type="button" onClick={() => setShowAddExp(false)}
-                  className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">취소</button>
+                  className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">취소</button>
                 <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl border border-transparent transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
                   {isPending ? '저장 중...' : '저장'}
                 </button>
               </div>
@@ -2497,7 +2498,7 @@ export default function FinanceClient({
               </div>
               <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                 <button type="button" onClick={() => setShowAddInc(false)}
-                  className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">취소</button>
+                  className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">취소</button>
                 <button type="submit" disabled={isPending}
                   className="flex-1 py-2.5 bg-green-700 hover:bg-green-600 text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                   {isPending ? '저장 중...' : '저장'}

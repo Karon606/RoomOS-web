@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { Btn } from '@/components/ui/Btn'
 import { formatPhone } from '@/lib/formatPhone'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
@@ -1451,14 +1452,10 @@ export default function RoomsClient({
                 </div>
 
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                  <button type="button" onClick={() => { setShowPayForm(false); setError('') }}
-                    className="flex-1 py-2.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
-                    취소
-                  </button>
-                  <button type="submit" disabled={isPending}
-                    className="flex-1 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  <Btn type="button" variant="secondary" onClick={() => { setShowPayForm(false); setError('') }} fullWidth>취소</Btn>
+                  <Btn type="submit" variant="primary" disabled={isPending} fullWidth>
                     {isPending ? '저장 중...' : '저장'}
-                  </button>
+                  </Btn>
                 </div>
               </form>
             )}
