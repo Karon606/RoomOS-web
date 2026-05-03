@@ -107,10 +107,17 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const visitRoute          = formData.get('visitRoute') as string
   const tourDate            = formData.get('tourDate') as string
   const inquiryAt           = formData.get('inquiryAt') as string
+  const reservationConfirmed = formData.get('reservationConfirmed') === 'true'
 
+  const isReservedConfirmed = status === 'RESERVED' && reservationConfirmed
   const roomOptionalStatuses = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] as string[]
   if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
   if (!roomId && !roomOptionalStatuses.includes(status)) return { ok: false, error: '호실을 선택해주세요.' }
+  if (isReservedConfirmed) {
+    if (!roomId) return { ok: false, error: '예약 확정 시 호실은 필수입니다.' }
+    if (!rentAmount) return { ok: false, error: '예약 확정 시 월 이용료는 필수입니다.' }
+    if (!moveInDate) return { ok: false, error: '예약 확정 시 입주 희망일은 필수입니다.' }
+  }
 
   // NON_RESIDENT(명의만)와 실거주자(ACTIVE/RESERVED/CHECKOUT_PENDING)는 같은 방에 공존 가능
   const existingLeases = roomId ? await prisma.leaseTerm.findMany({
@@ -167,6 +174,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
           expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
           tourDate: tourDate ? new Date(tourDate) : null,
           inquiryAt: inquiryAt ? new Date(inquiryAt) : null,
+          reservationConfirmedAt: isReservedConfirmed ? new Date() : null,
           paymentTiming,
           payMethod: payMethod || null,
           cashReceipt: cashReceipt || null,
@@ -244,13 +252,20 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
   const visitRoute         = formData.get('visitRoute') as string
   const tourDate           = formData.get('tourDate') as string
   const inquiryAt          = formData.get('inquiryAt') as string
+  const reservationConfirmed = formData.get('reservationConfirmed') === 'true'
   const applyScheduledRent = formData.get('applyScheduledRent') as string  // '1' = 즉시 적용, '0' = 보류, 비어있음 = 처리 안함
 
+  const isReservedConfirmed = status === 'RESERVED' && reservationConfirmed
   if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
+  if (isReservedConfirmed) {
+    if (!roomId) return { ok: false, error: '예약 확정 시 호실은 필수입니다.' }
+    if (!rentAmount) return { ok: false, error: '예약 확정 시 월 이용료는 필수입니다.' }
+    if (!moveInDate) return { ok: false, error: '예약 확정 시 입주 희망일은 필수입니다.' }
+  }
 
   const currentLease = await prisma.leaseTerm.findUnique({
     where: { id: leaseTermId },
-    select: { roomId: true, status: true },
+    select: { roomId: true, status: true, reservationConfirmedAt: true },
   })
   if (!currentLease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
@@ -333,6 +348,9 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
       expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
       tourDate: tourDate ? new Date(tourDate) : null,
       inquiryAt: inquiryAt ? new Date(inquiryAt) : null,
+      reservationConfirmedAt: isReservedConfirmed
+        ? (currentLease.reservationConfirmedAt ?? new Date())
+        : null,
       paymentTiming,
       roomId: newRoomId ?? null,
       payMethod: payMethod || null,
@@ -486,6 +504,75 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
 
   revalidatePath('/tenants')
   return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 예약 확정 → 거주중 전환 (대시보드 알림에서 사용). 호실이 공실이 아니면 거부.
+export async function confirmReservationToActive(leaseTermId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId, user } = await getPropertyId()
+
+    const lease = await prisma.leaseTerm.findUnique({
+      where: { id: leaseTermId },
+      select: {
+        id: true, status: true, tenantId: true, roomId: true, reservationConfirmedAt: true,
+        room: { select: { id: true, roomNo: true, isVacant: true } },
+      },
+    })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    if (lease.status !== 'RESERVED' || !lease.reservationConfirmedAt) {
+      return { ok: false, error: '예약 확정 상태가 아닙니다.' }
+    }
+    if (!lease.roomId || !lease.room) return { ok: false, error: '확정된 호실 정보가 없습니다.' }
+
+    // 호실이 공실이 아니면 차단 (다른 거주자가 있는지 확인 — 본인 lease 제외)
+    if (!lease.room.isVacant) {
+      const others = await prisma.leaseTerm.findMany({
+        where: {
+          roomId: lease.roomId,
+          id: { not: leaseTermId },
+          status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] },
+        },
+        select: { status: true },
+      })
+      if (others.some(o => o.status === 'ACTIVE')) {
+        return { ok: false, error: `${lease.room.roomNo}호는 아직 거주 중인 입주자가 있습니다.` }
+      }
+      if (others.some(o => o.status === 'CHECKOUT_PENDING')) {
+        return { ok: false, error: `${lease.room.roomNo}호는 아직 퇴실 처리가 완료되지 않았습니다.` }
+      }
+    }
+
+    await prisma.leaseTerm.update({
+      where: { id: leaseTermId },
+      data: { status: 'ACTIVE' },
+    })
+
+    await prisma.room.update({
+      where: { id: lease.roomId },
+      data: { isVacant: false },
+    })
+
+    await prisma.tenantStatusLog.create({
+      data: {
+        tenantId:    lease.tenantId,
+        leaseTermId,
+        propertyId,
+        fromStatus:  'RESERVED',
+        toStatus:    'ACTIVE',
+        changedById: user.id,
+      },
+    })
+
+    revalidatePath('/dashboard')
+    revalidatePath('/tenants')
+    revalidatePath('/rooms')
+    revalidatePath('/room-manage')
+    return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

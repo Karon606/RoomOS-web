@@ -137,16 +137,17 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       _sum: { amount: true },
       orderBy: { _sum: { amount: 'desc' } },
     }),
-    // 입실예정 알림
+    // 입실예정 알림 — 미래 moveInDate (또는 도래 전)이면서 미확정/확정 모두 포함
     prisma.leaseTerm.findMany({
       where: {
         propertyId,
         status: 'RESERVED',
         moveInDate: { gte: alertFrom, lte: alertTo },
       },
-      include: {
+      select: {
+        id: true, moveInDate: true, reservationConfirmedAt: true,
         tenant: { select: { name: true, id: true } },
-        room:   { select: { roomNo: true } },
+        room:   { select: { id: true, roomNo: true } },
       },
       orderBy: { moveInDate: 'asc' },
     }),
@@ -212,7 +213,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       select: {
         id: true, status: true, wishRooms: true, wishConditions: true, inquiryAt: true, createdAt: true,
-        moveInDate: true, keepAlertAfterInquiry: true,
+        moveInDate: true, keepAlertAfterInquiry: true, reservationConfirmedAt: true,
         tenant: { select: { name: true, id: true } },
         room:   { select: { roomNo: true } },
       },
@@ -558,6 +559,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   for (const l of wishRoomLeases) {
     // 입주 희망일이 지난 예약자는 옵션이 켜져 있지 않으면 매칭 제외
     if (isInquiryExpired(l)) continue
+    // 예약 확정자는 이미 호실이 정해진 상태 → 매칭 알림에서 제외
+    if (l.reservationConfirmedAt) continue
 
     const inquiryAt = l.inquiryAt ? new Date(l.inquiryAt) : null
     const createdAt = new Date(l.createdAt)
@@ -799,18 +802,79 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     return `${dt.getMonth() + 1}월 ${dt.getDate()}일`
   }
 
+  // 예약 확정 + 입주 희망일 도래(오늘 KST 09:00 이후) → reservationDue
+  // 그 외 RESERVED는 movein 알림
+  const nowKst = (() => { const n = new Date(); return new Date(n.getTime() + 9 * 3600000) })()
+  const todayKst9amLocal = (() => {
+    const k = new Date(nowKst); k.setUTCHours(9, 0, 0, 0)
+    return new Date(k.getTime() - 9 * 3600000)
+  })()
   for (const l of moveInLeases) {
     const days = daysUntil(l.moveInDate!)
-    // RESERVED는 입주 확정 아님 — "입실 희망 (예약)"으로 명확히 표기
+    const isConfirmed = !!l.reservationConfirmedAt
+    const moveInD = l.moveInDate ? new Date(l.moveInDate) : null
+    const isDue = moveInD && (
+      moveInD.getTime() < todayKst9amLocal.getTime() ||
+      (days === 0 && new Date() >= todayKst9amLocal)
+    )
+
+    if (isConfirmed && isDue) {
+      alertItems.push({
+        category:  'movein',
+        text:      `${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}${l.tenant.name}님 입주 확정일 도래`,
+        link:      `/tenants?tenantId=${l.tenant.id}`,
+        dotColor:  '#22c55e',
+        timeLabel: days === 0 ? '오늘' : days < 0 ? `${Math.abs(days)}일 경과` : dayLabel(days),
+        tenantId:  l.tenant.id,
+        detail:    `입주 희망일(${fmtKorDate(l.moveInDate)})이 도래했습니다. 거주중으로 변경하시겠어요?`,
+        exactDate: fmtShortDate(l.moveInDate),
+        reservationDueLeaseId: l.id,
+        reservationDueRoomNo:  l.room?.roomNo ?? null,
+      })
+      continue
+    }
+
     alertItems.push({
       category:  'movein',
-      text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}입실 희망 (예약)`,
+      text:      `${l.tenant.name}님 ${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}입실 희망${isConfirmed ? ' (예약 확정)' : ' (예약)'}`,
       link:      `/tenants?tenantId=${l.tenant.id}`,
-      dotColor:  '#3b82f6',
+      dotColor:  isConfirmed ? '#22c55e' : '#3b82f6',
       timeLabel: dayLabel(days),
       tenantId:  l.tenant.id,
-      detail:    fmtKorDate(l.moveInDate) ? `입주 희망일: ${fmtKorDate(l.moveInDate)} · 입주 미확정 (예약 단계)` : undefined,
+      detail:    fmtKorDate(l.moveInDate)
+        ? `입주 희망일: ${fmtKorDate(l.moveInDate)}${isConfirmed ? ' · 예약 확정' : ' · 입주 미확정 (예약 단계)'}`
+        : undefined,
       exactDate: fmtShortDate(l.moveInDate),
+    })
+  }
+
+  // 7일보다 오래된 과거 입주 희망일을 가진 확정 예약 — alertFrom 범위 밖이라 별도 처리
+  const overduConfirmed = await prisma.leaseTerm.findMany({
+    where: {
+      propertyId,
+      status: 'RESERVED',
+      reservationConfirmedAt: { not: null },
+      moveInDate: { not: null, lt: alertFrom },
+    },
+    select: {
+      id: true, moveInDate: true,
+      tenant: { select: { name: true, id: true } },
+      room:   { select: { id: true, roomNo: true } },
+    },
+  })
+  for (const l of overduConfirmed) {
+    const days = daysUntil(l.moveInDate!)
+    alertItems.push({
+      category:  'movein',
+      text:      `${l.room?.roomNo ? `${l.room.roomNo}호 ` : ''}${l.tenant.name}님 입주 확정일 경과`,
+      link:      `/tenants?tenantId=${l.tenant.id}`,
+      dotColor:  '#22c55e',
+      timeLabel: `${Math.abs(days)}일 경과`,
+      tenantId:  l.tenant.id,
+      detail:    `입주 희망일(${fmtKorDate(l.moveInDate)})이 ${Math.abs(days)}일 경과했습니다. 거주중으로 변경하시겠어요?`,
+      exactDate: fmtShortDate(l.moveInDate),
+      reservationDueLeaseId: l.id,
+      reservationDueRoomNo:  l.room?.roomNo ?? null,
     })
   }
 

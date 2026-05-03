@@ -13,6 +13,7 @@ import {
 import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS } from '@/lib/chartColors'
 import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment, getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { recordRecurringExpense } from '@/app/(app)/finance/actions'
+import { confirmReservationToActive } from '@/app/(app)/tenants/actions'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 
 // ── 타입 ────────────────────────────────────────────────────────
@@ -39,7 +40,7 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
-  alerts:            { category?: 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string }[]
+  alerts:            { category?: 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
@@ -102,9 +103,22 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   onOpenPayment: (id: string) => void
   onStartRecord: (alert: AlertItem) => void
 }) {
+  const router = useRouter()
   const initial = alert.text.slice(0, 1)
   const avatarBg = hexToRgba(alert.dotColor, 0.15)
   const isRecurring = !!alert.recurringExpenseId
+  const reservationDueLeaseId = alert.reservationDueLeaseId
+  const [confirmPending, setConfirmPending] = useState(false)
+  const [confirmError, setConfirmError]     = useState('')
+
+  const handleConfirmActive = async () => {
+    if (!reservationDueLeaseId || confirmPending) return
+    setConfirmPending(true); setConfirmError('')
+    const res = await confirmReservationToActive(reservationDueLeaseId)
+    if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
+    router.refresh()
+    onClose()
+  }
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -168,6 +182,18 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
 
         {/* 하단 버튼 */}
         <div className="px-5 pb-5 pt-4 space-y-2">
+          {confirmError && (
+            <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{confirmError}</p>
+          )}
+          {reservationDueLeaseId && (
+            <button
+              onClick={handleConfirmActive}
+              disabled={confirmPending}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-60"
+              style={{ background: '#22c55e', color: 'white' }}>
+              {confirmPending ? '처리 중...' : '거주중으로 변경'}
+            </button>
+          )}
           {isRecurring && (
             <button
               onClick={() => { onStartRecord(alert); onClose() }}
@@ -176,7 +202,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               지출 기록하기
             </button>
           )}
-          {alert.tenantId && !isRecurring && (
+          {alert.tenantId && !isRecurring && !reservationDueLeaseId && (
             <button
               onClick={() => { onOpenPayment(alert.tenantId!); onClose() }}
               className="w-full py-2.5 rounded-xl text-sm font-medium transition-opacity hover:opacity-80"

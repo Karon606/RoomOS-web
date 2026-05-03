@@ -282,6 +282,7 @@ model LeaseTerm {
   visitRoute         String?
   tourDate           DateTime?          @db.Date
   inquiryAt          DateTime?          // 입실 문의 일시 (예약자 순번 기준)
+  reservationConfirmedAt DateTime?      // 예약 확정 일시 (RESERVED → 확정 단계 진입 시점). null이면 일반 예약, non-null이면 예약 확정
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
