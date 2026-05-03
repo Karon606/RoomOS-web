@@ -486,6 +486,7 @@ function PriceChart({ points, unitLabel, qtyUnit }: { points: PricePoint[]; unit
 function SettingsForm({ row, onCancel, onDone }: {
   row: InventoryRow; onCancel: () => void; onDone: () => void
 }) {
+  const [labelEdit, setLabelEdit]         = useState(row.label)
   const [thresholdDays, setThresholdDays] = useState(String(row.alertThresholdDays))
   const [reorderMemo, setReorderMemo]     = useState(row.reorderMemo ?? '')
   const [memo, setMemo]                   = useState(row.memo ?? '')
@@ -498,8 +499,10 @@ function SettingsForm({ row, onCancel, onDone }: {
     setError('')
     const n = parseInt(thresholdDays, 10)
     if (isNaN(n) || n < 0) { setError('알림 기준은 0 이상이어야 합니다.'); return }
+    if (!labelEdit.trim()) { setError('품목명은 필수입니다.'); return }
     startTransition(async () => {
       const res = await updateTrackedItem(row.id, {
+        label: labelEdit.trim(),
         alertThresholdDays: n,
         reorderMemo: reorderMemo.trim() || null,
         memo: memo.trim() || null,
@@ -512,6 +515,16 @@ function SettingsForm({ row, onCancel, onDone }: {
 
   return (
     <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">품목명 *</label>
+        <input type="text" value={labelEdit} onChange={e => setLabelEdit(e.target.value)}
+          placeholder="예: 키친타월 (롤타입)"
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+        <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
+          이 라벨을 바꾸면 같은 (카테고리·기존 라벨·{row.qtyUnit ?? '단위'}) 매칭되는 지출 내역의 품목명도 자동 갱신됩니다.
+          예) '키친타월' → '키친타월 (롤타입)' / '음식물쓰레기봉투' → '음식물쓰레기봉투 5L'
+        </p>
+      </div>
       <p className="text-xs text-[var(--warm-muted)]">소진 예상일이 알림 기준 이하가 되면 대시보드에 '재고 부족' 알림이 표시됩니다.</p>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">알림 기준 (D-N)</label>

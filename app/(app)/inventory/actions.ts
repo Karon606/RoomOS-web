@@ -340,18 +340,44 @@ export async function createTrackedItem(data: {
 }
 
 export async function updateTrackedItem(id: string, data: {
+  label?: string
   specUnit?: string | null; qtyUnit?: string | null; memo?: string | null
   alertThresholdDays?: number; reorderMemo?: string | null
   trackUnit?: 'spec' | 'qty'
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; renamedExpenses: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const it = await prisma.trackedItem.findFirst({ where: { id, propertyId } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+
+    // 라벨 변경 처리
+    const newLabel = data.label?.trim()
+    let renamedExpenses = 0
+    if (newLabel && newLabel !== it.label) {
+      // 동일 (propertyId, category, label) 충돌 검사
+      const dup = await prisma.trackedItem.findUnique({
+        where: { propertyId_category_label: { propertyId, category: it.category, label: newLabel } },
+      })
+      if (dup && dup.id !== id) return { ok: false, error: `이미 같은 라벨의 품목이 있습니다: ${newLabel}` }
+
+      // 같은 (category, oldLabel, qtyUnit) 매칭되는 expense들의 itemLabel도 함께 변경
+      const r = await prisma.expense.updateMany({
+        where: {
+          propertyId,
+          category: it.category,
+          itemLabel: it.label,
+          ...(it.qtyUnit ? { qtyUnit: it.qtyUnit } : {}),
+        },
+        data: { itemLabel: newLabel },
+      })
+      renamedExpenses = r.count
+    }
+
     await prisma.trackedItem.update({
       where: { id },
       data: {
+        label:              newLabel ?? it.label,
         specUnit:           data.specUnit           ?? it.specUnit,
         qtyUnit:            data.qtyUnit            ?? it.qtyUnit,
         memo:               data.memo               ?? it.memo,
@@ -361,7 +387,8 @@ export async function updateTrackedItem(id: string, data: {
       },
     })
     revalidatePath('/inventory')
-    return { ok: true }
+    revalidatePath('/finance')
+    return { ok: true, renamedExpenses }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
