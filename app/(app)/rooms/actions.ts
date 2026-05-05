@@ -18,18 +18,6 @@ async function getPropertyId() {
 }
 
 // ============================================================
-// 사이클 기반 수납 상태 — dueDay 도래 이벤트를 사이클 단위로 카운트.
-// PREPAID 모델: 4/28 dueDay에 납부 = 4/28~5/27 보장 사이클. 5/28 도래 후 미입금이면 미납.
-export type CycleStatus = {
-  type: 'paid' | 'today' | 'overdue'
-  daysToNextDue: number       // 다음 dueDay까지 남은 일 (음수면 경과)
-  daysOverdue: number          // 가장 오래된 미납 cycle의 dueDay로부터 경과 (0 이하면 미경과)
-  nextDueDate: string | null   // 'YYYY-MM-DD'
-  earliestUnpaidDate: string | null  // 가장 오래된 미납 cycle의 dueDay
-  requiredCycles: number
-  paidCycles: number
-}
-
 type RoomRow = {
   roomId: string; roomNo: string; type: string | null; windowType: string | null
   isVacant: boolean; tenantId: string | null; tenantName: string | null; contact: string | null
@@ -39,41 +27,8 @@ type RoomRow = {
   isFutureMonth: boolean; baseRent: number; prevTenantName: string | null; prevContact: string | null
   overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
   moveInDate: string | null; prevPaidThisMonth: boolean
+  // 첫 미납월 — 누적 미납이 있다면 그 시작월의 dueDay 기준으로 경과일 표시
   firstUnpaidMonth: string | null
-  cycleStatus: CycleStatus | null
-}
-
-// dueDay 이벤트들을 moveIn부터 effectiveDate까지 나열 + 다음 due 반환
-function computeCycleDueDates(
-  moveInDate: Date | string | null,
-  dueDay: string | null,
-  effectiveDate: Date,
-  skipMonth: string | null,  // 'YYYY-MM' (양도인 자동 처리 등)
-): { dueDates: Date[]; nextDueAfterEff: Date | null } {
-  if (!moveInDate || !dueDay) return { dueDates: [], nextDueAfterEff: null }
-  const dueDayNum = dueDay.includes('말') ? 31 : parseInt(dueDay.replace(/\D/g, ''), 10)
-  if (isNaN(dueDayNum) || dueDayNum < 1) return { dueDates: [], nextDueAfterEff: null }
-  const moveIn = new Date(moveInDate); moveIn.setHours(0, 0, 0, 0)
-  const eff = new Date(effectiveDate); eff.setHours(23, 59, 59, 999)
-  const dueDates: Date[] = []
-  let nextDueAfterEff: Date | null = null
-  let y = moveIn.getFullYear(); let m = moveIn.getMonth()
-  for (let i = 0; i < 600; i++) {
-    const lastDay = new Date(y, m + 1, 0).getDate()
-    const day = Math.min(dueDayNum, lastDay)
-    const due = new Date(y, m, day); due.setHours(0, 0, 0, 0)
-    const monthStr = `${y}-${String(m + 1).padStart(2, '0')}`
-    if (due >= moveIn && monthStr !== skipMonth) {
-      if (due <= eff) dueDates.push(due)
-      else { nextDueAfterEff = due; break }
-    }
-    m++; if (m > 11) { m = 0; y++ }
-  }
-  return { dueDates, nextDueAfterEff }
-}
-
-function ymd(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 // 핵심 비즈니스 로직 — GAS의 getRoomPaymentStatus 이관
@@ -173,31 +128,6 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
 
     const moveInDate = lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null
 
-    // 예약(RESERVED) 단계는 아직 입주 안 한 상태 → 청구·잔액·미납 계산 제외.
-    // 호실 행은 정상 노출하되 expected/balance 0, isPaid=true로 미납 카운터에서 빠지게 함.
-    // moveInDate는 유지 → UI에서 'D-N 입주 예정' 라벨로 분기 표시.
-    if (lease.status === 'RESERVED') {
-      return {
-        roomId: room.id, roomNo: room.roomNo, type: room.type,
-        windowType: room.windowType ?? null,
-        isVacant: false, tenantId: lease.tenant.id,
-        tenantName: lease.tenant.name,
-        contact: lease.tenant.contacts[0]?.contactValue ?? null,
-        status: 'RESERVED', expected: lease.rentAmount, dueDay: lease.dueDay,
-        currentPaid: 0, carryOver: 0, totalPaid: 0,
-        balance: 0, isPaid: true,
-        leaseTermId: lease.id, depositAmount: lease.depositAmount,
-        accumulatedUnpaid: 0, isFutureMonth, baseRent: room.baseRent,
-        prevTenantName, prevContact,
-        overrideDueDay: l.overrideDueDay ?? null,
-        overrideDueDayMonth: l.overrideDueDayMonth ?? null,
-        overrideDueDayReason: l.overrideDueDayReason ?? null,
-        moveInDate, prevPaidThisMonth: false,
-        firstUnpaidMonth: null,
-        cycleStatus: null,
-      }
-    }
-
     if (targetMonth < acqMonthStr) {
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
@@ -216,7 +146,6 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDayReason: l.overrideDueDayReason ?? null,
         moveInDate, prevPaidThisMonth: false,
         firstUnpaidMonth: null,
-        cycleStatus: null,
       }
     }
 
@@ -308,62 +237,6 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       }
     }
 
-    // ── 사이클 기반 수납 상태 (Phase C) ──
-    // PREPAID: 첫 dueDay에 납부 = 그 날부터 다음 dueDay 전일까지 보장 사이클.
-    // requiredCycles = moveIn~effectiveDate 사이의 dueDay 이벤트 수
-    // paidCycles = floor(누적 받은돈 / 월세) — cash 기준 FIFO
-    // 비교: paidCycles >= requiredCycles 면 'paid', 아니면 가장 오래된 미납 dueDay와 today 비교
-    const todayKst = (() => {
-      const k = kstYmd()
-      return new Date(k.year, k.month - 1, k.day)
-    })()
-    const monthEndForCycle = new Date(yyyy, mm, 0); monthEndForCycle.setHours(23, 59, 59, 999)
-    const effectiveDate = todayKst < monthEndForCycle ? todayKst : monthEndForCycle
-    const skipMonthForCycle = acqMonthPrePaid ? acqMonthStr : null
-
-    let cycleStatus: CycleStatus | null = null
-    if (['ACTIVE', 'CHECKOUT_PENDING'].includes(lease.status) && lease.rentAmount > 0) {
-      // cycleStart = max(moveInDate, cutoffDate). 입주는 오래됐어도 현재 owner의 인수일 이전 cycle은
-      // 양도인 책임이라 우리 cash flow에 안 잡힘 → cycle 카운트도 인수일부터 시작
-      const moveIn = lease.moveInDate ? new Date(lease.moveInDate) : null
-      const cycleStart = (cutoffDate && (!moveIn || cutoffDate > moveIn)) ? cutoffDate : moveIn
-      const { dueDates, nextDueAfterEff } = computeCycleDueDates(
-        cycleStart, lease.dueDay, effectiveDate, skipMonthForCycle,
-      )
-      const requiredCycles = dueDates.length
-      const totalReceivedAll = postCutoffRecords
-        .filter(p => new Date(p.payDate) <= effectiveDate)
-        .reduce((s, p) => s + p.actualAmount, 0)
-      const paidCycles = expected > 0 ? Math.min(requiredCycles, Math.floor(totalReceivedAll / expected)) : 0
-      const daysToNextDue = nextDueAfterEff
-        ? Math.round((nextDueAfterEff.getTime() - todayKst.getTime()) / 86400000)
-        : 0
-
-      if (requiredCycles === 0) {
-        cycleStatus = {
-          type: 'paid', daysToNextDue, daysOverdue: 0,
-          nextDueDate: nextDueAfterEff ? ymd(nextDueAfterEff) : null,
-          earliestUnpaidDate: null, requiredCycles: 0, paidCycles: 0,
-        }
-      } else if (paidCycles >= requiredCycles) {
-        cycleStatus = {
-          type: 'paid', daysToNextDue, daysOverdue: 0,
-          nextDueDate: nextDueAfterEff ? ymd(nextDueAfterEff) : null,
-          earliestUnpaidDate: null, requiredCycles, paidCycles,
-        }
-      } else {
-        const earliest = dueDates[paidCycles]
-        const daysOverdue = Math.round((todayKst.getTime() - earliest.getTime()) / 86400000)
-        cycleStatus = {
-          type: daysOverdue === 0 ? 'today' : 'overdue',
-          daysToNextDue, daysOverdue,
-          nextDueDate: nextDueAfterEff ? ymd(nextDueAfterEff) : null,
-          earliestUnpaidDate: ymd(earliest),
-          requiredCycles, paidCycles,
-        }
-      }
-    }
-
     if (isFutureMonth) {
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
@@ -383,7 +256,6 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDayReason: l.overrideDueDayReason ?? null,
         moveInDate, prevPaidThisMonth: false,
         firstUnpaidMonth,
-        cycleStatus,
       }
     }
 
@@ -404,7 +276,6 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       overrideDueDayReason: l.overrideDueDayReason ?? null,
       moveInDate, prevPaidThisMonth,
       firstUnpaidMonth,
-      cycleStatus,
     }
   }
 
@@ -429,7 +300,6 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null,
         moveInDate: null, prevPaidThisMonth: false,
         firstUnpaidMonth: null,
-        cycleStatus: null,
       }]
     }
 

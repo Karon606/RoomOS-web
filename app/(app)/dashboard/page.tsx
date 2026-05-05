@@ -267,8 +267,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     prisma.leaseTerm.findMany({
       where: {
         propertyId,
-        // RESERVED는 아직 입주 안 한 상태 → 미수 계산에서 제외 (Phase A)
-        status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] },
+        status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] },
         rentAmount: { gt: 0 },
       },
       select: {
