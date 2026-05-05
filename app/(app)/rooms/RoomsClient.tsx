@@ -793,7 +793,8 @@ export default function RoomsClient({
               {/* 셋째 줄: 월이용료 · 잔액/예정 · 납부일 */}
               <div className="flex items-center gap-2.5 mt-2 text-xs text-[var(--warm-mid)] flex-wrap">
                 <span className="font-medium text-[var(--warm-dark)]"><MoneyDisplay amount={room.expected} /></span>
-                {room.balance < 0 && (
+                {/* 실제 미납(!isPaid)일 때만 미수 표시 — '납부 예정' 케이스는 예정 라벨만 */}
+                {!room.isPaid && room.balance < 0 && (
                   <span className="text-red-500">
                     미수 -<MoneyDisplay amount={Math.abs(room.balance)} />
                   </span>
