@@ -2543,10 +2543,11 @@ function WishSelector({ rooms, lease, allowConditions }: {
 }) {
   const initialRooms = (lease?.wishRooms ?? '').split(',').map(s => s.trim()).filter(Boolean)
   const initialCond  = parseWishConditions(lease?.wishConditions)
-  // wishConditions가 DB에 저장되어 있으면(빈 객체 "{}" 포함) conditions 모드로 인식
+  // 기존 lease 데이터에 따라 모드 추론, 신규/미설정은 '조건만 선택' 디폴트
   const initialMode: 'rooms' | 'conditions' =
     !allowConditions ? 'rooms'
-    : (lease?.wishConditions != null && initialRooms.length === 0 ? 'conditions' : 'rooms')
+    : initialRooms.length > 0 ? 'rooms'
+    : 'conditions'
 
   const [mode, setMode] = useState<'rooms' | 'conditions'>(initialMode)
 
