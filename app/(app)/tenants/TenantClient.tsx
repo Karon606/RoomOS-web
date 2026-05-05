@@ -472,8 +472,36 @@ export default function TenantClient({
     )
   })
 
+  // inquiryAt 보조 정렬 (오래된 순 = 오래 기다린 순). 없으면 createdAt fallback. asc 고정.
+  const inquiryTime = (t: Tenant): number => {
+    const l = t.leaseTerms[0]
+    const inq = l?.inquiryAt
+    if (inq) return new Date(inq).getTime()
+    const c = (l as any)?.createdAt
+    return c ? new Date(c).getTime() : Infinity
+  }
   const sorted = [...filtered].sort((a, b) => {
     const dir = sortDir === 'asc' ? 1 : -1
+
+    // 호실순: 미배정자(호실 없음)는 항상 하단, 미배정 내에서는 inquiryAt asc 고정
+    if (sortKey === 'roomNo') {
+      const ra = a.leaseTerms[0]?.room?.roomNo ?? ''
+      const rb = b.leaseTerms[0]?.room?.roomNo ?? ''
+      const aHas = !!ra
+      const bHas = !!rb
+      if (aHas !== bHas) return aHas ? -1 : 1   // 배정된 사람 위로 (sortDir 무관)
+      if (!aHas) return inquiryTime(a) - inquiryTime(b)  // 미배정 그룹은 문의 오래된 순
+      return dir * ra.localeCompare(rb, 'ko', { numeric: true })
+    }
+
+    // 상태순: 같은 상태 내에서는 inquiryAt asc로 보조 정렬
+    if (sortKey === 'status') {
+      const sa = a.leaseTerms[0]?.status ?? ''
+      const sb = b.leaseTerms[0]?.status ?? ''
+      if (sa !== sb) return dir * sa.localeCompare(sb, 'ko', { numeric: true })
+      return inquiryTime(a) - inquiryTime(b)
+    }
+
     const va = getSortValue(a, sortKey)
     const vb = getSortValue(b, sortKey)
     if (typeof va === 'number' && typeof vb === 'number') return dir * (va - vb)
