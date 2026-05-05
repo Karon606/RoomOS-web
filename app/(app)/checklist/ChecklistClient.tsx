@@ -301,6 +301,7 @@ function FormModal({
             <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>제목 *</label>
             <input type="text" value={title} onChange={e => setTitle(e.target.value)}
               placeholder="예: 부식 잔량 확인"
+              autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
           </div>
 
@@ -308,6 +309,7 @@ function FormModal({
             <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>메모</label>
             <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={2}
               placeholder="위치, 기준, 비고 등 (선택)"
+              autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
           </div>
 
@@ -424,6 +426,7 @@ function CheckModal({
             <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>점검 메모 (선택)</label>
             <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={2}
               placeholder="확인 결과, 보충 필요한 항목 등"
+              autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
           </div>
 
