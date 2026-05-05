@@ -332,7 +332,7 @@ export default function TenantClient({
   const [roomDetailId, setRoomDetailId]   = useState<string | null>(null)
   const [error, setError]               = useState('')
   const [deleteTarget, setDeleteTarget]   = useState<{ id: string; name: string } | null>(null)
-  const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; fromDetail: boolean } | null>(null)
+  const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; cleaningFee: number; fromDetail: boolean } | null>(null)
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
   const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
@@ -554,9 +554,12 @@ export default function TenantClient({
   const openDepositRefundModal = (fd: FormData, fromDetail: boolean) => {
     const tenantName    = fd.get('name') as string || '입주자'
     const depositAmount = Number(fd.get('depositAmount')) || 0
-    setDepositReturnAmt(depositAmount)
+    const cleaningFee   = Number(fd.get('cleaningFee')) || 0
+    // 환불 가능 max = 보증금 - 청소비 (default도 동일)
+    const maxRefund = Math.max(0, depositAmount - cleaningFee)
+    setDepositReturnAmt(maxRefund)
     setDepositReturnDate(kstYmdStr())
-    setDepositRefundModal({ fd, tenantName, depositAmount, fromDetail })
+    setDepositRefundModal({ fd, tenantName, depositAmount, cleaningFee, fromDetail })
   }
 
   // 거주중→공실 변경 시 호실에 예정 가격이 있으면 가격 변동 팝업 표시
@@ -1007,56 +1010,85 @@ export default function TenantClient({
         </div>
       )}
 
-      {/* 보증금 반환 처리 모달 */}
-      {depositRefundModal && (
-        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
-          <div className="bg-[var(--cream)] rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-[var(--warm-dark)]">보증금 반환 처리</h2>
-              <button onClick={() => setDepositRefundModal(null)} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
-            </div>
-            <div className="bg-[var(--canvas)] rounded-xl p-3 text-sm text-[var(--warm-dark)]">
-              <span className="text-[var(--warm-muted)]">보증금 </span>
-              <span className="font-semibold">{depositRefundModal.depositAmount.toLocaleString()}원</span>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">반환 금액</label>
-              <MoneyInput value={depositReturnAmt} onChange={setDepositReturnAmt} placeholder="0원" />
-              <div className="flex gap-2 mt-1">
-                <button type="button"
-                  onClick={() => setDepositReturnAmt(depositRefundModal.depositAmount)}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 transition-colors">
-                  전액 반환
+      {/* 보증금 환불 모달 — 대시보드 알림 퇴실 처리와 동일 UI */}
+      {depositRefundModal && (() => {
+        const dep = depositRefundModal.depositAmount
+        const fee = depositRefundModal.cleaningFee
+        const maxRefund = Math.max(0, dep - fee)
+        const unreturned = dep - depositReturnAmt
+        const exceedsMax = depositReturnAmt > maxRefund
+        return (
+          <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
+            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-[var(--warm-border)]">
+                <p className="text-base font-bold text-[var(--warm-dark)]">보증금 환불</p>
+                <p className="text-xs mt-1 text-[var(--warm-muted)]">{depositRefundModal.tenantName}님 퇴실 정산</p>
+              </div>
+
+              <div className="px-5 py-4 space-y-3">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
+                    <p className="text-[var(--warm-muted)]">보증금</p>
+                    <p className="text-sm font-semibold mt-0.5 text-[var(--warm-dark)]">{dep.toLocaleString()}원</p>
+                  </div>
+                  <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
+                    <p className="text-[var(--warm-muted)]">청소비 차감</p>
+                    <p className={`text-sm font-semibold mt-0.5 ${fee > 0 ? 'text-red-600' : 'text-[var(--warm-mid)]'}`}>
+                      {fee > 0 ? `-${fee.toLocaleString()}원` : '없음'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">
+                    환불 금액 (최대 {maxRefund.toLocaleString()}원)
+                  </label>
+                  <MoneyInput value={depositReturnAmt} onChange={setDepositReturnAmt} placeholder="0원" />
+                  {exceedsMax && (
+                    <p className="text-[11px] text-red-500">환불 금액은 최대 {maxRefund.toLocaleString()}원입니다.</p>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">반환일</label>
+                  <DatePicker value={depositReturnDate} onChange={setDepositReturnDate}
+                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                </div>
+
+                <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ background: 'rgba(244,98,58,0.08)', color: 'var(--warm-dark)' }}>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--warm-muted)]">환불</span>
+                    <span className="font-medium">{depositReturnAmt.toLocaleString()}원</span>
+                  </div>
+                  {unreturned > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-[var(--warm-muted)]">부가수익 귀속 (보증금)</span>
+                      <span className="font-medium">{unreturned.toLocaleString()}원</span>
+                    </div>
+                  )}
+                  <p className="text-[10px] pt-1 text-[var(--warm-muted)]">
+                    미환불분은 부가수익 카테고리 &apos;보증금&apos; · 입금수단 &apos;보유 보증금&apos;으로 자동 등록됩니다.
+                  </p>
+                </div>
+
+                {error && <p className="text-red-400 text-sm">{error}</p>}
+              </div>
+
+              <div className="px-5 pb-5 pt-1 flex gap-2">
+                <button type="button" onClick={() => setDepositRefundModal(null)} disabled={isPending}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-[var(--warm-border)] text-[var(--warm-mid)] hover:opacity-70 transition-opacity disabled:opacity-50">
+                  취소
                 </button>
-                <button type="button"
-                  onClick={() => setDepositReturnAmt(0)}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 ring-1 ring-red-200 hover:bg-red-100 transition-colors">
-                  미반환
+                <button type="button" onClick={handleDepositRefundConfirm} disabled={isPending || exceedsMax}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
+                  style={{ background: '#eab308', color: 'white' }}>
+                  {isPending ? '처리 중...' : '퇴실 처리'}
                 </button>
               </div>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">반환일</label>
-              <DatePicker value={depositReturnDate} onChange={setDepositReturnDate}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
-            </div>
-            {depositRefundModal.depositAmount - depositReturnAmt > 0 && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs text-amber-700 leading-relaxed">
-                미수취 <span className="font-semibold">{(depositRefundModal.depositAmount - depositReturnAmt).toLocaleString()}원</span>은 기타 수익(보증금)으로 자동 등록됩니다.
-              </div>
-            )}
-            {error && <p className="text-red-400 text-sm">{error}</p>}
-            <div className="flex gap-2 pt-1">
-              <button type="button" onClick={() => setDepositRefundModal(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">취소</button>
-              <button type="button" onClick={handleDepositRefundConfirm} disabled={isPending}
-                className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--coral)] hover:opacity-90 text-white font-medium transition-opacity disabled:opacity-60">
-                {isPending ? '처리 중...' : '퇴실 처리'}
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* 가격 변동 적용 확인 모달 */}
       {rentChangeModal && (() => {
