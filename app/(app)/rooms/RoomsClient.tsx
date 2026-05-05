@@ -239,7 +239,7 @@ export default function RoomsClient({
     }).catch(() => {})
     return () => { cancelled = true }
   }, [showPayForm, selectedRoom?.leaseTermId, targetMonth])
-  const [filter, setFilter] = useState<'all' | 'unpaid' | 'awaiting' | 'paid'>('all')
+  const [filter, setFilter] = useState<'all' | 'unpaid' | 'checkout' | 'awaiting' | 'paid'>('all')
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(DEFAULT_VIS)
   const [showColMenu, setShowColMenu] = useState(false)
   const [vacantColVis, setVacantColVis] = useState<Record<VacantColKey, boolean>>(DEFAULT_VACANT_VIS)
@@ -354,17 +354,28 @@ export default function RoomsClient({
   )
 
   const isAwaitingRoom = (r: RoomStatus) => r.isPaid && !!r.nextDueDate && r.nextDueAmount > 0
+  const isCheckoutRoom = (r: RoomStatus) => {
+    const ck = r.expectedMoveOut?.slice(0, 7) ?? null
+    return r.status === 'CHECKOUT_PENDING' && r.isPaid && !!ck && ck <= targetMonth
+  }
   const filtered = occupied.filter(r => {
     if (filter === 'unpaid')   return !r.isPaid
-    if (filter === 'awaiting') return isAwaitingRoom(r)
-    if (filter === 'paid')     return r.isPaid && !isAwaitingRoom(r)
+    if (filter === 'checkout') return isCheckoutRoom(r)
+    if (filter === 'awaiting') return isAwaitingRoom(r) && !isCheckoutRoom(r)
+    if (filter === 'paid')     return r.isPaid && !isAwaitingRoom(r) && !isCheckoutRoom(r)
     return true
   })
 
   const sorted = [...filtered].sort((a, b) => {
-    // 상태 열일 때만 미납(0)→납부예정(1)→완납(2)→공실(3) 그룹 고정
+    // 상태 열: 미납(0)→퇴실예정(1)→납부예정(2)→완납(3)→공실(4) 그룹 고정
     if (sortKey === 'status') {
-      const grpKey = (r: RoomStatus) => r.isVacant ? 3 : (!r.isPaid ? 0 : (isAwaitingRoom(r) ? 1 : 2))
+      const grpKey = (r: RoomStatus) => {
+        if (r.isVacant) return 4
+        if (!r.isPaid) return 0
+        if (isCheckoutRoom(r)) return 1
+        if (isAwaitingRoom(r)) return 2
+        return 3
+      }
       const grpA = grpKey(a), grpB = grpKey(b)
       if (grpA !== grpB) return grpA - grpB
     }
@@ -529,8 +540,9 @@ export default function RoomsClient({
 
   // 요약 통계
   const unpaidCount   = occupied.filter(r => !r.isPaid).length
-  const awaitingCount = occupied.filter(r => isAwaitingRoom(r)).length
-  const paidCount     = occupied.filter(r => r.isPaid && !isAwaitingRoom(r)).length
+  const checkoutCount = occupied.filter(r => isCheckoutRoom(r)).length
+  const awaitingCount = occupied.filter(r => isAwaitingRoom(r) && !isCheckoutRoom(r)).length
+  const paidCount     = occupied.filter(r => r.isPaid && !isAwaitingRoom(r) && !isCheckoutRoom(r)).length
 
   const thCls = 'text-left text-xs text-[var(--warm-muted)] font-medium px-4 py-3'
 
@@ -640,6 +652,7 @@ export default function RoomsClient({
         {[
           { key: 'all',      label: `전체 ${occupied.length}실` },
           { key: 'unpaid',   label: `미납 ${unpaidCount}실` },
+          { key: 'checkout', label: `퇴실 예정 ${checkoutCount}실` },
           { key: 'awaiting', label: `납부 예정 ${awaitingCount}실` },
           { key: 'paid',     label: `완납 ${paidCount}실` },
         ].map(f => (
@@ -751,10 +764,13 @@ export default function RoomsClient({
                     </>
                   ) : (() => {
                     const isAwaiting = room.isPaid && room.nextDueDate && room.nextDueAmount > 0
-                    const isCheckout = room.status === 'CHECKOUT_PENDING'
-                    // 퇴실 예정자 + 이월 미수 없음 → '퇴실 예정' 배지가 우선
-                    // (이월 미수가 있으면 '미납' 우선이라 isPaid=false → 미납 흐름으로)
-                    const showCheckout = isCheckout && room.isPaid
+                    // 퇴실 예정 배지는 expectedMoveOut이 viewMonth 안(또는 그 이전)일 때만 표시
+                    // 522호처럼 7월 퇴실 예정인데 5월 페이지에서는 정상 납부 흐름
+                    const checkoutMonth = room.expectedMoveOut?.slice(0, 7) ?? null
+                    const showCheckout = room.status === 'CHECKOUT_PENDING'
+                      && room.isPaid
+                      && !!checkoutMonth
+                      && checkoutMonth <= targetMonth
                     const badgeClass = !room.isPaid
                       ? 'bg-red-50 text-red-600 ring-red-200'
                       : showCheckout
@@ -962,8 +978,11 @@ export default function RoomsClient({
                           </>
                         ) : (() => {
                           const isAwaiting = room.isPaid && room.nextDueDate && room.nextDueAmount > 0
-                          const isCheckout = room.status === 'CHECKOUT_PENDING'
-                          const showCheckout = isCheckout && room.isPaid
+                          const checkoutMonth = room.expectedMoveOut?.slice(0, 7) ?? null
+                          const showCheckout = room.status === 'CHECKOUT_PENDING'
+                            && room.isPaid
+                            && !!checkoutMonth
+                            && checkoutMonth <= targetMonth
                           const badgeClass = !room.isPaid
                             ? 'bg-red-50 text-red-600 ring-red-200'
                             : showCheckout
