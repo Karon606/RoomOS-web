@@ -246,6 +246,8 @@ model TenantContact {
   isEmergency       Boolean     @default(false)
   emergencyRelation String?
   isPrimary         Boolean     @default(false)
+  isHomeCountry     Boolean     @default(false)  // 본국 연락처 (국제 번호) — 외국인 입주자용
+  countryCode       String?                       // ISO 3166-1 alpha-2 (KR, RU 등) — 본국 번호 포맷 기준
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 

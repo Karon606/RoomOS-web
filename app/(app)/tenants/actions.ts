@@ -92,6 +92,8 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const contactValue     = formData.get('contactValue') as string
   const emergencyRelation = formData.get('emergencyRelation') as string
   const emergencyContact = formData.get('emergencyContact') as string
+  const homeCountryContact = formData.get('homeCountryContact') as string
+  const homeCountryCode    = formData.get('homeCountryCode') as string
   const memo             = formData.get('memo') as string
   const nationality      = formData.get('nationality') as string
   const gender           = (formData.get('gender') as Gender) || 'UNKNOWN'
@@ -137,6 +139,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const contactsToCreate: {
     contactType: ContactType; contactValue: string; isPrimary: boolean;
     isEmergency: boolean; emergencyRelation?: string
+    isHomeCountry?: boolean; countryCode?: string | null
   }[] = []
   if (contactValue) {
     contactsToCreate.push({ contactType, contactValue, isPrimary: true, isEmergency: false })
@@ -148,6 +151,16 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
       isPrimary: false,
       isEmergency: true,
       emergencyRelation: emergencyRelation || undefined,
+    })
+  }
+  if (homeCountryContact) {
+    contactsToCreate.push({
+      contactType: 'PHONE',
+      contactValue: homeCountryContact,
+      isPrimary: false,
+      isEmergency: false,
+      isHomeCountry: true,
+      countryCode: homeCountryCode || null,
     })
   }
 
@@ -233,6 +246,8 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
   const contactValue      = formData.get('contactValue') as string
   const emergencyRelation = formData.get('emergencyRelation') as string
   const emergencyContact  = formData.get('emergencyContact') as string
+  const homeCountryContact = formData.get('homeCountryContact') as string
+  const homeCountryCode    = formData.get('homeCountryCode') as string
 
   // 계약 정보
   const roomId             = formData.get('roomId') as string
@@ -336,6 +351,37 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
     }
   } else if (existingEmergency) {
     await prisma.tenantContact.delete({ where: { id: existingEmergency.id } })
+  }
+
+  // 본국 연락처 (외국인 입주자) — upsert
+  const existingHome = await prisma.tenantContact.findFirst({
+    where: { tenantId, isHomeCountry: true },
+  })
+  if (homeCountryContact) {
+    if (existingHome) {
+      await prisma.tenantContact.update({
+        where: { id: existingHome.id },
+        data: {
+          contactType: 'PHONE',
+          contactValue: homeCountryContact,
+          countryCode: homeCountryCode || null,
+        },
+      })
+    } else {
+      await prisma.tenantContact.create({
+        data: {
+          tenantId,
+          contactType: 'PHONE',
+          contactValue: homeCountryContact,
+          isPrimary: false,
+          isEmergency: false,
+          isHomeCountry: true,
+          countryCode: homeCountryCode || null,
+        },
+      })
+    }
+  } else if (existingHome) {
+    await prisma.tenantContact.delete({ where: { id: existingHome.id } })
   }
 
   // 계약 수정

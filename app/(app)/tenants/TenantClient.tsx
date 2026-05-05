@@ -7,6 +7,7 @@ import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPayme
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { PhoneInput } from '@/components/ui/PhoneInput'
+import { IntlPhoneInput, fmtIntlPhone } from '@/components/ui/IntlPhoneInput'
 import { formatPhone } from '@/lib/formatPhone'
 import { CountrySelect, flagByName } from '@/components/ui/CountrySelect'
 import { JobSelect } from '@/components/ui/JobSelect'
@@ -21,6 +22,7 @@ type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: numbe
 type Contact = {
   id: string; contactType: string; contactValue: string
   isEmergency: boolean; emergencyRelation: string | null; isPrimary: boolean
+  isHomeCountry?: boolean; countryCode?: string | null
 }
 
 type PaymentRecord = {
@@ -1450,6 +1452,11 @@ export default function TenantClient({
                                 <InfoItem label="비상 관계"   value={emergency.emergencyRelation ?? '—'} />
                                 <InfoItem label="비상 연락처" value={formatPhone(emergency.contactValue)} />
                               </>}
+                              {(() => {
+                                const home = t.contacts.find(c => c.isHomeCountry)
+                                if (!home) return null
+                                return <InfoItem label="본국 연락처" value={fmtIntlPhone(home.contactValue, home.countryCode ?? undefined) || home.contactValue} />
+                              })()}
                             </InfoGrid>
                           </InfoSection>
 
@@ -2701,6 +2708,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   const lease     = tenant?.leaseTerms[0]
   const primary   = tenant?.contacts.find(c => c.isPrimary)
   const emergency = tenant?.contacts.find(c => c.isEmergency)
+  const homeCountry = tenant?.contacts.find(c => c.isHomeCountry)
 
   const [statusVal, setStatusVal]   = useState(lease?.status ?? 'ACTIVE')
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
@@ -3034,6 +3042,16 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             <label className="text-xs font-medium text-[var(--warm-mid)]">비상 연락처</label>
             <PhoneInput name="emergencyContact" defaultValue={emergency?.contactValue ?? ''} />
           </div>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">본국 연락처 <span className="text-[10px] text-[var(--warm-muted)] font-normal">(외국인 입주자 — 국가 선택 시 자동 포맷)</span></label>
+          <IntlPhoneInput
+            name="homeCountryContact"
+            countryName="homeCountryCode"
+            defaultValue={homeCountry?.contactValue ?? ''}
+            defaultCountry={homeCountry?.countryCode ?? 'KR'}
+            placeholder="국가 선택 후 번호 입력"
+          />
         </div>
       </FormSection>
 
