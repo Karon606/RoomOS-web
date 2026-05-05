@@ -64,7 +64,8 @@ function dueChip(row: ChecklistRow) {
 
 export default function ChecklistClient({ initialRows }: { initialRows: ChecklistRow[] }) {
   const router = useRouter()
-  const [rows] = useState(initialRows)
+  // prop을 그대로 사용 — useState로 캡처하면 router.refresh() 후 새 데이터가 반영되지 않음
+  const rows = initialRows
   const [mode, setMode] = useState<Mode>(null)
   const [error, setError] = useState('')
   const [isPending, startTransition] = useTransition()
