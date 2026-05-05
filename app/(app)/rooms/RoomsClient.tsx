@@ -45,6 +45,7 @@ type RoomStatus = {
   latePaidAt: string | null
   nextDueDate: string | null
   nextDueAmount: number
+  expectedMoveOut: string | null
 }
 
 type PaymentRecord = {
@@ -750,12 +751,18 @@ export default function RoomsClient({
                     </>
                   ) : (() => {
                     const isAwaiting = room.isPaid && room.nextDueDate && room.nextDueAmount > 0
+                    const isCheckout = room.status === 'CHECKOUT_PENDING'
+                    // 퇴실 예정자 + 이월 미수 없음 → '퇴실 예정' 배지가 우선
+                    // (이월 미수가 있으면 '미납' 우선이라 isPaid=false → 미납 흐름으로)
+                    const showCheckout = isCheckout && room.isPaid
                     const badgeClass = !room.isPaid
                       ? 'bg-red-50 text-red-600 ring-red-200'
-                      : isAwaiting
-                        ? 'bg-blue-50 text-blue-700 ring-blue-200'
-                        : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                    const badgeText = !room.isPaid ? '미납' : isAwaiting ? '납부 예정' : '완납'
+                      : showCheckout
+                        ? 'bg-yellow-50 text-yellow-700 ring-yellow-200'
+                        : isAwaiting
+                          ? 'bg-blue-50 text-blue-700 ring-blue-200'
+                          : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                    const badgeText = !room.isPaid ? '미납' : showCheckout ? '퇴실 예정' : isAwaiting ? '납부 예정' : '완납'
                     return (
                       <>
                         <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ring-1 ${badgeClass}`}>
@@ -766,7 +773,16 @@ export default function RoomsClient({
                             {dueInfo.days === 0 ? '오늘' : `${dueInfo.days}일 초과`}
                           </span>
                         )}
-                        {isAwaiting && (() => {
+                        {showCheckout && room.expectedMoveOut && (() => {
+                          const [, mm, dd] = room.expectedMoveOut.split('-')
+                          const days = Math.round((new Date(room.expectedMoveOut).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                          return (
+                            <span className="text-[10px] font-medium text-yellow-700">
+                              {days > 0 ? `D-${days} (${Number(mm)}/${Number(dd)} 퇴실)` : days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 퇴실` : `${Number(mm)}/${Number(dd)} 퇴실 (${Math.abs(days)}일 경과)`}
+                            </span>
+                          )
+                        })()}
+                        {!showCheckout && isAwaiting && (() => {
                           const [, mm, dd] = room.nextDueDate!.split('-')
                           const days = Math.round((new Date(room.nextDueDate!).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
                           return (
@@ -775,7 +791,7 @@ export default function RoomsClient({
                             </span>
                           )
                         })()}
-                        {room.isPaid && !isAwaiting && room.latePaidAt && (() => {
+                        {room.isPaid && !showCheckout && !isAwaiting && room.latePaidAt && (() => {
                           const [, mm, dd] = room.latePaidAt.split('-')
                           return (
                             <span className="text-[10px] font-medium text-amber-600">
@@ -946,12 +962,16 @@ export default function RoomsClient({
                           </>
                         ) : (() => {
                           const isAwaiting = room.isPaid && room.nextDueDate && room.nextDueAmount > 0
+                          const isCheckout = room.status === 'CHECKOUT_PENDING'
+                          const showCheckout = isCheckout && room.isPaid
                           const badgeClass = !room.isPaid
                             ? 'bg-red-50 text-red-600 ring-red-200'
-                            : isAwaiting
-                              ? 'bg-blue-50 text-blue-700 ring-blue-200'
-                              : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                          const badgeText = !room.isPaid ? '미납' : isAwaiting ? '납부 예정' : '완납'
+                            : showCheckout
+                              ? 'bg-yellow-50 text-yellow-700 ring-yellow-200'
+                              : isAwaiting
+                                ? 'bg-blue-50 text-blue-700 ring-blue-200'
+                                : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                          const badgeText = !room.isPaid ? '미납' : showCheckout ? '퇴실 예정' : isAwaiting ? '납부 예정' : '완납'
                           return (
                             <>
                               <span className={`text-xs px-2.5 py-1 rounded-full font-medium ring-1 ${badgeClass}`}>
@@ -963,7 +983,16 @@ export default function RoomsClient({
                                 if (info.days === 0) return <span className="text-xs text-orange-600 font-medium">오늘</span>
                                 return <span className="text-xs text-red-400">{info.days}일 초과</span>
                               })()}
-                              {isAwaiting && (() => {
+                              {showCheckout && room.expectedMoveOut && (() => {
+                                const [, mm, dd] = room.expectedMoveOut.split('-')
+                                const days = Math.round((new Date(room.expectedMoveOut).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                                return (
+                                  <span className="text-xs text-yellow-700 font-medium">
+                                    {days > 0 ? `D-${days} (${Number(mm)}/${Number(dd)} 퇴실)` : days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 퇴실` : `${Number(mm)}/${Number(dd)} 퇴실 (${Math.abs(days)}일 경과)`}
+                                  </span>
+                                )
+                              })()}
+                              {!showCheckout && isAwaiting && (() => {
                                 const [, mm, dd] = room.nextDueDate!.split('-')
                                 const days = Math.round((new Date(room.nextDueDate!).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
                                 return (
@@ -972,7 +1001,7 @@ export default function RoomsClient({
                                   </span>
                                 )
                               })()}
-                              {room.isPaid && !isAwaiting && room.latePaidAt && (() => {
+                              {room.isPaid && !showCheckout && !isAwaiting && room.latePaidAt && (() => {
                                 const [, mm, dd] = room.latePaidAt.split('-')
                                 return (
                                   <span className="text-xs text-amber-600 font-medium">

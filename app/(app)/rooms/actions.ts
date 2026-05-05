@@ -35,6 +35,7 @@ type RoomRow = {
   nextDueDate: string | null
   // 다음 청구 도래 시 받아야 할 추가 금액 (월 청구액 - 누적 선납 잔액)
   nextDueAmount: number
+  expectedMoveOut: string | null  // CHECKOUT_PENDING 시 'YYYY-MM-DD'
 }
 
 // 핵심 비즈니스 로직 — GAS의 getRoomPaymentStatus 이관
@@ -162,6 +163,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         latePaidAt: null,
         nextDueDate: null,
         nextDueAmount: 0,
+        expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
       }
     }
 
@@ -187,6 +189,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         latePaidAt: null,
         nextDueDate: null,
         nextDueAmount: 0,
+        expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
       }
     }
 
@@ -276,8 +279,19 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       .filter(p => p.targetMonth < targetMonth)
       .reduce((s, p) => s + p.actualAmount, 0)
 
-    // viewMonth 청구액 (인수월 양도인 처리 또는 미래월이면 0)
-    const skipViewMonthBilled = (targetMonth === acqMonthStr && acqMonthPrePaid) || isFutureMonth
+    // viewMonth 청구권 도래 여부 사전 계산 (skipViewMonthBilled에서 사용)
+    const _isPastView = (yyyy < kst.year) || (yyyy === kst.year && mm < kst.month)
+    const _viewDueDate = effDueDateForMonth(targetMonth)
+    // 선납 모델: dueDay = 다음 서비스 기간 시작점. CHECKOUT_PENDING + expectedMoveOut ≤ dueDay이면
+    // 그 dueDay분 서비스를 사용하지 않으므로 납부 의무 없음 (502호: 5/6 dueDay지만 5/6 이전 퇴실)
+    const checkoutNoBilling = !!(
+      lease.status === 'CHECKOUT_PENDING' &&
+      lease.expectedMoveOut &&
+      _viewDueDate &&
+      new Date(lease.expectedMoveOut).getTime() <= _viewDueDate.getTime()
+    )
+    // viewMonth 청구액 (인수월 양도인 처리 / 미래월 / 퇴실 무청구이면 0)
+    const skipViewMonthBilled = (targetMonth === acqMonthStr && acqMonthPrePaid) || isFutureMonth || checkoutNoBilling
     const viewBilled = skipViewMonthBilled ? 0 : expected
     const viewBalance = receivedThisMonth - viewBilled                 // viewMonth 정산 (음수=미수, 양수=선납)
 
@@ -286,8 +300,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const pastBalance = receivedBeforeMonth - billedBefore
 
     // viewMonth 청구권 도래 여부 (과거 viewMonth는 자동 도래, 현재월은 effDueDay 검사)
-    const isPastView = (yyyy < kst.year) || (yyyy === kst.year && mm < kst.month)
-    const viewDueDate = effDueDateForMonth(targetMonth)
+    const isPastView = _isPastView
+    const viewDueDate = _viewDueDate
     const viewMonthDuePassed = isPastView || (viewDueDate ? viewDueDate <= todayKstEnd : false)
 
     // 표시 필드 (월 격리)
@@ -384,6 +398,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         latePaidAt,
         nextDueDate,
         nextDueAmount,
+        expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
       }
     }
 
@@ -408,6 +423,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       latePaidAt,
       nextDueDate,
       nextDueAmount,
+      expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
     }
   }
 
@@ -436,6 +452,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         latePaidAt: null,
         nextDueDate: null,
         nextDueAmount: 0,
+        expectedMoveOut: null,
       }]
     }
 
