@@ -247,7 +247,6 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       else raw = lease.dueDay
       if (!raw) return null
       if (raw.includes('-')) {
-        // 'YYYY-MM-DD' 전체 날짜 형식 (override가 다음달까지 미루는 케이스)
         const [fy, fm, fd] = raw.split('-').map(Number)
         return new Date(fy, fm - 1, fd, 23, 59, 59, 999)
       }
@@ -258,47 +257,46 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     }
     const todayKstEnd = new Date(kst.year, kst.month - 1, kst.day, 23, 59, 59, 999)
 
-    // 청구권 발생 월 수: 그 달 effectiveDueDay가 오늘(KST) 이전이어야 청구 가능
-    // (404호처럼 5/7 dueDay인데 오늘 5/5면 5월분은 아직 청구권 미발생 → 잔액 합산 X)
-    let billableThru = 0
-    let billableBefore = 0
-    let firstUnbilledFutureMonth: string | null = null
-    let firstUnbilledFutureDate: Date | null = null
-    for (let cy = acqYyyy, cmn = acqMm; cy < yyyy || (cy === yyyy && cmn <= mm); ) {
+    // viewMonth 격리 — 그 달의 정산만 (이월액은 별도)
+    // 과거 청구 가능 월수 (acqMonth ~ viewMonth-1, acqMonthPrePaid 제외)
+    let pastBillable = 0
+    for (let cy = acqYyyy, cmn = acqMm; cy < yyyy || (cy === yyyy && cmn < mm); ) {
       const ms = `${cy}-${String(cmn).padStart(2, '0')}`
       const skip = ms === acqMonthStr && acqMonthPrePaid
-      if (!skip) {
-        const dueDate = effDueDateForMonth(ms)
-        if (dueDate && dueDate <= todayKstEnd) {
-          billableThru++
-          if (ms < targetMonth) billableBefore++
-        } else if (dueDate && !firstUnbilledFutureDate) {
-          firstUnbilledFutureMonth = ms
-          firstUnbilledFutureDate = dueDate
-        }
-      }
+      if (!skip) pastBillable++
       cmn++; if (cmn > 12) { cmn = 1; cy++ }
     }
-    void firstUnbilledFutureMonth
 
-    // 받은 돈 (발생주의: targetMonth 기준 — 지연 입금이라도 귀속 월에 인식)
-    // targetMonth <= viewMonth이면 그 record는 viewMonth까지의 매출로 인식
+    // viewMonth 격리: 받은 돈 / 청구 / 잔액
     const accrualThruRecords = postCutoffRecords.filter(p => p.targetMonth <= targetMonth)
-    const receivedThruMonth = accrualThruRecords.reduce((s, p) => s + p.actualAmount, 0)
-    // 이번 달분 = targetMonth가 viewMonth와 같은 record (지연 입금 포함)
     const receivedThisMonth = accrualThruRecords
       .filter(p => p.targetMonth === targetMonth)
       .reduce((s, p) => s + p.actualAmount, 0)
-    const receivedBeforeMonth = receivedThruMonth - receivedThisMonth
+    const receivedBeforeMonth = accrualThruRecords
+      .filter(p => p.targetMonth < targetMonth)
+      .reduce((s, p) => s + p.actualAmount, 0)
 
-    const billedThru = billableThru * expected
-    const billedBefore = billableBefore * expected
+    // viewMonth 청구액 (인수월 양도인 처리 또는 미래월이면 0)
+    const skipViewMonthBilled = (targetMonth === acqMonthStr && acqMonthPrePaid) || isFutureMonth
+    const viewBilled = skipViewMonthBilled ? 0 : expected
+    const viewBalance = receivedThisMonth - viewBilled                 // viewMonth 정산 (음수=미수, 양수=선납)
 
-    // 표시 필드 (발생주의 — 귀속월 단위로 매출/미수 인식)
-    const cumulativeBalance = receivedThruMonth - billedThru          // 잔액 (누적, 음수=미수, 양수=선납)
-    const displayCarryOver = receivedBeforeMonth - billedBefore       // 이월액 (이전까지 누적)
-    const realCurrentPaid = receivedThisMonth                          // 총수납 (이번 달 귀속분)
-    const isPaid = cumulativeBalance >= 0
+    // 이월액 — 이전 달 누적 (양수=과거 선납, 음수=과거 미수)
+    const billedBefore = pastBillable * expected
+    const pastBalance = receivedBeforeMonth - billedBefore
+
+    // viewMonth 청구권 도래 여부 (과거 viewMonth는 자동 도래, 현재월은 effDueDay 검사)
+    const isPastView = (yyyy < kst.year) || (yyyy === kst.year && mm < kst.month)
+    const viewDueDate = effDueDateForMonth(targetMonth)
+    const viewMonthDuePassed = isPastView || (viewDueDate ? viewDueDate <= todayKstEnd : false)
+
+    // 표시 필드 (월 격리)
+    const cumulativeBalance = viewBalance                              // 잔액 = viewMonth 정산
+    const displayCarryOver = pastBalance                               // 이월액 = 이전 달 누적
+    const realCurrentPaid = receivedThisMonth                          // 총수납 = 이번 달 받은 금액
+    // 이월 미수 있으면 무조건 미납 우선 (503호: 4월 미수 + 5월 미도래 → '미납' 표시)
+    const hasPastUnpaid = pastBalance < 0
+    const isPaid = !hasPastUnpaid && (skipViewMonthBilled || receivedThisMonth >= viewBilled || !viewMonthDuePassed)
 
     // 모달의 "양도인 자동 완납" 플레이스홀더 — 인수월 보기에서 사용자 record 없을 때만
     const prevPaidThisMonth = !!(
@@ -325,7 +323,9 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         if (!skip) {
           // 청구권 미발생 월은 미수 후보에서 제외 (404호처럼 dueDay 미도래)
           const dueDate = effDueDateForMonth(ms)
-          if (dueDate && dueDate <= todayKstEnd) {
+          const isMsPast = ms < targetMonth
+          const billedThisStep = isMsPast || (dueDate && dueDate <= todayKstEnd)
+          if (billedThisStep) {
             cumExpected += expected
             if (totalReceivedAll < cumExpected) { firstUnpaidMonth = ms; break }
           }
@@ -350,27 +350,15 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       }
     }
 
-    // 다음 청구 도래일 — viewMonth부터 +3개월까지 스캔 (loop에서 못 찾았을 때 viewMonth+1·+2도 본다)
+    // 다음 청구 도래일 — viewMonth 안에서만 (그 달 dueDay가 미도래이고 아직 받지 못한 금액이 있을 때)
+    // 4월 페이지에서 5월/6월 dueDay를 표시하지 않음 — 그건 5월/6월 페이지에서 다룬다
+    // 이월 미수가 있으면 '납부 예정'이 아니라 '미납' 우선이라 nextDue 표시 안 함
     let nextDueDate: string | null = null
     let nextDueAmount = 0
-    if (firstUnbilledFutureDate) {
-      const d = firstUnbilledFutureDate
-      nextDueDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-      // 누적 선납액(cumulativeBalance > 0)만큼 차감 → 그 dueDay에 받아야 할 추가 금액
-      nextDueAmount = Math.max(0, expected - Math.max(0, cumulativeBalance))
-    } else if (!isFutureMonth) {
-      // viewMonth까지 스캔에서 못 찾았으면 (모두 청구권 발생 완료) viewMonth+1, +2까지 추가 스캔
-      for (let i = 1; i <= 3; i++) {
-        const future = new Date(yyyy, mm - 1 + i, 1)
-        const fy = future.getFullYear(), fmn = future.getMonth() + 1
-        const fms = `${fy}-${String(fmn).padStart(2, '0')}`
-        const dueDate = effDueDateForMonth(fms)
-        if (dueDate && dueDate > todayKstEnd) {
-          nextDueDate = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}`
-          nextDueAmount = Math.max(0, expected - Math.max(0, cumulativeBalance))
-          break
-        }
-      }
+    if (!isFutureMonth && !skipViewMonthBilled && !viewMonthDuePassed && viewDueDate
+        && receivedThisMonth < viewBilled && !hasPastUnpaid) {
+      nextDueDate = `${viewDueDate.getFullYear()}-${String(viewDueDate.getMonth() + 1).padStart(2, '0')}-${String(viewDueDate.getDate()).padStart(2, '0')}`
+      nextDueAmount = viewBilled - receivedThisMonth
     }
 
     if (isFutureMonth) {
