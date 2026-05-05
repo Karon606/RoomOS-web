@@ -182,10 +182,27 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       ? `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`
       : acqMonthStr
     const cutoffDay = cutoffDate ? cutoffDate.getDate() : 0
-    // 인수월 판정 — cutoffDate가 인수월 안에 있다는 자체가 "양도인이 그 달 dueDay를 받았다"는 강한 신호.
-    // dueDay와 cutoffDay 비교는 lease.dueDay가 changeDueDay로 영구 변경된 경우 잘못된 결과를 내므로 제거.
-    // 정규 월 청구 record(expectedAmount >= 월 이용료)가 없으면 양도인 prePaid로 간주.
-    const acqMonthInCutoffMonth = !!(cutoffDate && acqMonthStr === cutoffMonthStr)
+    // 인수월 양도인 자동 처리 판정용 dueDay — 정확성을 위해 다음 우선순위로 결정:
+    //   1) changeDueDay 기록 memo의 원본 dueDay (영구 변경 후에도 인수 시점 dueDay 복원)
+    //   2) lease.dueDay (override 무시 — override는 특정 월 임시 조정이므로 acqMonth와 무관할 수 있음)
+    // 그리고 acqMonth dueDay가 cutoffDay 이전이어야 양도인이 가져갔다고 판정.
+    const baseDueDay = lease.dueDay?.includes('말') ? 31 : Number(lease.dueDay ?? '1')
+    let originalDueDay = baseDueDay
+    {
+      const allLeaseRecords_forMemo = allRecordsThruMonth.filter(p => p.leaseTermId === lease.id)
+      const changeRecord = allLeaseRecords_forMemo
+        .filter(p => p.memo?.includes('[납입일변경]'))
+        .sort((a, b) => new Date(a.payDate).getTime() - new Date(b.payDate).getTime())[0]
+      if (changeRecord?.memo) {
+        const m = changeRecord.memo.match(/\[납입일변경\]\s*([^일→]+?)일?\s*→/)
+        if (m) {
+          const t = m[1].trim()
+          const parsed = t.includes('말') ? 31 : Number(t)
+          if (!isNaN(parsed) && parsed > 0) originalDueDay = parsed
+        }
+      }
+    }
+    const acqMonthDueBeforeCutoff = !!(cutoffDate && acqMonthStr === cutoffMonthStr && originalDueDay < cutoffDay)
 
     const monthStartDate = new Date(yyyy, mm - 1, 1)
     const monthEndDate = new Date(yyyy, mm, 0)
@@ -208,7 +225,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       .reduce((s, p) => s + p.actualAmount, 0)
     const acqMonthPrePaid =
       acqMonthPaidToPrev >= expected ||
-      (acqMonthInCutoffMonth && acqMonthCurrentOpRecords === 0)
+      (acqMonthDueBeforeCutoff && acqMonthCurrentOpRecords === 0)
 
     // 청구 가능 월 수: acqMonth부터 viewMonth까지, 양도인 자동 처리 월 제외
     let billableThru = 0
@@ -243,7 +260,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const prevPaidThisMonth = !!(
       cutoffDate &&
       targetMonth === cutoffMonthStr &&
-      acqMonthInCutoffMonth &&
+      acqMonthDueBeforeCutoff &&
       acqMonthCurrentOpRecords === 0
     )
 
