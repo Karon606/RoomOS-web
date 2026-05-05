@@ -264,6 +264,7 @@ export default function RoomsClient({
   const [editDate, setEditDate] = useState('')
   const [editPayMethod, setEditPayMethod] = useState('')
   const [editMemo, setEditMemo] = useState('')
+  const [editTargetMonth, setEditTargetMonth] = useState('')
   const [editingAutoPay, setEditingAutoPay] = useState(false)
   const [autoPayDate, setAutoPayDate] = useState('')
   const colMenuRef       = useRef<HTMLDivElement>(null)
@@ -419,6 +420,11 @@ export default function RoomsClient({
     setEditDate(kstYmdStr(new Date(p.payDate)))
     setEditPayMethod(p.payMethod ?? '')
     setEditMemo(p.memo ?? '')
+    setEditTargetMonth(p.targetMonth)
+    // 편집 시 귀속월 옵션 fetch (보증금이 아닌 경우)
+    if (!p.isDeposit && selectedRoom?.leaseTermId) {
+      getTargetMonthOptions(selectedRoom.leaseTermId, targetMonth).then(setTmOptions).catch(() => {})
+    }
   }
 
   const handleSaveEdit = async () => {
@@ -429,6 +435,7 @@ export default function RoomsClient({
         payDate:      editDate,
         payMethod:    editPayMethod,
         memo:         editMemo || undefined,
+        targetMonth:  editTargetMonth || undefined,
       })
       if (!res.ok) { setError(res.error); return }
       if (selectedRoom?.leaseTermId) {
@@ -1203,6 +1210,34 @@ export default function RoomsClient({
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                 </div>
+                                {!p.isDeposit && (
+                                  <div className="space-y-1">
+                                    <p className="text-[10px] text-[var(--warm-muted)]">귀속월 (이 record가 인식되는 월)</p>
+                                    <select value={editTargetMonth} onChange={e => setEditTargetMonth(e.target.value)}
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                                      {/* 현재 record의 targetMonth가 옵션 목록에 없을 수 있어 항상 포함 */}
+                                      {!tmOptions.some(o => o.month === p.targetMonth) && (
+                                        <option value={p.targetMonth}>
+                                          {Number(p.targetMonth.split('-')[0])}년 {Number(p.targetMonth.split('-')[1])}월분 (현재)
+                                        </option>
+                                      )}
+                                      {tmOptions.map(o => {
+                                        const [y, m] = o.month.split('-')
+                                        const yn = Number(y), mn = Number(m)
+                                        const tag =
+                                          o.status === 'paid' ? '완납'
+                                          : o.status === 'partial' ? `일부 ${o.paidAmount.toLocaleString()}/${o.expectedAmount.toLocaleString()}원`
+                                          : o.status === 'future' ? '향후'
+                                          : '미수'
+                                        return (
+                                          <option key={o.month} value={o.month}>
+                                            {yn}년 {mn}월분 — {tag}
+                                          </option>
+                                        )
+                                      })}
+                                    </select>
+                                  </div>
+                                )}
                                 <div className="flex gap-2 justify-end">
                                   <button onClick={() => setEditingPayId(null)}
                                     className="text-xs text-[var(--warm-mid)] hover:text-[var(--warm-dark)] px-3 py-1.5 rounded-lg border border-[var(--warm-border)] transition-colors">
@@ -1227,11 +1262,17 @@ export default function RoomsClient({
                                   {p.seqNo}회차 · {fmtDate(p.payDate)} · {p.payMethod ?? '—'}
                                   {p.isDeposit && <span className="ml-1.5 text-[10px] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>}
                                   {prevOwner && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
-                                  {!p.isDeposit && p.targetMonth !== targetMonth && (
-                                    <span className="ml-1.5 text-[10px] font-semibold bg-blue-100 text-blue-700 rounded px-1 py-0.5">
-                                      {p.targetMonth < targetMonth
-                                        ? `${Number(p.targetMonth.slice(5))}월 미납분 처리`
-                                        : `${Number(p.targetMonth.slice(5))}월 선납`}
+                                  {!p.isDeposit && (
+                                    <span className={`ml-1.5 text-[10px] font-semibold rounded px-1 py-0.5 ${
+                                      p.targetMonth === targetMonth
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : p.targetMonth < targetMonth
+                                          ? 'bg-blue-100 text-blue-700'
+                                          : 'bg-indigo-100 text-indigo-700'
+                                    }`}>
+                                      귀속 {Number(p.targetMonth.slice(5))}월
+                                      {p.targetMonth < targetMonth && ' (지난 미납분)'}
+                                      {p.targetMonth > targetMonth && ' (선납)'}
                                     </span>
                                   )}
                                 </p>

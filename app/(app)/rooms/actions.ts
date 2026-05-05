@@ -693,7 +693,7 @@ async function recalculatePayments(
 // 수납 기록 수정
 export async function updatePayment(
   paymentId: string,
-  data: { actualAmount: number; payDate: string; payMethod: string; memo?: string }
+  data: { actualAmount: number; payDate: string; payMethod: string; memo?: string; targetMonth?: string }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -717,6 +717,13 @@ export async function updatePayment(
       }
     }
 
+    // 귀속월 변경 시 새 월에서 unique seqNo 재할당 + 옛 월 재계산
+    const newTargetMonth = data.targetMonth && !record.isDeposit ? data.targetMonth : record.targetMonth
+    const targetMonthChanged = newTargetMonth !== record.targetMonth
+    const newSeqNo = targetMonthChanged
+      ? (await prisma.paymentRecord.count({ where: { leaseTermId: record.leaseTermId, targetMonth: newTargetMonth } })) + 1
+      : undefined
+
     await prisma.paymentRecord.update({
       where: { id: paymentId },
       data: {
@@ -724,11 +731,15 @@ export async function updatePayment(
         payDate:      new Date(data.payDate),
         payMethod:    data.payMethod,
         memo:         data.memo || null,
+        ...(targetMonthChanged ? { targetMonth: newTargetMonth, seqNo: newSeqNo } : {}),
       },
     })
 
     if (lease) {
       await recalculatePayments(record.leaseTermId, record.targetMonth, lease.rentAmount)
+      if (targetMonthChanged) {
+        await recalculatePayments(record.leaseTermId, newTargetMonth, lease.rentAmount)
+      }
     }
     return { ok: true }
   } catch (err) {
