@@ -207,8 +207,10 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
           .filter(p => p.targetMonth === acqMonthStr && new Date(p.payDate) < cutoffDate)
           .reduce((s, p) => s + p.actualAmount, 0)
       : 0
+    // 정규 월 청구만 — '일할 추가' 같이 expectedAmount가 한 달 이용료 미만인 record는
+    // 양도인 자동 처리 판정에서 제외 (그렇지 않으면 일할 record 하나가 4월 청구를 락인시켜 이월액이 잘못 발생)
     const acqMonthCurrentOpRecords = postCutoffRecords
-      .filter(p => p.targetMonth === acqMonthStr)
+      .filter(p => p.targetMonth === acqMonthStr && p.expectedAmount >= expected)
       .reduce((s, p) => s + p.actualAmount, 0)
     const acqMonthPrePaid =
       acqMonthPaidToPrev >= expected ||

@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 비밀 키·로컬 백업 (절대 커밋 금지)
+RoomOS.zip
+client_secret_*.json
+roomos-*-*.json
