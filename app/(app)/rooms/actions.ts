@@ -27,8 +27,8 @@ type RoomRow = {
   isFutureMonth: boolean; baseRent: number; prevTenantName: string | null; prevContact: string | null
   overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
   moveInDate: string | null; prevPaidThisMonth: boolean
-  // 첫 미납월 — 누적 미납이 있다면 그 시작월의 dueDay 기준으로 경과일 표시
   firstUnpaidMonth: string | null
+  isReservationConfirmed: boolean   // RESERVED + reservationConfirmedAt != null
 }
 
 // 핵심 비즈니스 로직 — GAS의 getRoomPaymentStatus 이관
@@ -128,6 +128,31 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
 
     const moveInDate = lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null
 
+    // 예약(RESERVED) 단계는 아직 입주 안 한 상태 → 청구·잔액·미납 계산 제외.
+    // 호실 행은 정상 노출하되 expected/balance 0, isPaid=true로 미납 카운터에서 빠지게 함.
+    // moveInDate · isReservationConfirmed는 유지 → UI에서 '예약 확정 / 입주 예정 D-N' 라벨 분기 표시.
+    if (lease.status === 'RESERVED') {
+      return {
+        roomId: room.id, roomNo: room.roomNo, type: room.type,
+        windowType: room.windowType ?? null,
+        isVacant: false, tenantId: lease.tenant.id,
+        tenantName: lease.tenant.name,
+        contact: lease.tenant.contacts[0]?.contactValue ?? null,
+        status: 'RESERVED', expected: lease.rentAmount, dueDay: lease.dueDay,
+        currentPaid: 0, carryOver: 0, totalPaid: 0,
+        balance: 0, isPaid: true,
+        leaseTermId: lease.id, depositAmount: lease.depositAmount,
+        accumulatedUnpaid: 0, isFutureMonth, baseRent: room.baseRent,
+        prevTenantName, prevContact,
+        overrideDueDay: l.overrideDueDay ?? null,
+        overrideDueDayMonth: l.overrideDueDayMonth ?? null,
+        overrideDueDayReason: l.overrideDueDayReason ?? null,
+        moveInDate, prevPaidThisMonth: false,
+        firstUnpaidMonth: null,
+        isReservationConfirmed: !!lease.reservationConfirmedAt,
+      }
+    }
+
     if (targetMonth < acqMonthStr) {
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
@@ -146,6 +171,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDayReason: l.overrideDueDayReason ?? null,
         moveInDate, prevPaidThisMonth: false,
         firstUnpaidMonth: null,
+        isReservationConfirmed: false,
       }
     }
 
@@ -256,6 +282,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDayReason: l.overrideDueDayReason ?? null,
         moveInDate, prevPaidThisMonth: false,
         firstUnpaidMonth,
+        isReservationConfirmed: false,
       }
     }
 
@@ -276,6 +303,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       overrideDueDayReason: l.overrideDueDayReason ?? null,
       moveInDate, prevPaidThisMonth,
       firstUnpaidMonth,
+        isReservationConfirmed: false,
     }
   }
 
@@ -300,6 +328,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null,
         moveInDate: null, prevPaidThisMonth: false,
         firstUnpaidMonth: null,
+        isReservationConfirmed: false,
       }]
     }
 

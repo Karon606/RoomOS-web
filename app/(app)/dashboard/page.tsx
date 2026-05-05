@@ -109,7 +109,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     allHistoricalPayments,
   ] = await Promise.all([
     prisma.leaseTerm.findMany({
-      where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+      // RESERVED는 아직 입주 안 한 상태 → 미수 합산 대상에서 제외
+      where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
       select: { id: true, rentAmount: true },
     }),
     prisma.paymentRecord.findMany({
@@ -263,11 +264,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         take: 20,
       })
     })(),
-    // 미납 상세 (이달 청구 대상 계약)
+    // 미납 상세 (이달 청구 대상 계약) — RESERVED는 미입주라 제외
     prisma.leaseTerm.findMany({
       where: {
         propertyId,
-        status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] },
+        status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] },
         rentAmount: { gt: 0 },
       },
       select: {
