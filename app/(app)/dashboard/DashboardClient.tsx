@@ -28,6 +28,7 @@ export type DashboardData = {
   totalDeposit:      number
   paidCount:         number
   unpaidCount:       number
+  pendingCount:      number
   unpaidAmount:      number
   totalExpected:     number
   categoryBreakdown: { category: string; amount: number; percent: number }[]
@@ -2036,12 +2037,14 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'rgba(200,160,120,0.4)' }} />
-                            <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>미수납</span>
-                            {data.unpaidCount > 0 && (
-                              <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>{data.unpaidCount}건</span>
+                            <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>수납 예정</span>
+                            {data.pendingCount > 0 && (
+                              <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: data.unpaidCount > 0 ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.12)', color: data.unpaidCount > 0 ? '#ef4444' : '#1e40af' }}>
+                                {data.pendingCount}건{data.unpaidCount > 0 ? ` (미납 ${data.unpaidCount})` : ''}
+                              </span>
                             )}
                           </div>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: data.unpaidAmount > 0 ? '#ef4444' : 'var(--warm-muted)' }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: data.unpaidCount > 0 ? '#ef4444' : 'var(--warm-mid)' }}>
                             {data.unpaidAmount > 0 ? `-${fmtKorMoney(data.unpaidAmount )}` : '—'}
                           </span>
                         </div>

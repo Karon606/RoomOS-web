@@ -835,6 +835,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const unpaidLeases = unpaidCandidates.filter(l => l.daysOverdue == null || l.daysOverdue >= 0)
   const awaitingLeases = unpaidCandidates.filter(l => l.daysOverdue != null && l.daysOverdue < 0)
   const unpaidCount = unpaidLeases.length
+  // 예상 매출 진행바용 — 도래·미도래 합산한 총 미수령 건수 (= 수납 예정)
+  const pendingCount = unpaidCandidates.length
 
   // 방 현황 그리드 미납 호실 — unpaidLeases와 동일 (둘 다 viewMonth 기준)
   const unpaidRoomNosForView = Array.from(new Set(unpaidLeases.map(l => l.roomNo)))
@@ -1210,6 +1212,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     totalDeposit,
     paidCount,
     unpaidCount,
+    pendingCount,
     unpaidAmount,
     totalExpected,
     categoryBreakdown,
