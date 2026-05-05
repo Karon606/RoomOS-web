@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
-import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getTenantQuickInfo, getRoomQuickInfo } from './actions'
+import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getTenantQuickInfo, getRoomQuickInfo, getTargetMonthOptions, type TargetMonthOption } from './actions'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -42,6 +42,7 @@ type RoomStatus = {
   prevPaidThisMonth: boolean
   firstUnpaidMonth: string | null
   isReservationConfirmed: boolean
+  latePaidAt: string | null
 }
 
 type PaymentRecord = {
@@ -221,6 +222,20 @@ export default function RoomsClient({
     const t = setTimeout(() => setToast(null), 5000)
     return () => clearTimeout(t)
   }, [toast])
+
+  // 수납 등록 폼 열릴 때 귀속월 옵션 fetch
+  useEffect(() => {
+    if (!showPayForm || !selectedRoom?.leaseTermId) {
+      setTmOptions([])
+      setForcedTm('auto')
+      return
+    }
+    let cancelled = false
+    getTargetMonthOptions(selectedRoom.leaseTermId, targetMonth).then(opts => {
+      if (!cancelled) setTmOptions(opts)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [showPayForm, selectedRoom?.leaseTermId, targetMonth])
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid'>('all')
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(DEFAULT_VIS)
   const [showColMenu, setShowColMenu] = useState(false)
@@ -240,6 +255,9 @@ export default function RoomsClient({
   const [payAmount, setPayAmount] = useState(0)
   const [payDateVal, setPayDateVal] = useState(kstYmdStr())
   const [isDepositMode, setIsDepositMode] = useState(false)
+  // 귀속월 — 'auto' = FIFO 자동, 'YYYY-MM' = 사용자가 명시한 귀속월
+  const [forcedTm, setForcedTm] = useState<'auto' | string>('auto')
+  const [tmOptions, setTmOptions] = useState<TargetMonthOption[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [editingPayId, setEditingPayId] = useState<string | null>(null)
   const [editAmount, setEditAmount] = useState(0)
@@ -454,6 +472,7 @@ export default function RoomsClient({
             payDate:        payDateVal,
             payMethod,
             memo,
+            forcedTargetMonth: forcedTm === 'auto' ? undefined : forcedTm,
           })
           // FIFO 결과를 사용자에게 알림 (다른 월로 분배된 경우)
           if (result.allocations.length > 0) {
@@ -727,6 +746,14 @@ export default function RoomsClient({
                           {dueInfo.days === 0 ? '오늘' : dueInfo.overdue ? `${dueInfo.days}일 초과` : `${dueInfo.days}일 후`}
                         </span>
                       )}
+                      {room.isPaid && room.latePaidAt && (() => {
+                        const [, mm, dd] = room.latePaidAt.split('-')
+                        return (
+                          <span className="text-[10px] font-medium text-amber-600">
+                            {Number(mm)}/{Number(dd)} 지연납부
+                          </span>
+                        )
+                      })()}
                     </>
                   )}
                 </div>
@@ -891,6 +918,14 @@ export default function RoomsClient({
                               return info.overdue
                                 ? <span className="text-xs text-red-400">{info.days}일 초과</span>
                                 : <span className="text-xs text-yellow-600">{info.days}일 후</span>
+                            })()}
+                            {room.isPaid && room.latePaidAt && (() => {
+                              const [, mm, dd] = room.latePaidAt.split('-')
+                              return (
+                                <span className="text-xs text-amber-600 font-medium">
+                                  {Number(mm)}/{Number(dd)} 지연납부
+                                </span>
+                              )
                             })()}
                           </>
                         )}
@@ -1426,9 +1461,40 @@ export default function RoomsClient({
               <form onSubmit={handleSavePayment} className="flex flex-col flex-1 overflow-hidden">
                 <div className="flex-1 overflow-y-auto p-6 space-y-3">
                   {!isDepositMode && (
-                    <p className="text-[10px] text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed">
-                      미수가 있는 가장 오래된 월부터 자동으로 충당됩니다 (발생주의). 입력 금액이 한 달 이용료를 초과하면 다음 달로 이월됩니다.
-                    </p>
+                    <>
+                      <p className="text-[10px] text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed">
+                        기본은 미수가 있는 가장 오래된 월부터 자동 충당(FIFO·발생주의)입니다. 특정 월로 귀속시키려면 아래에서 직접 선택하세요.
+                      </p>
+                      <div className="space-y-1">
+                        <label className="text-xs text-[var(--warm-muted)]">귀속월</label>
+                        <select
+                          value={forcedTm}
+                          onChange={e => setForcedTm(e.target.value as 'auto' | string)}
+                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+                        >
+                          <option value="auto">자동 (FIFO · 가장 오래된 미수월부터)</option>
+                          {tmOptions.map(o => {
+                            const [y, m] = o.month.split('-')
+                            const yn = Number(y), mn = Number(m)
+                            const tag =
+                              o.status === 'paid' ? '완납'
+                              : o.status === 'partial' ? `일부 ${o.paidAmount.toLocaleString()}/${o.expectedAmount.toLocaleString()}원`
+                              : o.status === 'future' ? '향후'
+                              : '미수'
+                            return (
+                              <option key={o.month} value={o.month}>
+                                {yn}년 {mn}월분 — {tag}
+                              </option>
+                            )
+                          })}
+                        </select>
+                        {forcedTm !== 'auto' && (
+                          <p className="text-[10px] text-amber-600 leading-relaxed">
+                            FIFO 우회 — 입력 금액이 한 달 이용료를 초과하면 그 다음 달로 이월됩니다.
+                          </p>
+                        )}
+                      </div>
+                    </>
                   )}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">

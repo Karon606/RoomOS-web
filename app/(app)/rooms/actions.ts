@@ -29,6 +29,8 @@ type RoomRow = {
   moveInDate: string | null; prevPaidThisMonth: boolean
   firstUnpaidMonth: string | null
   isReservationConfirmed: boolean   // RESERVED + reservationConfirmedAt != null
+  // 지연납부 — 이 viewMonth 귀속분이 모두 dueDay 이후에 입금된 경우 가장 늦은 payDate ('YYYY-MM-DD')
+  latePaidAt: string | null
 }
 
 // 핵심 비즈니스 로직 — GAS의 getRoomPaymentStatus 이관
@@ -150,6 +152,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         moveInDate, prevPaidThisMonth: false,
         firstUnpaidMonth: null,
         isReservationConfirmed: !!lease.reservationConfirmedAt,
+        latePaidAt: null,
       }
     }
 
@@ -172,6 +175,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         moveInDate, prevPaidThisMonth: false,
         firstUnpaidMonth: null,
         isReservationConfirmed: false,
+        latePaidAt: null,
       }
     }
 
@@ -285,6 +289,22 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       }
     }
 
+    // 지연납부 — viewMonth 귀속분이 모두 dueDay 이후에 입금된 경우 가장 늦은 payDate
+    // (= 4월 탭에서 4/30 dueDay인데 5/1에 입금된 4월분 record가 있으면 표시)
+    let latePaidAt: string | null = null
+    if (isPaid && dueDay >= 1 && dueDay <= 31) {
+      // viewMonth가 cutoff 이전이면 해당 없음
+      const dueDate = new Date(yyyy, mm - 1, Math.min(dueDay, new Date(yyyy, mm, 0).getDate()))
+      dueDate.setHours(23, 59, 59, 999)
+      const lateRecords = postCutoffRecords
+        .filter(p => p.targetMonth === targetMonth && new Date(p.payDate) > dueDate)
+        .map(p => new Date(p.payDate))
+      if (lateRecords.length > 0) {
+        const latest = new Date(Math.max(...lateRecords.map(d => d.getTime())))
+        latePaidAt = `${latest.getFullYear()}-${String(latest.getMonth() + 1).padStart(2, '0')}-${String(latest.getDate()).padStart(2, '0')}`
+      }
+    }
+
     if (isFutureMonth) {
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
@@ -305,6 +325,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         moveInDate, prevPaidThisMonth: false,
         firstUnpaidMonth,
         isReservationConfirmed: false,
+        latePaidAt,
       }
     }
 
@@ -325,7 +346,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       overrideDueDayReason: l.overrideDueDayReason ?? null,
       moveInDate, prevPaidThisMonth,
       firstUnpaidMonth,
-        isReservationConfirmed: false,
+      isReservationConfirmed: false,
+      latePaidAt,
     }
   }
 
@@ -351,6 +373,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         moveInDate: null, prevPaidThisMonth: false,
         firstUnpaidMonth: null,
         isReservationConfirmed: false,
+        latePaidAt: null,
       }]
     }
 
@@ -442,13 +465,17 @@ export async function savePayment(data: {
   payDate:     string
   payMethod:   string
   memo?:       string
+  // 사용자가 귀속월을 명시한 경우 — FIFO 우회. 해당 월부터 분배 시작 (과납분은 다음달로 이월)
+  forcedTargetMonth?: string
 }): Promise<SavePaymentResult> {
   await requireEdit()
   const propertyId = await getPropertyId()
 
   let remaining = data.actualAmount
-  // FIFO: 가장 오래된 미수월부터 시작 (없으면 사용자가 입력한 viewMonth)
-  let currentTm = await findFirstUnpaidMonth(data.leaseTermId, data.expectedAmount, data.targetMonth)
+  // forcedTargetMonth 명시 시 FIFO 우회, 아니면 가장 오래된 미수월부터 시작
+  let currentTm = data.forcedTargetMonth
+    ? data.forcedTargetMonth
+    : await findFirstUnpaidMonth(data.leaseTermId, data.expectedAmount, data.targetMonth)
   const startTm = currentTm
   let isOriginalMonth = true
   const touchedMonths: string[] = []
@@ -510,6 +537,71 @@ export async function savePayment(data: {
   }
 
   return { inputMonth: data.targetMonth, startMonth: startTm, allocations }
+}
+
+// 수납 등록 시 사용자가 명시 선택할 수 있는 귀속월 후보 — 전체 미수월 + viewMonth ± 향후 3개월
+// 자동(FIFO) 옵션은 클라이언트에서 별도 추가
+export type TargetMonthOption = {
+  month: string                                      // 'YYYY-MM'
+  status: 'unpaid' | 'partial' | 'paid' | 'future'
+  paidAmount: number
+  expectedAmount: number
+}
+
+export async function getTargetMonthOptions(
+  leaseTermId: string,
+  viewMonth: string,
+): Promise<TargetMonthOption[]> {
+  const lease = await prisma.leaseTerm.findUnique({
+    where: { id: leaseTermId },
+    select: {
+      moveInDate: true,
+      rentAmount: true,
+      property: { select: { acquisitionDate: true, prevOwnerCutoffDate: true } },
+    },
+  })
+  if (!lease) return []
+
+  const cutoffRaw = lease.property.prevOwnerCutoffDate ?? lease.property.acquisitionDate
+  const cutoffDate = cutoffRaw ? new Date(cutoffRaw) : null
+  const moveIn = lease.moveInDate ? new Date(lease.moveInDate) : null
+  // 시작점: 인수일과 입주일 중 더 늦은 쪽
+  const startDate = moveIn && cutoffDate && moveIn > cutoffDate ? moveIn : (cutoffDate ?? moveIn ?? new Date())
+  const startY = startDate.getFullYear()
+  const startM = startDate.getMonth() + 1
+
+  const [vy, vm] = viewMonth.split('-').map(Number)
+  // viewMonth + 3개월까지
+  const endDate = new Date(vy, vm - 1 + 3, 1)
+  const endY = endDate.getFullYear()
+  const endM = endDate.getMonth() + 1
+
+  // 모든 record 합산 by targetMonth
+  const records = await prisma.paymentRecord.findMany({
+    where: { leaseTermId, isDeposit: false },
+    select: { targetMonth: true, actualAmount: true, payDate: true },
+  })
+  const paidByMonth: Record<string, number> = {}
+  for (const r of records) {
+    if (cutoffDate && new Date(r.payDate) < cutoffDate) continue
+    paidByMonth[r.targetMonth] = (paidByMonth[r.targetMonth] ?? 0) + r.actualAmount
+  }
+
+  const expected = lease.rentAmount
+  const out: TargetMonthOption[] = []
+  let cy = startY, cmn = startM
+  while (cy < endY || (cy === endY && cmn <= endM)) {
+    const ms = `${cy}-${String(cmn).padStart(2, '0')}`
+    const paid = paidByMonth[ms] ?? 0
+    let status: TargetMonthOption['status']
+    if (ms > viewMonth) status = 'future'
+    else if (paid >= expected) status = 'paid'
+    else if (paid > 0) status = 'partial'
+    else status = 'unpaid'
+    out.push({ month: ms, status, paidAmount: paid, expectedAmount: expected })
+    cmn++; if (cmn > 12) { cmn = 1; cy++ }
+  }
+  return out
 }
 
 // 보증금 수납 등록 (초과금은 이용료로 분리 저장)

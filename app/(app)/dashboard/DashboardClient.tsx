@@ -592,7 +592,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
       <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--warm-border)' }}>
         <div className="grid grid-cols-5 divide-x" style={{ borderColor: 'var(--warm-border)', background: 'var(--cream)' }}>
           {[
-            { label: '수납액',   value: data.paidRevenue,  color: 'var(--coral)' },
+            { label: '수납액 (귀속)', value: data.paidRevenue,  color: 'var(--coral)' },
             { label: '기타수익', value: data.extraRevenue, color: '#f97316' },
             { label: '지출',     value: data.totalExpense, color: '#ef4444' },
             { label: '순수익',   value: data.netProfit,    color: data.netProfit >= 0 ? '#22c55e' : '#ef4444' },
@@ -716,7 +716,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                 <span className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>{data.unpaidCount}건</span>
               </div>
               <div className="pt-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
-                <Row label="이달 수납액" value={<MoneyDisplay amount={data.paidRevenue} />} />
+                <Row label="이달 수납액 (귀속)" value={<MoneyDisplay amount={data.paidRevenue} />} />
               </div>
             </div>
           </div>
@@ -1665,6 +1665,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         <div className="rounded-xl" style={{ background: 'var(--coral)', padding: '18px 20px' }}>
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,252,247,0.55)', marginBottom: 8 }}>
             당월 매출
+            <span style={{ fontSize: 9, fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'rgba(255,252,247,0.5)' }}>(귀속 기준)</span>
           </p>
           <p style={{ fontSize: 22, fontWeight: 700, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
             {data.totalRevenue.toLocaleString()}
