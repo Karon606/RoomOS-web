@@ -20,9 +20,13 @@ function getLast6Months(targetMonth: string): string[] {
 }
 
 function daysUntil(date: Date | string): number {
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const target = new Date(date); target.setHours(0, 0, 0, 0)
-  return Math.round((target.getTime() - today.getTime()) / 86400000)
+  // KST 기준 오늘 (서버 UTC와 시간대 차이로 1일 어긋나는 문제 방지)
+  const kst = kstYmd()
+  const today = new Date(kst.year, kst.month - 1, kst.day)
+  // target은 보통 'YYYY-MM-DD' 형태로 저장된 자정 UTC. UTC 컴포넌트로 캘린더 일자 추출.
+  const t = new Date(date)
+  const targetDay = new Date(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate())
+  return Math.round((targetDay.getTime() - today.getTime()) / 86400000)
 }
 
 function dayLabel(days: number): string {
@@ -74,7 +78,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const [tyear, tmonth] = last6Months[0].split('-').map(Number)
   const trendStartDate  = new Date(tyear, tmonth - 1, 1)
 
-  const today     = new Date(); today.setHours(0, 0, 0, 0)
+  // KST 기준 오늘 자정
+  const kstToday  = kstYmd()
+  const today     = new Date(kstToday.year, kstToday.month - 1, kstToday.day)
   const alertFrom = new Date(today.getTime() - 7  * 86400000)
   const alertTo   = new Date(today.getTime() + 30 * 86400000)
 
@@ -576,8 +582,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
 
   // 입주 희망일 경과 시 옵션이 꺼져 있으면 매칭 제외
-  const todayMidnight = new Date()
-  todayMidnight.setHours(0, 0, 0, 0)
+  // KST 기준 자정
+  const todayMidnight = new Date(kstToday.year, kstToday.month - 1, kstToday.day)
   const isInquiryExpired = (l: { moveInDate: Date | null; keepAlertAfterInquiry: boolean }): boolean => {
     if (l.keepAlertAfterInquiry) return false
     if (!l.moveInDate) return false
@@ -1008,7 +1014,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   for (const r of tenantRequestsRaw) {
     const daysLeft = r.targetDate
-      ? Math.round((new Date(r.targetDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+      ? (() => {
+          const t = new Date(r.targetDate)
+          const targetDay = new Date(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate())
+          return Math.round((targetDay.getTime() - today.getTime()) / 86400000)
+        })()
       : null
     alertItems.push({
       category:  'request',
