@@ -323,8 +323,12 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
 
     let cycleStatus: CycleStatus | null = null
     if (['ACTIVE', 'CHECKOUT_PENDING'].includes(lease.status) && lease.rentAmount > 0) {
+      // cycleStart = max(moveInDate, cutoffDate). 입주는 오래됐어도 현재 owner의 인수일 이전 cycle은
+      // 양도인 책임이라 우리 cash flow에 안 잡힘 → cycle 카운트도 인수일부터 시작
+      const moveIn = lease.moveInDate ? new Date(lease.moveInDate) : null
+      const cycleStart = (cutoffDate && (!moveIn || cutoffDate > moveIn)) ? cutoffDate : moveIn
       const { dueDates, nextDueAfterEff } = computeCycleDueDates(
-        lease.moveInDate, lease.dueDay, effectiveDate, skipMonthForCycle,
+        cycleStart, lease.dueDay, effectiveDate, skipMonthForCycle,
       )
       const requiredCycles = dueDates.length
       const totalReceivedAll = postCutoffRecords
