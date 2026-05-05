@@ -325,7 +325,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         isDeposit: false,
         targetMonth: { lte: realTodayMonthStr },
       },
-      select: { leaseTermId: true, targetMonth: true, actualAmount: true, payDate: true },
+      select: { leaseTermId: true, targetMonth: true, actualAmount: true, payDate: true, memo: true },
     }),
   ])
 
@@ -414,6 +414,34 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     ? `${acquisitionDate.getFullYear()}-${String(acquisitionDate.getMonth() + 1).padStart(2, '0')}`
     : null
   const cutoffDay = acquisitionDate ? acquisitionDate.getDate() : 0
+
+  // [납입일변경] 메모에서 변경 전 원래 dueDay를 복원 (changeDueDay로 lease.dueDay가 영구 변경된 경우 대비)
+  const originalDueDayByLease: Record<string, number> = {}
+  for (const p of allHistoricalPayments) {
+    if (!p.memo?.includes('[납입일변경]')) continue
+    const existing = originalDueDayByLease[p.leaseTermId]
+    const m = p.memo.match(/\[납입일변경\]\s*([^일→]+?)일?\s*→/)
+    if (!m) continue
+    const t = m[1].trim()
+    const parsed = t.includes('말') ? 31 : Number(t)
+    if (isNaN(parsed) || parsed <= 0) continue
+    // 가장 이른 [납입일변경] 기록의 변경 전 값을 사용
+    const recDate = new Date(p.payDate).getTime()
+    const cur = (originalDueDayByLease as any)[`__date_${p.leaseTermId}`] as number | undefined
+    if (existing === undefined || (cur !== undefined && recDate < cur)) {
+      originalDueDayByLease[p.leaseTermId] = parsed
+      ;(originalDueDayByLease as any)[`__date_${p.leaseTermId}`] = recDate
+    }
+  }
+  function getOriginalDueDay(l: { id: string; dueDay: string | null }): number | null {
+    const restored = originalDueDayByLease[l.id]
+    if (restored !== undefined) return restored
+    if (!l.dueDay) return null
+    if (l.dueDay.includes('말')) return 31
+    const n = parseInt(l.dueDay, 10)
+    return isNaN(n) ? null : n
+  }
+
   const prevOwnerLeaseIds = new Set<string>()
   if (cutoffMonthStr && targetMonth < cutoffMonthStr) {
     for (const l of unpaidLeasesRaw) {
@@ -422,10 +450,16 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }
   } else if (cutoffMonthStr && targetMonth === cutoffMonthStr) {
     for (const l of unpaidLeasesRaw) {
-      const eff = effectiveDueDay(l)
-      if (!eff) continue
-      const dayNum = parseInt(eff, 10)
-      if (!isNaN(dayNum) && dayNum < cutoffDay) {
+      // override가 cutoffMonth에 있으면 그것 사용, 아니면 originalDueDay (메모 복원) 사용
+      const overrideForCutoff = (l.overrideDueDayMonth === cutoffMonthStr && l.overrideDueDay) ? l.overrideDueDay : null
+      let dayNum: number | null = null
+      if (overrideForCutoff) {
+        dayNum = overrideForCutoff.includes('말') ? 31 : parseInt(overrideForCutoff, 10)
+        if (isNaN(dayNum)) dayNum = null
+      } else {
+        dayNum = getOriginalDueDay(l)
+      }
+      if (dayNum != null && dayNum < cutoffDay) {
         paymentByLeaseForStatus[l.id] = l.rentAmount
         prevOwnerLeaseIds.add(l.id)
       }
@@ -727,11 +761,16 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
     // 인수월 양도인 자동 처리: dueDay < cutoffDay이고 사용자(인수 후) record가 0건일 때만
     // 자동으로 양도인이 받았다고 가정. 사용자 record가 있으면 그건 사용자가 받은 것이므로 청구 유효.
+    // [납입일변경]으로 lease.dueDay가 영구 변경된 경우 originalDueDay를 우선 사용.
     const lAny = l as any
-    const effDueDayForAcqMonth = (lAny.overrideDueDayMonth === firstMonth && lAny.overrideDueDay)
-      ? lAny.overrideDueDay
-      : l.dueDay
-    const dueDayNum = parseInt(effDueDayForAcqMonth ?? '99')
+    let dueDayNum: number = NaN
+    if (lAny.overrideDueDayMonth === firstMonth && lAny.overrideDueDay) {
+      const eff = lAny.overrideDueDay as string
+      dueDayNum = eff.includes('말') ? 31 : parseInt(eff, 10)
+    } else {
+      const orig = getOriginalDueDay(l)
+      if (orig != null) dueDayNum = orig
+    }
     const opPaidInCutoff = opPaidInCutoffMonthByLease[l.id] ?? 0
     const acqMonthAutoPaid =
       !!(cutoffMonthStr && firstMonth === cutoffMonthStr && !isNaN(dueDayNum) && dueDayNum < cutoffDay && opPaidInCutoff === 0)
