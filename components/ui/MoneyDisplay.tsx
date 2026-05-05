@@ -1,13 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-
-function toCompact(amount: number): string {
-  if (amount < 10000) return `${amount.toLocaleString()}원`
-  const man = amount / 10000
-  const str = Number.isInteger(man) ? `${man}` : `${parseFloat(man.toFixed(1))}`
-  return `${str}만원`
-}
+import { fmtKorMoney } from '@/lib/fmtMoney'
 
 export function MoneyDisplay({
   amount,
@@ -22,7 +16,8 @@ export function MoneyDisplay({
 }) {
   const pre     = prefix ?? ''
   const full    = `${pre}${amount.toLocaleString()}원`
-  const compact = `${pre}${toCompact(amount)}`
+  // 모바일 compact — 한국식 천/백/십/원까지 표기 (51.6만원 X → 51만6천원 ✓)
+  const compact = `${pre}${fmtKorMoney(amount, { zero: '0원' })}`
 
   const [text, setText] = useState(full)
 
