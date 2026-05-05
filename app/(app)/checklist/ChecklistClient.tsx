@@ -330,7 +330,13 @@ function FormModal({
             {customMode && (
               <div className="flex items-center gap-2">
                 <input type="number" min={1} value={intervalDays}
-                  onChange={e => setIntervalDays(Math.max(1, Number(e.target.value) || 1))}
+                  onFocus={e => e.currentTarget.select()}
+                  onChange={e => {
+                    const v = e.target.value
+                    if (v === '') { setIntervalDays(1); return }
+                    const n = Number(v)
+                    if (!isNaN(n) && n >= 1) setIntervalDays(n)
+                  }}
                   className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 <span className="text-xs" style={{ color: 'var(--warm-muted)' }}>일마다</span>
               </div>
@@ -341,7 +347,13 @@ function FormModal({
             <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>알림 시작 (도래일 N일 전부터)</label>
             <div className="flex items-center gap-2">
               <input type="number" min={0} max={30} value={alertDaysBefore}
-                onChange={e => setAlertDaysBefore(Math.max(0, Number(e.target.value) || 0))}
+                onFocus={e => e.currentTarget.select()}
+                onChange={e => {
+                  const v = e.target.value
+                  if (v === '') { setAlertDaysBefore(0); return }
+                  const n = Number(v)
+                  if (!isNaN(n) && n >= 0 && n <= 30) setAlertDaysBefore(n)
+                }}
                 className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
               <span className="text-xs" style={{ color: 'var(--warm-muted)' }}>일 전부터 대시보드 알림</span>
             </div>
