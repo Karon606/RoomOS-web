@@ -39,8 +39,6 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
   const propertyId = await getPropertyId()
 
   const [yyyy, mm] = targetMonth.split('-').map(Number)
-  const prevDate  = new Date(yyyy, mm - 2, 1)
-  const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`
 
   // 조회 시점 필터 — 미래 월은 미납 표시 안 함 (KST 기준)
   const kst = kstYmd()
@@ -88,17 +86,22 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     },
   })
 
-  // 하이브리드 모델:
-  // - 잔액/이월액/총수납/납부내역 → payDate 기준(현금주의): "통장에 들어온 시점"
-  // - firstUnpaidMonth/매출 인식 → targetMonth 기준(발생주의)
-  // 두 기준 모두 충족하려면 viewMonth 마지막일까지의 payDate record 전부 + 미래 targetMonth 선납분도 포함
-  const monthEndForQuery = new Date(yyyy, mm, 0)
-  monthEndForQuery.setHours(23, 59, 59, 999)
+  // 발생주의(귀속월) 모델:
+  // - 잔액/이월액/총수납/firstUnpaidMonth/매출 → targetMonth 기준
+  //   (4/30 dueDay인데 5/1 입금 + targetMonth=4월 → 4월 페이지에서 완납으로 인식)
+  // - 지연납부 라벨(latePaidAt)만 payDate를 보조로 사용
+  // 인수일 이전 양도인 record는 별도 처리. [납입일변경] 메모는 payDate에 무관하게 항상 조회되어야 함.
   const allRecordsThruMonth = await prisma.paymentRecord.findMany({
     where: {
       propertyId,
       isDeposit: false,
-      payDate: { lte: monthEndForQuery },
+      // targetMonth가 viewMonth 이하인 record + viewMonth 말일까지의 payDate record (선납분 등)
+      // + [납입일변경] 메모 record는 viewMonth와 무관하게 항상 — originalDueDay 복원용
+      OR: [
+        { targetMonth: { lte: targetMonth } },
+        { payDate: { lte: new Date(yyyy, mm, 0, 23, 59, 59, 999) } },
+        { memo: { contains: '[납입일변경]' } },
+      ],
     },
   })
 
@@ -208,10 +211,6 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     }
     const acqMonthDueBeforeCutoff = !!(cutoffDate && acqMonthStr === cutoffMonthStr && originalDueDay < cutoffDay)
 
-    const monthStartDate = new Date(yyyy, mm - 1, 1)
-    const monthEndDate = new Date(yyyy, mm, 0)
-    monthEndDate.setHours(23, 59, 59, 999)
-
     const allLeaseRecords = allRecordsThruMonth.filter(p => p.leaseTermId === lease.id)
     // 양도인 몫 (payDate < cutoffDate) — 현 원장 계산에서 제외
     const postCutoffRecords = allLeaseRecords.filter(p => !cutoffDate || new Date(p.payDate) >= cutoffDate)
@@ -244,20 +243,23 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       cmn++; if (cmn > 12) { cmn = 1; cy++ }
     }
 
-    // 받은 돈 (현금주의: payDate 기준)
-    const receivedThruMonth = postCutoffRecords.reduce((s, p) => s + p.actualAmount, 0)
-    const receivedThisMonth = postCutoffRecords
-      .filter(p => new Date(p.payDate) >= monthStartDate && new Date(p.payDate) <= monthEndDate)
+    // 받은 돈 (발생주의: targetMonth 기준 — 지연 입금이라도 귀속 월에 인식)
+    // targetMonth <= viewMonth이면 그 record는 viewMonth까지의 매출로 인식
+    const accrualThruRecords = postCutoffRecords.filter(p => p.targetMonth <= targetMonth)
+    const receivedThruMonth = accrualThruRecords.reduce((s, p) => s + p.actualAmount, 0)
+    // 이번 달분 = targetMonth가 viewMonth와 같은 record (지연 입금 포함)
+    const receivedThisMonth = accrualThruRecords
+      .filter(p => p.targetMonth === targetMonth)
       .reduce((s, p) => s + p.actualAmount, 0)
     const receivedBeforeMonth = receivedThruMonth - receivedThisMonth
 
     const billedThru = billableThru * expected
     const billedBefore = billableBefore * expected
 
-    // 표시 필드 (현금주의 — 통장 잔고/선납 직관 유지)
+    // 표시 필드 (발생주의 — 귀속월 단위로 매출/미수 인식)
     const cumulativeBalance = receivedThruMonth - billedThru          // 잔액 (누적, 음수=미수, 양수=선납)
     const displayCarryOver = receivedBeforeMonth - billedBefore       // 이월액 (이전까지 누적)
-    const realCurrentPaid = receivedThisMonth                          // 총수납 (이번 달 통장에 들어온 돈)
+    const realCurrentPaid = receivedThisMonth                          // 총수납 (이번 달 귀속분)
     const isPaid = cumulativeBalance >= 0
 
     // 모달의 "양도인 자동 완납" 플레이스홀더 — 인수월 보기에서 사용자 record 없을 때만
@@ -276,7 +278,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     //   → firstUnpaidMonth = 5월 (5월 dueDay 미래)
     let firstUnpaidMonth: string | null = null
     {
-      const totalReceivedAll = postCutoffRecords.reduce((s, p) => s + p.actualAmount, 0)
+      // viewMonth 이하 귀속분만 합산 (선납 = targetMonth > viewMonth은 제외)
+      const totalReceivedAll = accrualThruRecords.reduce((s, p) => s + p.actualAmount, 0)
       let cumExpected = 0
       for (let cy = acqYyyy, cmn = acqMm; cy < yyyy || (cy === yyyy && cmn <= mm); ) {
         const ms = `${cy}-${String(cmn).padStart(2, '0')}`

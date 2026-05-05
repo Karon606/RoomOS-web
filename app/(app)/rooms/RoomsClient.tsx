@@ -1052,7 +1052,7 @@ export default function RoomsClient({
             {!showPayForm && (
               <>
                 <div className="flex-1 overflow-y-auto p-6 space-y-3">
-                  {/* 잔액 요약 — 현금주의(통장 입금일) 기준. 발생주의 매출은 대시보드 참조 */}
+                  {/* 잔액 요약 — 귀속월(targetMonth) 기준 발생주의 */}
                   <div className="grid grid-cols-3 gap-2">
                     <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
                       <p className="text-xs text-[var(--warm-muted)]">총 수납</p>
@@ -1080,7 +1080,7 @@ export default function RoomsClient({
                     </div>
                   </div>
                   <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
-                    총 수납·잔액·이월액은 입금일 기준입니다. 매출은 귀속 월로 별도 인식됩니다.
+                    총 수납·잔액·이월액은 귀속월 기준입니다. 지연 입금된 record도 그 귀속월에 인식됩니다.
                   </p>
 
                   {/* 납부 내역 */}
