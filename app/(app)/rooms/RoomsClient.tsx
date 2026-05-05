@@ -367,14 +367,15 @@ export default function RoomsClient({
   })
 
   const sorted = [...filtered].sort((a, b) => {
-    // 상태 열: 미납(0)→퇴실예정(1)→납부예정(2)→완납(3)→공실(4) 그룹 고정
+    // 상태 열: 미납(0)→퇴실예정(1)→예약(2)→납부예정(3)→완납(4)→공실(5) 그룹 고정
     if (sortKey === 'status') {
       const grpKey = (r: RoomStatus) => {
-        if (r.isVacant) return 4
+        if (r.isVacant) return 5
         if (!r.isPaid) return 0
         if (isCheckoutRoom(r)) return 1
-        if (isAwaitingRoom(r)) return 2
-        return 3
+        if (r.status === 'RESERVED') return 2
+        if (isAwaitingRoom(r)) return 3
+        return 4
       }
       const grpA = grpKey(a), grpB = grpKey(b)
       if (grpA !== grpB) return grpA - grpB
