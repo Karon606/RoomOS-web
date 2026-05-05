@@ -1056,6 +1056,33 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }
   } catch { /* inventory 모듈 로드 실패 시 무시 */ }
 
+  // ── 체크리스트 알림 (도래일 N일 이내 또는 경과) ────────────
+  try {
+    const { getDueChecklists } = await import('@/app/(app)/checklist/actions')
+    const dueList = await getDueChecklists()
+    for (const c of dueList) {
+      let timeLabel: string
+      if (c.daysUntilDue == null) timeLabel = '점검 필요'
+      else if (c.daysUntilDue < 0) timeLabel = `${Math.abs(c.daysUntilDue)}일 경과`
+      else if (c.daysUntilDue === 0) timeLabel = '오늘'
+      else timeLabel = `D-${c.daysUntilDue}`
+      const intervalText = c.intervalDays === 1 ? '매일'
+        : c.intervalDays === 7 ? '매주'
+        : c.intervalDays === 14 ? '격주'
+        : c.intervalDays === 30 ? '매월'
+        : c.intervalDays === 90 ? '분기'
+        : `${c.intervalDays}일마다`
+      alertItems.push({
+        category:  'inventory',
+        text:      `체크리스트: ${c.title}`,
+        link:      '/checklist',
+        dotColor:  '#d4a847',
+        timeLabel,
+        detail:    `주기: ${intervalText}${c.memo ? `\n${c.memo}` : ''}\n마지막 점검: ${c.lastCheckedAt ? new Date(c.lastCheckedAt).toLocaleDateString('ko-KR') : '없음'}${c.nextDueAt ? `\n다음 도래: ${new Date(c.nextDueAt).toLocaleDateString('ko-KR')}` : ''}`,
+      })
+    }
+  } catch { /* checklist 모듈 로드 실패 시 무시 */ }
+
   // ── 고정 지출 알림 ───────────────────────────────────────────
 
   // 한국 공휴일 (연도별 정적 목록 — 주말 대체공휴일 포함)

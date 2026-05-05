@@ -36,6 +36,11 @@ const NAV_ITEMS = [
     Icon: () => <svg {...ico}><rect x="3" y="6" width="16" height="12" rx="2"/><path d="M7 6V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1"/><circle cx="11" cy="12" r="2"/></svg>,
   },
   {
+    href: '/checklist',
+    label: '체크리스트',
+    Icon: () => <svg {...ico}><rect x="3" y="3" width="16" height="16" rx="2.5"/><path d="M7 10l2.5 2.5L15 7"/></svg>,
+  },
+  {
     href: '/settings',
     label: '설정',
     Icon: () => <svg {...ico}><circle cx="11" cy="11" r="3"/><path d="M11 2v2M11 18v2M2 11h2M18 11h2M4.9 4.9l1.4 1.4M15.7 15.7l1.4 1.4M4.9 17.1l1.4-1.4M15.7 6.3l1.4-1.4"/></svg>,

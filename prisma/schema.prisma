@@ -133,6 +133,7 @@ model Property {
   marketSurveys     MarketSurvey[]
   recurringExpenses RecurringExpense[]
   trackedItems      TrackedItem[]
+  checklists        Checklist[]
 
   @@map("properties")
 }
@@ -616,4 +617,41 @@ model StockAddition {
 
   @@index([trackedItemId, date])
   @@map("stock_additions")
+}
+
+// ============================================================
+// [19] Checklist — 운영 점검(부식 잔량/청소/소모품 등) 주기 To-Do
+// ============================================================
+
+model Checklist {
+  id              String          @id @default(uuid()) @db.Uuid
+  propertyId      String          @db.Uuid
+  property        Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  title           String                              // "부식 잔량 확인"
+  memo            String?                             // 상세 / 위치 / 기준
+  intervalDays    Int                                 // 확인 주기(일). 7=매주, 30=매월 등 프리셋도 같은 컬럼에 저장
+  alertDaysBefore Int             @default(3)         // 도래일 N일 전부터 대시보드 알림
+  lastCheckedAt   DateTime?                           // 마지막 점검 일시
+  isActive        Boolean         @default(true)
+  sortOrder       Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  logs            ChecklistLog[]
+
+  @@index([propertyId, isActive])
+  @@map("checklists")
+}
+
+// 체크리스트 점검 이력
+model ChecklistLog {
+  id           String     @id @default(uuid()) @db.Uuid
+  checklistId  String     @db.Uuid
+  checklist    Checklist  @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  checkedAt    DateTime   @default(now())
+  checkedBy    String?    @db.Uuid                    // userId
+  memo         String?
+
+  @@index([checklistId, checkedAt])
+  @@map("checklist_logs")
 }

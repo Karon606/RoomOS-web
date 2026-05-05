@@ -27,6 +27,9 @@ function IcoSettings() {
 function IcoMarket() {
   return <svg {...ico}><rect x="1" y="8" width="3" height="6" rx="0.5"/><rect x="6" y="5" width="3" height="9" rx="0.5"/><rect x="11" y="2" width="3" height="12" rx="0.5"/><line x1="0" y1="14.5" x2="15" y2="14.5"/></svg>
 }
+function IcoChecklist() {
+  return <svg {...ico}><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 8l2 2 4-4"/></svg>
+}
 
 // ── Nav structure ──────────────────────────────────────────────────
 const NAV_GROUPS = [
@@ -45,6 +48,12 @@ const NAV_GROUPS = [
       { href: '/finance',   label: '지출/기타수익', Icon: IcoWallet  },
       { href: '/inventory', label: '재고 관리',     Icon: IcoWallet  },
       { href: '/report',    label: '결산 보고서',   Icon: IcoFinance },
+    ],
+  },
+  {
+    label: '운영',
+    items: [
+      { href: '/checklist', label: '체크리스트', Icon: IcoChecklist },
     ],
   },
   {
