@@ -486,7 +486,8 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
   }
 }
 
-// 퇴실 시 보증금 미반환분 기타 수익 등록
+// 퇴실 시 보증금 미반환분 기타 수익 등록 (보증금 카테고리 + 보유 보증금 입금수단)
+// 보증금 카테고리가 incomeCategories에 없으면 자동 추가
 export async function recordDepositReturn(params: {
   depositAmount: number
   returnedAmount: number
@@ -498,6 +499,20 @@ export async function recordDepositReturn(params: {
     const { propertyId } = await getPropertyId()
     const unreturned = params.depositAmount - params.returnedAmount
     if (unreturned > 0) {
+      // 보증금 카테고리 보장 — 없으면 추가
+      const property = await prisma.property.findUnique({
+        where: { id: propertyId },
+        select: { incomeCategories: true },
+      })
+      const raw = (property as any)?.incomeCategories ?? '건조기,세탁기,자판기,이자수익,기타'
+      const cats = raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+      if (!cats.includes('보증금')) {
+        await prisma.property.update({
+          where: { id: propertyId },
+          data: { incomeCategories: [...cats, '보증금'].join(',') } as any,
+        })
+      }
+
       await prisma.extraIncome.create({
         data: {
           propertyId,
@@ -505,10 +520,45 @@ export async function recordDepositReturn(params: {
           amount:    unreturned,
           category:  '보증금',
           detail:    `${params.tenantName} 퇴실 — 보증금 미반환분`,
-          payMethod: '현금',
+          payMethod: '보유 보증금',
         },
       })
       revalidatePath('/finance')
+    }
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 퇴실 처리 + 보증금 환불 한 번에
+export async function checkoutWithDepositRefund(params: {
+  leaseTermId: string
+  tenantId: string
+  refundAmount: number
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const lease = await prisma.leaseTerm.findUnique({
+      where: { id: params.leaseTermId },
+      select: { depositAmount: true, tenant: { select: { name: true } } },
+    })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+
+    const checkoutRes = await checkoutTenant(params.leaseTermId, params.tenantId)
+    if (!checkoutRes.ok) return checkoutRes
+
+    if (lease.depositAmount > 0) {
+      const today = new Date()
+      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+      const refundRes = await recordDepositReturn({
+        depositAmount:  lease.depositAmount,
+        returnedAmount: Math.max(0, Math.min(params.refundAmount, lease.depositAmount)),
+        date:           dateStr,
+        tenantName:     lease.tenant.name,
+      })
+      if (!refundRes.ok) return refundRes
     }
     return { ok: true }
   } catch (err) {

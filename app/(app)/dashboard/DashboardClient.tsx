@@ -14,7 +14,7 @@ import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS } from '@/lib/ch
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment, getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { recordRecurringExpense } from '@/app/(app)/finance/actions'
-import { confirmReservationToActive, checkoutTenant } from '@/app/(app)/tenants/actions'
+import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 
 // ── 타입 ────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
-  alerts:            { category?: 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string }[]
+  alerts:            { category?: 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
@@ -98,6 +98,102 @@ function daysLabel(daysOverdue: number | null): { text: string; color: string } 
 
 type AlertItem = DashboardData['alerts'][number]
 
+function CheckoutRefundModal({
+  tenantName, depositAmount, cleaningFee, pending, onClose, onConfirm,
+}: {
+  tenantName: string
+  depositAmount: number
+  cleaningFee: number
+  pending: boolean
+  onClose: () => void
+  onConfirm: (refundAmount: number) => void
+}) {
+  // 환불 가능 최대 = 보증금 - 청소비 (청소비 0이면 보증금 전액)
+  const maxRefund = Math.max(0, depositAmount - cleaningFee)
+  const [refund, setRefund] = useState(maxRefund)
+  const unreturned = depositAmount - refund
+  const exceedsMax = refund > maxRefund
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b" style={{ borderColor: DIVIDER_COLOR }}>
+          <p className="text-base font-bold" style={{ color: 'var(--warm-dark)' }}>보증금 환불</p>
+          <p className="text-xs mt-1" style={{ color: 'var(--warm-muted)' }}>{tenantName}님 퇴실 정산</p>
+        </div>
+
+        <div className="px-5 py-4 space-y-3">
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
+              <p style={{ color: 'var(--warm-muted)' }}>보증금</p>
+              <p className="text-sm font-semibold mt-0.5" style={{ color: 'var(--warm-dark)' }}>
+                {depositAmount.toLocaleString()}원
+              </p>
+            </div>
+            <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
+              <p style={{ color: 'var(--warm-muted)' }}>청소비 차감</p>
+              <p className="text-sm font-semibold mt-0.5" style={{ color: cleaningFee > 0 ? '#dc2626' : 'var(--warm-mid)' }}>
+                {cleaningFee > 0 ? `-${cleaningFee.toLocaleString()}원` : '없음'}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>
+              환불 금액 (최대 {maxRefund.toLocaleString()}원)
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={refund.toLocaleString()}
+              onChange={e => {
+                const n = Number(e.target.value.replace(/[^0-9]/g, ''))
+                setRefund(isNaN(n) ? 0 : n)
+              }}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+            />
+            {exceedsMax && (
+              <p className="text-[11px] text-red-500">환불 금액은 최대 {maxRefund.toLocaleString()}원입니다.</p>
+            )}
+          </div>
+
+          <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ background: 'rgba(244,98,58,0.08)', color: 'var(--warm-dark)' }}>
+            <div className="flex justify-between">
+              <span style={{ color: 'var(--warm-muted)' }}>환불</span>
+              <span className="font-medium">{refund.toLocaleString()}원</span>
+            </div>
+            {unreturned > 0 && (
+              <div className="flex justify-between">
+                <span style={{ color: 'var(--warm-muted)' }}>부가수익 귀속 (보증금)</span>
+                <span className="font-medium">{unreturned.toLocaleString()}원</span>
+              </div>
+            )}
+            <p className="text-[10px] pt-1" style={{ color: 'var(--warm-muted)' }}>
+              미환불분은 부가수익 카테고리 &apos;보증금&apos; · 입금수단 &apos;보유 보증금&apos;으로 자동 등록됩니다.
+            </p>
+          </div>
+        </div>
+
+        <div className="px-5 pb-5 pt-1 flex gap-2">
+          <button onClick={onClose} disabled={pending}
+            className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
+            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+            취소
+          </button>
+          <button
+            onClick={() => onConfirm(refund)}
+            disabled={pending || exceedsMax}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
+            style={{ background: '#eab308', color: 'white' }}>
+            {pending ? '처리 중...' : '퇴실 처리'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   alert: AlertItem
   onClose: () => void
@@ -110,8 +206,12 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   const isRecurring = !!alert.recurringExpenseId
   const reservationDueLeaseId = alert.reservationDueLeaseId
   const moveOutLeaseId = alert.moveOutLeaseId
+  const moveOutDeposit = alert.moveOutDepositAmount ?? 0
+  const moveOutCleaning = alert.moveOutCleaningFee ?? 0
+  const moveOutTenantName = alert.moveOutTenantName ?? ''
   const [confirmPending, setConfirmPending] = useState(false)
   const [confirmError, setConfirmError]     = useState('')
+  const [refundModalOpen, setRefundModalOpen] = useState(false)
 
   const handleConfirmActive = async () => {
     if (!reservationDueLeaseId || confirmPending) return
@@ -124,10 +224,30 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
 
   const handleCheckout = async () => {
     if (!moveOutLeaseId || !alert.tenantId || confirmPending) return
+    // 보증금이 있으면 환불 모달 띄우기
+    if (moveOutDeposit > 0) {
+      setRefundModalOpen(true)
+      return
+    }
+    // 보증금 없는 경우 바로 처리
     if (!confirm('퇴실 처리하시겠습니까? 호실이 공실로 전환됩니다.')) return
     setConfirmPending(true); setConfirmError('')
     const res = await checkoutTenant(moveOutLeaseId, alert.tenantId)
     if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
+    router.refresh()
+    onClose()
+  }
+
+  const handleRefundConfirm = async (refundAmount: number) => {
+    if (!moveOutLeaseId || !alert.tenantId || confirmPending) return
+    setConfirmPending(true); setConfirmError('')
+    const res = await checkoutWithDepositRefund({
+      leaseTermId:  moveOutLeaseId,
+      tenantId:     alert.tenantId,
+      refundAmount,
+    })
+    if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
+    setRefundModalOpen(false)
     router.refresh()
     onClose()
   }
@@ -238,6 +358,16 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
           </Link>
         </div>
       </div>
+      {refundModalOpen && (
+        <CheckoutRefundModal
+          tenantName={moveOutTenantName}
+          depositAmount={moveOutDeposit}
+          cleaningFee={moveOutCleaning}
+          pending={confirmPending}
+          onClose={() => { if (!confirmPending) setRefundModalOpen(false) }}
+          onConfirm={handleRefundConfirm}
+        />
+      )}
     </div>
   )
 }
