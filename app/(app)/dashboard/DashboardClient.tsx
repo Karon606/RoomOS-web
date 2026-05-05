@@ -42,7 +42,7 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
-  alerts:            { category?: 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string }[]
+  alerts:            { category?: 'unpaid' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string; sortKey?: number }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
@@ -507,10 +507,11 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
 
 // ── 알림 스트립 — 카테고리별 그룹핑 (iOS 알림센터 스타일) ────────────
 
-type AlertCat = 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'other'
-const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'moveout', 'movein', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
+type AlertCat = 'unpaid' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'other'
+const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'upcoming', 'moveout', 'movein', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
 const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
   unpaid:    { label: '누적 미수',    color: '#dc2626' },
+  upcoming:  { label: '납부 예정',    color: '#d4a847' },
   moveout:   { label: '퇴실 예정',    color: '#eab308' },
   movein:    { label: '입실 희망',    color: '#3b82f6' },
   tour:      { label: '투어 예정',    color: '#a855f7' },
@@ -526,7 +527,7 @@ function AlertsStrip({ alerts, onOpenAlert }: {
   alerts: DashboardData['alerts']
   onOpenAlert: (alert: AlertItem) => void
 }) {
-  // 카테고리별 그룹
+  // 카테고리별 그룹 — sortKey 있으면 그 순으로 (납부예정: 가까운 순, 누적미수: 오래된 순)
   const groups = (() => {
     const map = new Map<AlertCat, typeof alerts>()
     for (const a of alerts) {
@@ -534,6 +535,10 @@ function AlertsStrip({ alerts, onOpenAlert }: {
       const arr = map.get(cat) ?? []
       arr.push(a)
       map.set(cat, arr)
+    }
+    for (const arr of map.values()) {
+      const hasSortKey = arr.some(a => typeof a.sortKey === 'number')
+      if (hasSortKey) arr.sort((a, b) => (a.sortKey ?? 0) - (b.sortKey ?? 0))
     }
     return CATEGORY_ORDER
       .map(cat => ({ cat, items: map.get(cat) ?? [] }))

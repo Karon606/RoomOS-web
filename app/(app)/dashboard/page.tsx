@@ -1009,11 +1009,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     })
   }
 
-  // 미수/도래임박 알림 — 알림 정책:
-  //  · daysOverdue >= 1 (이미 경과) → 무조건 알림
-  //  · 0 >= daysOverdue >= -7 (오늘 또는 D-7 이내) → 알림 (도래 임박)
+  // 미수/도래임박 알림 — 정책:
+  //  · daysOverdue >= 1 (경과) → 누적 미수 카테고리 (오래 경과한 순)
+  //  · 0 >= daysOverdue >= -7 (오늘/D-7 이내) → 납부 예정 카테고리 (가까운 순)
   //  · daysOverdue < -7 (8일 이상 여유) → 알림 X
-  // unpaidCandidates는 D-N 미도래 항목도 포함하므로 그 안에서 골라낸다
   for (const l of unpaidCandidates) {
     const days = l.daysOverdue
     if (days == null) continue
@@ -1027,18 +1026,20 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         timeLabel: `${days}일 경과`,
         tenantId:  l.tenantId,
         detail:    `미수금 ${l.unpaidAmount.toLocaleString()}원이 ${days}일 동안 회수되지 않고 있습니다.`,
+        sortKey:   -days, // 오래 경과한 순 (큰 days가 위)
       })
     } else {
-      // D-N 또는 오늘 도래 — 납부 예정 알림
+      // D-N 또는 오늘 도래 — 별도 '납부 예정' 카테고리
       const timeLabel = days === 0 ? '오늘 납부일' : `D-${Math.abs(days)}`
       alertItems.push({
-        category:  'unpaid',
-        text:      `${l.tenantName}님 ${l.roomNo}호 ${days === 0 ? '오늘 납부일' : '납부 예정'}`,
+        category:  'upcoming',
+        text:      `${l.tenantName}님 ${l.roomNo}호 납부 예정`,
         link:      `/rooms?tenantId=${l.tenantId}`,
         dotColor:  '#d4a847',
         timeLabel,
         tenantId:  l.tenantId,
         detail:    `청구 예정액 ${l.unpaidAmount.toLocaleString()}원${days === 0 ? ' — 오늘이 납부일입니다.' : ` — ${Math.abs(days)}일 후 납부 예정.`}`,
+        sortKey:   days, // 가까운 도래 순 (0이 가장 위, -7이 가장 아래)
       })
     }
   }
