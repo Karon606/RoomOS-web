@@ -11,6 +11,7 @@ import {
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
 import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS } from '@/lib/chartColors'
+import { fmtKorMoney } from '@/lib/fmtMoney'
 import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment, getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { recordRecurringExpense } from '@/app/(app)/finance/actions'
 import { confirmReservationToActive } from '@/app/(app)/tenants/actions'
@@ -283,7 +284,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
                   {alert.recurringIsVariable && alert.recurringHistoricalAvg && (
                     <span className="text-[10px] rounded-full px-1.5 py-0.5" style={{ background: 'rgba(99,102,241,0.1)', color: '#6366f1' }}
                       title="과거 동일 항목 결제 기록의 평균">
-                      과거 평균 {Math.round(alert.recurringHistoricalAvg / 10000).toLocaleString()}만원
+                      과거 평균 {fmtKorMoney(alert.recurringHistoricalAvg)}
                     </span>
                   )}
                 </div>
@@ -1842,7 +1843,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>이달 손익 현황</h3>
                         <p style={{ fontSize: 11, color: 'var(--warm-muted)', marginTop: 1 }}>
                           {parseInt(targetMonth.slice(5))}월 예상 순이익 {data.netProfit + data.unpaidAmount !== 0
-                            ? `${Math.round((data.netProfit + data.unpaidAmount) / 10000).toLocaleString()}만원`
+                            ? `${fmtKorMoney((data.netProfit + data.unpaidAmount))}`
                             : '—'}
                         </p>
                       </div>
@@ -1854,7 +1855,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                       <div className="flex items-center justify-between mb-1">
                         <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>예상 매출</span>
                         <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>
-                          {Math.round(data.totalExpected / 10000).toLocaleString()}만원
+                          {fmtKorMoney(data.totalExpected)}
                         </span>
                       </div>
                       <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.15)' }}>
@@ -1869,7 +1870,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                             <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: 9, fontWeight: 600, background: 'rgba(251,191,36,0.15)', color: 'var(--sun)' }}>{data.paidCount}건</span>
                           </div>
                           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sun)' }}>
-                            {Math.round(data.paidRevenue / 10000).toLocaleString()}만원
+                            {fmtKorMoney(data.paidRevenue)}
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -1881,7 +1882,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                             )}
                           </div>
                           <span style={{ fontSize: 12, fontWeight: 600, color: data.unpaidAmount > 0 ? '#ef4444' : 'var(--warm-muted)' }}>
-                            {data.unpaidAmount > 0 ? `-${Math.round(data.unpaidAmount / 10000).toLocaleString()}만원` : '—'}
+                            {data.unpaidAmount > 0 ? `-${fmtKorMoney(data.unpaidAmount )}` : '—'}
                           </span>
                         </div>
                       </div>
@@ -1897,7 +1898,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                           예상 지출{!data.hasExpenseHistory ? <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 4 }}>고정지출 기준</span> : null}
                         </span>
                         <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>
-                          {Math.round(data.expectedExpense / 10000).toLocaleString()}만원
+                          {fmtKorMoney(data.expectedExpense)}
                         </span>
                       </div>
                       <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.15)' }}>
@@ -1914,7 +1915,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                             <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>실제 지출</span>
                           </div>
                           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--warm-mid)' }}>
-                            {Math.round(data.totalExpense / 10000).toLocaleString()}만원
+                            {fmtKorMoney(data.totalExpense)}
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -1923,7 +1924,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                           </span>
                           <span style={{ fontSize: 12, fontWeight: 600, color: data.totalExpense <= data.expectedExpense ? 'var(--warm-mid)' : 'var(--coral)' }}>
                             {data.expectedExpense > 0
-                              ? `${data.totalExpense <= data.expectedExpense ? '-' : '+'}${Math.round(Math.abs(data.expectedExpense - data.totalExpense) / 10000).toLocaleString()}만원`
+                              ? `${data.totalExpense <= data.expectedExpense ? '-' : '+'}${fmtKorMoney(Math.abs(data.expectedExpense - data.totalExpense))}`
                               : '—'}
                           </span>
                         </div>
@@ -1943,7 +1944,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                           <div className="flex items-center justify-between mb-1">
                             <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>예상 순이익</span>
                             <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>
-                              {expectedNet !== 0 ? `${Math.round(expectedNet / 10000).toLocaleString()}만원` : '—'}
+                              {expectedNet !== 0 ? `${fmtKorMoney(expectedNet )}` : '—'}
                             </span>
                           </div>
                           <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(244,98,58,0.1)', outline: '1px solid rgba(244,98,58,0.25)', outlineOffset: '-1px' }}>
@@ -1957,7 +1958,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 <span style={{ fontSize: 11, color: 'var(--warm-muted)' }}>현재 순이익</span>
                               </div>
                               <span style={{ fontSize: 12, fontWeight: 600, color: currentNet >= 0 ? 'var(--coral)' : '#ef4444' }}>
-                                {currentNet >= 0 ? '+' : ''}{Math.round(currentNet / 10000).toLocaleString()}만원
+                                {currentNet >= 0 ? '+' : ''}{fmtKorMoney(currentNet)}
                               </span>
                             </div>
                             <div className="flex items-center justify-between">
@@ -2020,7 +2021,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   <p className="text-[10px] font-medium mt-0.5" style={{ color: dl.color }}>{dl.text}</p>
                                 </div>
                                 <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>
-                                  {Math.round(l.unpaidAmount / 10000)}만원
+                                  {fmtKorMoney(l.unpaidAmount)}
                                 </span>
                               </button>
                             )
@@ -2078,7 +2079,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</p>
                               </div>
                               <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
-                                {Math.round(item.amount / 10000)}만원
+                                {fmtKorMoney(item.amount)}
                               </span>
                             </button>
                           ))}

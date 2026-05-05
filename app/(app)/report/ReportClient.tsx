@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation'
 import type { AnnualSummary, ForecastSummary, PropertyDiagnostics } from './actions'
 import { analyzePropertyWithGemini } from './actions'
 import { Btn } from '@/components/ui/Btn'
+import { fmtKorMoney } from '@/lib/fmtMoney'
 
 const fmt = (n: number) => n === 0 ? '—' : n.toLocaleString('ko-KR') + '원'
-const fmtMan = (n: number) => n === 0 ? '—' : `${Math.round(n / 10000).toLocaleString()}만`
+const fmtMan = (n: number) => n === 0 ? '—' : fmtKorMoney(n).replace(/원$/, '')
 
 export default function ReportClient({ summary, years, forecast }: { summary: AnnualSummary; years: string[]; forecast: ForecastSummary }) {
   const router = useRouter()

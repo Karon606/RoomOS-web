@@ -18,6 +18,7 @@ import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { Btn } from '@/components/ui/Btn'
 import { chartColor } from '@/lib/chartColors'
+import { fmtKorMoney } from '@/lib/fmtMoney'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -552,7 +553,7 @@ function StackedBar({
         )}
       </div>
       <span className="text-[11px] font-medium text-[var(--warm-dark)] font-mono w-16 text-right shrink-0">
-        {total > 0 ? `${Math.round(total / 10000).toLocaleString()}만원` : '—'}
+        {total > 0 ? fmtKorMoney(total) : '—'}
       </span>
     </div>
   )
