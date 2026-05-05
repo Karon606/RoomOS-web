@@ -935,6 +935,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       tenantId:  l.tenant.id,
       detail:    l.expectedMoveOut ? `퇴실 예정일: ${fmtKorDate(l.expectedMoveOut)}` : '퇴실 날짜 미정',
       exactDate: fmtShortDate(l.expectedMoveOut),
+      moveOutLeaseId: l.id,
     })
   }
 

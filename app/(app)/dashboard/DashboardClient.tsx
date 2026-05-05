@@ -14,7 +14,7 @@ import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS } from '@/lib/ch
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment, getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { recordRecurringExpense } from '@/app/(app)/finance/actions'
-import { confirmReservationToActive } from '@/app/(app)/tenants/actions'
+import { confirmReservationToActive, checkoutTenant } from '@/app/(app)/tenants/actions'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 
 // ── 타입 ────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
-  alerts:            { category?: 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null }[]
+  alerts:            { category?: 'unpaid' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
@@ -109,6 +109,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   const avatarBg = hexToRgba(alert.dotColor, 0.15)
   const isRecurring = !!alert.recurringExpenseId
   const reservationDueLeaseId = alert.reservationDueLeaseId
+  const moveOutLeaseId = alert.moveOutLeaseId
   const [confirmPending, setConfirmPending] = useState(false)
   const [confirmError, setConfirmError]     = useState('')
 
@@ -116,6 +117,16 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
     if (!reservationDueLeaseId || confirmPending) return
     setConfirmPending(true); setConfirmError('')
     const res = await confirmReservationToActive(reservationDueLeaseId)
+    if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
+    router.refresh()
+    onClose()
+  }
+
+  const handleCheckout = async () => {
+    if (!moveOutLeaseId || !alert.tenantId || confirmPending) return
+    if (!confirm('퇴실 처리하시겠습니까? 호실이 공실로 전환됩니다.')) return
+    setConfirmPending(true); setConfirmError('')
+    const res = await checkoutTenant(moveOutLeaseId, alert.tenantId)
     if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
     router.refresh()
     onClose()
@@ -195,6 +206,15 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               {confirmPending ? '처리 중...' : '거주중으로 변경'}
             </button>
           )}
+          {moveOutLeaseId && (
+            <button
+              onClick={handleCheckout}
+              disabled={confirmPending}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-60"
+              style={{ background: '#eab308', color: 'white' }}>
+              {confirmPending ? '처리 중...' : '퇴실 처리'}
+            </button>
+          )}
           {isRecurring && (
             <button
               onClick={() => { onStartRecord(alert); onClose() }}
@@ -203,7 +223,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               지출 기록하기
             </button>
           )}
-          {alert.tenantId && !isRecurring && !reservationDueLeaseId && (
+          {alert.tenantId && !isRecurring && !reservationDueLeaseId && !moveOutLeaseId && (
             <button
               onClick={() => { onOpenPayment(alert.tenantId!); onClose() }}
               className="w-full py-2.5 rounded-xl text-sm font-medium transition-opacity hover:opacity-80"
