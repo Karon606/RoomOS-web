@@ -1121,10 +1121,34 @@ export default function TenantClient({
                 onClick={() => { setDetailTenant(tenant); setDetailTab('info') }}
                 className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 cursor-pointer active:opacity-70 transition-opacity"
               >
-                {/* 첫 줄: 호실 + 이름 + 상태 */}
+                {/* 첫 줄: 호실(또는 희망 조건/미배정) + 이름 + 상태 */}
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-[var(--coral)]">{lease?.room?.roomNo ?? '—'}호</span>
+                    {lease?.room?.roomNo ? (
+                      <span className="text-sm font-bold text-[var(--coral)]">{lease.room.roomNo}호</span>
+                    ) : (() => {
+                      // 호실 미배정자 — wishRooms > wishConditions > '미배정' 순으로 라벨 결정
+                      const wishRoomList = (lease?.wishRooms ?? '').split(',').map(s => s.trim()).filter(Boolean)
+                      const cond = parseWishConditions(lease?.wishConditions)
+                      const condParts: string[] = []
+                      if (cond.floor) condParts.push(`${cond.floor}층`)
+                      if (cond.windowType) condParts.push(WISH_WINDOW_LABEL[cond.windowType] ?? cond.windowType)
+                      if (cond.type) condParts.push(cond.type)
+                      if (cond.direction) condParts.push(cond.direction)
+                      let label: string
+                      if (wishRoomList.length > 0) {
+                        label = `희망 ${wishRoomList[0]}호${wishRoomList.length > 1 ? ` 외 ${wishRoomList.length - 1}` : ''}`
+                      } else if (condParts.length > 0) {
+                        label = condParts.join('·')
+                      } else {
+                        label = '미배정'
+                      }
+                      return (
+                        <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-muted)] font-medium">
+                          {label}
+                        </span>
+                      )
+                    })()}
                     <span className="text-sm font-semibold text-[var(--warm-dark)]">{tenant.name}</span>
                   </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[status] ?? 'bg-[var(--canvas)] text-[var(--warm-muted)]'}`}>
