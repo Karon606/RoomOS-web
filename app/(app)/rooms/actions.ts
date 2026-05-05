@@ -182,7 +182,16 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       ? `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}`
       : acqMonthStr
     const cutoffDay = cutoffDate ? cutoffDate.getDate() : 0
-    const acqMonthDueBeforeCutoff = !!(cutoffDate && acqMonthStr === cutoffMonthStr && dueDay < cutoffDay)
+    // 인수월(acqMonth) 판정용 dueDay — 현재 보고 있는 viewMonth의 override는 acqMonth와 무관.
+    // override가 acqMonth용으로 지정된 경우만 적용, 그 외엔 원본 lease.dueDay 사용.
+    const acqMonthOverrideDay = (l.overrideDueDayMonth === acqMonthStr && l.overrideDueDay)
+      ? (l.overrideDueDay.includes('-')
+          ? new Date(l.overrideDueDay + 'T00:00:00').getDate()
+          : l.overrideDueDay.includes('말') ? 31 : Number(l.overrideDueDay))
+      : null
+    const baseDueDay = lease.dueDay?.includes('말') ? 31 : Number(lease.dueDay ?? '1')
+    const acqMonthDueDay = acqMonthOverrideDay ?? baseDueDay
+    const acqMonthDueBeforeCutoff = !!(cutoffDate && acqMonthStr === cutoffMonthStr && acqMonthDueDay < cutoffDay)
 
     const monthStartDate = new Date(yyyy, mm - 1, 1)
     const monthEndDate = new Date(yyyy, mm, 0)
