@@ -2602,6 +2602,22 @@ function WishSelector({ rooms, lease, allowConditions }: {
   const [condType, setCondType]         = useState(initialCond.type ?? '')
   const [condDirection, setCondDirection] = useState(initialCond.direction ?? '')
 
+  // status 변경에 따른 allowConditions 토글 시 모드 재설정
+  // 신규 등록은 status=ACTIVE로 시작 → allowConditions=false → mode='rooms'로 초기화됨.
+  // 사용자가 RESERVED/WAITING_TOUR로 바꾸면 allowConditions가 true가 되는데,
+  // 이때 mode가 자동으로 '조건만 선택'(conditions)으로 전환되도록 동기화.
+  const prevAllowConditionsRef = useRef(allowConditions)
+  useEffect(() => {
+    if (prevAllowConditionsRef.current === allowConditions) return
+    prevAllowConditionsRef.current = allowConditions
+    if (!allowConditions) {
+      setMode('rooms')
+    } else if (initialRooms.length === 0) {
+      setMode('conditions')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowConditions])
+
   const floors     = [...new Set(rooms.map(r => getFloor(r.roomNo)).filter(Boolean))].sort((a, b) => Number(a) - Number(b))
   const windowTypes = [...new Set(rooms.map(r => r.windowType).filter(Boolean))] as string[]
   const types      = [...new Set(rooms.map(r => r.type).filter(Boolean))] as string[]
