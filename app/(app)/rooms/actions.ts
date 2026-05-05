@@ -31,6 +31,10 @@ type RoomRow = {
   isReservationConfirmed: boolean   // RESERVED + reservationConfirmedAt != null
   // 지연납부 — 이 viewMonth 귀속분이 모두 dueDay 이후에 입금된 경우 가장 늦은 payDate ('YYYY-MM-DD')
   latePaidAt: string | null
+  // 다음 청구 도래일 (오늘 이후 가장 가까운 dueDay, override·말일 등 반영). 'YYYY-MM-DD'
+  nextDueDate: string | null
+  // 다음 청구 도래 시 받아야 할 추가 금액 (월 청구액 - 누적 선납 잔액)
+  nextDueAmount: number
 }
 
 // 핵심 비즈니스 로직 — GAS의 getRoomPaymentStatus 이관
@@ -156,6 +160,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         firstUnpaidMonth: null,
         isReservationConfirmed: !!lease.reservationConfirmedAt,
         latePaidAt: null,
+        nextDueDate: null,
+        nextDueAmount: 0,
       }
     }
 
@@ -179,6 +185,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         firstUnpaidMonth: null,
         isReservationConfirmed: false,
         latePaidAt: null,
+        nextDueDate: null,
+        nextDueAmount: 0,
       }
     }
 
@@ -230,18 +238,48 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       acqMonthPaidToPrev >= expected ||
       (acqMonthDueBeforeCutoff && acqMonthCurrentOpRecords === 0)
 
-    // 청구 가능 월 수: acqMonth부터 viewMonth까지, 양도인 자동 처리 월 제외
+    // 그 월의 effectiveDueDay를 실제 Date로 환산 (override · 말일 · 'YYYY-MM-DD' 모두 처리)
+    const effDueDateForMonth = (monthStr: string): Date | null => {
+      const [my, mn] = monthStr.split('-').map(Number)
+      const lastDayOfMon = new Date(my, mn, 0).getDate()
+      let raw: string | null = null
+      if (l.overrideDueDay && l.overrideDueDayMonth === monthStr) raw = l.overrideDueDay
+      else raw = lease.dueDay
+      if (!raw) return null
+      if (raw.includes('-')) {
+        // 'YYYY-MM-DD' 전체 날짜 형식 (override가 다음달까지 미루는 케이스)
+        const [fy, fm, fd] = raw.split('-').map(Number)
+        return new Date(fy, fm - 1, fd, 23, 59, 59, 999)
+      }
+      let day: number
+      if (raw.includes('말')) day = lastDayOfMon
+      else { day = parseInt(raw, 10); if (isNaN(day)) return null; day = Math.min(day, lastDayOfMon) }
+      return new Date(my, mn - 1, day, 23, 59, 59, 999)
+    }
+    const todayKstEnd = new Date(kst.year, kst.month - 1, kst.day, 23, 59, 59, 999)
+
+    // 청구권 발생 월 수: 그 달 effectiveDueDay가 오늘(KST) 이전이어야 청구 가능
+    // (404호처럼 5/7 dueDay인데 오늘 5/5면 5월분은 아직 청구권 미발생 → 잔액 합산 X)
     let billableThru = 0
     let billableBefore = 0
+    let firstUnbilledFutureMonth: string | null = null
+    let firstUnbilledFutureDate: Date | null = null
     for (let cy = acqYyyy, cmn = acqMm; cy < yyyy || (cy === yyyy && cmn <= mm); ) {
       const ms = `${cy}-${String(cmn).padStart(2, '0')}`
       const skip = ms === acqMonthStr && acqMonthPrePaid
       if (!skip) {
-        billableThru++
-        if (ms < targetMonth) billableBefore++
+        const dueDate = effDueDateForMonth(ms)
+        if (dueDate && dueDate <= todayKstEnd) {
+          billableThru++
+          if (ms < targetMonth) billableBefore++
+        } else if (dueDate && !firstUnbilledFutureDate) {
+          firstUnbilledFutureMonth = ms
+          firstUnbilledFutureDate = dueDate
+        }
       }
       cmn++; if (cmn > 12) { cmn = 1; cy++ }
     }
+    void firstUnbilledFutureMonth
 
     // 받은 돈 (발생주의: targetMonth 기준 — 지연 입금이라도 귀속 월에 인식)
     // targetMonth <= viewMonth이면 그 record는 viewMonth까지의 매출로 인식
@@ -285,8 +323,12 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         const ms = `${cy}-${String(cmn).padStart(2, '0')}`
         const skip = ms === acqMonthStr && acqMonthPrePaid
         if (!skip) {
-          cumExpected += expected
-          if (totalReceivedAll < cumExpected) { firstUnpaidMonth = ms; break }
+          // 청구권 미발생 월은 미수 후보에서 제외 (404호처럼 dueDay 미도래)
+          const dueDate = effDueDateForMonth(ms)
+          if (dueDate && dueDate <= todayKstEnd) {
+            cumExpected += expected
+            if (totalReceivedAll < cumExpected) { firstUnpaidMonth = ms; break }
+          }
         }
         cmn++; if (cmn > 12) { cmn = 1; cy++ }
       }
@@ -305,6 +347,29 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       if (lateRecords.length > 0) {
         const latest = new Date(Math.max(...lateRecords.map(d => d.getTime())))
         latePaidAt = `${latest.getFullYear()}-${String(latest.getMonth() + 1).padStart(2, '0')}-${String(latest.getDate()).padStart(2, '0')}`
+      }
+    }
+
+    // 다음 청구 도래일 — viewMonth부터 +3개월까지 스캔 (loop에서 못 찾았을 때 viewMonth+1·+2도 본다)
+    let nextDueDate: string | null = null
+    let nextDueAmount = 0
+    if (firstUnbilledFutureDate) {
+      const d = firstUnbilledFutureDate
+      nextDueDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      // 누적 선납액(cumulativeBalance > 0)만큼 차감 → 그 dueDay에 받아야 할 추가 금액
+      nextDueAmount = Math.max(0, expected - Math.max(0, cumulativeBalance))
+    } else if (!isFutureMonth) {
+      // viewMonth까지 스캔에서 못 찾았으면 (모두 청구권 발생 완료) viewMonth+1, +2까지 추가 스캔
+      for (let i = 1; i <= 3; i++) {
+        const future = new Date(yyyy, mm - 1 + i, 1)
+        const fy = future.getFullYear(), fmn = future.getMonth() + 1
+        const fms = `${fy}-${String(fmn).padStart(2, '0')}`
+        const dueDate = effDueDateForMonth(fms)
+        if (dueDate && dueDate > todayKstEnd) {
+          nextDueDate = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}`
+          nextDueAmount = Math.max(0, expected - Math.max(0, cumulativeBalance))
+          break
+        }
       }
     }
 
@@ -329,6 +394,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         firstUnpaidMonth,
         isReservationConfirmed: false,
         latePaidAt,
+        nextDueDate,
+        nextDueAmount,
       }
     }
 
@@ -351,6 +418,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       firstUnpaidMonth,
       isReservationConfirmed: false,
       latePaidAt,
+      nextDueDate,
+      nextDueAmount,
     }
   }
 
@@ -377,6 +446,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         firstUnpaidMonth: null,
         isReservationConfirmed: false,
         latePaidAt: null,
+        nextDueDate: null,
+        nextDueAmount: 0,
       }]
     }
 

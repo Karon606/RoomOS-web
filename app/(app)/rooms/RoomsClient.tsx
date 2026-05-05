@@ -43,6 +43,8 @@ type RoomStatus = {
   firstUnpaidMonth: string | null
   isReservationConfirmed: boolean
   latePaidAt: string | null
+  nextDueDate: string | null
+  nextDueAmount: number
 }
 
 type PaymentRecord = {
@@ -236,7 +238,7 @@ export default function RoomsClient({
     }).catch(() => {})
     return () => { cancelled = true }
   }, [showPayForm, selectedRoom?.leaseTermId, targetMonth])
-  const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid'>('all')
+  const [filter, setFilter] = useState<'all' | 'unpaid' | 'awaiting' | 'paid'>('all')
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(DEFAULT_VIS)
   const [showColMenu, setShowColMenu] = useState(false)
   const [vacantColVis, setVacantColVis] = useState<Record<VacantColKey, boolean>>(DEFAULT_VACANT_VIS)
@@ -350,17 +352,19 @@ export default function RoomsClient({
     a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true })
   )
 
+  const isAwaitingRoom = (r: RoomStatus) => r.isPaid && !!r.nextDueDate && r.nextDueAmount > 0
   const filtered = occupied.filter(r => {
-    if (filter === 'unpaid') return !r.isPaid
-    if (filter === 'paid')   return r.isPaid
+    if (filter === 'unpaid')   return !r.isPaid
+    if (filter === 'awaiting') return isAwaitingRoom(r)
+    if (filter === 'paid')     return r.isPaid && !isAwaitingRoom(r)
     return true
   })
 
   const sorted = [...filtered].sort((a, b) => {
-    // 상태 열일 때만 미납(0)→완납(1)→공실(2) 그룹 고정
+    // 상태 열일 때만 미납(0)→납부예정(1)→완납(2)→공실(3) 그룹 고정
     if (sortKey === 'status') {
-      const grpA = a.isVacant ? 2 : (a.isPaid ? 1 : 0)
-      const grpB = b.isVacant ? 2 : (b.isPaid ? 1 : 0)
+      const grpKey = (r: RoomStatus) => r.isVacant ? 3 : (!r.isPaid ? 0 : (isAwaitingRoom(r) ? 1 : 2))
+      const grpA = grpKey(a), grpB = grpKey(b)
       if (grpA !== grpB) return grpA - grpB
     }
 
@@ -523,8 +527,9 @@ export default function RoomsClient({
   }
 
   // 요약 통계
-  const unpaidCount = occupied.filter(r => !r.isPaid).length
-  const paidCount   = occupied.filter(r => r.isPaid).length
+  const unpaidCount   = occupied.filter(r => !r.isPaid).length
+  const awaitingCount = occupied.filter(r => isAwaitingRoom(r)).length
+  const paidCount     = occupied.filter(r => r.isPaid && !isAwaitingRoom(r)).length
 
   const thCls = 'text-left text-xs text-[var(--warm-muted)] font-medium px-4 py-3'
 
@@ -632,9 +637,10 @@ export default function RoomsClient({
       {/* 빠른 필터 + 열 설정 */}
       <div className="flex gap-2 flex-wrap items-center">
         {[
-          { key: 'all',    label: `전체 ${occupied.length}실` },
-          { key: 'unpaid', label: `미납 ${unpaidCount}실` },
-          { key: 'paid',   label: `완납 ${paidCount}실` },
+          { key: 'all',      label: `전체 ${occupied.length}실` },
+          { key: 'unpaid',   label: `미납 ${unpaidCount}실` },
+          { key: 'awaiting', label: `납부 예정 ${awaitingCount}실` },
+          { key: 'paid',     label: `완납 ${paidCount}실` },
         ].map(f => (
           <button key={f.key}
             onClick={() => setFilter(f.key as any)}
@@ -742,37 +748,64 @@ export default function RoomsClient({
                         )
                       })()}
                     </>
-                  ) : (
-                    <>
-                      <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
-                        ${room.isPaid ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-red-50 text-red-600 ring-1 ring-red-200'}`}>
-                        {room.isPaid ? '완납' : '미납'}
-                      </span>
-                      {!room.isPaid && dueInfo && (
-                        <span className={`text-[10px] font-medium ${dueInfo.days === 0 ? 'text-orange-500' : dueInfo.overdue ? 'text-red-400' : 'text-yellow-600'}`}>
-                          {dueInfo.days === 0 ? '오늘' : dueInfo.overdue ? `${dueInfo.days}일 초과` : `${dueInfo.days}일 후`}
+                  ) : (() => {
+                    const isAwaiting = room.isPaid && room.nextDueDate && room.nextDueAmount > 0
+                    const badgeClass = !room.isPaid
+                      ? 'bg-red-50 text-red-600 ring-red-200'
+                      : isAwaiting
+                        ? 'bg-blue-50 text-blue-700 ring-blue-200'
+                        : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                    const badgeText = !room.isPaid ? '미납' : isAwaiting ? '납부 예정' : '완납'
+                    return (
+                      <>
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ring-1 ${badgeClass}`}>
+                          {badgeText}
                         </span>
-                      )}
-                      {room.isPaid && room.latePaidAt && (() => {
-                        const [, mm, dd] = room.latePaidAt.split('-')
-                        return (
-                          <span className="text-[10px] font-medium text-amber-600">
-                            {Number(mm)}/{Number(dd)} 지연납부
+                        {!room.isPaid && dueInfo && (
+                          <span className={`text-[10px] font-medium ${dueInfo.days === 0 ? 'text-orange-500' : 'text-red-400'}`}>
+                            {dueInfo.days === 0 ? '오늘' : `${dueInfo.days}일 초과`}
                           </span>
-                        )
-                      })()}
-                    </>
-                  )}
+                        )}
+                        {isAwaiting && (() => {
+                          const [, mm, dd] = room.nextDueDate!.split('-')
+                          const days = Math.round((new Date(room.nextDueDate!).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                          return (
+                            <span className="text-[10px] font-medium text-blue-500">
+                              {days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`}
+                            </span>
+                          )
+                        })()}
+                        {room.isPaid && !isAwaiting && room.latePaidAt && (() => {
+                          const [, mm, dd] = room.latePaidAt.split('-')
+                          return (
+                            <span className="text-[10px] font-medium text-amber-600">
+                              {Number(mm)}/{Number(dd)} 지연납부
+                            </span>
+                          )
+                        })()}
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
               {/* 둘째 줄: 입주자 */}
               <p className="text-sm font-medium text-[var(--warm-dark)] mt-1">{room.tenantName}</p>
-              {/* 셋째 줄: 월이용료 · 잔액 · 납부일 */}
+              {/* 셋째 줄: 월이용료 · 잔액/예정 · 납부일 */}
               <div className="flex items-center gap-2.5 mt-2 text-xs text-[var(--warm-mid)] flex-wrap">
                 <span className="font-medium text-[var(--warm-dark)]"><MoneyDisplay amount={room.expected} /></span>
-                {room.balance !== 0 && (
-                  <span className={`${room.balance > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                    잔액 {room.balance > 0 ? '+' : '-'}<MoneyDisplay amount={Math.abs(room.balance)} />
+                {room.balance < 0 && (
+                  <span className="text-red-500">
+                    미수 -<MoneyDisplay amount={Math.abs(room.balance)} />
+                  </span>
+                )}
+                {room.balance > 0 && (
+                  <span className="text-emerald-600">
+                    선납 +<MoneyDisplay amount={room.balance} />
+                  </span>
+                )}
+                {room.isPaid && room.nextDueDate && room.nextDueAmount > 0 && (
+                  <span className="text-blue-600">
+                    예정 <MoneyDisplay amount={room.nextDueAmount} />
                   </span>
                 )}
                 {room.dueDay && (
@@ -910,32 +943,45 @@ export default function RoomsClient({
                               )
                             })()}
                           </>
-                        ) : (
-                          <>
-                            <span className={`text-xs px-2.5 py-1 rounded-full font-medium
-                              ${room.isPaid ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-red-50 text-red-600 ring-1 ring-red-200'}`}>
-                              {room.isPaid ? '완납' : '미납'}
-                            </span>
-                            {!room.isPaid && (() => {
-                              const info = getEffectiveDueInfo(room, targetMonth)
-                              if (!info) return null
-                              if (info.days === 0) return (
-                                <span className="text-xs text-orange-600 font-medium">오늘</span>
-                              )
-                              return info.overdue
-                                ? <span className="text-xs text-red-400">{info.days}일 초과</span>
-                                : <span className="text-xs text-yellow-600">{info.days}일 후</span>
-                            })()}
-                            {room.isPaid && room.latePaidAt && (() => {
-                              const [, mm, dd] = room.latePaidAt.split('-')
-                              return (
-                                <span className="text-xs text-amber-600 font-medium">
-                                  {Number(mm)}/{Number(dd)} 지연납부
-                                </span>
-                              )
-                            })()}
-                          </>
-                        )}
+                        ) : (() => {
+                          const isAwaiting = room.isPaid && room.nextDueDate && room.nextDueAmount > 0
+                          const badgeClass = !room.isPaid
+                            ? 'bg-red-50 text-red-600 ring-red-200'
+                            : isAwaiting
+                              ? 'bg-blue-50 text-blue-700 ring-blue-200'
+                              : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                          const badgeText = !room.isPaid ? '미납' : isAwaiting ? '납부 예정' : '완납'
+                          return (
+                            <>
+                              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ring-1 ${badgeClass}`}>
+                                {badgeText}
+                              </span>
+                              {!room.isPaid && (() => {
+                                const info = getEffectiveDueInfo(room, targetMonth)
+                                if (!info) return null
+                                if (info.days === 0) return <span className="text-xs text-orange-600 font-medium">오늘</span>
+                                return <span className="text-xs text-red-400">{info.days}일 초과</span>
+                              })()}
+                              {isAwaiting && (() => {
+                                const [, mm, dd] = room.nextDueDate!.split('-')
+                                const days = Math.round((new Date(room.nextDueDate!).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                                return (
+                                  <span className="text-xs text-blue-500 font-medium">
+                                    {days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`}
+                                  </span>
+                                )
+                              })()}
+                              {room.isPaid && !isAwaiting && room.latePaidAt && (() => {
+                                const [, mm, dd] = room.latePaidAt.split('-')
+                                return (
+                                  <span className="text-xs text-amber-600 font-medium">
+                                    {Number(mm)}/{Number(dd)} 지연납부
+                                  </span>
+                                )
+                              })()}
+                            </>
+                          )
+                        })()}
                       </div>
                     </td>
                   )}
