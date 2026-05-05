@@ -3031,7 +3031,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
                 className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors disabled:opacity-50"
               />
             </div>
-            <KeepAlertCheckbox defaultValue={lease?.keepAlertAfterInquiry ?? false} />
+            <KeepAlertCheckbox defaultValue={lease?.keepAlertAfterInquiry ?? true} />
           </div>
         )}
         {/* 예약 확정 토글 (RESERVED 전용) — 호실/이용료/입주희망일 필수 + 매칭 알림 제외 */}
