@@ -833,10 +833,13 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 이달 미수납 위젯·총건수 — dueDay 도래(daysOverdue >= 0)한 것만 (수납관리 '미납' 배지와 일치)
   // dueDay 미도래(D-N)는 '납부 예정'이라 위젯에서 제외
   const unpaidLeases = unpaidCandidates.filter(l => l.daysOverdue == null || l.daysOverdue >= 0)
+  const awaitingLeases = unpaidCandidates.filter(l => l.daysOverdue != null && l.daysOverdue < 0)
   const unpaidCount = unpaidLeases.length
 
   // 방 현황 그리드 미납 호실 — unpaidLeases와 동일 (둘 다 viewMonth 기준)
   const unpaidRoomNosForView = Array.from(new Set(unpaidLeases.map(l => l.roomNo)))
+  // 납부 예정 호실 — dueDay 미도래 + 아직 받지 않음 (방 현황 그리드 4번째 상태)
+  const awaitingRoomNosForView = Array.from(new Set(awaitingLeases.map(l => l.roomNo)))
 
   // ── 알림 ────────────────────────────────────────────────────
   const alertItems: DashboardData['alerts'] = []
@@ -1226,6 +1229,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     activity:        activityItems,
     unpaidLeases,
     unpaidRoomNosForView,
+    awaitingRoomNosForView,
   }
 
   return dashboardData

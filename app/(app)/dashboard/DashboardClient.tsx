@@ -47,6 +47,7 @@ export type DashboardData = {
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
   unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; unpaidAmount: number; monthsOverdue: number }[]
   unpaidRoomNosForView: string[]
+  awaitingRoomNosForView: string[]
 }
 
 // ── 레이블 ──────────────────────────────────────────────────────
@@ -1942,9 +1943,12 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                     ) : (
                       <>
                         {/* 범례 */}
-                        <div className="flex gap-3.5 mb-3 shrink-0">
+                        <div className="flex gap-3.5 mb-3 shrink-0 flex-wrap">
                           <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
                             <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(16,185,129,0.35)' }} />납부완료
+                          </div>
+                          <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
+                            <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(59,130,246,0.35)' }} />납부예정
                           </div>
                           <div className="flex items-center gap-[5px]" style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
                             <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(234,179,8,0.45)' }} />미납
@@ -1955,25 +1959,30 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         </div>
                         <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
                           {(() => {
-                            // viewMonth(targetMonth) 기준 미납 호실 — 과거 월에서도 그 월말 시점 미납이 정확히 보임
+                            // viewMonth(targetMonth) 기준 미납·납부예정 호실
                             const unpaidRooms = new Set(data.unpaidRoomNosForView)
+                            const awaitingRooms = new Set(data.awaitingRoomNosForView)
                             return data.rooms.map(r => {
                               const isUnpaid = !r.isVacant && unpaidRooms.has(r.roomNo)
+                              const isAwaiting = !r.isVacant && !isUnpaid && awaitingRooms.has(r.roomNo)
                               const rentMan = r.baseRent > 0 ? `${Math.round(r.baseRent / 10000)}만` : null
                               const nameParts = r.tenantName?.split(' ') ?? []
                               const displayName = r.isVacant
                                 ? '공실'
                                 : nameParts.length >= 2 ? nameParts[1] : (r.tenantName ?? '거주중')
+                              const cellStyle = r.isVacant
+                                ? { background: 'rgba(200,160,120,0.12)', color: 'var(--warm-muted)' }
+                                : isUnpaid
+                                  ? { background: 'rgba(234,179,8,0.18)', color: '#a16207' }
+                                  : isAwaiting
+                                    ? { background: 'rgba(59,130,246,0.12)', color: '#1e40af' }
+                                    : { background: 'rgba(16,185,129,0.12)', color: '#047857' }
                               return (
                                 <div
                                   key={r.roomNo}
                                   onClick={() => setSelectedRoom(r)}
                                   className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[3px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
-                                  style={r.isVacant
-                                    ? { background: 'rgba(200,160,120,0.12)', color: 'var(--warm-muted)' }
-                                    : isUnpaid
-                                      ? { background: 'rgba(234,179,8,0.18)', color: '#a16207' }
-                                      : { background: 'rgba(16,185,129,0.12)', color: '#047857' }}
+                                  style={cellStyle}
                                 >
                                   <span className="truncate w-full text-center font-bold" style={{ fontSize: 11 }}>{r.roomNo}호</span>
                                   <span className="truncate w-full text-center" style={{ fontSize: 10, fontWeight: 500 }}>{displayName}</span>
