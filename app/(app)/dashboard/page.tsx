@@ -248,6 +248,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       orderBy: { roomNo: 'asc' },
     }),
     // 최근 수납 내역 (활동 피드용) — viewMonth 안에 payDate가 있는 record
+    // [납입일변경] 메모 record(일할 차액)는 물리적 납입이 아니므로 제외
     (() => {
       const [vy, vm] = targetMonth.split('-').map(Number)
       const monthStart = new Date(vy, vm - 1, 1)
@@ -257,6 +258,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
           propertyId,
           isDeposit: false,
           payDate: { gte: monthStart, lte: monthEnd },
+          NOT: { memo: { contains: '[납입일변경]' } },
         },
         select: {
           targetMonth: true,
@@ -807,13 +809,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
 
   const unpaidAmount = Object.values(unpaidMap).reduce((s, v) => s + v, 0)
-  const unpaidLeases = unpaidLeasesRaw
+  // 미수납 후보 — 이후 daysOverdue 기반으로 위젯·알림 분기
+  const unpaidCandidates = unpaidLeasesRaw
     .filter(l => (unpaidMap[l.id] ?? 0) > 0)
     .map(l => {
       const unpaid = unpaidMap[l.id]!
-      // 누적 미수가 임대료 몇 달치인지 (소수점 이하는 올림 — 일부 미납도 1개월로 카운트)
       const monthsOverdue = l.rentAmount > 0 ? Math.ceil(unpaid / l.rentAmount) : 0
-      // 첫 미수월의 dueDay(override 적용) 기준으로 daysOverdue 계산 — 사용자 멘탈 모델과 일치
       const firstUnpaid = firstUnpaidByLease[l.id] ?? null
       const dueDayForFirst = firstUnpaid ? effectiveDueDayForMonth(l, firstUnpaid) : null
       const daysOverdue = firstUnpaid && dueDayForFirst
@@ -829,6 +830,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         monthsOverdue,
       }
     })
+  // 이달 미수납 위젯·총건수 — dueDay 도래(daysOverdue >= 0)한 것만 (수납관리 '미납' 배지와 일치)
+  // dueDay 미도래(D-N)는 '납부 예정'이라 위젯에서 제외
+  const unpaidLeases = unpaidCandidates.filter(l => l.daysOverdue == null || l.daysOverdue >= 0)
   const unpaidCount = unpaidLeases.length
 
   // 방 현황 그리드 미납 호실 — unpaidLeases와 동일 (둘 다 viewMonth 기준)
@@ -1000,20 +1004,38 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     })
   }
 
-  // 미수 회수 — 첫 미납월의 dueDay가 오늘 이전이고 회수 안 된 lease만 알림
-  // (이번 달 납부일 미래라도 지난 달 미수가 누적되었으면 첫 미납월 기준으로 N일 경과)
-  for (const l of unpaidLeases) {
+  // 미수/도래임박 알림 — 알림 정책:
+  //  · daysOverdue >= 1 (이미 경과) → 무조건 알림
+  //  · 0 >= daysOverdue >= -7 (오늘 또는 D-7 이내) → 알림 (도래 임박)
+  //  · daysOverdue < -7 (8일 이상 여유) → 알림 X
+  // unpaidCandidates는 D-N 미도래 항목도 포함하므로 그 안에서 골라낸다
+  for (const l of unpaidCandidates) {
     const days = l.daysOverdue
-    if (days == null || days < 1) continue
-    alertItems.push({
-      category:  'unpaid',
-      text:      `${l.tenantName}님 ${l.roomNo}호 미납 ${days}일 경과`,
-      link:      `/rooms?tenantId=${l.tenantId}`,
-      dotColor:  '#dc2626',
-      timeLabel: `${days}일 경과`,
-      tenantId:  l.tenantId,
-      detail:    `미수금 ${l.unpaidAmount.toLocaleString()}원이 ${days}일 동안 회수되지 않고 있습니다.`,
-    })
+    if (days == null) continue
+    if (days < -7) continue
+    if (days >= 1) {
+      alertItems.push({
+        category:  'unpaid',
+        text:      `${l.tenantName}님 ${l.roomNo}호 미납 ${days}일 경과`,
+        link:      `/rooms?tenantId=${l.tenantId}`,
+        dotColor:  '#dc2626',
+        timeLabel: `${days}일 경과`,
+        tenantId:  l.tenantId,
+        detail:    `미수금 ${l.unpaidAmount.toLocaleString()}원이 ${days}일 동안 회수되지 않고 있습니다.`,
+      })
+    } else {
+      // D-N 또는 오늘 도래 — 납부 예정 알림
+      const timeLabel = days === 0 ? '오늘 납부일' : `D-${Math.abs(days)}`
+      alertItems.push({
+        category:  'unpaid',
+        text:      `${l.tenantName}님 ${l.roomNo}호 ${days === 0 ? '오늘 납부일' : '납부 예정'}`,
+        link:      `/rooms?tenantId=${l.tenantId}`,
+        dotColor:  '#d4a847',
+        timeLabel,
+        tenantId:  l.tenantId,
+        detail:    `청구 예정액 ${l.unpaidAmount.toLocaleString()}원${days === 0 ? ' — 오늘이 납부일입니다.' : ` — ${Math.abs(days)}일 후 납부 예정.`}`,
+      })
+    }
   }
 
   for (const r of tenantRequestsRaw) {
