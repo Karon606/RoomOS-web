@@ -169,6 +169,17 @@ function fmtDate(d: string | Date | null | undefined): string {
   return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})`
 }
 
+function fmtDateTime(d: string | Date | null | undefined): string {
+  if (!d) return '—'
+  const dt = new Date(d)
+  const DAYS = ['일', '월', '화', '수', '목', '금', '토']
+  const hh = dt.getHours()
+  const mm = dt.getMinutes()
+  const ampm = hh < 12 ? '오전' : '오후'
+  const hh12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
+  return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]}) ${ampm} ${hh12}:${String(mm).padStart(2, '0')}`
+}
+
 function fmtShortDate(d: string | Date | null | undefined): string {
   if (!d) return '—'
   const dt = new Date(d)
@@ -1508,6 +1519,9 @@ export default function TenantClient({
                                   label={['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(lease.status) ? '입주 희망일' : '입주일'}
                                   value={fmtDate(lease.moveInDate)}
                                 />
+                                {['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(lease.status) && lease.inquiryAt && (
+                                  <InfoItem label="입실 문의 일시" value={fmtDateTime(lease.inquiryAt)} />
+                                )}
                                 {!['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(lease.status) && (
                                   <InfoItem label="거주기간" value={calcStayPeriod(lease.moveInDate, lease.moveOutDate ?? undefined)} />
                                 )}
@@ -2980,7 +2994,15 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               <div className="flex-1">
                 <DatePicker
                   value={inquiryDateVal}
-                  onChange={setInquiryDateVal}
+                  onChange={(date) => {
+                    setInquiryDateVal(date)
+                    // 날짜 선택 시 시간이 비어있으면 현재 시각을 디폴트로 자동 입력
+                    // (브라우저 native time input의 placeholder는 실제 값이 아니라 사용자 혼동 방지용)
+                    if (date && !inquiryTimeVal) {
+                      const now = new Date()
+                      setInquiryTimeVal(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)
+                    }
+                  }}
                   placeholder="문의 날짜 선택"
                   className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
                 />
