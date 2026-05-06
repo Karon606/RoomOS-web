@@ -756,13 +756,29 @@ export default function MarketClient({
     })
   }
 
+  // 이력 인라인 분석용 상태 — 어느 surveyId가 분석 중인지, 항목별 strategy
+  const [historyAnalyzingId, setHistoryAnalyzingId] = useState<string | null>(null)
+  const [historyStrategyMap, setHistoryStrategyMap] = useState<Record<string, string>>({})
+  const [historyErrorMap, setHistoryErrorMap] = useState<Record<string, string>>({})
+
   // ── AI 분석 실행 ─────────────────────────────────────────────
-  const handleAnalyze = async () => {
-    if (!activeSurvey) return
-    setAiLoading(true)
-    setAiError('')
+  // targetSurvey 명시하면 해당 survey로 분석 (이력 탭에서 사용),
+  // 안 주면 activeSurvey + 화면의 strategy state 사용 (현재 탭)
+  const runAnalysis = async (
+    targetSurvey: Survey,
+    targetStrategy: string,
+    options: { isHistory?: boolean } = {},
+  ) => {
+    const setLoading = options.isHistory ? () => setHistoryAnalyzingId(targetSurvey.id) : () => setAiLoading(true)
+    const clearLoading = options.isHistory ? () => setHistoryAnalyzingId(null) : () => setAiLoading(false)
+    const setErr = options.isHistory
+      ? (msg: string) => setHistoryErrorMap(prev => ({ ...prev, [targetSurvey.id]: msg }))
+      : (msg: string) => setAiError(msg)
+
+    setLoading()
+    setErr('')
     try {
-      const competitors = activeSurvey.competitors.map(c => ({
+      const competitors = targetSurvey.competitors.map(c => ({
         name: c.name,
         address: c.address,
         roomPrices: parseRoomPrices(c.roomPrices),
@@ -774,32 +790,46 @@ export default function MarketClient({
         body: JSON.stringify({
           property: { name: property.name, address: property.address },
           competitors,
-          strategy,
+          strategy: targetStrategy,
           roomTypes: myRoomTypes,
         }),
       })
       const json = await res.json() as { result?: string; error?: string }
       if (!res.ok || json.error) {
-        setAiError(json.error ?? 'AI 분석 오류')
+        setErr(json.error ?? 'AI 분석 오류')
         return
       }
       const resultText = json.result ?? ''
-      setAiResult(resultText)
+      if (!options.isHistory) setAiResult(resultText)
 
-      // persist to DB
+      // persist to DB + state 동기화
       startTransition(async () => {
-        await updateSurveyStrategy(activeSurvey.id, strategy, resultText)
+        await updateSurveyStrategy(targetSurvey.id, targetStrategy, resultText)
         setSurveys(prev =>
           prev.map(s =>
-            s.id === activeSurvey.id ? { ...s, strategy, aiResult: resultText } : s,
+            s.id === targetSurvey.id ? { ...s, strategy: targetStrategy, aiResult: resultText } : s,
           ),
         )
       })
     } catch (err) {
-      setAiError((err as Error).message)
+      setErr((err as Error).message)
     } finally {
-      setAiLoading(false)
+      clearLoading()
     }
+  }
+
+  const handleAnalyze = async () => {
+    if (!activeSurvey) return
+    await runAnalysis(activeSurvey, strategy)
+  }
+
+  const handleHistoryAnalyze = async (survey: Survey) => {
+    if (survey.competitors.length === 0) {
+      setHistoryErrorMap(prev => ({ ...prev, [survey.id]: '경쟁업체를 먼저 등록해야 분석할 수 있습니다.' }))
+      return
+    }
+    const targetStrategy = historyStrategyMap[survey.id] ?? survey.strategy ?? '시세형'
+    await runAnalysis(survey, targetStrategy, { isHistory: true })
   }
 
   // ── Naver item selected ───────────────────────────────────────
@@ -1374,59 +1404,112 @@ export default function MarketClient({
                     </div>
                   )}
 
-                  {/* AI result summary */}
-                  {survey.aiResult && (
-                    <div>
-                      <p
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: 'var(--warm-muted)',
-                          marginBottom: 8,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.06em',
-                        }}
+                  {/* AI 분석 — 이력에서 직접 실행 가능 */}
+                  <div>
+                    <p
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: 'var(--warm-muted)',
+                        marginBottom: 8,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.06em',
+                      }}
+                    >
+                      AI 시세 분석
+                    </p>
+
+                    {/* 전략 선택 + 실행 버튼 */}
+                    <div className="flex gap-2 flex-wrap items-center" style={{ marginBottom: 12 }}>
+                      {['실속형', '시세형', '프리미엄형'].map(s => {
+                        const currentStrategy = historyStrategyMap[survey.id] ?? survey.strategy ?? '시세형'
+                        const selected = currentStrategy === s
+                        return (
+                          <button
+                            key={s}
+                            onClick={() => setHistoryStrategyMap(prev => ({ ...prev, [survey.id]: s }))}
+                            className="rounded-lg transition-colors"
+                            style={{
+                              padding: '6px 12px',
+                              fontSize: 12,
+                              fontWeight: selected ? 700 : 400,
+                              background: selected ? 'var(--coral)' : 'var(--canvas)',
+                              color: selected ? '#fff' : 'var(--warm-muted)',
+                              border: selected ? '1.5px solid var(--coral)' : '1.5px solid var(--warm-border)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {s}
+                          </button>
+                        )
+                      })}
+                      <Btn
+                        small
+                        variant="primary"
+                        onClick={() => handleHistoryAnalyze(survey)}
+                        disabled={historyAnalyzingId === survey.id || isPending}
                       >
-                        AI 분석 결과
-                      </p>
-                      {extractRecommendedPrices(survey.aiResult).length > 0 && (
-                        <div className="flex flex-wrap gap-2" style={{ marginBottom: 8 }}>
-                          {extractRecommendedPrices(survey.aiResult).map((rp, i) => (
-                            <span
-                              key={i}
-                              className="rounded-lg"
-                              style={{
-                                fontSize: 12,
-                                padding: '4px 10px',
-                                background: 'rgba(244,98,58,0.08)',
-                                border: '1px solid rgba(244,98,58,0.2)',
-                                color: 'var(--coral)',
-                                fontWeight: 600,
-                              }}
-                            >
-                              {rp.type}: {fmtMoney(rp.price)}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                        {historyAnalyzingId === survey.id ? 'AI 분석 중...' : (survey.aiResult ? 'AI 재분석' : 'AI 분석 실행')}
+                      </Btn>
+                    </div>
+
+                    {historyErrorMap[survey.id] && (
                       <div
                         className="rounded-xl"
                         style={{
-                          background: 'var(--canvas)',
-                          border: '1px solid var(--warm-border)',
-                          padding: '12px 14px',
+                          marginBottom: 10,
+                          padding: '8px 12px',
+                          background: '#fee2e2',
+                          color: '#b91c1c',
                           fontSize: 12,
-                          color: 'var(--warm-dark)',
-                          lineHeight: 1.7,
-                          whiteSpace: 'pre-wrap',
-                          maxHeight: 200,
-                          overflow: 'auto',
+                          border: '1px solid #fca5a5',
                         }}
                       >
-                        {extractAnalysisText(survey.aiResult)}
+                        {historyErrorMap[survey.id]}
                       </div>
-                    </div>
-                  )}
+                    )}
+
+                    {survey.aiResult && (
+                      <>
+                        {extractRecommendedPrices(survey.aiResult).length > 0 && (
+                          <div className="flex flex-wrap gap-2" style={{ marginBottom: 8 }}>
+                            {extractRecommendedPrices(survey.aiResult).map((rp, i) => (
+                              <span
+                                key={i}
+                                className="rounded-lg"
+                                style={{
+                                  fontSize: 12,
+                                  padding: '4px 10px',
+                                  background: 'rgba(244,98,58,0.08)',
+                                  border: '1px solid rgba(244,98,58,0.2)',
+                                  color: 'var(--coral)',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {rp.type}: {fmtMoney(rp.price)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <div
+                          className="rounded-xl"
+                          style={{
+                            background: 'var(--canvas)',
+                            border: '1px solid var(--warm-border)',
+                            padding: '12px 14px',
+                            fontSize: 12,
+                            color: 'var(--warm-dark)',
+                            lineHeight: 1.7,
+                            whiteSpace: 'pre-wrap',
+                            maxHeight: 200,
+                            overflow: 'auto',
+                          }}
+                        >
+                          {extractAnalysisText(survey.aiResult)}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
