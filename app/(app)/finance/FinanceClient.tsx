@@ -632,7 +632,7 @@ function buildSettleGroups(unsettledExpenses: UnsettledExpense[]): SettleGroup[]
 
 // ── Main Component ────────────────────────────────────────────────
 
-type Tab = 'expense' | 'income' | 'settle' | 'assets' | 'reserve'
+type Tab = 'expense' | 'income' | 'settle' | 'assets' | 'deposit' | 'reserve'
 
 // 예비비 거래 (server에서 props로 전달)
 type ReserveTxn = {
@@ -649,12 +649,24 @@ type SettleableExpense = {
   id: string; date: Date; amount: number; category: string; detail: string | null
   settledSum: number; remaining: number
 }
+type DepositPerTenant = {
+  leaseTermId: string; tenantId: string; tenantName: string
+  roomNo: string | null; status: string
+  contractDeposit: number; totalIn: number; totalReturned: number; totalWithheld: number; balance: number
+}
+type DepositLedgerEntry = {
+  type: 'IN' | 'REFUND'; date: Date; amount: number
+  returnedAmount?: number; withheldAmount?: number; reason?: string | null
+  memo: string | null; tenantId: string; tenantName: string
+  roomNo: string | null; leaseTermId: string
+}
 
 type CategoryTotal = { category: string; total: number }
 
 export default function FinanceClient({
   expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions,
   reserveBalance, reserveMonthly, reserveTxns, settleableExpenses,
+  depositSummary, depositLedger,
 }: {
   expenses: Expense[]
   incomes: Income[]
@@ -677,6 +689,8 @@ export default function FinanceClient({
   reserveMonthly: { deposit: number; withdraw: number }
   reserveTxns: ReserveTxn[]
   settleableExpenses: SettleableExpense[]
+  depositSummary: DepositPerTenant[]
+  depositLedger: DepositLedgerEntry[]
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('expense')
@@ -1100,11 +1114,13 @@ export default function FinanceClient({
     const [y, mo] = m.split('-')
     return `${y.slice(2)}년 ${parseInt(mo)}월`
   }
+  const totalDepositBalance = depositSummary.reduce((s, d) => s + d.balance, 0)
   const TABS: { key: Tab; label: string }[] = [
     { key: 'expense', label: `지출 내역${recUnrecordedCount > 0 ? ` (고정 ${recUnrecordedCount}건 미확인)` : ''}` },
     { key: 'income',  label: '부가 수익' },
     { key: 'settle',  label: `카드 정산${unsettledExpenses.length > 0 ? ` (${unsettledExpenses.length})` : ''}` },
     { key: 'assets',  label: `자산 관리${financialAccounts.length > 0 ? ` (${financialAccounts.length})` : ''}` },
+    { key: 'deposit', label: `보증금 (${fmtKorMoney(totalDepositBalance)})` },
     { key: 'reserve', label: `예비비 (${fmtKorMoney(reserveBalance)})` },
   ]
 
@@ -2200,6 +2216,10 @@ export default function FinanceClient({
         </div>
       )}
 
+      {tab === 'deposit' && (
+        <DepositTab summary={depositSummary} ledger={depositLedger} totalBalance={totalDepositBalance} />
+      )}
+
       {tab === 'reserve' && (
         <ReserveTab
           targetMonth={targetMonth}
@@ -2796,6 +2816,143 @@ export default function FinanceClient({
       </div>
     )}
     </>
+  )
+}
+
+// ── 보증금 탭 ─────────────────────────────────────────────────────
+
+const DEPOSIT_STATUS_LABEL: Record<string, string> = {
+  ACTIVE: '거주중', RESERVED: '예약', CHECKOUT_PENDING: '퇴실 예정',
+  CHECKED_OUT: '퇴실', NON_RESIDENT: '비거주',
+}
+
+function DepositTab({ summary, ledger, totalBalance }: {
+  summary: DepositPerTenant[]
+  ledger: DepositLedgerEntry[]
+  totalBalance: number
+}) {
+  type SubTab = 'tenant' | 'ledger'
+  const [sub, setSub] = useState<SubTab>('tenant')
+
+  const totalIn       = summary.reduce((s, d) => s + d.totalIn, 0)
+  const totalReturned = summary.reduce((s, d) => s + d.totalReturned, 0)
+  const totalWithheld = summary.reduce((s, d) => s + d.totalWithheld, 0)
+
+  return (
+    <div className="space-y-5">
+      {/* 잔고 요약 */}
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div>
+            <p className="text-xs text-[var(--warm-muted)] mb-1">현재 보유</p>
+            <p className="text-xl font-bold" style={{ color: '#7c3aed' }}>
+              <MoneyDisplay amount={totalBalance} />
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-[var(--warm-muted)] mb-1">누적 입금</p>
+            <p className="text-base font-semibold text-emerald-600"><MoneyDisplay amount={totalIn} /></p>
+          </div>
+          <div>
+            <p className="text-xs text-[var(--warm-muted)] mb-1">누적 반환</p>
+            <p className="text-base font-semibold text-amber-600"><MoneyDisplay amount={totalReturned} /></p>
+          </div>
+          <div>
+            <p className="text-xs text-[var(--warm-muted)] mb-1">누적 미반환</p>
+            <p className="text-base font-semibold" style={{ color: 'var(--coral)' }}><MoneyDisplay amount={totalWithheld} /></p>
+          </div>
+        </div>
+      </div>
+
+      {/* 서브 탭 */}
+      <div className="flex gap-1.5">
+        {(['tenant', 'ledger'] as SubTab[]).map(k => (
+          <button key={k} onClick={() => setSub(k)}
+            className={`px-4 py-2 text-sm font-medium rounded-xl transition-colors ${
+              sub === k ? 'bg-[var(--coral)] text-white'
+                : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
+            }`}>
+            {k === 'tenant' ? `입주자별 (${summary.length})` : `거래 이력 (${ledger.length})`}
+          </button>
+        ))}
+      </div>
+
+      {sub === 'tenant' && (
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+          {summary.length === 0 ? (
+            <EmptyState label="보증금 거래 이력이 있는 입주자가 없습니다." />
+          ) : (
+            <ul className="divide-y divide-[var(--warm-border)]/50">
+              {summary.map(d => (
+                <li key={d.leaseTermId} className="px-5 py-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="text-sm font-semibold text-[var(--warm-dark)]">{d.tenantName}</span>
+                      {d.roomNo && <span className="text-xs text-[var(--warm-muted)]">· {d.roomNo}호</span>}
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
+                        {DEPOSIT_STATUS_LABEL[d.status] ?? d.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[var(--warm-muted)]">
+                      입금 {d.totalIn.toLocaleString()}원
+                      {d.totalReturned > 0 && ` · 반환 ${d.totalReturned.toLocaleString()}원`}
+                      {d.totalWithheld > 0 && ` · 미반환 ${d.totalWithheld.toLocaleString()}원`}
+                      {d.contractDeposit !== d.totalIn && (
+                        <span className="ml-1 text-amber-500">(계약 {d.contractDeposit.toLocaleString()}원)</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-bold" style={{ color: d.balance > 0 ? '#7c3aed' : 'var(--warm-muted)' }}>
+                      {d.balance.toLocaleString()}원
+                    </p>
+                    <p className="text-[10px] text-[var(--warm-muted)]">현재 잔고</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {sub === 'ledger' && (
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+          {ledger.length === 0 ? (
+            <EmptyState label="보증금 거래 이력이 없습니다." />
+          ) : (
+            <ul className="divide-y divide-[var(--warm-border)]/50">
+              {ledger.map((e, i) => (
+                <li key={i} className="px-5 py-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                      <span className={`text-xs font-semibold ${e.type === 'IN' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                        {e.type === 'IN' ? '입금' : '환불'}
+                      </span>
+                      <span className="text-xs text-[var(--warm-muted)]">{new Date(e.date).toISOString().slice(0, 10)}</span>
+                      <span className="text-xs text-[var(--warm-dark)]">· {e.tenantName}</span>
+                      {e.roomNo && <span className="text-xs text-[var(--warm-muted)]">· {e.roomNo}호</span>}
+                    </div>
+                    {e.type === 'REFUND' && (
+                      <p className="text-xs text-[var(--warm-muted)]">
+                        반환 {(e.returnedAmount ?? 0).toLocaleString()}원
+                        {(e.withheldAmount ?? 0) > 0 && ` · 미반환 ${(e.withheldAmount ?? 0).toLocaleString()}원`}
+                        {e.reason && ` · 사유: ${e.reason}`}
+                      </p>
+                    )}
+                    {e.memo && <p className="text-xs text-[var(--warm-muted)] truncate">메모: {e.memo}</p>}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className={`text-sm font-semibold ${e.type === 'IN' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                      {e.type === 'IN' ? '+' : '−'}{e.amount.toLocaleString()}원
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 

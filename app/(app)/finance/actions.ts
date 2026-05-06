@@ -997,6 +997,162 @@ export async function deleteReserveTransaction(id: string): Promise<{ ok: true }
   }
 }
 
+// ============================================================
+// 보증금 (Deposit)
+// 입금: PaymentRecord(isDeposit=true)
+// 환불: DepositRefund(returnedAmount, withheldAmount)
+// 입주자별 잔고 = SUM(deposit 입금) - SUM(returned + withheld)
+// ============================================================
+
+export type DepositLedgerEntry = {
+  type: 'IN' | 'REFUND'
+  date: Date
+  amount: number          // IN은 입금액, REFUND는 returned + withheld
+  returnedAmount?: number // REFUND 전용
+  withheldAmount?: number // REFUND 전용
+  reason?: string | null  // REFUND 전용
+  memo: string | null
+  tenantId: string
+  tenantName: string
+  roomNo: string | null
+  leaseTermId: string
+}
+
+export type DepositPerTenant = {
+  leaseTermId: string
+  tenantId: string
+  tenantName: string
+  roomNo: string | null
+  status: string  // LeaseStatus
+  contractDeposit: number  // 계약상 보증금 (LeaseTerm.depositAmount)
+  totalIn: number          // 실제 입금 합계
+  totalReturned: number    // 환불된 금액
+  totalWithheld: number    // 미반환 처리 금액
+  balance: number          // 보유 보증금 (totalIn - totalReturned - totalWithheld)
+}
+
+// 모든 입주자별 보증금 잔고/내역 — 잔고 큰 순으로 정렬
+export async function getDepositSummaryByTenant(): Promise<DepositPerTenant[]> {
+  const propertyId = await getPropertyId()
+  const leases = await prisma.leaseTerm.findMany({
+    where: { propertyId },
+    select: {
+      id: true,
+      depositAmount: true,
+      status: true,
+      tenant: { select: { id: true, name: true } },
+      room: { select: { roomNo: true } },
+    },
+  })
+  if (leases.length === 0) return []
+
+  const leaseIds = leases.map(l => l.id)
+  const [paymentSums, refundSums] = await Promise.all([
+    prisma.paymentRecord.groupBy({
+      by: ['leaseTermId'],
+      where: { propertyId, isDeposit: true, leaseTermId: { in: leaseIds } },
+      _sum: { actualAmount: true },
+    }),
+    prisma.depositRefund.groupBy({
+      by: ['leaseTermId'],
+      where: { propertyId, leaseTermId: { in: leaseIds } },
+      _sum: { returnedAmount: true, withheldAmount: true },
+    }),
+  ])
+  const inMap: Record<string, number> = {}
+  for (const p of paymentSums) inMap[p.leaseTermId] = p._sum.actualAmount ?? 0
+  const returnedMap: Record<string, number> = {}
+  const withheldMap: Record<string, number> = {}
+  for (const r of refundSums) {
+    returnedMap[r.leaseTermId] = r._sum.returnedAmount ?? 0
+    withheldMap[r.leaseTermId] = r._sum.withheldAmount ?? 0
+  }
+
+  return leases
+    .map(l => {
+      const totalIn       = inMap[l.id] ?? 0
+      const totalReturned = returnedMap[l.id] ?? 0
+      const totalWithheld = withheldMap[l.id] ?? 0
+      const balance       = totalIn - totalReturned - totalWithheld
+      return {
+        leaseTermId: l.id,
+        tenantId:    l.tenant.id,
+        tenantName:  l.tenant.name,
+        roomNo:      l.room?.roomNo ?? null,
+        status:      l.status,
+        contractDeposit: l.depositAmount,
+        totalIn, totalReturned, totalWithheld, balance,
+      }
+    })
+    // 보증금 입출금 흔적이 있는 케이스만 (계약은 했으나 거래 0인 경우 숨김)
+    .filter(d => d.totalIn > 0 || d.totalReturned > 0 || d.totalWithheld > 0)
+    .sort((a, b) => b.balance - a.balance || a.tenantName.localeCompare(b.tenantName))
+}
+
+// 거래 이력 (입금 + 환불 통합) — 날짜 역순
+export async function getDepositLedger(targetMonth?: string): Promise<DepositLedgerEntry[]> {
+  const propertyId = await getPropertyId()
+  const monthFilter = targetMonth
+    ? (() => {
+        const [yyyy, mm] = targetMonth.split('-').map(Number)
+        return { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) }
+      })()
+    : undefined
+
+  const [deposits, refunds] = await Promise.all([
+    prisma.paymentRecord.findMany({
+      where: {
+        propertyId,
+        isDeposit: true,
+        ...(monthFilter ? { payDate: monthFilter } : {}),
+      },
+      select: {
+        id: true, payDate: true, actualAmount: true, memo: true, leaseTermId: true,
+        tenant: { select: { id: true, name: true } },
+        leaseTerm: { select: { room: { select: { roomNo: true } } } },
+      },
+    }),
+    prisma.depositRefund.findMany({
+      where: {
+        propertyId,
+        ...(monthFilter ? { date: monthFilter } : {}),
+      },
+      select: {
+        id: true, date: true, returnedAmount: true, withheldAmount: true,
+        reason: true, memo: true, leaseTermId: true,
+        tenant: { select: { id: true, name: true } },
+        leaseTerm: { select: { room: { select: { roomNo: true } } } },
+      },
+    }),
+  ])
+
+  const ins: DepositLedgerEntry[] = deposits.map(d => ({
+    type: 'IN',
+    date: d.payDate,
+    amount: d.actualAmount,
+    memo: d.memo,
+    tenantId: d.tenant.id,
+    tenantName: d.tenant.name,
+    roomNo: d.leaseTerm.room?.roomNo ?? null,
+    leaseTermId: d.leaseTermId,
+  }))
+  const outs: DepositLedgerEntry[] = refunds.map(r => ({
+    type: 'REFUND',
+    date: r.date,
+    amount: r.returnedAmount + r.withheldAmount,
+    returnedAmount: r.returnedAmount,
+    withheldAmount: r.withheldAmount,
+    reason: r.reason,
+    memo: r.memo,
+    tenantId: r.tenant.id,
+    tenantName: r.tenant.name,
+    roomNo: r.leaseTerm.room?.roomNo ?? null,
+    leaseTermId: r.leaseTermId,
+  }))
+
+  return [...ins, ...outs].sort((a, b) => b.date.getTime() - a.date.getTime())
+}
+
 // 사후정산용 — 해당 월 지출 중 아직 미정산 잔여가 있는 것만 (정산 가능 후보)
 export async function getSettleableExpenses(targetMonth: string): Promise<{ id: string; date: Date; amount: number; category: string; detail: string | null; settledSum: number; remaining: number }[]> {
   const propertyId = await getPropertyId()

@@ -1,4 +1,4 @@
-import { getExpenses, getExtraIncomes, getFinancialAccounts, getUnsettledExpenses, getSettledCardExpenses, getRecurringExpensesWithStatus, getRoomList, getExpenseCategoryTotals, getExpenseDetailSuggestions, getReserveBalance, getReserveMonthlySummary, getReserveTransactions, getSettleableExpenses } from './actions'
+import { getExpenses, getExtraIncomes, getFinancialAccounts, getUnsettledExpenses, getSettledCardExpenses, getRecurringExpensesWithStatus, getRoomList, getExpenseCategoryTotals, getExpenseDetailSuggestions, getReserveBalance, getReserveMonthlySummary, getReserveTransactions, getSettleableExpenses, getDepositSummaryByTenant, getDepositLedger } from './actions'
 import { getIncomeCategories, getExpenseCategories, getPaymentMethods, getPropertySettings } from '@/app/(app)/settings/actions'
 import FinanceClient from './FinanceClient'
 
@@ -17,7 +17,7 @@ export default async function FinancePage({
   const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`
   const lastYearMonth = `${y - 1}-${String(m).padStart(2, '0')}`
 
-  const [expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus, rooms, prevMonthTotals, lastYearTotals, propertySettings, detailSuggestions, reserveBalance, reserveMonthly, reserveTxns, settleableExpenses] = await Promise.all([
+  const [expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus, rooms, prevMonthTotals, lastYearTotals, propertySettings, detailSuggestions, reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, depositSummary, depositLedger] = await Promise.all([
     getExpenses(targetMonth),
     getExtraIncomes(targetMonth),
     getFinancialAccounts(),
@@ -36,6 +36,8 @@ export default async function FinancePage({
     getReserveMonthlySummary(targetMonth),
     getReserveTransactions(targetMonth),
     getSettleableExpenses(targetMonth),
+    getDepositSummaryByTenant(),
+    getDepositLedger(),
   ])
 
   const acquisitionDate = propertySettings?.acquisitionDate
@@ -65,6 +67,8 @@ export default async function FinancePage({
       reserveMonthly={reserveMonthly}
       reserveTxns={reserveTxns}
       settleableExpenses={settleableExpenses}
+      depositSummary={depositSummary}
+      depositLedger={depositLedger}
     />
   )
 }

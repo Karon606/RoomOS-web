@@ -135,6 +135,7 @@ model Property {
   trackedItems      TrackedItem[]
   checklists        Checklist[]
   reserveTransactions ReserveTransaction[]
+  depositRefunds      DepositRefund[]
 
   @@map("properties")
 }
@@ -233,6 +234,7 @@ model Tenant {
   paymentRecords PaymentRecord[]
   statusLogs     TenantStatusLog[]
   requests       TenantRequest[]
+  depositRefunds DepositRefund[]
 
   @@map("tenants")
 }
@@ -303,6 +305,7 @@ model LeaseTerm {
 
   paymentRecords PaymentRecord[]
   statusLogs     TenantStatusLog[]
+  depositRefunds DepositRefund[]
 
   @@index([propertyId, status]) // 영업장별 현재 거주자 조회 최적화
   @@map("lease_terms")
@@ -471,6 +474,38 @@ model ReserveTransaction {
   @@index([propertyId, date])
   @@index([propertyId, type])
   @@map("reserve_transactions")
+}
+
+// ============================================================
+// [12-2] DepositRefund — 보증금 환불 이력
+// 입금은 PaymentRecord(isDeposit=true)에 기록되어 있고,
+// 환불(반환·미반환분)은 별도 거래로 명시화해 보증금 흐름을 양방향 추적.
+// returnedAmount + withheldAmount = 처리한 보증금 총액 (보통 LeaseTerm.depositAmount).
+// 미반환분(withheldAmount)은 ExtraIncome(category='보증금')으로 동시에 잡혀 매출 인식됨.
+// ============================================================
+
+model DepositRefund {
+  id              String   @id @default(uuid()) @db.Uuid
+  date            DateTime @db.Date
+  returnedAmount  Int      @default(0)  // 실제 반환한 금액
+  withheldAmount  Int      @default(0)  // 미반환분(공제). ExtraIncome으로도 기록됨
+  reason          String?  // 공제/감액 사유
+  memo            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  tenantId String @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  leaseTermId String    @db.Uuid
+  leaseTerm   LeaseTerm @relation(fields: [leaseTermId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, date])
+  @@index([leaseTermId])
+  @@map("deposit_refunds")
 }
 
 // ============================================================

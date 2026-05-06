@@ -486,19 +486,45 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
   }
 }
 
-// 퇴실 시 보증금 미반환분 기타 수익 등록 (보증금 카테고리 + 보유 보증금 입금수단)
-// 보증금 카테고리가 incomeCategories에 없으면 자동 추가
+// 퇴실 시 보증금 환불 처리:
+// 1. DepositRefund 레코드 생성 (반환액 + 미반환액 양쪽 모두 명시 기록)
+// 2. 미반환분이 있으면 ExtraIncome(category='보증금', payMethod='보유 보증금')도 생성
+//    → 매출 인식 + '보유 보증금' KPI에서 차감 효과
+// leaseTermId / tenantId는 환불 이력 추적·표시를 위해 필수
 export async function recordDepositReturn(params: {
+  leaseTermId: string
+  tenantId: string
   depositAmount: number
   returnedAmount: number
   date: string
   tenantName: string
+  reason?: string
+  memo?: string
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
-    const unreturned = params.depositAmount - params.returnedAmount
-    if (unreturned > 0) {
+    if (!params.leaseTermId || !params.tenantId) return { ok: false, error: '계약/입주자 정보가 누락되었습니다.' }
+
+    const returned  = Math.max(0, Math.min(params.returnedAmount, params.depositAmount))
+    const withheld  = Math.max(0, params.depositAmount - returned)
+    const refundDate = new Date(params.date)
+
+    // 환불 이력 — 반환·미반환 양쪽 합쳐 한 건으로 기록
+    await prisma.depositRefund.create({
+      data: {
+        propertyId,
+        tenantId:       params.tenantId,
+        leaseTermId:    params.leaseTermId,
+        date:           refundDate,
+        returnedAmount: returned,
+        withheldAmount: withheld,
+        reason:         params.reason || null,
+        memo:           params.memo || null,
+      },
+    })
+
+    if (withheld > 0) {
       // 보증금 카테고리 보장 — 없으면 추가
       const property = await prisma.property.findUnique({
         where: { id: propertyId },
@@ -516,15 +542,16 @@ export async function recordDepositReturn(params: {
       await prisma.extraIncome.create({
         data: {
           propertyId,
-          date:      new Date(params.date),
-          amount:    unreturned,
+          date:      refundDate,
+          amount:    withheld,
           category:  '보증금',
           detail:    `${params.tenantName} 퇴실 — 보증금 미반환분`,
           payMethod: '보유 보증금',
         },
       })
-      revalidatePath('/finance')
     }
+    revalidatePath('/finance')
+    revalidatePath('/dashboard')
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -553,6 +580,8 @@ export async function checkoutWithDepositRefund(params: {
       const today = new Date()
       const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
       const refundRes = await recordDepositReturn({
+        leaseTermId:    params.leaseTermId,
+        tenantId:       params.tenantId,
         depositAmount:  lease.depositAmount,
         returnedAmount: Math.max(0, Math.min(params.refundAmount, lease.depositAmount)),
         date:           dateStr,

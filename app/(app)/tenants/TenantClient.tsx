@@ -332,7 +332,7 @@ export default function TenantClient({
   const [roomDetailId, setRoomDetailId]   = useState<string | null>(null)
   const [error, setError]               = useState('')
   const [deleteTarget, setDeleteTarget]   = useState<{ id: string; name: string } | null>(null)
-  const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; cleaningFee: number; fromDetail: boolean } | null>(null)
+  const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; cleaningFee: number; fromDetail: boolean; leaseTermId: string; tenantId: string } | null>(null)
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
   const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
@@ -555,11 +555,13 @@ export default function TenantClient({
     const tenantName    = fd.get('name') as string || '입주자'
     const depositAmount = Number(fd.get('depositAmount')) || 0
     const cleaningFee   = Number(fd.get('cleaningFee')) || 0
+    const leaseTermId   = (fd.get('leaseTermId') as string) || ''
+    const tenantId      = (fd.get('id') as string) || ''
     // 환불 가능 max = 보증금 - 청소비 (default도 동일)
     const maxRefund = Math.max(0, depositAmount - cleaningFee)
     setDepositReturnAmt(maxRefund)
     setDepositReturnDate(kstYmdStr())
-    setDepositRefundModal({ fd, tenantName, depositAmount, cleaningFee, fromDetail })
+    setDepositRefundModal({ fd, tenantName, depositAmount, cleaningFee, fromDetail, leaseTermId, tenantId })
   }
 
   // 거주중→공실 변경 시 호실에 예정 가격이 있으면 가격 변동 팝업 표시
@@ -632,9 +634,11 @@ export default function TenantClient({
 
   const handleDepositRefundConfirm = () => {
     if (!depositRefundModal) return
-    const { fd, tenantName, depositAmount, fromDetail } = depositRefundModal
+    const { fd, tenantName, depositAmount, fromDetail, leaseTermId, tenantId } = depositRefundModal
     startTransition(async () => {
       const refundRes = await recordDepositReturn({
+        leaseTermId,
+        tenantId,
         depositAmount,
         returnedAmount: depositReturnAmt,
         date: depositReturnDate,
