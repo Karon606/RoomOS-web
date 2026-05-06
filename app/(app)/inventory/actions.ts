@@ -629,14 +629,35 @@ export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; create
     }
 
     // 2) 같은 (category, baseLabel) 안에 그룹이 여럿이면 sub-label 부여
+    //    단, 이미 looseMatch(=qtyUnit null) TrackedItem이 존재하면 — 사용자가 병합한
+    //    '다양한 포장 합산' 카드 — sub-label 만들지 않고 그 카드로 모두 흡수.
     const byBase = new Map<string, Group[]>()
     for (const g of groups.values()) {
       const k = `${g.category}|${g.baseLabel}`
       if (!byBase.has(k)) byBase.set(k, [])
       byBase.get(k)!.push(g)
     }
+
+    // looseMatch 카드 사전 조회 — 같은 (category, baseLabel)이 이미 병합용 카드인지
+    const looseMatchKeys = new Set<string>()
+    await Promise.all(
+      Array.from(byBase.keys()).map(async k => {
+        const [cat, lbl] = k.split('|')
+        const found = await prisma.trackedItem.findUnique({
+          where: { propertyId_category_label: { propertyId, category: cat, label: lbl } },
+          select: { qtyUnit: true },
+        })
+        if (found && found.qtyUnit === null) looseMatchKeys.add(k)
+      }),
+    )
+
     const finalLabel = new Map<Group, string>()
-    for (const [, list] of byBase) {
+    for (const [k, list] of byBase) {
+      if (looseMatchKeys.has(k)) {
+        // 병합된 카드가 이미 존재 → 모든 그룹을 baseLabel로 흡수
+        for (const g of list) finalLabel.set(g, g.baseLabel)
+        continue
+      }
       if (list.length === 1) {
         finalLabel.set(list[0], list[0].baseLabel)
         continue
