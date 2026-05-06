@@ -179,9 +179,8 @@ export async function deleteRoom(id: string): Promise<{ ok: true } | { ok: false
 }
 
 // 호실 사진 업로드 (Google Drive)
-// 외부 API(Google Drive)로 큰 버퍼 전송 → 콜드 스타트 합쳐 60초 가까이 걸릴 수 있어 maxDuration 명시
-export const maxDuration = 60
-
+// 외부 API(Google Drive)로 큰 버퍼 전송 → 콜드 스타트 합쳐 시간 걸릴 수 있음.
+// maxDuration 설정은 'use server' 파일에서 직접 export 불가 → app/(app)/room-manage/page.tsx 참조.
 export async function uploadRoomPhoto(
   formData: FormData
 ): Promise<{ ok: true; id: string; driveFileId: string | null; storageUrl: string; fileName: string | null } | { ok: false; error: string }> {
