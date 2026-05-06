@@ -30,6 +30,8 @@ export type DashboardData = {
   unpaidCount:       number
   pendingCount:      number
   unpaidAmount:      number
+  overdueAmount:     number
+  upcomingAmount:    number
   totalExpected:     number
   categoryBreakdown: { category: string; amount: number; percent: number }[]
   trend:             { month: string; revenue: number; expense: number; profit: number }[]
@@ -1854,18 +1856,23 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           )
         })()}
 
-        {/* Row 3 Left: 누적 미납 금액 (전월 이월분 포함) */}
+        {/* Row 3 Left: 누적 미납 — 도래·미회수 강조, 납부 예정은 부가 */}
         <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             누적 미납
           </p>
-          <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.unpaidCount > 0 ? '#ef4444' : '#5a4a3a' }}>
-            {data.unpaidAmount.toLocaleString()}
+          <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.overdueAmount > 0 ? '#ef4444' : '#5a4a3a' }}>
+            {data.overdueAmount.toLocaleString()}
             <small style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
-          <p style={{ fontSize: 10.5, color: 'var(--warm-muted)' }}>
-            <em style={{ fontStyle: 'normal', color: data.unpaidCount > 0 ? 'var(--coral)' : 'var(--warm-muted)' }}>{data.unpaidCount}건</em> · 미납 발생 계약
+          <p style={{ fontSize: 10.5, color: 'var(--warm-muted)', marginBottom: data.upcomingAmount > 0 ? 4 : 0 }}>
+            <em style={{ fontStyle: 'normal', color: data.unpaidCount > 0 ? 'var(--coral)' : 'var(--warm-muted)' }}>{data.unpaidCount}건</em> · 도래·미회수
           </p>
+          {data.upcomingAmount > 0 && (
+            <p style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
+              <span style={{ color: '#1e40af', fontWeight: 500 }}>+{data.upcomingAmount.toLocaleString()}원</span> 납부 예정 ({data.pendingCount - data.unpaidCount}건)
+            </p>
+          )}
         </div>
 
         {/* Row 3 Right: 월 지출 */}
