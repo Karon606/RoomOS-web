@@ -611,8 +611,9 @@ export default function MarketClient({
   const [tab, setTab] = useState<'current' | 'history'>('current')
   const [isPending, startTransition] = useTransition()
 
-  // 현재(가장 최신) 조사
-  const activeSurvey = surveys[0] ?? null
+  // 편집 대상 surveyId (디폴트: 가장 최신). 과거 조사를 '수정'하면 이 값을 바꿔서 current 탭에서 편집.
+  const [editingSurveyId, setEditingSurveyId] = useState<string | null>(initialSurveys[0]?.id ?? null)
+  const activeSurvey = surveys.find(s => s.id === editingSurveyId) ?? surveys[0] ?? null
 
   // Competitor modal
   const [showCompetitorModal, setShowCompetitorModal] = useState(false)
@@ -644,11 +645,22 @@ export default function MarketClient({
           competitors: [],
         }
         setSurveys(prev => [newSurvey, ...prev])
+        setEditingSurveyId(newSurvey.id)
         setAiResult('')
         setStrategy('시세형')
         setTab('current')
       }
     })
+  }
+
+  // ── 과거 조사 수정 ──────────────────────────────────────────
+  const handleEditSurvey = (surveyId: string) => {
+    const target = surveys.find(s => s.id === surveyId)
+    if (!target) return
+    setEditingSurveyId(surveyId)
+    setStrategy(target.strategy ?? '시세형')
+    setAiResult(target.aiResult ?? '')
+    setTab('current')
   }
 
   // ── 경쟁업체 저장 ─────────────────────────────────────────────
@@ -1260,7 +1272,7 @@ export default function MarketClient({
                     {survey.strategy && ` · ${survey.strategy} 전략`}
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <Btn
                     small
                     variant="secondary"
@@ -1271,6 +1283,14 @@ export default function MarketClient({
                     }
                   >
                     {historySelected?.id === survey.id ? '접기' : '상세 보기'}
+                  </Btn>
+                  <Btn
+                    small
+                    variant="primary"
+                    onClick={() => handleEditSurvey(survey.id)}
+                    disabled={isPending}
+                  >
+                    수정
                   </Btn>
                   <Btn
                     small

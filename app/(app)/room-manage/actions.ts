@@ -179,6 +179,9 @@ export async function deleteRoom(id: string): Promise<{ ok: true } | { ok: false
 }
 
 // 호실 사진 업로드 (Google Drive)
+// 외부 API(Google Drive)로 큰 버퍼 전송 → 콜드 스타트 합쳐 60초 가까이 걸릴 수 있어 maxDuration 명시
+export const maxDuration = 60
+
 export async function uploadRoomPhoto(
   formData: FormData
 ): Promise<{ ok: true; id: string; driveFileId: string | null; storageUrl: string; fileName: string | null } | { ok: false; error: string }> {
@@ -216,7 +219,10 @@ export async function uploadRoomPhoto(
     return { ok: true, id: photo.id, driveFileId: photo.driveFileId, storageUrl: photo.storageUrl, fileName: photo.fileName }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
-    return { ok: false, error: (err as Error).message ?? '업로드 실패' }
+    // 서버 로그에 에러 원문 출력 (Vercel 로그에서 확인 가능 — Drive 자격증명/네트워크 등 디버깅용)
+    console.error('[uploadRoomPhoto] failed:', err)
+    const msg = (err as Error).message ?? '업로드 실패'
+    return { ok: false, error: `업로드 실패: ${msg}` }
   }
 }
 

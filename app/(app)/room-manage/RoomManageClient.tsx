@@ -315,12 +315,19 @@ export default function RoomManageClient({
     setPhotoUploading(true); setError('')
     try {
       for (const file of toUpload) {
-        const fd = new FormData()
-        fd.set('roomId', editRoom.id)
-        fd.set('photo', file)
-        const res = await uploadRoomPhoto(fd)
-        if (!res.ok) { setError(res.error); break }
-        setEditPhotos(prev => [...prev, { id: res.id, driveFileId: res.driveFileId, storageUrl: res.storageUrl, fileName: res.fileName }])
+        try {
+          const fd = new FormData()
+          fd.set('roomId', editRoom.id)
+          fd.set('photo', file)
+          const res = await uploadRoomPhoto(fd)
+          if (!res.ok) { setError(res.error || '업로드 실패 (사유 미확인). Vercel 로그를 확인해주세요.'); break }
+          setEditPhotos(prev => [...prev, { id: res.id, driveFileId: res.driveFileId, storageUrl: res.storageUrl, fileName: res.fileName }])
+        } catch (err) {
+          // 네트워크 단절·타임아웃·Server Action 실패 등 throw 케이스
+          console.error('[handlePhotoUpload]', err)
+          setError(`업로드 중 오류: ${(err as Error).message ?? '알 수 없는 오류'}`)
+          break
+        }
       }
     } finally {
       setPhotoUploading(false); e.target.value = ''
