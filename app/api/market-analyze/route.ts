@@ -70,24 +70,31 @@ JSON 권장 단가는 다음 형식: {"권장단가": [{"type": "방타입", "pr
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: requestBody },
       )
-      if (geminiRes.ok || geminiRes.status !== 503) break
-      // 503이면 다음 모델로 폴백
+      if (geminiRes.ok) break
+      // 일시적 장애(503) 또는 분당 한도(429)면 다음 모델로 폴백
+      if (geminiRes.status !== 503 && geminiRes.status !== 429) break
     }
 
     if (!geminiRes!.ok) {
       const errText = await geminiRes!.text()
       let friendlyMsg: string
       try {
-        const errJson = JSON.parse(errText) as { error?: { message?: string } }
+        const errJson = JSON.parse(errText) as { error?: { message?: string; status?: string } }
         const status = geminiRes!.status
+        const apiMsg = errJson.error?.message ?? ''
         if (status === 503) {
           friendlyMsg = 'AI 서버가 일시적으로 과부하 상태입니다. 잠시 후 다시 시도해주세요.'
         } else if (status === 429) {
-          friendlyMsg = 'AI 요청 한도에 도달했습니다. 잠시 후 다시 시도해주세요.'
+          // RPD(일일) vs RPM(분당) 구분 — message에 'per day' 포함이면 일일 한도
+          if (/per day|daily|RPD/i.test(apiMsg)) {
+            friendlyMsg = 'Gemini 무료 티어 일일 한도에 도달했습니다. 자정(PT) 이후 다시 시도해주세요.'
+          } else {
+            friendlyMsg = 'AI 요청 한도에 도달했습니다. 1분 후 다시 시도해주세요. (Gemini 무료 티어는 분당 약 10회 제한)'
+          }
         } else if (status === 400) {
-          friendlyMsg = `요청 형식 오류: ${errJson.error?.message ?? '알 수 없는 오류'}`
+          friendlyMsg = `요청 형식 오류: ${apiMsg || '알 수 없는 오류'}`
         } else {
-          friendlyMsg = errJson.error?.message ?? `AI 분석 오류 (${status})`
+          friendlyMsg = apiMsg || `AI 분석 오류 (${status})`
         }
       } catch {
         friendlyMsg = `AI 분석 오류 (${geminiRes!.status})`
