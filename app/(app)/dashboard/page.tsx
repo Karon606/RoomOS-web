@@ -6,6 +6,8 @@ import DataButtons from '@/components/DataButtons'
 import DashboardClient, { type DashboardData } from './DashboardClient'
 import { getPaymentMethods } from '@/app/(app)/settings/actions'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
+import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
+import { getNextBusinessDay } from '@/lib/krHolidays'
 
 // ── 헬퍼 ──────────────────────────────────────────────────────
 
@@ -81,8 +83,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // KST 기준 오늘 자정
   const kstToday  = kstYmd()
   const today     = new Date(kstToday.year, kstToday.month - 1, kstToday.day)
-  const alertFrom = new Date(today.getTime() - 7  * 86400000)
-  const alertTo   = new Date(today.getTime() + 30 * 86400000)
+  const alertFrom = new Date(today.getTime() - ALERT_WINDOW_BEFORE_DAYS * 86400000)
+  const alertTo   = new Date(today.getTime() + ALERT_WINDOW_AFTER_DAYS  * 86400000)
 
   const [
     activeLeases,
@@ -1057,7 +1059,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         detail:    `미수금 ${l.overduePortion.toLocaleString()}원이 ${days}일 동안 회수되지 않고 있습니다.`,
         sortKey:   -days,
       })
-    } else if (l.upcomingPortion > 0 && days < 0 && days >= -7) {
+    } else if (l.upcomingPortion > 0 && days < 0 && days >= -UNPAID_UPCOMING_ALERT_DAYS) {
       // D-N 또는 오늘 도래 — 별도 '납부 예정' 카테고리
       const timeLabel = days === 0 ? '오늘 납부일' : `D-${Math.abs(days)}`
       alertItems.push({
@@ -1154,26 +1156,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   // ── 고정 지출 알림 ───────────────────────────────────────────
 
-  // 한국 공휴일 (연도별 정적 목록 — 주말 대체공휴일 포함)
-  const KR_HOLIDAYS: Record<string, string[]> = {
-    '2025': ['2025-01-01','2025-01-28','2025-01-29','2025-01-30','2025-03-01','2025-05-05','2025-05-06','2025-06-06','2025-08-15','2025-10-03','2025-10-06','2025-10-07','2025-10-08','2025-10-09','2025-12-25'],
-    '2026': ['2026-01-01','2026-01-28','2026-01-29','2026-01-30','2026-03-01','2026-03-02','2026-05-05','2026-05-25','2026-06-06','2026-08-17','2026-09-24','2026-09-25','2026-09-28','2026-10-05','2026-10-09','2026-12-25'],
-  }
-
-  function getEffectiveTransferDate(baseDate: Date): Date {
-    const d = new Date(baseDate)
-    const yearKey = String(d.getFullYear())
-    const holidays = new Set(KR_HOLIDAYS[yearKey] ?? [])
-    while (true) {
-      const dow = d.getDay()
-      const iso = d.toISOString().slice(0, 10)
-      if (dow === 0) { d.setDate(d.getDate() + 1); continue }  // 일요일 → +1
-      if (dow === 6) { d.setDate(d.getDate() + 2); continue }  // 토요일 → +2
-      if (holidays.has(iso)) { d.setDate(d.getDate() + 1); continue } // 공휴일 → +1
-      break
-    }
-    return d
-  }
+  // 자동이체 실제 이체일 — 주말·공휴일 회피 (lib/krHolidays에서 동적 조회)
+  const getEffectiveTransferDate = getNextBusinessDay
 
   const recordedRecurringIds = new Set(
     recurringExpensesThisMonth.map(e => e.recurringExpenseId).filter(Boolean)

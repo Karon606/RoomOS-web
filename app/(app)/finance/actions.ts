@@ -8,6 +8,7 @@ import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
 import { uploadToDrive } from '@/lib/google-drive'
 import type { SettleStatus } from '@prisma/client'
+import { FINANCE_DETAIL_SUGGESTIONS_LIMIT } from '@/lib/appConfig'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -481,7 +482,7 @@ export async function getExpenseDetailSuggestions(): Promise<string[]> {
     where: { propertyId, detail: { not: null } },
     select: { detail: true },
     orderBy: { createdAt: 'desc' },
-    take: 500,
+    take: FINANCE_DETAIL_SUGGESTIONS_LIMIT,
   })
   const seen = new Set<string>()
   const result: string[] = []

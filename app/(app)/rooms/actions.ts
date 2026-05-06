@@ -6,6 +6,7 @@ import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
 import { kstYmd } from '@/lib/kstDate'
+import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -560,8 +561,8 @@ export async function savePayment(data: {
   const touchedMonths: string[] = []
   const allocations: { targetMonth: string; amount: number }[] = []
 
-  // 안전장치: 최대 24개월까지만 분배 (무한루프 방지)
-  let safety = 24
+  // 안전장치: 무한루프 방지 — appConfig.FIFO_MAX_ALLOCATE_MONTHS (60개월 = 5년)
+  let safety = FIFO_MAX_ALLOCATE_MONTHS
   while (remaining > 0 && safety-- > 0) {
     const existing = await prisma.paymentRecord.aggregate({
       where: { leaseTermId: data.leaseTermId, targetMonth: currentTm, isDeposit: false },

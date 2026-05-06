@@ -20,6 +20,11 @@ import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { DatePicker } from '@/components/ui/DatePicker'
+import {
+  DEFAULT_RECURRING_DUE_DAY,
+  DEFAULT_RECURRING_CATEGORY,
+  DEFAULT_RECURRING_ALERT_DAYS_BEFORE,
+} from '@/lib/appConfig'
 
 type Property = {
   id: string
@@ -299,8 +304,8 @@ export default function SettingsForm({
   const [recurringList, setRecurringList] = useState<RecurringExpenseRow[]>([])
   const [showRecForm, setShowRecForm] = useState(false)
   const [editingRec, setEditingRec] = useState<RecurringExpenseRow | null>(null)
-  const [recForm, setRecForm] = useState({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: '', memo: '' })
-  const [recDueDayDisp, setRecDueDayDisp] = useState('25일')
+  const [recForm, setRecForm] = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', memo: '' })
+  const [recDueDayDisp, setRecDueDayDisp] = useState(`${DEFAULT_RECURRING_DUE_DAY}일`)
   const [recPending, startRecTransition] = useTransition()
 
   const fmtRecDueDay = (d: string) => {
@@ -310,7 +315,7 @@ export default function SettingsForm({
   }
   const applyRecDueDay = (input: string) => {
     const t = input.trim()
-    if (!t) { setRecForm(p => ({ ...p, dueDay: '25' })); setRecDueDayDisp('25일'); return }
+    if (!t) { setRecForm(p => ({ ...p, dueDay: DEFAULT_RECURRING_DUE_DAY })); setRecDueDayDisp(`${DEFAULT_RECURRING_DUE_DAY}일`); return }
     if (/^[ㅁ마말]/.test(t) || t === '말일') {
       setRecForm(p => ({ ...p, dueDay: '31' })); setRecDueDayDisp('말일'); return
     }
@@ -325,8 +330,8 @@ export default function SettingsForm({
 
   const openNewRec = () => {
     setEditingRec(null)
-    setRecForm({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: acqDate ?? '', memo: '' })
-    setRecDueDayDisp('25일')
+    setRecForm({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: acqDate ?? '', memo: '' })
+    setRecDueDayDisp(`${DEFAULT_RECURRING_DUE_DAY}일`)
     setShowRecForm(true)
   }
   const openEditRec = (r: RecurringExpenseRow) => {

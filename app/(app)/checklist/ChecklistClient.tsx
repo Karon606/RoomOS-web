@@ -10,6 +10,7 @@ import {
   markChecklistDone,
   deleteChecklistLog,
 } from './actions'
+import { DEFAULT_CHECKLIST_ALERT_DAYS_BEFORE } from '@/lib/appConfig'
 
 type Mode = 'create' | { mode: 'edit'; row: ChecklistRow } | { mode: 'check'; row: ChecklistRow } | null
 
@@ -284,7 +285,7 @@ function FormModal({
   const [title, setTitle] = useState(row?.title ?? '')
   const [memo, setMemo] = useState(row?.memo ?? '')
   const [intervalDays, setIntervalDays] = useState(row?.intervalDays ?? 7)
-  const [alertDaysBefore, setAlertDaysBefore] = useState(row?.alertDaysBefore ?? 3)
+  const [alertDaysBefore, setAlertDaysBefore] = useState(row?.alertDaysBefore ?? DEFAULT_CHECKLIST_ALERT_DAYS_BEFORE)
   const [customMode, setCustomMode] = useState(row ? !PRESETS.some(p => p.days === row.intervalDays) : false)
 
   return (

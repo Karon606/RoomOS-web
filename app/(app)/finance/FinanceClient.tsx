@@ -22,6 +22,11 @@ import { fmtKorMoney } from '@/lib/fmtMoney'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
+import {
+  DEFAULT_RECURRING_DUE_DAY,
+  DEFAULT_RECURRING_CATEGORY,
+  DEFAULT_RECURRING_ALERT_DAYS_BEFORE,
+} from '@/lib/appConfig'
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -759,7 +764,7 @@ export default function FinanceClient({
   const [recMgmtLoading, setRecMgmtLoading] = useState(false)
   const [editingRecMgmt, setEditingRecMgmt] = useState<RecurringExpenseRow | null>(null)
   const [showRecMgmtForm, setShowRecMgmtForm] = useState(false)
-  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: '', priorYearAmount: '', memo: '' })
+  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '' })
   const [recMgmtPending, startRecMgmtTransition] = useTransition()
   const [recMgmtError, setRecMgmtError] = useState('')
 
@@ -778,7 +783,7 @@ export default function FinanceClient({
     const defaultActiveSince = acquisitionDate
       ? kstYmdStr(new Date(acquisitionDate))
       : ''
-    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? '관리비', dueDay: '25', payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: '7', activeSince: defaultActiveSince, priorYearAmount: '', memo: '' })
+    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, priorYearAmount: '', memo: '' })
     setShowRecMgmtForm(true)
     setRecMgmtError('')
   }

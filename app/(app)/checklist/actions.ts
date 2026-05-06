@@ -6,6 +6,7 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
+import { DEFAULT_CHECKLIST_ALERT_DAYS_BEFORE } from '@/lib/appConfig'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -111,7 +112,7 @@ export async function createChecklist(input: {
         title: input.title.trim(),
         memo: input.memo?.trim() || null,
         intervalDays: input.intervalDays,
-        alertDaysBefore: input.alertDaysBefore ?? 3,
+        alertDaysBefore: input.alertDaysBefore ?? DEFAULT_CHECKLIST_ALERT_DAYS_BEFORE,
         sortOrder: (maxOrder._max.sortOrder ?? 0) + 1,
       },
     })
@@ -144,7 +145,7 @@ export async function updateChecklist(input: {
         title: input.title.trim(),
         memo: input.memo?.trim() || null,
         intervalDays: input.intervalDays,
-        alertDaysBefore: input.alertDaysBefore ?? 3,
+        alertDaysBefore: input.alertDaysBefore ?? DEFAULT_CHECKLIST_ALERT_DAYS_BEFORE,
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
       },
     })
