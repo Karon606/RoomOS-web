@@ -28,6 +28,7 @@ export type DashboardData = {
   totalDeposit:      number
   paidCount:         number
   unpaidCount:       number
+  upcomingCount:     number
   pendingCount:      number
   unpaidAmount:      number
   overdueAmount:     number
@@ -1870,7 +1871,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           </p>
           {data.upcomingAmount > 0 && (
             <p style={{ fontSize: 10, color: 'var(--warm-muted)' }}>
-              <span style={{ color: '#1e40af', fontWeight: 500 }}>+{data.upcomingAmount.toLocaleString()}원</span> 납부 예정 ({data.pendingCount - data.unpaidCount}건)
+              <span style={{ color: '#1e40af', fontWeight: 500 }}>+{data.upcomingAmount.toLocaleString()}원</span> 납부 예정 ({data.upcomingCount}건)
             </p>
           )}
         </div>

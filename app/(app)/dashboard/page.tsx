@@ -753,6 +753,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   const unpaidMap: Record<string, number> = {}
   const firstUnpaidByLease: Record<string, string | null> = {}
+  const overdueByLease: Record<string, number> = {}
+  const upcomingByLease: Record<string, number> = {}
   for (const l of unpaidLeasesRaw) {
     const lMoveIn = l.moveInDate ? new Date(l.moveInDate) : null
     const leaseStartMonth = lMoveIn
@@ -806,12 +808,30 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       allocated += l.rentAmount
     }
     firstUnpaidByLease[l.id] = firstUnpaid
+
+    // 월별 도래·미도래 portion 분리 — FIFO 충당 후 각 월의 미충당분을 dueDay 도래 여부로 분류
+    let received = totalReceived
+    let leaseOverdue = 0
+    let leaseUpcoming = 0
+    for (const mon of billableMonthList) {
+      const allocThis = Math.min(received, l.rentAmount)
+      received -= allocThis
+      const monthUnpaid = l.rentAmount - allocThis
+      if (monthUnpaid <= 0) continue
+      const dueDayStr = effectiveDueDayForMonth(l, mon)
+      const days = dueDayStr ? calcDaysOverdueForMonth(dueDayStr, mon) : null
+      // days >= 0 (도래) 또는 알 수 없음 → 미수, days < 0 (미도래) → 납부 예정
+      if (days == null || days >= 0) leaseOverdue += monthUnpaid
+      else leaseUpcoming += monthUnpaid
+    }
+    overdueByLease[l.id] = leaseOverdue
+    upcomingByLease[l.id] = leaseUpcoming
   }
 
   const unpaidAmount = Object.values(unpaidMap).reduce((s, v) => s + v, 0)
-  // 진짜 미납(도래·미회수) vs 납부 예정(미도래·미회수) 금액 분리
-  let overdueAmount = 0
-  let upcomingAmount = 0
+  // 진짜 미납(도래·미회수) vs 납부 예정(미도래·미회수) 금액 분리 — 월별로 분류
+  const overdueAmount = Object.values(overdueByLease).reduce((s, v) => s + v, 0)
+  const upcomingAmount = Object.values(upcomingByLease).reduce((s, v) => s + v, 0)
   // 미수납 후보 — 이후 daysOverdue 기반으로 위젯·알림 분기
   const unpaidCandidates = unpaidLeasesRaw
     .filter(l => (unpaidMap[l.id] ?? 0) > 0)
@@ -823,6 +843,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       const daysOverdue = firstUnpaid && dueDayForFirst
         ? calcDaysOverdueForMonth(dueDayForFirst, firstUnpaid)
         : null
+      const overduePortion = overdueByLease[l.id] ?? 0
+      const upcomingPortion = upcomingByLease[l.id] ?? 0
       return {
         roomNo:        l.room?.roomNo ?? '?',
         tenantName:    l.tenant.name,
@@ -830,21 +852,21 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         leaseId:       l.id,
         daysOverdue,
         unpaidAmount:  unpaid,
+        overduePortion,
+        upcomingPortion,
         monthsOverdue,
       }
     })
-  // 이달 미수납 위젯·총건수 — dueDay 도래(daysOverdue >= 0)한 것만 (수납관리 '미납' 배지와 일치)
-  // dueDay 미도래(D-N)는 '납부 예정'이라 위젯에서 제외
-  const unpaidLeases = unpaidCandidates.filter(l => l.daysOverdue == null || l.daysOverdue >= 0)
-  const awaitingLeases = unpaidCandidates.filter(l => l.daysOverdue != null && l.daysOverdue < 0)
+  // 이달 미수납 위젯 — 도래·미회수 portion이 있는 lease만 표시 (월 단위 분리 후)
+  // 표시 금액은 그 lease의 도래·미회수 portion (전체 unpaid가 아님)
+  const unpaidLeases = unpaidCandidates
+    .filter(l => l.overduePortion > 0)
+    .map(l => ({ ...l, unpaidAmount: l.overduePortion }))
+  const awaitingLeases = unpaidCandidates.filter(l => l.overduePortion === 0 && l.upcomingPortion > 0)
   const unpaidCount = unpaidLeases.length
-  // 예상 매출 진행바용 — 도래·미도래 합산한 총 미수령 건수 (= 수납 예정)
+  const upcomingCount = unpaidCandidates.filter(l => l.upcomingPortion > 0).length
+  // 예상 매출 진행바용 — 도래·미도래 합산한 총 미수령 건수
   const pendingCount = unpaidCandidates.length
-  // 금액 분리 — 진짜 미납 / 납부 예정
-  for (const l of unpaidCandidates) {
-    if (l.daysOverdue == null || l.daysOverdue >= 0) overdueAmount += l.unpaidAmount
-    else upcomingAmount += l.unpaidAmount
-  }
 
   // 방 현황 그리드 미납 호실 — unpaidLeases와 동일 (둘 다 viewMonth 기준)
   const unpaidRoomNosForView = Array.from(new Set(unpaidLeases.map(l => l.roomNo)))
@@ -1018,14 +1040,13 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
 
   // 미수/도래임박 알림 — 정책:
-  //  · daysOverdue >= 1 (경과) → 누적 미수 카테고리 (오래 경과한 순)
-  //  · 0 >= daysOverdue >= -7 (오늘/D-7 이내) → 납부 예정 카테고리 (가까운 순)
-  //  · daysOverdue < -7 (8일 이상 여유) → 알림 X
+  //  · 도래·미회수 portion 있음(overduePortion > 0) → 누적 미수 카테고리 (오래 경과한 순)
+  //  · 미도래·미회수만 + days >= -7 → 납부 예정 카테고리 (가까운 순)
+  //  · 8일 이상 여유 → 알림 X
   for (const l of unpaidCandidates) {
     const days = l.daysOverdue
     if (days == null) continue
-    if (days < -7) continue
-    if (days >= 1) {
+    if (l.overduePortion > 0 && days >= 1) {
       alertItems.push({
         category:  'unpaid',
         text:      `${l.tenantName}님 ${l.roomNo}호 미납 ${days}일 경과`,
@@ -1033,10 +1054,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         dotColor:  '#dc2626',
         timeLabel: `${days}일 경과`,
         tenantId:  l.tenantId,
-        detail:    `미수금 ${l.unpaidAmount.toLocaleString()}원이 ${days}일 동안 회수되지 않고 있습니다.`,
-        sortKey:   -days, // 오래 경과한 순 (큰 days가 위)
+        detail:    `미수금 ${l.overduePortion.toLocaleString()}원이 ${days}일 동안 회수되지 않고 있습니다.`,
+        sortKey:   -days,
       })
-    } else {
+    } else if (l.upcomingPortion > 0 && days < 0 && days >= -7) {
       // D-N 또는 오늘 도래 — 별도 '납부 예정' 카테고리
       const timeLabel = days === 0 ? '오늘 납부일' : `D-${Math.abs(days)}`
       alertItems.push({
@@ -1046,8 +1067,20 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         dotColor:  '#d4a847',
         timeLabel,
         tenantId:  l.tenantId,
-        detail:    `청구 예정액 ${l.unpaidAmount.toLocaleString()}원${days === 0 ? ' — 오늘이 납부일입니다.' : ` — ${Math.abs(days)}일 후 납부 예정.`}`,
-        sortKey:   days, // 가까운 도래 순 (0이 가장 위, -7이 가장 아래)
+        detail:    `청구 예정액 ${l.upcomingPortion.toLocaleString()}원${days === 0 ? ' — 오늘이 납부일입니다.' : ` — ${Math.abs(days)}일 후 납부 예정.`}`,
+        sortKey:   days,
+      })
+    } else if (l.overduePortion > 0 && days === 0) {
+      // 오늘 도래·미회수 (드문 케이스)
+      alertItems.push({
+        category:  'unpaid',
+        text:      `${l.tenantName}님 ${l.roomNo}호 오늘 납부일`,
+        link:      `/rooms?tenantId=${l.tenantId}`,
+        dotColor:  '#dc2626',
+        timeLabel: '오늘',
+        tenantId:  l.tenantId,
+        detail:    `미수금 ${l.overduePortion.toLocaleString()}원이 오늘 도래입니다.`,
+        sortKey:   0,
       })
     }
   }
@@ -1221,6 +1254,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     totalDeposit,
     paidCount,
     unpaidCount,
+    upcomingCount,
     pendingCount,
     unpaidAmount,
     overdueAmount,
