@@ -654,6 +654,7 @@ type DepositPerTenant = {
   leaseTermId: string; tenantId: string; tenantName: string
   roomNo: string | null; status: string
   contractDeposit: number; totalIn: number; totalReturned: number; totalWithheld: number; balance: number
+  hasNoInRecord: boolean
 }
 type DepositLedgerEntry = {
   type: 'IN' | 'REFUND'; date: Date; amount: number
@@ -2893,13 +2894,23 @@ function DepositTab({ summary, ledger, totalBalance }: {
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                         {DEPOSIT_STATUS_LABEL[d.status] ?? d.status}
                       </span>
+                      {d.hasNoInRecord && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                          입금 거래 기록 없음
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-[var(--warm-muted)]">
-                      입금 {d.totalIn.toLocaleString()}원
+                      {d.hasNoInRecord
+                        ? `계약상 보증금 ${d.contractDeposit.toLocaleString()}원`
+                        : `입금 ${d.totalIn.toLocaleString()}원`}
                       {d.totalReturned > 0 && ` · 반환 ${d.totalReturned.toLocaleString()}원`}
                       {d.totalWithheld > 0 && ` · 미반환 ${d.totalWithheld.toLocaleString()}원`}
-                      {d.contractDeposit !== d.totalIn && (
+                      {!d.hasNoInRecord && d.contractDeposit !== d.totalIn && (
                         <span className="ml-1 text-amber-500">(계약 {d.contractDeposit.toLocaleString()}원)</span>
+                      )}
+                      {d.status === 'CHECKED_OUT' && d.balance === 0 && (d.totalReturned + d.totalWithheld === 0) && (
+                        <span className="ml-1 text-[var(--warm-muted)]">· 퇴실 정리됨</span>
                       )}
                     </p>
                   </div>

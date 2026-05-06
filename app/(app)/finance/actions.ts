@@ -1049,7 +1049,8 @@ export type DepositPerTenant = {
   totalIn: number          // 실제 입금 합계
   totalReturned: number    // 환불된 금액
   totalWithheld: number    // 미반환 처리 금액
-  balance: number          // 보유 보증금 (totalIn - totalReturned - totalWithheld)
+  balance: number          // 보유 보증금 (퇴실=0, 그 외 효정 입금-환불)
+  hasNoInRecord: boolean   // 입금 거래 기록 없이 계약상 보증금만 있는 경우
 }
 
 // 모든 입주자별 보증금 잔고/내역 — 잔고 큰 순으로 정렬
@@ -1094,7 +1095,13 @@ export async function getDepositSummaryByTenant(): Promise<DepositPerTenant[]> {
       const totalIn       = inMap[l.id] ?? 0
       const totalReturned = returnedMap[l.id] ?? 0
       const totalWithheld = withheldMap[l.id] ?? 0
-      const balance       = totalIn - totalReturned - totalWithheld
+      const isCheckedOut  = l.status === 'CHECKED_OUT'
+      // 입금 거래 기록 없어도 계약상 보증금이 있으면 그것을 입금으로 간주
+      // (옛 데이터: PaymentRecord 거래 없이 LeaseTerm만 임포트된 케이스 호환)
+      const effectiveIn   = totalIn > 0 ? totalIn : l.depositAmount
+      // 퇴실(CHECKED_OUT) — 옛 흐름은 ExtraIncome으로만 환불 처리해서
+      // DepositRefund가 없는 경우가 있음. 회계상 보증금 정리 완료로 보고 0.
+      const balance       = isCheckedOut ? 0 : Math.max(0, effectiveIn - totalReturned - totalWithheld)
       return {
         leaseTermId: l.id,
         tenantId:    l.tenant.id,
@@ -1103,10 +1110,11 @@ export async function getDepositSummaryByTenant(): Promise<DepositPerTenant[]> {
         status:      l.status,
         contractDeposit: l.depositAmount,
         totalIn, totalReturned, totalWithheld, balance,
+        hasNoInRecord: totalIn === 0 && l.depositAmount > 0,
       }
     })
-    // 보증금 입출금 흔적이 있는 케이스만 (계약은 했으나 거래 0인 경우 숨김)
-    .filter(d => d.totalIn > 0 || d.totalReturned > 0 || d.totalWithheld > 0)
+    // 입금 흔적 또는 환불 흔적 또는 계약상 보증금이 있는 케이스 모두 노출
+    .filter(d => d.totalIn > 0 || d.totalReturned > 0 || d.totalWithheld > 0 || d.contractDeposit > 0)
     .sort((a, b) => b.balance - a.balance || a.tenantName.localeCompare(b.tenantName))
 }
 
