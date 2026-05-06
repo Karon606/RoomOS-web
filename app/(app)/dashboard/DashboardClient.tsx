@@ -26,6 +26,8 @@ export type DashboardData = {
   totalExpense:      number
   netProfit:         number
   totalDeposit:      number
+  reserveBalance:    number
+  reserveMonthly:    { deposit: number; withdraw: number }
   paidCount:         number
   unpaidCount:       number
   upcomingCount:     number
@@ -1900,7 +1902,27 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: 10.5, color: 'var(--warm-muted)' }}>현재 보증금 합계</p>
         </div>
 
-        {/* Row 4 Right: 입실 현황 */}
+        {/* Row 4 Right: 보유 예비비 */}
+        <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
+          <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
+            보유 예비비
+          </p>
+          <p style={{ fontSize: 22, fontWeight: 700, color: '#0d9488', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+            {data.reserveBalance.toLocaleString()}
+            <small style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
+          </p>
+          <p style={{ fontSize: 10.5, color: 'var(--warm-muted)' }}>
+            {data.reserveMonthly.deposit > 0 || data.reserveMonthly.withdraw > 0 ? (
+              <>
+                이달 <span style={{ color: '#10b981' }}>+{data.reserveMonthly.deposit.toLocaleString()}</span>
+                {' / '}
+                <span style={{ color: '#f59e0b' }}>−{data.reserveMonthly.withdraw.toLocaleString()}</span>
+              </>
+            ) : '이번 달 거래 없음'}
+          </p>
+        </div>
+
+        {/* Row 5 Left: 입실 현황 */}
         <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             입실 현황

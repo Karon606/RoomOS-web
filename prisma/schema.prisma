@@ -134,6 +134,7 @@ model Property {
   recurringExpenses RecurringExpense[]
   trackedItems      TrackedItem[]
   checklists        Checklist[]
+  reserveTransactions ReserveTransaction[]
 
   @@map("properties")
 }
@@ -409,6 +410,8 @@ model Expense {
   recurringExpenseId   String?            @db.Uuid
   recurringExpense     RecurringExpense?  @relation(fields: [recurringExpenseId], references: [id])
 
+  reserveSettlements   ReserveTransaction[] @relation("ExpenseReserveSettlement")
+
   @@index([propertyId, date])
   @@map("expenses")
 }
@@ -437,6 +440,37 @@ model ExtraIncome {
 
   @@index([propertyId, date])
   @@map("extra_incomes")
+}
+
+// ============================================================
+// [12-1] ReserveTransaction — 예비비 (수선/비상자금 적립금)
+// 자기자본 내 적립으로, 보증금(부채)·일반 지출(비용)과 구분.
+// type:
+//   DEPOSIT                — 자금에서 예비비로 적립 (잔고 +)
+//   WITHDRAW_DIRECT        — 예비비에서 직접 지출 (잔고 -). 별도 Expense 미생성.
+//   WITHDRAW_FROM_EXPENSE  — 일반 지출 사후정산 (잔고 -). expenseId로 원본 지출 연결.
+// 잔고 = SUM(DEPOSIT) - SUM(WITHDRAW_*).
+// ============================================================
+
+model ReserveTransaction {
+  id          String   @id @default(uuid()) @db.Uuid
+  type        String   // 'DEPOSIT' | 'WITHDRAW_DIRECT' | 'WITHDRAW_FROM_EXPENSE'
+  amount      Int      // 항상 양수. type으로 부호 결정
+  date        DateTime @db.Date
+  category    String?  // 사용 분류(예: 시설 파손, 가전 교체)
+  memo        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  expenseId String?  @db.Uuid
+  expense   Expense? @relation("ExpenseReserveSettlement", fields: [expenseId], references: [id], onDelete: SetNull)
+
+  @@index([propertyId, date])
+  @@index([propertyId, type])
+  @@map("reserve_transactions")
 }
 
 // ============================================================

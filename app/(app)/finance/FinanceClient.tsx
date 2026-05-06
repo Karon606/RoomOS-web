@@ -8,6 +8,7 @@ import {
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
   recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits,
   analyzeReceiptWithGemini,
+  addReserveDeposit, addReserveWithdrawDirect, settleReserveFromExpense, deleteReserveTransaction,
   type RecurringExpenseWithStatus,
 } from './actions'
 import {
@@ -631,12 +632,29 @@ function buildSettleGroups(unsettledExpenses: UnsettledExpense[]): SettleGroup[]
 
 // ── Main Component ────────────────────────────────────────────────
 
-type Tab = 'expense' | 'income' | 'settle' | 'assets'
+type Tab = 'expense' | 'income' | 'settle' | 'assets' | 'reserve'
+
+// 예비비 거래 (server에서 props로 전달)
+type ReserveTxn = {
+  id: string
+  type: 'DEPOSIT' | 'WITHDRAW_DIRECT' | 'WITHDRAW_FROM_EXPENSE'
+  amount: number
+  date: Date
+  category: string | null
+  memo: string | null
+  expenseId: string | null
+  expense: { id: string; date: Date; amount: number; category: string; detail: string | null } | null
+}
+type SettleableExpense = {
+  id: string; date: Date; amount: number; category: string; detail: string | null
+  settledSum: number; remaining: number
+}
 
 type CategoryTotal = { category: string; total: number }
 
 export default function FinanceClient({
   expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions,
+  reserveBalance, reserveMonthly, reserveTxns, settleableExpenses,
 }: {
   expenses: Expense[]
   incomes: Income[]
@@ -655,6 +673,10 @@ export default function FinanceClient({
   lastYearTotals: CategoryTotal[]
   acquisitionDate: string | null
   detailSuggestions: string[]
+  reserveBalance: number
+  reserveMonthly: { deposit: number; withdraw: number }
+  reserveTxns: ReserveTxn[]
+  settleableExpenses: SettleableExpense[]
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('expense')
@@ -1083,6 +1105,7 @@ export default function FinanceClient({
     { key: 'income',  label: '부가 수익' },
     { key: 'settle',  label: `카드 정산${unsettledExpenses.length > 0 ? ` (${unsettledExpenses.length})` : ''}` },
     { key: 'assets',  label: `자산 관리${financialAccounts.length > 0 ? ` (${financialAccounts.length})` : ''}` },
+    { key: 'reserve', label: `예비비 (${fmtKorMoney(reserveBalance)})` },
   ]
 
   return (
@@ -2177,6 +2200,17 @@ export default function FinanceClient({
         </div>
       )}
 
+      {tab === 'reserve' && (
+        <ReserveTab
+          targetMonth={targetMonth}
+          balance={reserveBalance}
+          monthly={reserveMonthly}
+          txns={reserveTxns}
+          settleableExpenses={settleableExpenses}
+          onAfterMutate={() => router.refresh()}
+        />
+      )}
+
       {/* ══════════════════════════════════════════════════════════
           모달: 수익 상세 / 수정
       ══════════════════════════════════════════════════════════ */}
@@ -2762,6 +2796,225 @@ export default function FinanceClient({
       </div>
     )}
     </>
+  )
+}
+
+// ── 예비비 탭 ─────────────────────────────────────────────────────
+
+function ReserveTab({
+  targetMonth, balance, monthly, txns, settleableExpenses, onAfterMutate,
+}: {
+  targetMonth: string
+  balance: number
+  monthly: { deposit: number; withdraw: number }
+  txns: ReserveTxn[]
+  settleableExpenses: SettleableExpense[]
+  onAfterMutate: () => void
+}) {
+  type Mode = 'deposit' | 'withdraw' | 'settle'
+  const [mode, setMode] = useState<Mode | null>(null)
+  const [amount, setAmount] = useState<number | undefined>(undefined)
+  const [date, setDate] = useState(() => kstYmdStr())
+  const [category, setCategory] = useState('')
+  const [memo, setMemo] = useState('')
+  const [selectedExpenseId, setSelectedExpenseId] = useState('')
+  const [error, setError] = useState('')
+  const [pending, startTransition] = useTransition()
+
+  const reset = () => {
+    setMode(null); setAmount(undefined); setDate(kstYmdStr())
+    setCategory(''); setMemo(''); setSelectedExpenseId(''); setError('')
+  }
+
+  const submit = () => {
+    setError('')
+    if (mode === 'settle') {
+      if (!selectedExpenseId) { setError('정산할 지출을 선택하세요.'); return }
+    } else {
+      if (!amount || amount <= 0) { setError('금액을 입력하세요.'); return }
+    }
+    startTransition(async () => {
+      let res: { ok: true } | { ok: false; error: string }
+      if (mode === 'deposit') {
+        res = await addReserveDeposit({ amount: amount!, date, memo: memo || undefined })
+      } else if (mode === 'withdraw') {
+        res = await addReserveWithdrawDirect({ amount: amount!, date, category: category || undefined, memo: memo || undefined })
+      } else {
+        res = await settleReserveFromExpense({ expenseId: selectedExpenseId, amount: amount, memo: memo || undefined })
+      }
+      if (!res.ok) { setError(res.error); return }
+      reset()
+      onAfterMutate()
+    })
+  }
+
+  const handleDelete = (id: string) => {
+    if (!confirm('이 거래를 삭제하시겠습니까?')) return
+    startTransition(async () => {
+      const res = await deleteReserveTransaction(id)
+      if (!res.ok) { setError(res.error); return }
+      onAfterMutate()
+    })
+  }
+
+  const typeLabel = (t: ReserveTxn['type']) =>
+    t === 'DEPOSIT' ? '적립' : t === 'WITHDRAW_DIRECT' ? '직접 인출' : '사후 정산'
+  const typeColor = (t: ReserveTxn['type']) =>
+    t === 'DEPOSIT' ? 'text-emerald-600' : 'text-amber-600'
+
+  return (
+    <div className="space-y-5">
+      {/* 잔고 + 월간 요약 */}
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5">
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <p className="text-xs text-[var(--warm-muted)] mb-1">현재 잔고</p>
+            <p className="text-xl font-bold text-[var(--warm-dark)]">
+              <MoneyDisplay amount={balance} />
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-[var(--warm-muted)] mb-1">{targetMonth} 적립</p>
+            <p className="text-base font-semibold text-emerald-600">
+              +<MoneyDisplay amount={monthly.deposit} />
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-[var(--warm-muted)] mb-1">{targetMonth} 사용</p>
+            <p className="text-base font-semibold text-amber-600">
+              −<MoneyDisplay amount={monthly.withdraw} />
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* 액션 버튼 */}
+      {!mode && (
+        <div className="grid grid-cols-3 gap-2">
+          <button onClick={() => setMode('deposit')}
+            className="px-3 py-3 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl text-sm text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
+            적립
+          </button>
+          <button onClick={() => setMode('withdraw')}
+            className="px-3 py-3 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl text-sm text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
+            예비비에서 지출
+          </button>
+          <button onClick={() => setMode('settle')}
+            className="px-3 py-3 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl text-sm text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
+            지출을 예비비로 정산
+          </button>
+        </div>
+      )}
+
+      {/* 입력 폼 */}
+      {mode && (
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-[var(--warm-dark)]">
+              {mode === 'deposit' && '예비비 적립'}
+              {mode === 'withdraw' && '예비비에서 직접 지출'}
+              {mode === 'settle' && '기존 지출을 예비비로 정산'}
+            </h3>
+            <button onClick={reset} className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">취소</button>
+          </div>
+
+          {mode === 'settle' ? (
+            <>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">정산할 지출 *</label>
+                <select value={selectedExpenseId} onChange={e => setSelectedExpenseId(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                  <option value="">{settleableExpenses.length === 0 ? '이번 달 정산 가능한 지출 없음' : '선택'}</option>
+                  {settleableExpenses.map(e => (
+                    <option key={e.id} value={e.id}>
+                      {new Date(e.date).toISOString().slice(5,10)} · {e.category}
+                      {e.detail ? ` · ${e.detail}` : ''} · {e.remaining.toLocaleString()}원 남음
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-[var(--warm-muted)]">선택 후 금액 비우면 잔여 전액, 입력하면 부분 정산</p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">정산 금액 (선택)</label>
+                <MoneyInput value={amount} onChange={setAmount} placeholder="비우면 잔여 전액" />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
+                <MoneyInput value={amount} onChange={setAmount} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
+                <DatePicker value={date} onChange={setDate}
+                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+              </div>
+              {mode === 'withdraw' && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">사용 분류 (선택)</label>
+                  <input type="text" value={category} onChange={e => setCategory(e.target.value)}
+                    placeholder="예: 시설 파손, 가전 교체"
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                </div>
+              )}
+            </>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
+            <input type="text" value={memo} onChange={e => setMemo(e.target.value)}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+          </div>
+
+          {error && <p className="text-red-400 text-xs">{error}</p>}
+
+          <div className="flex gap-2 pt-1">
+            <Btn variant="secondary" onClick={reset} fullWidth>취소</Btn>
+            <Btn variant="primary" onClick={submit} disabled={pending} fullWidth>
+              {pending ? '저장 중...' : '저장'}
+            </Btn>
+          </div>
+        </div>
+      )}
+
+      {/* 거래 이력 */}
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-[var(--warm-border)]">
+          <h3 className="text-sm font-semibold text-[var(--warm-dark)]">{targetMonth} 거래 이력 ({txns.length}건)</h3>
+        </div>
+        {txns.length === 0 ? (
+          <EmptyState label="이번 달 예비비 거래 없음" />
+        ) : (
+          <ul className="divide-y divide-[var(--warm-border)]/50">
+            {txns.map(t => (
+              <li key={t.id} className="px-5 py-3 flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className={`text-xs font-semibold ${typeColor(t.type)}`}>{typeLabel(t.type)}</span>
+                    <span className="text-xs text-[var(--warm-muted)]">{new Date(t.date).toISOString().slice(0, 10)}</span>
+                    {t.category && <span className="text-xs text-[var(--warm-muted)]">· {t.category}</span>}
+                  </div>
+                  {t.expense && (
+                    <p className="text-xs text-[var(--warm-muted)] truncate">
+                      ↪ 원 지출: {t.expense.category}{t.expense.detail ? ` · ${t.expense.detail}` : ''} ({t.expense.amount.toLocaleString()}원)
+                    </p>
+                  )}
+                  {t.memo && <p className="text-xs text-[var(--warm-muted)] truncate">메모: {t.memo}</p>}
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className={`text-sm font-semibold ${typeColor(t.type)}`}>
+                    {t.type === 'DEPOSIT' ? '+' : '−'}{t.amount.toLocaleString()}원
+                  </span>
+                  <button onClick={() => handleDelete(t.id)}
+                    className="text-xs text-[var(--warm-muted)] hover:text-red-500">삭제</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
   )
 }
 

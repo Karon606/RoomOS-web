@@ -358,6 +358,25 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const totalExpense = expenses.reduce((s, e) => s + e.amount, 0)
   const totalDeposit = depositAgg._sum.depositAmount ?? 0
 
+  // ── 예비비 잔고 + 이달 적립/사용 ─────────────────────────────────
+  const reserveTxns = await prisma.reserveTransaction.findMany({
+    where: { propertyId },
+    select: { type: true, amount: true, date: true },
+  })
+  let reserveBalance = 0
+  let reserveMonthlyDeposit = 0
+  let reserveMonthlyWithdraw = 0
+  for (const r of reserveTxns) {
+    const isDep = r.type === 'DEPOSIT'
+    if (isDep) reserveBalance += r.amount
+    else reserveBalance -= r.amount
+    if (r.date >= startDate && r.date <= endDate) {
+      if (isDep) reserveMonthlyDeposit += r.amount
+      else reserveMonthlyWithdraw += r.amount
+    }
+  }
+  const reserveMonthly = { deposit: reserveMonthlyDeposit, withdraw: reserveMonthlyWithdraw }
+
   // ── 예상 지출 계산 ────────────────────────────────────────────
   // 변동 항목의 과거 기록 배치 조회 (전년 동월 우선, 없으면 과거 평균)
   const variableRecIds = recurringExpenses.filter(re => (re as any).isVariable).map(re => re.id)
@@ -1236,6 +1255,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     totalExpense,
     netProfit: totalRevenue - totalExpense,
     totalDeposit,
+    reserveBalance,
+    reserveMonthly,
     paidCount,
     unpaidCount,
     upcomingCount,

@@ -809,3 +809,221 @@ export async function recordRecurringExpense(data: {
     return { ok: false, error: (e as Error).message }
   }
 }
+
+// ============================================================
+// 예비비 (ReserveTransaction)
+// type: DEPOSIT(적립) | WITHDRAW_DIRECT(직접 인출, 별도 Expense 없음)
+//     | WITHDRAW_FROM_EXPENSE(일반 지출 사후정산, expenseId 연결)
+// 잔고 = SUM(DEPOSIT) - SUM(WITHDRAW_*)
+// ============================================================
+
+export type ReserveTxn = {
+  id: string
+  type: 'DEPOSIT' | 'WITHDRAW_DIRECT' | 'WITHDRAW_FROM_EXPENSE'
+  amount: number
+  date: Date
+  category: string | null
+  memo: string | null
+  expenseId: string | null
+  expense: { id: string; date: Date; amount: number; category: string; detail: string | null } | null
+}
+
+export async function getReserveBalance(): Promise<number> {
+  const propertyId = await getPropertyId()
+  const rows = await prisma.reserveTransaction.findMany({
+    where: { propertyId },
+    select: { type: true, amount: true },
+  })
+  let bal = 0
+  for (const r of rows) {
+    if (r.type === 'DEPOSIT') bal += r.amount
+    else bal -= r.amount
+  }
+  return bal
+}
+
+export async function getReserveMonthlySummary(targetMonth: string): Promise<{ deposit: number; withdraw: number }> {
+  const propertyId = await getPropertyId()
+  const [yyyy, mm] = targetMonth.split('-').map(Number)
+  const rows = await prisma.reserveTransaction.findMany({
+    where: {
+      propertyId,
+      date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
+    },
+    select: { type: true, amount: true },
+  })
+  let deposit = 0
+  let withdraw = 0
+  for (const r of rows) {
+    if (r.type === 'DEPOSIT') deposit += r.amount
+    else withdraw += r.amount
+  }
+  return { deposit, withdraw }
+}
+
+export async function getReserveTransactions(targetMonth: string): Promise<ReserveTxn[]> {
+  const propertyId = await getPropertyId()
+  const [yyyy, mm] = targetMonth.split('-').map(Number)
+  const rows = await prisma.reserveTransaction.findMany({
+    where: {
+      propertyId,
+      date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
+    },
+    include: {
+      expense: { select: { id: true, date: true, amount: true, category: true, detail: true } },
+    },
+    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+  })
+  return rows.map(r => ({
+    id: r.id,
+    type: r.type as ReserveTxn['type'],
+    amount: r.amount,
+    date: r.date,
+    category: r.category,
+    memo: r.memo,
+    expenseId: r.expenseId,
+    expense: r.expense,
+  }))
+}
+
+export async function addReserveDeposit(input: { amount: number; date: string; memo?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (input.amount <= 0) return { ok: false, error: '금액은 0보다 커야 합니다.' }
+    await prisma.reserveTransaction.create({
+      data: {
+        propertyId,
+        type: 'DEPOSIT',
+        amount: input.amount,
+        date: new Date(input.date),
+        memo: input.memo || null,
+      },
+    })
+    revalidatePath('/finance')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (e) {
+    if ((e as any)?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+export async function addReserveWithdrawDirect(input: { amount: number; date: string; category?: string; memo?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (input.amount <= 0) return { ok: false, error: '금액은 0보다 커야 합니다.' }
+    const balance = await getReserveBalance()
+    if (input.amount > balance) return { ok: false, error: `잔고 부족 — 현재 예비비 ${balance.toLocaleString()}원` }
+    await prisma.reserveTransaction.create({
+      data: {
+        propertyId,
+        type: 'WITHDRAW_DIRECT',
+        amount: input.amount,
+        date: new Date(input.date),
+        category: input.category || null,
+        memo: input.memo || null,
+      },
+    })
+    revalidatePath('/finance')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (e) {
+    if ((e as any)?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+export async function settleReserveFromExpense(input: { expenseId: string; amount?: number; memo?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const expense = await prisma.expense.findFirst({
+      where: { id: input.expenseId, propertyId },
+      select: { id: true, amount: true, date: true, category: true, detail: true },
+    })
+    if (!expense) return { ok: false, error: '지출을 찾을 수 없습니다.' }
+
+    // 이미 정산된 금액 합산 — 동일 지출에 중복 정산 방지
+    const existing = await prisma.reserveTransaction.aggregate({
+      where: { propertyId, type: 'WITHDRAW_FROM_EXPENSE', expenseId: input.expenseId },
+      _sum: { amount: true },
+    })
+    const alreadySettled = existing._sum.amount ?? 0
+    const remaining = expense.amount - alreadySettled
+    if (remaining <= 0) return { ok: false, error: '이미 전액 정산된 지출입니다.' }
+
+    const settleAmount = input.amount ?? remaining
+    if (settleAmount <= 0) return { ok: false, error: '정산 금액은 0보다 커야 합니다.' }
+    if (settleAmount > remaining) return { ok: false, error: `정산 가능 금액 초과 — 잔여 ${remaining.toLocaleString()}원` }
+
+    const balance = await getReserveBalance()
+    if (settleAmount > balance) return { ok: false, error: `잔고 부족 — 현재 예비비 ${balance.toLocaleString()}원` }
+
+    await prisma.reserveTransaction.create({
+      data: {
+        propertyId,
+        type: 'WITHDRAW_FROM_EXPENSE',
+        amount: settleAmount,
+        date: expense.date,
+        category: expense.category,
+        memo: input.memo || null,
+        expenseId: expense.id,
+      },
+    })
+    revalidatePath('/finance')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (e) {
+    if ((e as any)?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+export async function deleteReserveTransaction(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const found = await prisma.reserveTransaction.findFirst({ where: { id, propertyId } })
+    if (!found) return { ok: false, error: '거래를 찾을 수 없습니다.' }
+    await prisma.reserveTransaction.delete({ where: { id } })
+    revalidatePath('/finance')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (e) {
+    if ((e as any)?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+// 사후정산용 — 해당 월 지출 중 아직 미정산 잔여가 있는 것만 (정산 가능 후보)
+export async function getSettleableExpenses(targetMonth: string): Promise<{ id: string; date: Date; amount: number; category: string; detail: string | null; settledSum: number; remaining: number }[]> {
+  const propertyId = await getPropertyId()
+  const [yyyy, mm] = targetMonth.split('-').map(Number)
+  const expenses = await prisma.expense.findMany({
+    where: {
+      propertyId,
+      date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
+    },
+    select: { id: true, date: true, amount: true, category: true, detail: true },
+    orderBy: { date: 'desc' },
+  })
+  if (expenses.length === 0) return []
+
+  const settles = await prisma.reserveTransaction.groupBy({
+    by: ['expenseId'],
+    where: { propertyId, type: 'WITHDRAW_FROM_EXPENSE', expenseId: { in: expenses.map(e => e.id) } },
+    _sum: { amount: true },
+  })
+  const settleMap: Record<string, number> = {}
+  for (const s of settles) if (s.expenseId) settleMap[s.expenseId] = s._sum.amount ?? 0
+
+  return expenses
+    .map(e => ({
+      ...e,
+      settledSum: settleMap[e.id] ?? 0,
+      remaining: e.amount - (settleMap[e.id] ?? 0),
+    }))
+    .filter(e => e.remaining > 0)
+}
