@@ -822,6 +822,7 @@ export type ReserveTxn = {
   type: 'DEPOSIT' | 'WITHDRAW_DIRECT' | 'WITHDRAW_FROM_EXPENSE'
   amount: number
   date: Date
+  sourceMonth: string | null
   category: string | null
   memo: string | null
   expenseId: string | null
@@ -842,23 +843,37 @@ export async function getReserveBalance(): Promise<number> {
   return bal
 }
 
-export async function getReserveMonthlySummary(targetMonth: string): Promise<{ deposit: number; withdraw: number }> {
+export async function getReserveMonthlySummary(targetMonth: string): Promise<{
+  deposit: number             // 이 달에 일어난 적립 거래 합계 (date 기준)
+  withdraw: number            // 이 달에 일어난 사용 거래 합계 (date 기준)
+  depositFromThisMonthRevenue: number  // 출처가 이 달 매출인 적립 합계 (sourceMonth 기준, date 무관)
+}> {
   const propertyId = await getPropertyId()
   const [yyyy, mm] = targetMonth.split('-').map(Number)
-  const rows = await prisma.reserveTransaction.findMany({
-    where: {
-      propertyId,
-      date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
-    },
-    select: { type: true, amount: true },
-  })
+  const [byDate, bySourceAgg] = await Promise.all([
+    prisma.reserveTransaction.findMany({
+      where: {
+        propertyId,
+        date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
+      },
+      select: { type: true, amount: true },
+    }),
+    prisma.reserveTransaction.aggregate({
+      where: { propertyId, type: 'DEPOSIT', sourceMonth: targetMonth },
+      _sum: { amount: true },
+    }),
+  ])
   let deposit = 0
   let withdraw = 0
-  for (const r of rows) {
+  for (const r of byDate) {
     if (r.type === 'DEPOSIT') deposit += r.amount
     else withdraw += r.amount
   }
-  return { deposit, withdraw }
+  return {
+    deposit,
+    withdraw,
+    depositFromThisMonthRevenue: bySourceAgg._sum.amount ?? 0,
+  }
 }
 
 export async function getReserveTransactions(targetMonth: string): Promise<ReserveTxn[]> {
@@ -879,6 +894,7 @@ export async function getReserveTransactions(targetMonth: string): Promise<Reser
     type: r.type as ReserveTxn['type'],
     amount: r.amount,
     date: r.date,
+    sourceMonth: r.sourceMonth,
     category: r.category,
     memo: r.memo,
     expenseId: r.expenseId,
@@ -886,17 +902,22 @@ export async function getReserveTransactions(targetMonth: string): Promise<Reser
   }))
 }
 
-export async function addReserveDeposit(input: { amount: number; date: string; memo?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function addReserveDeposit(input: { amount: number; date: string; sourceMonth?: string; memo?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     if (input.amount <= 0) return { ok: false, error: '금액은 0보다 커야 합니다.' }
+    // sourceMonth 형식 검증 — "YYYY-MM"
+    if (input.sourceMonth && !/^\d{4}-\d{2}$/.test(input.sourceMonth)) {
+      return { ok: false, error: '출처 월 형식이 잘못되었습니다 (YYYY-MM).' }
+    }
     await prisma.reserveTransaction.create({
       data: {
         propertyId,
         type: 'DEPOSIT',
         amount: input.amount,
         date: new Date(input.date),
+        sourceMonth: input.sourceMonth || null,
         memo: input.memo || null,
       },
     })

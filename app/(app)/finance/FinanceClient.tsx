@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
+import { useState, useTransition, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   addExpense, updateExpense, deleteExpense,
   addExtraIncome, updateExtraIncome, deleteExtraIncome,
@@ -640,6 +640,7 @@ type ReserveTxn = {
   type: 'DEPOSIT' | 'WITHDRAW_DIRECT' | 'WITHDRAW_FROM_EXPENSE'
   amount: number
   date: Date
+  sourceMonth: string | null
   category: string | null
   memo: string | null
   expenseId: string | null
@@ -686,7 +687,7 @@ export default function FinanceClient({
   acquisitionDate: string | null
   detailSuggestions: string[]
   reserveBalance: number
-  reserveMonthly: { deposit: number; withdraw: number }
+  reserveMonthly: { deposit: number; withdraw: number; depositFromThisMonthRevenue: number }
   reserveTxns: ReserveTxn[]
   settleableExpenses: SettleableExpense[]
   depositSummary: DepositPerTenant[]
@@ -2963,7 +2964,7 @@ function ReserveTab({
 }: {
   targetMonth: string
   balance: number
-  monthly: { deposit: number; withdraw: number }
+  monthly: { deposit: number; withdraw: number; depositFromThisMonthRevenue: number }
   txns: ReserveTxn[]
   settleableExpenses: SettleableExpense[]
   onAfterMutate: () => void
@@ -2972,15 +2973,28 @@ function ReserveTab({
   const [mode, setMode] = useState<Mode | null>(null)
   const [amount, setAmount] = useState<number | undefined>(undefined)
   const [date, setDate] = useState(() => kstYmdStr())
+  const [sourceMonth, setSourceMonth] = useState(targetMonth)
   const [category, setCategory] = useState('')
   const [memo, setMemo] = useState('')
   const [selectedExpenseId, setSelectedExpenseId] = useState('')
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
 
+  // 출처 월 후보 — 최근 12개월
+  const monthOptions = useMemo(() => {
+    const opts: { value: string; label: string }[] = []
+    const [yy, mm] = targetMonth.split('-').map(Number)
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(yy, mm - 1 - i, 1)
+      const v = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      opts.push({ value: v, label: v === targetMonth ? `${v} (현재)` : v })
+    }
+    return opts
+  }, [targetMonth])
+
   const reset = () => {
     setMode(null); setAmount(undefined); setDate(kstYmdStr())
-    setCategory(''); setMemo(''); setSelectedExpenseId(''); setError('')
+    setSourceMonth(targetMonth); setCategory(''); setMemo(''); setSelectedExpenseId(''); setError('')
   }
 
   const submit = () => {
@@ -2993,7 +3007,7 @@ function ReserveTab({
     startTransition(async () => {
       let res: { ok: true } | { ok: false; error: string }
       if (mode === 'deposit') {
-        res = await addReserveDeposit({ amount: amount!, date, memo: memo || undefined })
+        res = await addReserveDeposit({ amount: amount!, date, sourceMonth, memo: memo || undefined })
       } else if (mode === 'withdraw') {
         res = await addReserveWithdrawDirect({ amount: amount!, date, category: category || undefined, memo: memo || undefined })
       } else {
@@ -3023,7 +3037,7 @@ function ReserveTab({
     <div className="space-y-5">
       {/* 잔고 + 월간 요약 */}
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5">
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <p className="text-xs text-[var(--warm-muted)] mb-1">현재 잔고</p>
             <p className="text-xl font-bold text-[var(--warm-dark)]">
@@ -3041,6 +3055,13 @@ function ReserveTab({
             <p className="text-base font-semibold text-amber-600">
               −<MoneyDisplay amount={monthly.withdraw} />
             </p>
+          </div>
+          <div>
+            <p className="text-xs text-[var(--warm-muted)] mb-1">{targetMonth} 매출에서</p>
+            <p className="text-base font-semibold" style={{ color: '#0d9488' }}>
+              −<MoneyDisplay amount={monthly.depositFromThisMonthRevenue} />
+            </p>
+            <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">예비비로 적립된 금액</p>
           </div>
         </div>
       </div>
@@ -3107,6 +3128,17 @@ function ReserveTab({
                 <DatePicker value={date} onChange={setDate}
                   className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
               </div>
+              {mode === 'deposit' && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">출처 월 (어느 달 매출에서 적립?)</label>
+                  <select value={sourceMonth} onChange={e => setSourceMonth(e.target.value)}
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                    {monthOptions.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {mode === 'withdraw' && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">사용 분류 (선택)</label>
@@ -3147,9 +3179,14 @@ function ReserveTab({
             {txns.map(t => (
               <li key={t.id} className="px-5 py-3 flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-0.5">
+                  <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                     <span className={`text-xs font-semibold ${typeColor(t.type)}`}>{typeLabel(t.type)}</span>
                     <span className="text-xs text-[var(--warm-muted)]">{new Date(t.date).toISOString().slice(0, 10)}</span>
+                    {t.type === 'DEPOSIT' && t.sourceMonth && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
+                        출처 {t.sourceMonth}
+                      </span>
+                    )}
                     {t.category && <span className="text-xs text-[var(--warm-muted)]">· {t.category}</span>}
                   </div>
                   {t.expense && (

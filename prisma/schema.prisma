@@ -460,6 +460,7 @@ model ReserveTransaction {
   type        String   // 'DEPOSIT' | 'WITHDRAW_DIRECT' | 'WITHDRAW_FROM_EXPENSE'
   amount      Int      // 항상 양수. type으로 부호 결정
   date        DateTime @db.Date
+  sourceMonth String?  // DEPOSIT일 때만 사용. "YYYY-MM" 형식. 어느 달 자금에서 적립했는지
   category    String?  // 사용 분류(예: 시설 파손, 가전 교체)
   memo        String?
   createdAt   DateTime @default(now())
