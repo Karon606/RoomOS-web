@@ -34,7 +34,7 @@ function daysUntil(date: Date | string): number {
 function dayLabel(days: number): string {
   if (days < 0) return `${Math.abs(days)}일 경과`
   if (days === 0) return '오늘'
-  return `D-${days} (${days}일 남음)`
+  return `${days}일 남음`
 }
 
 function relativeTime(date: Date): string {
@@ -1079,8 +1079,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         sortKey:   -days,
       })
     } else if (l.upcomingPortion > 0 && days < 0 && days >= -UNPAID_UPCOMING_ALERT_DAYS) {
-      // D-N 또는 오늘 도래 — 별도 '납부 예정' 카테고리
-      const timeLabel = days === 0 ? '오늘 납부일' : `D-${Math.abs(days)}`
+      // 도래 임박 — '납부 예정' 카테고리. 가까운 순(D-1 → D-7)으로 정렬되도록 sortKey는 절댓값.
+      const dueDate = new Date(today.getTime() + days * 86400000)
+      const timeLabel = dayLabel(days)
       alertItems.push({
         category:  'upcoming',
         text:      `${l.tenantName}님 ${l.roomNo}호 납부 예정`,
@@ -1089,7 +1090,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         timeLabel,
         tenantId:  l.tenantId,
         detail:    `청구 예정액 ${l.upcomingPortion.toLocaleString()}원${days === 0 ? ' — 오늘이 납부일입니다.' : ` — ${Math.abs(days)}일 후 납부 예정.`}`,
-        sortKey:   days,
+        exactDate: fmtShortDate(dueDate),
+        sortKey:   Math.abs(days),
       })
     } else if (l.overduePortion > 0 && days === 0) {
       // 오늘 도래·미회수 (드문 케이스)
@@ -1119,7 +1121,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       text:      `${r.tenant.name}님 요청: ${r.content.slice(0, 28)}${r.content.length > 28 ? '…' : ''}`,
       link:      `/tenants?tenantId=${r.tenantId}&tab=requests`,
       dotColor:  '#f4623a',
-      timeLabel: daysLeft != null ? (daysLeft <= 0 ? '처리 필요' : `D-${daysLeft}`) : '미처리',
+      timeLabel: daysLeft != null ? (daysLeft <= 0 ? '처리 필요' : `${daysLeft}일 남음`) : '미처리',
       tenantId:  r.tenantId,
       detail:    r.content + (r.targetDate ? `\n처리 기한: ${fmtKorDate(r.targetDate)}` : ''),
       exactDate: fmtShortDate(r.targetDate),
@@ -1135,13 +1137,17 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       const stockLabel = r.currentStock != null
         ? `${Math.round(r.currentStock * 100) / 100}${r.qtyUnit ?? ''}`
         : '잔량 미상'
+      const emptyDate = r.daysUntilEmpty > 0
+        ? new Date(today.getTime() + r.daysUntilEmpty * 86400000)
+        : null
       alertItems.push({
         category:  'inventory',
         text:      `${r.label} 재고 부족 (${stockLabel} 남음)`,
         link:      '/inventory',
         dotColor:  '#d4a847',
-        timeLabel: r.daysUntilEmpty <= 0 ? '소진 임박' : `D-${r.daysUntilEmpty}`,
-        detail:    `${r.category} · ${r.label}\n현재 잔량: ${stockLabel}\n평균 소모: ${r.avgDaily ? `${Math.round(r.avgDaily * 100) / 100}${r.qtyUnit ?? ''}/일` : '—'}\n소진 예상: ${r.daysUntilEmpty}일\n알림 기준: D-${r.alertThresholdDays}${r.reorderMemo ? `\n발주 메모: ${r.reorderMemo}` : ''}`,
+        timeLabel: r.daysUntilEmpty <= 0 ? '소진 임박' : `${r.daysUntilEmpty}일 남음`,
+        detail:    `${r.category} · ${r.label}\n현재 잔량: ${stockLabel}\n평균 소모: ${r.avgDaily ? `${Math.round(r.avgDaily * 100) / 100}${r.qtyUnit ?? ''}/일` : '—'}\n소진 예상: ${r.daysUntilEmpty}일\n알림 기준: ${r.alertThresholdDays}일 남음${r.reorderMemo ? `\n발주 메모: ${r.reorderMemo}` : ''}`,
+        exactDate: fmtShortDate(emptyDate),
       })
     }
   } catch { /* inventory 모듈 로드 실패 시 무시 */ }
@@ -1151,11 +1157,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const { getDueChecklists } = await import('@/app/(app)/checklist/actions')
     const dueList = await getDueChecklists()
     for (const c of dueList) {
-      let timeLabel: string
-      if (c.daysUntilDue == null) timeLabel = '점검 필요'
-      else if (c.daysUntilDue < 0) timeLabel = `${Math.abs(c.daysUntilDue)}일 경과`
-      else if (c.daysUntilDue === 0) timeLabel = '오늘'
-      else timeLabel = `D-${c.daysUntilDue}`
+      const timeLabel = c.daysUntilDue == null ? '점검 필요' : dayLabel(c.daysUntilDue)
       const intervalText = c.intervalDays === 1 ? '매일'
         : c.intervalDays === 7 ? '매주'
         : c.intervalDays === 14 ? '격주'
@@ -1169,6 +1171,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         dotColor:  '#d4a847',
         timeLabel,
         detail:    `주기: ${intervalText}${c.memo ? `\n${c.memo}` : ''}\n마지막 점검: ${c.lastCheckedAt ? new Date(c.lastCheckedAt).toLocaleDateString('ko-KR') : '없음'}${c.nextDueAt ? `\n다음 도래: ${new Date(c.nextDueAt).toLocaleDateString('ko-KR')}` : ''}`,
+        exactDate: fmtShortDate(c.nextDueAt),
       })
     }
   } catch { /* checklist 모듈 로드 실패 시 무시 */ }
@@ -1203,7 +1206,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       text:                `고정 지출: ${re.title}`,
       link:                '/finance',
       dotColor:            '#6366f1',
-      timeLabel:           daysLeft < 0 ? `${Math.abs(daysLeft)}일 경과` : daysLeft === 0 ? '오늘' : `D-${daysLeft}`,
+      timeLabel:           dayLabel(daysLeft),
       exactDate:           fmtShortDate(effectiveDate),
       detail:              `${re.amount.toLocaleString()}원 · ${re.category}${re.isAutoDebit ? ' · 자동이체' + shiftedNote : ''}${re.memo ? '\n' + re.memo : ''}`,
       recurringExpenseId:    re.id,
