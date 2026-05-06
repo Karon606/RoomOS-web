@@ -59,13 +59,24 @@ ${competitorsText}
 JSON 권장 단가는 다음 형식: {"권장단가": [{"type": "방타입", "price": 숫자, "reason": "이유"}]}`
 
     const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
-    const requestBody = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
 
     let geminiRes: Response | null = null
     let usedModel = models[0]
 
     for (const model of models) {
       usedModel = model
+      // 2.5 모델만 thinking 비활성화 지원 — TPM 절감 목적
+      const generationConfig: Record<string, unknown> = {
+        temperature: 0.7,
+        maxOutputTokens: 2000,
+      }
+      if (model.startsWith('gemini-2.5')) {
+        generationConfig.thinkingConfig = { thinkingBudget: 0 }
+      }
+      const requestBody = JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig,
+      })
       geminiRes = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: requestBody },
