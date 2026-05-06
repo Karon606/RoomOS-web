@@ -6,7 +6,12 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
-import { uploadToDrive, deleteFromDrive } from '@/lib/google-drive'
+import {
+  createDriveResumableSession,
+  setDrivePublicReadable,
+  buildDriveThumbnailUrl,
+  deleteFromDrive,
+} from '@/lib/google-drive'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -178,50 +183,84 @@ export async function deleteRoom(id: string): Promise<{ ok: true } | { ok: false
   }
 }
 
-// 호실 사진 업로드 (Google Drive)
-// 외부 API(Google Drive)로 큰 버퍼 전송 → 콜드 스타트 합쳐 시간 걸릴 수 있음.
-// maxDuration 설정은 'use server' 파일에서 직접 export 불가 → app/(app)/room-manage/page.tsx 참조.
-export async function uploadRoomPhoto(
-  formData: FormData
-): Promise<{ ok: true; id: string; driveFileId: string | null; storageUrl: string; fileName: string | null } | { ok: false; error: string }> {
+// 호실 사진 업로드 — 클라이언트 직접 업로드 방식 (Vercel 페이로드 한도 우회)
+// 흐름: createPhotoUploadSession → 클라이언트가 Drive에 직접 PUT → finalizeRoomPhoto
+
+const MAX_PHOTO_BYTES = 50 * 1024 * 1024 // 50MB
+
+export async function createPhotoUploadSession(input: {
+  roomId: string
+  fileName: string
+  mimeType: string
+  fileSize: number
+}): Promise<{ ok: true; uploadUrl: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    const roomId = formData.get('roomId') as string
-    const file = formData.get('photo') as File
+    if (!input.roomId) return { ok: false, error: '호실 정보가 없습니다.' }
+    if (!input.mimeType.startsWith('image/')) return { ok: false, error: '이미지 파일만 업로드 가능합니다.' }
+    if (input.fileSize <= 0) return { ok: false, error: '파일이 비어 있습니다.' }
+    if (input.fileSize > MAX_PHOTO_BYTES) return { ok: false, error: `파일 크기는 ${MAX_PHOTO_BYTES / 1024 / 1024}MB 이하여야 합니다.` }
 
-    if (!file || file.size === 0) return { ok: false, error: '파일이 없습니다.' }
-    if (!file.type.startsWith('image/')) return { ok: false, error: '이미지 파일만 업로드 가능합니다.' }
-    if (file.size > 10 * 1024 * 1024) return { ok: false, error: '파일 크기는 10MB 이하여야 합니다.' }
+    const ext = input.fileName.split('.').pop() ?? 'jpg'
+    const uniqueName = `room_${input.roomId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
 
-    const buffer = Buffer.from(await file.arrayBuffer())
-    const ext = file.name.split('.').pop() ?? 'jpg'
-    const uniqueName = `room_${roomId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
-    const { fileId, thumbnailUrl } = await uploadToDrive(buffer, uniqueName, file.type)
+    const uploadUrl = await createDriveResumableSession({
+      fileName: uniqueName,
+      mimeType: input.mimeType,
+      fileSize: input.fileSize,
+    })
+    return { ok: true, uploadUrl }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    console.error('[createPhotoUploadSession] failed:', err)
+    return { ok: false, error: `업로드 준비 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
+  }
+}
+
+export async function finalizeRoomPhoto(input: {
+  roomId: string
+  driveFileId: string
+  fileName: string
+}): Promise<{ ok: true; id: string; driveFileId: string; storageUrl: string; fileName: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    if (!input.driveFileId) return { ok: false, error: 'Drive 파일 ID가 없습니다.' }
+
+    // 링크 있는 사람 누구나 열람 가능하도록 권한 설정
+    await setDrivePublicReadable(input.driveFileId)
 
     const lastPhoto = await prisma.roomPhoto.findFirst({
-      where: { roomId },
+      where: { roomId: input.roomId },
       orderBy: { sortOrder: 'desc' },
       select: { sortOrder: true },
     })
 
     const photo = await prisma.roomPhoto.create({
       data: {
-        roomId,
-        storageUrl: thumbnailUrl,
-        driveFileId: fileId,
-        fileName: file.name,
+        roomId: input.roomId,
+        storageUrl: buildDriveThumbnailUrl(input.driveFileId, 400),
+        driveFileId: input.driveFileId,
+        fileName: input.fileName,
         sortOrder: (lastPhoto?.sortOrder ?? 0) + 1,
       },
     })
 
     revalidatePath('/room-manage')
-    return { ok: true, id: photo.id, driveFileId: photo.driveFileId, storageUrl: photo.storageUrl, fileName: photo.fileName }
+    return {
+      ok: true,
+      id: photo.id,
+      driveFileId: photo.driveFileId!,
+      storageUrl: photo.storageUrl,
+      fileName: photo.fileName ?? input.fileName,
+    }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
-    // 서버 로그에 에러 원문 출력 (Vercel 로그에서 확인 가능 — Drive 자격증명/네트워크 등 디버깅용)
-    console.error('[uploadRoomPhoto] failed:', err)
-    const msg = (err as Error).message ?? '업로드 실패'
-    return { ok: false, error: `업로드 실패: ${msg}` }
+    console.error('[finalizeRoomPhoto] failed:', err)
+    // DB 저장 실패 시 Drive 파일은 정리 (orphan 방지)
+    if (input.driveFileId) {
+      try { await deleteFromDrive(input.driveFileId) } catch { /* 정리 실패는 무시 */ }
+    }
+    return { ok: false, error: `업로드 마무리 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
   }
 }
 

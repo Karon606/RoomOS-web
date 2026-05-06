@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addRoom, updateRoom, deleteRoom, uploadRoomPhoto, deleteRoomPhoto, applyScheduledRentNow } from './actions'
+import { addRoom, updateRoom, deleteRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, applyScheduledRentNow } from './actions'
 import { getTenantQuickInfo, getLeaseSettlementInfo } from '@/app/(app)/rooms/actions'
 import { AreaInput } from '@/components/ui/AreaInput'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -156,6 +156,7 @@ export default function RoomManageClient({
   const [editPhotos, setEditPhotos]           = useState<Photo[]>([])
   const [addPhotoPreviews, setAddPhotoPreviews] = useState<{ file: File; previewUrl: string }[]>([])
   const [photoUploading, setPhotoUploading]   = useState(false)
+  const [photoProgress, setPhotoProgress]     = useState<{ name: string; percent: number; current: number; total: number } | null>(null)
 
   // 기타
   const [types, setTypes]   = useState<string[]>(roomTypes)
@@ -269,10 +270,20 @@ export default function RoomManageClient({
       const res = await addRoom(formData)
       if (!res.ok) { setError(res.error); return }
       for (const { file } of addPhotoPreviews) {
-        const fd = new FormData()
-        fd.set('roomId', res.id)
-        fd.set('photo', file)
-        await uploadRoomPhoto(fd)
+        try {
+          const session = await createPhotoUploadSession({
+            roomId: res.id,
+            fileName: file.name,
+            mimeType: file.type,
+            fileSize: file.size,
+          })
+          if (!session.ok) { setError(session.error); continue }
+          const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file, () => {})
+          await finalizeRoomPhoto({ roomId: res.id, driveFileId, fileName: file.name })
+        } catch (err) {
+          console.error('[handleAdd photo]', err)
+          // 일부 사진 실패해도 나머지/호실 자체는 유지
+        }
       }
       closeAddModal()
       window.location.reload()
@@ -314,23 +325,42 @@ export default function RoomManageClient({
     const toUpload = files.slice(0, MAX_PHOTOS - editPhotos.length)
     setPhotoUploading(true); setError('')
     try {
-      for (const file of toUpload) {
+      for (let i = 0; i < toUpload.length; i++) {
+        const file = toUpload[i]
+        setPhotoProgress({ name: file.name, percent: 0, current: i + 1, total: toUpload.length })
         try {
-          const fd = new FormData()
-          fd.set('roomId', editRoom.id)
-          fd.set('photo', file)
-          const res = await uploadRoomPhoto(fd)
-          if (!res.ok) { setError(res.error || '업로드 실패 (사유 미확인). Vercel 로그를 확인해주세요.'); break }
-          setEditPhotos(prev => [...prev, { id: res.id, driveFileId: res.driveFileId, storageUrl: res.storageUrl, fileName: res.fileName }])
+          // 1) 서버에 Drive 업로드 세션 요청 (파일은 보내지 않음 — 메타데이터만)
+          const session = await createPhotoUploadSession({
+            roomId: editRoom.id,
+            fileName: file.name,
+            mimeType: file.type,
+            fileSize: file.size,
+          })
+          if (!session.ok) { setError(session.error); break }
+
+          // 2) 클라이언트가 Drive로 직접 PUT 업로드 (Vercel 함수 우회)
+          const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file, percent =>
+            setPhotoProgress({ name: file.name, percent, current: i + 1, total: toUpload.length })
+          )
+
+          // 3) 권한 설정 + DB 저장
+          const fin = await finalizeRoomPhoto({
+            roomId: editRoom.id,
+            driveFileId,
+            fileName: file.name,
+          })
+          if (!fin.ok) { setError(fin.error); break }
+          setEditPhotos(prev => [...prev, { id: fin.id, driveFileId: fin.driveFileId, storageUrl: fin.storageUrl, fileName: fin.fileName }])
         } catch (err) {
-          // 네트워크 단절·타임아웃·Server Action 실패 등 throw 케이스
           console.error('[handlePhotoUpload]', err)
           setError(`업로드 중 오류: ${(err as Error).message ?? '알 수 없는 오류'}`)
           break
         }
       }
     } finally {
-      setPhotoUploading(false); e.target.value = ''
+      setPhotoUploading(false)
+      setPhotoProgress(null)
+      e.target.value = ''
     }
   }
 
@@ -874,8 +904,11 @@ export default function RoomManageClient({
                     </div>
                   ))}
                   {photoUploading && (
-                    <div className="aspect-square rounded-lg bg-[var(--canvas)] flex items-center justify-center">
+                    <div className="aspect-square rounded-lg bg-[var(--canvas)] flex flex-col items-center justify-center gap-1">
                       <div className="w-5 h-5 border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
+                      {photoProgress && (
+                        <span className="text-[10px] text-[var(--warm-muted)]">{photoProgress.percent}%</span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -883,9 +916,19 @@ export default function RoomManageClient({
                 <div onClick={() => photoInputRef.current?.click()}
                   className="h-20 border border-dashed border-[var(--warm-border)] rounded-xl flex items-center justify-center cursor-pointer hover:border-[var(--warm-border)] transition-colors">
                   {photoUploading
-                    ? <div className="w-5 h-5 border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
+                    ? <div className="flex flex-col items-center gap-1">
+                        <div className="w-5 h-5 border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
+                        {photoProgress && (
+                          <span className="text-[10px] text-[var(--warm-muted)]">{photoProgress.percent}%</span>
+                        )}
+                      </div>
                     : <p className="text-xs text-[var(--warm-muted)]">클릭하여 사진 업로드</p>}
                 </div>
+              )}
+              {photoProgress && photoProgress.total > 1 && (
+                <p className="text-[10px] text-[var(--warm-muted)] text-right">
+                  업로드 중 ({photoProgress.current}/{photoProgress.total}) · {photoProgress.percent}%
+                </p>
               )}
             </div>
 
@@ -911,6 +954,38 @@ export default function RoomManageClient({
       )}
     </div>
   )
+}
+
+// Drive resumable upload — XHR로 진행률 추적 + Drive에 직접 PUT
+function uploadFileToDriveSession(
+  uploadUrl: string,
+  file: File,
+  onProgress: (percent: number) => void,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', uploadUrl, true)
+    xhr.setRequestHeader('Content-Type', file.type)
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const body = JSON.parse(xhr.responseText) as { id?: string }
+          if (!body.id) return reject(new Error('Drive 응답에 파일 ID가 없습니다.'))
+          resolve(body.id)
+        } catch (err) {
+          reject(new Error(`Drive 응답 파싱 실패: ${(err as Error).message}`))
+        }
+      } else {
+        reject(new Error(`Drive 업로드 실패 (${xhr.status}): ${xhr.responseText.slice(0, 200)}`))
+      }
+    }
+    xhr.onerror = () => reject(new Error('네트워크 오류로 업로드 실패'))
+    xhr.ontimeout = () => reject(new Error('업로드 타임아웃'))
+    xhr.send(file)
+  })
 }
 
 // ── 공통 컴포넌트 ─────────────────────────────────────────────────
@@ -1051,6 +1126,19 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
         ✕
       </button>
 
+      {/* 원본 보기 — Drive에서 풀해상도 열기 */}
+      {photos[index]?.driveFileId && (
+        <a
+          href={`https://drive.google.com/file/d/${photos[index].driveFileId}/view`}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          className="absolute top-4 right-16 z-10 text-white/80 hover:text-white text-xs px-3 h-10 flex items-center rounded-full bg-black/40"
+        >
+          원본 보기 ↗
+        </a>
+      )}
+
       {/* 인덱스 */}
       <div className="absolute top-4 left-4 z-10 text-white/80 text-sm font-medium px-3 py-1 rounded-full bg-black/40">
         {index + 1} / {total}
@@ -1097,7 +1185,9 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
           {photos.map(p => (
             <div key={p.id} className="w-full h-full shrink-0 flex items-center justify-center px-2">
               <img
-                src={p.storageUrl}
+                src={p.driveFileId
+                  ? `https://drive.google.com/thumbnail?id=${p.driveFileId}&sz=w2000`
+                  : p.storageUrl}
                 alt={p.fileName ?? ''}
                 className="max-w-[95vw] max-h-[90vh] object-contain pointer-events-none"
                 draggable={false}
