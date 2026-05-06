@@ -276,6 +276,7 @@ export default function RoomManageClient({
             fileName: file.name,
             mimeType: file.type,
             fileSize: file.size,
+            origin: window.location.origin,
           })
           if (!session.ok) { setError(session.error); continue }
           const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file, () => {})
@@ -335,6 +336,7 @@ export default function RoomManageClient({
             fileName: file.name,
             mimeType: file.type,
             fileSize: file.size,
+            origin: window.location.origin,
           })
           if (!session.ok) { setError(session.error); break }
 

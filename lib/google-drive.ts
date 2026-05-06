@@ -46,10 +46,15 @@ export async function uploadToDrive(
 // 클라이언트 직접 업로드용 — Vercel 페이로드 한도 우회.
 // 서버는 Drive에 "이 파일 받을 준비" 요청만 보내고, 발급된 URL을 클라이언트에 전달.
 // 클라이언트가 그 URL로 파일을 PUT 업로드 → Vercel 함수는 파일 자체를 만지지 않음.
+//
+// CORS 주의: 발급된 업로드 URL은 세션 생성 시 보낸 Origin에서만 PUT을 허용함.
+// 서버 측 fetch는 Origin을 자동 첨부하지 않으므로 명시적으로 전달해야
+// 응답에 Access-Control-Allow-Origin이 포함되고 브라우저 PUT이 통과한다.
 export async function createDriveResumableSession(input: {
   fileName: string
   mimeType: string
   fileSize: number
+  origin: string
 }): Promise<string> {
   const auth = getOAuth2Client()
   const tokenRes = await auth.getAccessToken()
@@ -63,6 +68,7 @@ export async function createDriveResumableSession(input: {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json; charset=UTF-8',
+        'Origin': input.origin,
         'X-Upload-Content-Type': input.mimeType,
         'X-Upload-Content-Length': String(input.fileSize),
       },

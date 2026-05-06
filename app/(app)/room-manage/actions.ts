@@ -193,6 +193,7 @@ export async function createPhotoUploadSession(input: {
   fileName: string
   mimeType: string
   fileSize: number
+  origin: string
 }): Promise<{ ok: true; uploadUrl: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -200,6 +201,7 @@ export async function createPhotoUploadSession(input: {
     if (!input.mimeType.startsWith('image/')) return { ok: false, error: '이미지 파일만 업로드 가능합니다.' }
     if (input.fileSize <= 0) return { ok: false, error: '파일이 비어 있습니다.' }
     if (input.fileSize > MAX_PHOTO_BYTES) return { ok: false, error: `파일 크기는 ${MAX_PHOTO_BYTES / 1024 / 1024}MB 이하여야 합니다.` }
+    if (!input.origin) return { ok: false, error: 'Origin 정보가 누락되었습니다.' }
 
     const ext = input.fileName.split('.').pop() ?? 'jpg'
     const uniqueName = `room_${input.roomId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
@@ -208,6 +210,7 @@ export async function createPhotoUploadSession(input: {
       fileName: uniqueName,
       mimeType: input.mimeType,
       fileSize: input.fileSize,
+      origin: input.origin,
     })
     return { ok: true, uploadUrl }
   } catch (err) {
