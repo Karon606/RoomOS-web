@@ -568,6 +568,30 @@ function StackedBar({
 
 // ── Helpers ──────────────────────────────────────────────────────
 
+// 영수증 사진을 OCR 전송용으로 압축 — Server Action 페이로드 한도(10MB) 회피
+// HEIC/HEIF는 createImageBitmap이 처리 가능 (iOS Safari 17+).
+async function compressImageForOcr(
+  file: File, maxDim: number, quality: number,
+): Promise<{ base64: string; dataUrl: string }> {
+  const bitmap = await createImageBitmap(file)
+  const w = bitmap.width
+  const h = bitmap.height
+  const scale = Math.min(1, maxDim / Math.max(w, h))
+  const targetW = Math.max(1, Math.round(w * scale))
+  const targetH = Math.max(1, Math.round(h * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = targetW
+  canvas.height = targetH
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas 2D 컨텍스트를 만들 수 없습니다.')
+  ctx.drawImage(bitmap, 0, 0, targetW, targetH)
+  bitmap.close?.()
+  const dataUrl = canvas.toDataURL('image/jpeg', quality)
+  const base64  = dataUrl.replace(/^data:image\/jpeg;base64,/, '')
+  if (!base64) throw new Error('이미지 인코딩 결과가 비어 있습니다.')
+  return { base64, dataUrl }
+}
+
 function toDateInput(d: Date | string | null | undefined) {
   if (!d) return ''
   return kstYmdStr(new Date(d))
@@ -732,48 +756,45 @@ export default function FinanceClient({
   const [addItems, setAddItems]   = useState<ItemPickState[]>([])
   const [editItems, setEditItems] = useState<ItemPickState[]>([])
 
-  // 영수증 OCR 핸들러 — 사진 → base64 → Gemini → 폼 자동 채움
-  const handleReceiptOcr = (file: File) => {
+  // 영수증 OCR 핸들러 — 사진을 클라이언트에서 압축(max 1600px JPEG 0.85) 후
+  // base64로 Server Action에 전달. iPhone 원본 사진은 5~12MB라 그대로 보내면
+  // Server Action 페이로드 한도(10MB)를 초과해 throw가 일어남.
+  // 영수증은 글씨만 읽으면 되니 1600px이면 OCR 정확도 변화 거의 없음.
+  const handleReceiptOcr = async (file: File) => {
     setOcrError('')
     setOcrPending(true)
-    const reader = new FileReader()
-    reader.onload = async () => {
-      try {
-        const dataUrl = reader.result as string
-        setOcrPreview(dataUrl)
-        const base64 = dataUrl.replace(/^data:[^;]+;base64,/, '')
-        const res = await analyzeReceiptWithGemini(base64, file.type || 'image/jpeg')
-        if (!res.ok) { setOcrError(res.error); setOcrPending(false); return }
-        const d = res.data
-        if (d.date) setAddExpDate(d.date)
-        if (d.vendor) setAddExpVendor(d.vendor)
-        if (d.category && EXPENSE_CATEGORIES.includes(d.category)) setAddExpCategory(d.category)
-        if (d.items.length > 0 && ITEM_PRESETS[d.category ?? '']) {
-          // 다중 품목 — addItems에 주입
-          setAddItems(d.items.map(it => ({
-            label:     it.label,
-            specValue: it.specValue ?? '',
-            specUnit:  it.specUnit  ?? '',
-            qtyValue:  it.qtyValue  ?? '',
-            qtyUnit:   it.qtyUnit   ?? '',
-            amount:    it.amount,
-          })))
-          setAddExpAmount(d.items.reduce((s, it) => s + it.amount, 0))
-        } else {
-          setAddItems([])
-          if (d.totalAmount) setAddExpAmount(d.totalAmount)
-          if (d.items.length > 0) {
-            setAddExpDetail(d.items.map(it => `[${it.label}] ${it.amount.toLocaleString()}원`).join(', '))
-          }
+    try {
+      const { base64, dataUrl } = await compressImageForOcr(file, 1600, 0.85)
+      setOcrPreview(dataUrl)
+      const res = await analyzeReceiptWithGemini(base64, 'image/jpeg')
+      if (!res.ok) { setOcrError(res.error); setOcrPending(false); return }
+      const d = res.data
+      if (d.date) setAddExpDate(d.date)
+      if (d.vendor) setAddExpVendor(d.vendor)
+      if (d.category && EXPENSE_CATEGORIES.includes(d.category)) setAddExpCategory(d.category)
+      if (d.items.length > 0 && ITEM_PRESETS[d.category ?? '']) {
+        // 다중 품목 — addItems에 주입
+        setAddItems(d.items.map(it => ({
+          label:     it.label,
+          specValue: it.specValue ?? '',
+          specUnit:  it.specUnit  ?? '',
+          qtyValue:  it.qtyValue  ?? '',
+          qtyUnit:   it.qtyUnit   ?? '',
+          amount:    it.amount,
+        })))
+        setAddExpAmount(d.items.reduce((s, it) => s + it.amount, 0))
+      } else {
+        setAddItems([])
+        if (d.totalAmount) setAddExpAmount(d.totalAmount)
+        if (d.items.length > 0) {
+          setAddExpDetail(d.items.map(it => `[${it.label}] ${it.amount.toLocaleString()}원`).join(', '))
         }
-        setOcrPending(false)
-      } catch (err) {
-        setOcrError((err as Error).message ?? '영수증 분석 중 오류가 발생했습니다.')
-        setOcrPending(false)
       }
+      setOcrPending(false)
+    } catch (err) {
+      setOcrError(`영수증 처리 실패: ${(err as Error).message ?? '알 수 없는 오류'}`)
+      setOcrPending(false)
     }
-    reader.onerror = () => { setOcrError('이미지를 읽지 못했습니다.'); setOcrPending(false) }
-    reader.readAsDataURL(file)
   }
 
   // ── 수익 탭 상태 ─────────────────────────────────────────────
