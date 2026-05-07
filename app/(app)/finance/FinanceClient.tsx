@@ -2392,9 +2392,9 @@ export default function FinanceClient({
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">
-                      금액 *{addItems.length > 1 && <span className="text-[10px] text-[var(--warm-muted)] font-normal ml-1">(품목 합계 자동)</span>}
+                      금액 *{addItems.length >= 1 && <span className="text-[10px] text-[var(--warm-muted)] font-normal ml-1">(품목 합계 자동)</span>}
                     </label>
-                    {addItems.length > 1 ? (
+                    {addItems.length >= 1 ? (
                       <div className="relative">
                         <input type="hidden" name="amount" value={addItems.reduce((s, it) => s + (it.amount ?? 0), 0)} />
                         <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
