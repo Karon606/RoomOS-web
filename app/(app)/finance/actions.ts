@@ -827,6 +827,8 @@ export type ReserveTxn = {
   memo: string | null
   expenseId: string | null
   expense: { id: string; date: Date; amount: number; category: string; detail: string | null } | null
+  linkedAccountId: string | null
+  linkedAccount: { id: string; type: string; brand: string; alias: string | null } | null
 }
 
 export async function getReserveBalance(): Promise<number> {
@@ -886,6 +888,7 @@ export async function getReserveTransactions(targetMonth: string): Promise<Reser
     },
     include: {
       expense: { select: { id: true, date: true, amount: true, category: true, detail: true } },
+      linkedAccount: { select: { id: true, type: true, brand: true, alias: true } },
     },
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
   })
@@ -899,10 +902,12 @@ export async function getReserveTransactions(targetMonth: string): Promise<Reser
     memo: r.memo,
     expenseId: r.expenseId,
     expense: r.expense,
+    linkedAccountId: r.linkedAccountId,
+    linkedAccount: r.linkedAccount,
   }))
 }
 
-export async function addReserveDeposit(input: { amount: number; date: string; sourceMonth?: string; memo?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function addReserveDeposit(input: { amount: number; date: string; sourceMonth?: string; linkedAccountId?: string; memo?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -918,6 +923,7 @@ export async function addReserveDeposit(input: { amount: number; date: string; s
         amount: input.amount,
         date: new Date(input.date),
         sourceMonth: input.sourceMonth || null,
+        linkedAccountId: input.linkedAccountId || null,
         memo: input.memo || null,
       },
     })
@@ -930,7 +936,7 @@ export async function addReserveDeposit(input: { amount: number; date: string; s
   }
 }
 
-export async function addReserveWithdrawDirect(input: { amount: number; date: string; category?: string; memo?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function addReserveWithdrawDirect(input: { amount: number; date: string; category?: string; linkedAccountId?: string; memo?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -944,6 +950,7 @@ export async function addReserveWithdrawDirect(input: { amount: number; date: st
         amount: input.amount,
         date: new Date(input.date),
         category: input.category || null,
+        linkedAccountId: input.linkedAccountId || null,
         memo: input.memo || null,
       },
     })

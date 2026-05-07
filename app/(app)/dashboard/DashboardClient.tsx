@@ -28,6 +28,8 @@ export type DashboardData = {
   totalDeposit:      number
   reserveBalance:    number
   reserveMonthly:    { deposit: number; withdraw: number }
+  operatingCashAvailable: number  // = netProfit - 이 달 매출에서 적립된 예비비
+  reserveAccrualFromThisMonth: number
   paidCount:         number
   unpaidCount:       number
   upcomingCount:     number
@@ -1841,10 +1843,11 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           </p>
         </div>
 
-        {/* Row 2 Right: 현재 순이익 — 전문적 다크 */}
+        {/* Row 2 Right: 현재 순이익 — 전문적 다크. 예비비 이체분이 있으면 운영 가용 자금 보조 표시 */}
         {(() => {
           const net = data.netProfit
           const isPos = net >= 0
+          const hasReserveOut = data.reserveAccrualFromThisMonth > 0
           return (
             <div className="rounded-xl" style={{ background: '#1c2b3a', padding: '18px 20px' }}>
               <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(180,210,240,0.45)', marginBottom: 8 }}>
@@ -1854,7 +1857,12 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                 {isPos ? '+' : ''}{net.toLocaleString()}
                 <small style={{ fontSize: 11, fontWeight: 400, color: 'rgba(180,210,240,0.3)', marginLeft: 2 }}>원</small>
               </p>
-              <p style={{ fontSize: 10.5, color: 'rgba(180,210,240,0.4)' }}>수납 − 실제 지출</p>
+              <p style={{ fontSize: 10.5, color: 'rgba(180,210,240,0.4)', marginBottom: hasReserveOut ? 4 : 0 }}>수납 − 실제 지출</p>
+              {hasReserveOut && (
+                <p style={{ fontSize: 10, color: 'rgba(180,210,240,0.55)' }}>
+                  예비비 −{data.reserveAccrualFromThisMonth.toLocaleString()}원 이체 · 운영 가용 <span style={{ color: '#5eead4', fontWeight: 600 }}>{data.operatingCashAvailable.toLocaleString()}원</span>
+                </p>
+              )}
             </div>
           )
         })()}

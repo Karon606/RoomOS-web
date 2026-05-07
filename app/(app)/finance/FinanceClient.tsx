@@ -669,6 +669,8 @@ type ReserveTxn = {
   memo: string | null
   expenseId: string | null
   expense: { id: string; date: Date; amount: number; category: string; detail: string | null } | null
+  linkedAccountId: string | null
+  linkedAccount: { id: string; type: string; brand: string; alias: string | null } | null
 }
 type SettleableExpense = {
   id: string; date: Date; amount: number; category: string; detail: string | null
@@ -2250,6 +2252,7 @@ export default function FinanceClient({
           monthly={reserveMonthly}
           txns={reserveTxns}
           settleableExpenses={settleableExpenses}
+          financialAccounts={financialAccounts}
           onAfterMutate={() => router.refresh()}
         />
       )}
@@ -2992,13 +2995,14 @@ function DepositTab({ summary, ledger, totalBalance }: {
 // ── 예비비 탭 ─────────────────────────────────────────────────────
 
 function ReserveTab({
-  targetMonth, balance, monthly, txns, settleableExpenses, onAfterMutate,
+  targetMonth, balance, monthly, txns, settleableExpenses, financialAccounts, onAfterMutate,
 }: {
   targetMonth: string
   balance: number
   monthly: { deposit: number; withdraw: number; depositFromThisMonthRevenue: number }
   txns: ReserveTxn[]
   settleableExpenses: SettleableExpense[]
+  financialAccounts: FinancialAccount[]
   onAfterMutate: () => void
 }) {
   type Mode = 'deposit' | 'withdraw' | 'settle'
@@ -3009,8 +3013,12 @@ function ReserveTab({
   const [category, setCategory] = useState('')
   const [memo, setMemo] = useState('')
   const [selectedExpenseId, setSelectedExpenseId] = useState('')
+  const [linkedAccountId, setLinkedAccountId] = useState('')
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
+
+  // 등록된 계좌 목록 — 사용자 자유로 선택
+  const accountOptions = financialAccounts
 
   // 출처 월 후보 — 최근 12개월
   const monthOptions = useMemo(() => {
@@ -3026,7 +3034,8 @@ function ReserveTab({
 
   const reset = () => {
     setMode(null); setAmount(undefined); setDate(kstYmdStr())
-    setSourceMonth(targetMonth); setCategory(''); setMemo(''); setSelectedExpenseId(''); setError('')
+    setSourceMonth(targetMonth); setCategory(''); setMemo('')
+    setSelectedExpenseId(''); setLinkedAccountId(''); setError('')
   }
 
   const submit = () => {
@@ -3039,9 +3048,18 @@ function ReserveTab({
     startTransition(async () => {
       let res: { ok: true } | { ok: false; error: string }
       if (mode === 'deposit') {
-        res = await addReserveDeposit({ amount: amount!, date, sourceMonth, memo: memo || undefined })
+        res = await addReserveDeposit({
+          amount: amount!, date, sourceMonth,
+          linkedAccountId: linkedAccountId || undefined,
+          memo: memo || undefined,
+        })
       } else if (mode === 'withdraw') {
-        res = await addReserveWithdrawDirect({ amount: amount!, date, category: category || undefined, memo: memo || undefined })
+        res = await addReserveWithdrawDirect({
+          amount: amount!, date,
+          category: category || undefined,
+          linkedAccountId: linkedAccountId || undefined,
+          memo: memo || undefined,
+        })
       } else {
         res = await settleReserveFromExpense({ expenseId: selectedExpenseId, amount: amount, memo: memo || undefined })
       }
@@ -3179,6 +3197,21 @@ function ReserveTab({
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 </div>
               )}
+              {/* 이체 계좌 — 어느 계좌로 옮겼는지 / 어디서 인출했는지 */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">
+                  {mode === 'deposit' ? '이체 받는 계좌 (예비비 보관처)' : '인출 계좌 (예비비 출금처)'}
+                </label>
+                <select value={linkedAccountId} onChange={e => setLinkedAccountId(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                  <option value="">{accountOptions.length === 0 ? '등록된 계좌 없음 (자산 관리 탭에서 추가)' : '선택 (선택 사항)'}</option>
+                  {accountOptions.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.brand}{a.alias ? ` (${a.alias})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </>
           )}
 
@@ -3221,6 +3254,13 @@ function ReserveTab({
                     )}
                     {t.category && <span className="text-xs text-[var(--warm-muted)]">· {t.category}</span>}
                   </div>
+                  {/* 이체 계좌 표기 — DEPOSIT은 받는 계좌, WITHDRAW_DIRECT은 인출 계좌 */}
+                  {t.linkedAccount && (
+                    <p className="text-xs text-[var(--warm-muted)]">
+                      {t.type === 'DEPOSIT' ? '→ 이체: ' : '← 인출: '}
+                      {t.linkedAccount.brand}{t.linkedAccount.alias ? ` (${t.linkedAccount.alias})` : ''}
+                    </p>
+                  )}
                   {t.expense && (
                     <p className="text-xs text-[var(--warm-muted)] truncate">
                       ↪ 원 지출: {t.expense.category}{t.expense.detail ? ` · ${t.expense.detail}` : ''} ({t.expense.amount.toLocaleString()}원)

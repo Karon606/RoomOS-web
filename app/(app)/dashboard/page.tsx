@@ -361,11 +361,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // ── 예비비 잔고 + 이달 적립/사용 ─────────────────────────────────
   const reserveTxns = await prisma.reserveTransaction.findMany({
     where: { propertyId },
-    select: { type: true, amount: true, date: true },
+    select: { type: true, amount: true, date: true, sourceMonth: true },
   })
   let reserveBalance = 0
   let reserveMonthlyDeposit = 0
   let reserveMonthlyWithdraw = 0
+  let reserveAccrualFromThisMonth = 0  // 출처가 이 달 매출인 적립 합계 (sourceMonth=targetMonth)
   for (const r of reserveTxns) {
     const isDep = r.type === 'DEPOSIT'
     if (isDep) reserveBalance += r.amount
@@ -374,6 +375,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       if (isDep) reserveMonthlyDeposit += r.amount
       else reserveMonthlyWithdraw += r.amount
     }
+    if (isDep && r.sourceMonth === targetMonth) reserveAccrualFromThisMonth += r.amount
   }
   const reserveMonthly = { deposit: reserveMonthlyDeposit, withdraw: reserveMonthlyWithdraw }
 
@@ -1260,6 +1262,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     totalDeposit,
     reserveBalance,
     reserveMonthly,
+    operatingCashAvailable: (totalRevenue - totalExpense) - reserveAccrualFromThisMonth,
+    reserveAccrualFromThisMonth,
     paidCount,
     unpaidCount,
     upcomingCount,

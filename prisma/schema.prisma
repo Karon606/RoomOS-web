@@ -337,6 +337,7 @@ model FinancialAccount {
 
   expenses     Expense[]
   extraIncomes ExtraIncome[]
+  reserveLinks ReserveTransaction[] @relation("ReserveLinkedAccount")
 
   @@map("financial_accounts")
 }
@@ -471,6 +472,13 @@ model ReserveTransaction {
 
   expenseId String?  @db.Uuid
   expense   Expense? @relation("ExpenseReserveSettlement", fields: [expenseId], references: [id], onDelete: SetNull)
+
+  // 이체 대상/출금 계좌
+  // DEPOSIT: 적립금이 들어간 계좌 (예: '예비비 계좌')
+  // WITHDRAW_DIRECT: 예비비를 인출해 쓴 계좌
+  // WITHDRAW_FROM_EXPENSE: null (원 expense의 financialAccount 활용)
+  linkedAccountId String?           @db.Uuid
+  linkedAccount   FinancialAccount? @relation("ReserveLinkedAccount", fields: [linkedAccountId], references: [id], onDelete: SetNull)
 
   @@index([propertyId, date])
   @@index([propertyId, type])
