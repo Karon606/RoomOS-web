@@ -63,6 +63,16 @@
   --color-persimmon-l:  var(--persimmon-l);
   --color-honey:        var(--honey);
 
+  /* M7 가이드 radius 토큰 — Tailwind rounded-* 기본값 override
+     r-sm 6 (입력·뱃지) · r-md 10 (카드 small) · r-lg 14 (카드/KPI)
+     r-xl 18 (모달/앱아이콘) · r-pill 999 (칩/필터) */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+  --radius-xl:   18px;
+  --radius-2xl:  18px;
+  --radius-3xl:  24px;
+
   /* 기존 alias — 호환성 유지 */
   --color-canvas:       var(--canvas);
   --color-coral:        var(--coral);
