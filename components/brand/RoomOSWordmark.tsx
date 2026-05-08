@@ -19,12 +19,11 @@ export function RoomOSWordmark({
   className?: string
   style?: React.CSSProperties
 }) {
-  // viewBox 비율: 가이드 워드마크 비율과 비슷하게 (대략 "RoomOS" 6글자 * 0.55 = 3.3:1)
-  const w = height * 3.1
-  const h = height
-  // SVG 내부 좌표 — 1000 기준
-  const VB_W = 1000
+  // viewBox: 1280 폭이면 RoomOS 6글자가 안전하게 들어감 (S 잘림 방지)
+  const VB_W = 1280
   const VB_H = 320
+  const w = height * (VB_W / VB_H)  // 4.0:1 비율
+  const h = height
   return (
     <svg
       width={w}
@@ -41,7 +40,7 @@ export function RoomOSWordmark({
         fontFamily="'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif"
         fontWeight={weight}
         fontSize={VB_H * 0.95}
-        letterSpacing="-12"
+        letterSpacing="-10"
         fill="var(--ink, #1a1a1a)"
       >
         Room<tspan fill="var(--persimmon, #e84a1a)">O</tspan>S
