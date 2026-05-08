@@ -125,7 +125,7 @@ function CheckoutRefundModal({
 
   return (
     <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden"
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
         onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b" style={{ borderColor: DIVIDER_COLOR }}>
           <p className="text-base font-bold" style={{ color: 'var(--warm-dark)' }}>보증금 환불</p>
@@ -263,7 +263,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden"
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
         onClick={e => e.stopPropagation()}>
         {/* 헤더 */}
         <div className="flex items-start justify-between px-5 py-4 border-b" style={{ borderColor: DIVIDER_COLOR }}>
@@ -416,7 +416,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden"
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
         onClick={e => e.stopPropagation()}>
         {/* 헤더 */}
         <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: DIVIDER_COLOR }}>
@@ -1601,7 +1601,7 @@ function RoomDetailPopup({ room, onClose, onOpenPayment, onOpenTenantInfo }: {
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
       onClick={onClose}>
-      <div className="bg-[var(--cream)] rounded-2xl shadow-2xl w-full max-w-xs overflow-hidden"
+      <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-xs overflow-hidden"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
           <div className="flex items-center gap-2">
@@ -1707,7 +1707,7 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
           <span className="text-base font-bold text-[var(--warm-dark)]">
             {loading ? '불러오는 중…' : (info?.name ?? '입주자 정보')}

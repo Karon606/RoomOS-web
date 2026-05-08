@@ -847,7 +847,7 @@ export default function TenantClient({
     <div className="space-y-4">
       {/* 토스트 */}
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-md w-[calc(100%-2rem)] bg-[var(--warm-dark)] text-white text-xs rounded-xl px-4 py-3 shadow-lg flex items-start gap-2">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-md w-[calc(100%-2rem)] bg-[var(--warm-dark)] text-white text-xs rounded-xl px-4 py-3 shadow-lift flex items-start gap-2">
           <span className="text-amber-300 shrink-0">✦</span>
           <span className="flex-1 leading-relaxed">{toast}</span>
           <button onClick={() => setToast(null)} className="shrink-0 text-white/60 hover:text-white">✕</button>
@@ -920,7 +920,7 @@ export default function TenantClient({
           {showColMenu && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowColMenu(false)} />
-              <div className="absolute right-0 mt-2 z-20 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-xl p-3 space-y-2 min-w-[160px]">
+              <div className="absolute right-0 mt-2 z-20 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift p-3 space-y-2 min-w-[160px]">
                 {COL_DEFS.filter(c => (c.tabs as readonly string[]).includes(filter)).map(c => (
                   <label key={c.key} className="flex items-center gap-2.5 cursor-pointer">
                     <input
@@ -987,7 +987,7 @@ export default function TenantClient({
       {/* 삭제 확인 모달 */}
       {deleteTarget && (
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
-          <div className="bg-[var(--cream)] rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+          <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm p-6 space-y-4">
             <div className="flex items-start gap-3">
               <span className="text-2xl">⚠️</span>
               <div>
@@ -1023,7 +1023,7 @@ export default function TenantClient({
         const exceedsMax = depositReturnAmt > maxRefund
         return (
           <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
-            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden">
+            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden">
               <div className="px-5 py-4 border-b border-[var(--warm-border)]">
                 <p className="text-base font-bold text-[var(--warm-dark)]">보증금 환불</p>
                 <p className="text-xs mt-1 text-[var(--warm-muted)]">{depositRefundModal.tenantName}님 퇴실 정산</p>
@@ -1101,7 +1101,7 @@ export default function TenantClient({
         const dirColor = diff > 0 ? 'text-rose-600' : diff < 0 ? 'text-emerald-600' : 'text-[var(--warm-dark)]'
         return (
           <div className="fixed inset-0 bg-black/70 z-[70] flex items-center justify-center p-4">
-            <div className="bg-[var(--cream)] rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-bold text-[var(--warm-dark)]">가격 변동 적용</h2>
                 <button onClick={() => setRentChangeModal(null)} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>

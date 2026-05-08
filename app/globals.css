@@ -106,6 +106,10 @@ body {
 .mono { font-family: var(--font-dm-mono, 'DM Mono'), 'SF Mono', Menlo, monospace; font-feature-settings: 'tnum'; }
 .tnum { font-variant-numeric: tabular-nums; }
 
+/* M7 가이드: shadow는 모달·드롭다운·팝오버에만 사용. 단일 shadow-lift 토큰으로 통일.
+   카드/입력/디바이더는 shadow 미사용 — border 1px solid var(--cream-3)로 처리. */
+.shadow-lift { box-shadow: 0 8px 24px -12px rgba(40, 20, 10, 0.18); }
+
 /* iOS/Android 탭 하이라이트 제거 */
 a, button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"] {
   -webkit-tap-highlight-color: transparent;

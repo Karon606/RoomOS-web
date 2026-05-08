@@ -2625,7 +2625,7 @@ export default function FinanceClient({
 
     {showRecMgmt && (
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) { setShowRecMgmt(false); setShowRecMgmtForm(false) } }}>
-        <div className="bg-[var(--cream)] rounded-2xl w-full max-w-lg max-h-[90dvh] flex flex-col shadow-2xl border border-[var(--warm-border)]">
+        <div className="bg-[var(--cream)] rounded-2xl w-full max-w-lg max-h-[90dvh] flex flex-col shadow-lift border border-[var(--warm-border)]">
           {/* 모달 헤더 */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
             <div>
@@ -2776,7 +2776,7 @@ export default function FinanceClient({
       <div
         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
         onClick={e => { if (e.target === e.currentTarget) { setRecordingRec(null); setRecError('') } }}>
-        <div className="bg-[var(--cream)] rounded-2xl w-full max-w-sm shadow-2xl border border-[var(--warm-border)]">
+        <div className="bg-[var(--cream)] rounded-2xl w-full max-w-sm shadow-lift border border-[var(--warm-border)]">
           {/* 헤더 */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
             <div>

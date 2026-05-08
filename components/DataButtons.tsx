@@ -424,7 +424,7 @@ export default function DataButtons() {
       {showExportModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
           onClick={() => setShowExportModal(false)}>
-          <div className="bg-[var(--cream)] rounded-2xl shadow-2xl w-full max-w-sm"
+          <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm"
             onClick={e => e.stopPropagation()}>
             <div className="px-6 pt-6 pb-4">
               <h3 className="text-base font-bold mb-1" style={{ color: 'var(--warm-dark)' }}>내보내기 범위</h3>

@@ -197,7 +197,7 @@ export default function Header({
         </button>
 
         {open && (
-          <div className="absolute right-0 top-12 w-48 rounded-xl shadow-xl z-50"
+          <div className="absolute right-0 top-12 w-48 rounded-xl shadow-lift z-50"
                style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
             <div className="p-3" style={{ borderBottom: '1px solid var(--warm-border)' }}>
               <p className="text-xs truncate" style={{ color: 'var(--warm-muted)' }}>{user.email}</p>
@@ -243,7 +243,7 @@ function MonthPicker({
 
   return (
     <div
-      className="absolute top-9 left-0 rounded-2xl shadow-2xl p-4 w-72"
+      className="absolute top-9 left-0 rounded-2xl shadow-lift p-4 w-72"
       style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
       onClick={e => e.stopPropagation()}
     >

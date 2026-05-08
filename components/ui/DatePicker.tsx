@@ -104,7 +104,7 @@ export function DatePicker({
       <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
 
       <div
-        className="fixed z-[100] rounded-2xl shadow-2xl select-none"
+        className="fixed z-[100] rounded-2xl shadow-lift select-none"
         style={{
           top: pos.top, left: pos.left, width: pos.width,
           background: 'var(--cream)',

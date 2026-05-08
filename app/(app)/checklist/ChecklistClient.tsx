@@ -290,7 +290,7 @@ function FormModal({
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden"
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
         onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-[var(--warm-border)] flex items-center justify-between">
           <p className="text-base font-bold" style={{ color: 'var(--warm-dark)' }}>{row ? '체크리스트 편집' : '체크리스트 추가'}</p>
@@ -412,7 +412,7 @@ function CheckModal({
   const [memo, setMemo] = useState('')
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden"
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
         onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-[var(--warm-border)] flex items-center justify-between">
           <div>

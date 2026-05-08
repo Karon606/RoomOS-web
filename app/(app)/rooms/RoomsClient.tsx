@@ -619,7 +619,7 @@ export default function RoomsClient({
     <div className="space-y-6">
       {/* 토스트 */}
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-md w-[calc(100%-2rem)] bg-[var(--warm-dark)] text-white text-xs rounded-xl px-4 py-3 shadow-lg flex items-start gap-2">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-md w-[calc(100%-2rem)] bg-[var(--warm-dark)] text-white text-xs rounded-xl px-4 py-3 shadow-lift flex items-start gap-2">
           <span className="text-amber-300 shrink-0">✦</span>
           <span className="flex-1 leading-relaxed">{toast}</span>
           <button onClick={() => setToast(null)} className="shrink-0 text-white/60 hover:text-white">✕</button>
@@ -680,7 +680,7 @@ export default function RoomsClient({
           {showColMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowColMenu(false)} />
-              <div className="absolute right-0 mt-2 z-50 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-xl p-3 space-y-2 min-w-[140px]">
+              <div className="absolute right-0 mt-2 z-50 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift p-3 space-y-2 min-w-[140px]">
                 {COL_DEFS.map(col => (
                   <label key={col.key} className="flex items-center gap-2.5 cursor-pointer">
                     <input
@@ -1066,7 +1066,7 @@ export default function RoomsClient({
                 <span>⚙</span> 열 설정
               </button>
               {showVacantColMenu && (
-                <div className="absolute right-0 top-full mt-1.5 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-3 z-50 shadow-xl min-w-[160px] space-y-2">
+                <div className="absolute right-0 top-full mt-1.5 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-3 z-50 shadow-lift min-w-[160px] space-y-2">
                   {VACANT_COL_DEFS.map(col => (
                     <label key={col.key} className="flex items-center gap-2.5 cursor-pointer group">
                       <input type="checkbox" checked={vacantColVis[col.key] ?? false}
