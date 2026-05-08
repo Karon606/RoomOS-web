@@ -772,17 +772,18 @@ export default function RoomsClient({
                       && room.isPaid
                       && !!checkoutMonth
                       && checkoutMonth <= targetMonth
+                    // M7 가이드: 의미 강한 라벨은 솔리드 톤. 대기성 라벨은 페일.
                     const badgeClass = !room.isPaid
-                      ? 'bg-red-50 text-red-600 ring-red-200'
+                      ? 'bg-[var(--persimmon)] text-white'                      // danger — 미납
                       : showCheckout
-                        ? 'bg-yellow-50 text-yellow-700 ring-yellow-200'
+                        ? 'bg-[var(--honey)] text-[var(--ink)]'                 // warn — 퇴실 예정
                         : isAwaiting
-                          ? 'bg-blue-50 text-blue-700 ring-blue-200'
-                          : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                          ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'     // 페일 blue — 대기
+                          : 'bg-[#6a9f3a] text-white'                           // success — 완납
                     const badgeText = !room.isPaid ? '미납' : showCheckout ? '퇴실 예정' : isAwaiting ? '납부 예정' : '완납'
                     return (
                       <>
-                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ring-1 ${badgeClass}`}>
+                        <span className={`text-xs px-2.5 py-0.5 rounded-md font-bold ${badgeClass}`}>
                           {badgeText}
                         </span>
                         {!room.isPaid && dueInfo && (
@@ -994,17 +995,18 @@ export default function RoomsClient({
                             && room.isPaid
                             && !!checkoutMonth
                             && checkoutMonth <= targetMonth
+                          // M7 가이드: 의미 강한 라벨은 솔리드 톤
                           const badgeClass = !room.isPaid
-                            ? 'bg-red-50 text-red-600 ring-red-200'
+                            ? 'bg-[var(--persimmon)] text-white'
                             : showCheckout
-                              ? 'bg-yellow-50 text-yellow-700 ring-yellow-200'
+                              ? 'bg-[var(--honey)] text-[var(--ink)]'
                               : isAwaiting
-                                ? 'bg-blue-50 text-blue-700 ring-blue-200'
-                                : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                                ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'
+                                : 'bg-[#6a9f3a] text-white'
                           const badgeText = !room.isPaid ? '미납' : showCheckout ? '퇴실 예정' : isAwaiting ? '납부 예정' : '완납'
                           return (
                             <>
-                              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ring-1 ${badgeClass}`}>
+                              <span className={`text-xs px-2.5 py-1 rounded-md font-bold ${badgeClass}`}>
                                 {badgeText}
                               </span>
                               {!room.isPaid && (() => {

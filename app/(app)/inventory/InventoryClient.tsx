@@ -140,7 +140,7 @@ function InventoryCard({ row, onOpen }: { row: InventoryRow; onOpen: () => void 
           <p className="text-sm font-bold text-[var(--warm-dark)] truncate">{row.label}</p>
           <p className="text-[10px] mt-0.5" style={{ color: tint?.fg }}>{row.category}</p>
         </div>
-        {lowStock && <Badge tone="red">소진 임박</Badge>}
+        {lowStock && <Badge tone="danger" mono>소진 임박</Badge>}
       </div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
         <div>
