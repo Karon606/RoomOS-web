@@ -33,17 +33,17 @@ export default function RootLoading() {
         .splash-text { animation: roos-fade 2.4s ease-in-out infinite; }
       `}</style>
 
-      {/* RoomOS 워드마크 */}
+      {/* RoomOS 워드마크 — 가이드 명시: 가운데 O만 persimmon */}
       <h1
         className="splash-text mb-7 tracking-tight"
         style={{
-          fontSize: 30,
-          fontWeight: 700,
-          letterSpacing: '-0.04em',
-          color: 'var(--warm-dark, var(--ink-2))',
+          fontSize: 36,
+          fontWeight: 800,
+          letterSpacing: '-0.045em',
+          color: 'var(--ink, #1a1a1a)',
         }}
       >
-        Room<span style={{ color: 'var(--coral, var(--persimmon))' }}>OS</span>
+        Room<span style={{ color: 'var(--persimmon, #e84a1a)' }}>O</span>S
       </h1>
 
       {/* 4-bar 로고 — (app)/loading.tsx 모티프와 동일 */}

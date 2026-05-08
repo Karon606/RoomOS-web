@@ -80,9 +80,8 @@ function LogoFull() {
         <line x1="0" y1="20.5" x2="28" y2="20.5" stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.62"/>
         <line x1="0" y1="29"   x2="14" y2="29"   stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.28"/>
       </svg>
-      <span className="text-[18px] tracking-tight" style={{ color: 'var(--warm-dark)' }}>
-        <span style={{ fontWeight: 300 }}>Room</span>
-        <span style={{ fontWeight: 700, color: 'var(--coral)' }}>OS</span>
+      <span className="text-[20px] tracking-tight" style={{ color: 'var(--ink)', fontWeight: 800, letterSpacing: '-0.04em' }}>
+        Room<span style={{ color: 'var(--persimmon)' }}>O</span>S
       </span>
     </div>
   )
