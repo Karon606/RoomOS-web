@@ -412,7 +412,7 @@ export default function RoomManageClient({
       {/* 검색바 + 필터 토글 */}
       <div className="flex gap-2">
         <div className="relative flex-1">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="11" cy="11" r="7" />
             <path d="M16 16 L21 21" />
           </svg>

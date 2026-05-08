@@ -7,7 +7,7 @@ const ico = {
   viewBox: '0 0 22 22',
   fill: 'none',
   stroke: 'currentColor',
-  strokeWidth: '1.6',
+  strokeWidth: '1.5',
   strokeLinecap: 'round' as const,
   strokeLinejoin: 'round' as const,
   width: 22,

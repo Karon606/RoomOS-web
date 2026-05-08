@@ -939,7 +939,7 @@ export default function TenantClient({
 
       {/* 모바일 검색바 */}
       <div className="sm:hidden relative">
-        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <circle cx="11" cy="11" r="7" />
           <path d="M16 16 L21 21" />
         </svg>
@@ -991,7 +991,7 @@ export default function TenantClient({
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
           <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm p-6 space-y-4">
             <div className="flex items-start gap-3">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--persimmon)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--persimmon)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}>
                 <path d="M12 3 L22 20 H2 L12 3 Z" />
                 <line x1="12" y1="10" x2="12" y2="14" />
                 <circle cx="12" cy="17" r="0.5" fill="currentColor" />
@@ -1792,7 +1792,7 @@ export default function TenantClient({
                                         className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md transition-colors disabled:opacity-40"
                                         style={{ color: 'var(--warm-muted)' }}
                                         title="삭제">
-                                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                           <path d="M1 3h12M4 3V2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M5.5 6v5M8.5 6v5M2 3l.8 9a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L12 3"/>
                                         </svg>
                                       </button>
@@ -1834,7 +1834,7 @@ export default function TenantClient({
                                           <button onClick={() => handleDelete(r.id)} disabled={reqPending}
                                             className="shrink-0 w-5 h-5 flex items-center justify-center rounded transition-colors disabled:opacity-40"
                                             style={{ color: 'var(--warm-muted)' }} title="삭제">
-                                            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                                            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                               <path d="M1 3h12M4 3V2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M5.5 6v5M8.5 6v5M2 3l.8 9a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L12 3"/>
                                             </svg>
                                           </button>

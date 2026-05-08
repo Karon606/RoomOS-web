@@ -5,7 +5,7 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import { RoomOSWordmark } from '@/components/brand/RoomOSWordmark'
 
 // ── SVG Icons ──────────────────────────────────────────────────────
-const ico = { viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: '1.6', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, width: 17, height: 17, style: { flexShrink: 0 } }
+const ico = { viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: '1.5', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, width: 17, height: 17, style: { flexShrink: 0 } }
 
 function IcoDashboard() {
   return <svg {...ico}><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>
