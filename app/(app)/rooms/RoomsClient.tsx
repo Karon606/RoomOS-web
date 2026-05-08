@@ -826,17 +826,27 @@ export default function RoomsClient({
               {/* 셋째 줄: 월이용료 · 잔액/예정 · 납부일 */}
               <div className="flex items-center gap-2.5 mt-2 text-xs text-[var(--warm-mid)] flex-wrap">
                 <span className="font-medium text-[var(--warm-dark)]"><MoneyDisplay amount={room.expected} /></span>
-                {/* 실제 미납(!isPaid)일 때만 미수 표시 — '납부 예정' 케이스는 예정 라벨만 */}
-                {!room.isPaid && room.balance < 0 && (
-                  <span className="text-red-500">
-                    미수 -<MoneyDisplay amount={Math.abs(room.balance)} />
-                  </span>
-                )}
-                {room.balance > 0 && (
-                  <span className="text-emerald-600">
-                    선납 +<MoneyDisplay amount={room.balance} />
-                  </span>
-                )}
+                {/* 진짜 미수 = 이월 미수 + (이번 달 도래 후 미회수). 도래 전 청구는 미수 아님.
+                   carryOver < 0이면 이월 미수, balance < 0이면 viewMonth 정산 부족.
+                   단, viewMonth가 도래 전이면 balance는 미수 아닌 '예정 잔액'이므로
+                   nextDueDate가 있을 때(도래 전 + 이월 없음)는 carryOver만 카운트. */}
+                {(() => {
+                  const carryUnpaid    = room.carryOver < 0 ? -room.carryOver : 0
+                  // viewMonth 도래 전이면(=nextDueDate 있음) balance는 미수 아님.
+                  // nextDueDate가 null인 케이스: (a) 도래 후 미회수 (b) 이월 있어 nextDue 미표시.
+                  // (b)일 때 balance는 5월 단일 청구액으로 잡혀 있어 미수에 합산하면 과대 계산.
+                  // → balance는 carryOver==0이고 nextDueDate==null일 때만 미수에 합산.
+                  const viewUnpaid     = (!room.isPaid && room.carryOver === 0 && !room.nextDueDate && room.balance < 0)
+                                          ? -room.balance : 0
+                  const totalUnpaid    = carryUnpaid + viewUnpaid
+                  if (totalUnpaid > 0) {
+                    return <span className="text-red-500">미수 -<MoneyDisplay amount={totalUnpaid} /></span>
+                  }
+                  if (room.balance > 0) {
+                    return <span className="text-emerald-600">선납 +<MoneyDisplay amount={room.balance} /></span>
+                  }
+                  return null
+                })()}
                 {room.isPaid && room.nextDueDate && room.nextDueAmount > 0 && (
                   <span className="text-blue-600">
                     예정 <MoneyDisplay amount={room.nextDueAmount} />
