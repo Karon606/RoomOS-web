@@ -30,5 +30,6 @@ export function MoneyDisplay({
     return () => mq.removeEventListener('change', handler)
   }, [full, compact, alwaysFull])
 
-  return <span className={`whitespace-nowrap ${className ?? ''}`}>{text}</span>
+  // M7 가이드: 숫자는 항상 DM Mono + tabular-nums (가지런한 자릿수)
+  return <span className={`whitespace-nowrap mono tnum ${className ?? ''}`}>{text}</span>
 }
