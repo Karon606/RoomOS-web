@@ -1390,7 +1390,7 @@ export default function FinanceClient({
                               {(e.vendor || e.detail || e.memo) && (
                                 <p className="text-xs text-[var(--warm-dark)] truncate">{[e.vendor, e.detail, e.memo].filter(Boolean).join(' · ')}</p>
                               )}
-                              {e.receiptUrl && <span className="text-[10px] shrink-0">🧾</span>}
+                              {e.receiptUrl && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--coral-pale)] text-[var(--coral)] font-medium shrink-0">영수증</span>}
                             </div>
                           </div>
                         )
@@ -1481,7 +1481,7 @@ export default function FinanceClient({
                                 <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
                                   <div className="flex items-center gap-1.5">
                                     <span className="truncate">{e.detail ?? '—'}</span>
-                                    {e.receiptUrl && <span className="shrink-0 text-xs">🧾</span>}
+                                    {e.receiptUrl && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--coral-pale)] text-[var(--coral)] font-medium shrink-0">영수증</span>}
                                   </div>
                                 </td>
                                 <td className="px-4 py-3 text-sm font-semibold text-red-500 overflow-hidden"><span className="truncate block"><MoneyDisplay amount={e.amount} prefix="-" /></span></td>
@@ -2384,7 +2384,6 @@ export default function FinanceClient({
                 <div className="rounded-xl border border-[var(--coral)]/30 bg-[var(--coral)]/5 px-3 py-3 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span>✨</span>
                       <span className="text-xs font-semibold text-[var(--coral)]">영수증 사진으로 자동 입력</span>
                     </div>
                     <input

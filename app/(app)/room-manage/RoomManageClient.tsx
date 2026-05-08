@@ -412,7 +412,10 @@ export default function RoomManageClient({
       {/* 검색바 + 필터 토글 */}
       <div className="flex gap-2">
         <div className="relative flex-1">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-sm">🔍</span>
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M16 16 L21 21" />
+          </svg>
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -576,7 +579,9 @@ export default function RoomManageClient({
       {/* 호실 그리드 */}
       {filteredRooms.length === 0 ? (
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-12 text-center">
-          <p className="text-4xl mb-3">🏠</p>
+          <svg className="mx-auto mb-3" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 12 L12 4 L21 12 M5 10 V20 H19 V10" />
+          </svg>
           <p className="text-[var(--warm-dark)] font-medium">{search ? '검색 결과가 없습니다' : '등록된 호실이 없습니다'}</p>
           {!search && <p className="text-sm text-[var(--warm-muted)] mt-1">호실 등록 버튼을 눌러 시작하세요</p>}
         </div>
@@ -635,7 +640,9 @@ export default function RoomManageClient({
                     <img src={thumb.storageUrl} alt={`${room.roomNo}호`} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <span className="text-3xl opacity-20">🏠</span>
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: 0.4 }}>
+                        <path d="M3 12 L12 4 L21 12 M5 10 V20 H19 V10" />
+                      </svg>
                     </div>
                   )}
                 </div>

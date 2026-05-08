@@ -79,9 +79,9 @@ export default function SettingsForm({
     startTransition(async () => {
       try {
         await updatePropertySettings(formData)
-        showToast('✅ 저장되었습니다.')
+        showToast('저장되었습니다.')
       } catch (err: unknown) {
-        showToast('❌ 저장 실패: ' + (err as Error).message)
+        showToast('저장 실패: ' + (err as Error).message)
       }
     })
   }
@@ -194,24 +194,24 @@ export default function SettingsForm({
   const handleInvite = async () => {
     const email = inviteEmail.trim(); if (!email) return
     const result = await inviteMember(email, inviteRole)
-    if (!result.ok) { showToast('❌ ' + result.error); return }
+    if (!result.ok) { showToast(result.error); return }
     setInviteEmail('')
-    showToast('✅ 멤버가 추가되었습니다.')
+    showToast('멤버가 추가되었습니다.')
     router.refresh()
   }
 
   const handleRoleChange = async (userId: string, role: Role) => {
     const result = await updateMemberRole(userId, role)
-    if (!result.ok) { showToast('❌ ' + result.error); return }
+    if (!result.ok) { showToast(result.error); return }
     setMembers(prev => prev.map(m => m.userId === userId ? { ...m, role, roleLabel: ROLE_LABEL[role] } : m))
   }
 
   const handleRemove = async (userId: string, name: string) => {
     if (!confirm(`'${name}' 멤버를 제거할까요?`)) return
     const result = await removeMember(userId)
-    if (!result.ok) { showToast('❌ ' + result.error); return }
+    if (!result.ok) { showToast(result.error); return }
     setMembers(prev => prev.filter(m => m.userId !== userId))
-    showToast('✅ 멤버가 제거되었습니다.')
+    showToast('멤버가 제거되었습니다.')
   }
 
   // ── 부가수익 카테고리 ────────────────────────────────────────────

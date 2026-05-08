@@ -848,7 +848,6 @@ export default function TenantClient({
       {/* 토스트 */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-md w-[calc(100%-2rem)] bg-[var(--warm-dark)] text-white text-xs rounded-xl px-4 py-3 shadow-lift flex items-start gap-2">
-          <span className="text-amber-300 shrink-0">✦</span>
           <span className="flex-1 leading-relaxed">{toast}</span>
           <button onClick={() => setToast(null)} className="shrink-0 text-white/60 hover:text-white">✕</button>
         </div>
@@ -915,7 +914,7 @@ export default function TenantClient({
             onClick={() => setShowColMenu(v => !v)}
             className="px-3 py-1.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] text-sm rounded-xl transition-colors"
           >
-            ⚙ 열 설정
+            열 설정
           </button>
           {showColMenu && (
             <>
@@ -940,7 +939,10 @@ export default function TenantClient({
 
       {/* 모바일 검색바 */}
       <div className="sm:hidden relative">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-sm">🔍</span>
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" />
+          <path d="M16 16 L21 21" />
+        </svg>
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
@@ -989,7 +991,11 @@ export default function TenantClient({
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
           <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm p-6 space-y-4">
             <div className="flex items-start gap-3">
-              <span className="text-2xl">⚠️</span>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--persimmon)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}>
+                <path d="M12 3 L22 20 H2 L12 3 Z" />
+                <line x1="12" y1="10" x2="12" y2="14" />
+                <circle cx="12" cy="17" r="0.5" fill="currentColor" />
+              </svg>
               <div>
                 <p className="font-semibold text-[var(--warm-dark)]">{deleteTarget.name}님을 완전 삭제하시겠습니까?</p>
                 <p className="text-sm text-[var(--warm-mid)] mt-1.5 leading-relaxed">
@@ -1179,7 +1185,10 @@ export default function TenantClient({
       {/* 모바일 카드 뷰 */}
       {sorted.length === 0 ? (
         <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-12 text-center">
-          <p className="text-4xl mb-3">👤</p>
+          <svg className="mx-auto mb-3" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="9" r="4" />
+            <path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" />
+          </svg>
           <p className="text-[var(--warm-dark)] font-medium">
             {search.trim() ? '검색 결과가 없습니다' : '입주자가 없습니다'}
           </p>
@@ -1274,7 +1283,10 @@ export default function TenantClient({
       {/* 데스크탑 테이블 */}
       {sorted.length === 0 ? (
         <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-12 text-center">
-          <p className="text-4xl mb-3">👤</p>
+          <svg className="mx-auto mb-3" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="9" r="4" />
+            <path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" />
+          </svg>
           <p className="text-[var(--warm-dark)] font-medium">
             {search.trim() ? '검색 결과가 없습니다' : '입주자가 없습니다'}
           </p>
@@ -1886,7 +1898,6 @@ export default function TenantClient({
                           <div className="rounded-xl border border-[var(--coral)]/20 bg-[var(--coral)]/5 p-4 space-y-3">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
-                                <span className="text-base">✨</span>
                                 <span className="text-sm font-semibold text-[var(--coral)]">Gemini AI 수납 진단</span>
                               </div>
                               <button
@@ -2304,7 +2315,6 @@ export default function TenantClient({
                       <div className="border-t border-amber-500/20 bg-amber-500/5 px-6 py-3 space-y-2 shrink-0">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs">📅</span>
                             <span className="text-xs font-semibold text-amber-300">납부일 임시 조정</span>
                             {isOverrideActive && (
                               <span className="text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full">

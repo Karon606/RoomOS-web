@@ -505,7 +505,7 @@ function AISection() {
     <div className="space-y-4">
       {!text && !pending && !error && (
         <div className="bg-[var(--cream)] border border-[var(--coral)]/30 rounded-2xl p-6 text-center space-y-3">
-          <p className="text-2xl">✨</p>
+          <p className="text-xs font-mono text-[var(--persimmon)] tracking-wider uppercase">AI Diagnose</p>
           <p className="text-sm font-semibold text-[var(--warm-dark)]">Gemini AI 영업장 진단</p>
           <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
             현재 점유율·임대료·미수율·12개월 매출 추세·지출 구조·입주자 회전율 등을 종합 분석해<br/>
@@ -544,7 +544,6 @@ function AISection() {
         <div className="bg-[var(--cream)] border border-[var(--coral)]/30 rounded-2xl p-5 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-base">✨</span>
               <span className="text-sm font-semibold text-[var(--coral)]">AI 진단 결과</span>
             </div>
             <Btn variant="primary" size="sm" onClick={handleAnalyze}>다시 분석</Btn>

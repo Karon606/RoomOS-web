@@ -140,7 +140,7 @@ function InventoryCard({ row, onOpen }: { row: InventoryRow; onOpen: () => void 
           <p className="text-sm font-bold text-[var(--warm-dark)] truncate">{row.label}</p>
           <p className="text-[10px] mt-0.5" style={{ color: tint?.fg }}>{row.category}</p>
         </div>
-        {lowStock && <Badge tone="red" icon="⚠️">소진 임박</Badge>}
+        {lowStock && <Badge tone="red">소진 임박</Badge>}
       </div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
         <div>
@@ -171,12 +171,12 @@ function InventoryCard({ row, onOpen }: { row: InventoryRow; onOpen: () => void 
       </div>
       {row.memo && (
         <p className="text-[10px] text-[var(--warm-mid)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-2 py-1.5 leading-relaxed whitespace-pre-wrap">
-          📝 {row.memo}
+          메모 · {row.memo}
         </p>
       )}
       {row.reorderMemo && (
         <p className="text-[10px] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2 py-1.5 leading-relaxed">
-          📦 {row.reorderMemo}
+          발주 · {row.reorderMemo}
         </p>
       )}
       {row.lastPeriodConsumption != null && row.lastPeriodDays != null && (

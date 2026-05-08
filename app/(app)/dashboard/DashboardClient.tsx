@@ -426,7 +426,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
 
         {done ? (
           <div className="px-5 py-10 text-center">
-            <p className="text-sm font-semibold text-green-600">✅ 지출이 기록되었습니다</p>
+            <p className="text-sm font-semibold text-green-600">지출이 기록되었습니다</p>
           </div>
         ) : (
           <div className="px-5 py-4 space-y-3">
@@ -1042,7 +1042,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
             style={{ background: 'var(--coral)' }}>
             {isLoading
               ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />분석 중...</>
-              : '✦ AI 분석하기'}
+              : 'AI 분석하기'}
           </button>
         </div>
         {!aiText && !isLoading && !error && (
@@ -1828,7 +1828,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: '현황' },
   { key: 'finance',  label: '재무' },
   { key: 'tenants',  label: '입주자' },
-  { key: 'ai',       label: '✦ AI 분석' },
+  { key: 'ai',       label: 'AI 분석' },
 ]
 
 export default function DashboardClient({ data, targetMonth, paymentMethods }: { data: DashboardData; targetMonth: string; paymentMethods: string[] }) {
@@ -2247,7 +2247,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                       )}
                     </div>
                     {sortedUnpaid.length === 0 ? (
-                      <p className="text-sm text-center py-6" style={{ color: 'var(--warm-muted)' }}>이달 수납 완료 🎉</p>
+                      <p className="text-sm text-center py-6" style={{ color: 'var(--warm-muted)' }}>이달 수납 완료</p>
                     ) : (
                       <>
                         <div>
