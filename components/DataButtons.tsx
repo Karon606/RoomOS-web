@@ -392,7 +392,7 @@ export default function DataButtons() {
         <button onClick={handleExportClick}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors"
           style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-mid)' }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
             <path d="M7 1v8M4 6l3 3 3-3M2 11h10"/>
           </svg>
           내보내기
@@ -410,7 +410,7 @@ export default function DataButtons() {
             </>
           ) : (
             <>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
                 <path d="M7 9V1M4 4l3-3 3 3M2 11h10"/>
               </svg>
               가져오기

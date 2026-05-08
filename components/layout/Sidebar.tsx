@@ -4,32 +4,49 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { RoomOSWordmark } from '@/components/brand/RoomOSWordmark'
 
-// ── SVG Icons ──────────────────────────────────────────────────────
-const ico = { viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: '1.5', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, width: 17, height: 17, style: { flexShrink: 0 } }
+// ── SVG Icons — RoomOS Design Guide v2 (Lucide style)
+//   24×24 viewBox · stroke-width 1.6 · round caps/joins · currentColor
+const ico = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '1.6', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, width: 18, height: 18, style: { flexShrink: 0 } }
 
+// 대시보드 — LayoutGrid (4 rect)
 function IcoDashboard() {
-  return <svg {...ico}><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>
+  return <svg {...ico}><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
 }
+// 호실 관리 — Floor plan
 function IcoRooms() {
-  return <svg {...ico}><rect x="2" y="2" width="12" height="12" rx="2"/><line x1="2" y1="7" x2="14" y2="7"/><line x1="7" y1="7" x2="7" y2="14"/></svg>
+  return <svg {...ico}><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 10h18M10 10v11"/><path d="M14 6h3"/></svg>
 }
+// 입주자 — Person
 function IcoTenants() {
-  return <svg {...ico}><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-5 6-5s6 1.7 6 5"/></svg>
+  return <svg {...ico}><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
 }
+// 수납 관리 — Wallet
 function IcoFinance() {
-  return <svg {...ico}><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><circle cx="8" cy="9" r="1.5"/></svg>
+  return <svg {...ico}><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M7 6V5a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v1"/><circle cx="12" cy="13" r="2.5"/></svg>
 }
+// 지출/기타수익 — TrendingUp
 function IcoWallet() {
-  return <svg {...ico}><rect x="1" y="4" width="14" height="10" rx="1.5"/><path d="M11 9h2"/><circle cx="11.5" cy="9" r="0.5" fill="currentColor"/></svg>
+  return <svg {...ico}><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>
 }
-function IcoSettings() {
-  return <svg {...ico}><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M3.2 12.8l1.4-1.4M11.4 4.6l1.4-1.4"/></svg>
+// 재고 관리 — Boxes
+function IcoInventory() {
+  return <svg {...ico}><path d="M21 8L12 3 3 8v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>
 }
-function IcoMarket() {
-  return <svg {...ico}><rect x="1" y="8" width="3" height="6" rx="0.5"/><rect x="6" y="5" width="3" height="9" rx="0.5"/><rect x="11" y="2" width="3" height="12" rx="0.5"/><line x1="0" y1="14.5" x2="15" y2="14.5"/></svg>
+// 결산 보고서 — FileText
+function IcoReport() {
+  return <svg {...ico}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 14l2 2 4-4"/></svg>
 }
+// 체크리스트 — CalendarCheck
 function IcoChecklist() {
-  return <svg {...ico}><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 8l2 2 4-4"/></svg>
+  return <svg {...ico}><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4M8 15l2 2 4-4"/></svg>
+}
+// 시세조사 — Search
+function IcoMarket() {
+  return <svg {...ico}><circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5"/></svg>
+}
+// 환경설정 — Cog
+function IcoSettings() {
+  return <svg {...ico}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
 }
 
 // ── Nav structure ──────────────────────────────────────────────────
@@ -45,10 +62,10 @@ const NAV_GROUPS = [
   {
     label: '수익/지출',
     items: [
-      { href: '/rooms',     label: '수납 관리',     Icon: IcoFinance },
-      { href: '/finance',   label: '지출/기타수익', Icon: IcoWallet  },
-      { href: '/inventory', label: '재고 관리',     Icon: IcoWallet  },
-      { href: '/report',    label: '결산 보고서',   Icon: IcoFinance },
+      { href: '/rooms',     label: '수납 관리',     Icon: IcoFinance   },  // Wallet
+      { href: '/finance',   label: '지출/기타수익', Icon: IcoWallet    },  // TrendingUp
+      { href: '/inventory', label: '재고 관리',     Icon: IcoInventory },  // Boxes
+      { href: '/report',    label: '결산 보고서',   Icon: IcoReport    },  // FileText
     ],
   },
   {

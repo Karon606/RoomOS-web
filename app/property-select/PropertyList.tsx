@@ -94,7 +94,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
       <div className="space-y-3">
         <div className="rounded-2xl p-8 text-center space-y-3"
              style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-          <svg className="mx-auto" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg className="mx-auto" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M3 21 V8 L12 3 L21 8 V21 M9 21 V13 H15 V21" />
           </svg>
           <p className="font-medium" style={{ color: 'var(--warm-dark)' }}>소속된 영업장이 없습니다</p>
