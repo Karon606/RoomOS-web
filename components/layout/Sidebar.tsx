@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
+import { RoomOSWordmark } from '@/components/brand/RoomOSWordmark'
 
 // ── SVG Icons ──────────────────────────────────────────────────────
 const ico = { viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: '1.6', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, width: 17, height: 17, style: { flexShrink: 0 } }
@@ -80,9 +81,7 @@ function LogoFull() {
         <line x1="0" y1="20.5" x2="28" y2="20.5" stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.62"/>
         <line x1="0" y1="29"   x2="14" y2="29"   stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.28"/>
       </svg>
-      <span className="text-[20px] tracking-tight" style={{ color: 'var(--ink)', fontWeight: 800, letterSpacing: '-0.04em' }}>
-        Room<span style={{ color: 'var(--persimmon)' }}>O</span>S
-      </span>
+      <RoomOSWordmark height={22} weight={800} />
     </div>
   )
 }

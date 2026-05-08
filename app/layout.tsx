@@ -42,10 +42,11 @@ export default function RootLayout({
   return (
     <html lang="ko" className={dmMono.variable}>
       <head>
-        {/* 가이드 명시: 한글 본문·디스플레이는 Pretendard. Pretendard는 Google Fonts에 없어 jsdelivr CDN 사용. */}
+        {/* 가이드 명시: 한글 본문·디스플레이는 Pretendard. Pretendard는 Google Fonts에 없어 jsdelivr CDN.
+            Variable 버전 — 100~900 모든 weight를 한 파일로 안정 로딩. */}
         <link
           rel="stylesheet"
-          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"
+          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css"
         />
       </head>
       <body>{children}</body>

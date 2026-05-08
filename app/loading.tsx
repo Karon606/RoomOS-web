@@ -1,3 +1,5 @@
+import { RoomOSWordmark } from '@/components/brand/RoomOSWordmark'
+
 // 루트 레벨 loading.tsx — 첫 진입(cold start, 모바일 백그라운드 복귀 등)
 // 시점부터 표시되는 풀스크린 스플래시. (app)/loading.tsx는 layout이
 // 렌더된 이후 page fetch 동안만 표시되므로 그 이전 구간은 빈 화면이었음.
@@ -33,18 +35,10 @@ export default function RootLoading() {
         .splash-text { animation: roos-fade 2.4s ease-in-out infinite; }
       `}</style>
 
-      {/* RoomOS 워드마크 — 가이드 명시: 가운데 O만 persimmon */}
-      <h1
-        className="splash-text mb-7 tracking-tight"
-        style={{
-          fontSize: 36,
-          fontWeight: 800,
-          letterSpacing: '-0.045em',
-          color: 'var(--ink, #1a1a1a)',
-        }}
-      >
-        Room<span style={{ color: 'var(--persimmon, #e84a1a)' }}>O</span>S
-      </h1>
+      {/* RoomOS 워드마크 — SVG 컴포넌트로 폰트 의존성 최소화 */}
+      <div className="splash-text mb-7">
+        <RoomOSWordmark height={42} weight={800} />
+      </div>
 
       {/* 4-bar 로고 — (app)/loading.tsx 모티프와 동일 */}
       <div
