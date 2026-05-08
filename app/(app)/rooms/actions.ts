@@ -886,17 +886,18 @@ export async function clearDueDayOverride(leaseTermId: string) {
 }
 
 // 수납 내역 조회
-export async function getTenantLeaseForDashboard(tenantId: string) {
+export async function getTenantLeaseForDashboard(tenantId: string, targetMonth?: string) {
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return null
-  return prisma.leaseTerm.findFirst({
+  const lease = await prisma.leaseTerm.findFirst({
     where: { tenantId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
     select: {
       id: true,
       rentAmount: true,
       depositAmount: true,
       dueDay: true,
+      moveInDate: true,
       paymentTiming: true,
       overrideDueDay: true,
       overrideDueDayMonth: true,
@@ -906,6 +907,48 @@ export async function getTenantLeaseForDashboard(tenantId: string) {
     },
     orderBy: { createdAt: 'desc' },
   })
+  if (!lease) return null
+
+  // carryOver = targetMonth 이전까지 누적 (양수=이월 선납, 음수=이월 미수)
+  // 모달에서 진짜 미수(이월 + viewMonth 도래 후 미회수)를 표시하기 위함
+  let carryOver = 0
+  if (targetMonth && lease.moveInDate) {
+    const [y, m] = targetMonth.split('-').map(Number)
+    const monthStart = new Date(y, m - 1, 1)
+
+    // 이전 달까지 입금 합 (보증금·납입일변경 조정 제외)
+    const recordsBefore = await prisma.paymentRecord.findMany({
+      where: { leaseTermId: lease.id, isDeposit: false, payDate: { lt: monthStart } },
+      select: { actualAmount: true, memo: true },
+    })
+    const receivedBefore = recordsBefore
+      .filter(r => !r.memo?.startsWith('[납입일변경]'))
+      .reduce((s, r) => s + r.actualAmount, 0)
+
+    // 이전 달까지 청구 = max(moveInDate, acquisitionDate)부터 (targetMonth-1)월까지의 월 수 * rentAmount
+    const mi = new Date(lease.moveInDate)
+    let startY = mi.getFullYear()
+    let startM = mi.getMonth() + 1
+    const acqRaw = lease.property.acquisitionDate
+    if (acqRaw) {
+      const acq = new Date(acqRaw)
+      const acqY = acq.getFullYear(), acqM = acq.getMonth() + 1
+      // acqDate가 moveIn보다 이후면 그 시점부터 청구 (이전 소유자 시기 제외)
+      if (acqY > startY || (acqY === startY && acqM > startM)) {
+        startY = acqY; startM = acqM
+      }
+    }
+    let billedMonths = 0
+    let cy = startY, cmn = startM
+    while (cy < y || (cy === y && cmn < m)) {
+      billedMonths++
+      cmn++; if (cmn > 12) { cmn = 1; cy++ }
+    }
+    const billedBefore = billedMonths * lease.rentAmount
+    carryOver = receivedBefore - billedBefore
+  }
+
+  return { ...lease, carryOver }
 }
 
 export async function getTenantQuickInfo(tenantId: string) {

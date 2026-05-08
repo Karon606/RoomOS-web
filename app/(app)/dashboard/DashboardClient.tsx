@@ -1110,7 +1110,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
     let cancelled = false
     ;(async () => {
       setLoading(true)
-      const l = await getTenantLeaseForDashboard(tenantId)
+      const l = await getTenantLeaseForDashboard(tenantId, targetMonth)
       if (cancelled) return
       setLease(l)
       if (l) {
@@ -1143,7 +1143,12 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
   const prevOwnerPaid = regularRecords.filter(isPreAcq).reduce((s, p) => s + p.actualAmount, 0)
   const regularPaid = regularRecords.reduce((s, p) => s + p.actualAmount, 0) - prevOwnerPaid
   const adjNet = adjRecords.reduce((s, p) => s + p.actualAmount, 0)
-  const balance = lease ? regularPaid + adjNet - lease.rentAmount : 0
+  // viewMonth(targetMonth) 단일 정산 — 5월 입금 - 5월 청구
+  const viewBalance = lease ? regularPaid + adjNet - lease.rentAmount : 0
+  // 누적 잔액 = 이월(carryOver) + viewMonth 정산
+  // carryOver < 0 = 이월 미수, viewBalance < 0 = 이번 달 잔액 부족
+  const carryOver = lease?.carryOver ?? 0
+  const balance = viewBalance + carryOver
 
   // 양도인 자동 완납 여부 계산
   const cutoffDate2 = lease?.property.prevOwnerCutoffDate ?? lease?.property.acquisitionDate ?? null
@@ -1268,19 +1273,63 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
             <div className="p-6 space-y-5">
               {error && <p className="text-xs text-red-500 bg-red-50 rounded-xl px-3 py-2">{error}</p>}
 
-              {/* 수납 현황 */}
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { label: '예정 금액', value: `${lease!.rentAmount.toLocaleString()}원`, color: 'var(--warm-dark)' },
-                  { label: '납부 금액', value: `${regularPaid.toLocaleString()}원`, color: regularPaid >= lease!.rentAmount ? '#16a34a' : 'var(--warm-dark)' },
-                  { label: balance >= 0 ? '과입금' : '미납', value: `${Math.abs(balance).toLocaleString()}원`, color: balance >= 0 ? '#16a34a' : '#ef4444' },
-                ].map(item => (
-                  <div key={item.label} className="rounded-xl p-3 text-center" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
-                    <p className="text-[10px] text-[var(--warm-muted)] mb-1">{item.label}</p>
-                    <p className="text-xs font-bold" style={{ color: item.color }}>{item.value}</p>
-                  </div>
-                ))}
-              </div>
+              {/* 수납 현황 — 누적 미수(이월 + viewMonth 도래 후 미회수) 정확히 반영 */}
+              {(() => {
+                // viewMonth 도래 여부: 같은 월이면 dueDay 비교, 과거면 자동 도래, 미래면 미도래
+                const dueDay = lease?.dueDay ? parseInt(lease.dueDay, 10) : 0
+                const [tY, tM] = targetMonth.split('-').map(Number)
+                const today = new Date()
+                const todayY = today.getFullYear(), todayM = today.getMonth() + 1
+                let viewDuePassed: boolean
+                if (tY > todayY || (tY === todayY && tM > todayM)) viewDuePassed = false
+                else if (tY < todayY || (tY === todayY && tM < todayM)) viewDuePassed = true
+                else {
+                  if (dueDay >= 1 && dueDay <= 31) {
+                    const td = new Date(tY, tM - 1, Math.min(dueDay, new Date(tY, tM, 0).getDate()))
+                    td.setHours(23, 59, 59, 999)
+                    viewDuePassed = today >= td
+                  } else viewDuePassed = true
+                }
+                // 진짜 미수 = 이월 미수 + (도래 후 viewMonth 미회수만)
+                const trueUnpaid = (carryOver < 0 ? -carryOver : 0)
+                                 + (viewDuePassed && viewBalance < 0 ? -viewBalance : 0)
+                const truePrepaid = (carryOver > 0 ? carryOver : 0)
+                                  + (viewBalance > 0 ? viewBalance : 0)
+                const thirdLabel = trueUnpaid > 0 ? '미수' : truePrepaid > 0 ? '선납' : '정상'
+                const thirdValue = trueUnpaid > 0
+                  ? `-${trueUnpaid.toLocaleString()}원`
+                  : truePrepaid > 0 ? `+${truePrepaid.toLocaleString()}원` : '0원'
+                const thirdColor = trueUnpaid > 0 ? '#ef4444' : truePrepaid > 0 ? '#16a34a' : 'var(--warm-mid)'
+                return (
+                  <>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { label: '이달 청구', value: `${lease!.rentAmount.toLocaleString()}원`, color: 'var(--warm-dark)' },
+                        { label: '이달 납부', value: `${regularPaid.toLocaleString()}원`, color: regularPaid >= lease!.rentAmount ? '#16a34a' : 'var(--warm-dark)' },
+                        { label: thirdLabel, value: thirdValue, color: thirdColor },
+                      ].map(item => (
+                        <div key={item.label} className="rounded-xl p-3 text-center" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+                          <p className="text-[10px] text-[var(--warm-muted)] mb-1">{item.label}</p>
+                          <p className="text-xs font-bold mono tnum" style={{ color: item.color }}>{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {/* carryOver(이월) 별도 보조 표시 — 0이 아닐 때만 */}
+                    {carryOver !== 0 && (
+                      <p className="text-[11px] text-[var(--warm-muted)] mt-1.5 text-center">
+                        {carryOver < 0 ? (
+                          <>이월 미수 <span className="text-red-500 font-medium mono tnum">{Math.abs(carryOver).toLocaleString()}원</span> 포함</>
+                        ) : (
+                          <>이월 선납 <span className="text-emerald-600 font-medium mono tnum">{carryOver.toLocaleString()}원</span> 포함</>
+                        )}
+                        {!viewDuePassed && viewBalance < 0 && (
+                          <span className="ml-1.5 text-[var(--warm-muted)]">(이달 청구 {Math.abs(viewBalance).toLocaleString()}원은 도래 전)</span>
+                        )}
+                      </p>
+                    )}
+                  </>
+                )
+              })()}
 
               {/* 납부 내역 */}
               {(payHistory.length > 0 || isAutoPaidNoBilling) && (
