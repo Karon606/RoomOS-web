@@ -183,7 +183,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
           </div>
           <div className="space-y-2">
             {summary.expenseByCategory.map(c => {
-              const colors = ['#f4623a', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#06b6d4', '#ef4444', '#94a3b8']
+              const colors = ['var(--persimmon)', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#06b6d4', '#ef4444', '#94a3b8']
               const idx = summary.expenseByCategory.indexOf(c)
               const color = colors[idx % colors.length]
               return (

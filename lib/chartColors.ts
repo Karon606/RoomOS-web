@@ -6,7 +6,7 @@
 
 export const CHART_COLORS = [
   '#e8893a', // Warm Orange  — 1순위
-  '#f4623a', // Coral (Brand)— 2순위
+  'var(--persimmon)', // Coral (Brand)— 2순위
   '#d4a847', // Amber Gold   — 3순위
   '#b8c45a', // Warm Lime    — 4순위
   '#6aab7e', // Sage Green   — 5순위
@@ -23,7 +23,7 @@ export function chartColor(index: number): string {
 
 /** 지출 카테고리 고정 색상 매핑 */
 export const EXPENSE_CATEGORY_COLORS: Record<string, string> = {
-  '관리비':      '#f4623a', // Coral (브랜드)
+  '관리비':      'var(--persimmon)', // Coral (브랜드)
   '수선유지':    '#d4a847', // Amber Gold
   '세금':        '#7b8fc4', // Periwinkle
   '인건비':      '#e8893a', // Warm Orange

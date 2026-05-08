@@ -273,7 +273,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               {initial}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-bold leading-snug" style={{ color: '#5a4a3a' }}>{alert.text}</p>
+              <p className="text-sm font-bold leading-snug" style={{ color: 'var(--ink-2)' }}>{alert.text}</p>
               <span className="inline-block mt-1.5 text-[10px] font-semibold rounded-full px-2 py-0.5"
                 style={{ background: hexToRgba(alert.dotColor, 0.12), color: alert.dotColor }}>
                 {alert.timeLabel}{alert.exactDate ? ` · ${alert.exactDate}` : ''}
@@ -523,7 +523,7 @@ const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
   movein:    { label: '입실 희망',    color: '#3b82f6' },
   tour:      { label: '투어 예정',    color: '#a855f7' },
   wish:      { label: '희망 호실/조건 매칭', color: '#22c55e' },
-  request:   { label: '요청·컴플레인',color: '#f4623a' },
+  request:   { label: '요청·컴플레인',color: 'var(--persimmon)' },
   recurring: { label: '고정 지출',    color: '#6366f1' },
   inventory: { label: '재고 부족',    color: '#d4a847' },
   other:     { label: '기타',         color: '#94a3b8' },
@@ -565,7 +565,7 @@ function AlertsStrip({ alerts, onOpenAlert }: {
     <div className="rounded-xl flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
       <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b shrink-0" style={{ borderColor: DIVIDER_COLOR }}>
         <div className="flex items-center gap-2">
-          <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>알림</h3>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)' }}>알림</h3>
           <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>미처리</span>
         </div>
         <span className="rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>
@@ -586,7 +586,7 @@ function AlertsStrip({ alerts, onOpenAlert }: {
               style={{ background: 'rgba(0,0,0,0.015)' }}
             >
               <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: meta.color }} />
-              <span className="text-[11px] font-semibold flex-1 text-left" style={{ color: '#5a4a3a' }}>
+              <span className="text-[11px] font-semibold flex-1 text-left" style={{ color: 'var(--ink-2)' }}>
                 {meta.label}
               </span>
               <span className="text-[10px] font-medium" style={{ color: 'var(--warm-muted)' }}>
@@ -610,7 +610,7 @@ function AlertsStrip({ alerts, onOpenAlert }: {
                           {item.text.slice(0, 1)}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>{item.text}</p>
+                          <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink-2)' }}>{item.text}</p>
                           <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
                             {item.timeLabel}{item.exactDate ? ` · ${item.exactDate}` : ''}
                           </p>
@@ -645,7 +645,7 @@ function DonutChart({
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       {total === 0 ? (
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e8ddd2" strokeWidth={strokeWidth} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--cream-3)" strokeWidth={strokeWidth} />
       ) : (
         segments.filter(s => s.value > 0).map((seg, i) => {
           const pct = seg.value / total
@@ -660,7 +660,7 @@ function DonutChart({
           )
         })
       )}
-      {centerLabel && <text x={cx} y={cy + 6} textAnchor="middle" fontSize="15" fontWeight="700" fill="#5a4a3a">{centerLabel}</text>}
+      {centerLabel && <text x={cx} y={cy + 6} textAnchor="middle" fontSize="15" fontWeight="700" fill="var(--ink-2)">{centerLabel}</text>}
       {centerSub && <text x={cx} y={cy + 22} textAnchor="middle" fontSize="10" fill="#a89888">{centerSub}</text>}
     </svg>
   )
@@ -743,8 +743,8 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
     color: chartColor(i),
   }))
   const paymentSegments = [
-    { value: data.paidCount,   color: '#f4623a' },
-    { value: data.unpaidCount, color: '#e8ddd2' },
+    { value: data.paidCount,   color: 'var(--persimmon)' },
+    { value: data.unpaidCount, color: 'var(--cream-3)' },
   ]
   const paymentRate = (data.paidCount + data.unpaidCount) > 0
     ? Math.round((data.paidCount / (data.paidCount + data.unpaidCount)) * 100)
@@ -814,7 +814,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#a89888' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
               <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: 10, fill: '#a89888' }} axisLine={false} tickLine={false} width={52} />
               <Tooltip
-                contentStyle={{ background: '#fff', border: '1px solid #e8ddd2', borderRadius: 8, fontSize: 12 }}
+                contentStyle={{ background: '#fff', border: '1px solid var(--cream-3)', borderRadius: 8, fontSize: 12 }}
                 formatter={(v, name) => [`${Number(v).toLocaleString()}만원`, String(name)]}
               />
               <Area type="monotone" dataKey="revenue" name="수입" stroke="var(--coral)" strokeWidth={2} fill="url(#gradRev)" dot={false} activeDot={{ r: 4, fill: 'var(--coral)' }} />
@@ -829,7 +829,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#a89888' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
               <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: 10, fill: '#a89888' }} axisLine={false} tickLine={false} width={52} />
               <Tooltip
-                contentStyle={{ background: '#fff', border: '1px solid #e8ddd2', borderRadius: 8, fontSize: 12 }}
+                contentStyle={{ background: '#fff', border: '1px solid var(--cream-3)', borderRadius: 8, fontSize: 12 }}
                 formatter={(v, name) => [`${Number(v).toLocaleString()}만원`, String(name)]}
               />
               <Bar dataKey="revenue" name="수입" fill="var(--coral)" radius={[3, 3, 0, 0]} maxBarSize={28} />
@@ -870,9 +870,9 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             </div>
             <div className="flex-1 space-y-3">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: '#f4623a' }} />
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: 'var(--persimmon)' }} />
                 <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>완납</span>
-                <span className="text-sm font-semibold" style={{ color: '#f4623a' }}>{data.paidCount}건</span>
+                <span className="text-sm font-semibold" style={{ color: 'var(--persimmon)' }}>{data.paidCount}건</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: '#c4b5a5' }} />
@@ -895,7 +895,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
 function TenantsTab({ data }: { data: DashboardData }) {
   const occupancyRate = data.totalRooms > 0 ? Math.round((data.occupiedRooms / data.totalRooms) * 100) : 0
   const statusTotal = data.statusCounts.active + data.statusCounts.reserved + data.statusCounts.checkout + data.statusCounts.nonResident
-  const occupancySegments = [{ value: data.occupiedRooms, color: '#f4623a' }, { value: data.vacantRooms, color: '#e8ddd2' }]
+  const occupancySegments = [{ value: data.occupiedRooms, color: 'var(--persimmon)' }, { value: data.vacantRooms, color: 'var(--cream-3)' }]
   const statusSegments = [
     { value: data.statusCounts.active,      color: STATUS_COLORS.active },
     { value: data.statusCounts.reserved,    color: STATUS_COLORS.reserved },
@@ -921,7 +921,7 @@ function TenantsTab({ data }: { data: DashboardData }) {
           <div className="flex items-center gap-4">
             <DonutChart segments={occupancySegments} centerLabel={`${occupancyRate}%`} centerSub="입주율" />
             <div className="space-y-2.5 flex-1">
-              {[{ label: '거주중', val: `${data.occupiedRooms}실`, dot: '#f4623a' }, { label: '공실', val: `${data.vacantRooms}실`, dot: '#e8ddd2' }, { label: '전체', val: `${data.totalRooms}실`, dot: '' }].map(r => (
+              {[{ label: '거주중', val: `${data.occupiedRooms}실`, dot: 'var(--persimmon)' }, { label: '공실', val: `${data.vacantRooms}실`, dot: 'var(--cream-3)' }, { label: '전체', val: `${data.totalRooms}실`, dot: '' }].map(r => (
                 <div key={r.label} className="flex items-center gap-2">
                   {r.dot ? <span className="w-2 h-2 rounded-full shrink-0" style={{ background: r.dot }} /> : <span className="w-2 h-2 shrink-0" />}
                   <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{r.label}</span>
@@ -1872,7 +1872,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             누적 미납
           </p>
-          <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.overdueAmount > 0 ? '#ef4444' : '#5a4a3a' }}>
+          <p style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.overdueAmount > 0 ? '#ef4444' : 'var(--ink-2)' }}>
             {data.overdueAmount.toLocaleString()}
             <small style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
@@ -1891,7 +1891,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             월 지출
           </p>
-          <p style={{ fontSize: 22, fontWeight: 700, color: '#5a4a3a', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+          <p style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink-2)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
             {data.totalExpense.toLocaleString()}
             <small style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
@@ -1935,7 +1935,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             입실 현황
           </p>
-          <p style={{ fontSize: 26, fontWeight: 700, color: '#5a4a3a', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+          <p style={{ fontSize: 26, fontWeight: 700, color: 'var(--ink-2)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
             {data.occupiedRooms}
             <small style={{ fontSize: 13, fontWeight: 400, color: 'var(--warm-muted)' }}> / {data.totalRooms}</small>
           </p>
@@ -1976,7 +1976,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                   {/* 방 현황 그리드 */}
                   <div className="rounded-xl p-5 flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
                     <div className="flex items-center justify-between mb-3.5 shrink-0">
-                      <p style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)' }}>
                         방 현황
                         <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 6 }}>{data.totalRooms}개 호실</span>
                       </p>
@@ -2044,7 +2044,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                   <div className="rounded-xl p-5 flex flex-col gap-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>이달 손익 현황</h3>
+                        <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)' }}>이달 손익 현황</h3>
                         <p style={{ fontSize: 11, color: 'var(--warm-muted)', marginTop: 1 }}>
                           {parseInt(targetMonth.slice(5))}월 예상 순이익 {data.netProfit + data.unpaidAmount !== 0
                             ? `${fmtKorMoney((data.netProfit + data.unpaidAmount))}`
@@ -2057,8 +2057,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                     {/* ── 매출 섹션 ── */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between mb-1">
-                        <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>예상 매출</span>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-2)' }}>예상 매출</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-2)' }}>
                           {fmtKorMoney(data.totalExpected)}
                         </span>
                       </div>
@@ -2100,10 +2100,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                     {/* ── 지출 섹션 ── */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between mb-1">
-                        <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-2)' }}>
                           예상 지출{!data.hasExpenseHistory ? <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 4 }}>고정지출 기준</span> : null}
                         </span>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-2)' }}>
                           {fmtKorMoney(data.expectedExpense)}
                         </span>
                       </div>
@@ -2148,8 +2148,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                       return (
                         <div className="space-y-2">
                           <div className="flex items-center justify-between mb-1">
-                            <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>예상 순이익</span>
-                            <span style={{ fontSize: 11, fontWeight: 600, color: '#5a4a3a' }}>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-2)' }}>예상 순이익</span>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-2)' }}>
                               {expectedNet !== 0 ? `${fmtKorMoney(expectedNet )}` : '—'}
                             </span>
                           </div>
@@ -2188,7 +2188,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                   <div>
                     <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
                       <div className="flex items-center gap-2">
-                        <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>이달 미수납</h3>
+                        <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)' }}>이달 미수납</h3>
                         <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
                       </div>
                       {data.unpaidCount > 0 && (
@@ -2216,7 +2216,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   {l.tenantName.slice(0, 1)}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-semibold truncate flex items-center gap-1" style={{ color: '#5a4a3a' }}>
+                                  <p className="text-xs font-semibold truncate flex items-center gap-1" style={{ color: 'var(--ink-2)' }}>
                                     {l.roomNo}호 {l.tenantName}
                                     {l.daysOverdue != null && l.daysOverdue >= 7 && (
                                       <span className="rounded-full text-[9px] font-bold px-1.5 py-0.5" style={{ background: '#dc2626', color: '#fff' }}>
@@ -2255,7 +2255,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                   <div>
                     <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
                       <div className="flex items-center gap-2">
-                        <h3 style={{ fontSize: 13, fontWeight: 600, color: '#5a4a3a' }}>납입 완료</h3>
+                        <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)' }}>납입 완료</h3>
                         <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
                       </div>
                       {data.activity.length > 0 && (
@@ -2281,7 +2281,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 {item.tenantName.slice(0, 1)}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-xs font-semibold truncate" style={{ color: '#5a4a3a' }}>{item.roomNo}호 {item.tenantName}</p>
+                                <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink-2)' }}>{item.roomNo}호 {item.tenantName}</p>
                                 <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</p>
                               </div>
                               <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>

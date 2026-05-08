@@ -40,10 +40,10 @@ export default function RootLoading() {
           fontSize: 30,
           fontWeight: 700,
           letterSpacing: '-0.04em',
-          color: 'var(--warm-dark, #5a4a3a)',
+          color: 'var(--warm-dark, var(--ink-2))',
         }}
       >
-        Room<span style={{ color: 'var(--coral, #f4623a)' }}>OS</span>
+        Room<span style={{ color: 'var(--coral, var(--persimmon))' }}>OS</span>
       </h1>
 
       {/* 4-bar 로고 — (app)/loading.tsx 모티프와 동일 */}
@@ -53,16 +53,16 @@ export default function RootLoading() {
       >
         <svg width="54" height="54" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{ overflow: 'visible' }}>
           <g className="splash-b1">
-            <line x1="3" y1="6"  x2="57" y2="6"  stroke="var(--coral, #f4623a)" strokeWidth="8" strokeLinecap="round" />
+            <line x1="3" y1="6"  x2="57" y2="6"  stroke="var(--coral, var(--persimmon))" strokeWidth="8" strokeLinecap="round" />
           </g>
           <g className="splash-b2">
-            <line x1="3" y1="23" x2="38" y2="23" stroke="var(--coral, #f4623a)" strokeWidth="8" strokeLinecap="round" opacity="0.5" />
+            <line x1="3" y1="23" x2="38" y2="23" stroke="var(--coral, var(--persimmon))" strokeWidth="8" strokeLinecap="round" opacity="0.5" />
           </g>
           <g className="splash-b3">
-            <line x1="3" y1="40" x2="57" y2="40" stroke="var(--coral, #f4623a)" strokeWidth="8" strokeLinecap="round" opacity="0.72" />
+            <line x1="3" y1="40" x2="57" y2="40" stroke="var(--coral, var(--persimmon))" strokeWidth="8" strokeLinecap="round" opacity="0.72" />
           </g>
           <g className="splash-b4">
-            <line x1="3" y1="57" x2="30" y2="57" stroke="var(--coral, #f4623a)" strokeWidth="8" strokeLinecap="round" opacity="0.38" />
+            <line x1="3" y1="57" x2="30" y2="57" stroke="var(--coral, var(--persimmon))" strokeWidth="8" strokeLinecap="round" opacity="0.38" />
           </g>
         </svg>
       </div>

@@ -513,7 +513,7 @@ function DonutChart({
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       {total === 0 ? (
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e8ddd2" strokeWidth={strokeWidth} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--cream-3)" strokeWidth={strokeWidth} />
       ) : (
         segments.filter(s => s.value > 0).map((seg, i) => {
           const pct = seg.value / total
@@ -528,7 +528,7 @@ function DonutChart({
           )
         })
       )}
-      {centerLabel && <text x={cx} y={cy + 5} textAnchor="middle" fontSize="13" fontWeight="700" fill="#5a4a3a">{centerLabel}</text>}
+      {centerLabel && <text x={cx} y={cy + 5} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--ink-2)">{centerLabel}</text>}
       {centerSub && <text x={cx} y={cy + 19} textAnchor="middle" fontSize="10" fill="#a89888">{centerSub}</text>}
     </svg>
   )

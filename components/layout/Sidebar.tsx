@@ -75,10 +75,10 @@ function LogoFull() {
   return (
     <div className="flex items-center gap-3">
       <svg width="28" height="30" viewBox="0 0 28 30" fill="none">
-        <line x1="0" y1="3.5"  x2="28" y2="3.5"  stroke="#f4623a" strokeWidth="4.5" strokeLinecap="round"/>
-        <line x1="0" y1="12"   x2="18" y2="12"   stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.42"/>
-        <line x1="0" y1="20.5" x2="28" y2="20.5" stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.62"/>
-        <line x1="0" y1="29"   x2="14" y2="29"   stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.28"/>
+        <line x1="0" y1="3.5"  x2="28" y2="3.5"  stroke="var(--persimmon)" strokeWidth="4.5" strokeLinecap="round"/>
+        <line x1="0" y1="12"   x2="18" y2="12"   stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.42"/>
+        <line x1="0" y1="20.5" x2="28" y2="20.5" stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.62"/>
+        <line x1="0" y1="29"   x2="14" y2="29"   stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.28"/>
       </svg>
       <span className="text-[18px] tracking-tight" style={{ color: 'var(--warm-dark)' }}>
         <span style={{ fontWeight: 300 }}>Room</span>
@@ -91,10 +91,10 @@ function LogoFull() {
 function LogoMark() {
   return (
     <svg width="28" height="30" viewBox="0 0 28 30" fill="none">
-      <line x1="0" y1="3.5"  x2="28" y2="3.5"  stroke="#f4623a" strokeWidth="4.5" strokeLinecap="round"/>
-      <line x1="0" y1="12"   x2="18" y2="12"   stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.42"/>
-      <line x1="0" y1="20.5" x2="28" y2="20.5" stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.62"/>
-      <line x1="0" y1="29"   x2="14" y2="29"   stroke="#7a6a5a" strokeWidth="4.5" strokeLinecap="round" opacity="0.28"/>
+      <line x1="0" y1="3.5"  x2="28" y2="3.5"  stroke="var(--persimmon)" strokeWidth="4.5" strokeLinecap="round"/>
+      <line x1="0" y1="12"   x2="18" y2="12"   stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.42"/>
+      <line x1="0" y1="20.5" x2="28" y2="20.5" stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.62"/>
+      <line x1="0" y1="29"   x2="14" y2="29"   stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.28"/>
     </svg>
   )
 }

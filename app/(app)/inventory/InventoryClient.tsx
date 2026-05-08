@@ -27,7 +27,7 @@ import {
 
 const CATEGORY_TINT: Record<string, { bg: string; fg: string }> = {
   '부식비':       { bg: 'rgba(232,137,58,0.10)',  fg: '#e8893a' },
-  '소모품비':     { bg: 'rgba(244,98,58,0.10)',   fg: '#f4623a' },
+  '소모품비':     { bg: 'rgba(244,98,58,0.10)',   fg: 'var(--persimmon)' },
   '폐기물 처리비':{ bg: 'rgba(91,164,184,0.10)',  fg: '#5aa4b8' },
 }
 

@@ -8,14 +8,14 @@ import type { DashboardData } from '../dashboard/DashboardClient'
 // ── 상수 ────────────────────────────────────────────────────────
 
 const CATEGORY_COLORS: Record<string, string> = {
-  관리비:   '#f4623a',
+  관리비:   'var(--persimmon)',
   수선유지: '#f97316',
   세금:     '#ef4444',
   인건비:   '#a855f7',
   소모품:   '#22c55e',
   기타:     '#a89888',
 }
-const FALLBACK_COLORS = ['#f4623a','#f97316','#ef4444','#a855f7','#22c55e','#a89888','#3b82f6','#eab308']
+const FALLBACK_COLORS = ['var(--persimmon)','#f97316','#ef4444','#a855f7','#22c55e','#a89888','#3b82f6','#eab308']
 
 // ── 도넛 차트 ───────────────────────────────────────────────────
 
@@ -33,7 +33,7 @@ function DonutChart({
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       {total === 0 ? (
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e8ddd2" strokeWidth={strokeWidth} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--cream-3)" strokeWidth={strokeWidth} />
       ) : (
         segments.filter(s => s.value > 0).map((seg, i) => {
           const pct = seg.value / total
@@ -48,7 +48,7 @@ function DonutChart({
           )
         })
       )}
-      {centerLabel && <text x={cx} y={cy + 6} textAnchor="middle" fontSize="15" fontWeight="700" fill="#5a4a3a">{centerLabel}</text>}
+      {centerLabel && <text x={cx} y={cy + 6} textAnchor="middle" fontSize="15" fontWeight="700" fill="var(--ink-2)">{centerLabel}</text>}
       {centerSub && <text x={cx} y={cy + 22} textAnchor="middle" fontSize="10" fill="#a89888">{centerSub}</text>}
     </svg>
   )
@@ -236,7 +236,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
 
 const GENDER_LABEL: Record<string, string> = { MALE: '남성', FEMALE: '여성', OTHER: '기타', UNKNOWN: '미기재' }
 const GENDER_COLOR: Record<string, string> = { MALE: '#3b82f6', FEMALE: '#ec4899', OTHER: '#a855f7', UNKNOWN: '#a89888' }
-const DIST_COLORS = ['#f4623a', '#22c55e', '#f97316', '#a855f7', '#eab308', '#a89888']
+const DIST_COLORS = ['var(--persimmon)', '#22c55e', '#f97316', '#a855f7', '#eab308', '#a89888']
 
 function DistList({ items, colors }: { items: { label: string; count: number; percent: number }[]; colors: string[] }) {
   if (items.length === 0) return <p className="text-sm py-4 text-center" style={{ color: 'var(--warm-muted)' }}>데이터 없음</p>
@@ -263,7 +263,7 @@ function DistList({ items, colors }: { items: { label: string; count: number; pe
 function TenantsTab({ data }: { data: DashboardData }) {
   const occupancyRate = data.totalRooms > 0 ? Math.round((data.occupiedRooms / data.totalRooms) * 100) : 0
   const statusTotal = data.statusCounts.active + data.statusCounts.reserved + data.statusCounts.checkout + data.statusCounts.nonResident
-  const occupancySegments = [{ value: data.occupiedRooms, color: '#f4623a' }, { value: data.vacantRooms, color: '#e8ddd2' }]
+  const occupancySegments = [{ value: data.occupiedRooms, color: 'var(--persimmon)' }, { value: data.vacantRooms, color: 'var(--cream-3)' }]
   const statusSegments = [
     { value: data.statusCounts.active,      color: '#22c55e' },
     { value: data.statusCounts.reserved,    color: '#3b82f6' },
@@ -288,7 +288,7 @@ function TenantsTab({ data }: { data: DashboardData }) {
           <div className="flex items-center gap-4">
             <DonutChart segments={occupancySegments} centerLabel={`${occupancyRate}%`} centerSub="입주율" />
             <div className="space-y-2.5 flex-1">
-              {[{ label: '거주중', val: `${data.occupiedRooms}실`, dot: '#f4623a' }, { label: '공실', val: `${data.vacantRooms}실`, dot: '#e8ddd2' }, { label: '전체', val: `${data.totalRooms}실`, dot: '' }].map(r => (
+              {[{ label: '거주중', val: `${data.occupiedRooms}실`, dot: 'var(--persimmon)' }, { label: '공실', val: `${data.vacantRooms}실`, dot: 'var(--cream-3)' }, { label: '전체', val: `${data.totalRooms}실`, dot: '' }].map(r => (
                 <div key={r.label} className="flex items-center gap-2">
                   {r.dot ? <span className="w-2 h-2 rounded-full shrink-0" style={{ background: r.dot }} /> : <span className="w-2 h-2 shrink-0" />}
                   <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{r.label}</span>

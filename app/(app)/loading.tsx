@@ -29,16 +29,16 @@ export default function AppLoading() {
           style={{ overflow: 'visible' }}
         >
           <g className="rl-b1">
-            <line x1="3" y1="6"  x2="57" y2="6"  stroke="#f4623a" strokeWidth="8" strokeLinecap="round" />
+            <line x1="3" y1="6"  x2="57" y2="6"  stroke="var(--persimmon)" strokeWidth="8" strokeLinecap="round" />
           </g>
           <g className="rl-b2">
-            <line x1="3" y1="23" x2="38" y2="23" stroke="#f4623a" strokeWidth="8" strokeLinecap="round" opacity="0.5" />
+            <line x1="3" y1="23" x2="38" y2="23" stroke="var(--persimmon)" strokeWidth="8" strokeLinecap="round" opacity="0.5" />
           </g>
           <g className="rl-b3">
-            <line x1="3" y1="40" x2="57" y2="40" stroke="#f4623a" strokeWidth="8" strokeLinecap="round" opacity="0.72" />
+            <line x1="3" y1="40" x2="57" y2="40" stroke="var(--persimmon)" strokeWidth="8" strokeLinecap="round" opacity="0.72" />
           </g>
           <g className="rl-b4">
-            <line x1="3" y1="57" x2="30" y2="57" stroke="#f4623a" strokeWidth="8" strokeLinecap="round" opacity="0.38" />
+            <line x1="3" y1="57" x2="30" y2="57" stroke="var(--persimmon)" strokeWidth="8" strokeLinecap="round" opacity="0.38" />
           </g>
         </svg>
       </div>
