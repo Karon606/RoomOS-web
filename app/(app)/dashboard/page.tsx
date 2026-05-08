@@ -1082,8 +1082,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       })
     } else if (l.upcomingPortion > 0 && days < 0 && days >= -UNPAID_UPCOMING_ALERT_DAYS) {
       // 도래 임박 — '납부 예정' 카테고리. 가까운 순(D-1 → D-7)으로 정렬되도록 sortKey는 절댓값.
-      const dueDate = new Date(today.getTime() + days * 86400000)
-      const timeLabel = dayLabel(days)
+      // days = today - dueDate (음수=미래). 미래 dueDate 복원은 today - days, 즉 today + |days|.
+      const daysLeft = -days
+      const dueDate = new Date(today.getTime() + daysLeft * 86400000)
+      const timeLabel = daysLeft === 0 ? '오늘 납부일' : `${daysLeft}일 남음`
       alertItems.push({
         category:  'upcoming',
         text:      `${l.tenantName}님 ${l.roomNo}호 납부 예정`,
@@ -1091,7 +1093,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         dotColor:  '#d4a847',
         timeLabel,
         tenantId:  l.tenantId,
-        detail:    `청구 예정액 ${l.upcomingPortion.toLocaleString()}원${days === 0 ? ' — 오늘이 납부일입니다.' : ` — ${Math.abs(days)}일 후 납부 예정.`}`,
+        detail:    `청구 예정액 ${l.upcomingPortion.toLocaleString()}원${daysLeft === 0 ? ' — 오늘이 납부일입니다.' : ` — ${daysLeft}일 후 납부 예정.`}`,
         exactDate: fmtShortDate(dueDate),
         sortKey:   Math.abs(days),
       })
