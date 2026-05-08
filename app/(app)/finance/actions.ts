@@ -690,6 +690,8 @@ export type RecurringExpenseWithStatus = {
   recordedDate: string | null
   // 변동 항목 과거 평균
   historicalAvg: number | null
+  // 미리 입력된 예약 금액 — 결제일 모달에서 prefill될 값. 기록 시 자동 클리어
+  pendingAmount: number | null
 }
 
 export async function getRecurringExpensesWithStatus(month: string): Promise<RecurringExpenseWithStatus[]> {
@@ -766,6 +768,7 @@ export async function getRecurringExpensesWithStatus(month: string): Promise<Rec
       recordedAmount:    isPending ? null : (recorded?.amount ?? null),
       recordedDate:      isPending ? null : (recorded ? new Date(recorded.date).toISOString().slice(0, 10) : null),
       historicalAvg:     historicalAvgVal,
+      pendingAmount:     (re as any).pendingAmount ?? null,
     }
   })
 }
@@ -788,18 +791,77 @@ export async function recordRecurringExpense(data: {
     })
     if (!recurring) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
 
-    await prisma.expense.create({
-      data: {
-        propertyId,
-        date:                new Date(data.date),
-        amount:              data.amount,
-        category:            recurring.category,
-        detail:              recurring.title,
-        payMethod:           data.payMethod ?? recurring.payMethod ?? '계좌이체',
-        memo:                data.memo ?? null,
-        settleStatus:        (data.payMethod ?? recurring.payMethod) === '신용카드' ? 'UNSETTLED' : 'SETTLED',
-        recurringExpenseId:  data.recurringExpenseId,
-      },
+    await prisma.$transaction([
+      prisma.expense.create({
+        data: {
+          propertyId,
+          date:                new Date(data.date),
+          amount:              data.amount,
+          category:            recurring.category,
+          detail:              recurring.title,
+          payMethod:           data.payMethod ?? recurring.payMethod ?? '계좌이체',
+          memo:                data.memo ?? null,
+          settleStatus:        (data.payMethod ?? recurring.payMethod) === '신용카드' ? 'UNSETTLED' : 'SETTLED',
+          recurringExpenseId:  data.recurringExpenseId,
+        },
+      }),
+      // 예약 금액 자동 클리어 — 같은 트랜잭션으로 처리해 부분 실패 방지
+      prisma.recurringExpense.update({
+        where: { id: data.recurringExpenseId },
+        data:  { pendingAmount: null },
+      }),
+    ])
+    revalidatePath('/finance')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (e) {
+    if ((e as any)?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+// 예약 금액 저장 — 변동 고정지출 금액을 미리 알았을 때.
+// Expense는 만들지 않고 RecurringExpense.pendingAmount만 갱신.
+export async function setRecurringPendingAmount(input: {
+  recurringExpenseId: string
+  amount: number
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (input.amount <= 0) return { ok: false, error: '금액은 0보다 커야 합니다.' }
+    const found = await prisma.recurringExpense.findFirst({
+      where: { id: input.recurringExpenseId, propertyId },
+      select: { id: true },
+    })
+    if (!found) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
+    await prisma.recurringExpense.update({
+      where: { id: input.recurringExpenseId },
+      data:  { pendingAmount: input.amount },
+    })
+    revalidatePath('/finance')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (e) {
+    if ((e as any)?.digest?.startsWith('NEXT_REDIRECT')) throw e
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+export async function clearRecurringPendingAmount(input: {
+  recurringExpenseId: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const found = await prisma.recurringExpense.findFirst({
+      where: { id: input.recurringExpenseId, propertyId },
+      select: { id: true },
+    })
+    if (!found) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
+    await prisma.recurringExpense.update({
+      where: { id: input.recurringExpenseId },
+      data:  { pendingAmount: null },
     })
     revalidatePath('/finance')
     revalidatePath('/dashboard')

@@ -9,6 +9,7 @@ import {
   recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits,
   analyzeReceiptWithGemini,
   addReserveDeposit, addReserveWithdrawDirect, settleReserveFromExpense, deleteReserveTransaction,
+  setRecurringPendingAmount, clearRecurringPendingAmount,
   type RecurringExpenseWithStatus,
 } from './actions'
 import {
@@ -1396,7 +1397,8 @@ export default function FinanceClient({
                       }
                       // 미확인 고정 지출 카드
                       const r = item.rec
-                      const expectedAmt = r.historicalAvg ?? r.amount
+                      // 예약 금액이 있으면 우선 prefill, 없으면 평균 또는 기본 금액
+                      const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
                       return (
                         <div key={`rec-${r.id}`}
                           onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.payMethod ?? '계좌이체'); setRecError('') }}
@@ -1424,6 +1426,11 @@ export default function FinanceClient({
                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20">{r.category}</span>
                             {r.payMethod && <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{r.payMethod}</span>}
                             {r.isVariable && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-500 ring-1 ring-blue-100">변동</span>}
+                            {r.pendingAmount != null && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200 font-medium">
+                                예약 {r.pendingAmount.toLocaleString()}원
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-[var(--warm-dark)] font-medium">{r.title}{r.memo ? ` · ${r.memo}` : ''}</p>
                         </div>
@@ -1489,7 +1496,8 @@ export default function FinanceClient({
                           }
                           // 미확인 고정 지출 행
                           const r = item.rec
-                          const expectedAmt = r.historicalAvg ?? r.amount
+                          // 예약 금액이 있으면 우선 prefill, 없으면 평균 또는 기본 금액
+                      const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
                           return (
                             <tr key={`rec-${r.id}`}
                               onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.payMethod ?? '계좌이체'); setRecError('') }}
@@ -2766,7 +2774,7 @@ export default function FinanceClient({
     {/* ── 고정 지출 기록 모달 ────────────────────────────────────────── */}
     {recordingRec && (
       <div
-        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
         onClick={e => { if (e.target === e.currentTarget) { setRecordingRec(null); setRecError('') } }}>
         <div className="bg-[var(--cream)] rounded-2xl w-full max-w-sm shadow-2xl border border-[var(--warm-border)]">
           {/* 헤더 */}
@@ -2813,28 +2821,61 @@ export default function FinanceClient({
               </div>
             </div>
             {recError && <p className="text-red-400 text-xs">{recError}</p>}
-            <div className="flex gap-2 pt-1">
-              <button type="button" onClick={() => { setRecordingRec(null); setRecError('') }}
-                className="flex-1 px-4 py-2.5 bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)] text-sm rounded-xl">취소</button>
+            {recordingRec.pendingAmount != null && (
+              <p className="text-[10px] text-[var(--warm-muted)] -mt-1">
+                예약된 금액 {recordingRec.pendingAmount.toLocaleString()}원이 자동 입력되었습니다.
+                <button type="button"
+                  onClick={() => {
+                    startTransition(async () => {
+                      await clearRecurringPendingAmount({ recurringExpenseId: recordingRec.id })
+                      setRecordingRec(null); router.refresh()
+                    })
+                  }}
+                  className="ml-1 underline text-[var(--coral)]">예약 취소</button>
+              </p>
+            )}
+            <div className="flex flex-col gap-2 pt-1">
+              <div className="flex gap-2">
+                <button type="button" onClick={() => { setRecordingRec(null); setRecError('') }}
+                  className="flex-1 px-4 py-2.5 bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)] text-sm rounded-xl">취소</button>
+                <button type="button"
+                  disabled={isPending || !recRecDate || recRecAmount <= 0}
+                  onClick={() => {
+                    setRecError('')
+                    startTransition(async () => {
+                      const res = await recordRecurringExpense({
+                        recurringExpenseId: recordingRec.id,
+                        amount: recRecAmount,
+                        date: recRecDate,
+                        payMethod: recRecPayMethod || undefined,
+                        memo: recRecMemo || undefined,
+                      })
+                      if (!res.ok) { setRecError(res.error); return }
+                      setRecordingRec(null)
+                      router.refresh()
+                    })
+                  }}
+                  className="flex-1 px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-semibold rounded-xl disabled:opacity-60 transition-opacity">
+                  {isPending ? '저장 중...' : '기록 저장'}
+                </button>
+              </div>
+              {/* 예약 저장 — 결제일 전에 금액만 미리 입력해 두는 모드. 지출은 생성하지 않음. */}
               <button type="button"
-                disabled={isPending || !recRecDate || recRecAmount <= 0}
+                disabled={isPending || recRecAmount <= 0}
                 onClick={() => {
                   setRecError('')
                   startTransition(async () => {
-                    const res = await recordRecurringExpense({
+                    const res = await setRecurringPendingAmount({
                       recurringExpenseId: recordingRec.id,
                       amount: recRecAmount,
-                      date: recRecDate,
-                      payMethod: recRecPayMethod || undefined,
-                      memo: recRecMemo || undefined,
                     })
                     if (!res.ok) { setRecError(res.error); return }
                     setRecordingRec(null)
                     router.refresh()
                   })
                 }}
-                className="flex-1 px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-semibold rounded-xl disabled:opacity-60 transition-opacity">
-                {isPending ? '저장 중...' : '기록 저장'}
+                className="w-full px-4 py-2 bg-[var(--canvas)] border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-xs rounded-xl hover:bg-[var(--coral)]/5 disabled:opacity-60 transition-colors">
+                예약 저장 (결제일에 처리) — 금액만 보관
               </button>
             </div>
           </div>
