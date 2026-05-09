@@ -1952,7 +1952,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             보유 보증금
           </p>
-          <p className="mono tnum" style={{ fontSize: 22, fontWeight: 700, color: '#7c3aed', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+          <p className="mono tnum" style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-deposit)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
             {data.totalDeposit.toLocaleString()}
             <small style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
@@ -1964,7 +1964,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             보유 예비비
           </p>
-          <p className="mono tnum" style={{ fontSize: 22, fontWeight: 700, color: '#0d9488', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+          <p className="mono tnum" style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-reserve)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
             {data.reserveBalance.toLocaleString()}
             <small style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
@@ -2063,13 +2063,14 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               const displayName = r.isVacant
                                 ? '공실'
                                 : nameParts.length >= 2 ? nameParts[1] : (r.tenantName ?? '거주중')
+                              // M7: 라이트/다크 자동 전환 status 토큰 사용
                               const cellStyle = r.isVacant
-                                ? { background: 'rgba(200,160,120,0.12)', color: 'var(--warm-muted)' }
+                                ? { background: 'var(--status-vacant-bg)', color: 'var(--status-vacant-fg)' }
                                 : isUnpaid
-                                  ? { background: 'rgba(234,179,8,0.18)', color: '#a16207' }
+                                  ? { background: 'var(--status-unpaid-bg)', color: 'var(--status-unpaid-fg)' }
                                   : isAwaiting
-                                    ? { background: 'rgba(59,130,246,0.12)', color: '#1e40af' }
-                                    : { background: 'rgba(16,185,129,0.12)', color: '#047857' }
+                                    ? { background: 'var(--status-await-bg)', color: 'var(--status-await-fg)' }
+                                    : { background: 'var(--status-paid-bg)', color: 'var(--status-paid-fg)' }
                               return (
                                 <div
                                   key={r.roomNo}

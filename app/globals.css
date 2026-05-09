@@ -47,6 +47,20 @@
   --chart-8:  #c8c0b4;   /* misc — gray */
   --chart-9:  #c83a10;   /* extra — persimmon-d */
   --chart-10: #4d3e2e;   /* extra — ink-3 */
+
+  /* Status (의미) — 페일 셀 / 강조 페어. 라이트 톤. 다크는 .dark에서 override */
+  --status-paid-bg:     rgba(16,185,129,0.12);  /* 납부 완료 */
+  --status-paid-fg:     #047857;
+  --status-paid-strong: #6a9f3a;                /* 솔리드 (b-success) */
+  --status-await-bg:    rgba(59,130,246,0.12);  /* 납부 예정 */
+  --status-await-fg:    #1e40af;
+  --status-unpaid-bg:   rgba(234,179,8,0.18);   /* 미납 */
+  --status-unpaid-fg:   #a16207;
+  --status-vacant-bg:   rgba(200,160,120,0.12); /* 공실 */
+  --status-vacant-fg:   #7a6a55;
+  /* 강조 보조색 — 보증금(purple), 예비비(teal) */
+  --accent-deposit: #7c3aed;
+  --accent-reserve: #0d9488;
 }
 
 @theme inline {
@@ -150,6 +164,20 @@ html.dark {
   /* Chart — 다크에서 미세 조정 (어두운 배경에 더 잘 보이게)
      원래 카테고리 색은 채도 높은 편이라 대부분 OK. ink(#1a1a1a)는 다크 배경이라 안 보여 cream으로 */
   --chart-1:  #fbf6ee;       /* ops — light ink in dark mode */
+
+  /* Status — 다크 적합 톤. 배경 alpha 약간 ↑, 텍스트는 밝은 톤으로 */
+  --status-paid-bg:     rgba(74,222,128,0.18);  /* emerald-400 alpha */
+  --status-paid-fg:     #6ee7b7;                /* emerald-300 */
+  --status-paid-strong: #4ade80;                /* solid */
+  --status-await-bg:    rgba(96,165,250,0.18);  /* blue-400 alpha */
+  --status-await-fg:    #93c5fd;                /* blue-300 */
+  --status-unpaid-bg:   rgba(251,191,36,0.20);  /* amber-400 alpha */
+  --status-unpaid-fg:   #fcd34d;                /* amber-300 */
+  --status-vacant-bg:   rgba(168,152,128,0.16); /* warm muted */
+  --status-vacant-fg:   #c8b89a;                /* 밝은 베이지 */
+  /* 강조 — 다크에서 더 밝게 */
+  --accent-deposit: #a78bfa;                    /* violet-400 */
+  --accent-reserve: #5eead4;                    /* teal-300 */
 }
 
 html.dark body { color: var(--ink-2); background: var(--cream-2); }
