@@ -1402,7 +1402,7 @@ export default function FinanceClient({
                       return (
                         <div key={`rec-${r.id}`}
                           onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.payMethod ?? '계좌이체'); setRecError('') }}
-                          className="bg-[var(--cream)] border border-[var(--warm-border)] border-l-[3px] border-l-amber-400 rounded-2xl p-4 cursor-pointer hover:bg-[var(--canvas)] active:opacity-70 transition-colors">
+                          className="bg-amber-50/40 border border-amber-200 rounded-2xl p-4 cursor-pointer hover:bg-amber-50/70 active:opacity-70 transition-colors">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-xs text-[var(--warm-muted)]">{item.dateStr.slice(5).replace('-', '/')} 납부일</span>
                             <div className="flex items-center gap-1.5">
