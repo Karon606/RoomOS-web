@@ -155,10 +155,10 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .business-stamp-image { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
   /* Made with RoomOS — 우측 하단에 살짝 안쪽으로 들여서 시각적으로 안 잘려 보이게 */
-  .powered-by { position: absolute; right: 6mm; bottom: 4mm; margin: 0; display: inline-flex; align-items: center; gap: 5px; }
-  .powered-by-prefix { font-family: 'DM Mono', 'Pretendard', monospace; font-size: 6.5pt; letter-spacing: 0.04em; color: #b8b0a3; font-weight: 500; }
-  .powered-by-wordmark { font-family: 'Pretendard', sans-serif; font-weight: 900; font-size: 11px; letter-spacing: -0.06em; color: #4a4a4a; opacity: 0.78; }
-  .powered-by-wordmark .o { color: #e84a1a; }
+  .made-with { position: absolute; right: 6mm; bottom: 4mm; margin: 0; display: inline-flex; align-items: center; gap: 5px; }
+  .made-with-prefix { font-family: 'DM Mono', 'Pretendard', monospace; font-size: 6.5pt; letter-spacing: 0.04em; color: #b8b0a3; font-weight: 500; }
+  .made-with-wordmark { font-family: 'Pretendard', sans-serif; font-weight: 900; font-size: 11px; letter-spacing: -0.06em; color: #4a4a4a; opacity: 0.78; }
+  .made-with-wordmark .o { color: #e84a1a; }
 </style>
 </head>
 <body>
@@ -209,9 +209,9 @@ export function buildContractPrintHtml(d: PrintContractData): string {
       </div>
     </div>
 
-    <div class="powered-by" aria-label="Made with RoomOS">
-      <span class="powered-by-prefix">Made with</span>
-      <span class="powered-by-wordmark">Room<span class="o">O</span>S</span>
+    <div class="made-with" aria-label="Made with RoomOS">
+      <span class="made-with-prefix">Made with</span>
+      <span class="made-with-wordmark">Room<span class="o">O</span>S</span>
     </div>
   </div>
 </body>

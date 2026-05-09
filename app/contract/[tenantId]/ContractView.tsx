@@ -514,9 +514,9 @@ export default function ContractView({ data }: { data: ContractData }) {
         </div>
 
         {/* 우측 하단 이스터에그 — Brand Guide 정식 워드마크(SVG) 사용 */}
-        <div className="powered-by" aria-label="Made with RoomOS">
-          <span className="powered-by-prefix">Made with</span>
-          <RoomOSWordmark height={11} className="powered-by-wm" />
+        <div className="made-with" aria-label="Made with RoomOS">
+          <span className="made-with-prefix">Made with</span>
+          <RoomOSWordmark height={11} className="made-with-wm" />
         </div>
       </main>
       </div>
@@ -640,10 +640,10 @@ export default function ContractView({ data }: { data: ContractData }) {
           box-sizing: border-box;
         }
 
-        /* powered by RoomOS — 우측 하단 작은 이스터에그.
-           "powered by"는 무광 그레이, 워드마크는 Brand Guide ink + persimmon 사양 그대로
+        /* Made with RoomOS — 우측 하단 작은 이스터에그.
+           "Made with"는 무광 그레이, 워드마크는 Brand Guide ink + persimmon 사양 그대로
            (SVG라서 인쇄·PDF에도 폰트 의존성 없이 동일 렌더) */
-        .powered-by {
+        .made-with {
           position: absolute;
           right: 16mm;
           bottom: 6mm;
@@ -655,14 +655,14 @@ export default function ContractView({ data }: { data: ContractData }) {
           --ink: #4a4a4a;
           --persimmon: #e84a1a;
         }
-        .powered-by-prefix {
+        .made-with-prefix {
           font-family: 'DM Mono', 'Pretendard', monospace;
           font-size: 6.5pt;
           letter-spacing: 0.04em;
           color: #b8b0a3;
           font-weight: 500;
         }
-        .powered-by-wm {
+        .made-with-wm {
           opacity: 0.78; /* 너무 튀지 않게 살짝 죽임 */
         }
 
@@ -897,8 +897,8 @@ export default function ContractView({ data }: { data: ContractData }) {
           }
           /* 1장 보장 — 본문 섹션 사이에서 페이지 split 금지 */
           .section, .info-table, .oath, .business-block, .emergency-note { page-break-inside: avoid; }
-          /* 인쇄 시 powered-by 위치 — 페이지 끝에 너무 붙으면 잘려보이므로 안쪽으로 살짝 */
-          .powered-by { right: 6mm; bottom: 4mm; }
+          /* 인쇄 시 made-with 위치 — 페이지 끝에 너무 붙으면 잘려보이므로 안쪽으로 살짝 */
+          .made-with { right: 6mm; bottom: 4mm; }
           /* 도장·로고 — 인쇄에서도 색상 그대로 */
           .business-stamp-image, .contract-logo-img, .signature-image, img {
             -webkit-print-color-adjust: exact;
