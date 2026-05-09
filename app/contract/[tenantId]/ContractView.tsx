@@ -355,6 +355,11 @@ export default function ContractView({ data }: { data: ContractData }) {
             )}
           </div>
         </div>
+
+        {/* 우측 하단 이스터에그 — RoomOS 워드마크 컬러 강조 (작게) */}
+        <p className="powered-by" aria-label="powered by RoomOS">
+          powered by Roo<span className="powered-by-accent">O</span>S
+        </p>
       </main>
 
       {/* 인쇄/화면 공통 스타일 */}
@@ -416,6 +421,7 @@ export default function ContractView({ data }: { data: ContractData }) {
 
         /* 인쇄 영역 — A4 1장. 화면에선 padding으로 종이 느낌, 인쇄에선 @page margin이 처리 */
         .contract-paper {
+          position: relative;          /* powered-by 절대 위치 기준 */
           width: 210mm;
           min-height: 297mm;
           padding: 14mm 16mm;
@@ -426,6 +432,23 @@ export default function ContractView({ data }: { data: ContractData }) {
           line-height: 1.45;
           box-shadow: 0 4px 20px rgba(0,0,0,0.08);
           box-sizing: border-box;
+        }
+
+        /* powered by RoomOS — 우측 하단 작은 이스터에그. 인쇄 시에도 그대로 노출 */
+        .powered-by {
+          position: absolute;
+          right: 16mm;
+          bottom: 6mm;
+          margin: 0;
+          font-family: 'DM Mono', 'Pretendard', monospace;
+          font-size: 6.5pt;
+          letter-spacing: 0.04em;
+          color: #b8b0a3;
+          font-weight: 500;
+        }
+        .powered-by-accent {
+          color: #e84a1a;
+          font-weight: 700;
         }
 
         /* 헤더 — 좌측 로고 슬롯 / 중앙 제목 / 우측 빈공간으로 제목을 페이지 정중앙에 정렬 */
@@ -584,10 +607,13 @@ export default function ContractView({ data }: { data: ContractData }) {
           .contract-paper {
             box-shadow: none;
             width: auto;        /* @page 안에서 자연스럽게 */
-            min-height: auto;
+            /* 인쇄 시에도 min-height를 페이지 높이로 — powered-by 가 진짜 페이지 하단에 찍히도록 */
+            min-height: calc(297mm - 28mm);
             padding: 0;          /* 마진은 @page가 처리 */
             page-break-after: avoid;
           }
+          /* 인쇄 시 powered-by 위치는 paper의 우측 하단 — @page margin 이미 16mm 잡혀있으므로 right: 0 */
+          .powered-by { right: 0; bottom: 0; }
           /* 도장 — 인쇄에서도 색상 그대로 */
           .business-stamp-image, img {
             -webkit-print-color-adjust: exact;
