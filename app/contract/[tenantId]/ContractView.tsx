@@ -639,15 +639,13 @@ export default function ContractView({ data }: { data: ContractData }) {
           box-sizing: border-box;
         }
 
-        /* Made with RoomOS — 우측 하단 작은 이스터에그.
-           "Made with"는 무광 그레이, 워드마크는 Brand Guide ink + persimmon 사양 그대로
-           (SVG라서 인쇄·PDF에도 폰트 의존성 없이 동일 렌더) */
+        /* Made with RoomOS — 콘텐츠 끝에 우측 정렬로 흐름 배치.
+           paper 강제 page-height 시 빈 2페이지가 생겨서 흐름 배치로 회피.
+           본문이 거의 페이지를 채우므로 시각적으로 footer 효과 동일. */
         .made-with {
-          position: absolute;
-          right: 16mm;
-          bottom: 6mm;
-          margin: 0;
-          display: inline-flex;
+          margin-top: 14pt;
+          display: flex;
+          justify-content: flex-end;
           align-items: center;
           gap: 5px;
           /* SVG 워드마크 안 ink/persimmon CSS var는 약간 톤 다운해 이스터에그 톤 유지 */
@@ -887,7 +885,7 @@ export default function ContractView({ data }: { data: ContractData }) {
             transform: none !important;
             box-shadow: none;
             width: auto;        /* @page 안에서 자연스럽게 */
-            min-height: 277mm !important;  /* 페이지 콘텐츠 높이로 고정 → made-with 가 실제 footer 자리 */
+            min-height: 0 !important;  /* 흐름 높이 그대로 — 빈 2페이지 방지 */
             padding: 0 !important;
             page-break-after: avoid;
             page-break-inside: avoid;
@@ -896,8 +894,6 @@ export default function ContractView({ data }: { data: ContractData }) {
           }
           /* 1장 보장 — 본문 섹션 사이에서 페이지 split 금지 */
           .section, .info-table, .oath, .business-block, .emergency-note { page-break-inside: avoid; }
-          /* 인쇄 시 made-with 위치 — paper 가 페이지 콘텐츠 영역 전체이므로 우측 하단 코너 */
-          .made-with { right: 0; bottom: 0; }
           /* 도장·로고 — 인쇄에서도 색상 그대로 */
           .business-stamp-image, .contract-logo-img, .signature-image, img {
             -webkit-print-color-adjust: exact;
