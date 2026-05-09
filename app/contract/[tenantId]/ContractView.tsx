@@ -866,11 +866,12 @@ export default function ContractView({ data }: { data: ContractData }) {
            추가하더라도 1장 안에 들어가도록). 데스크톱 브라우저는 @page margin 그대로 따름. */
         @page {
           size: A4;
-          /* 상단 16mm: 브라우저 '머리말 및 꼬리말 프린트' 옵션이 켜져 있을 때
-             Safari/Chrome 자체 헤더(~12mm)가 차지하는 영역을 흡수.
-             하단 12mm: 꼬리말(URL/페이지) 흡수.
-             좌우 14mm: 표 우측 테두리·footer 잘림 방지 */
-          margin: 16mm 14mm 12mm 14mm;
+          /* 상단 16mm: 브라우저 머리말 옵션 흡수
+             우측 18mm: 표 우측 테두리/콘텐츠가 프린터 비인쇄 영역에 살짝 걸리는
+                       문제 방지 (대부분 가정용 프린터 우측 비인쇄 ~5mm)
+             하단 12mm: 꼬리말 흡수
+             좌측 14mm: 표 좌측은 cell padding 으로 어차피 여유 */
+          margin: 16mm 18mm 12mm 14mm;
         }
         @media print {
           html, body { background: #fff; overflow: visible !important; height: auto !important; }
