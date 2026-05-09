@@ -1031,3 +1031,126 @@ export async function autoTransitionReserved() {
     // 페이지 로드 중 호출되므로 실패해도 무시
   }
 }
+
+// ── 계약서 파일 (서명된 PDF / 스캔 본) ─────────────────────────────────
+
+export type ContractFileRow = {
+  id: string
+  driveFileId: string
+  fileName: string
+  source: 'GENERATED' | 'UPLOADED'
+  signedAt: Date
+  createdAt: Date
+  viewUrl: string
+}
+
+export async function getContractFiles(tenantId: string): Promise<ContractFileRow[]> {
+  const { propertyId } = await getPropertyId()
+  const rows = await prisma.contractFile.findMany({
+    where: { tenantId, propertyId },
+    orderBy: [{ signedAt: 'desc' }, { createdAt: 'desc' }],
+    select: { id: true, driveFileId: true, fileName: true, source: true, signedAt: true, createdAt: true },
+  })
+  return rows.map(r => ({
+    ...r,
+    viewUrl: `https://drive.google.com/file/d/${r.driveFileId}/view`,
+  }))
+}
+
+export async function deleteContractFile(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const { deleteFromDrive } = await import('@/lib/google-drive')
+    const file = await prisma.contractFile.findFirst({ where: { id, propertyId }, select: { driveFileId: true } })
+    if (!file) return { ok: false, error: '파일을 찾을 수 없습니다.' }
+    try { await deleteFromDrive(file.driveFileId) } catch { /* Drive 정리 실패 무시 — DB 레코드는 삭제 */ }
+    await prisma.contractFile.delete({ where: { id } })
+    revalidatePath('/tenants')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
+  }
+}
+
+// 스캔 업로드 — 종이로 서명받은 계약서를 사진/PDF로 첨부
+const MAX_SCAN_BYTES = 25 * 1024 * 1024  // 25MB
+
+export async function createContractScanUploadSession(input: {
+  tenantId: string
+  fileName: string
+  mimeType: string
+  fileSize: number
+  origin: string
+}): Promise<{ ok: true; uploadUrl: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    if (input.fileSize <= 0) return { ok: false, error: '파일이 비어 있습니다.' }
+    if (input.fileSize > MAX_SCAN_BYTES) return { ok: false, error: `파일 크기는 ${MAX_SCAN_BYTES / 1024 / 1024}MB 이하여야 합니다.` }
+    if (!input.origin) return { ok: false, error: 'Origin 정보가 누락되었습니다.' }
+    const tenant = await prisma.tenant.findFirst({ where: { id: input.tenantId, propertyId }, select: { id: true } })
+    if (!tenant) return { ok: false, error: '입실자를 찾을 수 없습니다.' }
+    const { createDriveResumableSession } = await import('@/lib/google-drive')
+    const ext = input.fileName.split('.').pop() ?? 'bin'
+    const uniqueName = `contract_scan_${input.tenantId}_${Date.now()}.${ext}`
+    const uploadUrl = await createDriveResumableSession({
+      fileName: uniqueName, mimeType: input.mimeType, fileSize: input.fileSize, origin: input.origin,
+    })
+    return { ok: true, uploadUrl }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: `업로드 준비 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
+  }
+}
+
+export async function finalizeContractScan(input: {
+  tenantId: string
+  driveFileId: string
+  fileName: string
+  signedAt?: string  // YYYY-MM-DD, 없으면 오늘
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const { setDrivePublicReadable, deleteFromDrive } = await import('@/lib/google-drive')
+    const tenant = await prisma.tenant.findFirst({
+      where: { id: input.tenantId, propertyId },
+      include: {
+        leaseTerms: {
+          where: { status: { in: ['ACTIVE', 'RESERVED'] } },
+          orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
+          take: 1,
+          select: { id: true },
+        },
+      },
+    })
+    if (!tenant) {
+      try { await deleteFromDrive(input.driveFileId) } catch {}
+      return { ok: false, error: '입실자를 찾을 수 없습니다.' }
+    }
+    await setDrivePublicReadable(input.driveFileId)
+    const lease = tenant.leaseTerms[0] ?? null
+    const created = await prisma.contractFile.create({
+      data: {
+        propertyId,
+        tenantId: tenant.id,
+        leaseTermId: lease?.id ?? null,
+        driveFileId: input.driveFileId,
+        fileName: input.fileName,
+        source: 'UPLOADED',
+        signedAt: input.signedAt ? new Date(`${input.signedAt}T00:00:00`) : new Date(),
+      },
+      select: { id: true },
+    })
+    revalidatePath('/tenants')
+    return { ok: true, id: created.id }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    if (input.driveFileId) {
+      try { const { deleteFromDrive } = await import('@/lib/google-drive'); await deleteFromDrive(input.driveFileId) } catch {}
+    }
+    return { ok: false, error: `업로드 마무리 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
+  }
+}

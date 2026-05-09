@@ -141,6 +141,7 @@ model Property {
   checklists        Checklist[]
   reserveTransactions ReserveTransaction[]
   depositRefunds      DepositRefund[]
+  contractFiles       ContractFile[]
 
   @@map("properties")
 }
@@ -240,6 +241,7 @@ model Tenant {
   statusLogs     TenantStatusLog[]
   requests       TenantRequest[]
   depositRefunds DepositRefund[]
+  contractFiles  ContractFile[]
 
   @@map("tenants")
 }
@@ -312,6 +314,7 @@ model LeaseTerm {
   paymentRecords PaymentRecord[]
   statusLogs     TenantStatusLog[]
   depositRefunds DepositRefund[]
+  contractFiles  ContractFile[]
 
   @@index([propertyId, status]) // 영업장별 현재 거주자 조회 최적화
   @@map("lease_terms")
@@ -742,4 +745,35 @@ model ChecklistLog {
 
   @@index([checklistId, checkedAt])
   @@map("checklist_logs")
+}
+// ============================================================
+// ContractFile — 입실자 서명된 계약서 파일 (PDF, Drive 보관)
+// 같은 입실자에 대해 여러 파일 보관 가능 (재발행·갱신·스캔본 등)
+// ============================================================
+
+enum ContractFileSource {
+  GENERATED  // 앱 내에서 서명 + 자동 생성된 PDF
+  UPLOADED   // 종이로 출력해 사인 후 스캔 업로드
+}
+
+model ContractFile {
+  id           String             @id @default(uuid()) @db.Uuid
+  source       ContractFileSource @default(GENERATED)
+  driveFileId  String                                       // Google Drive file ID
+  fileName     String                                       // 표시용 파일명
+  signedAt     DateTime           @default(now())            // 서명 일시 (사용자가 입력한 서명일 또는 업로드 시각)
+  createdAt    DateTime           @default(now())
+
+  tenantId     String   @db.Uuid
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  leaseTermId  String?  @db.Uuid
+  leaseTerm    LeaseTerm? @relation(fields: [leaseTermId], references: [id], onDelete: SetNull)
+
+  propertyId   String   @db.Uuid
+  property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([propertyId, createdAt])
+  @@map("contract_files")
 }

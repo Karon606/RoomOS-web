@@ -183,6 +183,80 @@ export default function ContractView({ data }: { data: ContractData }) {
     return Number.isFinite(y) ? `${y}년 ${m}월 ${d}일` : signDate
   })()
 
+  // ── 서명 패드 모달 ──────────────────────────────────────────────
+  const [signOpen, setSignOpen]       = useState(false)
+  const [signSaving, setSignSaving]   = useState(false)
+  const sigCanvasRef = useRef<HTMLCanvasElement>(null)
+  const sigPadRef    = useRef<import('signature_pad').default | null>(null)
+
+  // 패드 마운트 / 사이즈 (DPR 보정)
+  useEffect(() => {
+    if (!signOpen || !sigCanvasRef.current) return
+    let pad: import('signature_pad').default | null = null
+    const canvas = sigCanvasRef.current
+    const setupCanvas = () => {
+      const ratio = Math.max(window.devicePixelRatio || 1, 1)
+      canvas.width = canvas.offsetWidth * ratio
+      canvas.height = canvas.offsetHeight * ratio
+      const ctx = canvas.getContext('2d')
+      if (ctx) ctx.scale(ratio, ratio)
+      pad?.clear()
+    }
+    import('signature_pad').then(({ default: SignaturePad }) => {
+      pad = new SignaturePad(canvas, {
+        backgroundColor: 'rgba(255,255,255,0)',
+        penColor: '#1a1a1a',
+        minWidth: 0.7,
+        maxWidth: 2.4,
+      })
+      sigPadRef.current = pad
+      setupCanvas()
+    })
+    window.addEventListener('resize', setupCanvas)
+    return () => {
+      window.removeEventListener('resize', setupCanvas)
+      pad?.off()
+      sigPadRef.current = null
+    }
+  }, [signOpen])
+
+  const handleSignSave = async () => {
+    const pad = sigPadRef.current
+    if (!pad || pad.isEmpty()) {
+      pushToast('error', '서명을 입력해주세요.')
+      return
+    }
+    setSignSaving(true)
+    const release = trackSave()
+    try {
+      const dataUrl = pad.toDataURL('image/png')
+      const res = await fetch('/api/contract/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: data.tenant.id,
+          signDate,
+          signatureName,
+          signatureImageDataUrl: dataUrl,
+          smoking,
+          emergencyContactText,
+        }),
+      })
+      const json = await res.json()
+      if (!json.ok) {
+        pushToast('error', json.error ?? '계약서 생성 실패')
+        return
+      }
+      pushToast('success', '서명된 계약서 PDF 저장됨')
+      setSignOpen(false)
+      // 입실자 상세 모달에서 첨부 파일을 즉시 보려면 refresh
+      router.refresh()
+    } finally {
+      release()
+      setSignSaving(false)
+    }
+  }
+
   // 출력에 쓰일 활성 템플릿 — 편집 중이면 draft, 아니면 props
   const view = editing ? draft : data.template
 
@@ -213,7 +287,8 @@ export default function ContractView({ data }: { data: ContractData }) {
                 공통 템플릿으로
               </button>
             )}
-            <button onClick={handlePrint} className="toolbar-print">인쇄 / PDF 저장</button>
+            <button onClick={handlePrint} className="toolbar-btn-secondary">인쇄</button>
+            <button onClick={() => setSignOpen(true)} className="toolbar-print">서명 받기</button>
           </>
         )}
         {editing && (
@@ -404,6 +479,37 @@ export default function ContractView({ data }: { data: ContractData }) {
         </div>
       </main>
       </div>
+
+      {/* 서명 받기 모달 — 아이패드/모바일에서 입실자 손글씨 서명 캡처 */}
+      {signOpen && (
+        <div className="sig-overlay no-print" onClick={() => !signSaving && setSignOpen(false)}>
+          <div className="sig-modal" onClick={e => e.stopPropagation()}>
+            <div className="sig-head">
+              <div>
+                <div className="sig-title">입실자 서명</div>
+                <div className="sig-sub">아래 영역에 서명해주세요. 저장하면 도장·로고가 합성된 PDF로 입실자 정보에 자동 첨부됩니다.</div>
+              </div>
+              <button onClick={() => setSignOpen(false)} disabled={signSaving} className="sig-close" aria-label="닫기">✕</button>
+            </div>
+            <div className="sig-canvas-wrap">
+              <canvas ref={sigCanvasRef} className="sig-canvas" />
+              <div className="sig-baseline" />
+            </div>
+            <div className="sig-actions">
+              <button onClick={() => sigPadRef.current?.clear()} disabled={signSaving} className="toolbar-btn-secondary">
+                지우기
+              </button>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setSignOpen(false)} disabled={signSaving} className="toolbar-btn-secondary">
+                취소
+              </button>
+              <button onClick={handleSignSave} disabled={signSaving} className="toolbar-print">
+                {signSaving ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 인쇄/화면 공통 스타일 */}
       <style jsx global>{`
@@ -669,6 +775,36 @@ export default function ContractView({ data }: { data: ContractData }) {
           print-color-adjust: exact;
         }
         .business-stamp-marker { font-weight: 600; }
+
+        /* ── 서명 모달 ──────────────────────────────────────────── */
+        .sig-overlay {
+          position: fixed; inset: 0; z-index: 100;
+          background: rgba(0,0,0,0.55);
+          display: flex; align-items: center; justify-content: center;
+          padding: 16px;
+        }
+        .sig-modal {
+          width: 100%; max-width: 640px;
+          background: #fff; border-radius: 16px; padding: 18px 18px 16px;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+          display: flex; flex-direction: column; gap: 14px;
+        }
+        .sig-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .sig-title { font-size: 15px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+        .sig-sub { font-size: 12px; color: #6b6258; line-height: 1.5; }
+        .sig-close { width: 32px; height: 32px; border: 0; background: transparent; color: #6b6258; font-size: 18px; cursor: pointer; border-radius: 8px; }
+        .sig-close:hover { background: #f3eee5; }
+        .sig-canvas-wrap {
+          position: relative; width: 100%; aspect-ratio: 16 / 7;
+          background: #fbf6ee; border: 1px dashed #d6cdbb; border-radius: 12px;
+          touch-action: none; /* 모바일에서 스크롤로 가로채지 않도록 */
+        }
+        .sig-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+        .sig-baseline {
+          position: absolute; left: 12%; right: 12%; bottom: 22%;
+          border-top: 1px dashed #d6cdbb; pointer-events: none;
+        }
+        .sig-actions { display: flex; align-items: center; gap: 8px; }
 
         /* ── 인쇄 전용 ─────────────────────────────────────────── */
         /* A4 + 14mm × 16mm 마진을 페이지에서 잡아준다 (paper의 padding과 함께
