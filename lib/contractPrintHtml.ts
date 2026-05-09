@@ -123,7 +123,9 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   html, body { margin: 0; padding: 0; background: #fff; color: #1a1a1a; font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif; }
   body { font-size: 9pt; line-height: 1.45; }
 
-  .paper { position: relative; padding: 0; box-sizing: border-box; }
+  /* paper 높이를 페이지 콘텐츠 영역(297mm - top/bottom margin 20mm)으로 고정해야
+     우측 하단 absolute 의 made-with 가 실제 페이지 footer 자리에 박힌다 */
+  .paper { position: relative; padding: 0; box-sizing: border-box; min-height: 277mm; }
 
   /* 헤더 — grid 3컬럼 [로고 | 제목 | 빈공간] */
   .contract-header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 6mm; margin-bottom: 10px; }
@@ -145,7 +147,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .oath { margin-top: 12pt; text-align: center; }
   .oath-text { font-weight: 700; font-size: 9pt; margin: 0 0 6pt; }
   .signature-row { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 9pt; }
-  .signature-name-print { display: inline-block; min-width: 120px; text-align: center; padding-bottom: 2px; border-bottom: 1px solid #1a1a1a; }
+  .signature-name-print { display: inline-block; min-width: 60px; text-align: center; padding: 0 6px; }
   .signature-stamp-img { height: 12mm; width: auto; vertical-align: middle; margin: 0 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
   .business-block { margin-top: 14pt; font-size: 9pt; display: flex; align-items: center; justify-content: center; gap: 6mm; flex-wrap: nowrap; }
@@ -154,8 +156,8 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .business-stamp { flex: 0 0 auto; width: 14mm; height: 14mm; display: inline-flex; align-items: center; justify-content: center; }
   .business-stamp-image { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-  /* Made with RoomOS — 우측 하단에 살짝 안쪽으로 들여서 시각적으로 안 잘려 보이게 */
-  .made-with { position: absolute; right: 6mm; bottom: 4mm; margin: 0; display: inline-flex; align-items: center; gap: 5px; }
+  /* Made with RoomOS — paper(=페이지 footer 영역)의 실제 우측 하단 코너에 footer로 박음 */
+  .made-with { position: absolute; right: 0; bottom: 0; margin: 0; display: inline-flex; align-items: center; gap: 5px; }
   .made-with-prefix { font-family: 'DM Mono', 'Pretendard', monospace; font-size: 6.5pt; letter-spacing: 0.04em; color: #b8b0a3; font-weight: 500; }
   .made-with-wordmark { font-family: 'Pretendard', sans-serif; font-weight: 900; font-size: 11px; letter-spacing: -0.06em; color: #4a4a4a; opacity: 0.78; }
   .made-with-wordmark .o { color: #e84a1a; }

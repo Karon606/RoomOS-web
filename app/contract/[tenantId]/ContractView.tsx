@@ -781,12 +781,12 @@ export default function ContractView({ data }: { data: ContractData }) {
           font-weight: 700; font-size: 9pt;
         }
         .signature-name input {
-          padding: 2px 10px; font-size: 9pt; border: 0; border-bottom: 1px solid #1a1a1a;
-          min-width: 120px; text-align: center;
+          padding: 2px 10px; font-size: 9pt; border: 0;
+          min-width: 60px; text-align: center;
         }
         .signature-image-wrap {
           display: inline-flex; align-items: center; position: relative;
-          border-bottom: 1px solid #1a1a1a; padding: 0 4px;
+          padding: 0 4px;
         }
         .signature-image {
           height: 11mm; width: auto; max-width: 50mm;
@@ -869,7 +869,7 @@ export default function ContractView({ data }: { data: ContractData }) {
            추가하더라도 1장 안에 들어가도록). 데스크톱 브라우저는 @page margin 그대로 따름. */
         @page {
           size: A4;
-          margin: 10mm 12mm;
+          margin: 10mm 14mm;   /* 우측 14mm: 표 우측 테두리·footer 잘림 방지 */
         }
         @media print {
           html, body { background: #fff; overflow: visible !important; height: auto !important; }
@@ -888,7 +888,7 @@ export default function ContractView({ data }: { data: ContractData }) {
             transform: none !important;
             box-shadow: none;
             width: auto;        /* @page 안에서 자연스럽게 */
-            min-height: 0 !important;
+            min-height: 277mm !important;  /* 페이지 콘텐츠 높이로 고정 → made-with 가 실제 footer 자리 */
             padding: 0 !important;
             page-break-after: avoid;
             page-break-inside: avoid;
@@ -897,8 +897,8 @@ export default function ContractView({ data }: { data: ContractData }) {
           }
           /* 1장 보장 — 본문 섹션 사이에서 페이지 split 금지 */
           .section, .info-table, .oath, .business-block, .emergency-note { page-break-inside: avoid; }
-          /* 인쇄 시 made-with 위치 — 페이지 끝에 너무 붙으면 잘려보이므로 안쪽으로 살짝 */
-          .made-with { right: 6mm; bottom: 4mm; }
+          /* 인쇄 시 made-with 위치 — paper 가 페이지 콘텐츠 영역 전체이므로 우측 하단 코너 */
+          .made-with { right: 0; bottom: 0; }
           /* 도장·로고 — 인쇄에서도 색상 그대로 */
           .business-stamp-image, .contract-logo-img, .signature-image, img {
             -webkit-print-color-adjust: exact;
