@@ -877,18 +877,17 @@ export default function ContractView({ data }: { data: ContractData }) {
           .contract-shell { padding: 0; min-height: auto; }
           .no-print { display: none !important; }
           .only-print { display: inline !important; }
-          /* 인쇄 시: 모바일 scale wrapper 완전 해제 — 종이는 원본 사이즈로 자연 흐름 */
-          .paper-cage {
-            width: auto !important;
-            height: auto !important;
-            position: static !important;
-            margin: 0 !important;
-            overflow: visible !important;   /* 안전장치: 잘림 방지 */
+          /* 인쇄 시: cage 레이아웃 완전 우회 — display:contents 로 cage box 제거.
+             contract-paper 가 contract-shell 의 직접 자식처럼 동작 → cage 의 width/height/
+             position 잔여 영향 zero */
+          .contract-shell {
             display: block !important;
+            align-items: stretch !important;
+          }
+          .paper-cage {
+            display: contents !important;
           }
           .contract-paper {
-            /* Safari: position absolute → static 전환 시 자식이 페이지 밖으로 밀리는 버그 방지.
-               top/left/transform 까지 모두 명시 reset */
             position: static !important;
             top: auto !important;
             left: auto !important;
@@ -897,21 +896,38 @@ export default function ContractView({ data }: { data: ContractData }) {
             transform: none !important;
             transform-origin: 0 0 !important;
             box-shadow: none;
-            width: auto !important;
+            width: 100% !important;            /* @page 콘텐츠 영역 전체 사용 */
+            max-width: 100% !important;
             min-height: 0 !important;
             padding: 0 !important;
             margin: 0 !important;
             page-break-after: avoid;
             page-break-inside: avoid;
-            /* 브라우저 머리말/꼬리말 옵션이 켜진 경우에도 1장 보장 — 강하게 압축 */
             font-size: 8pt;
             line-height: 1.32;
           }
-          /* 섹션 간격도 축소 — 1장 보장 우선 */
-          .contract-header { margin-bottom: 4pt !important; }
-          .contract-header-logo { height: 11mm !important; }
-          .contract-logo-img { max-height: 11mm !important; }
-          .contract-title { font-size: 12pt !important; }
+          /* 헤더 — grid 대신 단순 block + text-align center 로 안정 렌더 */
+          .contract-header {
+            display: block !important;
+            text-align: center !important;
+            margin-bottom: 4pt !important;
+          }
+          .contract-header-logo {
+            display: inline-block !important;
+            vertical-align: middle !important;
+            height: 10mm !important;
+            justify-self: auto !important;
+            margin-right: 4mm !important;
+          }
+          .contract-logo-img { max-height: 10mm !important; vertical-align: middle !important; }
+          .contract-title {
+            display: inline-block !important;
+            vertical-align: middle !important;
+            font-size: 12pt !important;
+            margin: 0 !important;
+            white-space: normal !important;
+          }
+          .contract-header-spacer { display: none !important; }
           .sections { margin-top: 5pt !important; }
           .section { margin-bottom: 6pt !important; }
           .section-title { margin-bottom: 2pt !important; }
