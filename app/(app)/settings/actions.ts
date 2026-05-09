@@ -468,6 +468,8 @@ export type ContractSettings = {
   businessInfo: BusinessInfo
   stampDriveFileId: string | null
   stampThumbnailUrl: string | null
+  logoDriveFileId: string | null
+  logoThumbnailUrl: string | null
 }
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = {
@@ -478,16 +480,22 @@ export async function getContractSettings(): Promise<ContractSettings> {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
-    select: { contractTemplate: true, businessInfo: true, stampDriveFileId: true },
+    select: {
+      contractTemplate: true, businessInfo: true,
+      stampDriveFileId: true, logoDriveFileId: true,
+    },
   })
   const template = (property?.contractTemplate as ContractTemplate | null) ?? DEFAULT_CONTRACT_TEMPLATE
   const businessInfo = (property?.businessInfo as BusinessInfo | null) ?? EMPTY_BUSINESS_INFO
   const stampDriveFileId = property?.stampDriveFileId ?? null
+  const logoDriveFileId  = property?.logoDriveFileId  ?? null
   return {
     template,
     businessInfo,
     stampDriveFileId,
     stampThumbnailUrl: stampDriveFileId ? buildDriveThumbnailUrl(stampDriveFileId, 200) : null,
+    logoDriveFileId,
+    logoThumbnailUrl:  logoDriveFileId  ? buildDriveThumbnailUrl(logoDriveFileId,  300) : null,
   }
 }
 
@@ -598,6 +606,89 @@ export async function deleteStamp(): Promise<{ ok: true } | { ok: false; error: 
     await prisma.property.update({
       where: { id: propertyId },
       data: { stampDriveFileId: null },
+    })
+    revalidatePath('/settings')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
+  }
+}
+
+// ── 영업장 로고 (도장과 동일한 업로드 패턴) ─────────────────────
+
+const MAX_LOGO_BYTES = 5 * 1024 * 1024  // 5MB
+
+export async function createLogoUploadSession(input: {
+  fileName: string
+  mimeType: string
+  fileSize: number
+  origin: string
+}): Promise<{ ok: true; uploadUrl: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    if (!input.mimeType.startsWith('image/')) return { ok: false, error: '이미지 파일만 업로드 가능합니다.' }
+    if (input.fileSize <= 0) return { ok: false, error: '파일이 비어 있습니다.' }
+    if (input.fileSize > MAX_LOGO_BYTES) return { ok: false, error: `파일 크기는 ${MAX_LOGO_BYTES / 1024 / 1024}MB 이하여야 합니다.` }
+    if (!input.origin) return { ok: false, error: 'Origin 정보가 누락되었습니다.' }
+    const propertyId = await getPropertyId()
+    const ext = input.fileName.split('.').pop() ?? 'png'
+    const uniqueName = `logo_${propertyId}_${Date.now()}.${ext}`
+    const uploadUrl = await createDriveResumableSession({
+      fileName: uniqueName,
+      mimeType: input.mimeType,
+      fileSize: input.fileSize,
+      origin: input.origin,
+    })
+    return { ok: true, uploadUrl }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: `업로드 준비 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
+  }
+}
+
+export async function finalizeLogo(driveFileId: string): Promise<{ ok: true; thumbnailUrl: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    if (!driveFileId) return { ok: false, error: 'Drive 파일 ID가 없습니다.' }
+    const propertyId = await getPropertyId()
+    await setDrivePublicReadable(driveFileId)
+    const prev = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { logoDriveFileId: true },
+    })
+    if (prev?.logoDriveFileId && prev.logoDriveFileId !== driveFileId) {
+      try { await deleteFromDrive(prev.logoDriveFileId) } catch { /* 이전 파일 정리 실패 무시 */ }
+    }
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { logoDriveFileId: driveFileId },
+    })
+    revalidatePath('/settings')
+    return { ok: true, thumbnailUrl: buildDriveThumbnailUrl(driveFileId, 300) }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    if (driveFileId) {
+      try { await deleteFromDrive(driveFileId) } catch { /* 정리 실패 무시 */ }
+    }
+    return { ok: false, error: `업로드 마무리 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
+  }
+}
+
+export async function deleteLogo(): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const prev = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { logoDriveFileId: true },
+    })
+    if (prev?.logoDriveFileId) {
+      try { await deleteFromDrive(prev.logoDriveFileId) } catch { /* 무시 */ }
+    }
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { logoDriveFileId: null },
     })
     revalidatePath('/settings')
     return { ok: true }

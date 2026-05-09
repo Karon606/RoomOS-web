@@ -14,7 +14,9 @@ import {
   inviteMember, updateMemberRole, removeMember,
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
   exportAllData,
-  saveContractTemplate, saveBusinessInfo, createStampUploadSession, finalizeStamp, deleteStamp,
+  saveContractTemplate, saveBusinessInfo,
+  createStampUploadSession, finalizeStamp, deleteStamp,
+  createLogoUploadSession, finalizeLogo, deleteLogo,
   type MemberWithUser, type RecurringExpenseRow, type ContractSettings,
 } from './actions'
 import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
@@ -839,9 +841,11 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
   const [template, setTemplate]         = useState<ContractTemplate>(initial.template)
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(initial.businessInfo)
   const [stampUrl, setStampUrl]         = useState<string | null>(initial.stampThumbnailUrl)
+  const [logoUrl, setLogoUrl]           = useState<string | null>(initial.logoThumbnailUrl)
   const [savingTpl, setSavingTpl]       = useState(false)
   const [savingBiz, setSavingBiz]       = useState(false)
   const [stampUploading, setStampUploading] = useState(false)
+  const [logoUploading, setLogoUploading]   = useState(false)
 
   const updateSection = (idx: number, patch: Partial<ContractSection>) => {
     setTemplate(t => ({
@@ -924,6 +928,38 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
     } finally { release() }
   }
 
+  const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setLogoUploading(true)
+    const release = trackSave()
+    try {
+      const session = await createLogoUploadSession({
+        fileName: file.name, mimeType: file.type, fileSize: file.size,
+        origin: window.location.origin,
+      })
+      if (!session.ok) { pushToast('error', session.error); return }
+      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file)
+      const fin = await finalizeLogo(driveFileId)
+      if (!fin.ok) { pushToast('error', fin.error); return }
+      setLogoUrl(fin.thumbnailUrl)
+      pushToast('success', '로고 업로드됨')
+    } catch (err) {
+      pushToast('error', (err as Error).message ?? '로고 업로드 실패')
+    } finally { release(); setLogoUploading(false) }
+  }
+  const handleLogoDelete = async () => {
+    if (!confirm('영업장 로고를 삭제할까요?')) return
+    const release = trackSave()
+    try {
+      const res = await deleteLogo()
+      if (!res.ok) { pushToast('error', res.error); return }
+      setLogoUrl(null)
+      pushToast('success', '로고 삭제됨')
+    } finally { release() }
+  }
+
   return (
     <div className="space-y-5">
       {/* 사업자 정보 */}
@@ -938,6 +974,28 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
           <BizField label="사업자번호" value={businessInfo.registrationNo} onChange={v => setBusinessInfo(b => ({ ...b, registrationNo: v }))} />
           <BizField label="대표자" value={businessInfo.ceoName} onChange={v => setBusinessInfo(b => ({ ...b, ceoName: v }))} />
           <BizField label="사업장 주소" value={businessInfo.address} onChange={v => setBusinessInfo(b => ({ ...b, address: v }))} />
+        </div>
+      </div>
+
+      {/* 영업장 로고 */}
+      <div className="rounded-2xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+        <h3 className="text-sm font-semibold text-[var(--warm-dark)]">영업장 로고</h3>
+        <p className="text-xs text-[var(--warm-muted)] -mt-1">투명 배경 PNG 권장 (가로형 권장). 계약서 헤더 좌측에 자동 표시됩니다.</p>
+        <div className="flex items-center gap-4">
+          <div className="w-32 h-16 rounded-xl border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--canvas)] overflow-hidden">
+            {logoUrl ? (
+              <img src={logoUrl} alt="로고" className="max-w-full max-h-full object-contain" />
+            ) : (
+              <span className="text-xs text-[var(--warm-muted)]">미등록</span>
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className={`px-3 py-2 text-sm rounded-lg cursor-pointer text-center font-medium transition-colors ${logoUploading ? 'opacity-60' : 'bg-[var(--coral)] text-white hover:opacity-90'}`}>
+              {logoUploading ? '업로드 중...' : (logoUrl ? '교체' : '업로드')}
+              <input type="file" accept="image/*" className="hidden" onChange={handleLogoSelect} disabled={logoUploading} />
+            </label>
+            {logoUrl && <Btn variant="danger" size="sm" onClick={handleLogoDelete} disabled={logoUploading}>삭제</Btn>}
+          </div>
         </div>
       </div>
 

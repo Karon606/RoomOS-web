@@ -18,6 +18,7 @@ export type ContractData = {
   hasOverride: boolean                 // 오버라이드 사용 여부 — '원본으로' 버튼 활성화 판단용
   businessInfo: BusinessInfo
   stampImageUrl: string | null         // 인쇄에 쓰일 큰 사이즈
+  logoImageUrl: string | null          // 영업장 로고 (헤더 좌측)
   tenant: {
     id: string
     name: string
@@ -74,7 +75,10 @@ export async function getContractData(tenantId: string): Promise<ContractData | 
     }),
     prisma.property.findUnique({
       where: { id: propertyId },
-      select: { contractTemplate: true, businessInfo: true, stampDriveFileId: true },
+      select: {
+        contractTemplate: true, businessInfo: true,
+        stampDriveFileId: true, logoDriveFileId: true,
+      },
     }),
   ])
 
@@ -103,6 +107,8 @@ export async function getContractData(tenantId: string): Promise<ContractData | 
     businessInfo: (property?.businessInfo as BusinessInfo | null) ?? EMPTY_BUSINESS_INFO,
     // 도장은 인쇄 품질 기준 큰 사이즈 (= width 800px) 썸네일을 받아 max 24mm 슬롯에 object-fit:contain
     stampImageUrl: property?.stampDriveFileId ? buildDriveThumbnailUrl(property.stampDriveFileId, 800) : null,
+    // 로고는 헤더 좌측 14mm 높이 슬롯 — 인쇄 화질 위해 width 600px 썸네일
+    logoImageUrl: property?.logoDriveFileId ? buildDriveThumbnailUrl(property.logoDriveFileId, 600) : null,
     tenant: {
       id: tenant.id,
       name: tenant.name,

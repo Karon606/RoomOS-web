@@ -200,7 +200,15 @@ export default function ContractView({ data }: { data: ContractData }) {
 
       {/* 인쇄 영역 — A4 1장 */}
       <main className="contract-paper">
-        <h1 className="contract-title">{view.title}</h1>
+        <header className="contract-header">
+          <div className="contract-header-logo">
+            {data.logoImageUrl && (
+              <img src={data.logoImageUrl} alt="영업장 로고" className="contract-logo-img" />
+            )}
+          </div>
+          <h1 className="contract-title">{view.title}</h1>
+          <div className="contract-header-spacer" />
+        </header>
 
         {/* 입실자 정보 표 */}
         <table className="info-table">
@@ -420,12 +428,39 @@ export default function ContractView({ data }: { data: ContractData }) {
           box-sizing: border-box;
         }
 
+        /* 헤더 — 좌측 로고 슬롯 / 중앙 제목 / 우측 빈공간으로 제목을 페이지 정중앙에 정렬 */
+        .contract-header {
+          display: grid;
+          grid-template-columns: 1fr auto 1fr;
+          align-items: center;
+          gap: 6mm;
+          margin-bottom: 10px;
+        }
+        .contract-header-logo {
+          justify-self: start;
+          height: 14mm;
+          max-width: 50mm;
+          display: flex;
+          align-items: center;
+        }
+        .contract-logo-img {
+          max-height: 14mm;
+          max-width: 50mm;
+          width: auto;
+          height: auto;
+          object-fit: contain;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        .contract-header-spacer { /* 우측 가짜 컬럼 — 제목 정중앙 정렬용 */ }
+
         .contract-title {
           text-align: center;
           font-size: 13pt;
           font-weight: 700;
           text-decoration: underline;
-          margin: 0 0 10px;
+          margin: 0;
+          white-space: nowrap;
         }
 
         .info-table {

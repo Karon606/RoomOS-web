@@ -12,7 +12,8 @@
 ALTER TABLE "properties"
   ADD COLUMN IF NOT EXISTS "contractTemplate" JSONB,
   ADD COLUMN IF NOT EXISTS "businessInfo"     JSONB,
-  ADD COLUMN IF NOT EXISTS "stampDriveFileId" TEXT;
+  ADD COLUMN IF NOT EXISTS "stampDriveFileId" TEXT,
+  ADD COLUMN IF NOT EXISTS "logoDriveFileId"  TEXT;
 
 ALTER TABLE "lease_terms"
   ADD COLUMN IF NOT EXISTS "contractOverride" JSONB;
