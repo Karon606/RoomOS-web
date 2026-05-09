@@ -34,9 +34,13 @@ export async function getRooms() {
         where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
         select: {
           id: true,
+          status: true,
           tenantId: true,
           tenant: { select: { id: true, name: true } },
         },
+        // ACTIVE > CHECKOUT_PENDING > RESERVED 우선순위 정렬
+        // (예약자보다 거주자가 호실의 '주' 점유자)
+        orderBy: { status: 'asc' },
         take: 1,
       },
     },

@@ -38,9 +38,42 @@ type Room = {
   photos: Photo[]
   leaseTerms: {
     id: string
+    status: string                 // ACTIVE | RESERVED | CHECKOUT_PENDING
     tenantId: string
     tenant: { id: string; name: string } | null
   }[]
+}
+
+// 호실 상태 라벨/색상 — lease term 상태 우선, 없으면 isVacant 기반
+type RoomStatus = { label: '공실' | '예약' | '거주중' | '퇴실 예정'; badgeClass: string; borderClass: string; isVacant: boolean }
+function getRoomStatus(r: Room): RoomStatus {
+  const lease = r.leaseTerms[0]
+  if (!lease) {
+    return {
+      label: '공실', isVacant: true,
+      badgeClass: 'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]',
+      borderClass: 'border-[var(--warm-border)]',
+    }
+  }
+  if (lease.status === 'RESERVED') {
+    return {
+      label: '예약', isVacant: false,
+      badgeClass: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+      borderClass: 'border-amber-300/50',
+    }
+  }
+  if (lease.status === 'CHECKOUT_PENDING') {
+    return {
+      label: '퇴실 예정', isVacant: false,
+      badgeClass: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
+      borderClass: 'border-blue-300/50',
+    }
+  }
+  return {
+    label: '거주중', isVacant: false,
+    badgeClass: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+    borderClass: 'border-[var(--coral)]/40',
+  }
 }
 
 // 구 enum 값 → 한국어 표시 (마이그레이션 전 데이터 호환)
@@ -402,13 +435,26 @@ export default function RoomManageClient({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">호실 관리</h1>
-          <p className="text-sm text-[var(--warm-muted)] mt-0.5">
-            전체 {rooms.length}실
-            <span className="mx-1.5 text-[var(--warm-border)]">·</span>
-            거주중 {rooms.filter(r => !r.isVacant).length}실
-            <span className="mx-1.5 text-[var(--warm-border)]">·</span>
-            공실 {rooms.filter(r => r.isVacant).length}실
-          </p>
+          {(() => {
+            const occupied = rooms.filter(r => r.leaseTerms[0]?.status === 'ACTIVE' || r.leaseTerms[0]?.status === 'CHECKOUT_PENDING').length
+            const reserved = rooms.filter(r => r.leaseTerms[0]?.status === 'RESERVED').length
+            const vacant   = rooms.filter(r => r.leaseTerms.length === 0).length
+            return (
+              <p className="text-sm text-[var(--warm-muted)] mt-0.5">
+                전체 {rooms.length}실
+                <span className="mx-1.5 text-[var(--warm-border)]">·</span>
+                거주중 {occupied}실
+                {reserved > 0 && (
+                  <>
+                    <span className="mx-1.5 text-[var(--warm-border)]">·</span>
+                    예약 {reserved}실
+                  </>
+                )}
+                <span className="mx-1.5 text-[var(--warm-border)]">·</span>
+                공실 {vacant}실
+              </p>
+            )
+          })()}
         </div>
         <button
           onClick={() => { setShowAddModal(true); setError('') }}
@@ -598,18 +644,17 @@ export default function RoomManageClient({
           {filteredRooms.map(room => {
             const tenant = currentTenant(room)
             const thumb  = room.photos[0]
+            const rs     = getRoomStatus(room)
             return (
               <div key={room.id}
                 onClick={() => { setDetailRoom(room); setError('') }}
-                className={`bg-[var(--cream)] border rounded-2xl overflow-hidden cursor-pointer active:opacity-70 transition-opacity flex items-stretch
-                  ${room.isVacant ? 'border-[var(--warm-border)]' : 'border-[var(--coral)]/40'}`}>
+                className={`bg-[var(--cream)] border rounded-2xl overflow-hidden cursor-pointer active:opacity-70 transition-opacity flex items-stretch ${rs.borderClass}`}>
                 {/* 정보 */}
                 <div className="flex-1 p-4 min-w-0 space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="text-base font-bold text-[var(--coral)]">{room.roomNo}호</span>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0
-                      ${room.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'}`}>
-                      {room.isVacant ? '공실' : '거주중'}
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${rs.badgeClass}`}>
+                      {rs.label}
                     </span>
                   </div>
                   {tenant && <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant}</p>}
@@ -674,10 +719,9 @@ export default function RoomManageClient({
               <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
                 <div className="flex items-center gap-2.5">
                   <h2 className="text-base font-bold text-[var(--warm-dark)]">{r.roomNo}호</h2>
-                  <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
-                    ${r.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'}`}>
-                    {r.isVacant ? '공실' : '거주중'}
-                  </span>
+                  {(() => { const rs = getRoomStatus(r); return (
+                    <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${rs.badgeClass}`}>{rs.label}</span>
+                  )})()}
                 </div>
                 <button onClick={closeDetail} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
               </div>
@@ -711,7 +755,7 @@ export default function RoomManageClient({
                           {r.rentUpdateDate && <span className="text-[var(--warm-muted)] ml-1 text-xs">({fmtDate(r.rentUpdateDate)} 적용)</span>}
                         </span>
                       } />
-                      {r.isVacant && (
+                      {r.leaseTerms.length === 0 && (
                         <div className="flex justify-end">
                           <button type="button" onClick={() => handleApplyScheduledNow(r)} disabled={isPending}
                             className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 ring-1 ring-amber-200 hover:bg-amber-100 transition-colors disabled:opacity-60">
@@ -737,8 +781,8 @@ export default function RoomManageClient({
               <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0 flex-wrap">
                 <button
                   onClick={() => handleDelete(r.id, r.roomNo)}
-                  disabled={!r.isVacant || isPending}
-                  title={!r.isVacant ? '거주중인 호실은 삭제할 수 없습니다' : ''}
+                  disabled={r.leaseTerms.length > 0 || isPending}
+                  title={r.leaseTerms.length > 0 ? '입주자(예약 포함)가 있는 호실은 삭제할 수 없습니다' : ''}
                   className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                   삭제
                 </button>
