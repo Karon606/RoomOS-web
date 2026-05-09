@@ -228,7 +228,10 @@ a, button, [role="button"], input[type="button"], input[type="submit"], input[ty
 @media print {
   @page { size: A4; margin: 12mm; }
   body { background: #fff !important; color: #000 !important; }
-  .no-print, nav, aside, header { display: none !important; }
+  /* 인쇄에서 숨길 요소는 명시적으로 .no-print 클래스를 붙인다.
+     (이전엔 header 태그 자체를 숨겼는데 contract 페이지의 contract-header
+      <header> 까지 같이 사라지는 문제 → 클래스 기반으로 전환) */
+  .no-print, nav, aside { display: none !important; }
   /* 사이드바·헤더 등 레이아웃 요소 제거 */
   main { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
   .report-page { color: #000 !important; }
