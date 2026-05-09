@@ -578,10 +578,19 @@ export default function ContractView({ data }: { data: ContractData }) {
           padding: 2px 8px; font-size: 9pt; border: 1px dashed #999; border-radius: 4px; min-width: 240px;
         }
 
-        .sections { margin-top: 6px; }
-        .section { margin-bottom: 8pt; }
-        .section-title { margin: 0 0 2pt 18pt; font-weight: 700; font-size: 9pt; }
-        .section-item { margin: 0 0 1pt 0; font-size: 9pt; white-space: pre-line; }
+        .sections { margin-top: 8pt; }
+        .section { margin-bottom: 9pt; }
+        /* 소제목 — 왼쪽 끝에 붙여서 위계가 한눈에 보이게 */
+        .section-title { margin: 0 0 3pt 0; font-weight: 700; font-size: 9pt; }
+        /* 항목 — 소제목 아래로 들여쓰기. text-indent: -10pt 로 hanging indent →
+           '-' 글머리는 약간 왼쪽으로 튀어나오고, 줄바꿈된 본문은 들여쓴 위치에 맞춰 정렬 */
+        .section-item {
+          margin: 0 0 1pt 0;
+          padding-left: 14pt;
+          text-indent: -10pt;
+          font-size: 9pt;
+          white-space: pre-line;
+        }
 
         /* 편집 모드 */
         .section-edit {
