@@ -35,7 +35,7 @@ async function getMyUserId() {
 
 export async function getPropertySettings() {
   const propertyId = await getPropertyId()
-  return prisma.property.findUnique({
+  const property = await prisma.property.findUnique({
     where: { id: propertyId },
     select: {
       id: true,
@@ -46,8 +46,17 @@ export async function getPropertySettings() {
       prevOwnerCutoffDate: true,
       defaultDeposit: true,
       defaultCleaningFee: true,
+      logoDriveFileId: true,
     },
   })
+  if (!property) return null
+  // 로고는 화면 어디서든 즉시 표시할 수 있도록 thumbnail URL을 같이 반환
+  const { logoDriveFileId, ...rest } = property
+  return {
+    ...rest,
+    logoDriveFileId,
+    logoThumbnailUrl: logoDriveFileId ? buildDriveThumbnailUrl(logoDriveFileId, 300) : null,
+  }
 }
 
 export async function getRoomTypeOptions(): Promise<string[]> {
@@ -468,8 +477,6 @@ export type ContractSettings = {
   businessInfo: BusinessInfo
   stampDriveFileId: string | null
   stampThumbnailUrl: string | null
-  logoDriveFileId: string | null
-  logoThumbnailUrl: string | null
 }
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = {
@@ -480,22 +487,16 @@ export async function getContractSettings(): Promise<ContractSettings> {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
-    select: {
-      contractTemplate: true, businessInfo: true,
-      stampDriveFileId: true, logoDriveFileId: true,
-    },
+    select: { contractTemplate: true, businessInfo: true, stampDriveFileId: true },
   })
   const template = (property?.contractTemplate as ContractTemplate | null) ?? DEFAULT_CONTRACT_TEMPLATE
   const businessInfo = (property?.businessInfo as BusinessInfo | null) ?? EMPTY_BUSINESS_INFO
   const stampDriveFileId = property?.stampDriveFileId ?? null
-  const logoDriveFileId  = property?.logoDriveFileId  ?? null
   return {
     template,
     businessInfo,
     stampDriveFileId,
     stampThumbnailUrl: stampDriveFileId ? buildDriveThumbnailUrl(stampDriveFileId, 200) : null,
-    logoDriveFileId,
-    logoThumbnailUrl:  logoDriveFileId  ? buildDriveThumbnailUrl(logoDriveFileId,  300) : null,
   }
 }
 

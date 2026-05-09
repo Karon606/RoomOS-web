@@ -43,6 +43,8 @@ type Property = {
   prevOwnerCutoffDate: Date | null
   defaultDeposit: number | null
   defaultCleaningFee: number | null
+  logoDriveFileId: string | null
+  logoThumbnailUrl: string | null
 }
 
 const WINDOW_TYPE_LABEL: Record<string, string> = {
@@ -79,6 +81,42 @@ export default function SettingsForm({
   const [tab, setTab]             = useState<Tab>('basic')
   const [toast, setToast]         = useState('')
   const [isPending, startTransition] = useTransition()
+
+  // 영업장 로고 — 계약서 이외 위치(사이드바·대시보드 등)에서도 재사용 예정이므로 기본정보에서 관리
+  const [logoUrl, setLogoUrl]         = useState<string | null>(property?.logoThumbnailUrl ?? null)
+  const [logoUploading, setLogoUploading] = useState(false)
+
+  const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setLogoUploading(true)
+    const release = trackSave()
+    try {
+      const session = await createLogoUploadSession({
+        fileName: file.name, mimeType: file.type, fileSize: file.size,
+        origin: window.location.origin,
+      })
+      if (!session.ok) { pushToast('error', session.error); return }
+      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file)
+      const fin = await finalizeLogo(driveFileId)
+      if (!fin.ok) { pushToast('error', fin.error); return }
+      setLogoUrl(fin.thumbnailUrl)
+      pushToast('success', '로고 업로드됨')
+    } catch (err) {
+      pushToast('error', (err as Error).message ?? '로고 업로드 실패')
+    } finally { release(); setLogoUploading(false) }
+  }
+  const handleLogoDelete = async () => {
+    if (!confirm('영업장 로고를 삭제할까요?')) return
+    const release = trackSave()
+    try {
+      const res = await deleteLogo()
+      if (!res.ok) { pushToast('error', res.error); return }
+      setLogoUrl(null)
+      pushToast('success', '로고 삭제됨')
+    } finally { release() }
+  }
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -429,6 +467,34 @@ export default function SettingsForm({
         <>
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
           <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-4">영업장 기본 정보</h2>
+
+          {/* 영업장 로고 — 계약서 헤더 외에 사이드바·대시보드 등에서도 재사용 */}
+          <div className="space-y-1.5 mb-4">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">영업장 로고</label>
+            <p className="text-xs text-[var(--warm-muted)]">투명 배경 PNG 권장 (가로형). 계약서 헤더와 향후 사이드바·대시보드 등에서 표시됩니다.</p>
+            <div className="flex items-center gap-3">
+              <div className="w-32 h-16 rounded-xl border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--canvas)] overflow-hidden">
+                {logoUrl ? (
+                  <img src={logoUrl} alt="로고" className="max-w-full max-h-full object-contain" />
+                ) : (
+                  <span className="text-xs text-[var(--warm-muted)]">미등록</span>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className={`px-3 py-1.5 text-xs rounded-lg cursor-pointer text-center font-medium transition-colors ${logoUploading ? 'opacity-60' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'}`}>
+                  {logoUploading ? '업로드 중...' : (logoUrl ? '교체' : '업로드')}
+                  <input type="file" accept="image/*" className="hidden" onChange={handleLogoSelect} disabled={logoUploading} />
+                </label>
+                {logoUrl && (
+                  <button type="button" onClick={handleLogoDelete} disabled={logoUploading}
+                    className="px-3 py-1.5 text-xs rounded-lg border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-50">
+                    삭제
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <Field label="영업장명 *" name="name" defaultValue={property?.name ?? ''} />
             <Field label="주소" name="address" defaultValue={property?.address ?? ''} />
@@ -841,11 +907,9 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
   const [template, setTemplate]         = useState<ContractTemplate>(initial.template)
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(initial.businessInfo)
   const [stampUrl, setStampUrl]         = useState<string | null>(initial.stampThumbnailUrl)
-  const [logoUrl, setLogoUrl]           = useState<string | null>(initial.logoThumbnailUrl)
   const [savingTpl, setSavingTpl]       = useState(false)
   const [savingBiz, setSavingBiz]       = useState(false)
   const [stampUploading, setStampUploading] = useState(false)
-  const [logoUploading, setLogoUploading]   = useState(false)
 
   const updateSection = (idx: number, patch: Partial<ContractSection>) => {
     setTemplate(t => ({
@@ -928,40 +992,12 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
     } finally { release() }
   }
 
-  const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    setLogoUploading(true)
-    const release = trackSave()
-    try {
-      const session = await createLogoUploadSession({
-        fileName: file.name, mimeType: file.type, fileSize: file.size,
-        origin: window.location.origin,
-      })
-      if (!session.ok) { pushToast('error', session.error); return }
-      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file)
-      const fin = await finalizeLogo(driveFileId)
-      if (!fin.ok) { pushToast('error', fin.error); return }
-      setLogoUrl(fin.thumbnailUrl)
-      pushToast('success', '로고 업로드됨')
-    } catch (err) {
-      pushToast('error', (err as Error).message ?? '로고 업로드 실패')
-    } finally { release(); setLogoUploading(false) }
-  }
-  const handleLogoDelete = async () => {
-    if (!confirm('영업장 로고를 삭제할까요?')) return
-    const release = trackSave()
-    try {
-      const res = await deleteLogo()
-      if (!res.ok) { pushToast('error', res.error); return }
-      setLogoUrl(null)
-      pushToast('success', '로고 삭제됨')
-    } finally { release() }
-  }
-
   return (
     <div className="space-y-5">
+      <div className="rounded-xl px-3 py-2 text-[11px] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+        영업장 로고는 <span className="font-semibold text-[var(--warm-dark)]">기본정보 탭</span>에서 등록·관리합니다 (사이드바·대시보드 등 다른 위치에서도 함께 사용).
+      </div>
+
       {/* 사업자 정보 */}
       <div className="rounded-2xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <div className="flex items-center justify-between">
@@ -974,28 +1010,6 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
           <BizField label="사업자번호" value={businessInfo.registrationNo} onChange={v => setBusinessInfo(b => ({ ...b, registrationNo: v }))} />
           <BizField label="대표자" value={businessInfo.ceoName} onChange={v => setBusinessInfo(b => ({ ...b, ceoName: v }))} />
           <BizField label="사업장 주소" value={businessInfo.address} onChange={v => setBusinessInfo(b => ({ ...b, address: v }))} />
-        </div>
-      </div>
-
-      {/* 영업장 로고 */}
-      <div className="rounded-2xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-        <h3 className="text-sm font-semibold text-[var(--warm-dark)]">영업장 로고</h3>
-        <p className="text-xs text-[var(--warm-muted)] -mt-1">투명 배경 PNG 권장 (가로형 권장). 계약서 헤더 좌측에 자동 표시됩니다.</p>
-        <div className="flex items-center gap-4">
-          <div className="w-32 h-16 rounded-xl border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--canvas)] overflow-hidden">
-            {logoUrl ? (
-              <img src={logoUrl} alt="로고" className="max-w-full max-h-full object-contain" />
-            ) : (
-              <span className="text-xs text-[var(--warm-muted)]">미등록</span>
-            )}
-          </div>
-          <div className="flex flex-col gap-2">
-            <label className={`px-3 py-2 text-sm rounded-lg cursor-pointer text-center font-medium transition-colors ${logoUploading ? 'opacity-60' : 'bg-[var(--coral)] text-white hover:opacity-90'}`}>
-              {logoUploading ? '업로드 중...' : (logoUrl ? '교체' : '업로드')}
-              <input type="file" accept="image/*" className="hidden" onChange={handleLogoSelect} disabled={logoUploading} />
-            </label>
-            {logoUrl && <Btn variant="danger" size="sm" onClick={handleLogoDelete} disabled={logoUploading}>삭제</Btn>}
-          </div>
         </div>
       </div>
 
