@@ -7,6 +7,12 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getMyRole, requireEdit, requireOwner } from '@/lib/role'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
+import {
+  createDriveResumableSession, setDrivePublicReadable, deleteFromDrive, buildDriveThumbnailUrl,
+} from '@/lib/google-drive'
+import {
+  type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE,
+} from '@/lib/contract'
 
 export { getMyRole }
 
@@ -453,6 +459,152 @@ export async function updatePropertySettings(formData: FormData) {
 
   revalidatePath('/settings')
   revalidatePath('/rooms')
+}
+
+// ── 계약서 (영업장별 템플릿 + 사업자 정보 + 도장) ─────────────────
+
+export type ContractSettings = {
+  template: ContractTemplate
+  businessInfo: BusinessInfo
+  stampDriveFileId: string | null
+  stampThumbnailUrl: string | null
+}
+
+const EMPTY_BUSINESS_INFO: BusinessInfo = {
+  name: '', registrationNo: '', ceoName: '', address: '',
+}
+
+export async function getContractSettings(): Promise<ContractSettings> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { contractTemplate: true, businessInfo: true, stampDriveFileId: true },
+  })
+  const template = (property?.contractTemplate as ContractTemplate | null) ?? DEFAULT_CONTRACT_TEMPLATE
+  const businessInfo = (property?.businessInfo as BusinessInfo | null) ?? EMPTY_BUSINESS_INFO
+  const stampDriveFileId = property?.stampDriveFileId ?? null
+  return {
+    template,
+    businessInfo,
+    stampDriveFileId,
+    stampThumbnailUrl: stampDriveFileId ? buildDriveThumbnailUrl(stampDriveFileId, 200) : null,
+  }
+}
+
+export async function saveContractTemplate(template: ContractTemplate): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (!template.title?.trim()) return { ok: false, error: '계약서 제목을 입력하세요.' }
+    if (!Array.isArray(template.sections)) return { ok: false, error: '섹션 형식이 올바르지 않습니다.' }
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { contractTemplate: template as unknown as object },
+    })
+    revalidatePath('/settings')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '저장에 실패했습니다.' }
+  }
+}
+
+export async function saveBusinessInfo(info: BusinessInfo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { businessInfo: info as unknown as object },
+    })
+    revalidatePath('/settings')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '저장에 실패했습니다.' }
+  }
+}
+
+const MAX_STAMP_BYTES = 5 * 1024 * 1024  // 5MB — 도장은 작은 PNG면 충분
+
+export async function createStampUploadSession(input: {
+  fileName: string
+  mimeType: string
+  fileSize: number
+  origin: string
+}): Promise<{ ok: true; uploadUrl: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    if (!input.mimeType.startsWith('image/')) return { ok: false, error: '이미지 파일만 업로드 가능합니다.' }
+    if (input.fileSize <= 0) return { ok: false, error: '파일이 비어 있습니다.' }
+    if (input.fileSize > MAX_STAMP_BYTES) return { ok: false, error: `파일 크기는 ${MAX_STAMP_BYTES / 1024 / 1024}MB 이하여야 합니다.` }
+    if (!input.origin) return { ok: false, error: 'Origin 정보가 누락되었습니다.' }
+    const propertyId = await getPropertyId()
+    const ext = input.fileName.split('.').pop() ?? 'png'
+    const uniqueName = `stamp_${propertyId}_${Date.now()}.${ext}`
+    const uploadUrl = await createDriveResumableSession({
+      fileName: uniqueName,
+      mimeType: input.mimeType,
+      fileSize: input.fileSize,
+      origin: input.origin,
+    })
+    return { ok: true, uploadUrl }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: `업로드 준비 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
+  }
+}
+
+export async function finalizeStamp(driveFileId: string): Promise<{ ok: true; thumbnailUrl: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    if (!driveFileId) return { ok: false, error: 'Drive 파일 ID가 없습니다.' }
+    const propertyId = await getPropertyId()
+    await setDrivePublicReadable(driveFileId)
+    // 기존 도장이 있으면 Drive에서 정리
+    const prev = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { stampDriveFileId: true },
+    })
+    if (prev?.stampDriveFileId && prev.stampDriveFileId !== driveFileId) {
+      try { await deleteFromDrive(prev.stampDriveFileId) } catch { /* 이전 파일 정리 실패 무시 */ }
+    }
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { stampDriveFileId: driveFileId },
+    })
+    revalidatePath('/settings')
+    return { ok: true, thumbnailUrl: buildDriveThumbnailUrl(driveFileId, 200) }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    if (driveFileId) {
+      try { await deleteFromDrive(driveFileId) } catch { /* 정리 실패 무시 */ }
+    }
+    return { ok: false, error: `업로드 마무리 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
+  }
+}
+
+export async function deleteStamp(): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const prev = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { stampDriveFileId: true },
+    })
+    if (prev?.stampDriveFileId) {
+      try { await deleteFromDrive(prev.stampDriveFileId) } catch { /* 무시 */ }
+    }
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { stampDriveFileId: null },
+    })
+    revalidatePath('/settings')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
+  }
 }
 
 // ── 고정 지출 ────────────────────────────────────────────────

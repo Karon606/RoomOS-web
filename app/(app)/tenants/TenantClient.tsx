@@ -1961,6 +1961,13 @@ export default function TenantClient({
                           호실 정보
                         </button>
                       )}
+                      <a
+                        href={`/contract/${t.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                        계약서 출력
+                      </a>
                       <div className="flex-1" />
                       {status === 'RESERVED' && (
                         <button onClick={() => handleMoveIn(lease!.id, t.id, t.name)} disabled={isPending}

@@ -114,6 +114,10 @@ model Property {
   paymentMethods     String?   // 결제 수단 목록 (콤마 구분)
   defaultDeposit   Int?      // 기본 보증금
   defaultCleaningFee Int?    // 기본 청소비
+  // 계약서 (영업장별 별도 운영)
+  contractTemplate Json?     // 섹션 본문 + 추가 표시 옵션. shape: { title, sections: [{ title, items: string[] }], oathText }
+  businessInfo     Json?     // 사업자 정보. shape: { name, registrationNo, ceoName, address }
+  stampDriveFileId String?   // 도장 PNG (Drive 파일 ID, 투명 배경 권장)
   createdAt        DateTime  @default(now())
   updatedAt   DateTime @updatedAt
 

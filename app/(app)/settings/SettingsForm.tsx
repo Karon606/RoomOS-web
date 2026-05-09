@@ -14,8 +14,12 @@ import {
   inviteMember, updateMemberRole, removeMember,
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
   exportAllData,
-  type MemberWithUser, type RecurringExpenseRow,
+  saveContractTemplate, saveBusinessInfo, createStampUploadSession, finalizeStamp, deleteStamp,
+  type MemberWithUser, type RecurringExpenseRow, type ContractSettings,
 } from './actions'
+import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
+import { uploadFileToDriveSession } from '@/lib/driveUpload'
+import { Btn } from '@/components/ui/Btn'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { useTheme, type ThemeMode } from '@/components/theme/ThemeProvider'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -47,13 +51,14 @@ function windowLabel(val: string) {
   return WINDOW_TYPE_LABEL[val] ?? val
 }
 
-type Tab = 'basic' | 'room' | 'finance' | 'members' | 'appearance'
+type Tab = 'basic' | 'room' | 'finance' | 'members' | 'contract' | 'appearance'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'basic',      label: '기본정보' },
   { key: 'room',       label: '호실 설정' },
   { key: 'finance',    label: '수익·지출' },
   { key: 'members',    label: '멤버 관리' },
+  { key: 'contract',   label: '계약서' },
   { key: 'appearance', label: '화면' },
 ]
 
@@ -61,10 +66,12 @@ export default function SettingsForm({
   property,
   members: initialMembers,
   myRole,
+  contractSettings,
 }: {
   property: Property | null
   members: MemberWithUser[]
   myRole: Role
+  contractSettings: ContractSettings
 }) {
   const router = useRouter()
   const [tab, setTab]             = useState<Tab>('basic')
@@ -819,7 +826,228 @@ export default function SettingsForm({
         </div>
       )}
 
+      {tab === 'contract' && <ContractTab initial={contractSettings} />}
+
       {tab === 'appearance' && <AppearanceTab />}
+    </div>
+  )
+}
+
+// ── 계약서 탭 ─────────────────────────────────────────────────────
+
+function ContractTab({ initial }: { initial: ContractSettings }) {
+  const [template, setTemplate]         = useState<ContractTemplate>(initial.template)
+  const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(initial.businessInfo)
+  const [stampUrl, setStampUrl]         = useState<string | null>(initial.stampThumbnailUrl)
+  const [savingTpl, setSavingTpl]       = useState(false)
+  const [savingBiz, setSavingBiz]       = useState(false)
+  const [stampUploading, setStampUploading] = useState(false)
+
+  const updateSection = (idx: number, patch: Partial<ContractSection>) => {
+    setTemplate(t => ({
+      ...t,
+      sections: t.sections.map((s, i) => i === idx ? { ...s, ...patch } : s),
+    }))
+  }
+  const moveSection = (idx: number, dir: -1 | 1) => {
+    setTemplate(t => {
+      const next = [...t.sections]
+      const j = idx + dir
+      if (j < 0 || j >= next.length) return t
+      ;[next[idx], next[j]] = [next[j], next[idx]]
+      return { ...t, sections: next }
+    })
+  }
+  const removeSection = (idx: number) => {
+    if (!confirm('이 섹션을 삭제할까요?')) return
+    setTemplate(t => ({ ...t, sections: t.sections.filter((_, i) => i !== idx) }))
+  }
+  const addSection = () => {
+    setTemplate(t => ({
+      ...t,
+      sections: [...t.sections, {
+        id: `s${Date.now()}`,
+        title: `${t.sections.length + 1}. 새 섹션`,
+        items: ['- '],
+      }],
+    }))
+  }
+
+  const handleSaveTemplate = async () => {
+    setSavingTpl(true)
+    const release = trackSave()
+    try {
+      const res = await saveContractTemplate(template)
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', '계약서 본문 저장됨')
+    } finally { release(); setSavingTpl(false) }
+  }
+  const handleSaveBusinessInfo = async () => {
+    setSavingBiz(true)
+    const release = trackSave()
+    try {
+      const res = await saveBusinessInfo(businessInfo)
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', '사업자 정보 저장됨')
+    } finally { release(); setSavingBiz(false) }
+  }
+
+  const handleStampSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setStampUploading(true)
+    const release = trackSave()
+    try {
+      const session = await createStampUploadSession({
+        fileName: file.name, mimeType: file.type, fileSize: file.size,
+        origin: window.location.origin,
+      })
+      if (!session.ok) { pushToast('error', session.error); return }
+      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file)
+      const fin = await finalizeStamp(driveFileId)
+      if (!fin.ok) { pushToast('error', fin.error); return }
+      setStampUrl(fin.thumbnailUrl)
+      pushToast('success', '도장 업로드됨')
+    } catch (err) {
+      pushToast('error', (err as Error).message ?? '도장 업로드 실패')
+    } finally { release(); setStampUploading(false) }
+  }
+  const handleStampDelete = async () => {
+    if (!confirm('도장 이미지를 삭제할까요?')) return
+    const release = trackSave()
+    try {
+      const res = await deleteStamp()
+      if (!res.ok) { pushToast('error', res.error); return }
+      setStampUrl(null)
+      pushToast('success', '도장 삭제됨')
+    } finally { release() }
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* 사업자 정보 */}
+      <div className="rounded-2xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-[var(--warm-dark)]">사업자 정보</h3>
+          <Btn variant="primary" size="sm" onClick={handleSaveBusinessInfo} disabled={savingBiz}>{savingBiz ? '저장 중...' : '저장'}</Btn>
+        </div>
+        <p className="text-xs text-[var(--warm-muted)] -mt-1">계약서 하단 사업자 표기 영역에 자동 삽입됩니다.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <BizField label="상호" value={businessInfo.name} onChange={v => setBusinessInfo(b => ({ ...b, name: v }))} />
+          <BizField label="사업자번호" value={businessInfo.registrationNo} onChange={v => setBusinessInfo(b => ({ ...b, registrationNo: v }))} />
+          <BizField label="대표자" value={businessInfo.ceoName} onChange={v => setBusinessInfo(b => ({ ...b, ceoName: v }))} />
+          <BizField label="사업장 주소" value={businessInfo.address} onChange={v => setBusinessInfo(b => ({ ...b, address: v }))} />
+        </div>
+      </div>
+
+      {/* 도장 */}
+      <div className="rounded-2xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+        <h3 className="text-sm font-semibold text-[var(--warm-dark)]">도장 이미지</h3>
+        <p className="text-xs text-[var(--warm-muted)] -mt-1">투명 배경 PNG 권장. 출력 시 사업자 서명란 옆에 자동 표시됩니다.</p>
+        <div className="flex items-center gap-4">
+          <div className="w-24 h-24 rounded-xl border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--canvas)] overflow-hidden">
+            {stampUrl ? (
+              <img src={stampUrl} alt="도장" className="max-w-full max-h-full object-contain" />
+            ) : (
+              <span className="text-xs text-[var(--warm-muted)]">미등록</span>
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className={`px-3 py-2 text-sm rounded-lg cursor-pointer text-center font-medium transition-colors ${stampUploading ? 'opacity-60' : 'bg-[var(--coral)] text-white hover:opacity-90'}`}>
+              {stampUploading ? '업로드 중...' : (stampUrl ? '교체' : '업로드')}
+              <input type="file" accept="image/*" className="hidden" onChange={handleStampSelect} disabled={stampUploading} />
+            </label>
+            {stampUrl && <Btn variant="danger" size="sm" onClick={handleStampDelete} disabled={stampUploading}>삭제</Btn>}
+          </div>
+        </div>
+      </div>
+
+      {/* 본문 템플릿 */}
+      <div className="rounded-2xl p-4 sm:p-5 space-y-4" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h3 className="text-sm font-semibold text-[var(--warm-dark)]">계약서 본문</h3>
+          <Btn variant="primary" size="sm" onClick={handleSaveTemplate} disabled={savingTpl}>{savingTpl ? '저장 중...' : '저장'}</Btn>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">계약서 제목</label>
+          <input
+            type="text"
+            value={template.title}
+            onChange={e => setTemplate(t => ({ ...t, title: e.target.value }))}
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2 text-sm text-[var(--warm-dark)] outline-none"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">비상연락망 안내 문구</label>
+          <input
+            type="text"
+            value={template.emergencyContactNote ?? ''}
+            onChange={e => setTemplate(t => ({ ...t, emergencyContactNote: e.target.value }))}
+            placeholder="예) * 비상연락망(이름/전화번호/관계-위급상황시 통보):"
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2 text-sm text-[var(--warm-dark)] outline-none"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">서약 문구 (서명란 위)</label>
+          <input
+            type="text"
+            value={template.oathText}
+            onChange={e => setTemplate(t => ({ ...t, oathText: e.target.value }))}
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2 text-sm text-[var(--warm-dark)] outline-none"
+          />
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-[var(--warm-mid)]">섹션 (각 줄은 줄바꿈으로 구분 — &lsquo;- &rsquo;로 시작 권장)</p>
+          {template.sections.map((sec, idx) => (
+            <div key={sec.id} className="rounded-xl p-3 space-y-2" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={sec.title}
+                  onChange={e => updateSection(idx, { title: e.target.value })}
+                  className="flex-1 bg-transparent border-b border-[var(--warm-border)] px-1 py-1 text-sm font-semibold text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+                />
+                <button type="button" onClick={() => moveSection(idx, -1)} disabled={idx === 0}
+                  className="text-xs px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] disabled:opacity-30">↑</button>
+                <button type="button" onClick={() => moveSection(idx, 1)} disabled={idx === template.sections.length - 1}
+                  className="text-xs px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] disabled:opacity-30">↓</button>
+                <button type="button" onClick={() => removeSection(idx)}
+                  className="text-xs px-2 py-1 rounded-md border border-red-200 text-red-500 hover:bg-red-50">삭제</button>
+              </div>
+              <textarea
+                value={sec.items.join('\n')}
+                onChange={e => updateSection(idx, { items: e.target.value.split('\n') })}
+                rows={Math.max(3, sec.items.length)}
+                className="w-full bg-transparent border border-[var(--warm-border)] rounded-md px-2 py-2 text-xs text-[var(--warm-dark)] leading-relaxed outline-none focus:border-[var(--coral)]"
+                style={{ fontFamily: 'inherit' }}
+              />
+            </div>
+          ))}
+          <button type="button" onClick={addSection}
+            className="w-full py-2 text-sm text-[var(--coral)] border border-dashed border-[var(--coral)]/40 rounded-xl hover:bg-[var(--coral-pale)]/30 transition-colors">
+            + 섹션 추가
+          </button>
+        </div>
+
+        <div className="rounded-lg px-3 py-2 text-[11px] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)' }}>
+          본문에서 다음 변수를 사용하면 출력 시 입실자 정보로 자동 치환됩니다:
+          <span className="block mt-1 font-mono text-[10px]">
+            {`{{name}} {{phone}} {{birth}} {{job}} {{gender}} {{smoking}} {{deposit}} {{checkInDate}} {{roomNo}} {{checkOutDate}} {{rentFee}} {{emergencyContact}}`}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BizField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
+      <input type="text" value={value} onChange={e => onChange(e.target.value)}
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
     </div>
   )
 }
