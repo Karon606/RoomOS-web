@@ -287,6 +287,7 @@ model LeaseTerm {
   cashReceipt        String?
   registrationStatus RegistrationStatus @default(NOT_REPORTED)
   contractUrl        String?
+  contractOverride   Json?              // 입실자별 계약서 본문 덮어쓰기 (Property.contractTemplate 형식과 동일). null이면 영업장 공통 템플릿 사용
   wishRooms          String?
   wishConditions     String?            // JSON: { floor?, windowType?, type?, direction? } — 호실 미지정 예약자용. "{}"이면 조건 무관(모든 빈 방 매칭)
   keepAlertAfterInquiry Boolean         @default(false)  // 입주 희망일이 지나도 알림 유지
