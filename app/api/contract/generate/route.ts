@@ -115,6 +115,8 @@ export async function POST(req: Request) {
     const html = buildContractPrintHtml(printData)
 
     // 1) Chromium 실행해 HTML → PDF
+    // PDF 생성에는 WebGL 불필요 → swiftshader 스킵해서 cold start 단축
+    chromium.setGraphicsMode = false
     const browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: { width: 794, height: 1123, deviceScaleFactor: 2 }, // A4 96dpi @ 2x

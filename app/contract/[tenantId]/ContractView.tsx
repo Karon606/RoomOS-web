@@ -186,6 +186,8 @@ export default function ContractView({ data }: { data: ContractData }) {
   // ── 서명 패드 모달 ──────────────────────────────────────────────
   const [signOpen, setSignOpen]       = useState(false)
   const [signSaving, setSignSaving]   = useState(false)
+  // 캡처된 서명 PNG dataURL — 화면 서명란에 즉시 표시
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null)
   const sigCanvasRef = useRef<HTMLCanvasElement>(null)
   const sigPadRef    = useRef<import('signature_pad').default | null>(null)
 
@@ -226,10 +228,15 @@ export default function ContractView({ data }: { data: ContractData }) {
       pushToast('error', '서명을 입력해주세요.')
       return
     }
+    const dataUrl = pad.toDataURL('image/png')
+    // 1) 화면에 즉시 반영 + 모달 닫기 — UX 우선
+    setSignatureDataUrl(dataUrl)
+    setSignOpen(false)
+    pushToast('info', 'PDF 생성 중... (5~15초)')
+    // 2) 백그라운드로 서버 PDF 생성·Drive 업로드
     setSignSaving(true)
     const release = trackSave()
     try {
-      const dataUrl = pad.toDataURL('image/png')
       const res = await fetch('/api/contract/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -242,15 +249,22 @@ export default function ContractView({ data }: { data: ContractData }) {
           emergencyContactText,
         }),
       })
-      const json = await res.json()
-      if (!json.ok) {
-        pushToast('error', json.error ?? '계약서 생성 실패')
+      const text = await res.text()
+      let json: { ok: boolean; error?: string } | null = null
+      try { json = JSON.parse(text) } catch { /* not JSON — show raw */ }
+      if (!res.ok || !json?.ok) {
+        const msg = json?.error ?? `서버 오류 (${res.status}): ${text.slice(0, 200)}`
+        pushToast('error', msg)
+        // 토스트가 짧아 놓칠 수 있으니 alert도 같이 — 디버그/현장 대응 용이
+        alert(`계약서 PDF 생성 실패\n\n${msg}`)
         return
       }
       pushToast('success', '서명된 계약서 PDF 저장됨')
-      setSignOpen(false)
-      // 입실자 상세 모달에서 첨부 파일을 즉시 보려면 refresh
       router.refresh()
+    } catch (err) {
+      const msg = (err as Error).message ?? 'PDF 생성 실패'
+      pushToast('error', msg)
+      alert(`계약서 PDF 생성 실패\n\n${msg}`)
     } finally {
       release()
       setSignSaving(false)
@@ -443,10 +457,24 @@ export default function ContractView({ data }: { data: ContractData }) {
           <div className="signature-row">
             <span className="signature-date">{signDateLabel}</span>
             <span className="signature-label">/ 서명: </span>
-            <span className="signature-name no-print">
-              <input type="text" value={signatureName} onChange={e => setSignatureName(e.target.value)} />
-            </span>
-            <span className="only-print">{signatureName}</span>
+            {signatureDataUrl ? (
+              <span className="signature-image-wrap">
+                <img src={signatureDataUrl} alt="서명" className="signature-image" />
+                <button
+                  type="button"
+                  onClick={() => setSignatureDataUrl(null)}
+                  className="signature-clear no-print"
+                  title="서명 지우기"
+                >✕</button>
+              </span>
+            ) : (
+              <>
+                <span className="signature-name no-print">
+                  <input type="text" value={signatureName} onChange={e => setSignatureName(e.target.value)} />
+                </span>
+                <span className="only-print">{signatureName}</span>
+              </>
+            )}
             <span className="signature-stamp">(인)</span>
           </div>
         </div>
@@ -743,6 +771,23 @@ export default function ContractView({ data }: { data: ContractData }) {
           padding: 2px 10px; font-size: 9pt; border: 0; border-bottom: 1px solid #1a1a1a;
           min-width: 120px; text-align: center;
         }
+        .signature-image-wrap {
+          display: inline-flex; align-items: center; position: relative;
+          border-bottom: 1px solid #1a1a1a; padding: 0 4px;
+        }
+        .signature-image {
+          height: 11mm; width: auto; max-width: 50mm;
+          object-fit: contain;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        .signature-clear {
+          margin-left: 4px; width: 18px; height: 18px;
+          border-radius: 50%; border: 1px solid #d6cdbb; background: #fff;
+          color: #6b6258; font-size: 11px; cursor: pointer; line-height: 1;
+          display: inline-flex; align-items: center; justify-content: center;
+        }
+        .signature-clear:hover { color: #c4452b; border-color: #f3c8b5; }
         .only-print { display: none; }
 
         .business-block {
