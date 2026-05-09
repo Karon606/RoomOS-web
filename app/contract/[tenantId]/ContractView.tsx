@@ -358,8 +358,8 @@ export default function ContractView({ data }: { data: ContractData }) {
         </div>
 
         {/* 우측 하단 이스터에그 — Brand Guide 정식 워드마크(SVG) 사용 */}
-        <div className="powered-by" aria-label="powered by RoomOS">
-          <span className="powered-by-prefix">powered by</span>
+        <div className="powered-by" aria-label="Made with RoomOS">
+          <span className="powered-by-prefix">Made with</span>
           <RoomOSWordmark height={11} className="powered-by-wm" />
         </div>
       </main>
