@@ -36,6 +36,33 @@ export default function ContractView({ data }: { data: ContractData }) {
   useEffect(() => { setDraft(data.template) }, [data.template])
   const [pending, startTransition] = useTransition()
 
+  // 호실: 숫자만이면 '호' 자동 부착, 외수 문자가 섞이면 그대로
+  const roomNoLabel = (() => {
+    const v = data.lease?.roomNo
+    if (!v) return ''
+    return /^\d+$/.test(v.trim()) ? `${v.trim()}호` : v
+  })()
+
+  // 보증금/청소비 동적 표기
+  // 둘 다 0/없음     → 라벨 '입실 보증금 (Deposit)' / 값 ''
+  // 보증금만 있음    → 라벨 '입실 보증금 (Deposit)' / 값 'X원'
+  // 보증금+청소비    → 라벨 '입실 보증금 (Deposit)' / 값 'X원 (중 청소비 Y원)'
+  // 청소비만 있음    → 라벨 '청소비 (Cleaning Fee)'  / 값 'Y원'
+  const depositRow = (() => {
+    const dep = data.lease?.depositAmount ?? 0
+    const cln = data.lease?.cleaningFee   ?? 0
+    if (dep === 0 && cln > 0) {
+      return { label: '청소비 (Cleaning Fee)', value: `${cln.toLocaleString()}원` }
+    }
+    if (dep > 0 && cln > 0) {
+      return { label: '입실 보증금 (Deposit)', value: `${dep.toLocaleString()}원 (중 청소비 ${cln.toLocaleString()}원)` }
+    }
+    if (dep > 0) {
+      return { label: '입실 보증금 (Deposit)', value: `${dep.toLocaleString()}원` }
+    }
+    return { label: '입실 보증금 (Deposit)', value: '' }
+  })()
+
   // 변수 치환 맵 — 본문 섹션 내 {{key}} 자리 자동 채움
   const vars = useMemo<Record<string, string>>(() => ({
     name:             data.tenant.name ?? '',
@@ -47,10 +74,10 @@ export default function ContractView({ data }: { data: ContractData }) {
     deposit:          data.lease ? data.lease.depositAmount.toLocaleString() : '',
     checkInDate:      fmtDate(data.lease?.moveInDate ?? null),
     checkOutDate:     fmtDate(data.lease?.expectedMoveOut ?? null),
-    roomNo:           data.lease?.roomNo ?? '',
+    roomNo:           roomNoLabel,
     rentFee:          data.lease ? data.lease.rentAmount.toLocaleString() : '',
     emergencyContact: emergencyContactText,
-  }), [data, smoking, emergencyContactText])
+  }), [data, smoking, emergencyContactText, roomNoLabel])
 
   const handlePrint = () => window.print()
 
@@ -203,14 +230,14 @@ export default function ContractView({ data }: { data: ContractData }) {
               <td>{smoking}</td>
             </tr>
             <tr>
-              <th>입실 보증금 (Deposit)</th>
-              <td>{data.lease ? `${data.lease.depositAmount.toLocaleString()}원${data.lease.cleaningFee ? ` (청소비 ${fmtKorMoney(data.lease.cleaningFee)})` : ''}` : ''}</td>
+              <th>{depositRow.label}</th>
+              <td>{depositRow.value}</td>
               <th>입실일 (Check-in)</th>
               <td>{fmtDate(data.lease?.moveInDate ?? null)}</td>
             </tr>
             <tr>
               <th>호실 (Room No.)</th>
-              <td>{data.lease?.roomNo ?? ''}</td>
+              <td>{roomNoLabel}</td>
               <th>퇴실 예정일 (Check-out)</th>
               <td>{fmtDate(data.lease?.expectedMoveOut ?? null)}</td>
             </tr>
@@ -300,23 +327,25 @@ export default function ContractView({ data }: { data: ContractData }) {
           </div>
         </div>
 
-        {/* 사업자 정보 + 도장 */}
+        {/* 사업자 정보 + 도장 — 도장은 우측에 flex로 자리잡아 줄바꿈 방지 */}
         <div className="business-block">
-          <div className="business-line">
-            <span>상호: {data.businessInfo.name}</span>
-            {data.businessInfo.registrationNo && <span> / 사업자번호 {data.businessInfo.registrationNo}</span>}
-            {data.businessInfo.ceoName && <span> / 대표 {data.businessInfo.ceoName}</span>}
-            <span className="business-stamp-slot">
-              {data.stampImageUrl ? (
-                <img src={data.stampImageUrl} alt="도장" className="business-stamp-image" />
-              ) : (
-                <span className="business-stamp-marker">(인)</span>
-              )}
-            </span>
+          <div className="business-info">
+            <div className="business-line">
+              상호: {data.businessInfo.name}
+              {data.businessInfo.registrationNo && ` / 사업자번호 ${data.businessInfo.registrationNo}`}
+              {data.businessInfo.ceoName && ` / 대표 ${data.businessInfo.ceoName}`}
+            </div>
+            {data.businessInfo.address && (
+              <div className="business-line">사업장 주소: {data.businessInfo.address}</div>
+            )}
           </div>
-          {data.businessInfo.address && (
-            <div className="business-line">사업장 주소: {data.businessInfo.address}</div>
-          )}
+          <div className="business-stamp">
+            {data.stampImageUrl ? (
+              <img src={data.stampImageUrl} alt="도장" className="business-stamp-image" />
+            ) : (
+              <span className="business-stamp-marker">(인)</span>
+            )}
+          </div>
         </div>
       </main>
 
@@ -377,7 +406,7 @@ export default function ContractView({ data }: { data: ContractData }) {
           border-radius: 999px; font-size: 11px; font-weight: 600;
         }
 
-        /* 인쇄 영역 — A4 1장 */
+        /* 인쇄 영역 — A4 1장. 화면에선 padding으로 종이 느낌, 인쇄에선 @page margin이 처리 */
         .contract-paper {
           width: 210mm;
           min-height: 297mm;
@@ -476,24 +505,41 @@ export default function ContractView({ data }: { data: ContractData }) {
 
         .business-block {
           margin-top: 14pt;
-          text-align: center;
           font-size: 9pt;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6mm;
+          flex-wrap: nowrap;
         }
-        .business-line { margin-bottom: 2pt; }
-        .business-stamp-slot {
-          margin-left: 4px; position: relative; display: inline-block;
-          width: 18mm; height: 18mm; vertical-align: middle;
+        .business-info { text-align: center; flex: 0 1 auto; min-width: 0; }
+        .business-line { margin-bottom: 2pt; white-space: normal; }
+        .business-stamp {
+          flex: 0 0 auto;
+          width: 14mm;
+          height: 14mm;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
         }
         .business-stamp-image {
-          position: absolute; inset: 0; width: 100%; height: 100%;
-          object-fit: contain; mix-blend-mode: multiply; /* 흰배경 PNG도 자연스럽게 */
+          max-width: 100%;
+          max-height: 100%;
+          width: auto;
+          height: auto;
+          object-fit: contain;
+          /* 인쇄·PDF에서도 도장 색이 빠지지 않도록 강제 */
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
         }
         .business-stamp-marker { font-weight: 600; }
 
         /* ── 인쇄 전용 ─────────────────────────────────────────── */
+        /* A4 + 14mm × 16mm 마진을 페이지에서 잡아준다 (paper의 padding과 함께
+           이중으로 적용되지 않도록 인쇄 시 paper.padding은 0으로 리셋) */
         @page {
           size: A4;
-          margin: 0;
+          margin: 14mm 16mm;
         }
         @media print {
           html, body { background: #fff; overflow: visible !important; height: auto !important; }
@@ -502,9 +548,15 @@ export default function ContractView({ data }: { data: ContractData }) {
           .only-print { display: inline !important; }
           .contract-paper {
             box-shadow: none;
-            width: 210mm;
-            min-height: 297mm;
+            width: auto;        /* @page 안에서 자연스럽게 */
+            min-height: auto;
+            padding: 0;          /* 마진은 @page가 처리 */
             page-break-after: avoid;
+          }
+          /* 도장 — 인쇄에서도 색상 그대로 */
+          .business-stamp-image, img {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
         }
       `}</style>
