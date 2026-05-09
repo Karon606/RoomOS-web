@@ -9,6 +9,7 @@ import { renderContractText, type ContractTemplate, type ContractSection } from 
 import { kstYmdStr } from '@/lib/kstDate'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { trackSave, pushToast } from '@/lib/saveStatus'
+import { RoomOSWordmark } from '@/components/brand/RoomOSWordmark'
 
 const fmtDate = (d: string | null) => {
   if (!d) return ''
@@ -356,10 +357,11 @@ export default function ContractView({ data }: { data: ContractData }) {
           </div>
         </div>
 
-        {/* 우측 하단 이스터에그 — RoomOS 워드마크 컬러 강조 (작게) */}
-        <p className="powered-by" aria-label="powered by RoomOS">
-          powered by Roo<span className="powered-by-accent">O</span>S
-        </p>
+        {/* 우측 하단 이스터에그 — Brand Guide 정식 워드마크(SVG) 사용 */}
+        <div className="powered-by" aria-label="powered by RoomOS">
+          <span className="powered-by-prefix">powered by</span>
+          <RoomOSWordmark height={11} className="powered-by-wm" />
+        </div>
       </main>
 
       {/* 인쇄/화면 공통 스타일 */}
@@ -434,21 +436,30 @@ export default function ContractView({ data }: { data: ContractData }) {
           box-sizing: border-box;
         }
 
-        /* powered by RoomOS — 우측 하단 작은 이스터에그. 인쇄 시에도 그대로 노출 */
+        /* powered by RoomOS — 우측 하단 작은 이스터에그.
+           "powered by"는 무광 그레이, 워드마크는 Brand Guide ink + persimmon 사양 그대로
+           (SVG라서 인쇄·PDF에도 폰트 의존성 없이 동일 렌더) */
         .powered-by {
           position: absolute;
           right: 16mm;
           bottom: 6mm;
           margin: 0;
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          /* SVG 워드마크 안 ink/persimmon CSS var는 약간 톤 다운해 이스터에그 톤 유지 */
+          --ink: #4a4a4a;
+          --persimmon: #e84a1a;
+        }
+        .powered-by-prefix {
           font-family: 'DM Mono', 'Pretendard', monospace;
           font-size: 6.5pt;
           letter-spacing: 0.04em;
           color: #b8b0a3;
           font-weight: 500;
         }
-        .powered-by-accent {
-          color: #e84a1a;
-          font-weight: 700;
+        .powered-by-wm {
+          opacity: 0.78; /* 너무 튀지 않게 살짝 죽임 */
         }
 
         /* 헤더 — 좌측 로고 슬롯 / 중앙 제목 / 우측 빈공간으로 제목을 페이지 정중앙에 정렬 */

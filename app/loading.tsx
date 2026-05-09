@@ -37,7 +37,7 @@ export default function RootLoading() {
 
       {/* RoomOS 워드마크 — SVG 컴포넌트로 폰트 의존성 최소화 */}
       <div className="splash-text mb-7">
-        <RoomOSWordmark height={42} weight={800} />
+        <RoomOSWordmark height={42} />
       </div>
 
       {/* 4-bar 로고 — (app)/loading.tsx 모티프와 동일 */}

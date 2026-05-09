@@ -12,7 +12,7 @@ function RoomOSLogo() {
         <line x1="0" y1="20.5" x2="28" y2="20.5" stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.62"/>
         <line x1="0" y1="29"   x2="14" y2="29"   stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.28"/>
       </svg>
-      <RoomOSWordmark height={36} weight={800} />
+      <RoomOSWordmark height={36} />
     </div>
   )
 }
