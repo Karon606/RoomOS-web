@@ -1917,7 +1917,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         })()}
 
         {/* Row 3 Left: 누적 미납 — 도래·미회수 강조, 납부 예정은 부가 */}
-        <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
+        <Link href="/rooms" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             누적 미납
           </p>
@@ -1933,10 +1933,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
               <span style={{ color: '#1e40af', fontWeight: 500 }}>+{data.upcomingAmount.toLocaleString()}원</span> 납부 예정 ({data.upcomingCount}건)
             </p>
           )}
-        </div>
+        </Link>
 
         {/* Row 3 Right: 월 지출 */}
-        <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
+        <Link href="/finance?tab=expense" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             월 지출
           </p>
@@ -1945,10 +1945,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             <small style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
           <p style={{ fontSize: 10.5, color: 'var(--warm-muted)' }}>이달 지출 합계</p>
-        </div>
+        </Link>
 
         {/* Row 4 Left: 보유 보증금 */}
-        <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
+        <Link href="/finance?tab=deposit" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             보유 보증금
           </p>
@@ -1957,10 +1957,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             <small style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
           <p style={{ fontSize: 10.5, color: 'var(--warm-muted)' }}>현재 보증금 합계</p>
-        </div>
+        </Link>
 
         {/* Row 4 Right: 보유 예비비 */}
-        <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
+        <Link href="/finance?tab=reserve" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             보유 예비비
           </p>
@@ -1977,10 +1977,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
               </>
             ) : '이번 달 거래 없음'}
           </p>
-        </div>
+        </Link>
 
         {/* Row 5 Left: 입실 현황 */}
-        <div className="rounded-xl" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
+        <Link href="/room-manage" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
           <p style={{ fontSize: '10.5px', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             입실 현황
           </p>
@@ -1991,7 +1991,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: 10.5, color: 'var(--warm-muted)' }}>
             공실 <em style={{ fontStyle: 'normal', color: 'var(--coral)' }}>{data.vacantRooms}개</em>
           </p>
-        </div>
+        </Link>
       </div>
 
       {/* ── 탭 섹션 ─────────────────────────────────────────────── */}

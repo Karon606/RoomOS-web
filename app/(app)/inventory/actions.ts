@@ -592,7 +592,7 @@ function deriveSubLabel(base: string, specValue: number | null, specUnit: string
   return parts.length > 0 ? `${base} ${parts.join(' ')}` : base
 }
 
-export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; created: number; migrated: number } | { ok: false; error: string }> {
+export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; created: number; migrated: number; skippedArchived: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -639,15 +639,18 @@ export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; create
     }
 
     // looseMatch 카드 사전 조회 — 같은 (category, baseLabel)이 이미 병합용 카드인지
+    // 사용자가 삭제(archive)한 카드는 재생성/재흡수 대상에서 제외
     const looseMatchKeys = new Set<string>()
+    const archivedBaseKeys = new Set<string>()  // baseLabel 카드가 archived인 경우
     await Promise.all(
       Array.from(byBase.keys()).map(async k => {
         const [cat, lbl] = k.split('|')
         const found = await prisma.trackedItem.findUnique({
           where: { propertyId_category_label: { propertyId, category: cat, label: lbl } },
-          select: { qtyUnit: true },
+          select: { qtyUnit: true, isArchived: true },
         })
-        if (found && found.qtyUnit === null) looseMatchKeys.add(k)
+        if (found?.isArchived) archivedBaseKeys.add(k)
+        else if (found && found.qtyUnit === null) looseMatchKeys.add(k)
       }),
     )
 
@@ -668,27 +671,39 @@ export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; create
     }
 
     // 3) TrackedItem 생성/조회 + expense itemLabel 마이그레이션
+    //    - 같은 라벨의 archived 카드가 있으면 재생성하지 않고 스킵 (사용자가 의도적으로 삭제한 것)
     let created = 0
     let migrated = 0
+    let skippedArchived = 0
     for (const g of groups.values()) {
       const label = finalLabel.get(g) ?? g.baseLabel
+      const baseKey = `${g.category}|${g.baseLabel}`
+      // baseLabel 카드가 archived → 모든 sub-label 그룹 스킵 (사용자가 삭제한 묶음)
+      if (archivedBaseKeys.has(baseKey)) {
+        skippedArchived += g.expenseIds.length
+        continue
+      }
       const existing = await prisma.trackedItem.findUnique({
         where: { propertyId_category_label: { propertyId, category: g.category, label } },
+        select: { id: true, isArchived: true },
       })
+      // 같은 sub-label의 archived 카드가 이미 있으면 스킵
+      if (existing?.isArchived) {
+        skippedArchived += g.expenseIds.length
+        continue
+      }
       if (!existing) {
-        if (existing === null) {
-          await prisma.trackedItem.create({
-            data: {
-              propertyId,
-              category: g.category,
-              label,
-              specUnit: g.specUnit,
-              qtyUnit: g.qtyUnit,
-              trackUnit: g.category === '폐기물 처리비' ? 'qty' : 'spec',
-            },
-          })
-          created++
-        }
+        await prisma.trackedItem.create({
+          data: {
+            propertyId,
+            category: g.category,
+            label,
+            specUnit: g.specUnit,
+            qtyUnit: g.qtyUnit,
+            trackUnit: g.category === '폐기물 처리비' ? 'qty' : 'spec',
+          },
+        })
+        created++
       }
       // 라벨이 변경된 그룹의 expense rows의 itemLabel을 새 라벨로 업데이트
       if (label !== g.baseLabel && g.expenseIds.length > 0) {
@@ -701,7 +716,7 @@ export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; create
     }
     revalidatePath('/inventory')
     revalidatePath('/finance')
-    return { ok: true, created, migrated }
+    return { ok: true, created, migrated, skippedArchived }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

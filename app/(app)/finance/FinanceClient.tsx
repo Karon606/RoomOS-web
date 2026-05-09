@@ -697,6 +697,7 @@ export default function FinanceClient({
   expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions,
   reserveBalance, reserveMonthly, reserveTxns, settleableExpenses,
   depositSummary, depositLedger,
+  initialTab,
 }: {
   expenses: Expense[]
   incomes: Income[]
@@ -721,9 +722,21 @@ export default function FinanceClient({
   settleableExpenses: SettleableExpense[]
   depositSummary: DepositPerTenant[]
   depositLedger: DepositLedgerEntry[]
+  initialTab?: Tab
 }) {
   const router = useRouter()
-  const [tab, setTab] = useState<Tab>('expense')
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'expense')
+
+  // 대시보드에서 ?tab=…로 진입했을 때 탭 영역으로 스크롤
+  useEffect(() => {
+    if (!initialTab) return
+    const el = document.getElementById('finance-tabs')
+    if (el) {
+      requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+    }
+    // 최초 진입 시 1회만
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState('')
   const [finColWidths, setFinColWidths] = useState<Record<string, number>>(DEFAULT_FIN_WIDTHS)
@@ -731,6 +744,14 @@ export default function FinanceClient({
 
   // ── 지출 탭 상태 ─────────────────────────────────────────────
   const [expFilter, setExpFilter] = useState({ method: 'all', category: 'all', finance: 'all' })
+  // 미확인 고정 지출 가시성: 'all' = 전체, 'soon' = 결제일 D-3 이내(과거 도래 포함)만
+  const [recVisibility, setRecVisibility] = useState<'all' | 'soon'>(() => {
+    if (typeof window === 'undefined') return 'soon'
+    return (localStorage.getItem('roomos-rec-visibility') as 'all' | 'soon') ?? 'soon'
+  })
+  useEffect(() => {
+    if (typeof window !== 'undefined') localStorage.setItem('roomos-rec-visibility', recVisibility)
+  }, [recVisibility])
   const [showAddExp, setShowAddExp]       = useState(false)
   const [addExpDate, setAddExpDate]       = useState(() => kstYmdStr())
   const [detailExp, setDetailExp]         = useState<Expense | null>(null)
@@ -1276,7 +1297,7 @@ export default function FinanceClient({
       )}
 
       {/* 서브탭 */}
-      <div className="flex gap-1.5 overflow-x-auto scrollbar-hide">
+      <div id="finance-tabs" className="flex gap-1.5 overflow-x-auto scrollbar-hide scroll-mt-20">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors rounded-xl
@@ -1329,11 +1350,27 @@ export default function FinanceClient({
 
           {(() => {
             // 미확인 고정 지출 — 필터 적용 후 납부일 기준 날짜 부여
-            const unconfirmedRecs = activeRecs.filter(r =>
+            const unconfirmedRecsFiltered = activeRecs.filter(r =>
               !r.recordedExpenseId &&
               (expFilter.category === 'all' || r.category === expFilter.category) &&
               (expFilter.method === 'all' || r.payMethod === expFilter.method)
             )
+
+            // D-3 이내(과거 도래 포함)만 보기 옵션 적용
+            const todayStr = kstYmdStr()
+            const todayDay = parseInt(todayStr.slice(8, 10), 10)
+            const isThisMonth = targetMonth === todayStr.slice(0, 7)
+            const isSoon = (dueDay: number) => {
+              if (!isThisMonth) return true // 다른 달 보기 시 always show
+              return dueDay - todayDay <= 3
+            }
+            const unconfirmedRecs = recVisibility === 'soon'
+              ? unconfirmedRecsFiltered.filter(r => isSoon(r.dueDay))
+              : unconfirmedRecsFiltered
+            const hiddenRecs = recVisibility === 'soon'
+              ? unconfirmedRecsFiltered.filter(r => !isSoon(r.dueDay))
+              : []
+            const hiddenRecsTotal = hiddenRecs.reduce((s, r) => s + (r.pendingAmount ?? r.amount), 0)
 
             type ListItem =
               | { kind: 'expense'; exp: Expense; dateStr: string }
@@ -1364,6 +1401,27 @@ export default function FinanceClient({
 
             return (
               <>
+                {/* 고정지출 가시성 토글 + 숨김 요약 */}
+                {isThisMonth && unconfirmedRecsFiltered.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 -mb-1">
+                    <div className="inline-flex bg-[var(--cream)] border border-[var(--warm-border)] rounded-full p-0.5">
+                      <button onClick={() => setRecVisibility('all')}
+                        className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${recVisibility === 'all' ? 'bg-[var(--coral)] text-white' : 'text-[var(--warm-mid)]'}`}>
+                        전체 보기
+                      </button>
+                      <button onClick={() => setRecVisibility('soon')}
+                        className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${recVisibility === 'soon' ? 'bg-[var(--coral)] text-white' : 'text-[var(--warm-mid)]'}`}>
+                        결제일 D-3
+                      </button>
+                    </div>
+                    {recVisibility === 'soon' && hiddenRecs.length > 0 && (
+                      <button onClick={() => setRecVisibility('all')}
+                        className="text-xs text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
+                        + 임박하지 않은 고정 <span className="text-[var(--warm-dark)] font-semibold">{hiddenRecs.length}건</span> · 합계 <span className="font-mono text-[var(--warm-dark)] font-semibold">{hiddenRecsTotal.toLocaleString()}원</span> 숨김
+                      </button>
+                    )}
+                  </div>
+                )}
                 {/* 모바일 카드 */}
                 {isEmpty ? (
                   <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-10 text-center">

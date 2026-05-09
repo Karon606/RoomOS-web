@@ -62,6 +62,7 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
       const parts: string[] = []
       if (res.created > 0) parts.push(`${res.created}개 품목 추가`)
       if (res.migrated > 0) parts.push(`${res.migrated}개 지출 라벨 정리 (사이즈/포장 변형 분리)`)
+      if (res.skippedArchived > 0) parts.push(`삭제된 품목과 매칭되는 지출 ${res.skippedArchived}건은 건너뜀`)
       // alert는 다음 tick에 — refresh가 먼저 적용되도록
       setTimeout(() => {
         alert(parts.length > 0 ? parts.join(' · ') : '추가할 품목이 없습니다 (이미 등록됨).')

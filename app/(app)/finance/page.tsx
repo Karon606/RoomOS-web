@@ -2,12 +2,18 @@ import { getExpenses, getExtraIncomes, getFinancialAccounts, getUnsettledExpense
 import { getIncomeCategories, getExpenseCategories, getPaymentMethods, getPropertySettings } from '@/app/(app)/settings/actions'
 import FinanceClient from './FinanceClient'
 
+type FinTab = 'expense' | 'income' | 'settle' | 'assets' | 'deposit' | 'reserve'
+
 export default async function FinancePage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string }>
+  searchParams: Promise<{ month?: string; tab?: string }>
 }) {
-  const { month } = await searchParams
+  const { month, tab } = await searchParams
+  const initialTab: FinTab | undefined =
+    tab === 'expense' || tab === 'income' || tab === 'settle' || tab === 'assets' || tab === 'deposit' || tab === 'reserve'
+      ? tab
+      : undefined
   const now = new Date()
   const targetMonth = month ??
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -69,6 +75,7 @@ export default async function FinancePage({
       settleableExpenses={settleableExpenses}
       depositSummary={depositSummary}
       depositLedger={depositLedger}
+      initialTab={initialTab}
     />
   )
 }
