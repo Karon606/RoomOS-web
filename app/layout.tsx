@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { DM_Mono } from 'next/font/google'
 import './globals.css'
+import { ThemeProvider, themeBootstrapScript } from '@/components/theme/ThemeProvider'
 
 // 가이드 명시: Numbers·Mono·Meta는 DM Mono
 const dmMono = DM_Mono({
@@ -40,7 +41,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ko" className={dmMono.variable}>
+    <html lang="ko" className={dmMono.variable} suppressHydrationWarning>
       <head>
         {/* 가이드 명시: 한글 본문·디스플레이는 Pretendard. Pretendard는 Google Fonts에 없어 jsdelivr CDN.
             Variable 버전 — 100~900 모든 weight를 한 파일로 안정 로딩. */}
@@ -48,8 +49,12 @@ export default function RootLayout({
           rel="stylesheet"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css"
         />
+        {/* FOUC 방지 — hydration 전에 .dark 클래스 미리 토글. localStorage 읽어 즉시 적용. */}
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
       </head>
-      <body>{children}</body>
+      <body>
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   )
 }

@@ -17,6 +17,7 @@ import {
   type MemberWithUser, type RecurringExpenseRow,
 } from './actions'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
+import { useTheme, type ThemeMode } from '@/components/theme/ThemeProvider'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -45,13 +46,14 @@ function windowLabel(val: string) {
   return WINDOW_TYPE_LABEL[val] ?? val
 }
 
-type Tab = 'basic' | 'room' | 'finance' | 'members'
+type Tab = 'basic' | 'room' | 'finance' | 'members' | 'appearance'
 
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'basic',   label: '기본정보' },
-  { key: 'room',    label: '호실 설정' },
-  { key: 'finance', label: '수익·지출' },
-  { key: 'members', label: '멤버 관리' },
+  { key: 'basic',      label: '기본정보' },
+  { key: 'room',       label: '호실 설정' },
+  { key: 'finance',    label: '수익·지출' },
+  { key: 'members',    label: '멤버 관리' },
+  { key: 'appearance', label: '화면' },
 ]
 
 export default function SettingsForm({
@@ -811,6 +813,54 @@ export default function SettingsForm({
           </div>
         </div>
       )}
+
+      {tab === 'appearance' && <AppearanceTab />}
+    </div>
+  )
+}
+
+// ── 화면(테마) 탭 ─────────────────────────────────────────────────
+function AppearanceTab() {
+  const { mode, setMode, isDark } = useTheme()
+  const options: { key: ThemeMode; label: string; desc: string }[] = [
+    { key: 'system', label: '시스템 따라', desc: '기기 설정(라이트/다크)에 자동으로 맞춤' },
+    { key: 'light',  label: '라이트',     desc: '항상 밝은 화면' },
+    { key: 'dark',   label: '다크',       desc: '항상 어두운 화면 — 야간·OLED 권장' },
+    { key: 'time',   label: '시간 기반',  desc: '오전 6시~오후 6시 라이트, 그 외 다크' },
+  ]
+  return (
+    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5 space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold text-[var(--warm-dark)]">테마</h2>
+        <p className="text-xs text-[var(--warm-muted)] mt-0.5">
+          현재 적용: <span className="font-medium text-[var(--warm-dark)]">{isDark ? '다크' : '라이트'}</span>
+        </p>
+      </div>
+      <div className="space-y-2">
+        {options.map(o => {
+          const selected = mode === o.key
+          return (
+            <button
+              key={o.key}
+              type="button"
+              onClick={() => setMode(o.key)}
+              className={`w-full text-left px-4 py-3 rounded-xl border transition-colors flex items-start gap-3
+                ${selected
+                  ? 'border-[var(--persimmon)] bg-[var(--persimmon-l)]'
+                  : 'border-[var(--warm-border)] bg-[var(--canvas)] hover:border-[var(--warm-muted)]'}`}
+            >
+              <span className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0
+                ${selected ? 'border-[var(--persimmon)]' : 'border-[var(--warm-border)]'}`}>
+                {selected && <span className="w-2 h-2 rounded-full bg-[var(--persimmon)]" />}
+              </span>
+              <span className="flex-1">
+                <span className={`block text-sm font-medium ${selected ? 'text-[var(--persimmon-d)]' : 'text-[var(--warm-dark)]'}`}>{o.label}</span>
+                <span className="block text-xs text-[var(--warm-muted)] mt-0.5">{o.desc}</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
