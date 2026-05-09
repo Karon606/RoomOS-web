@@ -135,9 +135,10 @@ export async function POST(req: Request) {
       await page.evaluateHandle('document.fonts.ready')
       const pdfUint8 = await page.pdf({
         format: 'A4',
-        // 상하 12mm + 좌우 14mm — 화면 인쇄 @page margin 과 동일하게 정렬
-        // (서버 PDF·화면 인쇄 결과 일관)
-        margin: { top: '12mm', right: '14mm', bottom: '12mm', left: '14mm' },
+        // 서버 PDF는 puppeteer 라 브라우저 머리말 footer 가 없음 → 화면 인쇄(12mm)
+        // 보다 상하 마진을 작게 (10mm) 가져가 1페이지 보장.
+        // 좌우 14mm 는 표 우측 테두리 잘림 방지.
+        margin: { top: '10mm', right: '14mm', bottom: '10mm', left: '14mm' },
         printBackground: true,
         preferCSSPageSize: false,
       })

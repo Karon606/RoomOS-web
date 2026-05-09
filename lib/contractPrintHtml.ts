@@ -121,7 +121,8 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #fff; color: #1a1a1a; font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif; }
-  body { font-size: 9pt; line-height: 1.45; }
+  /* PDF 출력 전용이라 살짝 압축해 1페이지 보장 (가독성 무난한 8.7pt / 1.42) */
+  body { font-size: 8.7pt; line-height: 1.42; }
 
   .paper { position: relative; padding: 0; box-sizing: border-box; }
 
