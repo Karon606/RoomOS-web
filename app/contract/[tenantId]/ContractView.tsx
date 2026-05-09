@@ -907,28 +907,11 @@ export default function ContractView({ data }: { data: ContractData }) {
             font-size: 8pt;
             line-height: 1.32;
           }
-          /* 헤더 — grid 대신 단순 block + text-align center 로 안정 렌더 */
-          .contract-header {
-            display: block !important;
-            text-align: center !important;
-            margin-bottom: 4pt !important;
-          }
-          .contract-header-logo {
-            display: inline-block !important;
-            vertical-align: middle !important;
-            height: 10mm !important;
-            justify-self: auto !important;
-            margin-right: 4mm !important;
-          }
-          .contract-logo-img { max-height: 10mm !important; vertical-align: middle !important; }
-          .contract-title {
-            display: inline-block !important;
-            vertical-align: middle !important;
-            font-size: 12pt !important;
-            margin: 0 !important;
-            white-space: normal !important;
-          }
-          .contract-header-spacer { display: none !important; }
+          /* 헤더 — grid 레이아웃 유지 (로고 좌측, 제목 중앙). cage 우회 후엔 안전 */
+          .contract-header { margin-bottom: 4pt !important; }
+          .contract-header-logo { height: 10mm !important; }
+          .contract-logo-img { max-height: 10mm !important; }
+          .contract-title { font-size: 12pt !important; margin: 0 !important; }
           .sections { margin-top: 5pt !important; }
           .section { margin-bottom: 6pt !important; }
           .section-title { margin-bottom: 2pt !important; }
