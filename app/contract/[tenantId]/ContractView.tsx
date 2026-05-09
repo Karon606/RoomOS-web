@@ -866,7 +866,10 @@ export default function ContractView({ data }: { data: ContractData }) {
            추가하더라도 1장 안에 들어가도록). 데스크톱 브라우저는 @page margin 그대로 따름. */
         @page {
           size: A4;
-          margin: 10mm 14mm;   /* 우측 14mm: 표 우측 테두리·footer 잘림 방지 */
+          /* 상하 12mm: 브라우저 '머리말 및 꼬리말 프린트' 옵션이 켜져 있어도
+             로고·제목이 가려지지 않도록 살짝 buffer.
+             좌우 14mm: 표 우측 테두리·footer 잘림 방지 */
+          margin: 12mm 14mm;
         }
         @media print {
           html, body { background: #fff; overflow: visible !important; height: auto !important; }
