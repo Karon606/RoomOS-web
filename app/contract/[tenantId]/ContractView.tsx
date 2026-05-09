@@ -259,8 +259,9 @@ export default function ContractView({ data }: { data: ContractData }) {
         alert(`계약서 PDF 생성 실패\n\n${msg}`)
         return
       }
-      pushToast('success', '서명된 계약서 PDF 저장됨')
-      router.refresh()
+      pushToast('success', '서명된 계약서 PDF 저장됨 — 입실자 정보로 이동합니다')
+      // 저장 직후 입실자 상세 모달로 자동 이동 (정보 탭에 새 첨부 파일 노출)
+      router.push(`/tenants?tenantId=${data.tenant.id}&tab=info`)
     } catch (err) {
       const msg = (err as Error).message ?? 'PDF 생성 실패'
       pushToast('error', msg)
@@ -278,7 +279,7 @@ export default function ContractView({ data }: { data: ContractData }) {
     <div className="contract-shell">
       {/* 화면 전용 툴바 — 인쇄 시 숨김 */}
       <div className="no-print toolbar">
-        <Link href={`/tenants?id=${data.tenant.id}`} className="toolbar-link">← 입실자 목록</Link>
+        <Link href={`/tenants?tenantId=${data.tenant.id}`} className="toolbar-link">← 입실자 정보</Link>
         <div className="toolbar-spacer" />
         {!editing && (
           <>
@@ -850,11 +851,11 @@ export default function ContractView({ data }: { data: ContractData }) {
         .sig-actions { display: flex; align-items: center; gap: 8px; }
 
         /* ── 인쇄 전용 ─────────────────────────────────────────── */
-        /* A4 + 14mm × 16mm 마진을 페이지에서 잡아준다 (paper의 padding과 함께
-           이중으로 적용되지 않도록 인쇄 시 paper.padding은 0으로 리셋) */
+        /* iPad/iOS Safari 호환을 위해 @page margin 을 작게 (Safari가 자체 마진을
+           추가하더라도 1장 안에 들어가도록). 데스크톱 브라우저는 @page margin 그대로 따름. */
         @page {
           size: A4;
-          margin: 14mm 16mm;
+          margin: 10mm 12mm;
         }
         @media print {
           html, body { background: #fff; overflow: visible !important; height: auto !important; }
@@ -873,15 +874,19 @@ export default function ContractView({ data }: { data: ContractData }) {
             transform: none !important;
             box-shadow: none;
             width: auto;        /* @page 안에서 자연스럽게 */
-            /* 인쇄 시에도 min-height를 페이지 높이로 — powered-by 가 진짜 페이지 하단에 찍히도록 */
-            min-height: calc(297mm - 28mm);
-            padding: 0;          /* 마진은 @page가 처리 */
+            min-height: 0 !important;
+            padding: 0 !important;
             page-break-after: avoid;
+            page-break-inside: avoid;
+            font-size: 8.5pt;   /* 살짝 줄여 1장 보장 (iPad Safari 마진 흡수) */
+            line-height: 1.4;
           }
-          /* 인쇄 시 powered-by 위치는 paper의 우측 하단 — @page margin 이미 16mm 잡혀있으므로 right: 0 */
+          /* 1장 보장 — 본문 섹션 사이에서 페이지 split 금지 */
+          .section, .info-table, .oath, .business-block, .emergency-note { page-break-inside: avoid; }
+          /* 인쇄 시 powered-by 위치는 paper의 우측 하단 */
           .powered-by { right: 0; bottom: 0; }
-          /* 도장 — 인쇄에서도 색상 그대로 */
-          .business-stamp-image, img {
+          /* 도장·로고 — 인쇄에서도 색상 그대로 */
+          .business-stamp-image, .contract-logo-img, .signature-image, img {
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }

@@ -131,7 +131,8 @@ export async function POST(req: Request) {
       await page.evaluateHandle('document.fonts.ready')
       const pdfUint8 = await page.pdf({
         format: 'A4',
-        margin: { top: '14mm', right: '16mm', bottom: '14mm', left: '16mm' },
+        // 모바일/데스크톱 모두에서 1장 보장 위해 화면용 print 설정과 동일하게 살짝 줄임
+        margin: { top: '10mm', right: '12mm', bottom: '10mm', left: '12mm' },
         printBackground: true,
         preferCSSPageSize: false,
       })
