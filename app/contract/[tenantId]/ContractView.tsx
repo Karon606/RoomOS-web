@@ -888,13 +888,25 @@ export default function ContractView({ data }: { data: ContractData }) {
             transform: none !important;
             box-shadow: none;
             width: auto;        /* @page 안에서 자연스럽게 */
-            min-height: 0 !important;  /* 흐름 높이 그대로 — 빈 2페이지 방지 */
+            min-height: 0 !important;
             padding: 0 !important;
             page-break-after: avoid;
             page-break-inside: avoid;
-            font-size: 8.5pt;   /* 살짝 줄여 1장 보장 (iPad Safari 마진 흡수) */
-            line-height: 1.4;
+            /* 브라우저 머리말/꼬리말 옵션이 켜진 경우에도 1장 보장 — 강하게 압축 */
+            font-size: 8pt;
+            line-height: 1.32;
           }
+          /* 섹션 간격도 축소 — 1장 보장 우선 */
+          .sections { margin-top: 5pt !important; }
+          .section { margin-bottom: 6pt !important; }
+          .section-title { margin-bottom: 2pt !important; }
+          .oath { margin-top: 8pt !important; }
+          .oath-text { margin-bottom: 4pt !important; }
+          .business-block { margin-top: 8pt !important; gap: 4mm !important; }
+          .business-line { margin-bottom: 1pt !important; }
+          .made-with { margin-top: 8pt !important; }
+          .emergency-note { margin: 6px 0 4px !important; }
+          .info-table th, .info-table td { padding: 2px 6px !important; height: auto !important; }
           /* 1장 보장 — 본문 섹션 사이에서 페이지 split 금지 */
           .section, .info-table, .oath, .business-block, .emergency-note { page-break-inside: avoid; }
           /* 도장·로고 — 인쇄에서도 색상 그대로 */
