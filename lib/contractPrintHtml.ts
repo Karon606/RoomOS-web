@@ -158,6 +158,13 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   /* Made with RoomOS — 본문 끝에 흐름으로 두어 빈 페이지 안 생기게.
      본문이 거의 페이지를 채우므로 시각적으로 footer 효과 동일 */
   .made-with { margin-top: 14pt; text-align: right; display: flex; justify-content: flex-end; align-items: center; gap: 5px; }
+
+  /* 다장 출력 대비 — 핵심 묶음 page-break 보호 */
+  body { widows: 2; orphans: 2; }
+  .section, .section-item, .info-table, .oath, .business-block, .emergency-note, .made-with { page-break-inside: avoid; }
+  .oath { page-break-after: avoid; }
+  .business-block { page-break-before: avoid; page-break-after: avoid; }
+  .made-with { page-break-before: avoid; }
   .made-with-prefix { font-family: 'DM Mono', 'Pretendard', monospace; font-size: 6.5pt; letter-spacing: 0.04em; color: #b8b0a3; font-weight: 500; }
   .made-with-wordmark { font-family: 'Pretendard', sans-serif; font-weight: 900; font-size: 11px; letter-spacing: -0.06em; color: #4a4a4a; opacity: 0.78; }
   .made-with-wordmark .o { color: #e84a1a; }

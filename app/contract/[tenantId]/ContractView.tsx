@@ -922,8 +922,15 @@ export default function ContractView({ data }: { data: ContractData }) {
           .made-with { margin-top: 8pt !important; }
           .emergency-note { margin: 6px 0 4px !important; }
           .info-table th, .info-table td { padding: 2px 6px !important; height: auto !important; }
-          /* 1장 보장 — 본문 섹션 사이에서 페이지 split 금지 */
+          /* 페이지 split 금지 — 핵심 묶음 보존 */
           .section, .info-table, .oath, .business-block, .emergency-note { page-break-inside: avoid; }
+          .section-item { page-break-inside: avoid; }     /* 항목 한 줄이 페이지 사이로 잘리지 않게 */
+          /* 서약 → 서명 → 사업자정보 → Made with 를 한 묶음으로 보존 (2장 가도 마지막에 같이 감) */
+          .oath { page-break-after: avoid !important; }
+          .business-block { page-break-before: avoid !important; page-break-after: avoid !important; }
+          .made-with { page-break-before: avoid !important; page-break-inside: avoid !important; }
+          /* 단락 widow/orphan — 페이지 끝/시작 최소 2줄 보장 */
+          body { widows: 2; orphans: 2; }
           /* 도장·로고 — 인쇄에서도 색상 그대로 */
           .business-stamp-image, .contract-logo-img, .signature-image, img {
             -webkit-print-color-adjust: exact;
