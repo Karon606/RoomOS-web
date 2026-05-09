@@ -877,20 +877,30 @@ export default function ContractView({ data }: { data: ContractData }) {
           .contract-shell { padding: 0; min-height: auto; }
           .no-print { display: none !important; }
           .only-print { display: inline !important; }
-          /* 인쇄 시: 모바일 scale wrapper 해제 — 종이는 원본 사이즈로 출력 */
+          /* 인쇄 시: 모바일 scale wrapper 완전 해제 — 종이는 원본 사이즈로 자연 흐름 */
           .paper-cage {
             width: auto !important;
             height: auto !important;
             position: static !important;
             margin: 0 !important;
+            overflow: visible !important;   /* 안전장치: 잘림 방지 */
+            display: block !important;
           }
           .contract-paper {
+            /* Safari: position absolute → static 전환 시 자식이 페이지 밖으로 밀리는 버그 방지.
+               top/left/transform 까지 모두 명시 reset */
             position: static !important;
+            top: auto !important;
+            left: auto !important;
+            right: auto !important;
+            bottom: auto !important;
             transform: none !important;
+            transform-origin: 0 0 !important;
             box-shadow: none;
-            width: auto;        /* @page 안에서 자연스럽게 */
+            width: auto !important;
             min-height: 0 !important;
             padding: 0 !important;
+            margin: 0 !important;
             page-break-after: avoid;
             page-break-inside: avoid;
             /* 브라우저 머리말/꼬리말 옵션이 켜진 경우에도 1장 보장 — 강하게 압축 */
