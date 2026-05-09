@@ -483,6 +483,7 @@ export default function ContractView({ data }: { data: ContractData }) {
           width: auto;
           height: auto;
           object-fit: contain;
+          opacity: 0.6;       /* 헤더 워터마크 톤 — 본문에 시선이 먼저 가도록 살짝 톤다운 */
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
         }
