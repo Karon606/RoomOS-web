@@ -457,6 +457,10 @@ export default function ContractView({ data }: { data: ContractData }) {
           <div className="signature-row">
             <span className="signature-date">{signDateLabel}</span>
             <span className="signature-label">/ 서명: </span>
+            <span className="signature-name no-print">
+              <input type="text" value={signatureName} onChange={e => setSignatureName(e.target.value)} />
+            </span>
+            <span className="only-print">{signatureName}</span>
             {signatureDataUrl ? (
               <span className="signature-image-wrap">
                 <img src={signatureDataUrl} alt="서명" className="signature-image" />
@@ -468,14 +472,8 @@ export default function ContractView({ data }: { data: ContractData }) {
                 >✕</button>
               </span>
             ) : (
-              <>
-                <span className="signature-name no-print">
-                  <input type="text" value={signatureName} onChange={e => setSignatureName(e.target.value)} />
-                </span>
-                <span className="only-print">{signatureName}</span>
-              </>
+              <span className="signature-stamp">(인)</span>
             )}
-            <span className="signature-stamp">(인)</span>
           </div>
         </div>
 

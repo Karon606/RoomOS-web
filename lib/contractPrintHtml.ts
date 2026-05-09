@@ -168,10 +168,10 @@ export function buildContractPrintHtml(d: PrintContractData): string {
       <div class="signature-row">
         <span>${escape(d.signDate)}</span>
         <span>/ 서명:</span>
+        <span class="signature-name-print">${escape(d.signatureName)}</span>
         ${d.signatureImageDataUrl
           ? `<img class="signature-stamp-img" src="${d.signatureImageDataUrl}" alt="signature" />`
-          : `<span class="signature-name-print">${escape(d.signatureName)}</span>`}
-        <span>(인)</span>
+          : `<span>(인)</span>`}
       </div>
     </div>
 
