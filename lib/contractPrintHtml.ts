@@ -2,9 +2,25 @@
 // ContractView.tsx 화면 출력과 시각이 동일하도록 같은 토큰·동일 layout을 그대로 옮겨 둠.
 // 변수: 입실자/계약/영업장 데이터 + 서명 PNG dataURL.
 //
-// Pretendard CDN 임베드 (jsdelivr) — puppeteer에서 networkidle0 으로 대기 후 PDF 변환.
+// 폰트 — Pretendard variable woff2를 base64로 HTML에 직접 임베드.
+// Vercel @sparticuz/chromium 바이너리에는 한글 폰트가 없어 CDN <link>로는 한글이 깨짐.
+// 임베드 방식이라 네트워크 의존성 zero, document.fonts.ready로 로딩 보장.
 
 import { type ContractTemplate, type BusinessInfo, renderContractText } from '@/lib/contract'
+
+// 모듈 레벨 캐시 — cold start 후 첫 PDF 생성 때만 jsdelivr CDN에서 폰트 다운로드 (~570KB).
+// 이후 요청은 메모리 캐시 사용.
+const PRETENDARD_URL = 'https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/woff2/PretendardVariable.woff2'
+let pretendardCache: string | null = null
+
+export async function getPretendardBase64(): Promise<string> {
+  if (pretendardCache) return pretendardCache
+  const res = await fetch(PRETENDARD_URL)
+  if (!res.ok) throw new Error(`Pretendard 폰트 다운로드 실패 (${res.status})`)
+  const buf = Buffer.from(await res.arrayBuffer())
+  pretendardCache = buf.toString('base64')
+  return pretendardCache
+}
 
 export type PrintContractData = {
   template: ContractTemplate
@@ -35,6 +51,7 @@ export type PrintContractData = {
   signDate: string                // 'YYYY년 M월 D일'
   signatureName: string
   signatureImageDataUrl: string   // 'data:image/png;base64,...' — 입실자 손글씨
+  pretendardBase64: string        // Pretendard variable woff2 base64 — 한글 렌더 보장
 }
 
 const fmtDate = (d: string | null) => {
@@ -93,8 +110,15 @@ export function buildContractPrintHtml(d: PrintContractData): string {
 <head>
 <meta charset="utf-8" />
 <title>${escape(d.template.title)}</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css" />
 <style>
+  /* Pretendard variable woff2 base64 임베드 — 한글 깨짐 방지 (Vercel chromium 한글 폰트 미탑재) */
+  @font-face {
+    font-family: 'Pretendard';
+    font-weight: 45 920;
+    font-style: normal;
+    font-display: block;
+    src: url(data:font/woff2;base64,${d.pretendardBase64}) format('woff2-variations');
+  }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #fff; color: #1a1a1a; font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif; }
   body { font-size: 9pt; line-height: 1.45; }

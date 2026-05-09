@@ -6,7 +6,7 @@ import prisma from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { requireEdit } from '@/lib/role'
 import { uploadToDrive, buildDriveThumbnailUrl } from '@/lib/google-drive'
-import { buildContractPrintHtml, type PrintContractData } from '@/lib/contractPrintHtml'
+import { buildContractPrintHtml, getPretendardBase64, type PrintContractData } from '@/lib/contractPrintHtml'
 import {
   type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE,
 } from '@/lib/contract'
@@ -84,11 +84,15 @@ export async function POST(req: Request) {
     const [y, m, dd] = body.signDate.split('-').map(Number)
     const signDateLabel = Number.isFinite(y) ? `${y}년 ${m}월 ${dd}일` : body.signDate
 
+    // Pretendard variable woff2 base64 — 한글 폰트 보장 (모듈 캐시)
+    const pretendardBase64 = await getPretendardBase64()
+
     const printData: PrintContractData = {
       template,
       businessInfo: (property?.businessInfo as BusinessInfo | null) ?? EMPTY_BUSINESS_INFO,
       logoImageUrl: property?.logoDriveFileId ? buildDriveThumbnailUrl(property.logoDriveFileId, 600) : null,
       stampImageUrl: property?.stampDriveFileId ? buildDriveThumbnailUrl(property.stampDriveFileId, 800) : null,
+      pretendardBase64,
       tenant: {
         name: tenant.name,
         birthdate: tenant.birthdate ? new Date(tenant.birthdate).toISOString().slice(0, 10) : null,
