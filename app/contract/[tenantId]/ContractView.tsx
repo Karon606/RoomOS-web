@@ -897,8 +897,8 @@ export default function ContractView({ data }: { data: ContractData }) {
           }
           /* 1장 보장 — 본문 섹션 사이에서 페이지 split 금지 */
           .section, .info-table, .oath, .business-block, .emergency-note { page-break-inside: avoid; }
-          /* 인쇄 시 powered-by 위치는 paper의 우측 하단 */
-          .powered-by { right: 0; bottom: 0; }
+          /* 인쇄 시 powered-by 위치 — 페이지 끝에 너무 붙으면 잘려보이므로 안쪽으로 살짝 */
+          .powered-by { right: 6mm; bottom: 4mm; }
           /* 도장·로고 — 인쇄에서도 색상 그대로 */
           .business-stamp-image, .contract-logo-img, .signature-image, img {
             -webkit-print-color-adjust: exact;
