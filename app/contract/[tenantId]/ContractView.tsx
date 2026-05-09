@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect, useTransition } from 'react'
+import { useState, useMemo, useEffect, useTransition, useRef, useLayoutEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
@@ -36,6 +36,39 @@ export default function ContractView({ data }: { data: ContractData }) {
   // props가 갱신되면(서버 리프레시 후) draft도 동기화
   useEffect(() => { setDraft(data.template) }, [data.template])
   const [pending, startTransition] = useTransition()
+
+  // ── 모바일 횡스크롤 방지: 210mm 종이를 viewport 폭에 맞춰 scale ──
+  // 인쇄 시에는 @media print 에서 scale 1로 리셋되므로 실제 출력은 영향 없음
+  const paperRef = useRef<HTMLElement>(null)
+  const [scale, setScale]       = useState(1)
+  const [paperHeight, setPaperHeight] = useState<number | null>(null)
+  const PAPER_W_PX = 210 * 3.7795275591  // 210mm in CSS px (≈ 793.7)
+
+  useEffect(() => {
+    const calc = () => {
+      const SIDE_PADDING = 12
+      const available = window.innerWidth - SIDE_PADDING * 2
+      setScale(Math.min(1, available / PAPER_W_PX))
+    }
+    calc()
+    window.addEventListener('resize', calc)
+    window.addEventListener('orientationchange', calc)
+    return () => {
+      window.removeEventListener('resize', calc)
+      window.removeEventListener('orientationchange', calc)
+    }
+  }, [PAPER_W_PX])
+
+  // 종이 실제 높이 측정 → cage 높이 = 측정값 × scale (편집 모드 진입·내용 변화 시 갱신)
+  useLayoutEffect(() => {
+    const node = paperRef.current
+    if (!node) return
+    const update = () => setPaperHeight(node.offsetHeight)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(node)
+    return () => ro.disconnect()
+  }, [editing, draft, data])
 
   // 호실: 숫자만이면 '호' 자동 부착, 외수 문자가 섞이면 그대로
   const roomNoLabel = (() => {
@@ -199,8 +232,15 @@ export default function ContractView({ data }: { data: ContractData }) {
         )}
       </div>
 
-      {/* 인쇄 영역 — A4 1장 */}
-      <main className="contract-paper">
+      {/* 인쇄 영역 — A4 1장. 모바일에선 scale로 viewport에 맞춤 (인쇄 시는 원본) */}
+      <div
+        className="paper-cage"
+        style={{
+          ['--paper-scale' as string]: scale,
+          ['--paper-h' as string]: paperHeight != null ? `${paperHeight}px` : '297mm',
+        }}
+      >
+      <main ref={paperRef} className="contract-paper">
         <header className="contract-header">
           <div className="contract-header-logo">
             {data.logoImageUrl && (
@@ -363,12 +403,15 @@ export default function ContractView({ data }: { data: ContractData }) {
           <RoomOSWordmark height={11} className="powered-by-wm" />
         </div>
       </main>
+      </div>
 
       {/* 인쇄/화면 공통 스타일 */}
       <style jsx global>{`
-        /* 글로벌 html/body overflow:hidden 을 이 라우트에선 해제 (스크롤 가능하도록) */
+        /* 글로벌 html/body overflow:hidden 을 이 라우트에선 해제 (스크롤 가능하도록).
+           좌우는 hidden — scale로 viewport에 맞췄어도 포함된 layout box 안전장치 */
         html, body {
-          overflow: auto !important;
+          overflow-x: hidden !important;
+          overflow-y: auto !important;
           height: auto !important;
           background: #efeae0;
         }
@@ -421,9 +464,23 @@ export default function ContractView({ data }: { data: ContractData }) {
           border-radius: 999px; font-size: 11px; font-weight: 600;
         }
 
+        /* paper-cage: 화면용 viewport-fit wrapper.
+           cage 자체는 (210mm × paperHeight) × scale 크기로 layout 자리를 차지하고,
+           안의 .contract-paper 는 원본 사이즈 그대로 유지하면서 transform: scale 로 시각 축소. */
+        .paper-cage {
+          width: calc(210mm * var(--paper-scale, 1));
+          height: calc(var(--paper-h, 297mm) * var(--paper-scale, 1));
+          margin: 0 auto;
+          position: relative;
+        }
+
         /* 인쇄 영역 — A4 1장. 화면에선 padding으로 종이 느낌, 인쇄에선 @page margin이 처리 */
         .contract-paper {
-          position: relative;          /* powered-by 절대 위치 기준 */
+          position: absolute;          /* cage 안쪽 좌상단 고정 */
+          top: 0;
+          left: 0;
+          transform: scale(var(--paper-scale, 1));
+          transform-origin: top left;
           width: 210mm;
           min-height: 297mm;
           padding: 14mm 16mm;
@@ -616,7 +673,16 @@ export default function ContractView({ data }: { data: ContractData }) {
           .contract-shell { padding: 0; min-height: auto; }
           .no-print { display: none !important; }
           .only-print { display: inline !important; }
+          /* 인쇄 시: 모바일 scale wrapper 해제 — 종이는 원본 사이즈로 출력 */
+          .paper-cage {
+            width: auto !important;
+            height: auto !important;
+            position: static !important;
+            margin: 0 !important;
+          }
           .contract-paper {
+            position: static !important;
+            transform: none !important;
             box-shadow: none;
             width: auto;        /* @page 안에서 자연스럽게 */
             /* 인쇄 시에도 min-height를 페이지 높이로 — powered-by 가 진짜 페이지 하단에 찍히도록 */
