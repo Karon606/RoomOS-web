@@ -146,9 +146,9 @@ export function buildContractPrintHtml(d: PrintContractData): string {
 
   .oath { margin-top: 12pt; text-align: center; }
   .oath-text { font-weight: 700; font-size: 9pt; margin: 0 0 6pt; }
-  .signature-row { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 9pt; }
-  .signature-name-print { display: inline-block; min-width: 60px; text-align: center; padding: 0 6px; }
-  .signature-stamp-img { height: 12mm; width: auto; vertical-align: middle; margin: 0 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .signature-row { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; font-size: 9pt; }
+  .signature-name-print { display: inline-block; padding: 0 2px; }
+  .signature-stamp-img { height: 12mm; width: auto; vertical-align: middle; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
   .business-block { margin-top: 14pt; font-size: 9pt; display: flex; align-items: center; justify-content: center; gap: 6mm; flex-wrap: nowrap; }
   .business-info { text-align: center; flex: 0 1 auto; min-width: 0; }
@@ -193,7 +193,6 @@ export function buildContractPrintHtml(d: PrintContractData): string {
       <p class="oath-text">${escape(renderContractText(d.template.oathText, vars))}</p>
       <div class="signature-row">
         <span>${escape(d.signDate)}</span>
-        <span>/ 서명:</span>
         <span class="signature-name-print">${escape(d.signatureName)}</span>
         ${d.signatureImageDataUrl
           ? `<img class="signature-stamp-img" src="${d.signatureImageDataUrl}" alt="signature" />`

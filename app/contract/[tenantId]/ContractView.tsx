@@ -471,7 +471,6 @@ export default function ContractView({ data }: { data: ContractData }) {
           )}
           <div className="signature-row">
             <span className="signature-date">{signDateLabel}</span>
-            <span className="signature-label">/ 서명: </span>
             <span className="signature-name no-print">
               <input type="text" value={signatureName} onChange={e => setSignatureName(e.target.value)} />
             </span>
@@ -777,12 +776,12 @@ export default function ContractView({ data }: { data: ContractData }) {
         .oath { margin-top: 12pt; text-align: center; }
         .oath-text { font-weight: 700; font-size: 9pt; margin: 0 0 6pt; }
         .signature-row {
-          display: inline-flex; align-items: center; gap: 6px;
+          display: inline-flex; align-items: center; gap: 10px;
           font-weight: 700; font-size: 9pt;
         }
         .signature-name input {
-          padding: 2px 10px; font-size: 9pt; border: 0;
-          min-width: 60px; text-align: center;
+          padding: 0 4px; font-size: 9pt; border: 0;
+          width: 6em; text-align: center;
         }
         .signature-image-wrap {
           display: inline-flex; align-items: center; position: relative;
