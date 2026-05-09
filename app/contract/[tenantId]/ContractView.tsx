@@ -185,7 +185,6 @@ export default function ContractView({ data }: { data: ContractData }) {
 
   // ── 서명 패드 모달 ──────────────────────────────────────────────
   const [signOpen, setSignOpen]       = useState(false)
-  const [signSaving, setSignSaving]   = useState(false)
   // 캡처된 서명 PNG dataURL — 화면 서명란에 즉시 표시
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null)
   const sigCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -222,19 +221,27 @@ export default function ContractView({ data }: { data: ContractData }) {
     }
   }, [signOpen])
 
-  const handleSignSave = async () => {
+  // 모달 "확인" — 서명만 화면 상태에 반영. PDF 저장은 별도 버튼에서.
+  const handleSignConfirm = () => {
     const pad = sigPadRef.current
     if (!pad || pad.isEmpty()) {
       pushToast('error', '서명을 입력해주세요.')
       return
     }
-    const dataUrl = pad.toDataURL('image/png')
-    // 1) 화면에 즉시 반영 + 모달 닫기 — UX 우선
-    setSignatureDataUrl(dataUrl)
+    setSignatureDataUrl(pad.toDataURL('image/png'))
     setSignOpen(false)
-    pushToast('info', 'PDF 생성 중... (5~15초)')
-    // 2) 백그라운드로 서버 PDF 생성·Drive 업로드
-    setSignSaving(true)
+    pushToast('info', '서명 적용됨 — 확인 후 \'계약서 저장\' 을 눌러주세요')
+  }
+
+  // 툴바 "계약서 저장" — PDF 생성 + Drive 업로드 + 입실자 정보로 이동
+  const [contractSaving, setContractSaving] = useState(false)
+  const handleContractSave = async () => {
+    if (!signatureDataUrl) {
+      pushToast('error', '먼저 서명을 받아주세요.')
+      return
+    }
+    if (!confirm('이 계약서를 PDF로 저장하시겠습니까?\n\n· 도장·로고·서명이 합성된 PDF가 Google Drive에 업로드됩니다.\n· 입실자 정보의 \'계약서 파일\' 에 자동 첨부됩니다.')) return
+    setContractSaving(true)
     const release = trackSave()
     try {
       const res = await fetch('/api/contract/generate', {
@@ -244,23 +251,21 @@ export default function ContractView({ data }: { data: ContractData }) {
           tenantId: data.tenant.id,
           signDate,
           signatureName,
-          signatureImageDataUrl: dataUrl,
+          signatureImageDataUrl: signatureDataUrl,
           smoking,
           emergencyContactText,
         }),
       })
       const text = await res.text()
       let json: { ok: boolean; error?: string } | null = null
-      try { json = JSON.parse(text) } catch { /* not JSON — show raw */ }
+      try { json = JSON.parse(text) } catch { /* not JSON */ }
       if (!res.ok || !json?.ok) {
         const msg = json?.error ?? `서버 오류 (${res.status}): ${text.slice(0, 200)}`
         pushToast('error', msg)
-        // 토스트가 짧아 놓칠 수 있으니 alert도 같이 — 디버그/현장 대응 용이
         alert(`계약서 PDF 생성 실패\n\n${msg}`)
         return
       }
-      pushToast('success', '서명된 계약서 PDF 저장됨 — 입실자 정보로 이동합니다')
-      // 저장 직후 입실자 상세 모달로 자동 이동 (정보 탭에 새 첨부 파일 노출)
+      pushToast('success', '계약서 저장됨 — 입실자 정보로 이동합니다')
       router.push(`/tenants?tenantId=${data.tenant.id}&tab=info`)
     } catch (err) {
       const msg = (err as Error).message ?? 'PDF 생성 실패'
@@ -268,7 +273,7 @@ export default function ContractView({ data }: { data: ContractData }) {
       alert(`계약서 PDF 생성 실패\n\n${msg}`)
     } finally {
       release()
-      setSignSaving(false)
+      setContractSaving(false)
     }
   }
 
@@ -303,7 +308,16 @@ export default function ContractView({ data }: { data: ContractData }) {
               </button>
             )}
             <button onClick={handlePrint} className="toolbar-btn-secondary">인쇄</button>
-            <button onClick={() => setSignOpen(true)} className="toolbar-print">서명 받기</button>
+            {!signatureDataUrl ? (
+              <button onClick={() => setSignOpen(true)} className="toolbar-print">서명 받기</button>
+            ) : (
+              <>
+                <button onClick={() => setSignOpen(true)} className="toolbar-btn-secondary">서명 다시</button>
+                <button onClick={handleContractSave} disabled={contractSaving} className="toolbar-print">
+                  {contractSaving ? '저장 중... (5~15초)' : '계약서 저장'}
+                </button>
+              </>
+            )}
           </>
         )}
         {editing && (
@@ -509,29 +523,29 @@ export default function ContractView({ data }: { data: ContractData }) {
 
       {/* 서명 받기 모달 — 아이패드/모바일에서 입실자 손글씨 서명 캡처 */}
       {signOpen && (
-        <div className="sig-overlay no-print" onClick={() => !signSaving && setSignOpen(false)}>
+        <div className="sig-overlay no-print" onClick={() => setSignOpen(false)}>
           <div className="sig-modal" onClick={e => e.stopPropagation()}>
             <div className="sig-head">
               <div>
                 <div className="sig-title">입실자 서명</div>
-                <div className="sig-sub">아래 영역에 서명해주세요. 저장하면 도장·로고가 합성된 PDF로 입실자 정보에 자동 첨부됩니다.</div>
+                <div className="sig-sub">아래 영역에 서명해주세요. 확인을 누르면 계약서에 서명이 표시됩니다 (PDF 저장은 다음 단계).</div>
               </div>
-              <button onClick={() => setSignOpen(false)} disabled={signSaving} className="sig-close" aria-label="닫기">✕</button>
+              <button onClick={() => setSignOpen(false)} className="sig-close" aria-label="닫기">✕</button>
             </div>
             <div className="sig-canvas-wrap">
               <canvas ref={sigCanvasRef} className="sig-canvas" />
               <div className="sig-baseline" />
             </div>
             <div className="sig-actions">
-              <button onClick={() => sigPadRef.current?.clear()} disabled={signSaving} className="toolbar-btn-secondary">
+              <button onClick={() => sigPadRef.current?.clear()} className="toolbar-btn-secondary">
                 지우기
               </button>
               <div style={{ flex: 1 }} />
-              <button onClick={() => setSignOpen(false)} disabled={signSaving} className="toolbar-btn-secondary">
+              <button onClick={() => setSignOpen(false)} className="toolbar-btn-secondary">
                 취소
               </button>
-              <button onClick={handleSignSave} disabled={signSaving} className="toolbar-print">
-                {signSaving ? '저장 중...' : '저장'}
+              <button onClick={handleSignConfirm} className="toolbar-print">
+                확인
               </button>
             </div>
           </div>
