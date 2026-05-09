@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Tailwind v4: dark: prefix를 html.dark 기반으로 활성화 */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   /* ── M7 Ink × Persimmon — RoomOS Brand System ────────────────────
      기존 변수명은 그대로 두고 hex만 M7 값으로 갱신.

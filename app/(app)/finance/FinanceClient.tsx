@@ -45,6 +45,7 @@ type Expense = {
   itemLabel: string | null
   specValue: number | null; specUnit: string | null
   qtyValue: number | null; qtyUnit: string | null
+  createdAt: Date  // 같은 날짜 정렬 보조 (최근 입력 우선)
 }
 
 type Income = {
@@ -1349,7 +1350,15 @@ export default function FinanceClient({
                 rec: r,
                 dateStr: `${targetMonth}-${String(r.dueDay).padStart(2, '0')}`,
               })),
-            ].sort((a, b) => b.dateStr.localeCompare(a.dateStr))
+            ].sort((a, b) => {
+              // 1차: 날짜 내림차순 (최신 날짜 먼저)
+              const dateCmp = b.dateStr.localeCompare(a.dateStr)
+              if (dateCmp !== 0) return dateCmp
+              // 2차: 같은 날짜면 최근 입력(createdAt) 먼저. recurring은 최후순.
+              const aTime = a.kind === 'expense' ? new Date(a.exp.createdAt).getTime() : -Infinity
+              const bTime = b.kind === 'expense' ? new Date(b.exp.createdAt).getTime() : -Infinity
+              return bTime - aTime
+            })
 
             const isEmpty = items.length === 0
 
@@ -1402,7 +1411,7 @@ export default function FinanceClient({
                       return (
                         <div key={`rec-${r.id}`}
                           onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.payMethod ?? '계좌이체'); setRecError('') }}
-                          className="bg-amber-50/40 border border-amber-200 rounded-2xl p-4 cursor-pointer hover:bg-amber-50/70 active:opacity-70 transition-colors">
+                          className="bg-amber-50/40 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-2xl p-4 cursor-pointer hover:bg-amber-50/70 dark:hover:bg-amber-500/15 active:opacity-70 transition-colors">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-xs text-[var(--warm-muted)]">{item.dateStr.slice(5).replace('-', '/')} 납부일</span>
                             <div className="flex items-center gap-1.5">

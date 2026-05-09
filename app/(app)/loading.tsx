@@ -1,6 +1,9 @@
+import { RoomOSWordmark } from '@/components/brand/RoomOSWordmark'
+
 export default function AppLoading() {
   return (
-    <div className="flex items-center justify-center" style={{ minHeight: 'calc(100vh - 120px)' }}>
+    <div className="flex flex-col items-center justify-center gap-5" style={{ minHeight: 'calc(100vh - 120px)' }}>
+      <RoomOSWordmark height={32} weight={800} />
       <style>{`
         @keyframes roos-from-left {
           0%   { transform: translateX(-54px); }

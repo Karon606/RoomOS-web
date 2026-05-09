@@ -279,7 +279,7 @@ function DetailModal({ row, onClose, onChange }: {
   useEffect(() => { reload() }, [trackedItemId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleArchive = () => {
-    if (!confirm('이 품목을 추적 목록에서 제외하시겠습니까? (지출 기록은 그대로 유지됩니다)')) return
+    if (!confirm('이 품목을 삭제하시겠습니까?\n\n· 재고 추적 카드와 점검·무상입수 기록이 사라집니다.\n· 지출 내역(영수증·금액)은 그대로 유지됩니다.')) return
     startTransition(async () => {
       const res = await archiveTrackedItem(trackedItemId)
       if (res.ok) { onChange(); onClose() }
@@ -317,7 +317,7 @@ function DetailModal({ row, onClose, onChange }: {
       subtitle={data?.item.category ?? row.category}
       footer={isViewMode ? (
         <div className="flex items-center gap-2 flex-wrap">
-          <Btn variant="danger" size="sm" onClick={handleArchive} disabled={pending}>추적 제외</Btn>
+          <Btn variant="danger" size="sm" onClick={handleArchive} disabled={pending}>삭제</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setMode('settings')}>설정</Btn>
           <div className="flex-1" />
           <Btn variant="secondary" size="sm" onClick={() => setMode('addition')}>+ 무상 입수</Btn>
