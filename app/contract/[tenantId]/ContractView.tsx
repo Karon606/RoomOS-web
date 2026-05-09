@@ -866,10 +866,11 @@ export default function ContractView({ data }: { data: ContractData }) {
            추가하더라도 1장 안에 들어가도록). 데스크톱 브라우저는 @page margin 그대로 따름. */
         @page {
           size: A4;
-          /* 상하 12mm: 브라우저 '머리말 및 꼬리말 프린트' 옵션이 켜져 있어도
-             로고·제목이 가려지지 않도록 살짝 buffer.
+          /* 상단 16mm: 브라우저 '머리말 및 꼬리말 프린트' 옵션이 켜져 있을 때
+             Safari/Chrome 자체 헤더(~12mm)가 차지하는 영역을 흡수.
+             하단 12mm: 꼬리말(URL/페이지) 흡수.
              좌우 14mm: 표 우측 테두리·footer 잘림 방지 */
-          margin: 12mm 14mm;
+          margin: 16mm 14mm 12mm 14mm;
         }
         @media print {
           html, body { background: #fff; overflow: visible !important; height: auto !important; }
@@ -897,6 +898,10 @@ export default function ContractView({ data }: { data: ContractData }) {
             line-height: 1.32;
           }
           /* 섹션 간격도 축소 — 1장 보장 우선 */
+          .contract-header { margin-bottom: 4pt !important; }
+          .contract-header-logo { height: 11mm !important; }
+          .contract-logo-img { max-height: 11mm !important; }
+          .contract-title { font-size: 12pt !important; }
           .sections { margin-top: 5pt !important; }
           .section { margin-bottom: 6pt !important; }
           .section-title { margin-bottom: 2pt !important; }
