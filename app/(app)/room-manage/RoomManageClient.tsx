@@ -13,6 +13,7 @@ import { Modal as SharedModal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { useUrlState } from '@/lib/useUrlState'
 import { kstMonthStr } from '@/lib/kstDate'
+import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 
 type Photo = {
   id: string
@@ -173,7 +174,7 @@ export default function RoomManageClient({
     const ok = confirm(`${room.roomNo}호 예정 가격을 즉시 적용할까요?\n\n기존 ${room.baseRent.toLocaleString()}원 → ${dirLabel} ${room.scheduledRent.toLocaleString()}원`)
     if (!ok) return
     startTransition(async () => {
-      const res = await applyScheduledRentNow(room.id)
+      const res = await withSave(() => applyScheduledRentNow(room.id), { success: '예정 가격 적용됨' })
       if (!res.ok) { setError(res.error); return }
       setDetailRoom(null)
       router.refresh()
@@ -267,27 +268,31 @@ export default function RoomManageClient({
     e.preventDefault(); setError('')
     const formData = new FormData(e.currentTarget)
     startTransition(async () => {
-      const res = await addRoom(formData)
-      if (!res.ok) { setError(res.error); return }
-      for (const { file } of addPhotoPreviews) {
-        try {
-          const session = await createPhotoUploadSession({
-            roomId: res.id,
-            fileName: file.name,
-            mimeType: file.type,
-            fileSize: file.size,
-            origin: window.location.origin,
-          })
-          if (!session.ok) { setError(session.error); continue }
-          const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file, () => {})
-          await finalizeRoomPhoto({ roomId: res.id, driveFileId, fileName: file.name })
-        } catch (err) {
-          console.error('[handleAdd photo]', err)
-          // 일부 사진 실패해도 나머지/호실 자체는 유지
+      const release = trackSave()
+      try {
+        const res = await addRoom(formData)
+        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        for (const { file } of addPhotoPreviews) {
+          try {
+            const session = await createPhotoUploadSession({
+              roomId: res.id,
+              fileName: file.name,
+              mimeType: file.type,
+              fileSize: file.size,
+              origin: window.location.origin,
+            })
+            if (!session.ok) { setError(session.error); continue }
+            const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file, () => {})
+            await finalizeRoomPhoto({ roomId: res.id, driveFileId, fileName: file.name })
+          } catch (err) {
+            console.error('[handleAdd photo]', err)
+            // 일부 사진 실패해도 나머지/호실 자체는 유지
+          }
         }
-      }
-      closeAddModal()
-      window.location.reload()
+        closeAddModal()
+        pushToast('success', '호실 추가됨')
+        window.location.reload()
+      } finally { release() }
     })
   }
 
@@ -295,13 +300,16 @@ export default function RoomManageClient({
     e.preventDefault(); setError('')
     const formData = new FormData(e.currentTarget)
     startTransition(async () => {
+      const release = trackSave()
       try {
         await updateRoom(formData)
         closeEdit()
+        pushToast('success', '호실 수정됨')
         window.location.reload()
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : '오류가 발생했습니다.')
-      }
+        const msg = err instanceof Error ? err.message : '오류가 발생했습니다.'
+        setError(msg); pushToast('error', msg)
+      } finally { release() }
     })
   }
 
@@ -309,7 +317,7 @@ export default function RoomManageClient({
     if (!confirm(`${roomNo}호를 삭제하시겠습니까?`)) return
     setError('')
     startTransition(async () => {
-      const res = await deleteRoom(id)
+      const res = await withSave(() => deleteRoom(id), { success: `${roomNo}호 삭제됨` })
       if (!res.ok) { setError(res.error); return }
       closeDetail()
       window.location.reload()

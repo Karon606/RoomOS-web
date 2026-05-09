@@ -14,6 +14,7 @@ import { JobSelect } from '@/components/ui/JobSelect'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
+import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
@@ -545,7 +546,7 @@ export default function TenantClient({
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      const res = await addTenant(fd)
+      const res = await withSave(() => addTenant(fd), { success: '입주자 등록됨' })
       if (!res.ok) { setError(res.error); return }
       setShowAdd(false); refresh()
     })
@@ -591,7 +592,7 @@ export default function TenantClient({
       return
     }
     startTransition(async () => {
-      const res = await updateTenant(fd)
+      const res = await withSave(() => updateTenant(fd), { success: '입주자 정보 수정됨' })
       if (!res.ok) { setError(res.error); return }
       if (fromDetail) { setDetailTenant(null); setDetailEditMode(false) }
       else setEditTenant(null)
@@ -625,7 +626,7 @@ export default function TenantClient({
   const handleMoveIn = async (leaseTermId: string, tenantId: string, name: string) => {
     if (!confirm(`${name}님 입실 처리하시겠습니까?`)) return
     startTransition(async () => {
-      const res = await moveInTenant(leaseTermId, tenantId)
+      const res = await withSave(() => moveInTenant(leaseTermId, tenantId), { success: `${name}님 입실 처리됨` })
       if (!res.ok) { setError(res.error); return }
       setDetailTenant(null); refresh()
     })
@@ -636,21 +637,25 @@ export default function TenantClient({
     if (!depositRefundModal) return
     const { fd, tenantName, depositAmount, fromDetail, leaseTermId, tenantId } = depositRefundModal
     startTransition(async () => {
-      const refundRes = await recordDepositReturn({
-        leaseTermId,
-        tenantId,
-        depositAmount,
-        returnedAmount: depositReturnAmt,
-        date: depositReturnDate,
-        tenantName,
-      })
-      if (!refundRes.ok) { setError(refundRes.error); return }
-      const updateRes = await updateTenant(fd)
-      if (!updateRes.ok) { setError(updateRes.error); return }
-      setDepositRefundModal(null)
-      if (fromDetail) { setDetailTenant(null); setDetailEditMode(false) }
-      else setEditTenant(null)
-      refresh()
+      const release = trackSave()
+      try {
+        const refundRes = await recordDepositReturn({
+          leaseTermId,
+          tenantId,
+          depositAmount,
+          returnedAmount: depositReturnAmt,
+          date: depositReturnDate,
+          tenantName,
+        })
+        if (!refundRes.ok) { setError(refundRes.error); pushToast('error', refundRes.error); return }
+        const updateRes = await updateTenant(fd)
+        if (!updateRes.ok) { setError(updateRes.error); pushToast('error', updateRes.error); return }
+        setDepositRefundModal(null)
+        if (fromDetail) { setDetailTenant(null); setDetailEditMode(false) }
+        else setEditTenant(null)
+        refresh()
+        pushToast('success', '보증금 환불 + 퇴실 처리됨')
+      } finally { release() }
     })
   }
 
@@ -679,6 +684,7 @@ export default function TenantClient({
     const payMethod = fd.get('payMethod') as string
     const memo = fd.get('memo') as string
     startTransition(async () => {
+      const release = trackSave()
       try {
         if (isDepositMode) {
           await saveDepositPayment({
@@ -717,14 +723,18 @@ export default function TenantClient({
         const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
         setPayHistory(records as PayRecord[])
         refresh()
-      } catch (err: unknown) { setError((err as Error).message) }
+        pushToast('success', isDepositMode ? '보증금 수납됨' : '월세 수납됨')
+      } catch (err: unknown) {
+        const msg = (err as Error).message
+        setError(msg); pushToast('error', msg)
+      } finally { release() }
     })
   }
 
   const handleDeletePayRecord = async (paymentId: string) => {
     if (!confirm('이 수납 기록을 삭제하시겠습니까?')) return
     startTransition(async () => {
-      const res = await deletePayment(paymentId)
+      const res = await withSave(() => deletePayment(paymentId), { success: '수납 기록 삭제됨' })
       if (!res.ok) { setError(res.error); return }
       if (payTarget) {
         const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
@@ -745,12 +755,12 @@ export default function TenantClient({
   const handleSaveEdit = async () => {
     if (!editingPayId) return
     startTransition(async () => {
-      const res = await updatePayment(editingPayId, {
+      const res = await withSave(() => updatePayment(editingPayId, {
         actualAmount: editAmount,
         payDate:      editDate,
         payMethod:    editPayMethod,
         memo:         editMemo || undefined,
-      })
+      }), { success: '수납 기록 수정됨' })
       if (!res.ok) { setError(res.error); return }
       if (payTarget) {
         const { records, acquisitionDate } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
@@ -770,7 +780,10 @@ export default function TenantClient({
     if (!calc || calc.type === 'none') return
     const adjustAmount = calc.type === 'extra' ? -calc.amount : calc.amount
     startTransition(async () => {
-      const res = await changeDueDay(lease.id, newDueDayInput.trim(), targetMonth, adjustAmount)
+      const res = await withSave(
+        () => changeDueDay(lease.id, newDueDayInput.trim(), targetMonth, adjustAmount),
+        { success: '납부일 변경됨' },
+      )
       if (!res.ok) { setError(res.error); return }
       setShowDueDayChange(false)
       setNewDueDayInput('')
@@ -788,7 +801,7 @@ export default function TenantClient({
     const { id, name } = deleteTarget
     setDeleteTarget(null)
     startTransition(async () => {
-      const res = await deleteTenant(id)
+      const res = await withSave(() => deleteTenant(id), { success: `${name}님 삭제됨` })
       if (!res.ok) { setError(res.error); return }
       setDetailTenant(null); refresh()
     })
@@ -2347,8 +2360,12 @@ export default function TenantClient({
                                         }
                                       })
                                       startTransition(async () => {
-                                        await clearDueDayOverride(leaseId)
-                                        refresh()
+                                        const release = trackSave()
+                                        try {
+                                          await clearDueDayOverride(leaseId)
+                                          refresh()
+                                          pushToast('success', '이번 달 납부일 임시 변경 해제됨')
+                                        } finally { release() }
                                       })
                                     }}
                                     className="text-xs bg-red-500 hover:bg-red-400 active:bg-red-600 text-white font-semibold px-2 py-0.5 rounded disabled:opacity-40">
@@ -2460,8 +2477,12 @@ export default function TenantClient({
                                   }
                                 })
                                 startTransition(async () => {
-                                  await setDueDayOverride(leaseId, targetMonth, val, reason)
-                                  refresh()
+                                  const release = trackSave()
+                                  try {
+                                    await setDueDayOverride(leaseId, targetMonth, val, reason)
+                                    refresh()
+                                    pushToast('success', '이번 달 납부일 임시 변경됨')
+                                  } finally { release() }
                                 })
                               }}
                               className="w-full py-2 bg-amber-500 active:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40">

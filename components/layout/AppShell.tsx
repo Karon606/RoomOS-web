@@ -4,6 +4,7 @@ import { useState, useTransition, Suspense } from 'react'
 import Sidebar from '@/components/layout/Sidebar'
 import Header from '@/components/layout/Header'
 import BottomNav from '@/components/layout/BottomNav'
+import SaveFeedback from '@/components/feedback/SaveFeedback'
 import { User } from '@supabase/supabase-js'
 
 function PageLoadingOverlay() {
@@ -72,6 +73,9 @@ export default function AppShell({
 
       {/* HIG: iPhone에서 1차 내비게이션은 하단 탭바 */}
       <BottomNav />
+
+      {/* 글로벌 저장 진행 표시 + 토스트 */}
+      <SaveFeedback />
     </div>
   )
 }

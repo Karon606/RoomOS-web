@@ -26,6 +26,7 @@ import {
   DEFAULT_RECURRING_CATEGORY,
   DEFAULT_RECURRING_ALERT_DAYS_BEFORE,
 } from '@/lib/appConfig'
+import { trackSave, pushToast } from '@/lib/saveStatus'
 
 type Property = {
   id: string
@@ -79,12 +80,16 @@ export default function SettingsForm({
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
     startTransition(async () => {
+      const release = trackSave()
       try {
         await updatePropertySettings(formData)
         showToast('저장되었습니다.')
+        pushToast('success', '환경설정 저장됨')
       } catch (err: unknown) {
-        showToast('저장 실패: ' + (err as Error).message)
-      }
+        const msg = '저장 실패: ' + (err as Error).message
+        showToast(msg)
+        pushToast('error', msg)
+      } finally { release() }
     })
   }
 

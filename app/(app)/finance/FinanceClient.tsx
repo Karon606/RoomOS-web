@@ -24,6 +24,7 @@ import { fmtKorMoney } from '@/lib/fmtMoney'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
+import { trackSave, pushToast } from '@/lib/saveStatus'
 import {
   DEFAULT_RECURRING_DUE_DAY,
   DEFAULT_RECURRING_CATEGORY,
@@ -1024,24 +1025,36 @@ export default function FinanceClient({
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      const res = await addExpense(fd)
-      if (!res.ok) { setError(res.error); return }
-      setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); router.refresh()
+      const release = trackSave()
+      try {
+        const res = await addExpense(fd)
+        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); router.refresh()
+        pushToast('success', '지출 등록됨')
+      } finally { release() }
     })
   }
   const handleUpdateExp = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      const res = await updateExpense(fd)
-      if (!res.ok) { setError(res.error); return }
-      setDetailExp(null); setDetailExpEdit(false); router.refresh()
+      const release = trackSave()
+      try {
+        const res = await updateExpense(fd)
+        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        setDetailExp(null); setDetailExpEdit(false); router.refresh()
+        pushToast('success', '지출 수정됨')
+      } finally { release() }
     })
   }
   const handleDeleteExp = (id: string) => {
     if (!confirm('삭제하시겠습니까?')) return
     startTransition(async () => {
-      await deleteExpense(id); setDetailExp(null); router.refresh()
+      const release = trackSave()
+      try {
+        await deleteExpense(id); setDetailExp(null); router.refresh()
+        pushToast('success', '삭제됨')
+      } finally { release() }
     })
   }
 
@@ -1049,18 +1062,26 @@ export default function FinanceClient({
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      const res = await addExtraIncome(fd)
-      if (!res.ok) { setError(res.error); return }
-      setShowAddInc(false); setAddIncDate(kstYmdStr()); router.refresh()
+      const release = trackSave()
+      try {
+        const res = await addExtraIncome(fd)
+        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        setShowAddInc(false); setAddIncDate(kstYmdStr()); router.refresh()
+        pushToast('success', '수익 등록됨')
+      } finally { release() }
     })
   }
   const handleUpdateInc = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      const res = await updateExtraIncome(fd)
-      if (!res.ok) { setError(res.error); return }
-      setDetailInc(null); setDetailIncEdit(false); router.refresh()
+      const release = trackSave()
+      try {
+        const res = await updateExtraIncome(fd)
+        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        setDetailInc(null); setDetailIncEdit(false); router.refresh()
+        pushToast('success', '수익 수정됨')
+      } finally { release() }
     })
   }
   const handleDeleteInc = (id: string) => {
@@ -3153,26 +3174,30 @@ function ReserveTab({
       if (!amount || amount <= 0) { setError('금액을 입력하세요.'); return }
     }
     startTransition(async () => {
-      let res: { ok: true } | { ok: false; error: string }
-      if (mode === 'deposit') {
-        res = await addReserveDeposit({
-          amount: amount!, date, sourceMonth,
-          linkedAccountId: linkedAccountId || undefined,
-          memo: memo || undefined,
-        })
-      } else if (mode === 'withdraw') {
-        res = await addReserveWithdrawDirect({
-          amount: amount!, date,
-          category: category || undefined,
-          linkedAccountId: linkedAccountId || undefined,
-          memo: memo || undefined,
-        })
-      } else {
-        res = await settleReserveFromExpense({ expenseId: selectedExpenseId, amount: amount, memo: memo || undefined })
-      }
-      if (!res.ok) { setError(res.error); return }
-      reset()
-      onAfterMutate()
+      const release = trackSave()
+      try {
+        let res: { ok: true } | { ok: false; error: string }
+        if (mode === 'deposit') {
+          res = await addReserveDeposit({
+            amount: amount!, date, sourceMonth,
+            linkedAccountId: linkedAccountId || undefined,
+            memo: memo || undefined,
+          })
+        } else if (mode === 'withdraw') {
+          res = await addReserveWithdrawDirect({
+            amount: amount!, date,
+            category: category || undefined,
+            linkedAccountId: linkedAccountId || undefined,
+            memo: memo || undefined,
+          })
+        } else {
+          res = await settleReserveFromExpense({ expenseId: selectedExpenseId, amount: amount, memo: memo || undefined })
+        }
+        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        reset()
+        onAfterMutate()
+        pushToast('success', mode === 'deposit' ? '예비비 적립됨' : mode === 'withdraw' ? '예비비 인출됨' : '정산 완료')
+      } finally { release() }
     })
   }
 

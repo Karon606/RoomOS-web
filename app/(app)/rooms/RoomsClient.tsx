@@ -10,6 +10,7 @@ import { Btn } from '@/components/ui/Btn'
 import { formatPhone } from '@/lib/formatPhone'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
+import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 
 type RoomStatus = {
   roomId: string
@@ -447,13 +448,13 @@ export default function RoomsClient({
   const handleSaveEdit = async () => {
     if (!editingPayId) return
     startTransition(async () => {
-      const res = await updatePayment(editingPayId, {
+      const res = await withSave(() => updatePayment(editingPayId, {
         actualAmount: editAmount,
         payDate:      editDate,
         payMethod:    editPayMethod,
         memo:         editMemo || undefined,
         targetMonth:  editTargetMonth || undefined,
-      })
+      }), { success: '수납 기록 수정됨' })
       if (!res.ok) { setError(res.error); return }
       if (selectedRoom?.leaseTermId) {
         const { records, acquisitionDate } = await getPaymentsByLease(selectedRoom.leaseTermId, targetMonth)
@@ -473,6 +474,7 @@ export default function RoomsClient({
     const payMethod = fd.get('payMethod') as string
     const memo = fd.get('memo') as string
     startTransition(async () => {
+      const release = trackSave()
       try {
         if (isDepositMode) {
           await saveDepositPayment({
@@ -513,22 +515,27 @@ export default function RoomsClient({
         setShowPayForm(false)
         setShowPayModal(false)
         router.refresh()
+        pushToast('success', isDepositMode ? '보증금 수납됨' : '월세 수납됨')
       } catch (err: unknown) {
-        setError((err as Error).message)
-      }
+        const msg = (err as Error).message
+        setError(msg); pushToast('error', msg)
+      } finally { release() }
     })
   }
 
   const handleDeletePayment = async (paymentId: string) => {
     if (!confirm('이 수납 기록을 삭제하시겠습니까?')) return
     startTransition(async () => {
+      const release = trackSave()
       try {
         await deletePayment(paymentId)
         setShowPayModal(false)
         router.refresh()
+        pushToast('success', '수납 기록 삭제됨')
       } catch (err: unknown) {
-        setError((err as Error).message)
-      }
+        const msg = (err as Error).message
+        setError(msg); pushToast('error', msg)
+      } finally { release() }
     })
   }
 
@@ -1231,6 +1238,7 @@ export default function RoomsClient({
                           const handleSaveAutoPay = () => {
                             if (!selectedRoom.leaseTermId || !selectedRoom.tenantId || !autoPayDate) return
                             startTransition(async () => {
+                              const release = trackSave()
                               try {
                                 await savePayment({
                                   leaseTermId: selectedRoom.leaseTermId!,
@@ -1248,9 +1256,11 @@ export default function RoomsClient({
                                 setPaymentHistory(records as PaymentRecord[])
                                 setPayAcquisitionDate(acq ? new Date(acq) : null)
                                 setLoadingHistory(false)
+                                pushToast('success', '양도인 수납 저장됨')
                               } catch (e) {
-                                setError(e instanceof Error ? e.message : '저장 실패')
-                              }
+                                const msg = e instanceof Error ? e.message : '저장 실패'
+                                setError(msg); pushToast('error', msg)
+                              } finally { release() }
                             })
                           }
                           return editingAutoPay ? (
@@ -1449,8 +1459,12 @@ export default function RoomsClient({
                                   setConfirmClearOverride(false)
                                   setSelectedRoom(prev => prev ? { ...prev, overrideDueDay: null, overrideDueDayMonth: null, overrideDueDayReason: null } : prev)
                                   startTransition(async () => {
-                                    await clearDueDayOverride(leaseTermId)
-                                    router.refresh()
+                                    const release = trackSave()
+                                    try {
+                                      await clearDueDayOverride(leaseTermId)
+                                      router.refresh()
+                                      pushToast('success', '이번 달 납부일 임시 변경 해제됨')
+                                    } finally { release() }
                                   })
                                 }}
                                 className="text-xs bg-red-500 hover:bg-red-400 text-white font-semibold px-1.5 py-0.5 rounded">
@@ -1543,8 +1557,12 @@ export default function RoomsClient({
                             setShowOverrideForm(false)
                             setSelectedRoom(prev => prev ? { ...prev, overrideDueDay: val, overrideDueDayMonth: targetMonth, overrideDueDayReason: reason || null } : prev)
                             startTransition(async () => {
-                              await setDueDayOverride(leaseTermId, targetMonth, val, reason || undefined)
-                              router.refresh()
+                              const release = trackSave()
+                              try {
+                                await setDueDayOverride(leaseTermId, targetMonth, val, reason || undefined)
+                                router.refresh()
+                                pushToast('success', '이번 달 납부일 임시 변경됨')
+                              } finally { release() }
                             })
                           }}
                           className="w-full py-2 bg-amber-500 active:bg-amber-600 hover:bg-amber-400 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors">

@@ -8,6 +8,7 @@ import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { kstYmdStr } from '@/lib/kstDate'
+import { trackSave, pushToast } from '@/lib/saveStatus'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, TRACKED_CATEGORIES } from './constants'
 import {
   getInventoryDetail,
@@ -54,21 +55,23 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
   const [seedPending, setSeedPending] = useState(false)
   const handleSeed = async () => {
     setSeedPending(true)
+    const release = trackSave()
     try {
       const res = await seedTrackedItemsFromExpenses()
-      if (!res.ok) { alert(res.error); return }
+      if (!res.ok) { pushToast('error', res.error); alert(res.error); return }
       // refresh 먼저 트리거 (alert가 동기 블로킹이라 그 뒤에 두면 모달 닫을 때까지 페이지가 안 갱신됨)
       router.refresh()
       const parts: string[] = []
       if (res.created > 0) parts.push(`${res.created}개 품목 추가`)
       if (res.migrated > 0) parts.push(`${res.migrated}개 지출 라벨 정리 (사이즈/포장 변형 분리)`)
       if (res.skippedArchived > 0) parts.push(`삭제된 품목과 매칭되는 지출 ${res.skippedArchived}건은 건너뜀`)
+      const summary = parts.length > 0 ? parts.join(' · ') : '추가할 품목이 없습니다 (이미 등록됨).'
+      pushToast('success', summary)
       // alert는 다음 tick에 — refresh가 먼저 적용되도록
-      setTimeout(() => {
-        alert(parts.length > 0 ? parts.join(' · ') : '추가할 품목이 없습니다 (이미 등록됨).')
-      }, 0)
+      setTimeout(() => { alert(summary) }, 0)
     } finally {
       setSeedPending(false)
+      release()
     }
   }
 
@@ -202,14 +205,18 @@ function AddItemModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
     e.preventDefault()
     setError('')
     startTransition(async () => {
-      const res = await createTrackedItem({
-        category, label,
-        specUnit: specUnit || null,
-        qtyUnit:  qtyUnit  || null,
-        memo:     memo     || null,
-      })
-      if (!res.ok) { setError(res.error); return }
-      onDone()
+      const release = trackSave()
+      try {
+        const res = await createTrackedItem({
+          category, label,
+          specUnit: specUnit || null,
+          qtyUnit:  qtyUnit  || null,
+          memo:     memo     || null,
+        })
+        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        onDone()
+        pushToast('success', '품목 추가됨')
+      } finally { release() }
     })
   }
 
@@ -282,27 +289,36 @@ function DetailModal({ row, onClose, onChange }: {
   const handleArchive = () => {
     if (!confirm('이 품목을 삭제하시겠습니까?\n\n· 재고 추적 카드와 점검·무상입수 기록이 사라집니다.\n· 지출 내역(영수증·금액)은 그대로 유지됩니다.')) return
     startTransition(async () => {
-      const res = await archiveTrackedItem(trackedItemId)
-      if (res.ok) { onChange(); onClose() }
-      else setError(res.error)
+      const release = trackSave()
+      try {
+        const res = await archiveTrackedItem(trackedItemId)
+        if (res.ok) { onChange(); onClose(); pushToast('success', '품목 삭제됨') }
+        else { setError(res.error); pushToast('error', res.error) }
+      } finally { release() }
     })
   }
 
   const handleDeleteCheck = (id: string) => {
     if (!confirm('이 점검 기록을 삭제하시겠습니까?')) return
     startTransition(async () => {
-      const res = await deleteStockCheck(id)
-      if (res.ok) { reload(); onChange() }
-      else setError(res.error)
+      const release = trackSave()
+      try {
+        const res = await deleteStockCheck(id)
+        if (res.ok) { reload(); onChange(); pushToast('success', '점검 기록 삭제됨') }
+        else { setError(res.error); pushToast('error', res.error) }
+      } finally { release() }
     })
   }
 
   const handleDeleteAddition = (id: string) => {
     if (!confirm('이 입수 기록을 삭제하시겠습니까?')) return
     startTransition(async () => {
-      const res = await deleteStockAddition(id)
-      if (res.ok) { reload(); onChange() }
-      else setError(res.error)
+      const release = trackSave()
+      try {
+        const res = await deleteStockAddition(id)
+        if (res.ok) { reload(); onChange(); pushToast('success', '입수 기록 삭제됨') }
+        else { setError(res.error); pushToast('error', res.error) }
+      } finally { release() }
     })
   }
 

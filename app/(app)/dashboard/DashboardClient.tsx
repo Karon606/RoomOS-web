@@ -16,6 +16,7 @@ import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDeposi
 import { recordRecurringExpense } from '@/app/(app)/finance/actions'
 import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
+import { trackSave, pushToast } from '@/lib/saveStatus'
 
 // ── 타입 ────────────────────────────────────────────────────────
 
@@ -1182,6 +1183,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
     const payMethod = fd.get('payMethod') as string
     const memo = fd.get('memo') as string
     startTransition(async () => {
+      const release = trackSave()
       try {
         if (isDepositMode) {
           await saveDepositPayment({
@@ -1211,15 +1213,23 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
         setIsDepositMode(false)
         await reload(lease)
         onPaymentDone?.()
-      } catch (err: unknown) { setError((err as Error).message) }
+        pushToast('success', isDepositMode ? '보증금 수납됨' : '월세 수납됨')
+      } catch (err: unknown) {
+        const msg = (err as Error).message
+        setError(msg); pushToast('error', msg)
+      } finally { release() }
     })
   }
 
   const handleDelete = (id: string) => {
     if (!confirm('이 수납 기록을 삭제하시겠습니까?')) return
     startTransition(async () => {
-      await deletePayment(id)
-      await reload(lease)
+      const release = trackSave()
+      try {
+        await deletePayment(id)
+        await reload(lease)
+        pushToast('success', '수납 기록 삭제됨')
+      } finally { release() }
     })
   }
 

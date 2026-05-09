@@ -11,6 +11,7 @@ import {
   deleteChecklistLog,
 } from './actions'
 import { DEFAULT_CHECKLIST_ALERT_DAYS_BEFORE } from '@/lib/appConfig'
+import { withSave } from '@/lib/saveStatus'
 
 type Mode = 'create' | { mode: 'edit'; row: ChecklistRow } | { mode: 'check'; row: ChecklistRow } | null
 
@@ -131,10 +132,10 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
             startTransition(async () => {
               setError('')
               if (mode === 'create') {
-                const res = await createChecklist(data)
+                const res = await withSave(() => createChecklist(data), { success: '체크리스트 추가됨' })
                 if (!res.ok) { setError(res.error); return }
               } else if (mode && typeof mode === 'object' && mode.mode === 'edit') {
-                const res = await updateChecklist({ id: mode.row.id, ...data })
+                const res = await withSave(() => updateChecklist({ id: mode.row.id, ...data }), { success: '체크리스트 수정됨' })
                 if (!res.ok) { setError(res.error); return }
               }
               setMode(null)
@@ -144,7 +145,7 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
           onDelete={mode && typeof mode === 'object' && mode.mode === 'edit' ? () => {
             if (!confirm('이 체크리스트 항목과 모든 점검 이력을 삭제하시겠습니까?')) return
             startTransition(async () => {
-              const res = await deleteChecklist((mode as { mode: 'edit'; row: ChecklistRow }).row.id)
+              const res = await withSave(() => deleteChecklist((mode as { mode: 'edit'; row: ChecklistRow }).row.id), { success: '체크리스트 삭제됨' })
               if (!res.ok) { setError(res.error); return }
               setMode(null)
               refresh()
@@ -153,14 +154,14 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
           onToggleActive={mode && typeof mode === 'object' && mode.mode === 'edit' ? () => {
             const row = (mode as { mode: 'edit'; row: ChecklistRow }).row
             startTransition(async () => {
-              const res = await updateChecklist({
+              const res = await withSave(() => updateChecklist({
                 id: row.id,
                 title: row.title,
                 memo: row.memo ?? '',
                 intervalDays: row.intervalDays,
                 alertDaysBefore: row.alertDaysBefore,
                 isActive: !row.isActive,
-              })
+              }), { success: row.isActive ? '비활성화됨' : '활성화됨' })
               if (!res.ok) { setError(res.error); return }
               setMode(null)
               refresh()
@@ -179,7 +180,7 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
           onConfirm={(memo) => {
             startTransition(async () => {
               setError('')
-              const res = await markChecklistDone({ id: mode.row.id, memo })
+              const res = await withSave(() => markChecklistDone({ id: mode.row.id, memo }), { success: '점검 완료 기록됨' })
               if (!res.ok) { setError(res.error); return }
               setMode(null)
               refresh()
@@ -188,7 +189,7 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
           onDeleteLog={(logId) => {
             if (!confirm('이 점검 이력을 삭제하시겠습니까?')) return
             startTransition(async () => {
-              const res = await deleteChecklistLog(logId)
+              const res = await withSave(() => deleteChecklistLog(logId), { success: '점검 이력 삭제됨' })
               if (!res.ok) { setError(res.error); return }
               setMode(null)
               refresh()
