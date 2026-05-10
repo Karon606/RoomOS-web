@@ -14,7 +14,7 @@ import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS } from '@/lib/ch
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment, getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { recordRecurringExpense } from '@/app/(app)/finance/actions'
-import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
+import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund, resolveTenantRequest } from '@/app/(app)/tenants/actions'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 
@@ -50,7 +50,7 @@ export type DashboardData = {
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
-  alerts:            { category?: 'unpaid' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string; sortKey?: number }[]
+  alerts:            { category?: 'unpaid' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string; sortKey?: number; tenantRequestId?: string }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
@@ -223,6 +223,19 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   const [confirmError, setConfirmError]     = useState('')
   const [refundModalOpen, setRefundModalOpen] = useState(false)
 
+  // 요청 처리 — 메모 입력 후 바로 해결 (입주자 관리 진입 불필요)
+  const isRequest = alert.category === 'request' && !!alert.tenantRequestId
+  const [resolveOpen, setResolveOpen] = useState(false)
+  const [resolveMemo, setResolveMemo] = useState('')
+  const handleResolveRequest = async () => {
+    if (!alert.tenantRequestId || confirmPending) return
+    setConfirmPending(true); setConfirmError('')
+    const res = await resolveTenantRequest(alert.tenantRequestId, resolveMemo)
+    if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
+    router.refresh()
+    onClose()
+  }
+
   const handleConfirmActive = async () => {
     if (!reservationDueLeaseId || confirmPending) return
     setConfirmPending(true); setConfirmError('')
@@ -326,6 +339,40 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
         <div className="px-5 pb-5 pt-4 space-y-2">
           {confirmError && (
             <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{confirmError}</p>
+          )}
+          {/* 요청 — 바로 처리 (입주자 관리 진입 없이) */}
+          {isRequest && !resolveOpen && (
+            <button
+              onClick={() => setResolveOpen(true)}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
+              style={{ background: '#16a34a', color: 'white' }}>
+              완료로 처리하기
+            </button>
+          )}
+          {isRequest && resolveOpen && (
+            <div className="space-y-2 rounded-xl p-3" style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.25)' }}>
+              <textarea
+                value={resolveMemo}
+                onChange={e => setResolveMemo(e.target.value)}
+                rows={3}
+                autoFocus
+                placeholder="어떻게 처리했는지 짧게 (선택) — 추후 이력 확인 시 도움"
+                className="w-full text-sm rounded-md px-3 py-2 resize-none"
+                style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)', outline: 'none' }}
+              />
+              <div className="flex gap-2">
+                <button onClick={() => { setResolveOpen(false); setResolveMemo('') }} disabled={confirmPending}
+                  className="flex-1 py-2 text-xs font-medium rounded-md disabled:opacity-50"
+                  style={{ background: 'var(--canvas)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
+                  취소
+                </button>
+                <button onClick={handleResolveRequest} disabled={confirmPending}
+                  className="flex-1 py-2 text-sm font-semibold rounded-md disabled:opacity-50"
+                  style={{ background: '#16a34a', color: '#fff' }}>
+                  {confirmPending ? '저장 중...' : '완료로 저장'}
+                </button>
+              </div>
+            </div>
           )}
           {reservationDueLeaseId && (
             <button

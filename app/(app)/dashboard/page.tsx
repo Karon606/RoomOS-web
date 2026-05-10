@@ -1129,6 +1129,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       tenantId:  r.tenantId,
       detail:    r.content + (r.targetDate ? `\n처리 기한: ${fmtKorDate(r.targetDate)}` : ''),
       exactDate: fmtShortDate(r.targetDate),
+      tenantRequestId: r.id,
     })
   }
 

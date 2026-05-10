@@ -882,7 +882,7 @@ export async function getTenantRequests(tenantId: string) {
     orderBy: { createdAt: 'desc' },
     select: {
       id: true, content: true, requestDate: true,
-      targetDate: true, resolvedAt: true, createdAt: true,
+      targetDate: true, resolvedAt: true, resolutionMemo: true, createdAt: true,
       tenant: { select: { name: true } },
     },
   })
@@ -916,13 +916,16 @@ export async function createTenantRequest(data: {
   }
 }
 
-export async function resolveTenantRequest(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function resolveTenantRequest(id: string, resolutionMemo?: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     await getPropertyId()
     await prisma.tenantRequest.update({
       where: { id },
-      data: { resolvedAt: new Date() },
+      data: {
+        resolvedAt: new Date(),
+        resolutionMemo: resolutionMemo?.trim() || null,
+      },
     })
     revalidatePath('/tenants')
     revalidatePath('/dashboard')
