@@ -113,7 +113,7 @@ export default function Header({
   return (
     /* relative z-[100]: 헤더가 사이드바(z-50)보다 항상 위 → MonthPicker 겹침 방지 */
     <header
-      className="no-print h-14 md:h-16 flex items-center justify-between px-4 md:px-6 shrink-0 relative z-[100]"
+      className="h-14 md:h-16 flex items-center justify-between px-4 md:px-6 shrink-0 relative z-[100]"
       style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }}
     >
       <div className="flex items-center gap-1">

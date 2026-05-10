@@ -566,9 +566,6 @@ model TenantRequest {
   requestDate DateTime  @default(now()) @db.Date
   targetDate  DateTime? @db.Date
   resolvedAt  DateTime?
-  resolutionMemo String?    // 처리 내용 (어떻게 처리했는지)
-  category    String?    // 시설 | 소음 | 청결 | 편의 | 기타 (자유 텍스트)
-  isUrgent    Boolean   @default(false)  // 긴급 표시
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

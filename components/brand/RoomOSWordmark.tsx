@@ -39,11 +39,10 @@ export function RoomOSWordmark({
       <text
         x="0"
         y={VB_H * 0.78}
-        fontFamily="'Pretendard Black', 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif"
+        fontFamily="'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif"
         fontWeight={weight}
         fontSize={FONT}
         letterSpacing={LETTER_SPACING}
-        style={{ fontVariationSettings: `'wght' ${weight}` }}
         fill="var(--ink, #1a1a1a)"
       >
         Room<tspan fill="var(--persimmon, #e84a1a)">O</tspan>S

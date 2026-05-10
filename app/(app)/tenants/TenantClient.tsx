@@ -330,12 +330,7 @@ export default function TenantClient({
   const [newContent, setNewContent]           = useState('')
   const [newReqDate, setNewReqDate]           = useState(() => kstYmdStr())
   const [newTargetDate, setNewTargetDate]     = useState('')
-  const [newCategory, setNewCategory]         = useState<string>('')
-  const [newUrgent, setNewUrgent]             = useState(false)
   const [reqPending, startReqTransition]      = useTransition()
-  // 처리 모드 — 어떤 요청을 지금 '완료 처리' 중인지 + 입력 중인 처리 메모
-  const [resolvingId, setResolvingId]         = useState<string | null>(null)
-  const [resolvingMemo, setResolvingMemo]     = useState('')
   const [showHistory, setShowHistory]         = useState(false)
   const [aiText, setAiText]               = useState('')
   const [aiLoading, setAiLoading]         = useState(false)
@@ -1742,32 +1737,20 @@ export default function TenantClient({
                               content:     newContent,
                               requestDate: newReqDate,
                               targetDate:  newTargetDate || null,
-                              category:    newCategory || null,
-                              isUrgent:    newUrgent,
                             })
-                            setNewContent(''); setNewTargetDate(''); setNewCategory(''); setNewUrgent(false)
+                            setNewContent(''); setNewTargetDate('')
                             setNewReqDate(kstYmdStr())
                             const updated = await getTenantRequests(detailTenant!.id)
                             setRequests(updated)
                           })
                         }
 
-                        const handleResolve = (id: string, memo: string) => {
+                        const handleResolve = (id: string) => {
                           startReqTransition(async () => {
-                            await resolveTenantRequest(id, memo)
-                            setResolvingId(null)
-                            setResolvingMemo('')
+                            await resolveTenantRequest(id)
                             const updated = await getTenantRequests(detailTenant!.id)
                             setRequests(updated)
                           })
-                        }
-                        const startResolve = (id: string) => {
-                          setResolvingId(id)
-                          setResolvingMemo('')
-                        }
-                        const cancelResolve = () => {
-                          setResolvingId(null)
-                          setResolvingMemo('')
                         }
 
                         const handleDelete = (id: string) => {
@@ -1804,23 +1787,6 @@ export default function TenantClient({
                                     className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-2 text-[11px] text-[var(--warm-dark)] min-w-0" />
                                 </div>
                               </div>
-                              {/* 카테고리 + 긴급 */}
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <select value={newCategory} onChange={e => setNewCategory(e.target.value)}
-                                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-[11px] text-[var(--warm-dark)] outline-none">
-                                  <option value="">카테고리 선택</option>
-                                  <option value="시설">시설</option>
-                                  <option value="소음">소음</option>
-                                  <option value="청결">청결</option>
-                                  <option value="편의">편의</option>
-                                  <option value="기타">기타</option>
-                                </select>
-                                <label className="inline-flex items-center gap-1.5 text-[11px] cursor-pointer text-[var(--warm-mid)]">
-                                  <input type="checkbox" checked={newUrgent} onChange={e => setNewUrgent(e.target.checked)}
-                                    className="accent-[var(--coral)]" />
-                                  🚨 긴급
-                                </label>
-                              </div>
                               <button onClick={handleCreate} disabled={reqPending || !newContent.trim()}
                                 className="w-full py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
                                 style={{ background: 'var(--coral)', color: '#fff' }}>
@@ -1853,41 +1819,15 @@ export default function TenantClient({
                                       </button>
                                     </div>
                                     <p className="text-sm leading-snug" style={{ color: 'var(--warm-dark)' }}>{r.content}</p>
-                                    {/* 완료 처리 CTA — 클릭하면 처리 메모 입력 영역 펼침 */}
-                                    {resolvingId === r.id ? (
-                                      <div className="space-y-2 rounded-lg p-2.5" style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.25)' }}>
-                                        <textarea
-                                          value={resolvingMemo}
-                                          onChange={e => setResolvingMemo(e.target.value)}
-                                          rows={2}
-                                          autoFocus
-                                          placeholder="어떻게 처리했는지 짧게 (선택) — 추후 이력 확인 시 도움"
-                                          className="w-full text-xs rounded-md px-2 py-1.5 resize-none"
-                                          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)', outline: 'none' }}
-                                        />
-                                        <div className="flex gap-2">
-                                          <button type="button" onClick={cancelResolve} disabled={reqPending}
-                                            className="flex-1 py-1.5 text-xs font-medium rounded-md disabled:opacity-50"
-                                            style={{ background: 'var(--canvas)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
-                                            취소
-                                          </button>
-                                          <button type="button" onClick={() => handleResolve(r.id, resolvingMemo)} disabled={reqPending}
-                                            className="flex-1 py-1.5 text-xs font-semibold rounded-md disabled:opacity-50"
-                                            style={{ background: '#16a34a', color: '#fff' }}>
-                                            {reqPending ? '저장 중...' : '완료로 저장'}
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <button onClick={() => startResolve(r.id)} disabled={reqPending}
-                                        className="w-full py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
-                                        style={{ background: 'rgba(34,197,94,0.12)', color: '#16a34a', border: '1.5px solid rgba(34,197,94,0.35)' }}>
-                                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                          <path d="M2 6l3 3 5-5"/>
-                                        </svg>
-                                        완료로 처리하기
-                                      </button>
-                                    )}
+                                    {/* 완료 처리 CTA */}
+                                    <button onClick={() => handleResolve(r.id)} disabled={reqPending}
+                                      className="w-full py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                                      style={{ background: 'rgba(34,197,94,0.12)', color: '#16a34a', border: '1.5px solid rgba(34,197,94,0.35)' }}>
+                                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M2 6l3 3 5-5"/>
+                                      </svg>
+                                      완료로 처리하기
+                                    </button>
                                   </div>
                                 ))}
                               </div>
@@ -1921,11 +1861,6 @@ export default function TenantClient({
                                           </button>
                                         </div>
                                         <p className="text-xs" style={{ color: 'var(--warm-mid)' }}>{r.content}</p>
-                                        {r.resolutionMemo && (
-                                          <p className="text-[11px] mt-1.5 pt-1.5 border-t" style={{ color: '#16a34a', borderColor: 'rgba(34,197,94,0.2)' }}>
-                                            ↳ {r.resolutionMemo}
-                                          </p>
-                                        )}
                                       </div>
                                     ))}
                                   </div>

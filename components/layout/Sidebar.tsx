@@ -72,8 +72,6 @@ const NAV_GROUPS = [
     label: '운영',
     items: [
       { href: '/checklist', label: '체크리스트', Icon: IcoChecklist },
-      { href: '/requests',  label: '요청·컴플레인', Icon: IcoTenants },
-      { href: '/contracts', label: '계약서',        Icon: IcoReport },
     ],
   },
   {
