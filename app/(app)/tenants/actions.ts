@@ -54,7 +54,7 @@ export async function getRoomsForSelect() {
     where: { propertyId },
     orderBy: { roomNo: 'asc' },
     select: {
-      id: true, roomNo: true, baseRent: true, scheduledRent: true, isVacant: true, type: true, windowType: true, direction: true,
+      id: true, roomNo: true, baseRent: true, scheduledRent: true, nonResidentRent: true, isVacant: true, type: true, windowType: true, direction: true,
       leaseTerms: {
         where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] } },
         select: { status: true },

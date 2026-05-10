@@ -25,7 +25,7 @@ const fmtRoomNo = (no: string | null | undefined) =>
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
-type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: number | null; isVacant: boolean; type: string | null; windowType: string | null; direction: string | null; currentLeaseStatus: string | null }
+type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: number | null; nonResidentRent: number | null; isVacant: boolean; type: string | null; windowType: string | null; direction: string | null; currentLeaseStatus: string | null }
 
 type Contact = {
   id: string; contactType: string; contactValue: string
@@ -2896,8 +2896,19 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
     setSelectedRoomId(roomId)
     if (isShortTerm) return  // 단기 희망: 호실 표준가 자동입력 건너뛰기
     const room = rooms.find(r => r.id === roomId)
-    if (room) setRentAmount(room.baseRent)
+    if (!room) return
+    const isNR = statusVal === 'NON_RESIDENT'
+    setRentAmount(isNR && room.nonResidentRent != null ? room.nonResidentRent : room.baseRent)
   }
+
+  // 비거주자 ↔ 일반 전환 시 해당 호실의 적정 이용료로 자동 교체
+  useEffect(() => {
+    if (isShortTerm || !selectedRoomId) return
+    const room = rooms.find(r => r.id === selectedRoomId)
+    if (!room) return
+    const isNR = statusVal === 'NON_RESIDENT'
+    setRentAmount(isNR && room.nonResidentRent != null ? room.nonResidentRent : room.baseRent)
+  }, [statusVal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // WAITING_TOUR/TOUR_DONE/RESERVED는 호실 필수 아님 (단, 예약 확정 시 RESERVED는 호실 필수)
   const roomIsOptional = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'].includes(statusVal) && !(statusVal === 'RESERVED' && reservationConfirmed)
@@ -3054,20 +3065,39 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           </select>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">월 이용료</label>
-            <MoneyInput name="rentAmount" value={rentAmount} onChange={setRentAmount} placeholder="0원" />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">보증금</label>
-            <MoneyInput
-              name="depositAmount"
-              value={depositAmountVal}
-              onChange={setDepositAmountVal}
-              placeholder="0원"
-            />
-          </div>
+        {(() => {
+          const selectedRoom = rooms.find(r => r.id === selectedRoomId)
+          const isNR = statusVal === 'NON_RESIDENT'
+          const hasNRRate = isNR && selectedRoom?.nonResidentRent != null
+          return (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">
+                  {hasNRRate ? '비거주 이용료' : '월 이용료'}
+                </label>
+                {hasNRRate && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200 font-medium">
+                    비거주 전용
+                  </span>
+                )}
+              </div>
+              <MoneyInput name="rentAmount" value={rentAmount} onChange={setRentAmount} placeholder="0원" />
+              {isNR && selectedRoom && selectedRoom.nonResidentRent == null && (
+                <p className="text-[10px] text-amber-500">
+                  이 호실에 비거주 이용료가 설정되어 있지 않습니다. 호실 관리에서 먼저 설정해 주세요.
+                </p>
+              )}
+            </div>
+          )
+        })()}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">보증금</label>
+          <MoneyInput
+            name="depositAmount"
+            value={depositAmountVal}
+            onChange={setDepositAmountVal}
+            placeholder="0원"
+          />
         </div>
         {/* 청소비 | 입주일 or 입주희망일 */}
         <div className="grid grid-cols-2 gap-3">
