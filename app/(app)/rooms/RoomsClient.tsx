@@ -12,6 +12,9 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 
+const fmtRoomNo = (no: string | null | undefined) =>
+  no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
+
 type RoomStatus = {
   roomId: string
   roomNo: string
@@ -749,7 +752,7 @@ export default function RoomsClient({
               {/* 첫 줄: 호실 + 수납상태 */}
               <div className="flex items-start justify-between">
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-base font-bold text-[var(--coral)]">{room.roomNo}호</span>
+                  <span className="text-base font-bold text-[var(--coral)]">{fmtRoomNo(room.roomNo)}</span>
                   {room.type && <span className="text-xs text-[var(--warm-muted)]">{room.type}</span>}
                 </div>
                 <div className="flex flex-col items-end gap-0.5">
@@ -908,7 +911,7 @@ export default function RoomsClient({
                   {/* sticky — 호실 */}
                   <td className="px-4 py-4 text-sm font-bold text-[var(--coral)] overflow-hidden sticky left-0 z-20 bg-[var(--cream)]"
                     style={{ width: colWidths.roomNo, minWidth: colWidths.roomNo, maxWidth: colWidths.roomNo }}>
-                    <span className="truncate block">{room.roomNo}호</span>
+                    <span className="truncate block">{fmtRoomNo(room.roomNo)}</span>
                   </td>
                   {/* sticky — 입주자 */}
                   <td className="px-4 py-4 text-sm font-medium text-[var(--warm-dark)] overflow-hidden sticky z-20 bg-[var(--cream)]"
@@ -1093,7 +1096,7 @@ export default function RoomsClient({
           <div className="sm:hidden grid grid-cols-2 gap-2">
             {sortedVacants.map(room => (
               <div key={room.roomId} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl px-4 py-3 space-y-1">
-                <span className="text-sm font-bold text-[var(--warm-mid)]">{room.roomNo}호</span>
+                <span className="text-sm font-bold text-[var(--warm-mid)]">{fmtRoomNo(room.roomNo)}</span>
                 {room.type && <p className="text-xs text-[var(--warm-muted)]">{room.type}</p>}
                 <p className="text-sm font-semibold text-[var(--warm-dark)]">
                   {room.baseRent > 0 ? <MoneyDisplay amount={room.baseRent} /> : '—'}
@@ -1118,7 +1121,7 @@ export default function RoomsClient({
               <tbody>
                 {sortedVacants.map(room => (
                   <tr key={room.roomId} className="border-b border-[var(--warm-border)]/50">
-                    <td className="px-4 py-3 text-sm font-bold text-[var(--warm-mid)]">{room.roomNo}호</td>
+                    <td className="px-4 py-3 text-sm font-bold text-[var(--warm-mid)]">{fmtRoomNo(room.roomNo)}</td>
                     {vacantColVis.type && (
                       <td className="px-4 py-3 text-sm text-[var(--warm-muted)]">{room.type ?? '—'}</td>
                     )}
@@ -1159,7 +1162,7 @@ export default function RoomsClient({
             <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
               <div>
                 <h2 className="text-base font-bold text-[var(--warm-dark)]">
-                  {selectedRoom.roomNo}호 — {selectedRoom.tenantName}
+                  {fmtRoomNo(selectedRoom.roomNo)} — {selectedRoom.tenantName}
                 </h2>
                 <p className="text-xs text-[var(--warm-muted)] mt-0.5">
                   예정 {selectedRoom.expected.toLocaleString()}원
@@ -1798,7 +1801,7 @@ function TenantInfoModal({ tenantId, onClose, onBack }: { tenantId: string; onCl
                 <h3 className="text-xs font-semibold text-[var(--warm-mid)] pb-1 border-b border-[var(--warm-border)]">기본 정보</h3>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                   <InfoCol label="이름" value={info.name} />
-                  <InfoCol label="호실" value={lease?.room?.roomNo ? `${lease.room.roomNo}호` : '—'} />
+                  <InfoCol label="호실" value={fmtRoomNo(lease?.room?.roomNo)} />
                   <InfoCol label="성별" value={info.gender === 'MALE' ? '남성' : info.gender === 'FEMALE' ? '여성' : '—'} />
                   <InfoCol label="국적" value={info.nationality ?? '—'} />
                   <InfoCol label="직업" value={info.job ?? '—'} />
@@ -1874,7 +1877,7 @@ function RoomInfoModal({ roomId, onClose, onBack }: { roomId: string; onClose: (
                 ‹
               </button>
             )}
-            <h2 className="text-base font-bold text-[var(--warm-dark)]">{info?.roomNo}호</h2>
+            <h2 className="text-base font-bold text-[var(--warm-dark)]">{fmtRoomNo(info?.roomNo)}</h2>
             {info && (
               <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
                 ${info.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'}`}>
