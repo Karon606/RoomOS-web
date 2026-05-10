@@ -18,6 +18,9 @@ import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund }
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 
+const fmtRoomNo = (no: string | null | undefined) =>
+  no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
+
 // ── 타입 ────────────────────────────────────────────────────────
 
 export type DashboardData = {
@@ -1263,7 +1266,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
           ) : (
             <div>
               <h2 className="text-base font-bold text-[var(--warm-dark)]">
-                {lease?.room?.roomNo ? `${lease.room.roomNo}호 — ` : ''}{lease?.tenant.name}
+                {lease?.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}{lease?.tenant.name}
               </h2>
               <p className="text-xs text-[var(--warm-muted)] mt-0.5">
                 {targetMonth} · 예정 {lease?.rentAmount.toLocaleString()}원
@@ -1615,7 +1618,7 @@ function RoomDetailPopup({ room, onClose, onOpenPayment, onOpenTenantInfo }: {
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
           <div className="flex items-center gap-2">
-            <span className="text-base font-bold text-[var(--warm-dark)]">{room.roomNo}호</span>
+            <span className="text-base font-bold text-[var(--warm-dark)]">{fmtRoomNo(room.roomNo)}</span>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium
               ${room.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-mid)]' : 'bg-[var(--coral)]/20 text-[var(--coral)]'}`}>
               {room.isVacant ? '공실' : (DASH_STATUS_LABEL[room.tenantStatus ?? ''] ?? '거주중')}
@@ -1779,7 +1782,7 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-2">계약 정보</p>
                 <div className="flex justify-between mb-1">
                   <span className="text-[var(--warm-muted)]">호실</span>
-                  <span className="text-[var(--warm-dark)] font-medium">{lease.room?.roomNo}호</span>
+                  <span className="text-[var(--warm-dark)] font-medium">{fmtRoomNo(lease.room?.roomNo)}</span>
                 </div>
                 <div className="flex justify-between mb-1">
                   <span className="text-[var(--warm-muted)]">상태</span>
@@ -2088,7 +2091,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[3px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
                                   style={cellStyle}
                                 >
-                                  <span className="truncate w-full text-center font-bold" style={{ fontSize: 11 }}>{r.roomNo}호</span>
+                                  <span className="truncate w-full text-center font-bold" style={{ fontSize: 11 }}>{fmtRoomNo(r.roomNo)}</span>
                                   <span className="truncate w-full text-center" style={{ fontSize: 10, fontWeight: 500 }}>{displayName}</span>
                                   {rentMan && <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
                                 </div>
@@ -2277,7 +2280,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <p className="text-xs font-semibold truncate flex items-center gap-1" style={{ color: 'var(--ink-2)' }}>
-                                    {l.roomNo}호 {l.tenantName}
+                                    {fmtRoomNo(l.roomNo)} {l.tenantName}
                                     {l.daysOverdue != null && l.daysOverdue >= 7 && (
                                       <span className="rounded-full text-[9px] font-bold px-1.5 py-0.5" style={{ background: '#dc2626', color: '#fff' }}>
                                         {l.daysOverdue}일 경과
@@ -2341,7 +2344,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 {item.tenantName.slice(0, 1)}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink-2)' }}>{item.roomNo}호 {item.tenantName}</p>
+                                <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink-2)' }}>{fmtRoomNo(item.roomNo)} {item.tenantName}</p>
                                 <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</p>
                               </div>
                               <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>

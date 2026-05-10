@@ -3002,7 +3002,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               <option value="ACTIVE">거주중</option>
               <option value="CHECKOUT_PENDING">퇴실 예정</option>
               <option value="CHECKED_OUT">퇴실</option>
-              <option value="NON_RESIDENT">비거주자 (명의만)</option>
+              <option value="NON_RESIDENT">비거주자</option>
               <option value="WAITING_TOUR">투어 대기</option>
               <option value="TOUR_DONE">투어 완료</option>
               <option value="RESERVED">예약</option>
