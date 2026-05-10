@@ -76,17 +76,17 @@ type SortDir = 'asc' | 'desc'
 // ── 열 정의 ─────────────────────────────────────────────────────
 
 const COL_DEFS = [
-  { key: 'englishName',   label: '영어이름', defaultOn: false, tabs: ['active', 'past'] },
-  { key: 'nationality',   label: '국적',     defaultOn: true,  tabs: ['active', 'past'] },
-  { key: 'gender',        label: '성별',     defaultOn: true,  tabs: ['active', 'past'] },
-  { key: 'job',           label: '직업',     defaultOn: false, tabs: ['active', 'past'] },
-  { key: 'contact',       label: '연락처',   defaultOn: true,  tabs: ['active', 'past'] },
-  { key: 'payMethod',     label: '결제수단', defaultOn: false, tabs: ['active', 'past'] },
-  { key: 'depositAmount', label: '보증금',   defaultOn: true,  tabs: ['active', 'past'] },
-  { key: 'rentAmount',    label: '월 이용료', defaultOn: true, tabs: ['active', 'past'] },
+  { key: 'englishName',   label: '영어이름', defaultOn: false, tabs: ['active', 'past', 'dropped'] },
+  { key: 'nationality',   label: '국적',     defaultOn: true,  tabs: ['active', 'past', 'dropped'] },
+  { key: 'gender',        label: '성별',     defaultOn: true,  tabs: ['active', 'past', 'dropped'] },
+  { key: 'job',           label: '직업',     defaultOn: false, tabs: ['active', 'past', 'dropped'] },
+  { key: 'contact',       label: '연락처',   defaultOn: true,  tabs: ['active', 'past', 'dropped'] },
+  { key: 'payMethod',     label: '결제수단', defaultOn: false, tabs: ['active', 'past', 'dropped'] },
+  { key: 'depositAmount', label: '보증금',   defaultOn: true,  tabs: ['active', 'past', 'dropped'] },
+  { key: 'rentAmount',    label: '월 이용료', defaultOn: true, tabs: ['active', 'past', 'dropped'] },
   { key: 'dueDay',        label: '납부일',   defaultOn: true,  tabs: ['active'] },
-  { key: 'stayPeriod',    label: '거주기간', defaultOn: true,  tabs: ['active', 'past'] },
-  { key: 'status',        label: '상태',     defaultOn: true,  tabs: ['active', 'past'] },
+  { key: 'stayPeriod',    label: '거주기간', defaultOn: true,  tabs: ['active', 'past', 'dropped'] },
+  { key: 'status',        label: '상태',     defaultOn: true,  tabs: ['active', 'past', 'dropped'] },
   { key: 'scheduledDate', label: '예정일',   defaultOn: false, tabs: ['active'] },
   { key: 'moveOutDate',   label: '퇴실일',   defaultOn: true,  tabs: ['past'] },
 ] as const
@@ -149,7 +149,6 @@ type ActiveFilter = (typeof ACTIVE_FILTERS)[number]['key']
 const PAST_FILTERS = [
   { key: 'all',         label: '전체' },
   { key: 'CHECKED_OUT', label: '퇴실' },
-  { key: 'CANCELLED',   label: '취소' },
 ] as const
 type PastFilter = (typeof PAST_FILTERS)[number]['key']
 
@@ -345,7 +344,7 @@ export default function TenantClient({
   const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  const [filter, setFilter]             = useState<'active' | 'past'>('active')
+  const [filter, setFilter]             = useState<'active' | 'past' | 'dropped'>('active')
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
   const [pastFilter, setPastFilter]     = useState<PastFilter>('all')
   const [search, setSearch]             = useUrlState('q', '')
@@ -454,9 +453,11 @@ export default function TenantClient({
     const status = t.leaseTerms[0]?.status ?? ''
 
     // 탭 필터
-    const isActive = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'].includes(status)
-    if (filter === 'active' && !isActive) return false
-    if (filter === 'past'   && isActive)  return false
+    const isActive   = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'].includes(status)
+    const isDropped  = status === 'CANCELLED'
+    if (filter === 'active'  && !isActive)  return false
+    if (filter === 'past'    && (isActive || isDropped)) return false
+    if (filter === 'dropped' && !isDropped) return false
 
     // 빠른 상태 필터
     if (filter === 'active') {
@@ -856,10 +857,11 @@ export default function TenantClient({
 
   // ── 인원수 ────────────────────────────────────────────────────
 
-  const activeCount = initialTenants.filter(t =>
+  const activeCount   = initialTenants.filter(t =>
     ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'].includes(t.leaseTerms[0]?.status ?? '')
   ).length
-  const pastCount = initialTenants.length - activeCount
+  const droppedCount  = initialTenants.filter(t => t.leaseTerms[0]?.status === 'CANCELLED').length
+  const pastCount     = initialTenants.length - activeCount - droppedCount
 
   // ── 렌더 ─────────────────────────────────────────────────────────
 
@@ -885,21 +887,25 @@ export default function TenantClient({
       </div>
 
       {/* 탭 */}
-      <div className="flex gap-2">
-        {(['active', 'past'] as const).map(tab => (
-          <button key={tab} onClick={() => setFilter(tab)}
+      <div className="flex gap-2 flex-wrap">
+        {([
+          { key: 'active',  label: `입주/예약자 (${activeCount})` },
+          { key: 'past',    label: `퇴실자 내역 (${pastCount})` },
+          { key: 'dropped', label: `드랍 내역 (${droppedCount})` },
+        ] as const).map(tab => (
+          <button key={tab.key} onClick={() => setFilter(tab.key)}
             className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
-              filter === tab ? 'bg-[var(--coral)] text-white' : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
+              filter === tab.key ? 'bg-[var(--coral)] text-white' : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
             }`}
           >
-            {tab === 'active' ? `입주/예약자 (${activeCount})` : `퇴실자 내역 (${pastCount})`}
+            {tab.label}
           </button>
         ))}
       </div>
 
       {/* 빠른 상태 필터 */}
       <div className="flex gap-2 flex-wrap items-center">
-        {(filter === 'active' ? ACTIVE_FILTERS : PAST_FILTERS).map(f => {
+        {(filter === 'dropped' ? [] : (filter === 'active' ? ACTIVE_FILTERS : PAST_FILTERS)).map(f => {
           const cur = filter === 'active' ? activeFilter : pastFilter
           const set = filter === 'active'
             ? (v: string) => setActiveFilter(v as ActiveFilter)
