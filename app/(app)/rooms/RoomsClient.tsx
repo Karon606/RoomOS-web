@@ -666,10 +666,10 @@ export default function RoomsClient({
         ].map(f => (
           <button key={f.key}
             onClick={() => setFilter(f.key as any)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors
+            className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors
               ${filter === f.key
-                ? 'bg-[var(--canvas)] text-[var(--warm-dark)]'
-                : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'}`}>
+                ? 'bg-[var(--coral)] text-white'
+                : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'}`}>
             {f.label}
           </button>
         ))}
@@ -727,7 +727,7 @@ export default function RoomsClient({
               className={`shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                 active
                   ? 'bg-[var(--coral)] text-white'
-                  : 'bg-[var(--canvas)] text-[var(--warm-mid)]'
+                  : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
               }`}>
               {label}
               {active && <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}

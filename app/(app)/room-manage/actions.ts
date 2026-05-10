@@ -71,6 +71,14 @@ export async function addRoom(formData: FormData): Promise<{ ok: true; id: strin
   const areaPyeong = formData.get('areaPyeong') ? Number(formData.get('areaPyeong')) : null
   const areaM2     = formData.get('areaM2') ? Number(formData.get('areaM2')) : null
 
+  const nrEnabled = formData.get('nonResidentEnabled') === '1'
+  const nonResidentRent      = nrEnabled ? Number(formData.get('nonResidentRent') || 0) : null
+  const nonResidentScheduled = nrEnabled && formData.get('nonResidentScheduled')
+    ? (Number(formData.get('nonResidentScheduled')) || null)
+    : null
+  const nonResidentRentDateRaw = nrEnabled ? (formData.get('nonResidentRentDate') as string) : ''
+  const nonResidentRentDate    = nonResidentRentDateRaw ? new Date(nonResidentRentDateRaw) : null
+
   const room = await prisma.room.create({
     data: {
       propertyId,
@@ -83,6 +91,9 @@ export async function addRoom(formData: FormData): Promise<{ ok: true; id: strin
       direction:  direction || null,
       areaPyeong,
       areaM2,
+      nonResidentRent,
+      nonResidentScheduled,
+      nonResidentRentDate,
     },
   })
 
@@ -114,6 +125,15 @@ export async function updateRoom(formData: FormData) {
   const rentUpdateDateRaw = formData.get('rentUpdateDate') as string
   const rentUpdateDate   = rentUpdateDateRaw ? new Date(rentUpdateDateRaw) : null
 
+  // 비거주 이용료 필드
+  const nrEnabled = formData.get('nonResidentEnabled') === '1'
+  const nonResidentRent      = nrEnabled ? Number(formData.get('nonResidentRent') || 0) : null
+  const nonResidentScheduled = nrEnabled && formData.get('nonResidentScheduled')
+    ? (Number(formData.get('nonResidentScheduled')) || null)
+    : null
+  const nonResidentRentDateRaw = nrEnabled ? (formData.get('nonResidentRentDate') as string) : ''
+  const nonResidentRentDate    = nonResidentRentDateRaw ? new Date(nonResidentRentDateRaw) : null
+
   const prevRoom = await prisma.room.findUnique({ where: { id }, select: { baseRent: true } })
 
   await prisma.room.update({
@@ -129,6 +149,9 @@ export async function updateRoom(formData: FormData) {
       areaM2,
       scheduledRent,
       rentUpdateDate,
+      nonResidentRent,
+      nonResidentScheduled,
+      nonResidentRentDate,
     },
   })
 
@@ -305,35 +328,46 @@ export async function applyScheduledRents() {
   const rooms = await prisma.room.findMany({
     where: {
       propertyId,
-      scheduledRent:  { not: null },
-      rentUpdateDate: { lte: today },
+      OR: [
+        { scheduledRent: { not: null }, rentUpdateDate: { lte: today } },
+        { nonResidentScheduled: { not: null }, nonResidentRentDate: { lte: today } },
+      ],
     },
-    select: { id: true, scheduledRent: true },
+    select: {
+      id: true,
+      scheduledRent: true,
+      rentUpdateDate: true,
+      nonResidentScheduled: true,
+      nonResidentRentDate: true,
+    },
   })
 
   if (rooms.length === 0) return { updated: 0 }
 
   // 각 호실 업데이트 (baseRent 적용 + 예약 필드 초기화 + 활성 계약 rentAmount 동기화)
   await Promise.all(rooms.map(async room => {
-    const newRent = room.scheduledRent!
+    const data: Record<string, unknown> = {}
 
-    await prisma.room.update({
-      where: { id: room.id },
-      data: {
-        baseRent:       newRent,
-        scheduledRent:  null,
-        rentUpdateDate: null,
-      },
-    })
+    if (room.scheduledRent != null && room.rentUpdateDate && room.rentUpdateDate <= today) {
+      data.baseRent      = room.scheduledRent
+      data.scheduledRent = null
+      data.rentUpdateDate = null
+    }
+    if (room.nonResidentScheduled != null && room.nonResidentRentDate && room.nonResidentRentDate <= today) {
+      data.nonResidentRent      = room.nonResidentScheduled
+      data.nonResidentScheduled = null
+      data.nonResidentRentDate  = null
+    }
+    if (Object.keys(data).length === 0) return
 
-    // 활성 계약의 rentAmount도 동기화
-    await prisma.leaseTerm.updateMany({
-      where: {
-        roomId: room.id,
-        status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] },
-      },
-      data: { rentAmount: newRent },
-    })
+    await prisma.room.update({ where: { id: room.id }, data })
+
+    if (data.baseRent != null) {
+      await prisma.leaseTerm.updateMany({
+        where: { roomId: room.id, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        data: { rentAmount: data.baseRent as number },
+      })
+    }
   }))
 
   revalidatePath('/room-manage')

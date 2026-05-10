@@ -888,8 +888,8 @@ export default function TenantClient({
       <div className="flex gap-2">
         {(['active', 'past'] as const).map(tab => (
           <button key={tab} onClick={() => setFilter(tab)}
-            className={`px-4 py-2 text-sm font-medium rounded-xl transition-colors ${
-              filter === tab ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'
+            className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
+              filter === tab ? 'bg-[var(--coral)] text-white' : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
             }`}
           >
             {tab === 'active' ? `입주/예약자 (${activeCount})` : `퇴실자 내역 (${pastCount})`}
@@ -906,10 +906,10 @@ export default function TenantClient({
             : (v: string) => setPastFilter(v as PastFilter)
           return (
             <button key={f.key} onClick={() => set(f.key)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
                 cur === f.key
-                  ? 'bg-[var(--canvas)] text-[var(--warm-dark)]'
-                  : 'text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'
+                  ? 'bg-[var(--coral)] text-white'
+                  : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
               }`}
             >
               {f.label}
@@ -990,7 +990,7 @@ export default function TenantClient({
           return (
             <button key={sk} onClick={() => handleSort(sk)}
               className={`shrink-0 flex items-center gap-0.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                active ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)]'
+                active ? 'bg-[var(--coral)] text-white' : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
               }`}
             >
               {label}{active ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}

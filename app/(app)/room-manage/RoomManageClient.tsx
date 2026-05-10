@@ -32,6 +32,9 @@ type Room = {
   baseRent: number
   scheduledRent: number | null
   rentUpdateDate: Date | string | null
+  nonResidentRent: number | null
+  nonResidentScheduled: number | null
+  nonResidentRentDate: Date | string | null
   memo: string | null
   isVacant: boolean
   windowType: string | null
@@ -172,6 +175,12 @@ export default function RoomManageClient({
   const [showAddModal, setShowAddModal] = useState(false)
   const [editRoom, setEditRoom]         = useState<Room | null>(null)
   const [rentUpdateDateVal, setRentUpdateDateVal] = useState('')
+  // 비거주 이용료 상태 — 수정 모달
+  const [nrEnabled, setNrEnabled]         = useState(false)
+  const [nrDateVal, setNrDateVal]         = useState('')
+  // 비거주 이용료 상태 — 등록 모달
+  const [addNrEnabled, setAddNrEnabled]   = useState(false)
+  const [addNrDateVal, setAddNrDateVal]   = useState('')
   // 호실 상세에서 띄우는 인라인 모달 (입주자 정보 / 수납 정보) — 닫으면 원래 호실 상세로 복귀
   const [detailTenantInfoId, setDetailTenantInfoId] = useState<string | null>(null)
   const [detailSettlementLeaseId, setDetailSettlementLeaseId] = useState<string | null>(null)
@@ -267,14 +276,24 @@ export default function RoomManageClient({
     setEditRoom(room)
     setEditPhotos(room.photos)
     setRentUpdateDateVal(room.rentUpdateDate ? new Date(room.rentUpdateDate).toISOString().slice(0, 10) : '')
+    setNrEnabled(room.nonResidentRent != null)
+    setNrDateVal(room.nonResidentRentDate ? new Date(room.nonResidentRentDate).toISOString().slice(0, 10) : '')
     setError('')
   }
 
-  const closeEdit = () => { setEditRoom(null); setEditPhotos([]); setError('') }
+  const closeEdit = () => {
+    setEditRoom(null)
+    setEditPhotos([])
+    setNrEnabled(false)
+    setNrDateVal('')
+    setError('')
+  }
 
   const closeAddModal = () => {
     addPhotoPreviews.forEach(p => URL.revokeObjectURL(p.previewUrl))
     setAddPhotoPreviews([])
+    setAddNrEnabled(false)
+    setAddNrDateVal('')
     setShowAddModal(false)
     setError('')
   }
@@ -617,7 +636,7 @@ export default function RoomManageClient({
           return (
             <button key={sk} onClick={() => handleSortRoom(sk)}
               className={`shrink-0 flex items-center gap-0.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                active ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)]'
+                active ? 'bg-[var(--coral)] text-white' : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
               }`}
             >
               {label}{active ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
@@ -659,6 +678,11 @@ export default function RoomManageClient({
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${rs.badgeClass}`}>
                       {rs.label}
                     </span>
+                    {room.nonResidentRent != null && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200">
+                        비거주
+                      </span>
+                    )}
                   </div>
                   {tenant && <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant}</p>}
                   <div className="space-y-0.5 pt-0.5">
@@ -768,6 +792,26 @@ export default function RoomManageClient({
                       )}
                     </>
                   )}
+                  {r.nonResidentRent != null && (
+                    <>
+                      <div className="border-t border-[var(--warm-border)] my-1" />
+                      <DetailRow label="비거주 이용료" value={
+                        <span className="text-indigo-600 font-medium">
+                          <MoneyDisplay amount={r.nonResidentRent} />
+                        </span>
+                      } />
+                      {r.nonResidentScheduled != null && (
+                        <DetailRow label="비거주 예약료" value={
+                          <span className="text-amber-400">
+                            <MoneyDisplay amount={r.nonResidentScheduled} />
+                            {r.nonResidentRentDate && (
+                              <span className="text-[var(--warm-muted)] ml-1 text-xs">({fmtDate(r.nonResidentRentDate)} 적용)</span>
+                            )}
+                          </span>
+                        } />
+                      )}
+                    </>
+                  )}
                   {r.windowType && <DetailRow label="창문 타입" value={getWindowLabel(r.windowType)} />}
                   {r.direction  && <DetailRow label="방향"     value={getDirectionLabel(r.direction)} />}
                   {(r.areaPyeong || r.areaM2) && (
@@ -864,6 +908,42 @@ export default function RoomManageClient({
               <label className="text-xs font-medium text-[var(--warm-mid)]">기본 월 이용료</label>
               <MoneyInput name="baseRent" placeholder="0원" />
             </div>
+
+            {/* 비거주 이용료 설정 */}
+            <div className="border border-[var(--warm-border)] rounded-xl p-3.5 space-y-3">
+              <input type="hidden" name="nonResidentEnabled" value={addNrEnabled ? '1' : '0'} />
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-[var(--warm-mid)]">비거주 이용료 설정</p>
+                  <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">일반 이용료와 별도로 비거주자 전용 금액을 설정합니다</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input type="checkbox" className="sr-only" checked={addNrEnabled} onChange={e => setAddNrEnabled(e.target.checked)} />
+                  <div className={`w-9 h-5 rounded-full transition-colors ${addNrEnabled ? 'bg-[var(--coral)]' : 'bg-[var(--warm-border)]'}`} />
+                  <div className={`absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${addNrEnabled ? 'translate-x-4' : ''}`} />
+                </label>
+              </div>
+              {addNrEnabled && (
+                <div className="space-y-3 pt-1">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">비거주 월이용료</label>
+                    <MoneyInput name="nonResidentRent" placeholder="0원" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">예약 이용료 <span className="text-[var(--warm-muted)]">(선택)</span></label>
+                      <MoneyInput name="nonResidentScheduled" placeholder="미설정" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">적용 예정일</label>
+                      <DatePicker name="nonResidentRentDate" value={addNrDateVal} onChange={setAddNrDateVal}
+                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <SelectField label="창문 타입" name="windowType" options={windowTypeOptions}
                 hint="추가·관리는 환경설정에서 할 수 있습니다." />
@@ -936,6 +1016,42 @@ export default function RoomManageClient({
                   className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
               </div>
             </div>
+
+            {/* 비거주 이용료 설정 */}
+            <div className="border border-[var(--warm-border)] rounded-xl p-3.5 space-y-3">
+              <input type="hidden" name="nonResidentEnabled" value={nrEnabled ? '1' : '0'} />
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-[var(--warm-mid)]">비거주 이용료 설정</p>
+                  <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">일반 이용료와 별도로 비거주자 전용 금액을 설정합니다</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input type="checkbox" className="sr-only" checked={nrEnabled} onChange={e => setNrEnabled(e.target.checked)} />
+                  <div className={`w-9 h-5 rounded-full transition-colors ${nrEnabled ? 'bg-[var(--coral)]' : 'bg-[var(--warm-border)]'}`} />
+                  <div className={`absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${nrEnabled ? 'translate-x-4' : ''}`} />
+                </label>
+              </div>
+              {nrEnabled && (
+                <div className="space-y-3 pt-1">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">비거주 월이용료</label>
+                    <MoneyInput name="nonResidentRent" defaultValue={editRoom.nonResidentRent ?? undefined} placeholder="0원" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">예약 이용료 <span className="text-[var(--warm-muted)]">(선택)</span></label>
+                      <MoneyInput name="nonResidentScheduled" defaultValue={editRoom.nonResidentScheduled ?? undefined} placeholder="미설정" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">적용 예정일</label>
+                      <DatePicker name="nonResidentRentDate" value={nrDateVal} onChange={setNrDateVal}
+                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <SelectField label="창문 타입" name="windowType" options={windowTypeOptions} defaultValue={editRoom.windowType ?? ''}
                 hint="추가·관리는 환경설정에서 할 수 있습니다." />

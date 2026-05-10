@@ -175,9 +175,12 @@ model Room {
   roomNo     String     // TEXT — 하드코딩 금지, 영업장별 자유 구성
   type       String?
   memo       String?
-  baseRent       Int        @default(0)
-  scheduledRent  Int?                   // 예약된 변경 이용료 (가격 예약 시스템)
-  rentUpdateDate DateTime?  @db.Date    // 가격 적용 예정일
+  baseRent             Int        @default(0)
+  scheduledRent        Int?                   // 예약된 변경 이용료 (가격 예약 시스템)
+  rentUpdateDate       DateTime?  @db.Date    // 가격 적용 예정일
+  nonResidentRent      Int?                   // 비거주 월이용료 (null = 비거주 옵션 비활성)
+  nonResidentScheduled Int?                   // 비거주 예약 이용료
+  nonResidentRentDate  DateTime?  @db.Date    // 비거주 예약 이용료 적용 예정일
   isVacant   Boolean    @default(true)
   areaPyeong Float?
   areaM2     Float?

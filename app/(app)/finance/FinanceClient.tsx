@@ -1321,7 +1321,7 @@ export default function FinanceClient({
       <div id="finance-tabs" className="flex gap-1.5 overflow-x-auto scrollbar-hide scroll-mt-20">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors rounded-xl
+            className={`px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors rounded-full
               ${tab === t.key
                 ? 'bg-[var(--coral)] text-white'
                 : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'}`}>
