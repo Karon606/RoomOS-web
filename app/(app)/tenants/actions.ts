@@ -888,11 +888,38 @@ export async function getTenantRequests(tenantId: string) {
   })
 }
 
+export async function getAllRequestsForProperty() {
+  const { propertyId } = await getPropertyId()
+  return prisma.tenantRequest.findMany({
+    where: { propertyId },
+    orderBy: [{ resolvedAt: 'asc' }, { isUrgent: 'desc' }, { createdAt: 'desc' }],
+    select: {
+      id: true, content: true, requestDate: true,
+      targetDate: true, resolvedAt: true, resolutionMemo: true,
+      category: true, isUrgent: true, createdAt: true,
+      tenantId: true,
+      tenant: {
+        select: {
+          id: true, name: true,
+          leaseTerms: {
+            where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+            orderBy: { status: 'asc' },
+            take: 1,
+            select: { room: { select: { roomNo: true } } },
+          },
+        },
+      },
+    },
+  })
+}
+
 export async function createTenantRequest(data: {
   tenantId: string
   content: string
   requestDate: string
   targetDate: string | null
+  category?: string | null
+  isUrgent?: boolean
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -905,9 +932,12 @@ export async function createTenantRequest(data: {
         content:     data.content.trim(),
         requestDate: data.requestDate ? new Date(data.requestDate) : new Date(),
         targetDate:  data.targetDate  ? new Date(data.targetDate)  : null,
+        category:    data.category?.trim() || null,
+        isUrgent:    data.isUrgent ?? false,
       },
     })
     revalidatePath('/tenants')
+    revalidatePath('/requests')
     revalidatePath('/dashboard')
     return { ok: true }
   } catch (err) {
@@ -916,15 +946,19 @@ export async function createTenantRequest(data: {
   }
 }
 
-export async function resolveTenantRequest(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function resolveTenantRequest(id: string, memo?: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     await getPropertyId()
     await prisma.tenantRequest.update({
       where: { id },
-      data: { resolvedAt: new Date() },
+      data: {
+        resolvedAt: new Date(),
+        resolutionMemo: memo?.trim() || null,
+      },
     })
     revalidatePath('/tenants')
+    revalidatePath('/requests')
     revalidatePath('/dashboard')
     return { ok: true }
   } catch (err) {
@@ -995,6 +1029,7 @@ export async function deleteTenantRequest(id: string): Promise<{ ok: true } | { 
     await getPropertyId()
     await prisma.tenantRequest.delete({ where: { id } })
     revalidatePath('/tenants')
+    revalidatePath('/requests')
     revalidatePath('/dashboard')
     return { ok: true }
   } catch (err) {

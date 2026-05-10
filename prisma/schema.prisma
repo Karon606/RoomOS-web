@@ -561,13 +561,16 @@ model TenantStatusLog {
 // ============================================================
 
 model TenantRequest {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  content     String
-  requestDate DateTime  @default(now()) @db.Date
-  targetDate  DateTime? @db.Date
-  resolvedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  content        String
+  requestDate    DateTime  @default(now()) @db.Date
+  targetDate     DateTime? @db.Date
+  resolvedAt     DateTime?
+  resolutionMemo String?
+  category       String?
+  isUrgent       Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   tenantId   String @db.Uuid
   tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

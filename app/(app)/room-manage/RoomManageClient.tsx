@@ -15,6 +15,9 @@ import { useUrlState } from '@/lib/useUrlState'
 import { kstMonthStr } from '@/lib/kstDate'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 
+const fmtRoomNo = (no: string | null | undefined) =>
+  no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
+
 type Photo = {
   id: string
   driveFileId: string | null
@@ -204,7 +207,7 @@ export default function RoomManageClient({
     if (room.scheduledRent == null) return
     const diff = room.scheduledRent - room.baseRent
     const dirLabel = diff > 0 ? '인상' : diff < 0 ? '인하' : '동결'
-    const ok = confirm(`${room.roomNo}호 예정 가격을 즉시 적용할까요?\n\n기존 ${room.baseRent.toLocaleString()}원 → ${dirLabel} ${room.scheduledRent.toLocaleString()}원`)
+    const ok = confirm(`${fmtRoomNo(room.roomNo)} 예정 가격을 즉시 적용할까요?\n\n기존 ${room.baseRent.toLocaleString()}원 → ${dirLabel} ${room.scheduledRent.toLocaleString()}원`)
     if (!ok) return
     startTransition(async () => {
       const res = await withSave(() => applyScheduledRentNow(room.id), { success: '예정 가격 적용됨' })
@@ -347,10 +350,10 @@ export default function RoomManageClient({
   }
 
   const handleDelete = async (id: string, roomNo: string) => {
-    if (!confirm(`${roomNo}호를 삭제하시겠습니까?`)) return
+    if (!confirm(`${fmtRoomNo(roomNo)}를 삭제하시겠습니까?`)) return
     setError('')
     startTransition(async () => {
-      const res = await withSave(() => deleteRoom(id), { success: `${roomNo}호 삭제됨` })
+      const res = await withSave(() => deleteRoom(id), { success: `${fmtRoomNo(roomNo)} 삭제됨` })
       if (!res.ok) { setError(res.error); return }
       closeDetail()
       window.location.reload()
@@ -652,7 +655,7 @@ export default function RoomManageClient({
                 {/* 정보 */}
                 <div className="flex-1 p-4 min-w-0 space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-base font-bold text-[var(--coral)]">{room.roomNo}호</span>
+                    <span className="text-base font-bold text-[var(--coral)]">{fmtRoomNo(room.roomNo)}</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${rs.badgeClass}`}>
                       {rs.label}
                     </span>
@@ -690,7 +693,7 @@ export default function RoomManageClient({
                 {/* 썸네일 (오른쪽) */}
                 <div className="w-24 sm:w-28 shrink-0 bg-[var(--canvas)]">
                   {thumb ? (
-                    <img src={thumb.storageUrl} alt={`${room.roomNo}호`} className="w-full h-full object-cover" />
+                    <img src={thumb.storageUrl} alt={fmtRoomNo(room.roomNo)} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: 0.4 }}>
@@ -718,7 +721,7 @@ export default function RoomManageClient({
               {/* 헤더 */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
                 <div className="flex items-center gap-2.5">
-                  <h2 className="text-base font-bold text-[var(--warm-dark)]">{r.roomNo}호</h2>
+                  <h2 className="text-base font-bold text-[var(--warm-dark)]">{fmtRoomNo(r.roomNo)}</h2>
                   {(() => { const rs = getRoomStatus(r); return (
                     <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${rs.badgeClass}`}>{rs.label}</span>
                   )})()}
@@ -913,7 +916,7 @@ export default function RoomManageClient({
 
       {/* ── 호실 수정 모달 ──────────────────────────────────────────── */}
       {editRoom && (
-        <Modal title={`${editRoom.roomNo}호 수정`} onClose={closeEdit}>
+        <Modal title={`${fmtRoomNo(editRoom.roomNo)} 수정`} onClose={closeEdit}>
           <form onSubmit={handleUpdate} className="space-y-4">
             <input type="hidden" name="id" value={editRoom.id} />
             <Field label="호실 번호 *" name="roomNo" defaultValue={editRoom.roomNo} />
@@ -1326,7 +1329,7 @@ function RoomMgrTenantInfoModal({ tenantId, onClose, onBack }: { tenantId: strin
                 <h3 className="text-xs font-semibold text-[var(--warm-mid)] pb-1 border-b border-[var(--warm-border)]">기본 정보</h3>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                   <RmInfoCol label="이름" value={info.name} />
-                  <RmInfoCol label="호실" value={lease?.room?.roomNo ? `${lease.room.roomNo}호` : '—'} />
+                  <RmInfoCol label="호실" value={fmtRoomNo(lease?.room?.roomNo)} />
                   <RmInfoCol label="성별" value={info.gender === 'MALE' ? '남성' : info.gender === 'FEMALE' ? '여성' : '—'} />
                   <RmInfoCol label="국적" value={info.nationality ?? '—'} />
                   <RmInfoCol label="직업" value={info.job ?? '—'} />
@@ -1409,7 +1412,7 @@ function RoomMgrSettlementInfoModal({
                 title="호실 정보로 돌아가기">‹</button>
             )}
             <h2 className="text-base font-bold text-[var(--warm-dark)]">
-              {info ? `${info.roomNo}호 — ${info.tenantName ?? ''}` : '수납 정보'}
+              {info ? `${fmtRoomNo(info.roomNo)} — ${info.tenantName ?? ''}` : '수납 정보'}
             </h2>
           </div>
           <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
