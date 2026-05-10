@@ -330,6 +330,8 @@ export default function TenantClient({
   const [newContent, setNewContent]           = useState('')
   const [newReqDate, setNewReqDate]           = useState(() => kstYmdStr())
   const [newTargetDate, setNewTargetDate]     = useState('')
+  const [newCategory, setNewCategory]         = useState<string>('')
+  const [newUrgent, setNewUrgent]             = useState(false)
   const [reqPending, startReqTransition]      = useTransition()
   // 처리 모드 — 어떤 요청을 지금 '완료 처리' 중인지 + 입력 중인 처리 메모
   const [resolvingId, setResolvingId]         = useState<string | null>(null)
@@ -1740,8 +1742,10 @@ export default function TenantClient({
                               content:     newContent,
                               requestDate: newReqDate,
                               targetDate:  newTargetDate || null,
+                              category:    newCategory || null,
+                              isUrgent:    newUrgent,
                             })
-                            setNewContent(''); setNewTargetDate('')
+                            setNewContent(''); setNewTargetDate(''); setNewCategory(''); setNewUrgent(false)
                             setNewReqDate(kstYmdStr())
                             const updated = await getTenantRequests(detailTenant!.id)
                             setRequests(updated)
@@ -1799,6 +1803,23 @@ export default function TenantClient({
                                   <DatePicker value={newTargetDate} onChange={setNewTargetDate}
                                     className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-2 text-[11px] text-[var(--warm-dark)] min-w-0" />
                                 </div>
+                              </div>
+                              {/* 카테고리 + 긴급 */}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <select value={newCategory} onChange={e => setNewCategory(e.target.value)}
+                                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-[11px] text-[var(--warm-dark)] outline-none">
+                                  <option value="">카테고리 선택</option>
+                                  <option value="시설">시설</option>
+                                  <option value="소음">소음</option>
+                                  <option value="청결">청결</option>
+                                  <option value="편의">편의</option>
+                                  <option value="기타">기타</option>
+                                </select>
+                                <label className="inline-flex items-center gap-1.5 text-[11px] cursor-pointer text-[var(--warm-mid)]">
+                                  <input type="checkbox" checked={newUrgent} onChange={e => setNewUrgent(e.target.checked)}
+                                    className="accent-[var(--coral)]" />
+                                  🚨 긴급
+                                </label>
                               </div>
                               <button onClick={handleCreate} disabled={reqPending || !newContent.trim()}
                                 className="w-full py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"

@@ -882,8 +882,63 @@ export async function getTenantRequests(tenantId: string) {
     orderBy: { createdAt: 'desc' },
     select: {
       id: true, content: true, requestDate: true,
-      targetDate: true, resolvedAt: true, resolutionMemo: true, createdAt: true,
+      targetDate: true, resolvedAt: true, resolutionMemo: true,
+      category: true, isUrgent: true, createdAt: true,
       tenant: { select: { name: true } },
+    },
+  })
+}
+
+// 영업장 전체 계약서 — /contracts 통합 페이지용
+export async function getAllContractsForProperty() {
+  const { propertyId } = await getPropertyId()
+  const rows = await prisma.contractFile.findMany({
+    where: { propertyId },
+    orderBy: [{ signedAt: 'desc' }, { createdAt: 'desc' }],
+    select: {
+      id: true, driveFileId: true, fileName: true, source: true,
+      signedAt: true, createdAt: true,
+      tenant: {
+        select: {
+          id: true, name: true,
+          leaseTerms: {
+            where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+            orderBy: { status: 'asc' },
+            take: 1,
+            select: { room: { select: { roomNo: true } } },
+          },
+        },
+      },
+    },
+  })
+  return rows.map(r => ({
+    ...r,
+    viewUrl: `https://drive.google.com/file/d/${r.driveFileId}/view`,
+  }))
+}
+
+// 영업장 전체 요청 — /requests 통합 페이지용
+export async function getAllRequestsForProperty() {
+  const { propertyId } = await getPropertyId()
+  return prisma.tenantRequest.findMany({
+    where: { propertyId },
+    orderBy: [{ resolvedAt: 'asc' }, { isUrgent: 'desc' }, { createdAt: 'desc' }],
+    select: {
+      id: true, content: true, requestDate: true,
+      targetDate: true, resolvedAt: true, resolutionMemo: true,
+      category: true, isUrgent: true, createdAt: true,
+      tenantId: true,
+      tenant: {
+        select: {
+          id: true, name: true,
+          leaseTerms: {
+            where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+            orderBy: { status: 'asc' },
+            take: 1,
+            select: { room: { select: { roomNo: true } } },
+          },
+        },
+      },
     },
   })
 }
@@ -893,6 +948,8 @@ export async function createTenantRequest(data: {
   content: string
   requestDate: string
   targetDate: string | null
+  category?: string | null
+  isUrgent?: boolean
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -905,9 +962,12 @@ export async function createTenantRequest(data: {
         content:     data.content.trim(),
         requestDate: data.requestDate ? new Date(data.requestDate) : new Date(),
         targetDate:  data.targetDate  ? new Date(data.targetDate)  : null,
+        category:    data.category?.trim() || null,
+        isUrgent:    data.isUrgent ?? false,
       },
     })
     revalidatePath('/tenants')
+    revalidatePath('/requests')
     revalidatePath('/dashboard')
     return { ok: true }
   } catch (err) {
@@ -928,6 +988,7 @@ export async function resolveTenantRequest(id: string, resolutionMemo?: string):
       },
     })
     revalidatePath('/tenants')
+    revalidatePath('/requests')
     revalidatePath('/dashboard')
     return { ok: true }
   } catch (err) {
@@ -998,6 +1059,7 @@ export async function deleteTenantRequest(id: string): Promise<{ ok: true } | { 
     await getPropertyId()
     await prisma.tenantRequest.delete({ where: { id } })
     revalidatePath('/tenants')
+    revalidatePath('/requests')
     revalidatePath('/dashboard')
     return { ok: true }
   } catch (err) {
