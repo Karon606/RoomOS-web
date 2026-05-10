@@ -1704,7 +1704,16 @@ export default function TenantClient({
                                 <InfoItem label="결제 수단"      value={lease.payMethod ?? '—'} />
                                 <InfoItem label="현금영수증"     value={lease.cashReceipt ?? '—'} />
                                 <InfoItem label="방문 경로"      value={lease.visitRoute ?? '—'} />
-                                <InfoItem label="희망 이동 호실" value={lease.wishRooms ?? '—'} />
+                                <InfoItem label="희망 이동 호실" value={(() => {
+                                  if (lease.wishRooms) return lease.wishRooms
+                                  const cond = parseWishConditions(lease.wishConditions)
+                                  const parts: string[] = []
+                                  if (cond.floor) parts.push(`${cond.floor}층`)
+                                  if (cond.windowType) parts.push(WISH_WINDOW_LABEL[cond.windowType] ?? cond.windowType)
+                                  if (cond.type) parts.push(cond.type)
+                                  if (cond.direction) parts.push(WISH_DIR_LABEL[cond.direction] ?? cond.direction)
+                                  return parts.length > 0 ? `조건: ${parts.join(' · ')}` : '—'
+                                })()} />
                                 {lease.contractUrl && (
                                   <InfoItem label="계약서" value={
                                     <a href={lease.contractUrl} target="_blank" rel="noopener noreferrer"
@@ -2687,10 +2696,11 @@ function parseWishConditions(raw: string | null | undefined): WishConditionsObj 
   try { return JSON.parse(raw) as WishConditionsObj } catch { return {} }
 }
 
-function WishSelector({ rooms, lease, allowConditions }: {
+function WishSelector({ rooms, lease, allowConditions, isMove }: {
   rooms: Room[]
   lease?: LeaseTerm
-  allowConditions: boolean   // 예약/투어 단계에서 true (호실 미지정 + 조건만 입력 가능)
+  allowConditions: boolean
+  isMove?: boolean           // ACTIVE/NON_RESIDENT 상태 — 라벨을 "이동 희망"으로
 }) {
   const initialRooms = (lease?.wishRooms ?? '').split(',').map(s => s.trim()).filter(Boolean)
   const initialCond  = parseWishConditions(lease?.wishConditions)
@@ -2767,7 +2777,7 @@ function WishSelector({ rooms, lease, allowConditions }: {
   return (
     <div className="space-y-2">
       <label className="text-xs font-medium text-[var(--warm-mid)]">
-        입실 희망 {allowConditions ? '호실 / 조건' : '호실'} <span className="font-normal opacity-60">(공실/퇴실 예정 시 대시보드 알림)</span>
+        {isMove ? '이동 희망' : '입실 희망'} {allowConditions ? '호실 / 조건' : '호실'} <span className="font-normal opacity-60">(공실/퇴실 예정 시 대시보드 알림)</span>
       </label>
       <input type="hidden" name="wishRooms"      value={wishRoomsValue} />
       <input type="hidden" name="wishConditions" value={wishConditionsValue} />
@@ -3287,7 +3297,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
         <WishSelector
           rooms={rooms}
           lease={lease}
-          allowConditions={statusVal === 'RESERVED' || statusVal === 'WAITING_TOUR' || statusVal === 'TOUR_DONE'}
+          allowConditions={true}
+          isMove={statusVal === 'ACTIVE' || statusVal === 'NON_RESIDENT'}
         />
         <Field label="계약서 링크" name="contractUrl" type="url" defaultValue={lease?.contractUrl ?? ''} placeholder="https://..." />
       </FormSection>
