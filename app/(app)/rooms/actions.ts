@@ -262,9 +262,17 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const todayKstEnd = new Date(kst.year, kst.month - 1, kst.day, 23, 59, 59, 999)
 
     // viewMonth 격리 — 그 달의 정산만 (이월액은 별도)
-    // 과거 청구 가능 월수 (acqMonth ~ viewMonth-1, acqMonthPrePaid 제외)
+    // 과거 청구 가능 월수: 인수일 vs 입주일 중 더 늦은 달부터 viewMonth-1까지
+    // (인수 이후 신규 등록된 입주자가 이전 기간을 미납으로 잘못 인식하는 버그 방지)
+    const leaseStart  = lease.moveInDate ? new Date(lease.moveInDate) : null
+    const lsYyyy      = leaseStart ? leaseStart.getFullYear() : 0
+    const lsMm        = leaseStart ? leaseStart.getMonth() + 1 : 0
+    const useLeaseStart = leaseStart && (lsYyyy > acqYyyy || (lsYyyy === acqYyyy && lsMm > acqMm))
+    const loopStartYyyy = useLeaseStart ? lsYyyy   : acqYyyy
+    const loopStartMm   = useLeaseStart ? lsMm     : acqMm
+
     let pastBillable = 0
-    for (let cy = acqYyyy, cmn = acqMm; cy < yyyy || (cy === yyyy && cmn < mm); ) {
+    for (let cy = loopStartYyyy, cmn = loopStartMm; cy < yyyy || (cy === yyyy && cmn < mm); ) {
       const ms = `${cy}-${String(cmn).padStart(2, '0')}`
       const skip = ms === acqMonthStr && acqMonthPrePaid
       if (!skip) pastBillable++
