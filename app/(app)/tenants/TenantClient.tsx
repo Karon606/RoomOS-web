@@ -114,7 +114,7 @@ function loadColWidths(): Record<string, number> | null {
 
 const STATUS_LABEL: Record<string, string> = {
   ACTIVE: '거주중', RESERVED: '예약', CHECKOUT_PENDING: '퇴실 예정',
-  CHECKED_OUT: '퇴실', WAITING_TOUR: '투어 대기', TOUR_DONE: '투어 완료', CANCELLED: '취소',
+  CHECKED_OUT: '퇴실', WAITING_TOUR: '투어 대기', TOUR_DONE: '투어 완료', CANCELLED: '예약취소',
   NON_RESIDENT: '비거주자',
 }
 const STATUS_COLOR: Record<string, string> = {
@@ -891,7 +891,7 @@ export default function TenantClient({
         {([
           { key: 'active',  label: `입주/예약자 (${activeCount})` },
           { key: 'past',    label: `퇴실자 내역 (${pastCount})` },
-          { key: 'dropped', label: `드랍 내역 (${droppedCount})` },
+          { key: 'dropped', label: `예약취소 내역 (${droppedCount})` },
         ] as const).map(tab => (
           <button key={tab.key} onClick={() => setFilter(tab.key)}
             className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
@@ -2944,7 +2944,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   }, [statusVal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // WAITING_TOUR/TOUR_DONE/RESERVED는 호실 필수 아님 (단, 예약 확정 시 RESERVED는 호실 필수)
-  const roomIsOptional = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'].includes(statusVal) && !(statusVal === 'RESERVED' && reservationConfirmed)
+  const roomIsOptional = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'].includes(statusVal) && !(statusVal === 'RESERVED' && reservationConfirmed)
   // ACTIVE, CHECKOUT_PENDING + 예약 확정 → 입주중/퇴실예정 방만 비활성화 (공실 + 퇴실예정만 선택 가능)
   const activeOnlyStatus = ['ACTIVE', 'CHECKOUT_PENDING'].includes(statusVal) || (statusVal === 'RESERVED' && reservationConfirmed)
   const isWaitingTourStatus = statusVal === 'WAITING_TOUR' || (statusVal === 'RESERVED' && reservationConfirmed)
@@ -3050,7 +3050,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               <option value="WAITING_TOUR">투어 대기</option>
               <option value="TOUR_DONE">투어 완료</option>
               <option value="RESERVED">예약</option>
-              <option value="CANCELLED">취소</option>
+              <option value="CANCELLED">예약취소</option>
             </select>
           </div>
           <SelectField label="선납/후납" name="paymentTiming" defaultValue={lease?.paymentTiming ?? 'PREPAID'}>

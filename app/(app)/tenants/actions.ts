@@ -113,7 +113,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const isShortTerm          = formData.get('isShortTerm') === 'true'
 
   const isReservedConfirmed = status === 'RESERVED' && reservationConfirmed
-  const roomOptionalStatuses = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] as string[]
+  const roomOptionalStatuses = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'] as string[]
   if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
   if (!roomId && !roomOptionalStatuses.includes(status)) return { ok: false, error: '호실을 선택해주세요.' }
   if (isReservedConfirmed) {
