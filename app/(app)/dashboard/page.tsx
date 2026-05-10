@@ -243,7 +243,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         rentUpdateDate: true,
         leaseTerms: {
           where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
-          select: { tenant: { select: { id: true, name: true } }, status: true },
+          select: { id: true, tenant: { select: { id: true, name: true } }, status: true },
           orderBy: { createdAt: 'desc' },
         },
       },
@@ -741,9 +741,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     baseRent:      r.baseRent,
     scheduledRent: r.scheduledRent,
     rentUpdateDate: r.rentUpdateDate ? new Date(r.rentUpdateDate).toISOString().slice(0, 10) : null,
-    tenantName:    r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.tenant.name ?? null,
-    tenantId:      r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.tenant.id ?? null,
-    tenantStatus:  r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.status ?? null,
+    tenantName:       r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.tenant.name ?? null,
+    tenantId:         r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.tenant.id ?? null,
+    tenantStatus:     r.leaseTerms.find(l => ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'].includes(l.status))?.status ?? null,
+    nonResidentName:  r.leaseTerms.find(l => l.status === 'NON_RESIDENT')?.tenant.name ?? null,
+    nonResidentId:    r.leaseTerms.find(l => l.status === 'NON_RESIDENT')?.tenant.id ?? null,
   }))
 
   // ── 누적 미납 상세 — 발생주의(targetMonth 기반) ──────────
@@ -895,6 +897,21 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const unpaidRoomNosForView = Array.from(new Set(unpaidLeases.map(l => l.roomNo)))
   // 납부 예정 호실 — dueDay 미도래 + 아직 받지 않음 (방 현황 그리드 4번째 상태)
   const awaitingRoomNosForView = Array.from(new Set(awaitingLeases.map(l => l.roomNo)))
+
+  // ── 비거주자 현황 ────────────────────────────────────────────
+  const nonResidentItems = roomsWithTenants.flatMap(r =>
+    r.leaseTerms
+      .filter(l => l.status === 'NON_RESIDENT')
+      .map(l => ({
+        roomNo:     r.roomNo,
+        tenantId:   l.tenant.id,
+        tenantName: l.tenant.name,
+        baseRent:   r.baseRent,
+        payStatus:  (overdueByLease[l.id] ?? 0) > 0 ? 'unpaid'   as const
+                  : (upcomingByLease[l.id] ?? 0) > 0 ? 'awaiting' as const
+                  : 'paid' as const,
+      }))
+  )
 
   // ── 알림 ────────────────────────────────────────────────────
   const alertItems: DashboardData['alerts'] = []
@@ -1292,6 +1309,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     unpaidLeases,
     unpaidRoomNosForView,
     awaitingRoomNosForView,
+    nonResidentItems,
   }
 
   return dashboardData

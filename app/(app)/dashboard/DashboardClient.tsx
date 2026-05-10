@@ -52,7 +52,8 @@ export type DashboardData = {
   genderDist:        { label: string; count: number; percent: number }[]
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
-  rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
+  rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; nonResidentName: string | null; nonResidentId: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
+  nonResidentItems:  { roomNo: string; tenantId: string; tenantName: string; baseRent: number; payStatus: 'paid' | 'awaiting' | 'unpaid' }[]
   alerts:            { category?: 'unpaid' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string; sortKey?: number }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
@@ -2069,21 +2070,30 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                             const unpaidRooms = new Set(data.unpaidRoomNosForView)
                             const awaitingRooms = new Set(data.awaitingRoomNosForView)
                             return data.rooms.map(r => {
-                              const isUnpaid = !r.isVacant && unpaidRooms.has(r.roomNo)
-                              const isAwaiting = !r.isVacant && !isUnpaid && awaitingRooms.has(r.roomNo)
+                              const hasNonResident = !!r.nonResidentName
+                              // 공실이지만 비거주자가 있는 방: 납부 상태는 nonResidentItems 기준
+                              const nonResItem = r.isVacant && hasNonResident
+                                ? data.nonResidentItems.find(n => n.roomNo === r.roomNo) : null
+                              const isUnpaid   = r.isVacant
+                                ? (nonResItem?.payStatus === 'unpaid')
+                                : unpaidRooms.has(r.roomNo)
+                              const isAwaiting = r.isVacant
+                                ? (nonResItem?.payStatus === 'awaiting')
+                                : (!isUnpaid && awaitingRooms.has(r.roomNo))
                               const rentMan = r.baseRent > 0 ? `${Math.round(r.baseRent / 10000)}만` : null
                               const nameParts = r.tenantName?.split(' ') ?? []
                               const displayName = r.isVacant
-                                ? '공실'
+                                ? (hasNonResident ? '공실 (비거주자)' : '공실')
                                 : nameParts.length >= 2 ? nameParts[1] : (r.tenantName ?? '거주중')
-                              // M7: 라이트/다크 자동 전환 status 토큰 사용
-                              const cellStyle = r.isVacant
+                              const cellStyle = (r.isVacant && !hasNonResident)
                                 ? { background: 'var(--status-vacant-bg)', color: 'var(--status-vacant-fg)' }
                                 : isUnpaid
                                   ? { background: 'var(--status-unpaid-bg)', color: 'var(--status-unpaid-fg)' }
                                   : isAwaiting
                                     ? { background: 'var(--status-await-bg)', color: 'var(--status-await-fg)' }
-                                    : { background: 'var(--status-paid-bg)', color: 'var(--status-paid-fg)' }
+                                    : (r.isVacant && hasNonResident)
+                                      ? { background: 'var(--status-vacant-bg)', color: 'var(--status-vacant-fg)' }
+                                      : { background: 'var(--status-paid-bg)', color: 'var(--status-paid-fg)' }
                               return (
                                 <div
                                   key={r.roomNo}
@@ -2092,7 +2102,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   style={cellStyle}
                                 >
                                   <span className="truncate w-full text-center font-bold" style={{ fontSize: 11 }}>{fmtRoomNo(r.roomNo)}</span>
-                                  <span className="truncate w-full text-center" style={{ fontSize: 10, fontWeight: 500 }}>{displayName}</span>
+                                  <span className="truncate w-full text-center" style={{ fontSize: 10, fontWeight: 500, lineHeight: 1.2 }}>{displayName}</span>
                                   {rentMan && <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
                                 </div>
                               )
@@ -2102,6 +2112,40 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                       </>
                     )}
                   </div>
+
+                  {/* 비거주자 현황 */}
+                  {data.nonResidentItems.length > 0 && (
+                    <div className="rounded-xl p-5 flex flex-col gap-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)' }}>
+                        비거주자 현황
+                        <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 6 }}>{data.nonResidentItems.length}명</span>
+                      </p>
+                      <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+                        {data.nonResidentItems.map(n => {
+                          const rentMan = n.baseRent > 0 ? `${Math.round(n.baseRent / 10000)}만` : null
+                          const nameParts = n.tenantName.split(' ')
+                          const shortName = nameParts.length >= 2 ? nameParts[1] : n.tenantName
+                          const cellStyle = n.payStatus === 'unpaid'
+                            ? { background: 'var(--status-unpaid-bg)', color: 'var(--status-unpaid-fg)' }
+                            : n.payStatus === 'awaiting'
+                              ? { background: 'var(--status-await-bg)', color: 'var(--status-await-fg)' }
+                              : { background: 'var(--status-paid-bg)', color: 'var(--status-paid-fg)' }
+                          return (
+                            <div
+                              key={n.tenantId}
+                              onClick={() => window.location.href = `/tenants?tenantId=${n.tenantId}`}
+                              className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[3px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
+                              style={cellStyle}
+                            >
+                              <span className="truncate w-full text-center font-bold" style={{ fontSize: 11 }}>{fmtRoomNo(n.roomNo)}</span>
+                              <span className="truncate w-full text-center" style={{ fontSize: 10, fontWeight: 500 }}>{shortName}</span>
+                              {rentMan && <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* 이달 손익 현황 */}
                   <div className="rounded-xl p-5 flex flex-col gap-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
