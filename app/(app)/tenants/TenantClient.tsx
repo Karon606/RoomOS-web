@@ -20,6 +20,9 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 
+const fmtRoomNo = (no: string | null | undefined) =>
+  no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
+
 // ── 타입 ─────────────────────────────────────────────────────────
 
 type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: number | null; isVacant: boolean; type: string | null; windowType: string | null; direction: string | null; currentLeaseStatus: string | null }
@@ -1130,7 +1133,7 @@ export default function TenantClient({
                 <button onClick={() => setRentChangeModal(null)} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
               </div>
               <p className="text-sm text-[var(--warm-mid)] leading-relaxed">
-                <span className="font-semibold text-[var(--warm-dark)]">{rentChangeModal.roomNo}호</span>가 공실로 변경됩니다. 예정된 가격 변동을 즉시 적용할까요?
+                <span className="font-semibold text-[var(--warm-dark)]">{fmtRoomNo(rentChangeModal.roomNo)}</span>가 공실로 변경됩니다. 예정된 가격 변동을 즉시 적용할까요?
               </p>
               <div className="bg-[var(--canvas)] rounded-xl px-3 py-2.5 text-sm flex items-center justify-center gap-2 flex-wrap">
                 <span className="text-[var(--warm-muted)]">기존</span>
@@ -1226,7 +1229,7 @@ export default function TenantClient({
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-2">
                     {lease?.room?.roomNo ? (
-                      <span className="text-sm font-bold text-[var(--coral)]">{lease.room.roomNo}호</span>
+                      <span className="text-sm font-bold text-[var(--coral)]">{fmtRoomNo(lease.room.roomNo)}</span>
                     ) : (() => {
                       // 호실 미배정자 — wishRooms > wishConditions > '미배정' 순으로 라벨 결정
                       const wishRoomList = (lease?.wishRooms ?? '').split(',').map(s => s.trim()).filter(Boolean)
@@ -1380,7 +1383,7 @@ export default function TenantClient({
                       style={{ maxWidth: colWidths.roomNo }}
                       onClick={e => { e.stopPropagation(); if (lease?.room?.id) setRoomDetailId(lease.room.id) }}>
                       <span className="block truncate text-[var(--coral)] cursor-pointer underline-offset-2 hover:underline">
-                        {lease?.room?.roomNo ? `${lease.room.roomNo}호` : '—'}
+                        {fmtRoomNo(lease?.room?.roomNo)}
                       </span>
                     </td>
                     {/* sticky — 이름 */}
@@ -1563,7 +1566,7 @@ export default function TenantClient({
                           <InfoSection title="기본 정보">
                             <InfoGrid>
                               <InfoItem label="이름"       value={<span className="font-semibold text-[var(--warm-dark)]">{t.name}</span>} />
-                              <InfoItem label="호실"       value={lease?.room?.roomNo ? `${lease.room.roomNo}호` : '—'} />
+                              <InfoItem label="호실"       value={fmtRoomNo(lease?.room?.roomNo)} />
                               {t.englishName && <InfoItem label="영어이름" value={t.englishName} />}
                               <InfoItem label="성별"       value={GENDER_LABEL[t.gender] ?? t.gender} />
                               <InfoItem label="국적"       value={t.nationality ? `${natFlag} ${t.nationality}` : '—'} />
@@ -2101,7 +2104,7 @@ export default function TenantClient({
               <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
                 <div>
                   <h2 className="text-base font-bold text-[var(--warm-dark)]">
-                    {lease.room?.roomNo ? `${lease.room.roomNo}호 — ` : ''}{tenant.name}
+                    {lease.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}{tenant.name}
                   </h2>
                   <p className="text-xs text-[var(--warm-muted)] mt-0.5">
                     {targetMonth} · 예정 {lease.rentAmount.toLocaleString()}원
@@ -2624,7 +2627,7 @@ export default function TenantClient({
             <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm p-6 space-y-3"
               onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between">
-                <h2 className="text-base font-bold text-[var(--warm-dark)]">{room?.roomNo}호 정보</h2>
+                <h2 className="text-base font-bold text-[var(--warm-dark)]">{fmtRoomNo(room?.roomNo)} 정보</h2>
                 <button onClick={() => setRoomDetailId(null)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl">✕</button>
               </div>
               {room ? (
@@ -2818,7 +2821,7 @@ function WishSelector({ rooms, lease, allowConditions }: {
             <option value="">호실 선택... {allowConditions ? '(선택사항, 최대 5개)' : '(최대 5개)'}</option>
             {filtered.filter(r => !selected.includes(r.roomNo)).map(r => (
               <option key={r.id} value={r.roomNo}>
-                {r.roomNo}호{r.isVacant ? ' (공실)' : ''}
+                {fmtRoomNo(r.roomNo)}{r.isVacant ? ' (공실)' : ''}
               </option>
             ))}
           </select>
@@ -2827,7 +2830,7 @@ function WishSelector({ rooms, lease, allowConditions }: {
             <div className="flex flex-wrap gap-2">
               {selected.map((roomNo, i) => (
                 <span key={roomNo} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--coral)]/20 text-[var(--coral)]">
-                  {WISH_RANK[i]} {roomNo}호
+                  {WISH_RANK[i]} {fmtRoomNo(roomNo)}
                   <button type="button" onClick={() => remove(roomNo)}
                     className="leading-none hover:text-red-400 transition-colors">×</button>
                 </span>
@@ -3044,7 +3047,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               return (
                 <option key={r.id} value={r.id} disabled={disableRoom}
                   style={isWaitingTourStatus && isCheckoutPending && !r.isVacant ? { fontWeight: 'bold' } : undefined}>
-                  {r.roomNo}호{isWaitingTourStatus && isCheckoutPending && !r.isVacant ? ' (퇴실예정)' : ''}
+                  {fmtRoomNo(r.roomNo)}{isWaitingTourStatus && isCheckoutPending && !r.isVacant ? ' (퇴실예정)' : ''}
                 </option>
               )
             })}
@@ -3366,7 +3369,7 @@ function SettlementInfoModal({
                 title="입주자 정보로 돌아가기">‹</button>
             )}
             <h2 className="text-base font-bold text-[var(--warm-dark)]">
-              {info ? `${info.roomNo}호 — ${info.tenantName ?? ''}` : '수납 정보'}
+              {info ? `${fmtRoomNo(info.roomNo)} — ${info.tenantName ?? ''}` : '수납 정보'}
             </h2>
           </div>
           <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
@@ -3440,7 +3443,7 @@ function RoomInfoSimpleModal({
                 className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors"
                 title="입주자 정보로 돌아가기">‹</button>
             )}
-            <h2 className="text-base font-bold text-[var(--warm-dark)]">{info?.roomNo}호</h2>
+            <h2 className="text-base font-bold text-[var(--warm-dark)]">{fmtRoomNo(info?.roomNo)}</h2>
             {info && (
               <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
                 ${info.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'}`}>
