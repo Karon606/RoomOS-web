@@ -1239,6 +1239,8 @@ export default function TenantClient({
                       if (cond.windowType) condParts.push(WISH_WINDOW_LABEL[cond.windowType] ?? cond.windowType)
                       if (cond.type) condParts.push(cond.type)
                       if (cond.direction) condParts.push(cond.direction)
+                      const minR = cond.minRent ?? 0; const maxR = cond.maxRent ?? 400000
+                      if (minR !== 0 || maxR !== 400000) condParts.push(`${(minR/10000).toFixed(0)}~${(maxR/10000).toFixed(0)}만`)
                       let label: string
                       if (wishRoomList.length > 0) {
                         label = `희망 ${wishRoomList[0]}호${wishRoomList.length > 1 ? ` 외 ${wishRoomList.length - 1}` : ''}`
@@ -1712,6 +1714,9 @@ export default function TenantClient({
                                   if (cond.windowType) parts.push(WISH_WINDOW_LABEL[cond.windowType] ?? cond.windowType)
                                   if (cond.type) parts.push(cond.type)
                                   if (cond.direction) parts.push(WISH_DIR_LABEL[cond.direction] ?? cond.direction)
+                                  const minR = cond.minRent ?? 0
+                                  const maxR = cond.maxRent ?? 400000
+                                  if (minR !== 0 || maxR !== 400000) parts.push(`${(minR/10000).toFixed(0)}~${(maxR/10000).toFixed(0)}만원`)
                                   return parts.length > 0 ? `조건: ${parts.join(' · ')}` : '—'
                                 })()} />
                                 {lease.contractUrl && (
@@ -2689,7 +2694,7 @@ function KeepAlertCheckbox({ defaultValue }: { defaultValue: boolean }) {
   )
 }
 
-type WishConditionsObj = { floor?: string; windowType?: string; type?: string; direction?: string }
+type WishConditionsObj = { floor?: string; windowType?: string; type?: string; direction?: string; minRent?: number; maxRent?: number }
 
 function parseWishConditions(raw: string | null | undefined): WishConditionsObj {
   if (!raw) return {}
@@ -2724,6 +2729,8 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
   const [condWindow, setCondWindow]     = useState(initialCond.windowType ?? '')
   const [condType, setCondType]         = useState(initialCond.type ?? '')
   const [condDirection, setCondDirection] = useState(initialCond.direction ?? '')
+  const [condMinRent, setCondMinRent]   = useState(initialCond.minRent ?? 0)
+  const [condMaxRent, setCondMaxRent]   = useState(initialCond.maxRent ?? 400000)
 
   // status 변경에 따른 allowConditions 토글 시 모드 재설정
   // 신규 등록은 status=ACTIVE로 시작 → allowConditions=false → mode='rooms'로 초기화됨.
@@ -2768,6 +2775,8 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
     if (condWindow)    condObj.windowType  = condWindow
     if (condType)      condObj.type        = condType
     if (condDirection) condObj.direction   = condDirection
+    condObj.minRent = condMinRent
+    condObj.maxRent = condMaxRent
   }
   // 조건 모드는 빈 객체("{}")라도 저장 — "조건 무관, 모든 빈 방 매칭" 의도
   const wishConditionsValue = mode === 'conditions' ? JSON.stringify(condObj) : ''
@@ -2870,6 +2879,14 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
               <option value="">방향 무관</option>
               {directions.map(d => <option key={d} value={d}>{WISH_DIR_LABEL[d] ?? d}</option>)}
             </select>
+          </div>
+          <div className="space-y-1">
+            <p className="text-[11px] text-[var(--warm-muted)]">이용료 범위</p>
+            <div className="flex items-center gap-2">
+              <MoneyInput value={condMinRent} onChange={setCondMinRent} placeholder="최소 0원" />
+              <span className="text-sm text-[var(--warm-muted)] flex-shrink-0">~</span>
+              <MoneyInput value={condMaxRent} onChange={setCondMaxRent} placeholder="최대 400,000원" />
+            </div>
           </div>
         </>
       )}
