@@ -96,12 +96,12 @@ const NAV_GROUPS = [
 // ── Logo variants ──────────────────────────────────────────────────
 // 가이드 § 01 WORDMARK: 통합 워드마크 (마크+텍스트 일체) 사용
 function LogoFull() {
-  return <RoomOSWordmark height={22} variant="light" />
+  return <RoomOSWordmark height={22} />
 }
 
 // 가이드 § 02 SYMBOL MARK: 선 마크만 (아이콘 크기 컨텍스트)
 function LogoMark() {
-  return <RoomOSWordmark height={30} variant="light" markOnly />
+  return <RoomOSWordmark height={30} markOnly />
 }
 
 // ── NavContent ─────────────────────────────────────────────────────
