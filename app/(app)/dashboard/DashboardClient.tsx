@@ -748,11 +748,13 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
     color: chartColor(i),
   }))
   const paymentSegments = [
-    { value: data.paidCount,   color: 'var(--persimmon)' },
-    { value: data.unpaidCount, color: 'var(--cream-3)' },
+    { value: data.paidCount,     color: 'var(--persimmon)' },
+    { value: data.upcomingCount, color: 'var(--sun)' },
+    { value: data.unpaidCount,   color: 'var(--cream-3)' },
   ]
-  const paymentRate = (data.paidCount + data.unpaidCount) > 0
-    ? Math.round((data.paidCount / (data.paidCount + data.unpaidCount)) * 100)
+  const paymentTotal = data.paidCount + data.upcomingCount + data.unpaidCount
+  const paymentRate = paymentTotal > 0
+    ? Math.round((data.paidCount / paymentTotal) * 100)
     : 0
 
   return (
@@ -879,6 +881,13 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                 <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>완납</span>
                 <span className="text-sm font-semibold" style={{ color: 'var(--persimmon)' }}>{data.paidCount}건</span>
               </div>
+              {data.upcomingCount > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: 'var(--sun)' }} />
+                  <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>수납예정</span>
+                  <span className="text-sm font-semibold" style={{ color: 'var(--sun)' }}>{data.upcomingCount}건</span>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: '#c4b5a5' }} />
                 <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>미납</span>
