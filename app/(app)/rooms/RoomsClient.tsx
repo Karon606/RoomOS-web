@@ -1321,9 +1321,16 @@ export default function RoomsClient({
                                 <div className="grid grid-cols-2 gap-2">
                                   <div className="space-y-1">
                                     <p className="text-[10px] text-[var(--warm-muted)]">납부방법</p>
-                                    <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
-                                      placeholder="계좌이체, 현금…"
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                                    <select value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                                      {!['계좌이체', '현금', '신용카드', '기타'].includes(editPayMethod) && editPayMethod && (
+                                        <option value={editPayMethod}>{editPayMethod}</option>
+                                      )}
+                                      <option value="계좌이체">계좌이체</option>
+                                      <option value="현금">현금</option>
+                                      <option value="신용카드">신용카드</option>
+                                      <option value="기타">기타</option>
+                                    </select>
                                   </div>
                                   <div className="space-y-1">
                                     <p className="text-[10px] text-[var(--warm-muted)]">메모</p>

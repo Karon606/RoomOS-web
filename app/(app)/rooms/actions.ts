@@ -340,7 +340,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       // viewMonth 이하 귀속분만 합산 (선납 = targetMonth > viewMonth은 제외)
       const totalReceivedAll = accrualThruRecords.reduce((s, p) => s + p.actualAmount, 0)
       let cumExpected = 0
-      for (let cy = acqYyyy, cmn = acqMm; cy < yyyy || (cy === yyyy && cmn <= mm); ) {
+      // pastBillable과 동일하게 loopStart(인수일 vs 입주일 중 더 늦은 달)부터 순회
+      for (let cy = loopStartYyyy, cmn = loopStartMm; cy < yyyy || (cy === yyyy && cmn <= mm); ) {
         const ms = `${cy}-${String(cmn).padStart(2, '0')}`
         const skip = ms === acqMonthStr && acqMonthPrePaid
         if (!skip) {
@@ -468,7 +469,13 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const rows = []
     if (primaryLease) rows.push(buildLeaseRow(room, primaryLease as LeaseWithOverride, null, null))
     if (nonResidentLease) rows.push(buildLeaseRow(room, nonResidentLease as LeaseWithOverride, null, null))
-    return rows
+    // 입주일이 viewMonth보다 미래인 행 제외 (예: 5월 11일 입주자가 4월 수납에 미납으로 표시되는 버그)
+    // RESERVED는 예외 — 입주 전에도 예약 확인용으로 표시
+    return rows.filter(row => {
+      if (row.status === 'RESERVED') return true
+      if (!row.moveInDate) return true
+      return row.moveInDate.slice(0, 7) <= targetMonth
+    })
   })
 }
 
@@ -503,6 +510,25 @@ async function findFirstUnpaidMonth(
     ? { y: cutoffDate.getFullYear(), m: cutoffDate.getMonth() + 1 }
     : null
 
+  // 납입일변경 이력에서 인수 시점의 원본 납부일 복원 (buildLeaseRow와 동일 로직)
+  // lease.dueDay는 변경 후 값일 수 있으므로 [납입일변경] 메모에서 원본을 추출
+  let baseDueDayNum = lease.dueDay?.includes('말') ? 31 : parseInt(lease.dueDay ?? '99', 10)
+  if (cutoffDate) {
+    const firstChangeMemo = await prisma.paymentRecord.findFirst({
+      where: { leaseTermId, memo: { contains: '[납입일변경]' } },
+      orderBy: { payDate: 'asc' },
+      select: { memo: true },
+    })
+    if (firstChangeMemo?.memo) {
+      const m = firstChangeMemo.memo.match(/\[납입일변경\]\s*([^일→]+?)일?\s*→/)
+      if (m) {
+        const t = m[1].trim()
+        const parsed = t.includes('말') ? 31 : Number(t)
+        if (!isNaN(parsed) && parsed > 0) baseDueDayNum = parsed
+      }
+    }
+  }
+
   while (cy < vy || (cy === vy && cmn <= vm)) {
     const ms = `${cy}-${String(cmn).padStart(2, '0')}`
     const records = await prisma.paymentRecord.findMany({
@@ -512,13 +538,12 @@ async function findFirstUnpaidMonth(
 
     // 인수월(cutoffDate가 속한 달): 양도인 자동 처리 검사
     if (cutoffDate && acqYearMonth && cy === acqYearMonth.y && cmn === acqYearMonth.m) {
-      const dueDayNum = lease.dueDay?.includes('말') ? 31 : parseInt(lease.dueDay ?? '99', 10)
       const cutoffDay = cutoffDate.getDate()
       const opPaid = records
         .filter(r => new Date(r.payDate) >= cutoffDate)
         .reduce((s, r) => s + r.actualAmount, 0)
       const totalPaid = records.reduce((s, r) => s + r.actualAmount, 0)
-      const dueBeforeCutoff = !isNaN(dueDayNum) && dueDayNum < cutoffDay
+      const dueBeforeCutoff = !isNaN(baseDueDayNum) && baseDueDayNum < cutoffDay
       const acqMonthAutoPaid = dueBeforeCutoff && opPaid === 0
       // 양도인이 받았거나(record 합으로 expected 충족) 자동 처리 조건이면 완납으로 본다
       if (totalPaid >= expectedAmount || acqMonthAutoPaid) {
