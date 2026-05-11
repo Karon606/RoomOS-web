@@ -66,6 +66,7 @@ export async function addRoom(formData: FormData): Promise<{ ok: true; id: strin
   })
   if (existing) return { ok: false, error: `${roomNo}호는 이미 존재합니다.` }
 
+  const floor      = (formData.get('floor') as string)?.trim() || null
   const windowType = (formData.get('windowType') as string) || null
   const direction  = (formData.get('direction') as string) || null
   const areaPyeong = formData.get('areaPyeong') ? Number(formData.get('areaPyeong')) : null
@@ -87,6 +88,7 @@ export async function addRoom(formData: FormData): Promise<{ ok: true; id: strin
       baseRent,
       memo:     memo || null,
       isVacant: true,
+      floor,
       windowType: windowType || null,
       direction:  direction || null,
       areaPyeong,
@@ -114,6 +116,7 @@ export async function updateRoom(formData: FormData) {
   const type    = formData.get('type') as string
   const baseRent = Number(formData.get('baseRent')) || 0
   const memo    = formData.get('memo') as string
+  const floor      = (formData.get('floor') as string)?.trim() || null
   const windowType = (formData.get('windowType') as string) || null
   const direction  = (formData.get('direction') as string) || null
   const areaPyeong = formData.get('areaPyeong') ? Number(formData.get('areaPyeong')) : null
@@ -143,6 +146,7 @@ export async function updateRoom(formData: FormData) {
       type:      type || null,
       baseRent,
       memo:      memo || null,
+      floor,
       windowType: windowType || null,
       direction:  direction || null,
       areaPyeong,

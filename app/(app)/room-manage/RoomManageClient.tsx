@@ -37,6 +37,7 @@ type Room = {
   nonResidentRentDate: Date | string | null
   memo: string | null
   isVacant: boolean
+  floor: string | null
   windowType: string | null
   direction: string | null
   areaPyeong: number | null
@@ -102,6 +103,12 @@ function getDirectionLabel(val: string) {
 function fmtDate(d: Date | string | null | undefined): string {
   if (!d) return '—'
   return new Date(d).toISOString().slice(0, 10)
+}
+
+function deriveFloor(roomNo: string): string {
+  const digits = roomNo.replace(/\D/g, '')
+  if (digits.length >= 3) return digits.slice(0, digits.length - 2)
+  return ''
 }
 
 export default function RoomManageClient({
@@ -175,6 +182,10 @@ export default function RoomManageClient({
   const [showAddModal, setShowAddModal] = useState(false)
   const [editRoom, setEditRoom]         = useState<Room | null>(null)
   const [rentUpdateDateVal, setRentUpdateDateVal] = useState('')
+  // 층 상태 — 등록·수정 모달
+  const [addRoomNoVal, setAddRoomNoVal]   = useState('')
+  const [addFloorVal, setAddFloorVal]     = useState('')
+  const [editFloorVal, setEditFloorVal]   = useState('')
   // 비거주 이용료 상태 — 수정 모달
   const [nrEnabled, setNrEnabled]         = useState(false)
   const [nrDateVal, setNrDateVal]         = useState('')
@@ -275,6 +286,7 @@ export default function RoomManageClient({
     setDetailRoom(null)
     setEditRoom(room)
     setEditPhotos(room.photos)
+    setEditFloorVal(room.floor ?? '')
     setRentUpdateDateVal(room.rentUpdateDate ? new Date(room.rentUpdateDate).toISOString().slice(0, 10) : '')
     setNrEnabled(room.nonResidentRent != null)
     setNrDateVal(room.nonResidentRentDate ? new Date(room.nonResidentRentDate).toISOString().slice(0, 10) : '')
@@ -284,6 +296,7 @@ export default function RoomManageClient({
   const closeEdit = () => {
     setEditRoom(null)
     setEditPhotos([])
+    setEditFloorVal('')
     setNrEnabled(false)
     setNrDateVal('')
     setError('')
@@ -294,6 +307,8 @@ export default function RoomManageClient({
     setAddPhotoPreviews([])
     setAddNrEnabled(false)
     setAddNrDateVal('')
+    setAddRoomNoVal('')
+    setAddFloorVal('')
     setShowAddModal(false)
     setError('')
   }
@@ -675,6 +690,11 @@ export default function RoomManageClient({
                 <div className="flex-1 p-4 min-w-0 space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="text-base font-bold text-[var(--coral)]">{fmtRoomNo(room.roomNo)}</span>
+                    {room.floor && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
+                        {room.floor}층
+                      </span>
+                    )}
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${rs.badgeClass}`}>
                       {rs.label}
                     </span>
@@ -812,6 +832,7 @@ export default function RoomManageClient({
                       )}
                     </>
                   )}
+                  {r.floor      && <DetailRow label="층"       value={`${r.floor}층`} />}
                   {r.windowType && <DetailRow label="창문 타입" value={getWindowLabel(r.windowType)} />}
                   {r.direction  && <DetailRow label="방향"     value={getDirectionLabel(r.direction)} />}
                   {(r.areaPyeong || r.areaM2) && (
@@ -902,7 +923,32 @@ export default function RoomManageClient({
       {showAddModal && (
         <Modal title="호실 등록" onClose={closeAddModal}>
           <form onSubmit={handleAdd} className="space-y-4">
-            <Field label="호실 번호 *" name="roomNo" placeholder="예: 101, A동-3, 옥탑방" />
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2 space-y-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">호실 번호 *</label>
+                <input
+                  name="roomNo"
+                  placeholder="예: 101, A동-3, 옥탑방"
+                  value={addRoomNoVal}
+                  onChange={e => {
+                    const val = e.target.value
+                    setAddRoomNoVal(val)
+                    setAddFloorVal(deriveFloor(val))
+                  }}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">층</label>
+                <input
+                  name="floor"
+                  placeholder="자동"
+                  value={addFloorVal}
+                  onChange={e => setAddFloorVal(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
+                />
+              </div>
+            </div>
             <TypeSection />
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">기본 월 이용료</label>
@@ -999,7 +1045,26 @@ export default function RoomManageClient({
         <Modal title={`${fmtRoomNo(editRoom.roomNo)} 수정`} onClose={closeEdit}>
           <form onSubmit={handleUpdate} className="space-y-4">
             <input type="hidden" name="id" value={editRoom.id} />
-            <Field label="호실 번호 *" name="roomNo" defaultValue={editRoom.roomNo} />
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2 space-y-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">호실 번호 *</label>
+                <input
+                  name="roomNo"
+                  defaultValue={editRoom.roomNo}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">층</label>
+                <input
+                  name="floor"
+                  placeholder="예: 1"
+                  value={editFloorVal}
+                  onChange={e => setEditFloorVal(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
+                />
+              </div>
+            </div>
             <TypeSection defaultValue={editRoom.type ?? ''} />
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">기본 월 이용료</label>

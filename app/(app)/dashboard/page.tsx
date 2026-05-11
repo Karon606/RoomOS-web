@@ -171,7 +171,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       include: {
         tenant: { select: { name: true, id: true } },
-        room:   { select: { roomNo: true, type: true, windowType: true, direction: true, baseRent: true } },
+        room:   { select: { roomNo: true, type: true, floor: true, windowType: true, direction: true, baseRent: true } },
       },
       orderBy: { expectedMoveOut: { sort: 'asc', nulls: 'last' } },
     }),
@@ -208,7 +208,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     // 희망 이동 호실용 공실 목록 (조건 매칭에 type/windowType/direction/baseRent 사용)
     prisma.room.findMany({
       where: { propertyId, isVacant: true },
-      select: { roomNo: true, type: true, windowType: true, direction: true, baseRent: true },
+      select: { roomNo: true, type: true, floor: true, windowType: true, direction: true, baseRent: true },
     }),
     // 희망 이동 호실/조건 계약 (예약/투어/거주중/퇴실예정 — 호실 또는 조건 보유자)
     prisma.leaseTerm.findMany({
@@ -234,6 +234,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         roomNo: true,
         isVacant: true,
         type: true,
+        floor: true,
         windowType: true,
         direction: true,
         areaPyeong: true,
@@ -577,16 +578,16 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   // ── 희망 호실/조건 알림 ──────────────────────────────────────
   // "공실"로 간주: 실제 공실(isVacant) + 퇴실 예정(CHECKOUT_PENDING) 호실
-  type TargetRoomInfo = { roomNo: string; type: string | null; windowType: string | null; direction: string | null; baseRent: number; isCheckoutPending: boolean }
+  type TargetRoomInfo = { roomNo: string; type: string | null; floor: string | null; windowType: string | null; direction: string | null; baseRent: number; isCheckoutPending: boolean }
   const vacantInfoMap = new Map<string, TargetRoomInfo>()
   for (const r of vacantRoomList) {
-    vacantInfoMap.set(r.roomNo, { roomNo: r.roomNo, type: r.type, windowType: r.windowType, direction: r.direction, baseRent: r.baseRent, isCheckoutPending: false })
+    vacantInfoMap.set(r.roomNo, { roomNo: r.roomNo, type: r.type, floor: r.floor ?? null, windowType: r.windowType, direction: r.direction, baseRent: r.baseRent, isCheckoutPending: false })
   }
   for (const l of moveOutLeases) {
     const r = l.room
     if (!r?.roomNo) continue
     if (vacantInfoMap.has(r.roomNo)) continue
-    vacantInfoMap.set(r.roomNo, { roomNo: r.roomNo, type: r.type, windowType: r.windowType, direction: r.direction, baseRent: r.baseRent ?? 0, isCheckoutPending: true })
+    vacantInfoMap.set(r.roomNo, { roomNo: r.roomNo, type: r.type, floor: r.floor ?? null, windowType: r.windowType, direction: r.direction, baseRent: r.baseRent ?? 0, isCheckoutPending: true })
   }
 
   const matchesConditions = (room: TargetRoomInfo, raw: string | null): boolean => {
@@ -595,7 +596,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     try { cond = JSON.parse(raw) } catch { return false }
     if (!cond) return false
     // 빈 객체 = 조건 무관 → 모든 빈 방 매칭
-    const roomFloor = (() => {
+    const roomFloor = room.floor ?? (() => {
       const n = room.roomNo.replace(/[^0-9]/g, '')
       return n.length >= 3 ? n.slice(0, n.length - 2) : ''
     })()
@@ -736,6 +737,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     roomNo:        r.roomNo,
     isVacant:      r.isVacant,
     type:          r.type,
+    floor:         r.floor as string | null,
     windowType:    r.windowType as string | null,
     direction:     r.direction as string | null,
     areaPyeong:    r.areaPyeong,

@@ -19,6 +19,7 @@ type RoomStatus = {
   roomId: string
   roomNo: string
   type: string | null
+  floor: string | null
   windowType: string | null
   isVacant: boolean
   tenantId: string | null
@@ -753,6 +754,7 @@ export default function RoomsClient({
               <div className="flex items-start justify-between">
                 <div className="flex items-baseline gap-1.5">
                   <span className="text-base font-bold text-[var(--coral)]">{fmtRoomNo(room.roomNo)}</span>
+                  {room.floor && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">{room.floor}층</span>}
                   {room.type && <span className="text-xs text-[var(--warm-muted)]">{room.type}</span>}
                 </div>
                 <div className="flex flex-col items-end gap-0.5">
@@ -911,7 +913,10 @@ export default function RoomsClient({
                   {/* sticky — 호실 */}
                   <td className="px-4 py-4 text-sm font-bold text-[var(--coral)] overflow-hidden sticky left-0 z-20 bg-[var(--cream)]"
                     style={{ width: colWidths.roomNo, minWidth: colWidths.roomNo, maxWidth: colWidths.roomNo }}>
-                    <span className="truncate block">{fmtRoomNo(room.roomNo)}</span>
+                    <div className="flex items-center gap-1 truncate">
+                      <span className="truncate">{fmtRoomNo(room.roomNo)}</span>
+                      {room.floor && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)] font-normal">{room.floor}층</span>}
+                    </div>
                   </td>
                   {/* sticky — 입주자 */}
                   <td className="px-4 py-4 text-sm font-medium text-[var(--warm-dark)] overflow-hidden sticky z-20 bg-[var(--cream)]"

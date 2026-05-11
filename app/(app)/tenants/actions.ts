@@ -30,7 +30,7 @@ export async function getTenants() {
         orderBy: { createdAt: 'desc' },
         take: 1,
         include: {
-          room: { select: { id: true, roomNo: true } },
+          room: { select: { id: true, roomNo: true, floor: true } },
           paymentRecords: {
             orderBy: { targetMonth: 'desc' },
             take: 12,
@@ -54,7 +54,7 @@ export async function getRoomsForSelect() {
     where: { propertyId },
     orderBy: { roomNo: 'asc' },
     select: {
-      id: true, roomNo: true, baseRent: true, scheduledRent: true, nonResidentRent: true, isVacant: true, type: true, windowType: true, direction: true,
+      id: true, roomNo: true, baseRent: true, scheduledRent: true, nonResidentRent: true, isVacant: true, type: true, floor: true, windowType: true, direction: true,
       leaseTerms: {
         where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] } },
         select: { status: true },

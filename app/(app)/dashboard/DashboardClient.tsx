@@ -52,7 +52,7 @@ export type DashboardData = {
   genderDist:        { label: string; count: number; percent: number }[]
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
-  rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; nonResidentName: string | null; nonResidentId: string | null; type: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
+  rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; nonResidentName: string | null; nonResidentId: string | null; type: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
   nonResidentItems:  { roomNo: string; tenantId: string; tenantName: string; baseRent: number; payStatus: 'paid' | 'awaiting' | 'unpaid' }[]
   alerts:            { category?: 'unpaid' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string; sortKey?: number }[]
   expectedExpense:   number
@@ -2101,7 +2101,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[3px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
                                   style={cellStyle}
                                 >
-                                  <span className="truncate w-full text-center font-bold" style={{ fontSize: 11 }}>{fmtRoomNo(r.roomNo)}</span>
+                                  <div className="flex items-center justify-center gap-0.5 w-full">
+                                    <span className="truncate font-bold" style={{ fontSize: 11 }}>{fmtRoomNo(r.roomNo)}</span>
+                                    {r.floor && <span style={{ fontSize: 9, opacity: 0.7 }}>{r.floor}F</span>}
+                                  </div>
                                   <span className="truncate w-full text-center" style={{ fontSize: 10, fontWeight: 500, lineHeight: 1.2 }}>{displayName}</span>
                                   {rentMan && <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
                                 </div>

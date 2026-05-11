@@ -25,7 +25,7 @@ const fmtRoomNo = (no: string | null | undefined) =>
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
-type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: number | null; nonResidentRent: number | null; isVacant: boolean; type: string | null; windowType: string | null; direction: string | null; currentLeaseStatus: string | null }
+type Room = { id: string; roomNo: string; baseRent: number; scheduledRent: number | null; nonResidentRent: number | null; isVacant: boolean; type: string | null; floor: string | null; windowType: string | null; direction: string | null; currentLeaseStatus: string | null }
 
 type Contact = {
   id: string; contactType: string; contactValue: string
@@ -56,7 +56,7 @@ type LeaseTerm = {
   payMethod: string | null; cashReceipt: string | null
   registrationStatus: string; contractUrl: string | null
   wishRooms: string | null; wishConditions: string | null; keepAlertAfterInquiry: boolean; visitRoute: string | null
-  room: { id: string; roomNo: string } | null
+  room: { id: string; roomNo: string; floor: string | null } | null
   paymentRecords: PaymentRecord[]
 }
 
@@ -1235,7 +1235,10 @@ export default function TenantClient({
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-2">
                     {lease?.room?.roomNo ? (
-                      <span className="text-sm font-bold text-[var(--coral)]">{fmtRoomNo(lease.room.roomNo)}</span>
+                      <>
+                        <span className="text-sm font-bold text-[var(--coral)]">{fmtRoomNo(lease.room.roomNo)}</span>
+                        {lease.room.floor && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">{lease.room.floor}층</span>}
+                      </>
                     ) : (() => {
                       // 호실 미배정자 — wishRooms > wishConditions > '미배정' 순으로 라벨 결정
                       const wishRoomList = (lease?.wishRooms ?? '').split(',').map(s => s.trim()).filter(Boolean)
@@ -2754,13 +2757,14 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowConditions])
 
-  const floors     = [...new Set(rooms.map(r => getFloor(r.roomNo)).filter(Boolean))].sort((a, b) => Number(a) - Number(b))
+  const getRoomFloor = (r: Room) => r.floor || getFloor(r.roomNo)
+  const floors     = [...new Set(rooms.map(r => getRoomFloor(r)).filter(Boolean))].sort((a, b) => Number(a) - Number(b))
   const windowTypes = [...new Set(rooms.map(r => r.windowType).filter(Boolean))] as string[]
   const types      = [...new Set(rooms.map(r => r.type).filter(Boolean))] as string[]
   const directions = [...new Set(rooms.map(r => r.direction).filter(Boolean))] as string[]
 
   const filtered = rooms.filter(r => {
-    if (floorF && getFloor(r.roomNo) !== floorF) return false
+    if (floorF && getRoomFloor(r) !== floorF) return false
     if (windowF && r.windowType !== windowF) return false
     if (typeF && r.type !== typeF) return false
     if (directionF && r.direction !== directionF) return false

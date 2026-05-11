@@ -184,6 +184,7 @@ model Room {
   isVacant   Boolean    @default(true)
   areaPyeong Float?
   areaM2     Float?
+  floor      String?                    // 층 (자동 유추 또는 수동 입력)
   windowType String?
   direction  String?
   createdAt     DateTime @default(now())
