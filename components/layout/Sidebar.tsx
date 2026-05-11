@@ -94,29 +94,14 @@ const NAV_GROUPS = [
 ]
 
 // ── Logo variants ──────────────────────────────────────────────────
+// 가이드 § 01 WORDMARK: 통합 워드마크 (마크+텍스트 일체) 사용
 function LogoFull() {
-  return (
-    <div className="flex items-center gap-3">
-      <svg width="28" height="30" viewBox="0 0 28 30" fill="none">
-        <line x1="0" y1="3.5"  x2="28" y2="3.5"  stroke="var(--persimmon)" strokeWidth="4.5" strokeLinecap="round"/>
-        <line x1="0" y1="12"   x2="18" y2="12"   stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.42"/>
-        <line x1="0" y1="20.5" x2="28" y2="20.5" stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.62"/>
-        <line x1="0" y1="29"   x2="14" y2="29"   stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.28"/>
-      </svg>
-      <RoomOSWordmark height={22} />
-    </div>
-  )
+  return <RoomOSWordmark height={22} variant="light" />
 }
 
+// 가이드 § 02 SYMBOL MARK: 선 마크만 (아이콘 크기 컨텍스트)
 function LogoMark() {
-  return (
-    <svg width="28" height="30" viewBox="0 0 28 30" fill="none">
-      <line x1="0" y1="3.5"  x2="28" y2="3.5"  stroke="var(--persimmon)" strokeWidth="4.5" strokeLinecap="round"/>
-      <line x1="0" y1="12"   x2="18" y2="12"   stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.42"/>
-      <line x1="0" y1="20.5" x2="28" y2="20.5" stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.62"/>
-      <line x1="0" y1="29"   x2="14" y2="29"   stroke="var(--ink-3)" strokeWidth="4.5" strokeLinecap="round" opacity="0.28"/>
-    </svg>
-  )
+  return <RoomOSWordmark height={30} variant="light" markOnly />
 }
 
 // ── NavContent ─────────────────────────────────────────────────────

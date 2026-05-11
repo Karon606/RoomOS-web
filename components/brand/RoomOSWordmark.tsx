@@ -1,52 +1,72 @@
-// RoomOS 워드마크 — Brand Guide v1.0 명시 형식 "Room`O`S" (가운데 O만 persimmon)
-// SVG <text>로 구현. Pretendard 로딩이 실패해도 system Black weight로 일관 렌더.
-// height만 받아 width는 자동 계산 (텍스트 길이에 맞춰).
+// RoomOS 워드마크 — Brand Guide v2 (Floor Mark + Wordmark 통합)
 //
-// 가이드 사양 (Brand Guide § 02 LOGO):
-//   font:        Pretendard 900 (Black)        — cover-title / logo-wm 모두 900
-//   letter-spacing: -0.06em (logo-wm) ~ -0.07em (display)
-//   ink color:   var(--ink)       #1a1a1a
-//   accent O:    var(--persimmon) #e84a1a
+// 사양 (Logo System § 01 WORDMARK):
+//   font:        Plus Jakarta Sans — Room = weight 300, OS = weight 700
+//   letter-spacing: -0.028em
+//   mark:        Floor 4선 (100%/65%/100%/50%, persimmon/ink, 100%/38%/58%/22%)
+//   구성:        mark 선들(x 0~48) + 간격(68) + 텍스트 → viewBox 0 0 440 56
+//
+// Props:
+//   height  — 렌더 높이(px). 너비는 비율 자동계산.
+//   variant — 'light'(기본, 크림배경), 'dark'(다크배경), 'mono'(단색 인쇄용)
+//   markOnly — true이면 선 마크만 (텍스트 없음)
+
+type Variant = 'light' | 'dark' | 'mono'
+
+const CONFIGS: Record<Variant, { text: string; l2: string; l3: string; l4: string; os: string }> = {
+  light: { text: '#1a1a1a', l2: '#1a1a1a', l3: '#1a1a1a', l4: '#1a1a1a', os: '#e84a1a' },
+  dark:  { text: '#fbf6ee', l2: '#fbf6ee', l3: '#fbf6ee', l4: '#fbf6ee', os: '#e84a1a' },
+  mono:  { text: '#1a1a1a', l2: '#1a1a1a', l3: '#1a1a1a', l4: '#1a1a1a', os: '#1a1a1a' },
+}
 
 export function RoomOSWordmark({
   height = 24,
-  weight = 900,
+  variant = 'light',
+  markOnly = false,
   className,
   style,
 }: {
   height?: number
-  weight?: number
+  variant?: Variant
+  markOnly?: boolean
   className?: string
   style?: React.CSSProperties
 }) {
-  // viewBox: 1280 폭이면 RoomOS 6글자가 -0.06em 압축에서도 안전하게 들어감 (S 잘림 방지)
-  const VB_W = 1280
-  const VB_H = 320
-  const FONT = VB_H * 0.95            // ≈ 304
-  const LETTER_SPACING = -FONT * 0.06 // -0.06em → -18.24 (가이드 logo-wm 사양)
+  const VB_W = markOnly ? 56 : 440
+  const VB_H = 56
   const w = height * (VB_W / VB_H)
-  const h = height
+  const c = CONFIGS[variant]
+
   return (
     <svg
       width={w}
-      height={h}
+      height={height}
       viewBox={`0 0 ${VB_W} ${VB_H}`}
+      fill="none"
       className={className}
       style={style}
       role="img"
       aria-label="RoomOS"
     >
-      <text
-        x="0"
-        y={VB_H * 0.78}
-        fontFamily="'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif"
-        fontWeight={weight}
-        fontSize={FONT}
-        letterSpacing={LETTER_SPACING}
-        fill="var(--ink, #1a1a1a)"
-      >
-        Room<tspan fill="var(--persimmon, #e84a1a)">O</tspan>S
-      </text>
+      {/* Floor 마크 — 4선: 100%/65%/100%/50%, 불투명도 100/38/58/22 */}
+      <line x1="0" y1="6"  x2="48" y2="6"  stroke="#e84a1a" strokeWidth="8" strokeLinecap="round"/>
+      <line x1="0" y1="22" x2="31" y2="22" stroke={c.l2}    strokeWidth="8" strokeLinecap="round" opacity="0.38"/>
+      <line x1="0" y1="38" x2="48" y2="38" stroke={c.l3}    strokeWidth="8" strokeLinecap="round" opacity="0.58"/>
+      <line x1="0" y1="54" x2="24" y2="54" stroke={c.l4}    strokeWidth="8" strokeLinecap="round" opacity="0.22"/>
+
+      {/* 워드마크 텍스트 */}
+      {!markOnly && (
+        <text
+          x="68"
+          y="44"
+          fontFamily="var(--font-plus-jakarta, 'Plus Jakarta Sans', sans-serif)"
+          fontSize="44"
+          letterSpacing="-1.2"
+        >
+          <tspan fontWeight="300" fill={c.text}>Room</tspan>
+          <tspan fontWeight="700"  fill={c.os}>OS</tspan>
+        </text>
+      )}
     </svg>
   )
 }

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { DM_Mono } from 'next/font/google'
+import { DM_Mono, Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider, themeBootstrapScript } from '@/components/theme/ThemeProvider'
 
@@ -9,6 +9,14 @@ const dmMono = DM_Mono({
   weight: ['400', '500'],
   display: 'swap',
   variable: '--font-dm-mono',
+})
+
+// 가이드 명시: 로고 워드마크는 Plus Jakarta Sans 300/700
+const plusJakarta = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['300', '700'],
+  display: 'swap',
+  variable: '--font-plus-jakarta',
 })
 
 export const viewport: Viewport = {
@@ -41,7 +49,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ko" className={dmMono.variable} suppressHydrationWarning>
+    <html lang="ko" className={`${dmMono.variable} ${plusJakarta.variable}`} suppressHydrationWarning>
       <head>
         {/* 가이드 명시: 한글 본문·디스플레이는 Pretendard. Pretendard는 Google Fonts에 없어 jsdelivr CDN.
             Variable 버전 — 100~900 모든 weight를 한 파일로 안정 로딩. */}
