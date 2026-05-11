@@ -3,11 +3,12 @@
 // 사양 (Logo System § 01 WORDMARK):
 //   font:        Plus Jakarta Sans — Room = weight 300, OS = weight 700
 //   letter-spacing: -0.028em
-//   mark:        Floor 4선 (100%/65%/100%/50%, persimmon + var(--ink))
-//   불투명도:    선1=100%, 선2=38%, 선3=58%, 선4=22%
+//   mark:        Floor 4선 (100%/65%/100%/50%), opacity 100/38/58/22%
 //
-// 선 2-4와 텍스트는 var(--ink) CSS 변수 사용 → 라이트/다크 자동 대응
-// 스플래시처럼 배경이 고정 다크(#1a1a1a)인 경우 컴포넌트 직접 SVG 인라인 권장.
+// 색상 전략:
+//   Line 1 & "OS": #e84a1a persimmon 고정
+//   Line 2-4 & "Room": currentColor 사용 → svg에 color: var(--ink) 설정
+//     → 라이트모드=#1a1a1a, 다크모드=#fbf6ee 자동 전환
 
 export function RoomOSWordmark({
   height = 24,
@@ -31,17 +32,17 @@ export function RoomOSWordmark({
       viewBox={`0 0 ${VB_W} ${VB_H}`}
       fill="none"
       className={className}
-      style={style}
+      style={{ color: 'var(--ink, #1a1a1a)', ...style }}
       role="img"
       aria-label="RoomOS"
     >
-      {/* Floor 마크 — 4선: 너비 100%/65%/100%/50%, 불투명도 100/38/58/22 */}
+      {/* Line 1: persimmon 고정 */}
       <line x1="0" y1="6"  x2="48" y2="6"  stroke="#e84a1a"      strokeWidth="8" strokeLinecap="round"/>
-      <line x1="0" y1="22" x2="31" y2="22" stroke="var(--ink, #1a1a1a)" strokeWidth="8" strokeLinecap="round" opacity="0.38"/>
-      <line x1="0" y1="38" x2="48" y2="38" stroke="var(--ink, #1a1a1a)" strokeWidth="8" strokeLinecap="round" opacity="0.58"/>
-      <line x1="0" y1="54" x2="24" y2="54" stroke="var(--ink, #1a1a1a)" strokeWidth="8" strokeLinecap="round" opacity="0.22"/>
+      {/* Lines 2-4: currentColor (var(--ink) 자동 상속) */}
+      <line x1="0" y1="22" x2="31" y2="22" stroke="currentColor" strokeWidth="8" strokeLinecap="round" opacity="0.38"/>
+      <line x1="0" y1="38" x2="48" y2="38" stroke="currentColor" strokeWidth="8" strokeLinecap="round" opacity="0.58"/>
+      <line x1="0" y1="54" x2="24" y2="54" stroke="currentColor" strokeWidth="8" strokeLinecap="round" opacity="0.22"/>
 
-      {/* 워드마크 텍스트 */}
       {!markOnly && (
         <text
           x="68"
@@ -50,7 +51,7 @@ export function RoomOSWordmark({
           fontSize="44"
           letterSpacing="-1.2"
         >
-          <tspan fontWeight="300" fill="var(--ink, #1a1a1a)">Room</tspan>
+          <tspan fontWeight="300" fill="currentColor">Room</tspan>
           <tspan fontWeight="700"  fill="#e84a1a">OS</tspan>
         </text>
       )}
