@@ -3,6 +3,7 @@
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getTenantQuickInfo, getRoomQuickInfo, getTargetMonthOptions, type TargetMonthOption } from './actions'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { fmtKorMoney } from '@/lib/fmtMoney'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -35,6 +36,7 @@ type RoomStatus = {
   isPaid: boolean
   leaseTermId: string | null
   depositAmount: number
+  cleaningFee: number
   accumulatedUnpaid: number
   isFutureMonth: boolean
   baseRent: number
@@ -264,6 +266,7 @@ export default function RoomsClient({
   const [payAmount, setPayAmount] = useState(0)
   const [payDateVal, setPayDateVal] = useState(kstYmdStr())
   const [isDepositMode, setIsDepositMode] = useState(false)
+  const [isCleaningFeeMode, setIsCleaningFeeMode] = useState(false)
   // 귀속월 — 'auto' = FIFO 자동, 'YYYY-MM' = 사용자가 명시한 귀속월
   const [forcedTm, setForcedTm] = useState<'auto' | string>('auto')
   const [tmOptions, setTmOptions] = useState<TargetMonthOption[]>([])
@@ -419,6 +422,7 @@ export default function RoomsClient({
     setPayAmount(room.balance < 0 ? -room.balance : room.expected)
     setPayDateVal(kstYmdStr())
     setIsDepositMode(false)
+    setIsCleaningFeeMode(false)
     setError('')
     setShowPayForm(false)
     setShowOverrideForm(false)
@@ -489,17 +493,17 @@ export default function RoomsClient({
     startTransition(async () => {
       const release = trackSave()
       try {
-        if (isDepositMode) {
+        if (isDepositMode || isCleaningFeeMode) {
           await saveDepositPayment({
             leaseTermId:   selectedRoom.leaseTermId!,
             tenantId:      selectedRoom.tenantId!,
             targetMonth,
-            depositAmount: selectedRoom.depositAmount,
+            depositAmount: isCleaningFeeMode ? selectedRoom.cleaningFee : selectedRoom.depositAmount,
             rentAmount:    selectedRoom.expected,
             totalPaid:     payAmount,
             payDate:       payDateVal,
             payMethod,
-            memo:          memo || undefined,
+            memo:          isCleaningFeeMode ? (memo || '청소비') : (memo || undefined),
           })
         } else {
           const result = await savePayment({
@@ -528,7 +532,7 @@ export default function RoomsClient({
         setShowPayForm(false)
         setShowPayModal(false)
         router.refresh()
-        pushToast('success', isDepositMode ? '보증금 수납됨' : '월세 수납됨')
+        pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨' : '월세 수납됨')
       } catch (err: unknown) {
         const msg = (err as Error).message
         setError(msg); pushToast('error', msg)
@@ -1660,7 +1664,7 @@ export default function RoomsClient({
             {showPayForm && (
               <form onSubmit={handleSavePayment} className="flex flex-col flex-1 overflow-hidden">
                 <div className="flex-1 overflow-y-auto p-6 space-y-3">
-                  {!isDepositMode && (
+                  {!isDepositMode && !isCleaningFeeMode && (
                     <>
                       <p className="text-[10px] text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed">
                         기본은 미수가 있는 가장 오래된 월부터 자동 충당(FIFO·발생주의)입니다. 특정 월로 귀속시키려면 아래에서 직접 선택하세요.
@@ -1717,6 +1721,7 @@ export default function RoomsClient({
                             const checked = e.target.checked
                             setIsDepositMode(checked)
                             if (checked) {
+                              setIsCleaningFeeMode(false)
                               setPayAmount(selectedRoom.depositAmount)
                               setPayDateVal(selectedRoom.moveInDate ?? kstYmdStr())
                             } else {
@@ -1726,12 +1731,41 @@ export default function RoomsClient({
                           className="w-4 h-4 accent-[var(--coral)]"
                         />
                         <span className="text-xs text-[var(--warm-mid)]">
-                          보증금 수납 ({selectedRoom.depositAmount.toLocaleString()}원)
+                          보증금 수납 ({fmtKorMoney(selectedRoom.depositAmount)})
                         </span>
                       </label>
                       {isDepositMode && payAmount > selectedRoom.depositAmount && (
                         <p className="text-xs text-emerald-600">
-                          초과금 {(payAmount - selectedRoom.depositAmount).toLocaleString()}원 → {targetMonth} 이용료 처리
+                          초과금 {fmtKorMoney(payAmount - selectedRoom.depositAmount)} → {targetMonth} 이용료 처리
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {selectedRoom.depositAmount === 0 && selectedRoom.cleaningFee > 0 && (
+                    <div className="space-y-1">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isCleaningFeeMode}
+                          onChange={e => {
+                            const checked = e.target.checked
+                            setIsCleaningFeeMode(checked)
+                            if (checked) {
+                              setPayAmount(selectedRoom.cleaningFee + selectedRoom.expected)
+                              setPayDateVal(selectedRoom.moveInDate ?? kstYmdStr())
+                            } else {
+                              setPayDateVal(kstYmdStr())
+                            }
+                          }}
+                          className="w-4 h-4 accent-[var(--coral)]"
+                        />
+                        <span className="text-xs text-[var(--warm-mid)]">
+                          청소비 포함 수납 (청소비 {fmtKorMoney(selectedRoom.cleaningFee)})
+                        </span>
+                      </label>
+                      {isCleaningFeeMode && (
+                        <p className="text-xs text-emerald-600">
+                          청소비 {fmtKorMoney(selectedRoom.cleaningFee)} + 이용료 {fmtKorMoney(selectedRoom.expected)} = {fmtKorMoney(selectedRoom.cleaningFee + selectedRoom.expected)}
                         </p>
                       )}
                     </div>

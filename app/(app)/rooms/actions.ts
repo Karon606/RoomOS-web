@@ -24,7 +24,7 @@ type RoomRow = {
   isVacant: boolean; tenantId: string | null; tenantName: string | null; contact: string | null
   status: string | null; expected: number; dueDay: string | null; currentPaid: number
   carryOver: number; totalPaid: number; balance: number; isPaid: boolean
-  leaseTermId: string | null; depositAmount: number; accumulatedUnpaid: number
+  leaseTermId: string | null; depositAmount: number; cleaningFee: number; accumulatedUnpaid: number
   isFutureMonth: boolean; baseRent: number; prevTenantName: string | null; prevContact: string | null
   overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
   moveInDate: string | null; prevPaidThisMonth: boolean
@@ -152,7 +152,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         status: 'RESERVED', expected: lease.rentAmount, dueDay: lease.dueDay,
         currentPaid: 0, carryOver: 0, totalPaid: 0,
         balance: 0, isPaid: true,
-        leaseTermId: lease.id, depositAmount: lease.depositAmount,
+        leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee ?? 0,
         accumulatedUnpaid: 0, isFutureMonth, baseRent: room.baseRent,
         prevTenantName, prevContact,
         overrideDueDay: l.overrideDueDay ?? null,
@@ -178,7 +178,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         status: lease.status, expected, dueDay: lease.dueDay,
         currentPaid: 0, carryOver: 0, totalPaid: 0,
         balance: 0, isPaid: true,
-        leaseTermId: lease.id, depositAmount: lease.depositAmount,
+        leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee ?? 0,
         accumulatedUnpaid: 0, isFutureMonth: false, baseRent: room.baseRent,
         prevTenantName, prevContact,
         overrideDueDay: l.overrideDueDay ?? null,
@@ -396,7 +396,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         currentPaid: 0, carryOver: displayCarryOver,
         totalPaid: 0, balance: cumulativeBalance,
         isPaid,
-        leaseTermId: lease.id, depositAmount: lease.depositAmount,
+        leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee ?? 0,
         accumulatedUnpaid: 0, isFutureMonth: true, baseRent: room.baseRent,
         prevTenantName, prevContact,
         overrideDueDay: l.overrideDueDay ?? null,
@@ -421,7 +421,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       status: lease.status, expected, dueDay: overrideIsFullDate ? lease.dueDay : effectiveDueDay,
       currentPaid: realCurrentPaid, carryOver: displayCarryOver,
       totalPaid: realCurrentPaid, balance: cumulativeBalance, isPaid,
-      leaseTermId: lease.id, depositAmount: lease.depositAmount,
+      leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee ?? 0,
       accumulatedUnpaid: 0, isFutureMonth: false, baseRent: room.baseRent,
       prevTenantName, prevContact,
       overrideDueDay: l.overrideDueDay ?? null,
@@ -451,7 +451,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         contact: null, status: null, expected: 0, dueDay: null,
         currentPaid: 0, carryOver: 0, totalPaid: 0,
         balance: 0, isPaid: false, leaseTermId: null,
-        depositAmount: 0, accumulatedUnpaid: 0, isFutureMonth,
+        depositAmount: 0, cleaningFee: 0, accumulatedUnpaid: 0, isFutureMonth,
         baseRent: room.baseRent,
         prevTenantName: prev?.tenant.name ?? null,
         prevContact: prev?.tenant.contacts[0]?.contactValue ?? null,

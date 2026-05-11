@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { fmtKorMoney } from '@/lib/fmtMoney'
 
 export function MoneyInput({
   name, defaultValue, value, onChange, placeholder
@@ -30,13 +31,14 @@ export function MoneyInput({
   }
 
   const rawValue = display.replace(/[^0-9]/g, '')
+  const numValue = rawValue ? Number(rawValue) : 0
 
   return (
     <div className="relative">
       {name && <input type="hidden" name={name} value={rawValue} />}
       <input
         type="text"
-        value={focused ? display : (display ? `${display}원` : '')}
+        value={focused ? display : (numValue ? fmtKorMoney(numValue) : '')}
         onChange={handleChange}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
