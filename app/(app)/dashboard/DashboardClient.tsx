@@ -2064,22 +2064,31 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                             <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(200,160,120,0.25)' }} />공실
                           </div>
                         </div>
-                        <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
-                          {(() => {
-                            // viewMonth(targetMonth) 기준 미납·납부예정 호실
+                        {(() => {
                             const unpaidRooms = new Set(data.unpaidRoomNosForView)
                             const awaitingRooms = new Set(data.awaitingRoomNosForView)
-                            return data.rooms.map(r => {
+                            const getFloor = (r: typeof data.rooms[0]) => {
+                              if (r.floor) return r.floor
+                              const n = r.roomNo.replace(/[^0-9]/g, '')
+                              return n.length >= 3 ? n.slice(0, n.length - 2) : '기타'
+                            }
+                            const floorGroups = data.rooms.reduce((acc, r) => {
+                              const f = getFloor(r)
+                              if (!acc[f]) acc[f] = []
+                              acc[f].push(r)
+                              return acc
+                            }, {} as Record<string, typeof data.rooms>)
+                            const sortedFloors = Object.keys(floorGroups).sort((a, b) => {
+                              if (a === '기타') return 1
+                              if (b === '기타') return -1
+                              return Number(a) - Number(b)
+                            })
+                            const renderCell = (r: typeof data.rooms[0]) => {
                               const hasNonResident = !!r.nonResidentName
-                              // 공실이지만 비거주자가 있는 방: 납부 상태는 nonResidentItems 기준
                               const nonResItem = r.isVacant && hasNonResident
                                 ? data.nonResidentItems.find(n => n.roomNo === r.roomNo) : null
-                              const isUnpaid   = r.isVacant
-                                ? (nonResItem?.payStatus === 'unpaid')
-                                : unpaidRooms.has(r.roomNo)
-                              const isAwaiting = r.isVacant
-                                ? (nonResItem?.payStatus === 'awaiting')
-                                : (!isUnpaid && awaitingRooms.has(r.roomNo))
+                              const isUnpaid   = r.isVacant ? (nonResItem?.payStatus === 'unpaid') : unpaidRooms.has(r.roomNo)
+                              const isAwaiting = r.isVacant ? (nonResItem?.payStatus === 'awaiting') : (!isUnpaid && awaitingRooms.has(r.roomNo))
                               const rentMan = r.baseRent > 0 ? `${Math.round(r.baseRent / 10000)}만` : null
                               const nameParts = r.tenantName?.split(' ') ?? []
                               const displayName = r.isVacant
@@ -2101,17 +2110,21 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[3px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
                                   style={cellStyle}
                                 >
-                                  <div className="flex items-center justify-center gap-0.5 w-full">
-                                    <span className="truncate font-bold" style={{ fontSize: 11 }}>{fmtRoomNo(r.roomNo)}</span>
-                                    {r.floor && <span style={{ fontSize: 9, opacity: 0.7 }}>{r.floor}F</span>}
-                                  </div>
+                                  <span className="truncate w-full text-center font-bold" style={{ fontSize: 11 }}>{fmtRoomNo(r.roomNo)}</span>
                                   <span className="truncate w-full text-center" style={{ fontSize: 10, fontWeight: 500, lineHeight: 1.2 }}>{displayName}</span>
                                   {rentMan && <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.8 }}>{rentMan}</span>}
                                 </div>
                               )
-                            })
+                            }
+                            return sortedFloors.map(floor => (
+                              <div key={floor} className="space-y-1.5">
+                                <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--warm-muted)' }}>{floor}층</p>
+                                <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+                                  {floorGroups[floor].map(r => renderCell(r))}
+                                </div>
+                              </div>
+                            ))
                           })()}
-                        </div>
                       </>
                     )}
                   </div>

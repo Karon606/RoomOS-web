@@ -347,6 +347,7 @@ export default function TenantClient({
   const [filter, setFilter]             = useState<'active' | 'past' | 'dropped'>('active')
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
   const [pastFilter, setPastFilter]     = useState<PastFilter>('all')
+  const [floorFilter, setFloorFilter]   = useState('')
   const [search, setSearch]             = useUrlState('q', '')
   const [sortKey, setSortKey]           = useState<SortKey>('roomNo')
   const [sortDir, setSortDir]           = useState<SortDir>('asc')
@@ -467,6 +468,9 @@ export default function TenantClient({
     if (filter === 'past') {
       if (pastFilter !== 'all' && status !== pastFilter) return false
     }
+
+    // 층 필터
+    if (floorFilter && getTenantFloor(t) !== floorFilter) return false
 
     // 검색
     if (!search.trim()) return true
@@ -863,6 +867,15 @@ export default function TenantClient({
   const droppedCount  = initialTenants.filter(t => t.leaseTerms[0]?.status === 'CANCELLED').length
   const pastCount     = initialTenants.length - activeCount - droppedCount
 
+  const getTenantFloor = (t: typeof initialTenants[0]) => {
+    const room = t.leaseTerms[0]?.room
+    if (!room) return ''
+    if (room.floor) return room.floor
+    const n = room.roomNo.replace(/[^0-9]/g, '')
+    return n.length >= 3 ? n.slice(0, n.length - 2) : ''
+  }
+  const allFloors = [...new Set(initialTenants.map(t => getTenantFloor(t)).filter(Boolean))].sort((a, b) => Number(a) - Number(b))
+
   // ── 렌더 ─────────────────────────────────────────────────────────
 
   return (
@@ -922,6 +935,20 @@ export default function TenantClient({
             </button>
           )
         })}
+
+        {allFloors.length > 1 && (
+          <select
+            value={floorFilter}
+            onChange={e => setFloorFilter(e.target.value)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors outline-none
+              ${floorFilter
+                ? 'bg-[var(--coral)] text-white border-[var(--coral)]'
+                : 'bg-[var(--cream)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}
+          >
+            <option value="">전체 층</option>
+            {allFloors.map(f => <option key={f} value={f}>{f}층</option>)}
+          </select>
+        )}
 
         {/* 구분선 */}
         <div className="flex-1" />

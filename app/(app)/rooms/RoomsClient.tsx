@@ -245,6 +245,7 @@ export default function RoomsClient({
     return () => { cancelled = true }
   }, [showPayForm, selectedRoom?.leaseTermId, targetMonth])
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'checkout' | 'awaiting' | 'paid'>('all')
+  const [floorFilter, setFloorFilter] = useState('')
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(DEFAULT_VIS)
   const [showColMenu, setShowColMenu] = useState(false)
   const [vacantColVis, setVacantColVis] = useState<Record<VacantColKey, boolean>>(DEFAULT_VACANT_VIS)
@@ -353,6 +354,13 @@ export default function RoomsClient({
     document.addEventListener('touchend', onEnd)
   }, [])
 
+  const getRoomFloor = (r: RoomStatus) => {
+    if (r.floor) return r.floor
+    const n = r.roomNo.replace(/[^0-9]/g, '')
+    return n.length >= 3 ? n.slice(0, n.length - 2) : ''
+  }
+  const allFloors = [...new Set(roomStatus.map(r => getRoomFloor(r)).filter(Boolean))].sort((a, b) => Number(a) - Number(b))
+
   const occupied = roomStatus.filter(r => !r.isVacant)
   const vacants  = roomStatus.filter(r => r.isVacant).sort((a, b) =>
     a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true })
@@ -364,6 +372,7 @@ export default function RoomsClient({
     return r.status === 'CHECKOUT_PENDING' && r.isPaid && !!ck && ck <= targetMonth
   }
   const filtered = occupied.filter(r => {
+    if (floorFilter && getRoomFloor(r) !== floorFilter) return false
     if (filter === 'unpaid')   return !r.isPaid
     if (filter === 'checkout') return isCheckoutRoom(r)
     if (filter === 'awaiting') return isAwaitingRoom(r) && !isCheckoutRoom(r)
@@ -677,6 +686,19 @@ export default function RoomsClient({
             {f.label}
           </button>
         ))}
+        {allFloors.length > 1 && (
+          <select
+            value={floorFilter}
+            onChange={e => setFloorFilter(e.target.value)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors outline-none
+              ${floorFilter
+                ? 'bg-[var(--coral)] text-white border-[var(--coral)]'
+                : 'bg-[var(--cream)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}
+          >
+            <option value="">전체 층</option>
+            {allFloors.map(f => <option key={f} value={f}>{f}층</option>)}
+          </select>
+        )}
 
         <div className="flex-1" />
 
@@ -754,7 +776,6 @@ export default function RoomsClient({
               <div className="flex items-start justify-between">
                 <div className="flex items-baseline gap-1.5">
                   <span className="text-base font-bold text-[var(--coral)]">{fmtRoomNo(room.roomNo)}</span>
-                  {room.floor && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">{room.floor}층</span>}
                   {room.type && <span className="text-xs text-[var(--warm-muted)]">{room.type}</span>}
                 </div>
                 <div className="flex flex-col items-end gap-0.5">
@@ -913,10 +934,7 @@ export default function RoomsClient({
                   {/* sticky — 호실 */}
                   <td className="px-4 py-4 text-sm font-bold text-[var(--coral)] overflow-hidden sticky left-0 z-20 bg-[var(--cream)]"
                     style={{ width: colWidths.roomNo, minWidth: colWidths.roomNo, maxWidth: colWidths.roomNo }}>
-                    <div className="flex items-center gap-1 truncate">
-                      <span className="truncate">{fmtRoomNo(room.roomNo)}</span>
-                      {room.floor && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)] font-normal">{room.floor}층</span>}
-                    </div>
+                    <span className="truncate block">{fmtRoomNo(room.roomNo)}</span>
                   </td>
                   {/* sticky — 입주자 */}
                   <td className="px-4 py-4 text-sm font-medium text-[var(--warm-dark)] overflow-hidden sticky z-20 bg-[var(--cream)]"
