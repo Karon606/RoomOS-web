@@ -244,7 +244,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         rentUpdateDate: true,
         leaseTerms: {
           where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
-          select: { id: true, tenant: { select: { id: true, name: true } }, status: true },
+          select: { id: true, tenant: { select: { id: true, name: true } }, status: true, rentAmount: true },
           orderBy: { createdAt: 'desc' },
         },
       },
@@ -910,7 +910,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         roomNo:     r.roomNo,
         tenantId:   l.tenant.id,
         tenantName: l.tenant.name,
-        baseRent:   r.baseRent,
+        rentAmount: l.rentAmount,
         payStatus:  (overdueByLease[l.id] ?? 0) > 0 ? 'unpaid'   as const
                   : (upcomingByLease[l.id] ?? 0) > 0 ? 'awaiting' as const
                   : 'paid' as const,
