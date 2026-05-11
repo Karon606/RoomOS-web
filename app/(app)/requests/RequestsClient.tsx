@@ -6,11 +6,16 @@ import { useRouter } from 'next/navigation'
 import {
   resolveTenantRequest,
   deleteTenantRequest,
+  createTenantRequest,
+  getActiveTenantsForRequests,
   type getAllRequestsForProperty,
 } from '@/app/(app)/tenants/actions'
 import { trackSave, pushToast } from '@/lib/saveStatus'
+import { DatePicker } from '@/components/ui/DatePicker'
+import { kstYmdStr } from '@/lib/kstDate'
 
 type Request = Awaited<ReturnType<typeof getAllRequestsForProperty>>[number]
+type ActiveTenant = Awaited<ReturnType<typeof getActiveTenantsForRequests>>[number]
 
 const CATEGORIES = ['시설', '소음', '청결', '편의', '기타'] as const
 type Category = (typeof CATEGORIES)[number]
@@ -26,7 +31,13 @@ const CATEGORY_COLORS: Record<string, { bg: string; fg: string; ring: string }> 
 const fmtDate = (d: Date | string | null | undefined) =>
   d ? new Date(d).toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
 
-export default function RequestsClient({ initialRequests }: { initialRequests: Request[] }) {
+export default function RequestsClient({
+  initialRequests,
+  activeTenants,
+}: {
+  initialRequests: Request[]
+  activeTenants: ActiveTenant[]
+}) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
 
@@ -38,6 +49,16 @@ export default function RequestsClient({ initialRequests }: { initialRequests: R
   const [resolvingId,   setResolvingId]   = useState<string | null>(null)
   const [resolvingMemo, setResolvingMemo] = useState('')
 
+  // 등록 폼 상태
+  const [showAddForm,   setShowAddForm]   = useState(false)
+  const [addSubject,    setAddSubject]    = useState<'common' | string>('common') // 'common' or tenantId
+  const [addCommonPlace, setAddCommonPlace] = useState('')
+  const [addContent,    setAddContent]    = useState('')
+  const [addCategory,   setAddCategory]  = useState<string>('')
+  const [addUrgent,     setAddUrgent]    = useState(false)
+  const [addReqDate,    setAddReqDate]   = useState(kstYmdStr())
+  const [addTargetDate, setAddTargetDate] = useState('')
+
   const filtered = useMemo(() => initialRequests.filter(r => {
     if (filterStatus === 'unresolved' && r.resolvedAt) return false
     if (filterStatus === 'resolved'   && !r.resolvedAt) return false
@@ -45,7 +66,7 @@ export default function RequestsClient({ initialRequests }: { initialRequests: R
     if (filterUrgent && !r.isUrgent) return false
     if (search.trim()) {
       const q   = search.trim().toLowerCase()
-      const hay = `${r.tenant?.name ?? ''} ${r.content} ${r.resolutionMemo ?? ''} ${r.category ?? ''}`.toLowerCase()
+      const hay = `${r.tenant?.name ?? ''} ${r.commonPlace ?? ''} ${r.content} ${r.resolutionMemo ?? ''} ${r.category ?? ''}`.toLowerCase()
       if (!hay.includes(q)) return false
     }
     return true
@@ -76,6 +97,35 @@ export default function RequestsClient({ initialRequests }: { initialRequests: R
         const res = await deleteTenantRequest(id)
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('success', '삭제됨')
+        router.refresh()
+      } finally { release() }
+    })
+  }
+
+  const handleAdd = () => {
+    if (!addContent.trim()) { pushToast('error', '내용을 입력해주세요.'); return }
+    startTransition(async () => {
+      const release = trackSave()
+      try {
+        const res = await createTenantRequest({
+          tenantId:    addSubject === 'common' ? null : addSubject,
+          content:     addContent,
+          requestDate: addReqDate,
+          targetDate:  addTargetDate || null,
+          category:    addCategory || null,
+          isUrgent:    addUrgent,
+          commonPlace: addSubject === 'common' ? (addCommonPlace || null) : null,
+        })
+        if (!res.ok) { pushToast('error', res.error); return }
+        pushToast('success', '요청 등록됨')
+        setShowAddForm(false)
+        setAddSubject('common')
+        setAddCommonPlace('')
+        setAddContent('')
+        setAddCategory('')
+        setAddUrgent(false)
+        setAddReqDate(kstYmdStr())
+        setAddTargetDate('')
         router.refresh()
       } finally { release() }
     })
@@ -112,14 +162,135 @@ export default function RequestsClient({ initialRequests }: { initialRequests: R
             )}
           </p>
         </div>
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="입주자/내용 검색..."
-          className="text-sm px-3 py-2 rounded-xl bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-w-[220px]"
-        />
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="입주자/내용 검색..."
+            className="text-sm px-3 py-2 rounded-xl bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-w-[180px]"
+          />
+          <button
+            onClick={() => setShowAddForm(v => !v)}
+            className={`px-4 py-2 text-sm font-semibold rounded-xl transition-colors ${
+              showAddForm
+                ? 'bg-[var(--warm-border)] text-[var(--warm-mid)]'
+                : 'bg-[var(--coral)] text-white hover:opacity-90'
+            }`}
+          >
+            {showAddForm ? '취소' : '+ 요청 등록'}
+          </button>
+        </div>
       </div>
+
+      {/* 등록 폼 */}
+      {showAddForm && (
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 space-y-3">
+          <p className="text-xs font-semibold text-[var(--warm-dark)]">새 요청 등록</p>
+
+          {/* 대상 선택 */}
+          <div className="space-y-1">
+            <label className="text-xs text-[var(--warm-muted)]">대상</label>
+            <select
+              value={addSubject}
+              onChange={e => setAddSubject(e.target.value)}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+            >
+              <option value="common">공용 (특정 입주자 없음)</option>
+              {activeTenants.map(t => {
+                const roomNo = t.leaseTerms[0]?.room?.roomNo
+                return (
+                  <option key={t.id} value={t.id}>
+                    {t.name}{roomNo ? ` · ${roomNo}호` : ''}
+                  </option>
+                )
+              })}
+            </select>
+          </div>
+
+          {/* 공용 선택 시 위치 입력 */}
+          {addSubject === 'common' && (
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--warm-muted)]">위치 / 장소 (선택)</label>
+              <input
+                type="text"
+                value={addCommonPlace}
+                onChange={e => setAddCommonPlace(e.target.value)}
+                placeholder="예: 공용 주방, 1층 화장실, 엘리베이터 등"
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-400 outline-none focus:border-[var(--coral)]"
+              />
+            </div>
+          )}
+
+          {/* 카테고리 + 긴급 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--warm-muted)]">카테고리</label>
+              <select
+                value={addCategory}
+                onChange={e => setAddCategory(e.target.value)}
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+              >
+                <option value="">카테고리 없음</option>
+                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--warm-muted)]">요청일</label>
+              <DatePicker value={addReqDate} onChange={setAddReqDate}
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+            </div>
+          </div>
+
+          {/* 목표일 + 긴급 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--warm-muted)]">목표 처리일 (선택)</label>
+              <DatePicker value={addTargetDate} onChange={setAddTargetDate}
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+            </div>
+            <div className="flex items-end pb-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={addUrgent}
+                  onChange={e => setAddUrgent(e.target.checked)}
+                  className="w-4 h-4 accent-[var(--coral)]"
+                />
+                <span className="text-xs text-[var(--warm-mid)]">긴급</span>
+              </label>
+            </div>
+          </div>
+
+          {/* 내용 */}
+          <div className="space-y-1">
+            <label className="text-xs text-[var(--warm-muted)]">내용</label>
+            <textarea
+              value={addContent}
+              onChange={e => setAddContent(e.target.value)}
+              rows={3}
+              placeholder="요청 내용을 입력하세요"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-400 outline-none focus:border-[var(--coral)] resize-none"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => setShowAddForm(false)}
+              className="flex-1 py-2 text-xs font-medium rounded-xl bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]"
+            >
+              취소
+            </button>
+            <button
+              onClick={handleAdd}
+              disabled={pending || !addContent.trim()}
+              className="flex-1 py-2 text-xs font-semibold rounded-xl bg-[var(--coral)] text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {pending ? '저장 중...' : '저장'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 필터 바 */}
       <div className="flex flex-wrap gap-2">
@@ -182,6 +353,7 @@ export default function RequestsClient({ initialRequests }: { initialRequests: R
             const c        = r.category ? CATEGORY_COLORS[r.category] : null
             const roomNo   = r.tenant?.leaseTerms[0]?.room?.roomNo
             const resolved = !!r.resolvedAt
+            const isCommon = !r.tenantId
             return (
               <li
                 key={r.id}
@@ -206,12 +378,18 @@ export default function RequestsClient({ initialRequests }: { initialRequests: R
                       완료
                     </span>
                   )}
-                  <Link
-                    href={`/tenants?tenantId=${r.tenantId}&tab=requests`}
-                    className="text-xs font-semibold text-[var(--warm-dark)] hover:text-[var(--coral)]"
-                  >
-                    {r.tenant?.name ?? '입실자 미상'}{roomNo && ` · ${roomNo}호`}
-                  </Link>
+                  {isCommon ? (
+                    <span className="text-xs font-semibold text-[var(--warm-dark)]">
+                      공용{r.commonPlace ? ` · ${r.commonPlace}` : ''}
+                    </span>
+                  ) : (
+                    <Link
+                      href={`/tenants?tenantId=${r.tenantId}&tab=requests`}
+                      className="text-xs font-semibold text-[var(--warm-dark)] hover:text-[var(--coral)]"
+                    >
+                      {r.tenant?.name ?? '입주자 미상'}{roomNo && ` · ${roomNo}호`}
+                    </Link>
+                  )}
                   <span className="text-[10px] text-[var(--warm-muted)]">요청 {fmtDate(r.requestDate)}</span>
                   {r.targetDate && !resolved && (
                     <span className="text-[10px] font-medium text-amber-600">목표 {fmtDate(r.targetDate)}</span>

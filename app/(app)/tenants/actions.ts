@@ -897,7 +897,7 @@ export async function getAllRequestsForProperty() {
       id: true, content: true, requestDate: true,
       targetDate: true, resolvedAt: true, resolutionMemo: true,
       category: true, isUrgent: true, createdAt: true,
-      tenantId: true,
+      tenantId: true, commonPlace: true,
       tenant: {
         select: {
           id: true, name: true,
@@ -914,12 +914,13 @@ export async function getAllRequestsForProperty() {
 }
 
 export async function createTenantRequest(data: {
-  tenantId: string
+  tenantId?: string | null
   content: string
   requestDate: string
   targetDate: string | null
   category?: string | null
   isUrgent?: boolean
+  commonPlace?: string | null
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -927,13 +928,14 @@ export async function createTenantRequest(data: {
     if (!data.content.trim()) return { ok: false, error: '내용을 입력해주세요.' }
     await prisma.tenantRequest.create({
       data: {
-        tenantId:    data.tenantId,
+        tenantId:    data.tenantId ?? null,
         propertyId,
         content:     data.content.trim(),
         requestDate: data.requestDate ? new Date(data.requestDate) : new Date(),
         targetDate:  data.targetDate  ? new Date(data.targetDate)  : null,
         category:    data.category?.trim() || null,
         isUrgent:    data.isUrgent ?? false,
+        commonPlace: data.commonPlace?.trim() || null,
       },
     })
     revalidatePath('/tenants')
@@ -944,6 +946,26 @@ export async function createTenantRequest(data: {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
+}
+
+export async function getActiveTenantsForRequests() {
+  const { propertyId } = await getPropertyId()
+  return prisma.tenant.findMany({
+    where: {
+      propertyId,
+      leaseTerms: { some: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } } },
+    },
+    select: {
+      id: true, name: true,
+      leaseTerms: {
+        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        orderBy: { status: 'asc' },
+        take: 1,
+        select: { room: { select: { roomNo: true } } },
+      },
+    },
+    orderBy: { name: 'asc' },
+  })
 }
 
 export async function resolveTenantRequest(id: string, memo?: string): Promise<{ ok: true } | { ok: false; error: string }> {

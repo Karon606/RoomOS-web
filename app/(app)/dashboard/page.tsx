@@ -1143,11 +1143,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       : null
     alertItems.push({
       category:  'request',
-      text:      `${r.tenant.name}님 요청: ${r.content.slice(0, 28)}${r.content.length > 28 ? '…' : ''}`,
-      link:      `/tenants?tenantId=${r.tenantId}&tab=requests`,
+      text:      r.tenant ? `${r.tenant.name}님 요청: ${r.content.slice(0, 28)}${r.content.length > 28 ? '…' : ''}` : `공용 요청: ${r.content.slice(0, 28)}${r.content.length > 28 ? '…' : ''}`,
+      link:      r.tenantId ? `/tenants?tenantId=${r.tenantId}&tab=requests` : '/requests',
       dotColor:  'var(--persimmon)',
       timeLabel: daysLeft != null ? (daysLeft <= 0 ? '처리 필요' : `${daysLeft}일 남음`) : '미처리',
-      tenantId:  r.tenantId,
+      tenantId:  r.tenantId ?? undefined,
       detail:    r.content + (r.targetDate ? `\n처리 기한: ${fmtKorDate(r.targetDate)}` : ''),
       exactDate: fmtShortDate(r.targetDate),
     })

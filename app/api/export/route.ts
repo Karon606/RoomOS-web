@@ -312,8 +312,8 @@ export async function GET(request: NextRequest) {
   })
   const requestSheet = requests.map(r => ({
     '작성일':     fmtDate(r.requestDate),
-    '입주자명':   r.tenant.name,
-    '호실':       r.tenant.leaseTerms[0]?.room?.roomNo ?? '',
+    '입주자명':   r.tenant?.name ?? '공용',
+    '호실':       r.tenant?.leaseTerms[0]?.room?.roomNo ?? '',
     '내용':       r.content,
     '처리예정일': fmtDate(r.targetDate),
     '해결일':     fmtDate(r.resolvedAt),
