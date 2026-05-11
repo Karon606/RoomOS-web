@@ -1097,6 +1097,7 @@ export async function deleteReserveTransaction(id: string): Promise<{ ok: true }
 export type DepositLedgerEntry = {
   type: 'IN' | 'REFUND'
   date: Date
+  createdAt?: Date
   amount: number          // IN은 입금액, REFUND는 returned + withheld
   returnedAmount?: number // REFUND 전용
   withheldAmount?: number // REFUND 전용
@@ -1205,7 +1206,7 @@ export async function getDepositLedger(targetMonth?: string): Promise<DepositLed
         ...(monthFilter ? { payDate: monthFilter } : {}),
       },
       select: {
-        id: true, payDate: true, actualAmount: true, memo: true, leaseTermId: true,
+        id: true, payDate: true, createdAt: true, actualAmount: true, memo: true, leaseTermId: true,
         tenant: { select: { id: true, name: true } },
         leaseTerm: { select: { room: { select: { roomNo: true } } } },
       },
@@ -1216,7 +1217,7 @@ export async function getDepositLedger(targetMonth?: string): Promise<DepositLed
         ...(monthFilter ? { date: monthFilter } : {}),
       },
       select: {
-        id: true, date: true, returnedAmount: true, withheldAmount: true,
+        id: true, date: true, createdAt: true, returnedAmount: true, withheldAmount: true,
         reason: true, memo: true, leaseTermId: true,
         tenant: { select: { id: true, name: true } },
         leaseTerm: { select: { room: { select: { roomNo: true } } } },
@@ -1227,6 +1228,7 @@ export async function getDepositLedger(targetMonth?: string): Promise<DepositLed
   const ins: DepositLedgerEntry[] = deposits.map(d => ({
     type: 'IN',
     date: d.payDate,
+    createdAt: d.createdAt,
     amount: d.actualAmount,
     memo: d.memo,
     tenantId: d.tenant.id,
@@ -1237,6 +1239,7 @@ export async function getDepositLedger(targetMonth?: string): Promise<DepositLed
   const outs: DepositLedgerEntry[] = refunds.map(r => ({
     type: 'REFUND',
     date: r.date,
+    createdAt: r.createdAt,
     amount: r.returnedAmount + r.withheldAmount,
     returnedAmount: r.returnedAmount,
     withheldAmount: r.withheldAmount,
@@ -1248,7 +1251,7 @@ export async function getDepositLedger(targetMonth?: string): Promise<DepositLed
     leaseTermId: r.leaseTermId,
   }))
 
-  return [...ins, ...outs].sort((a, b) => b.date.getTime() - a.date.getTime())
+  return [...ins, ...outs].sort((a, b) => b.date.getTime() - a.date.getTime() || (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0))
 }
 
 // 사후정산용 — 해당 월 지출 중 아직 미정산 잔여가 있는 것만 (정산 가능 후보)

@@ -65,7 +65,7 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
     where: { propertyId, isArchived: false },
     orderBy: [{ category: 'asc' }, { label: 'asc' }],
     include: {
-      stockChecks: { orderBy: { date: 'desc' }, take: 2 },
+      stockChecks: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }], take: 2 },
     },
   })
 
@@ -262,8 +262,8 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
   if (!item) return null
 
   const [checks, additions, purchases] = await Promise.all([
-    prisma.stockCheck.findMany({ where: { trackedItemId }, orderBy: { date: 'desc' } }),
-    prisma.stockAddition.findMany({ where: { trackedItemId }, orderBy: { date: 'desc' } }),
+    prisma.stockCheck.findMany({ where: { trackedItemId }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }),
+    prisma.stockAddition.findMany({ where: { trackedItemId }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }),
     prisma.expense.findMany({
       where: {
         propertyId,
@@ -271,21 +271,21 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         itemLabel: item.label,
         ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
       },
-      orderBy: { date: 'desc' },
-      select: { id: true, date: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, memo: true },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, memo: true },
     }),
   ])
 
   const timeline: TimelineEntry[] = [
-    ...checks.map(c => ({ type: 'check' as const, id: c.id, date: c.date, remainingQty: c.remainingQty, memo: c.memo })),
-    ...additions.map(a => ({ type: 'addition' as const, id: a.id, date: a.date, addedQty: a.addedQty, source: a.source, memo: a.memo })),
+    ...checks.map(c => ({ type: 'check' as const, id: c.id, date: c.date, createdAt: c.createdAt, remainingQty: c.remainingQty, memo: c.memo })),
+    ...additions.map(a => ({ type: 'addition' as const, id: a.id, date: a.date, createdAt: a.createdAt, addedQty: a.addedQty, source: a.source, memo: a.memo })),
     ...purchases.filter(p => p.qtyValue != null).map(p => ({
       type: 'purchase' as const,
-      id: p.id, date: p.date, qtyValue: p.qtyValue ?? 0, qtyUnit: p.qtyUnit,
+      id: p.id, date: p.date, createdAt: p.createdAt, qtyValue: p.qtyValue ?? 0, qtyUnit: p.qtyUnit,
       specValue: p.specValue, specUnit: p.specUnit,
       amount: p.amount, vendor: p.vendor, memo: p.memo,
     })),
-  ].sort((a, b) => b.date.getTime() - a.date.getTime())
+  ].sort((a, b) => b.date.getTime() - a.date.getTime() || b.createdAt.getTime() - a.createdAt.getTime())
 
   return {
     item: {
