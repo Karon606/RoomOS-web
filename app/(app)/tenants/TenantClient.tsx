@@ -933,8 +933,8 @@ export default function TenantClient({
         {([
           { key: 'residents', label: `입주자 (${residentsCount})` },
           { key: 'inquiry',   label: `문의/예약자 (${inquiryCount})` },
-          { key: 'past',      label: `퇴실자 내역 (${pastCount})` },
-          { key: 'dropped',   label: `입실 취소 내역 (${droppedCount})` },
+          { key: 'dropped',   label: `입실 취소자 (${droppedCount})` },
+          { key: 'past',      label: `퇴실자 (${pastCount})` },
         ] as const).map(tab => (
           <button key={tab.key} onClick={() => setFilter(tab.key)}
             className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
