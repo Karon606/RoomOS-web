@@ -453,7 +453,7 @@ function DetailModal({ row, onClose, onChange }: {
                 <p className="text-sm text-[var(--warm-muted)] text-center py-6">기록이 없습니다.</p>
               ) : (
                 <ul className="space-y-1.5">
-                  {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} pending={pending} />)}
+                  {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} pending={pending} />)}
                 </ul>
               )
             )}
@@ -729,8 +729,9 @@ function MergeSection({ currentId, currentLabel, category, onDone }: {
   )
 }
 
-function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddition, onConfirmReceipt, onChanged, pending }: {
+function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck, onDeleteAddition, onConfirmReceipt, onChanged, pending }: {
   entry: TimelineEntry; stockUnit: string | null; trackUnit: 'spec' | 'qty'
+  itemLocations: StorageLocationItem[]
   onDeleteCheck: (id: string) => void
   onDeleteAddition: (id: string) => void
   onConfirmReceipt?: (id: string) => void
@@ -745,7 +746,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
   if (entry.type === 'check') {
     if (editing) {
       return <CheckEditForm
-        entry={entry} stockUnit={stockUnit}
+        entry={entry} stockUnit={stockUnit} itemLocations={itemLocations}
         onCancel={() => { setEditing(false); setEditError('') }}
         onSave={async (data) => {
           setSavePending(true); setEditError('')
@@ -892,9 +893,10 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
 }
 
 // ── 재고 점검 인라인 편집 폼
-function CheckEditForm({ entry, stockUnit, onCancel, onSave, pending, error }: {
+function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pending, error }: {
   entry: TimelineEntry & { type: 'check' }
   stockUnit: string | null
+  itemLocations: StorageLocationItem[]
   onCancel: () => void
   onSave: (data: { date?: string; memo?: string | null; remainingQty?: number; locationQtys?: { storageLocationId: string; qty: number }[] }) => Promise<void>
   pending: boolean
@@ -902,26 +904,38 @@ function CheckEditForm({ entry, stockUnit, onCancel, onSave, pending, error }: {
 }) {
   const [date, setDate] = useState(entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10))
   const [memo, setMemo] = useState(entry.memo ?? '')
-  const hasBreakdown = entry.locationBreakdown.length > 0
-  const [qty, setQty] = useState(hasBreakdown ? '' : String(entry.remainingQty))
+
+  // 기존 점검에 위치별 기록이 있으면 그걸 사용, 없으면 아이템의 locations 목록으로 대체
+  const locationSources: { id: string; name: string }[] =
+    entry.locationBreakdown.length > 0
+      ? entry.locationBreakdown.map(lb => ({ id: lb.locationId, name: lb.locationName }))
+      : itemLocations.map(l => ({ id: l.id, name: l.name }))
+
+  const hasLocations = locationSources.length > 0
+
+  const [qty, setQty] = useState(hasLocations ? '' : String(entry.remainingQty))
   const [locationQtys, setLocationQtys] = useState<Record<string, string>>(
-    () => Object.fromEntries(entry.locationBreakdown.map(lb => [lb.locationId, String(lb.qty)]))
+    () => Object.fromEntries(
+      entry.locationBreakdown.length > 0
+        ? entry.locationBreakdown.map(lb => [lb.locationId, String(lb.qty)])
+        : itemLocations.map(l => [l.id, ''])
+    )
   )
 
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
-  const locationTotal = hasBreakdown
-    ? entry.locationBreakdown.reduce((s, lb) => s + (Number(locationQtys[lb.locationId]) || 0), 0)
+  const locationTotal = hasLocations
+    ? locationSources.reduce((s, l) => s + (Number(locationQtys[l.id]) || 0), 0)
     : null
 
   const handleSave = () => {
-    if (hasBreakdown) {
+    if (hasLocations) {
       onSave({
         date,
         memo: memo || null,
-        locationQtys: entry.locationBreakdown.map(lb => ({
-          storageLocationId: lb.locationId,
-          qty: Number(locationQtys[lb.locationId]) || 0,
+        locationQtys: locationSources.map(l => ({
+          storageLocationId: l.id,
+          qty: Number(locationQtys[l.id]) || 0,
         })),
       })
     } else {
@@ -938,22 +952,22 @@ function CheckEditForm({ entry, stockUnit, onCancel, onSave, pending, error }: {
           <p className="text-[10px] text-[var(--warm-muted)] mb-1">날짜</p>
           <DatePicker value={date} onChange={setDate} />
         </div>
-        {!hasBreakdown && (
+        {!hasLocations && (
           <div>
             <p className="text-[10px] text-[var(--warm-muted)] mb-1">잔량{stockUnit ? ` (${stockUnit})` : ''}</p>
             <input type="number" min="0" step="any" value={qty} onChange={e => setQty(e.target.value)} className={inputCls} />
           </div>
         )}
       </div>
-      {hasBreakdown && (
+      {hasLocations && (
         <div className="space-y-1.5">
           <p className="text-[10px] text-[var(--warm-muted)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''} · 합계 {locationTotal ?? 0}{stockUnit ?? ''}</p>
-          {entry.locationBreakdown.map(lb => (
-            <div key={lb.locationId} className="flex items-center gap-2">
-              <span className="text-xs text-[var(--warm-mid)] w-20 shrink-0 truncate">{lb.locationName}</span>
+          {locationSources.map(l => (
+            <div key={l.id} className="flex items-center gap-2">
+              <span className="text-xs text-[var(--warm-mid)] w-20 shrink-0 truncate">{l.name}</span>
               <input type="number" min="0" step="any"
-                value={locationQtys[lb.locationId] ?? ''}
-                onChange={e => setLocationQtys(prev => ({ ...prev, [lb.locationId]: e.target.value }))}
+                value={locationQtys[l.id] ?? ''}
+                onChange={e => setLocationQtys(prev => ({ ...prev, [l.id]: e.target.value }))}
                 className={inputCls} />
             </div>
           ))}
@@ -966,7 +980,7 @@ function CheckEditForm({ entry, stockUnit, onCancel, onSave, pending, error }: {
       <div className="flex gap-2 pt-1 justify-end">
         <button type="button" onClick={onCancel} disabled={pending}
           className="text-xs text-[var(--warm-muted)] px-3 py-1.5 rounded-lg hover:bg-[var(--cream)]">취소</button>
-        <Btn variant="primary" size="sm" disabled={pending || (!hasBreakdown && (!qty || Number(qty) < 0))}
+        <Btn variant="primary" size="sm" disabled={pending || (!hasLocations && (!qty || Number(qty) < 0))}
           onClick={handleSave}>
           {pending ? '저장 중…' : '저장'}
         </Btn>
