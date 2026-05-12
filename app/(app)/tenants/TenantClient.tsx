@@ -912,7 +912,7 @@ export default function TenantClient({
 
       {/* 헤더 */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-bold text-[var(--warm-dark)]">입주자 관리</h1>
+        <h1 className="text-xl font-bold text-[var(--warm-dark)]">고객 관리</h1>
         <div className="flex items-center gap-2">
           <button type="button"
             onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}
@@ -923,7 +923,7 @@ export default function TenantClient({
             onClick={() => { setShowAdd(true); setError('') }}
             className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors"
           >
-            + 입주자 등록
+            + 고객 등록
           </button>
         </div>
       </div>
@@ -1277,7 +1277,7 @@ export default function TenantClient({
             <path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" />
           </svg>
           <p className="text-[var(--warm-dark)] font-medium">
-            {search.trim() ? '검색 결과가 없습니다' : '입주자가 없습니다'}
+            {search.trim() ? '검색 결과가 없습니다' : '고객이 없습니다'}
           </p>
         </div>
       ) : (
@@ -1380,7 +1380,7 @@ export default function TenantClient({
             <path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" />
           </svg>
           <p className="text-[var(--warm-dark)] font-medium">
-            {search.trim() ? '검색 결과가 없습니다' : '입주자가 없습니다'}
+            {search.trim() ? '검색 결과가 없습니다' : '고객이 없습니다'}
           </p>
         </div>
       ) : (
@@ -1580,7 +1580,7 @@ export default function TenantClient({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <h2 className="text-base font-bold text-[var(--warm-dark)]">
-                      {detailEditMode ? '입주자 정보 수정' : '입주자 상세정보'}
+                      {detailEditMode ? '고객 정보 수정' : '고객 상세정보'}
                     </h2>
                     {!detailEditMode && (
                       <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${STATUS_COLOR[status] ?? ''}`}>
@@ -2025,7 +2025,7 @@ export default function TenantClient({
                               <p className="text-sm text-[var(--warm-dark)] leading-relaxed whitespace-pre-wrap">{aiText}</p>
                             )}
                             {!aiText && !aiLoading && (
-                              <p className="text-xs text-[var(--warm-muted)]">'분석하기'를 눌러 이 입주자의 수납 건전성을 AI로 진단하세요.</p>
+                              <p className="text-xs text-[var(--warm-muted)]">'분석하기'를 눌러 이 고객의 수납 건전성을 AI로 진단하세요.</p>
                             )}
                           </div>
                         </>
@@ -2136,7 +2136,7 @@ export default function TenantClient({
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh]"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-              <h2 className="text-base font-bold text-[var(--warm-dark)]">입주자 등록</h2>
+              <h2 className="text-base font-bold text-[var(--warm-dark)]">고객 등록</h2>
               <button onClick={() => setShowAdd(false)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl">✕</button>
             </div>
             <form onSubmit={handleAdd} className="overflow-y-auto p-6 space-y-4">
@@ -3386,7 +3386,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           </div>
         </div>
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-[var(--warm-mid)]">본국 연락처 <span className="text-[10px] text-[var(--warm-muted)] font-normal">(외국인 입주자 — 국가 선택 시 자동 포맷)</span></label>
+          <label className="text-xs font-medium text-[var(--warm-mid)]">본국 연락처 <span className="text-[10px] text-[var(--warm-muted)] font-normal">(외국인 고객 — 국가 선택 시 자동 포맷)</span></label>
           <IntlPhoneInput
             name="homeCountryContact"
             countryName="homeCountryCode"
@@ -3533,7 +3533,7 @@ function SettlementInfoModal({
             {onBack && (
               <button onClick={onBack}
                 className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors"
-                title="입주자 정보로 돌아가기">‹</button>
+                title="고객 정보로 돌아가기">‹</button>
             )}
             <h2 className="text-base font-bold text-[var(--warm-dark)]">
               {info ? `${fmtRoomNo(info.roomNo)} — ${info.tenantName ?? ''}` : '수납 정보'}
@@ -3608,7 +3608,7 @@ function RoomInfoSimpleModal({
             {onBack && (
               <button onClick={onBack}
                 className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors"
-                title="입주자 정보로 돌아가기">‹</button>
+                title="고객 정보로 돌아가기">‹</button>
             )}
             <h2 className="text-base font-bold text-[var(--warm-dark)]">{fmtRoomNo(info?.roomNo)}</h2>
             {info && (
@@ -3779,7 +3779,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
     const res = await batchUpdateTenants(selectedIds, data)
     setPending(false)
     if (!res.ok) { setError(res.error); return }
-    pushToast('success', `입주자 ${res.tenantCount}명${res.leaseCount > 0 ? `, 계약 ${res.leaseCount}건` : ''} 업데이트 완료`)
+    pushToast('success', `고객 ${res.tenantCount}명${res.leaseCount > 0 ? `, 계약 ${res.leaseCount}건` : ''} 업데이트 완료`)
     onDone()
   }
 
@@ -3791,7 +3791,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
           <div>
-            <h2 className="text-base font-bold text-[var(--warm-dark)]">입주자 일괄 편집</h2>
+            <h2 className="text-base font-bold text-[var(--warm-dark)]">고객 일괄 편집</h2>
             <p className="text-xs text-[var(--warm-muted)] mt-0.5">{selectedIds.length}명 선택됨 · 입력하지 않은 항목은 변경되지 않습니다</p>
           </div>
           <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl">✕</button>
@@ -3835,11 +3835,13 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
             <select value={status} onChange={e => setStatus(e.target.value)} className={inputCls}>
               <option value="">미변경</option>
               <option value="ACTIVE">거주중</option>
-              <option value="RESERVED">예약</option>
               <option value="CHECKOUT_PENDING">퇴실 예정</option>
+              <option value="CHECKED_OUT">퇴실</option>
+              <option value="NON_RESIDENT">비거주자</option>
               <option value="WAITING_TOUR">투어 대기</option>
               <option value="TOUR_DONE">투어 완료</option>
-              <option value="NON_RESIDENT">비거주자</option>
+              <option value="RESERVED">예약</option>
+              <option value="CANCELLED">입실 취소</option>
             </select>
           </div>
         </div>
