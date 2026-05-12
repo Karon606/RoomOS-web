@@ -21,6 +21,7 @@ import {
   mergeTrackedItems,
   createStockCheck,
   createStockAddition,
+  updateStockCheck,
   deleteStockCheck,
   deleteStockAddition,
   updateStockAddition,
@@ -742,6 +743,21 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
 
   // ── 점검
   if (entry.type === 'check') {
+    if (editing) {
+      return <CheckEditForm
+        entry={entry} stockUnit={stockUnit}
+        onCancel={() => { setEditing(false); setEditError('') }}
+        onSave={async (data) => {
+          setSavePending(true); setEditError('')
+          const res = await updateStockCheck(entry.id, data)
+          setSavePending(false)
+          if (!res.ok) { setEditError(res.error); return }
+          setEditing(false); onChanged()
+        }}
+        pending={savePending}
+        error={editError}
+      />
+    }
     return (
       <li className="flex items-center justify-between gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2">
         <div className="min-w-0 flex items-center gap-2">
@@ -761,8 +777,12 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
             {entry.memo && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">{entry.memo}</p>}
           </div>
         </div>
-        <button disabled={pending} onClick={() => onDeleteCheck(entry.id)}
-          className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 shrink-0 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-red-50">삭제</button>
+        <div className="flex items-center gap-1 shrink-0">
+          <button type="button" disabled={pending} onClick={() => setEditing(true)}
+            className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>
+          <button type="button" disabled={pending} onClick={() => onDeleteCheck(entry.id)}
+            className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-red-50">삭제</button>
+        </div>
       </li>
     )
   }
@@ -866,6 +886,90 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
           className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>
         <button type="button" disabled={pending} onClick={() => onDeleteAddition(entry.id)}
           className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-red-50">삭제</button>
+      </div>
+    </li>
+  )
+}
+
+// ── 재고 점검 인라인 편집 폼
+function CheckEditForm({ entry, stockUnit, onCancel, onSave, pending, error }: {
+  entry: TimelineEntry & { type: 'check' }
+  stockUnit: string | null
+  onCancel: () => void
+  onSave: (data: { date?: string; memo?: string | null; remainingQty?: number; locationQtys?: { storageLocationId: string; qty: number }[] }) => Promise<void>
+  pending: boolean
+  error: string
+}) {
+  const [date, setDate] = useState(entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10))
+  const [memo, setMemo] = useState(entry.memo ?? '')
+  const hasBreakdown = entry.locationBreakdown.length > 0
+  const [qty, setQty] = useState(hasBreakdown ? '' : String(entry.remainingQty))
+  const [locationQtys, setLocationQtys] = useState<Record<string, string>>(
+    () => Object.fromEntries(entry.locationBreakdown.map(lb => [lb.locationId, String(lb.qty)]))
+  )
+
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+
+  const locationTotal = hasBreakdown
+    ? entry.locationBreakdown.reduce((s, lb) => s + (Number(locationQtys[lb.locationId]) || 0), 0)
+    : null
+
+  const handleSave = () => {
+    if (hasBreakdown) {
+      onSave({
+        date,
+        memo: memo || null,
+        locationQtys: entry.locationBreakdown.map(lb => ({
+          storageLocationId: lb.locationId,
+          qty: Number(locationQtys[lb.locationId]) || 0,
+        })),
+      })
+    } else {
+      onSave({ date, memo: memo || null, remainingQty: Number(qty) })
+    }
+  }
+
+  return (
+    <li className="border border-[var(--coral)]/30 rounded-xl px-3 py-3 space-y-2 bg-[var(--canvas)]">
+      <p className="text-xs font-medium text-[var(--warm-mid)]">재고 점검 수정</p>
+      {error && <p className="text-xs text-red-500">{error}</p>}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <p className="text-[10px] text-[var(--warm-muted)] mb-1">날짜</p>
+          <DatePicker value={date} onChange={setDate} />
+        </div>
+        {!hasBreakdown && (
+          <div>
+            <p className="text-[10px] text-[var(--warm-muted)] mb-1">잔량{stockUnit ? ` (${stockUnit})` : ''}</p>
+            <input type="number" min="0" step="any" value={qty} onChange={e => setQty(e.target.value)} className={inputCls} />
+          </div>
+        )}
+      </div>
+      {hasBreakdown && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] text-[var(--warm-muted)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''} · 합계 {locationTotal ?? 0}{stockUnit ?? ''}</p>
+          {entry.locationBreakdown.map(lb => (
+            <div key={lb.locationId} className="flex items-center gap-2">
+              <span className="text-xs text-[var(--warm-mid)] w-20 shrink-0 truncate">{lb.locationName}</span>
+              <input type="number" min="0" step="any"
+                value={locationQtys[lb.locationId] ?? ''}
+                onChange={e => setLocationQtys(prev => ({ ...prev, [lb.locationId]: e.target.value }))}
+                className={inputCls} />
+            </div>
+          ))}
+        </div>
+      )}
+      <div>
+        <p className="text-[10px] text-[var(--warm-muted)] mb-1">메모</p>
+        <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} />
+      </div>
+      <div className="flex gap-2 pt-1 justify-end">
+        <button type="button" onClick={onCancel} disabled={pending}
+          className="text-xs text-[var(--warm-muted)] px-3 py-1.5 rounded-lg hover:bg-[var(--cream)]">취소</button>
+        <Btn variant="primary" size="sm" disabled={pending || (!hasBreakdown && (!qty || Number(qty) < 0))}
+          onClick={handleSave}>
+          {pending ? '저장 중…' : '저장'}
+        </Btn>
       </div>
     </li>
   )

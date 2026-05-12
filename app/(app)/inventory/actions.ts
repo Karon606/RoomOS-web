@@ -657,6 +657,52 @@ export async function createStockCheck(data: {
   }
 }
 
+export async function updateStockCheck(id: string, data: {
+  date?: string
+  memo?: string | null
+  remainingQty?: number
+  locationQtys?: { storageLocationId: string; qty: number }[]
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const c = await prisma.stockCheck.findUnique({ where: { id }, include: { trackedItem: true } })
+    if (!c || c.trackedItem.propertyId !== propertyId) return { ok: false, error: '점검 기록을 찾을 수 없습니다.' }
+
+    const finalQty = data.locationQtys && data.locationQtys.length > 0
+      ? data.locationQtys.reduce((s, lq) => s + lq.qty, 0)
+      : data.remainingQty
+
+    if (finalQty !== undefined && finalQty < 0) return { ok: false, error: '잔량은 0 이상이어야 합니다.' }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.stockCheck.update({
+        where: { id },
+        data: {
+          ...(data.date ? { date: new Date(data.date) } : {}),
+          ...(data.memo !== undefined ? { memo: data.memo || null } : {}),
+          ...(finalQty !== undefined ? { remainingQty: finalQty } : {}),
+        },
+      })
+      if (data.locationQtys && data.locationQtys.length > 0) {
+        await tx.stockCheckLocation.deleteMany({ where: { stockCheckId: id } })
+        await tx.stockCheckLocation.createMany({
+          data: data.locationQtys.map(lq => ({
+            stockCheckId: id,
+            storageLocationId: lq.storageLocationId,
+            remainingQty: lq.qty,
+          })),
+        })
+      }
+    })
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 export async function deleteStockCheck(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
