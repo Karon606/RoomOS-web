@@ -20,18 +20,39 @@ async function getPropertyId() {
 
 // ── 카테고리·라벨 매칭으로 그 기간의 구매량 합계
 // useSpecBase=true 면 qtyValue × specValue (kg, 매 같은 규격 단위) 로 환산
-async function sumPurchases(propertyId: string, category: string, label: string, qtyUnit: string | null, from: Date | null, to: Date | null, useSpecBase: boolean): Promise<number> {
-  const where: any = {
-    propertyId,
-    category,
-    itemLabel: label,
-    ...(qtyUnit ? { qtyUnit } : {}),
+//
+// fromCreatedAt 제공 시: from 날짜와 동일한 날에는 createdAt > fromCreatedAt 인 것만 포함.
+// → "점검 직후 같은 날 구매"를 currentStock 계산에 반영하기 위함.
+// → 소모량(consumption) 계산처럼 from~to 순수 기간만 볼 때는 fromCreatedAt 생략.
+async function sumPurchases(
+  propertyId: string, category: string, label: string, qtyUnit: string | null,
+  from: Date | null, to: Date | null, useSpecBase: boolean,
+  fromCreatedAt?: Date | null,
+): Promise<number> {
+  const conditions: any[] = [
+    { propertyId },
+    { category },
+    { itemLabel: label },
+    ...(qtyUnit ? [{ qtyUnit }] : []),
+    ...(to ? [{ date: { lte: to } }] : []),
+  ]
+
+  if (from != null) {
+    if (fromCreatedAt != null) {
+      // 같은 날 점검 이후 기록된 구매도 포함 (date 동일 + createdAt 이후)
+      conditions.push({
+        OR: [
+          { date: { gt: from } },
+          { AND: [{ date: { equals: from } }, { createdAt: { gt: fromCreatedAt } }] },
+        ],
+      })
+    } else {
+      conditions.push({ date: { gt: from } })
+    }
   }
-  if (from || to) {
-    where.date = {}
-    if (from) where.date.gt = from   // exclusive: prevCheck.date 이후
-    if (to)   where.date.lte = to    // inclusive: currCheck.date까지
-  }
+
+  const where = { AND: conditions }
+
   if (!useSpecBase) {
     const r = await prisma.expense.aggregate({ where, _sum: { qtyValue: true } })
     return r._sum.qtyValue ?? 0
@@ -44,17 +65,30 @@ async function sumPurchases(propertyId: string, category: string, label: string,
   }, 0)
 }
 
-async function sumAdditions(trackedItemId: string, from: Date | null, to: Date | null): Promise<number> {
-  const where: any = { trackedItemId }
-  if (from || to) {
-    where.date = {}
-    if (from) where.date.gt = from
-    if (to)   where.date.lte = to
+async function sumAdditions(
+  trackedItemId: string, from: Date | null, to: Date | null,
+  fromCreatedAt?: Date | null,
+): Promise<number> {
+  const conditions: any[] = [
+    { trackedItemId },
+    ...(to ? [{ date: { lte: to } }] : []),
+  ]
+
+  if (from != null) {
+    if (fromCreatedAt != null) {
+      conditions.push({
+        OR: [
+          { date: { gt: from } },
+          { AND: [{ date: { equals: from } }, { createdAt: { gt: fromCreatedAt } }] },
+        ],
+      })
+    } else {
+      conditions.push({ date: { gt: from } })
+    }
   }
-  const r = await prisma.stockAddition.aggregate({
-    where,
-    _sum: { addedQty: true },
-  })
+
+  const where = { AND: conditions }
+  const r = await prisma.stockAddition.aggregate({ where, _sum: { addedQty: true } })
   return r._sum.addedQty ?? 0
 }
 
@@ -82,14 +116,16 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
 
     let currentStock: number | null = null
     if (last) {
-      const incomingPurchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, last.date, today, useSpec)
-      const incomingAdditions = await sumAdditions(it.id, last.date, today)
+      // fromCreatedAt 전달 → 점검과 같은 날이라도 점검 이후 기록된 구매·입수 반영
+      const incomingPurchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, last.date, today, useSpec, last.createdAt)
+      const incomingAdditions = await sumAdditions(it.id, last.date, today, last.createdAt)
       currentStock = last.remainingQty + incomingPurchases + incomingAdditions
     }
 
     let lastPeriodConsumption: number | null = null
     let lastPeriodDays: number | null = null
     if (last && prev) {
+      // 소모량 계산: prev~last 기간 구매량. fromCreatedAt 없이 date.gt 사용 (기간 기준)
       const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, prev.date, last.date, useSpec)
       const additions = await sumAdditions(it.id, prev.date, last.date)
       lastPeriodConsumption = (prev.remainingQty + purchases + additions) - last.remainingQty
