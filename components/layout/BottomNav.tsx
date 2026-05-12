@@ -28,12 +28,12 @@ const NAV_ITEMS = [
   {
     href: '/tenants',
     label: '입주자',
-    Icon: () => <svg {...ico}><circle cx="11" cy="7" r="4"/><path d="M3 20c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>,
+    Icon: () => <svg {...ico}><circle cx="12" cy="7" r="4"/><path d="M3 20c0-4.4 3.6-7 9-7s9 2.6 9 7"/></svg>,
   },
   {
     href: '/rooms',
     label: '수납',
-    Icon: () => <svg {...ico}><rect x="3" y="6" width="16" height="12" rx="2"/><path d="M7 6V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1"/><circle cx="11" cy="12" r="2"/></svg>,
+    Icon: () => <svg {...ico}><rect x="3" y="6" width="16" height="12" rx="2"/><path d="M7 6V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1"/><circle cx="12" cy="12" r="2"/></svg>,
   },
   {
     href: '/checklist',
@@ -43,7 +43,7 @@ const NAV_ITEMS = [
   {
     href: '/settings',
     label: '설정',
-    Icon: () => <svg {...ico}><circle cx="11" cy="11" r="3"/><path d="M11 2v2M11 18v2M2 11h2M18 11h2M4.9 4.9l1.4 1.4M15.7 15.7l1.4 1.4M4.9 17.1l1.4-1.4M15.7 6.3l1.4-1.4"/></svg>,
+    Icon: () => <svg {...ico}><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 19v2M2 12h2M19 12h2M5.6 5.6l1.4 1.4M16.3 16.3l1.4 1.4M5.6 18.4l1.4-1.4M16.3 6.3l1.4-1.4"/></svg>,
   },
 ]
 
