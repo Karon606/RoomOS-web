@@ -30,7 +30,6 @@
   --persimmon-l:  #ffe6dc;   /* 페일 배경·뱃지 */
   --coral:        #e84a1a;   /* alias → persimmon */
   --coral-dark:   #c83a10;   /* alias → persimmon-d */
-  --coral-light:  #ff7048;   /* 약간 밝은 변형 (보조) */
   --coral-pale:   #ffe6dc;   /* alias → persimmon-l */
 
   /* M7 Honey — 경고·하이라이트 only (1% 미만 사용) */
@@ -98,7 +97,6 @@
   --color-canvas:       var(--canvas);
   --color-coral:        var(--coral);
   --color-coral-dark:   var(--coral-dark);
-  --color-coral-light:  var(--coral-light);
   --color-coral-pale:   var(--coral-pale);
   --color-sun:          var(--sun);
   --color-warm-mid:     var(--warm-mid);
