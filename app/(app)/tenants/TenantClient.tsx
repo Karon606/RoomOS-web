@@ -115,7 +115,7 @@ function loadColWidths(): Record<string, number> | null {
 
 const STATUS_LABEL: Record<string, string> = {
   ACTIVE: '거주중', RESERVED: '예약', CHECKOUT_PENDING: '퇴실 예정',
-  CHECKED_OUT: '퇴실', WAITING_TOUR: '투어 대기', TOUR_DONE: '투어 완료', CANCELLED: '예약취소',
+  CHECKED_OUT: '퇴실', WAITING_TOUR: '투어 대기', TOUR_DONE: '투어 완료', CANCELLED: '입실 취소',
   NON_RESIDENT: '비거주자',
 }
 const STATUS_COLOR: Record<string, string> = {
@@ -919,7 +919,7 @@ export default function TenantClient({
         {([
           { key: 'active',  label: `입주/예약자 (${activeCount})` },
           { key: 'past',    label: `퇴실자 내역 (${pastCount})` },
-          { key: 'dropped', label: `예약취소 내역 (${droppedCount})` },
+          { key: 'dropped', label: `입실 취소 내역 (${droppedCount})` },
         ] as const).map(tab => (
           <button key={tab.key} onClick={() => setFilter(tab.key)}
             className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
@@ -2803,6 +2803,7 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
   const [condWindow, setCondWindow]     = useState(initialCond.windowType ?? '')
   const [condType, setCondType]         = useState(initialCond.type ?? '')
   const [condDirection, setCondDirection] = useState(initialCond.direction ?? '')
+  const [rentEnabled, setRentEnabled]   = useState(initialCond.minRent !== undefined || initialCond.maxRent !== undefined)
   const [condMinRent, setCondMinRent]   = useState(initialCond.minRent ?? 0)
   const [condMaxRent, setCondMaxRent]   = useState(initialCond.maxRent ?? 400000)
 
@@ -2850,8 +2851,10 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
     if (condWindow)    condObj.windowType  = condWindow
     if (condType)      condObj.type        = condType
     if (condDirection) condObj.direction   = condDirection
-    condObj.minRent = condMinRent
-    condObj.maxRent = condMaxRent
+    if (rentEnabled) {
+      condObj.minRent = condMinRent
+      condObj.maxRent = condMaxRent
+    }
   }
   // 조건 모드는 빈 객체("{}")라도 저장 — "조건 무관, 모든 빈 방 매칭" 의도
   const wishConditionsValue = mode === 'conditions' ? JSON.stringify(condObj) : ''
@@ -2956,12 +2959,24 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
             </select>
           </div>
           <div className="space-y-1">
-            <p className="text-[11px] text-[var(--warm-muted)]">이용료 범위</p>
-            <div className="flex items-center gap-2">
-              <MoneyInput value={condMinRent} onChange={setCondMinRent} placeholder="최소 0원" />
-              <span className="text-sm text-[var(--warm-muted)] flex-shrink-0">~</span>
-              <MoneyInput value={condMaxRent} onChange={setCondMaxRent} placeholder="최대 400,000원" />
-            </div>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rentEnabled}
+                onChange={e => setRentEnabled(e.target.checked)}
+                className="accent-[var(--coral)] w-3.5 h-3.5"
+              />
+              <span className="text-[11px] text-[var(--warm-muted)]">이용료 범위 설정</span>
+            </label>
+            {rentEnabled ? (
+              <div className="flex items-center gap-2">
+                <MoneyInput value={condMinRent} onChange={setCondMinRent} placeholder="최소 0원" />
+                <span className="text-sm text-[var(--warm-muted)] flex-shrink-0">~</span>
+                <MoneyInput value={condMaxRent} onChange={setCondMaxRent} placeholder="최대 400,000원" />
+              </div>
+            ) : (
+              <p className="text-[11px] text-[var(--warm-muted)] pl-0.5">제한 없음 — 이용료 무관하게 매칭</p>
+            )}
           </div>
         </>
       )}
@@ -3119,7 +3134,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               <option value="WAITING_TOUR">투어 대기</option>
               <option value="TOUR_DONE">투어 완료</option>
               <option value="RESERVED">예약</option>
-              <option value="CANCELLED">예약취소</option>
+              <option value="CANCELLED">입실 취소</option>
             </select>
           </div>
           <SelectField label="선납/후납" name="paymentTiming" defaultValue={lease?.paymentTiming ?? 'PREPAID'}>
