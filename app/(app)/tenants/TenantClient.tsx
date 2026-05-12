@@ -1687,7 +1687,7 @@ export default function TenantClient({
                                   label={['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status) ? '입주 희망일' : '입주일'}
                                   value={fmtDate(lease.moveInDate)}
                                 />
-                                {['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status) && lease.inquiryAt && (
+                                {!['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(lease.status) && lease.inquiryAt && (
                                   <InfoItem label="입실 문의 일시" value={fmtDateTime(lease.inquiryAt)} />
                                 )}
                                 {!['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status) && (
