@@ -34,6 +34,7 @@ async function sumPurchases(
     { category },
     { itemLabel: label },
     { receivedAt: { not: null } },  // 수령 확인된 구매만 재고에 반영
+    { excludeFromInventory: false },
     ...(qtyUnit ? [{ qtyUnit }] : []),
     ...(to ? [{ date: { lte: to } }] : []),
   ]
@@ -129,6 +130,7 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
       category: { in: TRACKED_CATEGORIES as unknown as string[] },
       itemLabel: { not: null },
       receivedAt: null,
+      excludeFromInventory: false,
       qtyValue: { gt: 0 },
     },
     select: { id: true, date: true, qtyValue: true, specValue: true, specUnit: true, qtyUnit: true, itemLabel: true, category: true, amount: true, vendor: true, memo: true },
@@ -185,6 +187,7 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
         qtyValue: { gt: 0 },
         amount: { gt: 0 },
         receivedAt: { not: null },
+        excludeFromInventory: false,
       },
       select: { date: true, amount: true, qtyValue: true, specValue: true, specUnit: true },
       orderBy: { date: 'desc' },
@@ -282,6 +285,7 @@ export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyIn
         ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
         qtyValue: { gt: 0 },
         receivedAt: { not: null },
+        excludeFromInventory: false,
       },
       select: { date: true, qtyValue: true, specValue: true, amount: true },
     }),
@@ -329,6 +333,7 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
       qtyValue: { gt: 0 },
       amount: { gt: 0 },
       receivedAt: { not: null },
+      excludeFromInventory: false,
     },
     select: { date: true, amount: true, qtyValue: true, specValue: true },
     orderBy: { date: 'asc' },
@@ -383,6 +388,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         category: item.category,
         itemLabel: item.label,
         ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
+        excludeFromInventory: false,
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
       select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, memo: true, receivedAt: true },
@@ -760,15 +766,14 @@ export async function updateExpenseFromInventory(id: string, data: {
   }
 }
 
-export async function deleteExpenseFromInventory(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function excludeExpenseFromInventory(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const e = await prisma.expense.findUnique({ where: { id } })
     if (!e || e.propertyId !== propertyId) return { ok: false, error: '구매 기록을 찾을 수 없습니다.' }
-    await prisma.expense.delete({ where: { id } })
+    await prisma.expense.update({ where: { id }, data: { excludeFromInventory: true } })
     revalidatePath('/inventory')
-    revalidatePath('/expenses')
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err

@@ -25,7 +25,7 @@ import {
   deleteStockAddition,
   updateStockAddition,
   updateExpenseFromInventory,
-  deleteExpenseFromInventory,
+  excludeExpenseFromInventory,
   seedTrackedItemsFromExpenses,
   confirmReceipt,
   confirmAllPending,
@@ -788,9 +788,9 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
           setEditing(false); onChanged()
         }}
         onDelete={async () => {
-          if (!confirm('이 구매 기록을 삭제하시겠습니까?\n지출 페이지에서도 제거됩니다.')) return
+          if (!confirm('이 구매를 재고에서 제외하시겠습니까?\n지출 페이지에는 그대로 남습니다.')) return
           setSavePending(true)
-          const res = await deleteExpenseFromInventory(entry.id)
+          const res = await excludeExpenseFromInventory(entry.id)
           setSavePending(false)
           if (!res.ok) { setEditError(res.error); return }
           onChanged()
@@ -944,7 +944,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
 
   return (
     <li className="border border-[var(--warm-border)] rounded-xl px-3 py-3 space-y-2 bg-[var(--canvas)]">
-      <p className="text-xs font-medium text-[var(--warm-mid)]">구매 수정 <span className="text-[10px] font-normal text-[var(--warm-muted)]">— 지출 페이지에도 반영됩니다</span></p>
+      <p className="text-xs font-medium text-[var(--warm-mid)]">구매 수정 <span className="text-[10px] font-normal text-[var(--warm-muted)]">— 수정 내용은 지출 페이지에도 반영됩니다</span></p>
       {error && <p className="text-xs text-red-500">{error}</p>}
       <div className="grid grid-cols-2 gap-2">
         <div>
@@ -966,7 +966,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
       </div>
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onDelete} disabled={pending}
-          className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 px-2 py-1.5 rounded-lg hover:bg-red-50">삭제</button>
+          className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 px-2 py-1.5 rounded-lg hover:bg-red-50">재고에서 제외</button>
         <div className="flex-1" />
         <button type="button" onClick={onCancel} disabled={pending}
           className="text-xs text-[var(--warm-muted)] px-3 py-1.5 rounded-lg hover:bg-[var(--cream)]">취소</button>
