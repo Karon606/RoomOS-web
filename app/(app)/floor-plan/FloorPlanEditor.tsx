@@ -1,43 +1,25 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import dynamic from 'next/dynamic'
+import { Stage, Layer, Rect, Text, Group, Transformer, Line } from 'react-konva'
 import { type FloorPlanData, type FloorPlanElement, type ElementType, saveFloorPlan } from './actions'
 import { pushToast } from '@/lib/saveStatus'
 
-// react-konva는 SSR 불가 → dynamic import
-const Stage    = dynamic(() => import('react-konva').then(m => m.Stage),    { ssr: false })
-const Layer    = dynamic(() => import('react-konva').then(m => m.Layer),    { ssr: false })
-const Rect     = dynamic(() => import('react-konva').then(m => m.Rect),     { ssr: false })
-const Text     = dynamic(() => import('react-konva').then(m => m.Text),     { ssr: false })
-const Group    = dynamic(() => import('react-konva').then(m => m.Group),    { ssr: false })
-const Transformer = dynamic(() => import('react-konva').then(m => m.Transformer), { ssr: false })
-const Line     = dynamic(() => import('react-konva').then(m => m.Line),     { ssr: false })
-
-// ── 타입 설정 ────────────────────────────────────────────────
-
 const ELEMENT_DEFAULTS: Record<ElementType, { label: string; width: number; height: number; fill: string; stroke: string }> = {
-  room:           { label: '방',   width: 80,  height: 80,  fill: '#f5f1ea', stroke: '#4d3e2e' },
-  corridor:       { label: '복도', width: 200, height: 50,  fill: '#ebe1cf', stroke: '#7a6a55' },
-  kitchen:        { label: '주방', width: 100, height: 80,  fill: '#fff3e0', stroke: '#b85944' },
-  bathroom:       { label: '화장실', width: 60, height: 70, fill: '#e3f2fd', stroke: '#4d8fac' },
-  stairs:         { label: '계단', width: 70,  height: 80,  fill: '#f3e5f5', stroke: '#7b3f9e' },
-  entrance:       { label: '출입문', width: 50, height: 20, fill: '#1a1a1a', stroke: '#1a1a1a' },
-  emergency_exit: { label: '비상구', width: 40, height: 20, fill: '#e84a1a', stroke: '#c83a10' },
-  window:         { label: '창문', width: 60,  height: 12,  fill: '#b3d9f7', stroke: '#4d8fac' },
-  label:          { label: '텍스트', width: 80, height: 30, fill: 'transparent', stroke: 'transparent' },
+  room:           { label: '방',    width: 80,  height: 80,  fill: '#f5f1ea', stroke: '#4d3e2e' },
+  corridor:       { label: '복도',  width: 200, height: 50,  fill: '#ebe1cf', stroke: '#7a6a55' },
+  kitchen:        { label: '주방',  width: 100, height: 80,  fill: '#fff3e0', stroke: '#b85944' },
+  bathroom:       { label: '화장실', width: 60, height: 70,  fill: '#e3f2fd', stroke: '#4d8fac' },
+  stairs:         { label: '계단',  width: 70,  height: 80,  fill: '#f3e5f5', stroke: '#7b3f9e' },
+  entrance:       { label: '출입문', width: 50,  height: 20, fill: '#1a1a1a', stroke: '#1a1a1a' },
+  emergency_exit: { label: '비상구', width: 40,  height: 20, fill: '#e84a1a', stroke: '#c83a10' },
+  window:         { label: '창문',  width: 60,  height: 12,  fill: '#b3d9f7', stroke: '#4d8fac' },
+  label:          { label: '텍스트', width: 80,  height: 30, fill: 'transparent', stroke: 'transparent' },
 }
 
-const PALETTE: { type: ElementType; icon: string }[] = [
-  { type: 'room',           icon: '🚪' },
-  { type: 'corridor',       icon: '↔️' },
-  { type: 'kitchen',        icon: '🍳' },
-  { type: 'bathroom',       icon: '🚿' },
-  { type: 'stairs',         icon: '🪜' },
-  { type: 'entrance',       icon: '🏠' },
-  { type: 'emergency_exit', icon: '🆘' },
-  { type: 'window',         icon: '🪟' },
-  { type: 'label',          icon: '✏️' },
+const PALETTE: ElementType[] = [
+  'room', 'corridor', 'kitchen', 'bathroom', 'stairs',
+  'entrance', 'emergency_exit', 'window', 'label',
 ]
 
 const TYPE_LABEL: Record<ElementType, string> = {
@@ -47,44 +29,31 @@ const TYPE_LABEL: Record<ElementType, string> = {
 
 function genId() { return Math.random().toString(36).slice(2, 10) }
 
-// ── 점선 그리드 ──────────────────────────────────────────────
 function GridLines({ width, height, size = 20 }: { width: number; height: number; size?: number }) {
-  const hLines: number[][] = []
-  const vLines: number[][] = []
-  for (let y = 0; y <= height; y += size) hLines.push([0, y, width, y])
-  for (let x = 0; x <= width; x += size) vLines.push([x, 0, x, height])
-  return (
-    <>
-      {hLines.map((pts, i) => (
-        <Line key={`h${i}`} points={pts} stroke="#d0c8bc" strokeWidth={0.5} dash={[2, 4]} />
-      ))}
-      {vLines.map((pts, i) => (
-        <Line key={`v${i}`} points={pts} stroke="#d0c8bc" strokeWidth={0.5} dash={[2, 4]} />
-      ))}
-    </>
-  )
+  const lines: React.ReactNode[] = []
+  for (let y = 0; y <= height; y += size)
+    lines.push(<Line key={`h${y}`} points={[0, y, width, y]} stroke="#d0c8bc" strokeWidth={0.5} dash={[2, 4]} />)
+  for (let x = 0; x <= width; x += size)
+    lines.push(<Line key={`v${x}`} points={[x, 0, x, height]} stroke="#d0c8bc" strokeWidth={0.5} dash={[2, 4]} />)
+  return <>{lines}</>
 }
 
-// ── 개별 요소 ────────────────────────────────────────────────
 function PlanElement({
-  el, isSelected, onSelect, onChange, editMode,
-  roomStatus,
+  el, isSelected, onSelect, onChange, editMode, roomStatus,
 }: {
   el: FloorPlanElement
   isSelected: boolean
   onSelect: () => void
-  onChange: (updated: Partial<FloorPlanElement>) => void
+  onChange: (patch: Partial<FloorPlanElement>) => void
   editMode: boolean
   roomStatus?: { isVacant: boolean; tenantName?: string }
 }) {
   const groupRef = useRef<any>(null)
   const trRef    = useRef<any>(null)
-  const def = ELEMENT_DEFAULTS[el.type]
+  const def      = ELEMENT_DEFAULTS[el.type]
 
   const fill   = el.fill ?? def.fill
   const stroke = def.stroke
-
-  // 방 타입: 점유 상태 색상
   const bgFill =
     el.type === 'room' && roomStatus != null
       ? roomStatus.isVacant ? '#f0fdf4' : '#fff7ed'
@@ -97,14 +66,12 @@ function PlanElement({
     }
   }, [isSelected])
 
-  const handleDragEnd = (e: any) => {
-    onChange({ x: Math.round(e.target.x()), y: Math.round(e.target.y()) })
-  }
+  const handleDragEnd = (e: any) => onChange({ x: Math.round(e.target.x()), y: Math.round(e.target.y()) })
+
   const handleTransformEnd = () => {
     const node = groupRef.current
     if (!node) return
-    const scaleX = node.scaleX()
-    const scaleY = node.scaleY()
+    const scaleX = node.scaleX(), scaleY = node.scaleY()
     node.scaleX(1); node.scaleY(1)
     onChange({
       x: Math.round(node.x()),
@@ -134,7 +101,7 @@ function PlanElement({
         <Rect
           width={el.width} height={el.height}
           fill={bgFill}
-          stroke={isSelected ? '#e84a1a' : stroke}
+          stroke={isSelected ? 'var(--coral, #e84a1a)' : stroke}
           strokeWidth={isSelected ? 2 : 1}
           cornerRadius={el.type === 'room' ? 4 : 2}
           shadowEnabled={isSelected}
@@ -143,23 +110,18 @@ function PlanElement({
         />
         <Text
           text={el.label}
-          width={el.width}
-          height={el.height}
-          align="center"
-          verticalAlign="middle"
+          width={el.width} height={el.height}
+          align="center" verticalAlign="middle"
           fontSize={fontSize}
           fontFamily="Pretendard Variable, Pretendard, sans-serif"
           fill={textColor}
-          wrap="word"
-          padding={2}
+          wrap="word" padding={2}
         />
         {el.type === 'room' && roomStatus && (
           <Text
             text={roomStatus.isVacant ? '공실' : (roomStatus.tenantName ?? '입실')}
-            width={el.width}
-            y={el.height - 18}
-            align="center"
-            fontSize={8}
+            width={el.width} y={el.height - 18}
+            align="center" fontSize={8}
             fill={roomStatus.isVacant ? '#047857' : '#b85944'}
           />
         )}
@@ -179,18 +141,17 @@ function PlanElement({
   )
 }
 
-// ── 속성 패널 ────────────────────────────────────────────────
 function PropertiesPanel({
   el, rooms, onChange, onDelete,
 }: {
   el: FloorPlanElement
-  rooms: { roomNo: string; id: string }[]
-  onChange: (updated: Partial<FloorPlanElement>) => void
+  rooms: { id: string; roomNo: string }[]
+  onChange: (patch: Partial<FloorPlanElement>) => void
   onDelete: () => void
 }) {
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
   return (
-    <div className="space-y-2.5 p-3">
+    <div className="space-y-3 p-3">
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-semibold text-[var(--warm-dark)]">{TYPE_LABEL[el.type]}</p>
         <button onClick={onDelete}
@@ -218,14 +179,14 @@ function PropertiesPanel({
 
       <div className="grid grid-cols-2 gap-1.5">
         <div className="space-y-1">
-          <p className="text-[10px] text-[var(--warm-muted)]">너비</p>
+          <p className="text-[10px] text-[var(--warm-muted)]">너비 px</p>
           <input type="number" className={inputCls} value={el.width}
-            onChange={e => onChange({ width: Number(e.target.value) })} />
+            onChange={e => onChange({ width: Math.max(20, Number(e.target.value)) })} />
         </div>
         <div className="space-y-1">
-          <p className="text-[10px] text-[var(--warm-muted)]">높이</p>
+          <p className="text-[10px] text-[var(--warm-muted)]">높이 px</p>
           <input type="number" className={inputCls} value={el.height}
-            onChange={e => onChange({ height: Number(e.target.value) })} />
+            onChange={e => onChange({ height: Math.max(20, Number(e.target.value)) })} />
         </div>
       </div>
 
@@ -239,11 +200,14 @@ function PropertiesPanel({
         <div className="space-y-1">
           <p className="text-[10px] text-[var(--warm-muted)]">배경색</p>
           <div className="flex items-center gap-2">
-            <input type="color" value={el.fill ?? ELEMENT_DEFAULTS[el.type].fill}
+            <input type="color"
+              value={el.fill ?? ELEMENT_DEFAULTS[el.type].fill}
               onChange={e => onChange({ fill: e.target.value })}
               className="w-8 h-7 rounded cursor-pointer border border-[var(--warm-border)]" />
             <button onClick={() => onChange({ fill: undefined })}
-              className="text-[10px] text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">초기화</button>
+              className="text-[10px] text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">
+              초기화
+            </button>
           </div>
         </div>
       )}
@@ -251,7 +215,6 @@ function PropertiesPanel({
   )
 }
 
-// ── 메인 에디터 컴포넌트 ─────────────────────────────────────
 export default function FloorPlanEditor({
   initialData,
   rooms,
@@ -266,24 +229,25 @@ export default function FloorPlanEditor({
   const DEFAULT_W = 800
   const DEFAULT_H = 600
 
-  const [elements, setElements] = useState<FloorPlanElement[]>(initialData?.elements ?? [])
-  const [canvasWidth]  = useState(initialData?.canvasWidth  ?? DEFAULT_W)
-  const [canvasHeight] = useState(initialData?.canvasHeight ?? DEFAULT_H)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [editMode, setEditMode]     = useState(!viewOnly)
-  const [saving, setSaving]         = useState(false)
-  const [showGrid, setShowGrid]     = useState(true)
+  const [mounted, setMounted]         = useState(false)
+  const [elements, setElements]       = useState<FloorPlanElement[]>(initialData?.elements ?? [])
+  const [canvasWidth]                 = useState(initialData?.canvasWidth  ?? DEFAULT_W)
+  const [canvasHeight]                = useState(initialData?.canvasHeight ?? DEFAULT_H)
+  const [selectedId, setSelectedId]   = useState<string | null>(null)
+  const [editMode, setEditMode]       = useState(!viewOnly)
+  const [saving, setSaving]           = useState(false)
+  const [showGrid, setShowGrid]       = useState(true)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
 
-  // 컨테이너 크기에 맞춰 스케일 계산
+  useEffect(() => { setMounted(true) }, [])
+
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const obs = new ResizeObserver(() => {
-      const w = el.clientWidth
-      setScale(Math.min(1, w / canvasWidth))
+      setScale(Math.min(1, el.clientWidth / canvasWidth))
     })
     obs.observe(el)
     return () => obs.disconnect()
@@ -295,8 +259,8 @@ export default function FloorPlanEditor({
     const def = ELEMENT_DEFAULTS[type]
     const el: FloorPlanElement = {
       id: genId(), type,
-      x: 40 + Math.random() * 100,
-      y: 40 + Math.random() * 100,
+      x: 60 + Math.random() * 80,
+      y: 60 + Math.random() * 80,
       width: def.width, height: def.height,
       rotation: 0,
       label: def.label,
@@ -326,83 +290,97 @@ export default function FloorPlanEditor({
     if (e.target === e.target.getStage()) setSelectedId(null)
   }
 
+  const btnBase = 'px-2.5 py-1.5 text-xs rounded-lg border transition-colors'
+  const btnIdle = `${btnBase} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)]`
+
   return (
     <div className="flex flex-col h-full">
-      {/* 상단 툴바 */}
+      {/* 툴바 */}
       {!viewOnly && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--warm-border)] shrink-0 flex-wrap">
+        <div
+          className="flex items-center gap-1.5 px-3 py-2 border-b border-[var(--warm-border)] shrink-0 overflow-x-auto"
+          style={{ background: 'var(--cream)' }}
+        >
+          {/* 편집/보기 토글 */}
           <button
             onClick={() => { setEditMode(v => !v); setSelectedId(null) }}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+            className={`${btnBase} shrink-0 font-medium ${
               editMode
-                ? 'bg-[var(--coral)] text-white'
-                : 'bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:border-[var(--coral)]'
-            }`}>
-            {editMode ? '✏️ 편집 중' : '✏️ 편집'}
+                ? 'bg-[var(--coral)] border-[var(--coral)] text-white'
+                : 'bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-mid)]'
+            }`}
+          >
+            {editMode ? '편집 중' : '편집'}
           </button>
 
           {editMode && (
             <>
-              <div className="w-px h-5 bg-[var(--warm-border)]" />
-              {PALETTE.map(({ type, icon }) => (
+              <div className="w-px h-4 bg-[var(--warm-border)] shrink-0 mx-0.5" />
+              <span className="text-[10px] text-[var(--warm-muted)] shrink-0">추가:</span>
+              {PALETTE.map(type => (
                 <button key={type} onClick={() => addElement(type)}
-                  title={TYPE_LABEL[type]}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg hover:border-[var(--coral)] transition-colors text-[var(--warm-dark)]">
-                  <span>{icon}</span>
-                  <span className="hidden sm:inline">{TYPE_LABEL[type]}</span>
+                  className={`${btnIdle} shrink-0`}>
+                  {TYPE_LABEL[type]}
                 </button>
               ))}
-              <div className="w-px h-5 bg-[var(--warm-border)]" />
+              <div className="w-px h-4 bg-[var(--warm-border)] shrink-0 mx-0.5" />
             </>
           )}
 
-          <label className="flex items-center gap-1.5 text-xs text-[var(--warm-mid)] cursor-pointer ml-auto">
+          <label className="flex items-center gap-1 text-xs text-[var(--warm-mid)] cursor-pointer shrink-0 ml-auto">
             <input type="checkbox" checked={showGrid} onChange={e => setShowGrid(e.target.checked)}
               className="accent-[var(--coral)]" />
             그리드
           </label>
 
           <button onClick={handleSave} disabled={saving}
-            className="px-3 py-1.5 text-xs font-medium bg-[var(--ink)] text-[var(--canvas)] rounded-lg hover:opacity-80 disabled:opacity-50 transition-opacity">
-            {saving ? '저장 중...' : '저장'}
+            className={`${btnBase} shrink-0 font-medium bg-[var(--ink)] border-[var(--ink)] text-[var(--canvas)] hover:opacity-80 disabled:opacity-50`}>
+            {saving ? '저장 중…' : '저장'}
           </button>
         </div>
       )}
 
-      {/* 메인 영역 */}
+      {/* 본문 */}
       <div className="flex flex-1 overflow-hidden">
         {/* 캔버스 */}
-        <div ref={containerRef} className="flex-1 overflow-auto bg-[var(--cream-2)]">
-          <div style={{ width: canvasWidth * scale, height: canvasHeight * scale }}>
-            <Stage
-              width={canvasWidth * scale}
-              height={canvasHeight * scale}
-              scaleX={scale} scaleY={scale}
-              onClick={handleStageClick}
-              onTap={handleStageClick}
-            >
-              <Layer>
-                <Rect width={canvasWidth} height={canvasHeight} fill="#faf6ef" />
-                {showGrid && <GridLines width={canvasWidth} height={canvasHeight} />}
-                {elements.map(el => (
-                  <PlanElement
-                    key={el.id}
-                    el={el}
-                    isSelected={selectedId === el.id}
-                    onSelect={() => editMode && setSelectedId(el.id)}
-                    onChange={patch => updateElement(el.id, patch)}
-                    editMode={editMode}
-                    roomStatus={el.roomNo ? roomStatuses[el.roomNo] : undefined}
-                  />
-                ))}
-              </Layer>
-            </Stage>
-          </div>
+        <div ref={containerRef} className="flex-1 overflow-auto" style={{ background: 'var(--cream-2, #f0ebe0)' }}>
+          {mounted ? (
+            <div style={{ width: canvasWidth * scale, height: canvasHeight * scale }}>
+              <Stage
+                width={canvasWidth * scale}
+                height={canvasHeight * scale}
+                scaleX={scale} scaleY={scale}
+                onClick={handleStageClick}
+                onTap={handleStageClick}
+              >
+                <Layer>
+                  <Rect width={canvasWidth} height={canvasHeight} fill="#faf6ef" />
+                  {showGrid && <GridLines width={canvasWidth} height={canvasHeight} />}
+                  {elements.map(el => (
+                    <PlanElement
+                      key={el.id}
+                      el={el}
+                      isSelected={selectedId === el.id}
+                      onSelect={() => editMode && setSelectedId(el.id)}
+                      onChange={patch => updateElement(el.id, patch)}
+                      editMode={editMode}
+                      roomStatus={el.roomNo ? roomStatuses[el.roomNo] : undefined}
+                    />
+                  ))}
+                </Layer>
+              </Stage>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-sm text-[var(--warm-muted)]">도면 로딩 중…</p>
+            </div>
+          )}
         </div>
 
-        {/* 우측 속성 패널 */}
+        {/* 속성 패널 */}
         {editMode && selectedEl && (
-          <div className="w-48 shrink-0 border-l border-[var(--warm-border)] overflow-y-auto bg-[var(--cream)]">
+          <div className="w-48 shrink-0 border-l border-[var(--warm-border)] overflow-y-auto"
+            style={{ background: 'var(--cream)' }}>
             <PropertiesPanel
               el={selectedEl}
               rooms={rooms}
@@ -413,12 +391,13 @@ export default function FloorPlanEditor({
         )}
       </div>
 
-      {/* 편집 모드 안내 */}
-      {editMode && elements.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <p className="text-sm text-[var(--warm-muted)] bg-[var(--cream)]/80 rounded-xl px-4 py-3">
-            위 버튼을 눌러 요소를 추가하세요
-          </p>
+      {/* 빈 상태 안내 */}
+      {mounted && editMode && elements.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ top: 44 }}>
+          <div className="text-center px-6 py-4 rounded-xl" style={{ background: 'rgba(250,246,239,0.9)' }}>
+            <p className="text-sm text-[var(--warm-dark)] font-medium mb-1">도면이 비어 있습니다</p>
+            <p className="text-xs text-[var(--warm-muted)]">위 툴바에서 요소를 클릭해 캔버스에 추가하세요</p>
+          </div>
         </div>
       )}
     </div>
