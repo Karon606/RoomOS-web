@@ -68,6 +68,7 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
   const [selectMode, setSelectMode]       = useState(false)
   const [selected, setSelected]           = useState<Set<string>>(new Set())
   const [showBatchLoc, setShowBatchLoc]   = useState(false)
+  const [showBatchCheck, setShowBatchCheck] = useState(false)
 
   const toggleSelect = (id: string) => setSelected(prev => {
     const next = new Set(prev)
@@ -116,6 +117,7 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
           <Btn variant="secondary" size="sm" onClick={() => { selectMode ? exitSelectMode() : setSelectMode(true) }}>
             {selectMode ? `선택 취소${selected.size > 0 ? ` (${selected.size})` : ''}` : '선택'}
           </Btn>
+          <Btn variant="secondary" size="sm" onClick={() => setShowBatchCheck(true)}>위치별 점검</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setShowLocations(true)}>위치 관리</Btn>
           <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
           <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
@@ -153,6 +155,7 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
       )}
 
       {showLocations && <LocationSettingsModal onClose={() => { setShowLocations(false); router.refresh() }} />}
+      {showBatchCheck && <LocationBatchCheckModal rows={rows} onClose={() => setShowBatchCheck(false)} onDone={() => { setShowBatchCheck(false); router.refresh() }} />}
       {showAdd && <AddItemModal onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); router.refresh() }} />}
       {showBatchLoc && (
         <BatchLocationModal
@@ -434,7 +437,7 @@ function DetailModal({ row, onClose, onChange }: {
       {!data ? (
         <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
       ) : mode === 'check' ? (
-        <CheckForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
+        <CheckForm item={data.item} lastCheckBreakdown={row.lastCheckLocationBreakdown} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : mode === 'addition' ? (
         <AdditionForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : mode === 'settings' ? (
@@ -693,19 +696,25 @@ function MergeSection({ currentId, currentLabel, category, onDone }: {
 }) {
   const [siblings, setSiblings] = useState<{ id: string; label: string }[]>([])
   const [targetId, setTargetId] = useState('')
+  const [reversed, setReversed] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
   const [pending, setPending] = useState(false)
   useEffect(() => { getSameCategoryItems(currentId).then(setSiblings) }, [currentId])
   if (siblings.length === 0) return null
 
   const target = siblings.find(s => s.id === targetId)
+  const srcLabel  = reversed ? target?.label : currentLabel
+  const destLabel = reversed ? currentLabel   : target?.label
+  const srcId     = reversed ? targetId       : currentId
+  const destId    = reversed ? currentId      : targetId
+
   const handleMerge = async () => {
-    if (!target) return
-    if (!confirm(`'${currentLabel}'을(를) '${target.label}' 카드로 병합합니다.\n\n· 이 카드의 지출·점검·무상입수 기록이 모두 '${target.label}'로 이전됩니다.\n· 이 카드는 삭제되고, 대상 카드의 수량 단위 필터는 해제(다양한 포장 합산)됩니다.\n\n진행하시겠습니까?`)) return
     setPending(true)
-    const res = await mergeTrackedItems(currentId, target.id, true)
+    const res = await mergeTrackedItems(srcId, destId, true)
     setPending(false)
     if (!res.ok) { alert(res.error); return }
-    alert(`병합 완료 — 지출 ${res.movedExpenses}건, 점검 ${res.movedChecks}건, 무상입수 ${res.movedAdditions}건`)
+    setShowConfirm(false)
+    pushToast('success', `병합 완료 — 지출 ${res.movedExpenses}건, 점검 ${res.movedChecks}건, 무상입수 ${res.movedAdditions}건`)
     onDone()
   }
 
@@ -713,18 +722,56 @@ function MergeSection({ currentId, currentLabel, category, onDone }: {
     <div className="space-y-1.5 pt-2 border-t border-[var(--warm-border)]/60">
       <label className="text-xs font-medium text-[var(--warm-mid)]">다른 카드와 병합</label>
       <div className="flex gap-2">
-        <select value={targetId} onChange={e => setTargetId(e.target.value)}
+        <select value={targetId} onChange={e => { setTargetId(e.target.value); setReversed(false) }}
           className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none">
           <option value="">병합 대상 선택…</option>
           {siblings.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
-        <Btn type="button" variant="danger" size="md" onClick={handleMerge} disabled={!target || pending}>
-          {pending ? '병합 중...' : '병합'}
+        <Btn type="button" variant="danger" size="md" onClick={() => setShowConfirm(true)} disabled={!target || pending}>
+          병합
         </Btn>
       </div>
       <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
         예: 라면처럼 봉지·박스가 섞여도 한 카드로 합쳐 추적하고 싶을 때. 사이즈가 의미 있는 폐기물 봉투는 분리 유지 권장.
       </p>
+
+      {/* 병합 방향 확인 모달 */}
+      {showConfirm && target && (
+        <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4" onClick={() => setShowConfirm(false)}>
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm p-5 space-y-4 shadow-lift" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-[var(--warm-dark)]">병합 방향 확인</h3>
+
+            {/* 방향 표시 + 스왑 버튼 */}
+            <div className="flex items-center gap-2">
+              <div className="flex-1 text-center">
+                <p className="text-[10px] text-[var(--warm-muted)] mb-0.5">삭제될 카드</p>
+                <p className="text-sm font-semibold text-[var(--warm-dark)] truncate">{srcLabel}</p>
+              </div>
+              <button type="button" onClick={() => setReversed(r => !r)}
+                className="shrink-0 w-8 h-8 rounded-full border border-[var(--warm-border)] flex items-center justify-center text-[var(--warm-mid)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors text-base">
+                ⇄
+              </button>
+              <div className="flex-1 text-center">
+                <p className="text-[10px] text-[var(--warm-muted)] mb-0.5">기록이 합쳐질 카드</p>
+                <p className="text-sm font-semibold text-[var(--coral)] truncate">{destLabel}</p>
+              </div>
+            </div>
+
+            <ul className="text-[11px] text-[var(--warm-muted)] space-y-1 leading-relaxed">
+              <li>· <strong className="text-[var(--warm-dark)]">{srcLabel}</strong>의 지출·점검·무상입수 기록이 모두 <strong className="text-[var(--warm-dark)]">{destLabel}</strong>로 이전됩니다.</li>
+              <li>· <strong className="text-[var(--warm-dark)]">{srcLabel}</strong> 카드는 삭제됩니다.</li>
+              <li>· 대상 카드의 수량 단위 필터는 해제(다양한 포장 합산)됩니다.</li>
+            </ul>
+
+            <div className="flex gap-2 pt-1">
+              <Btn type="button" variant="secondary" fullWidth onClick={() => setShowConfirm(false)}>취소</Btn>
+              <Btn type="button" variant="danger" fullWidth onClick={handleMerge} disabled={pending}>
+                {pending ? '병합 중...' : '확인'}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1097,23 +1144,37 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   )
 }
 
-function CheckForm({ item, onCancel, onDone }: {
+function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
   item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
+  lastCheckBreakdown: LocationQtyEntry[]
   onCancel: () => void; onDone: () => void
 }) {
   const stockUnit = item.trackUnit === 'qty' ? item.qtyUnit : (item.specUnit ?? item.qtyUnit)
   const hasLocations = item.locations.length > 0
   const [date, setDate] = useState(kstYmdStr())
-  // 위치별 잔량: locationId → qty string
+
+  // 이전 점검의 위치별 수량 맵
+  const prevMap = Object.fromEntries(lastCheckBreakdown.map(lb => [lb.locationId, lb.qty]))
+  const hasPrev = lastCheckBreakdown.length > 0
+
+  // 위치별 잔량: 이전 수량으로 미리 채움
   const [locationQtys, setLocationQtys] = useState<Record<string, string>>(
-    () => Object.fromEntries(item.locations.map(l => [l.id, '']))
+    () => Object.fromEntries(item.locations.map(l => [l.id, prevMap[l.id] != null ? String(prevMap[l.id]) : '']))
   )
-  const [qty, setQty]   = useState('')  // 위치 없을 때 단일 입력
+  // 사용자가 직접 수정한 위치 추적
+  const [touched, setTouched] = useState<Set<string>>(new Set())
+
+  const [qty, setQty]   = useState('')
   const [memo, setMemo] = useState('')
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
 
-  // 위치별 합산
+  const handleLocChange = (id: string, val: string) => {
+    setLocationQtys(prev => ({ ...prev, [id]: val.replace(/[^0-9.]/g, '') }))
+    setTouched(prev => new Set([...prev, id]))
+  }
+  const confirmAll = () => setTouched(new Set(item.locations.map(l => l.id)))
+
   const locationTotal = hasLocations
     ? item.locations.reduce((s, l) => s + (Number(locationQtys[l.id]) || 0), 0)
     : null
@@ -1157,18 +1218,39 @@ function CheckForm({ item, onCancel, onDone }: {
 
       {hasLocations ? (
         <div className="space-y-2">
-          <label className="text-xs font-medium text-[var(--warm-mid)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''}</label>
-          {item.locations.map(loc => (
-            <div key={loc.id} className="flex items-center gap-2">
-              <span className="text-xs text-[var(--warm-mid)] w-24 shrink-0 truncate">{loc.name}</span>
-              <input
-                type="text" inputMode="decimal"
-                value={locationQtys[loc.id] ?? ''}
-                onChange={e => setLocationQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                placeholder="0"
-                className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-            </div>
-          ))}
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''}</label>
+            {hasPrev && touched.size < item.locations.length && (
+              <button type="button" onClick={confirmAll}
+                className="text-[10px] text-[var(--coral)] hover:underline">
+                모두 이전 수량으로 확인
+              </button>
+            )}
+          </div>
+          {item.locations.map(loc => {
+            const isTouched = touched.has(loc.id)
+            const isPrefilled = !isTouched && prevMap[loc.id] != null
+            return (
+              <div key={loc.id} className="flex items-center gap-2">
+                <span className="text-xs text-[var(--warm-mid)] w-24 shrink-0 truncate">{loc.name}</span>
+                <div className="flex-1 relative">
+                  <input
+                    type="text" inputMode="decimal"
+                    value={locationQtys[loc.id] ?? ''}
+                    onChange={e => handleLocChange(loc.id, e.target.value)}
+                    placeholder="0"
+                    className={`w-full bg-[var(--canvas)] border rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--coral)] transition-colors ${
+                      isPrefilled
+                        ? 'border-[var(--warm-border)]/50 text-[var(--ink-mute)]'
+                        : 'border-[var(--warm-border)] text-[var(--warm-dark)]'
+                    }`} />
+                  {isPrefilled && (
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] text-[var(--ink-mute)] bg-[var(--canvas)] pl-1">이전</span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
           {locationTotal !== null && (
             <p className="text-[10px] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
               → 합계 <strong>{Math.round(locationTotal * 100) / 100}{stockUnit ?? ''}</strong>
@@ -1197,6 +1279,163 @@ function CheckForm({ item, onCancel, onDone }: {
         </Btn>
       </div>
     </form>
+  )
+}
+
+// ── 위치별 일괄 점검 모달
+function LocationBatchCheckModal({ rows, onClose, onDone }: {
+  rows: InventoryRow[]; onClose: () => void; onDone: () => void
+}) {
+  const [locs, setLocs] = useState<StorageLocationItem[]>([])
+  const [locId, setLocId] = useState('')
+  const [date, setDate] = useState(kstYmdStr())
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => { getStorageLocations().then(setLocs) }, [])
+
+  // 선택 위치에 보관되는 품목 필터
+  const locItems = locId
+    ? rows.filter(r => !r.isArchived && r.locations.some(l => l.id === locId))
+    : []
+
+  // 위치별 잔량 입력 상태: itemId → qty string
+  const [qtys, setQtys] = useState<Record<string, string>>({})
+  const [touched, setTouched] = useState<Set<string>>(new Set())
+
+  // 위치 변경 시 이전 수량 pre-fill
+  useEffect(() => {
+    if (!locId) return
+    const init: Record<string, string> = {}
+    rows.filter(r => !r.isArchived && r.locations.some(l => l.id === locId)).forEach(r => {
+      const prev = r.lastCheckLocationBreakdown.find(lb => lb.locationId === locId)
+      init[r.id] = prev != null ? String(prev.qty) : ''
+    })
+    setQtys(init)
+    setTouched(new Set())
+  }, [locId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleChange = (itemId: string, val: string) => {
+    setQtys(prev => ({ ...prev, [itemId]: val.replace(/[^0-9.]/g, '') }))
+    setTouched(prev => new Set([...prev, itemId]))
+  }
+  const confirmAll = () => setTouched(new Set(locItems.map(r => r.id)))
+
+  const handleSave = async () => {
+    // 입력값이 있는 품목만 저장
+    const toSave = locItems.filter(r => qtys[r.id] !== '' && qtys[r.id] != null)
+    if (toSave.length === 0) { setError('저장할 수량이 없습니다.'); return }
+    setPending(true); setError('')
+    try {
+      await Promise.all(toSave.map(r => {
+        const thisLocQty = Number(qtys[r.id]) || 0
+        // 다른 위치는 이전 점검 수량 carry-over
+        const otherLocs = r.lastCheckLocationBreakdown
+          .filter(lb => lb.locationId !== locId)
+          .map(lb => ({ storageLocationId: lb.locationId, qty: lb.qty }))
+        const locationQtys = [{ storageLocationId: locId, qty: thisLocQty }, ...otherLocs]
+        const remainingQty = locationQtys.reduce((s, l) => s + l.qty, 0)
+        const stockUnit = r.trackUnit === 'qty' ? r.qtyUnit : (r.specUnit ?? r.qtyUnit)
+        return createStockCheck({
+          trackedItemId: r.id, date, remainingQty,
+          locationQtys: locationQtys.filter(l => l.qty > 0),
+          memo: `위치별 점검 (${locs.find(l => l.id === locId)?.name ?? ''})${stockUnit ? '' : ''}`,
+        })
+      }))
+      onDone()
+    } catch {
+      setError('저장 중 오류가 발생했습니다.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[100] flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-t-2xl sm:rounded-2xl w-full max-w-md flex flex-col max-h-[85vh]"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)] shrink-0">
+          <div>
+            <h2 className="text-sm font-bold text-[var(--warm-dark)]">위치별 점검</h2>
+            <p className="text-[11px] text-[var(--warm-muted)] mt-0.5">한 위치에서 여러 품목을 한 번에 기록합니다</p>
+          </div>
+          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl w-8 h-8 flex items-center justify-center">✕</button>
+        </div>
+
+        <div className="px-5 py-3 border-b border-[var(--warm-border)] shrink-0 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-[10px] text-[var(--warm-muted)] mb-1">점검 위치</p>
+              <select value={locId} onChange={e => setLocId(e.target.value)}
+                className={inputCls}>
+                <option value="">위치 선택…</option>
+                {locs.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <p className="text-[10px] text-[var(--warm-muted)] mb-1">점검일</p>
+              <DatePicker value={date} onChange={setDate}
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
+          {!locId ? (
+            <p className="text-xs text-[var(--warm-muted)] text-center py-6">위치를 선택하면 해당 위치에 보관된 품목이 표시됩니다.</p>
+          ) : locItems.length === 0 ? (
+            <p className="text-xs text-[var(--warm-muted)] text-center py-6">이 위치에 배정된 품목이 없습니다.</p>
+          ) : (
+            <>
+              {locItems.some(r => r.lastCheckLocationBreakdown.some(lb => lb.locationId === locId)) && touched.size < locItems.length && (
+                <div className="flex justify-end">
+                  <button type="button" onClick={confirmAll}
+                    className="text-[10px] text-[var(--coral)] hover:underline">모두 이전 수량으로 확인</button>
+                </div>
+              )}
+              {locItems.map(r => {
+                const stockUnit = r.trackUnit === 'qty' ? r.qtyUnit : (r.specUnit ?? r.qtyUnit)
+                const prev = r.lastCheckLocationBreakdown.find(lb => lb.locationId === locId)
+                const isTouched = touched.has(r.id)
+                const isPrefilled = !isTouched && prev != null
+                return (
+                  <div key={r.id} className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-[var(--warm-dark)] truncate">{r.label}</p>
+                      <p className="text-[10px] text-[var(--warm-muted)]">{r.category}</p>
+                    </div>
+                    <div className="relative w-28 shrink-0">
+                      <input
+                        type="text" inputMode="decimal"
+                        value={qtys[r.id] ?? ''}
+                        onChange={e => handleChange(r.id, e.target.value)}
+                        placeholder="0"
+                        className={`w-full bg-[var(--canvas)] border rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--coral)] transition-colors ${
+                          isPrefilled ? 'border-[var(--warm-border)]/50 text-[var(--ink-mute)]' : 'border-[var(--warm-border)] text-[var(--warm-dark)]'
+                        }`} />
+                      {isPrefilled && (
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[var(--ink-mute)] bg-[var(--canvas)] pl-0.5">이전</span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">{stockUnit ?? ''}</span>
+                  </div>
+                )
+              })}
+            </>
+          )}
+          {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+        </div>
+
+        <div className="border-t border-[var(--warm-border)] px-5 py-3 flex gap-2 shrink-0">
+          <Btn variant="secondary" fullWidth onClick={onClose}>취소</Btn>
+          <Btn variant="primary" fullWidth onClick={handleSave} disabled={pending || !locId || locItems.length === 0}>
+            {pending ? '저장 중...' : `${locItems.filter(r => (qtys[r.id] ?? '') !== '').length}품목 저장`}
+          </Btn>
+        </div>
+      </div>
+    </div>
   )
 }
 
