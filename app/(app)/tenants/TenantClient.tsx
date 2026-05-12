@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithGemini, createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests, changeDueDay, recordDepositReturn,
   getContractFiles, deleteContractFile, createContractScanUploadSession, finalizeContractScan,
+  batchUpdateTenants,
   type ContractFileRow,
 } from './actions'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
@@ -317,6 +318,13 @@ export default function TenantClient({
   ) as Record<ColKey, boolean>
 
   const [showAdd, setShowAdd]             = useState(false)
+  const [selectMode, setSelectMode]       = useState(false)
+  const [selectedIds, setSelectedIds]     = useState<Set<string>>(new Set())
+  const [showBatchEdit, setShowBatchEdit] = useState(false)
+  const toggleSelectTenant = (id: string) => setSelectedIds(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
+  })
+  const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
   const [editTenant, setEditTenant]       = useState<Tenant | null>(null)
   // 입주자 상세에서 참고용으로 띄우는 인라인 모달 (수납 정보 / 호실 정보)
   const [detailSettlementLeaseId, setDetailSettlementLeaseId] = useState<string | null>(null)
@@ -891,12 +899,19 @@ export default function TenantClient({
       {/* 헤더 */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl font-bold text-[var(--warm-dark)]">입주자 관리</h1>
-        <button
-          onClick={() => { setShowAdd(true); setError('') }}
-          className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors"
-        >
-          + 입주자 등록
-        </button>
+        <div className="flex items-center gap-2">
+          <button type="button"
+            onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}
+            className="px-3 py-2 text-sm font-medium text-[var(--warm-mid)] border border-[var(--warm-border)] hover:border-[var(--coral)] rounded-xl transition-colors">
+            {selectMode ? `선택 취소${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}` : '선택'}
+          </button>
+          <button
+            onClick={() => { setShowAdd(true); setError('') }}
+            className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            + 입주자 등록
+          </button>
+        </div>
       </div>
 
       {/* 탭 */}
@@ -1255,8 +1270,8 @@ export default function TenantClient({
             const stayPeriod = calcStayPeriod(lease?.moveInDate, lease?.moveOutDate ?? undefined)
             return (
               <div key={tenant.id}
-                onClick={() => { setDetailTenant(tenant); setDetailTab('info') }}
-                className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 cursor-pointer active:opacity-70 transition-opacity"
+                onClick={() => selectMode ? toggleSelectTenant(tenant.id) : (setDetailTenant(tenant), setDetailTab('info'))}
+                className={`bg-[var(--cream)] rounded-2xl p-4 cursor-pointer active:opacity-70 transition-opacity ${selectMode && selectedIds.has(tenant.id) ? 'border-2 border-[var(--coral)] ring-2 ring-[var(--coral)]/20' : 'border border-[var(--warm-border)]'}`}
               >
                 {/* 첫 줄: 호실(또는 희망 조건/미배정) + 이름 + 상태 */}
                 <div className="flex items-center justify-between mb-1.5">
@@ -1413,8 +1428,8 @@ export default function TenantClient({
 
                 return (
                   <tr key={tenant.id}
-                    onClick={() => { setDetailTenant(tenant); setDetailTab('info') }}
-                    className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:opacity-80 transition-colors cursor-pointer"
+                    onClick={() => selectMode ? toggleSelectTenant(tenant.id) : (setDetailTenant(tenant), setDetailTab('info'))}
+                    className={`border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:opacity-80 transition-colors cursor-pointer ${selectMode && selectedIds.has(tenant.id) ? 'bg-[var(--coral)]/5 ring-inset ring-1 ring-[var(--coral)]/30' : ''}`}
                   >
                     {/* sticky — 호실 (클릭 시 호실 관리 페이지로) */}
                     <td className="sticky left-0 z-20 bg-[var(--cream)] px-4 py-3 text-sm font-semibold overflow-hidden"
@@ -2071,6 +2086,29 @@ export default function TenantClient({
           </div>
         )
       })()}
+
+      {/* ── 배치 편집 모달 ─────────────────────────────────────────── */}
+      {showBatchEdit && (
+        <BatchEditTenantsModal
+          selectedIds={Array.from(selectedIds)}
+          onClose={() => setShowBatchEdit(false)}
+          onDone={() => { setShowBatchEdit(false); exitSelectMode(); router.refresh() }}
+        />
+      )}
+
+      {/* 배치 액션 바 */}
+      {selectMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
+          <div className="flex items-center gap-3 bg-[var(--warm-dark)] text-white rounded-2xl px-4 py-3 shadow-xl pointer-events-auto mx-4">
+            <span className="text-sm font-medium">{selectedIds.size}명 선택됨</span>
+            <div className="w-px h-4 bg-white/20" />
+            <button type="button" onClick={() => setShowBatchEdit(true)}
+              className="text-sm font-semibold text-[var(--honey)] hover:text-yellow-200 transition-colors">
+              일괄 편집
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── 입주자 추가 모달 ────────────────────────────────────────── */}
       {showAdd && (
@@ -3673,6 +3711,115 @@ function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string; tenant
           })}
         </ul>
       )}
+    </div>
+  )
+}
+
+// ── 입주자 일괄 편집 모달 ────────────────────────────────────────
+
+function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
+  selectedIds: string[]; onClose: () => void; onDone: () => void
+}) {
+  // Tenant 필드
+  const [nationality, setNationality] = useState('')
+  const [gender, setGender]           = useState('')
+  // LeaseTerm 필드
+  const [depositAmount, setDepositAmount] = useState<number | undefined>(undefined)
+  const [dueDay, setDueDay]           = useState('')
+  const [status, setStatus]           = useState('')
+
+  const [pending, setPending] = useState(false)
+  const [error, setError]     = useState('')
+
+  const handleApply = async () => {
+    const data: Parameters<typeof batchUpdateTenants>[1] = {}
+    if (nationality) data.nationality = nationality
+    if (gender)      data.gender      = gender
+    if (depositAmount != null) data.depositAmount = depositAmount
+    if (dueDay.trim()) data.dueDay = dueDay.trim()
+    if (status)      data.status   = status
+
+    if (Object.keys(data).length === 0) { setError('변경할 항목을 하나 이상 입력하세요.'); return }
+
+    setPending(true); setError('')
+    const res = await batchUpdateTenants(selectedIds, data)
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    pushToast('success', `입주자 ${res.tenantCount}명${res.leaseCount > 0 ? `, 계약 ${res.leaseCount}건` : ''} 업데이트 완료`)
+    onDone()
+  }
+
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[90vh]"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+          <div>
+            <h2 className="text-base font-bold text-[var(--warm-dark)]">입주자 일괄 편집</h2>
+            <p className="text-xs text-[var(--warm-muted)] mt-0.5">{selectedIds.length}명 선택됨 · 입력하지 않은 항목은 변경되지 않습니다</p>
+          </div>
+          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl">✕</button>
+        </div>
+        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
+          {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">국적</label>
+            <input type="text" value={nationality} onChange={e => setNationality(e.target.value)}
+              placeholder="미변경 (예: 한국, Vietnam, China)"
+              className={inputCls} />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">성별</label>
+            <div className="flex gap-2">
+              {[{ value: '', label: '미변경' }, { value: 'MALE', label: '남성' }, { value: 'FEMALE', label: '여성' }, { value: 'OTHER', label: '기타' }].map(opt => (
+                <button key={opt.value} type="button" onClick={() => setGender(opt.value)}
+                  className={`flex-1 text-xs py-2 rounded-xl border transition-colors ${gender === opt.value ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">보증금 (계약 전체 적용)</label>
+            <MoneyInput value={depositAmount} onChange={setDepositAmount} placeholder="미변경" />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">납부일 (계약 전체 적용)</label>
+            <input type="text" inputMode="numeric" value={dueDay} onChange={e => setDueDay(e.target.value.replace(/[^0-9말]/g, ''))}
+              placeholder="미변경 (예: 5, 25, 말)"
+              className={inputCls} />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">상태 (계약 전체 적용)</label>
+            <select value={status} onChange={e => setStatus(e.target.value)} className={inputCls}>
+              <option value="">미변경</option>
+              <option value="ACTIVE">거주중</option>
+              <option value="RESERVED">예약</option>
+              <option value="CHECKOUT_PENDING">퇴실 예정</option>
+              <option value="WAITING_TOUR">투어 대기</option>
+              <option value="TOUR_DONE">투어 완료</option>
+              <option value="NON_RESIDENT">비거주자</option>
+            </select>
+          </div>
+        </div>
+        <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0">
+          <button type="button" onClick={onClose}
+            className="flex-1 px-4 py-2.5 text-sm font-medium text-[var(--warm-mid)] border border-[var(--warm-border)] rounded-xl hover:border-[var(--coral)] transition-colors">
+            취소
+          </button>
+          <button type="button" onClick={handleApply} disabled={pending}
+            className="flex-1 px-4 py-2.5 text-sm font-semibold bg-[var(--coral)] text-white rounded-xl hover:opacity-90 disabled:opacity-50 transition-opacity">
+            {pending ? '적용 중...' : '적용'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

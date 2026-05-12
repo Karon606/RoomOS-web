@@ -138,6 +138,7 @@ model Property {
   marketSurveys     MarketSurvey[]
   recurringExpenses RecurringExpense[]
   trackedItems      TrackedItem[]
+  storageLocations  StorageLocation[]
   checklists        Checklist[]
   reserveTransactions ReserveTransaction[]
   depositRefunds      DepositRefund[]
@@ -412,6 +413,7 @@ model Expense {
   specUnit     String?
   qtyValue     Float?
   qtyUnit      String?
+  receivedAt   DateTime?    // null = 수령 대기, not null = 수령 완료 (재고 계산에 반영)
   createdAt     DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
@@ -683,6 +685,7 @@ model TrackedItem {
 
   stockChecks  StockCheck[]
   additions    StockAddition[]
+  locations    TrackedItemLocation[]
 
   @@unique([propertyId, category, label])
   @@index([propertyId, isArchived])
@@ -695,12 +698,57 @@ model StockCheck {
   trackedItemId  String      @db.Uuid
   trackedItem    TrackedItem @relation(fields: [trackedItemId], references: [id], onDelete: Cascade)
   date           DateTime    @db.Date
-  remainingQty   Float       // qtyUnit 기준 잔량
+  remainingQty   Float       // 전체 잔량 합계 (위치별 합산 or 단일 입력)
   memo           String?
   createdAt      DateTime    @default(now())
 
+  locationBreakdown StockCheckLocation[]
+
   @@index([trackedItemId, date])
   @@map("stock_checks")
+}
+
+// 보관 위치 — 창고 / 4층 주방 / 손님실 선반 등 property-level 마스터
+model StorageLocation {
+  id         String   @id @default(uuid()) @db.Uuid
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  name       String
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  trackedItems        TrackedItemLocation[]
+  stockCheckLocations StockCheckLocation[]
+
+  @@unique([propertyId, name])
+  @@index([propertyId, sortOrder])
+  @@map("storage_locations")
+}
+
+// 품목 ↔ 위치 M:N — 이 품목이 어느 위치에 보관되는지
+model TrackedItemLocation {
+  trackedItemId     String @db.Uuid
+  storageLocationId String @db.Uuid
+
+  trackedItem     TrackedItem     @relation(fields: [trackedItemId], references: [id], onDelete: Cascade)
+  storageLocation StorageLocation @relation(fields: [storageLocationId], references: [id], onDelete: Cascade)
+
+  @@id([trackedItemId, storageLocationId])
+  @@map("tracked_item_locations")
+}
+
+// 점검 시 위치별 잔량 — StockCheck.remainingQty = sum(이 테이블)
+model StockCheckLocation {
+  id                String @id @default(uuid()) @db.Uuid
+  stockCheckId      String @db.Uuid
+  storageLocationId String @db.Uuid
+  remainingQty      Float
+
+  stockCheck      StockCheck      @relation(fields: [stockCheckId], references: [id], onDelete: Cascade)
+  storageLocation StorageLocation @relation(fields: [storageLocationId], references: [id], onDelete: Cascade)
+
+  @@unique([stockCheckId, storageLocationId])
+  @@map("stock_check_locations")
 }
 
 // 무상 입수/이월 등 — 지출 외 추가 입고

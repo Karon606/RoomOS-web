@@ -6,7 +6,7 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
-import { TRACKED_CATEGORIES, type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow } from './constants'
+import { TRACKED_CATEGORIES, type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem } from './constants'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -33,6 +33,7 @@ async function sumPurchases(
     { propertyId },
     { category },
     { itemLabel: label },
+    { receivedAt: { not: null } },  // 수령 확인된 구매만 재고에 반영
     ...(qtyUnit ? [{ qtyUnit }] : []),
     ...(to ? [{ date: { lte: to } }] : []),
   ]
@@ -106,6 +107,25 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
   const today = new Date()
   today.setHours(23, 59, 59, 999)
 
+  // 위치 정보 일괄 조회 — 루프 내 N+1 방지
+  const allItemLocations = await prisma.trackedItemLocation.findMany({
+    where: { trackedItemId: { in: items.map(i => i.id) } },
+    include: { storageLocation: { select: { id: true, name: true, sortOrder: true } } },
+  })
+
+  // 수령 대기 구매 일괄 조회 — 루프 내 N+1 방지
+  const allPending = await prisma.expense.findMany({
+    where: {
+      propertyId,
+      category: { in: TRACKED_CATEGORIES as unknown as string[] },
+      itemLabel: { not: null },
+      receivedAt: null,
+      qtyValue: { gt: 0 },
+    },
+    select: { id: true, date: true, qtyValue: true, specValue: true, specUnit: true, qtyUnit: true, itemLabel: true, category: true, amount: true, vendor: true, memo: true },
+    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+  })
+
   const rows: InventoryRow[] = []
   for (const it of items) {
     const last = it.stockChecks[0] ?? null
@@ -155,6 +175,7 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
         date: { gte: oneYearAgo },
         qtyValue: { gt: 0 },
         amount: { gt: 0 },
+        receivedAt: { not: null },
       },
       select: { date: true, amount: true, qtyValue: true, specValue: true, specUnit: true },
       orderBy: { date: 'desc' },
@@ -181,6 +202,29 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
       lastUnitPrice = lastBase > 0 ? last.amount / lastBase : null
     }
 
+    const locations: StorageLocationItem[] = allItemLocations
+      .filter(l => l.trackedItemId === it.id)
+      .map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder }))
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+
+    const pendingPurchases: PendingPurchase[] = allPending
+      .filter(p =>
+        p.category === it.category &&
+        p.itemLabel === it.label &&
+        (it.qtyUnit == null || p.qtyUnit === it.qtyUnit),
+      )
+      .map(p => ({
+        id: p.id,
+        date: p.date,
+        qtyValue: p.qtyValue ?? 0,
+        specValue: p.specValue,
+        specUnit: p.specUnit,
+        qtyUnit: p.qtyUnit,
+        amount: p.amount,
+        vendor: p.vendor,
+        memo: p.memo,
+      }))
+
     rows.push({
       id: it.id,
       category: it.category,
@@ -201,6 +245,8 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
       lastPeriodDays,
       avgUnitPrice,
       lastUnitPrice,
+      pendingPurchases,
+      locations,
     })
   }
   return rows
@@ -221,6 +267,7 @@ export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyIn
         itemLabel: item.label,
         ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
         qtyValue: { gt: 0 },
+        receivedAt: { not: null },
       },
       select: { date: true, qtyValue: true, specValue: true, amount: true },
     }),
@@ -267,6 +314,7 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
       ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
       qtyValue: { gt: 0 },
       amount: { gt: 0 },
+      receivedAt: { not: null },
     },
     select: { date: true, amount: true, qtyValue: true, specValue: true },
     orderBy: { date: 'asc' },
@@ -288,12 +336,18 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
 
 // ── 단일 품목 상세 — 점검 + 구매 + 무상 입수 타임라인
 export async function getInventoryDetail(trackedItemId: string): Promise<{
-  item: { id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; memo: string | null; trackUnit: 'spec' | 'qty' }
+  item: { id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; memo: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   timeline: TimelineEntry[]
 } | null> {
   const propertyId = await getPropertyId()
   const item = await prisma.trackedItem.findFirst({
     where: { id: trackedItemId, propertyId },
+    include: {
+      locations: {
+        include: { storageLocation: { select: { id: true, name: true, sortOrder: true } } },
+        orderBy: { storageLocation: { sortOrder: 'asc' } },
+      },
+    },
   })
   if (!item) return null
 
@@ -308,7 +362,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, memo: true },
+      select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, memo: true, receivedAt: true },
     }),
   ])
 
@@ -319,7 +373,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       type: 'purchase' as const,
       id: p.id, date: p.date, createdAt: p.createdAt, qtyValue: p.qtyValue ?? 0, qtyUnit: p.qtyUnit,
       specValue: p.specValue, specUnit: p.specUnit,
-      amount: p.amount, vendor: p.vendor, memo: p.memo,
+      amount: p.amount, vendor: p.vendor, memo: p.memo, receivedAt: p.receivedAt,
     })),
   ].sort((a, b) => b.date.getTime() - a.date.getTime() || b.createdAt.getTime() - a.createdAt.getTime())
 
@@ -328,6 +382,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       id: item.id, category: item.category, label: item.label,
       specUnit: item.specUnit, qtyUnit: item.qtyUnit, memo: item.memo,
       trackUnit: (item.trackUnit === 'qty' ? 'qty' : 'spec') as 'spec' | 'qty',
+      locations: item.locations.map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder })),
     },
     timeline,
   }
@@ -532,6 +587,8 @@ export async function archiveTrackedItem(id: string): Promise<{ ok: true } | { o
 // ── StockCheck CRUD
 export async function createStockCheck(data: {
   trackedItemId: string; date: string; remainingQty: number; memo?: string
+  // 위치별 잔량 — 제공 시 남은 합계는 locationQtys의 합, 아니면 remainingQty 그대로
+  locationQtys?: { storageLocationId: string; qty: number }[]
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -545,6 +602,14 @@ export async function createStockCheck(data: {
         date: new Date(data.date),
         remainingQty: data.remainingQty,
         memo: data.memo || null,
+        ...(data.locationQtys && data.locationQtys.length > 0 ? {
+          locationBreakdown: {
+            create: data.locationQtys.map(lq => ({
+              storageLocationId: lq.storageLocationId,
+              remainingQty: lq.qty,
+            })),
+          },
+        } : {}),
       },
     })
     revalidatePath('/inventory')
@@ -753,6 +818,162 @@ export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; create
     revalidatePath('/inventory')
     revalidatePath('/finance')
     return { ok: true, created, migrated, skippedArchived }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// ── 보관 위치 CRUD
+export async function getStorageLocations(): Promise<StorageLocationItem[]> {
+  const propertyId = await getPropertyId()
+  const locs = await prisma.storageLocation.findMany({
+    where: { propertyId },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    select: { id: true, name: true, sortOrder: true },
+  })
+  return locs
+}
+
+export async function createStorageLocation(name: string): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const trimmed = name.trim()
+    if (!trimmed) return { ok: false, error: '위치 이름을 입력해주세요.' }
+    const existing = await prisma.storageLocation.findUnique({
+      where: { propertyId_name: { propertyId, name: trimmed } },
+    })
+    if (existing) return { ok: false, error: '이미 같은 이름의 위치가 있습니다.' }
+    const maxOrder = await prisma.storageLocation.aggregate({ where: { propertyId }, _max: { sortOrder: true } })
+    const r = await prisma.storageLocation.create({
+      data: { propertyId, name: trimmed, sortOrder: (maxOrder._max.sortOrder ?? 0) + 1 },
+    })
+    revalidatePath('/inventory')
+    return { ok: true, id: r.id }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function updateStorageLocation(id: string, name: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const trimmed = name.trim()
+    if (!trimmed) return { ok: false, error: '위치 이름을 입력해주세요.' }
+    const loc = await prisma.storageLocation.findFirst({ where: { id, propertyId } })
+    if (!loc) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    await prisma.storageLocation.update({ where: { id }, data: { name: trimmed } })
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function deleteStorageLocation(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const loc = await prisma.storageLocation.findFirst({ where: { id, propertyId } })
+    if (!loc) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    await prisma.storageLocation.delete({ where: { id } })
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 품목에 위치 할당 (전체 교체)
+export async function setItemLocations(trackedItemId: string, locationIds: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    // 전체 교체: 기존 삭제 후 재생성
+    await prisma.trackedItemLocation.deleteMany({ where: { trackedItemId } })
+    if (locationIds.length > 0) {
+      await prisma.trackedItemLocation.createMany({
+        data: locationIds.map(storageLocationId => ({ trackedItemId, storageLocationId })),
+        skipDuplicates: true,
+      })
+    }
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 여러 품목에 동일 위치 일괄 할당 (교체)
+export async function batchSetItemLocations(trackedItemIds: string[], locationIds: string[]): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (trackedItemIds.length === 0) return { ok: false, error: '선택된 품목이 없습니다.' }
+    // 권한 확인
+    const count = await prisma.trackedItem.count({ where: { id: { in: trackedItemIds }, propertyId } })
+    if (count !== trackedItemIds.length) return { ok: false, error: '일부 품목을 찾을 수 없습니다.' }
+
+    await prisma.trackedItemLocation.deleteMany({ where: { trackedItemId: { in: trackedItemIds } } })
+    if (locationIds.length > 0) {
+      await prisma.trackedItemLocation.createMany({
+        data: trackedItemIds.flatMap(trackedItemId =>
+          locationIds.map(storageLocationId => ({ trackedItemId, storageLocationId }))
+        ),
+        skipDuplicates: true,
+      })
+    }
+    revalidatePath('/inventory')
+    return { ok: true, count: trackedItemIds.length }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// ── 수령 확인
+export async function confirmReceipt(expenseId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const expense = await prisma.expense.findFirst({ where: { id: expenseId, propertyId } })
+    if (!expense) return { ok: false, error: '구매 내역을 찾을 수 없습니다.' }
+    await prisma.expense.update({ where: { id: expenseId }, data: { receivedAt: new Date() } })
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 품목에 속한 수령 대기 구매 전체 확인
+export async function confirmAllPending(trackedItemId: string): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const item = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
+    if (!item) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    const r = await prisma.expense.updateMany({
+      where: {
+        propertyId,
+        category: item.category,
+        itemLabel: item.label,
+        ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
+        receivedAt: null,
+      },
+      data: { receivedAt: new Date() },
+    })
+    revalidatePath('/inventory')
+    return { ok: true, count: r.count }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

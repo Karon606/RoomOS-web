@@ -420,3 +420,46 @@ export async function applyScheduledRentNow(roomId: string): Promise<{ ok: true;
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
+
+// ── 일괄 편집
+export async function batchUpdateRooms(
+  roomIds: string[],
+  data: {
+    type?: string | null
+    baseRent?: number
+    scheduledRent?: number | null
+    windowType?: string | null
+    direction?: string | null
+  },
+): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    if (roomIds.length === 0) return { ok: false, error: '선택된 호실이 없습니다.' }
+    if (Object.keys(data).length === 0) return { ok: false, error: '변경할 항목이 없습니다.' }
+
+    const r = await prisma.room.updateMany({
+      where: { id: { in: roomIds }, propertyId },
+      data,
+    })
+
+    // baseRent 변경 시 활성 계약의 rentAmount 동기화
+    if (data.baseRent != null) {
+      await prisma.leaseTerm.updateMany({
+        where: {
+          roomId: { in: roomIds },
+          status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] },
+        },
+        data: { rentAmount: data.baseRent },
+      })
+    }
+
+    revalidatePath('/room-manage')
+    revalidatePath('/rooms')
+    revalidatePath('/tenants')
+    return { ok: true, count: r.count }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}

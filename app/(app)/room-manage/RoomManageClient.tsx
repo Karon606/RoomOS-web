@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addRoom, updateRoom, deleteRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, applyScheduledRentNow } from './actions'
+import { addRoom, updateRoom, deleteRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, applyScheduledRentNow, batchUpdateRooms } from './actions'
 import { getTenantQuickInfo, getLeaseSettlementInfo } from '@/app/(app)/rooms/actions'
 import { AreaInput } from '@/components/ui/AreaInput'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -214,6 +214,15 @@ export default function RoomManageClient({
   const [addPhotoPreviews, setAddPhotoPreviews] = useState<{ file: File; previewUrl: string }[]>([])
   const [photoUploading, setPhotoUploading]   = useState(false)
   const [photoProgress, setPhotoProgress]     = useState<{ name: string; percent: number; current: number; total: number } | null>(null)
+
+  // 배치 선택
+  const [selectMode, setSelectMode]   = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [showBatchEdit, setShowBatchEdit] = useState(false)
+  const toggleSelectRoom = (id: string) => setSelectedIds(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
+  })
+  const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
 
   // 기타
   const [types, setTypes]   = useState<string[]>(roomTypes)
@@ -493,11 +502,19 @@ export default function RoomManageClient({
             )
           })()}
         </div>
-        <button
-          onClick={() => { setShowAddModal(true); setError('') }}
-          className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
-          + 호실 등록
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}
+            className="px-3 py-2 text-sm font-medium text-[var(--warm-mid)] border border-[var(--warm-border)] hover:border-[var(--coral)] rounded-xl transition-colors">
+            {selectMode ? `선택 취소${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}` : '선택'}
+          </button>
+          <button
+            onClick={() => { setShowAddModal(true); setError('') }}
+            className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
+            + 호실 등록
+          </button>
+        </div>
       </div>
 
       {/* 검색바 + 필터 토글 */}
@@ -684,8 +701,8 @@ export default function RoomManageClient({
             const rs     = getRoomStatus(room)
             return (
               <div key={room.id}
-                onClick={() => { setDetailRoom(room); setError('') }}
-                className={`bg-[var(--cream)] border rounded-2xl overflow-hidden cursor-pointer active:opacity-70 transition-opacity flex items-stretch ${rs.borderClass}`}>
+                onClick={() => selectMode ? toggleSelectRoom(room.id) : (setDetailRoom(room), setError(''))}
+                className={`bg-[var(--cream)] border rounded-2xl overflow-hidden cursor-pointer active:opacity-70 transition-opacity flex items-stretch ${selectMode && selectedIds.has(room.id) ? 'border-2 border-[var(--coral)] ring-2 ring-[var(--coral)]/20' : rs.borderClass}`}>
                 {/* 정보 */}
                 <div className="flex-1 p-4 min-w-0 space-y-1">
                   <div className="flex items-center gap-2">
@@ -917,6 +934,32 @@ export default function RoomManageClient({
             if (back) setDetailRoom(back)
           } : undefined}
         />
+      )}
+
+      {/* ── 배치 편집 모달 ─────────────────────────────────────────────── */}
+      {showBatchEdit && (
+        <BatchEditRoomsModal
+          selectedIds={Array.from(selectedIds)}
+          roomTypes={types}
+          windowTypeOptions={windowTypeOptions}
+          directionOptions={directionOptions}
+          onClose={() => setShowBatchEdit(false)}
+          onDone={() => { setShowBatchEdit(false); exitSelectMode(); router.refresh() }}
+        />
+      )}
+
+      {/* 배치 액션 바 */}
+      {selectMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
+          <div className="flex items-center gap-3 bg-[var(--warm-dark)] text-white rounded-2xl px-4 py-3 shadow-xl pointer-events-auto mx-4">
+            <span className="text-sm font-medium">{selectedIds.size}개 선택됨</span>
+            <div className="w-px h-4 bg-white/20" />
+            <button type="button" onClick={() => setShowBatchEdit(true)}
+              className="text-sm font-semibold text-[var(--honey)] hover:text-yellow-200 transition-colors">
+              일괄 편집
+            </button>
+          </div>
+        </div>
       )}
 
       {/* ── 호실 추가 모달 ──────────────────────────────────────────── */}
@@ -1252,6 +1295,114 @@ function uploadFileToDriveSession(
 
     xhr.send(file)
   })
+}
+
+// ── 호실 일괄 편집 모달 ──────────────────────────────────────────
+
+function BatchEditRoomsModal({ selectedIds, roomTypes, windowTypeOptions, directionOptions, onClose, onDone }: {
+  selectedIds: string[]
+  roomTypes: string[]
+  windowTypeOptions: { value: string; label: string }[]
+  directionOptions: { value: string; label: string }[]
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [type, setType]             = useState('')
+  const [baseRent, setBaseRent]     = useState<number | undefined>(undefined)
+  const [scheduledRent, setScheduledRent] = useState<number | undefined>(undefined)
+  const [clearScheduled, setClearScheduled] = useState(false)
+  const [windowType, setWindowType] = useState('')
+  const [direction, setDirection]   = useState('')
+  const [pending, setPending]       = useState(false)
+  const [error, setError]           = useState('')
+
+  const handleApply = async () => {
+    const data: Parameters<typeof batchUpdateRooms>[1] = {}
+    if (type) data.type = type
+    if (baseRent != null) data.baseRent = baseRent
+    if (clearScheduled) data.scheduledRent = null
+    else if (scheduledRent != null) data.scheduledRent = scheduledRent
+    if (windowType) data.windowType = windowType
+    if (direction)  data.direction  = direction
+
+    if (Object.keys(data).length === 0) { setError('변경할 항목을 하나 이상 입력하세요.'); return }
+
+    setPending(true); setError('')
+    const res = await batchUpdateRooms(selectedIds, data)
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    pushToast('success', `${res.count}개 호실 업데이트 완료`)
+    onDone()
+  }
+
+  return (
+    <Modal title={`호실 일괄 편집 (${selectedIds.length}개)`} onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-xs text-[var(--warm-muted)]">입력하지 않은 항목은 변경되지 않습니다.</p>
+        {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">방 타입</label>
+          <div className="flex gap-1 flex-wrap">
+            {['미변경', ...roomTypes].map(t => (
+              <button key={t} type="button"
+                onClick={() => setType(t === '미변경' ? '' : t)}
+                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${(t === '미변경' && !type) || type === t ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}>
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">기본이용료</label>
+            <MoneyInput value={baseRent} onChange={setBaseRent} placeholder="미변경" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">예약이용료</label>
+            <div className={clearScheduled ? 'opacity-40 pointer-events-none' : ''}>
+              <MoneyInput value={scheduledRent} onChange={setScheduledRent} placeholder="미변경" />
+            </div>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={clearScheduled} onChange={e => { setClearScheduled(e.target.checked); if (e.target.checked) setScheduledRent(undefined) }} className="rounded" />
+              <span className="text-[10px] text-[var(--warm-muted)]">예약이용료 삭제</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">창문 타입</label>
+            <select value={windowType} onChange={e => setWindowType(e.target.value)}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+              <option value="">미변경</option>
+              {windowTypeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">방향</label>
+            <select value={direction} onChange={e => setDirection(e.target.value)}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+              <option value="">미변경</option>
+              {directionOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <button type="button" onClick={onClose}
+            className="flex-1 px-4 py-2.5 text-sm font-medium text-[var(--warm-mid)] border border-[var(--warm-border)] rounded-xl hover:border-[var(--coral)] transition-colors">
+            취소
+          </button>
+          <button type="button" onClick={handleApply} disabled={pending}
+            className="flex-1 px-4 py-2.5 text-sm font-semibold bg-[var(--coral)] text-white rounded-xl hover:opacity-90 disabled:opacity-50 transition-opacity">
+            {pending ? '적용 중...' : '적용'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
 }
 
 // ── 공통 컴포넌트 ─────────────────────────────────────────────────

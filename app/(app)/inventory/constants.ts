@@ -1,5 +1,17 @@
 export const TRACKED_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비'] as const
 
+export type PendingPurchase = {
+  id: string
+  date: Date
+  qtyValue: number
+  specValue: number | null
+  specUnit: string | null
+  qtyUnit: string | null
+  amount: number
+  vendor: string | null
+  memo: string | null
+}
+
 export type InventoryRow = {
   id: string
   category: string
@@ -20,6 +32,8 @@ export type InventoryRow = {
   lastPeriodDays: number | null
   avgUnitPrice: number | null   // 최근 12개월 구매 평균 단가 (원/qtyUnit)
   lastUnitPrice: number | null  // 가장 최근 구매의 단가
+  pendingPurchases: PendingPurchase[]  // 수령 대기 중인 구매 내역
+  locations: StorageLocationItem[]    // 이 품목이 보관되는 위치 목록
 }
 
 export type PricePoint = {
@@ -37,7 +51,13 @@ export type MonthlyInflowRow = {
   purchaseAmount: number
 }
 
+export type StorageLocationItem = {
+  id: string
+  name: string
+  sortOrder: number
+}
+
 export type TimelineEntry =
   | { type: 'check';    id: string; date: Date; createdAt: Date; remainingQty: number; memo: string | null }
-  | { type: 'purchase'; id: string; date: Date; createdAt: Date; qtyValue: number; qtyUnit: string | null; specValue: number | null; specUnit: string | null; amount: number; vendor: string | null; memo: string | null }
+  | { type: 'purchase'; id: string; date: Date; createdAt: Date; qtyValue: number; qtyUnit: string | null; specValue: number | null; specUnit: string | null; amount: number; vendor: string | null; memo: string | null; receivedAt: Date | null }
   | { type: 'addition'; id: string; date: Date; createdAt: Date; addedQty: number; source: string | null; memo: string | null }

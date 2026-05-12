@@ -24,7 +24,16 @@ import {
   deleteStockCheck,
   deleteStockAddition,
   seedTrackedItemsFromExpenses,
+  confirmReceipt,
+  confirmAllPending,
+  getStorageLocations,
+  createStorageLocation,
+  updateStorageLocation,
+  deleteStorageLocation,
+  setItemLocations,
+  batchSetItemLocations,
 } from './actions'
+import { type StorageLocationItem } from './constants'
 
 const CATEGORY_TINT: Record<string, { bg: string; fg: string }> = {
   '부식비':       { bg: 'rgba(232,137,58,0.10)',  fg: '#e8893a' },
@@ -48,9 +57,20 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
   const router = useRouter()
   const rows = initialRows
   const [isPending, startTransition] = useTransition()
-  const [showAdd, setShowAdd]         = useState(false)
-  const [detailId, setDetailId]       = useState<string | null>(null)
-  const [error, setError]             = useState('')
+  const [showAdd, setShowAdd]             = useState(false)
+  const [showLocations, setShowLocations] = useState(false)
+  const [detailId, setDetailId]           = useState<string | null>(null)
+  const [error, setError]                 = useState('')
+  const [selectMode, setSelectMode]       = useState(false)
+  const [selected, setSelected]           = useState<Set<string>>(new Set())
+  const [showBatchLoc, setShowBatchLoc]   = useState(false)
+
+  const toggleSelect = (id: string) => setSelected(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const exitSelectMode = () => { setSelectMode(false); setSelected(new Set()) }
 
   const [seedPending, setSeedPending] = useState(false)
   const handleSeed = async () => {
@@ -89,6 +109,10 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">부식·소모품·폐기물 사용량을 점검 기록 기반으로 추적합니다.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Btn variant="secondary" size="sm" onClick={() => { selectMode ? exitSelectMode() : setSelectMode(true) }}>
+            {selectMode ? `선택 취소${selected.size > 0 ? ` (${selected.size})` : ''}` : '선택'}
+          </Btn>
+          <Btn variant="secondary" size="sm" onClick={() => setShowLocations(true)}>위치 관리</Btn>
           <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
           <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
         </div>
@@ -110,13 +134,44 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
               <span className="text-[11px] text-[var(--warm-muted)]">{g.rows.length}품목</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {g.rows.map(r => <InventoryCard key={r.id} row={r} onOpen={() => setDetailId(r.id)} />)}
+              {g.rows.map(r => (
+                <InventoryCard
+                  key={r.id}
+                  row={r}
+                  selectMode={selectMode}
+                  isSelected={selected.has(r.id)}
+                  onOpen={() => selectMode ? toggleSelect(r.id) : setDetailId(r.id)}
+                />
+              ))}
             </div>
           </section>
         ))
       )}
 
+      {showLocations && <LocationSettingsModal onClose={() => { setShowLocations(false); router.refresh() }} />}
       {showAdd && <AddItemModal onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); router.refresh() }} />}
+      {showBatchLoc && (
+        <BatchLocationModal
+          selectedIds={Array.from(selected)}
+          onClose={() => setShowBatchLoc(false)}
+          onDone={() => { setShowBatchLoc(false); exitSelectMode(); router.refresh() }}
+        />
+      )}
+
+      {/* 배치 액션 바 */}
+      {selectMode && selected.size > 0 && (
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
+          <div className="flex items-center gap-3 bg-[var(--warm-dark)] text-white rounded-2xl px-4 py-3 shadow-xl pointer-events-auto mx-4">
+            <span className="text-sm font-medium">{selected.size}개 선택됨</span>
+            <div className="w-px h-4 bg-white/20" />
+            <button type="button" onClick={() => setShowBatchLoc(true)}
+              className="text-sm font-semibold text-[var(--honey)] hover:text-yellow-200 transition-colors">
+              위치 일괄 할당
+            </button>
+          </div>
+        </div>
+      )}
+
       {detailId && (
         <DetailModal
           row={rows.find(r => r.id === detailId) ?? null}
@@ -128,7 +183,7 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
   )
 }
 
-function InventoryCard({ row, onOpen }: { row: InventoryRow; onOpen: () => void }) {
+function InventoryCard({ row, onOpen, selectMode, isSelected }: { row: InventoryRow; onOpen: () => void; selectMode?: boolean; isSelected?: boolean }) {
   const tint = CATEGORY_TINT[row.category]
   const lowStock = row.daysUntilEmpty != null && row.daysUntilEmpty <= row.alertThresholdDays
   // trackUnit='qty' (폐기물 봉투 등): 매 단위 그대로. 'spec': specUnit 우선
@@ -138,13 +193,18 @@ function InventoryCard({ row, onOpen }: { row: InventoryRow; onOpen: () => void 
     <button
       type="button"
       onClick={onOpen}
-      className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 space-y-3 text-left hover:border-[var(--coral)] transition-colors">
+      className={`w-full bg-[var(--cream)] rounded-2xl p-4 space-y-3 text-left transition-colors ${isSelected ? 'border-2 border-[var(--coral)] ring-2 ring-[var(--coral)]/20' : 'border border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-bold text-[var(--warm-dark)] truncate">{row.label}</p>
           <p className="text-[10px] mt-0.5" style={{ color: tint?.fg }}>{row.category}</p>
         </div>
-        {lowStock && <Badge tone="danger" mono>소진 임박</Badge>}
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {lowStock && <Badge tone="danger" mono>소진 임박</Badge>}
+          {row.pendingPurchases.length > 0 && (
+            <Badge tone="warn" mono>{row.pendingPurchases.length}건 수령대기</Badge>
+          )}
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
         <div>
@@ -182,6 +242,13 @@ function InventoryCard({ row, onOpen }: { row: InventoryRow; onOpen: () => void 
         <p className="text-[10px] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2 py-1.5 leading-relaxed">
           발주 · {row.reorderMemo}
         </p>
+      )}
+      {row.locations.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {row.locations.map(loc => (
+            <span key={loc.id} className="text-[10px] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">{loc.name}</span>
+          ))}
+        </div>
       )}
       {row.lastPeriodConsumption != null && row.lastPeriodDays != null && (
         <p className="text-[10px] text-[var(--warm-muted)] pt-1.5 border-t border-[var(--warm-border)]/60">
@@ -322,6 +389,17 @@ function DetailModal({ row, onClose, onChange }: {
     })
   }
 
+  const handleConfirmReceipt = (expenseId: string) => {
+    startTransition(async () => {
+      const release = trackSave()
+      try {
+        const res = await confirmReceipt(expenseId)
+        if (res.ok) { reload(); onChange(); pushToast('success', '수령 확인 완료') }
+        else { setError(res.error); pushToast('error', res.error) }
+      } finally { release() }
+    })
+  }
+
   const detailStockUnit = data ? (data.item.trackUnit === 'qty' ? data.item.qtyUnit : (data.item.specUnit ?? data.item.qtyUnit)) : null
   const isViewMode = mode === 'view' && !!data
 
@@ -364,7 +442,7 @@ function DetailModal({ row, onClose, onChange }: {
                 <p className="text-sm text-[var(--warm-muted)] text-center py-6">기록이 없습니다.</p>
               ) : (
                 <ul className="space-y-1.5">
-                  {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} pending={pending} />)}
+                  {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onConfirmReceipt={handleConfirmReceipt} pending={pending} />)}
                 </ul>
               )
             )}
@@ -584,6 +662,8 @@ function SettingsForm({ row, onCancel, onDone }: {
           placeholder="예: 쿠팡 / 100매 박스 단위 / 영업장 카드 결제"
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
       </div>
+      {/* 위치 할당 섹션 */}
+      <LocationAssignSection trackedItemId={row.id} initialLocations={row.locations} />
       {/* 병합 섹션 — 같은 카테고리 다른 카드로 통합 */}
       <MergeSection currentId={row.id} currentLabel={row.label} category={row.category} onDone={onDone} />
       {error && <p className="text-xs text-red-500">{error}</p>}
@@ -638,10 +718,11 @@ function MergeSection({ currentId, currentLabel, category, onDone }: {
   )
 }
 
-function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddition, pending }: {
+function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddition, onConfirmReceipt, pending }: {
   entry: TimelineEntry; stockUnit: string | null; trackUnit: 'spec' | 'qty'
   onDeleteCheck: (id: string) => void
   onDeleteAddition: (id: string) => void
+  onConfirmReceipt?: (id: string) => void
   pending: boolean
 }) {
   if (entry.type === 'check') {
@@ -663,6 +744,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
   if (entry.type === 'purchase') {
     // trackUnit='spec': 규격 환산 우선 (qtyValue × specValue), 단위=specUnit
     // trackUnit='qty':  qty 그대로 (50L × 30매 → 30매)
+    const isPendingReceipt = entry.receivedAt === null
     const hasSpec = entry.specValue != null && entry.specValue > 0 && entry.specUnit
     const useSpec = trackUnit !== 'qty' && hasSpec
     const baseQty = useSpec ? entry.qtyValue * (entry.specValue ?? 0) : entry.qtyValue
@@ -671,15 +753,26 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
       ? `${entry.specValue}${entry.specUnit} × ${fmtQty(entry.qtyValue, entry.qtyUnit)}`
       : null
     return (
-      <li className="flex items-center justify-between gap-2 border border-[var(--warm-border)]/60 rounded-xl px-3 py-2">
+      <li className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 ${isPendingReceipt ? 'border border-amber-300/70 bg-amber-50/40' : 'border border-[var(--warm-border)]/60'}`}>
         <div className="min-w-0 flex items-center gap-2">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+          <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${isPendingReceipt ? 'bg-amber-400' : 'bg-emerald-500'}`} />
           <div className="min-w-0">
-            <p className="text-xs text-[var(--warm-muted)]">{fmtDate(entry.date)} · 구매 (지출){packLabel ? ` · ${packLabel}` : ''}</p>
+            <p className="text-xs text-[var(--warm-muted)]">
+              {fmtDate(entry.date)} · {isPendingReceipt ? '구매 (수령 대기)' : '구매 (지출)'}{packLabel ? ` · ${packLabel}` : ''}
+            </p>
             <p className="text-sm font-medium text-[var(--warm-dark)]">+ {fmtQty(baseQty, baseUnit)}{entry.amount > 0 ? ` (${entry.amount.toLocaleString()}원)` : ''}</p>
             {(entry.vendor || entry.memo) && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">{entry.vendor ?? ''}{entry.vendor && entry.memo ? ' · ' : ''}{entry.memo ?? ''}</p>}
           </div>
         </div>
+        {isPendingReceipt && onConfirmReceipt && (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => onConfirmReceipt(entry.id)}
+            className="text-xs font-semibold text-emerald-700 hover:text-emerald-900 disabled:opacity-40 shrink-0 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-emerald-50 whitespace-nowrap">
+            수령 확인
+          </button>
+        )}
       </li>
     )
   }
@@ -700,23 +793,49 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
 }
 
 function CheckForm({ item, onCancel, onDone }: {
-  item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty' }
+  item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   onCancel: () => void; onDone: () => void
 }) {
   const stockUnit = item.trackUnit === 'qty' ? item.qtyUnit : (item.specUnit ?? item.qtyUnit)
+  const hasLocations = item.locations.length > 0
   const [date, setDate] = useState(kstYmdStr())
-  const [qty, setQty]   = useState('')
+  // 위치별 잔량: locationId → qty string
+  const [locationQtys, setLocationQtys] = useState<Record<string, string>>(
+    () => Object.fromEntries(item.locations.map(l => [l.id, '']))
+  )
+  const [qty, setQty]   = useState('')  // 위치 없을 때 단일 입력
   const [memo, setMemo] = useState('')
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
 
+  // 위치별 합산
+  const locationTotal = hasLocations
+    ? item.locations.reduce((s, l) => s + (Number(locationQtys[l.id]) || 0), 0)
+    : null
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    const n = Number(qty)
-    if (isNaN(n) || n < 0) { setError('잔량은 0 이상이어야 합니다.'); return }
+    let remainingQty: number
+    let locationData: { storageLocationId: string; qty: number }[] | undefined
+
+    if (hasLocations) {
+      remainingQty = locationTotal ?? 0
+      if (remainingQty < 0) { setError('잔량은 0 이상이어야 합니다.'); return }
+      locationData = item.locations
+        .map(l => ({ storageLocationId: l.id, qty: Number(locationQtys[l.id]) || 0 }))
+        .filter(lq => lq.qty > 0)
+    } else {
+      const n = Number(qty)
+      if (isNaN(n) || n < 0) { setError('잔량은 0 이상이어야 합니다.'); return }
+      remainingQty = n
+    }
+
     startTransition(async () => {
-      const res = await createStockCheck({ trackedItemId: item.id, date, remainingQty: n, memo: memo || undefined })
+      const res = await createStockCheck({
+        trackedItemId: item.id, date, remainingQty, memo: memo || undefined,
+        locationQtys: locationData,
+      })
       if (!res.ok) { setError(res.error); return }
       onDone()
     })
@@ -725,19 +844,41 @@ function CheckForm({ item, onCancel, onDone }: {
   return (
     <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
       <p className="text-xs text-[var(--warm-muted)]">점검한 시점에 남아있는 양을 {stockUnit ?? '단위'} 기준으로 기록합니다. 직전 점검과의 차이로 그 기간의 소모량이 계산됩니다.</p>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-[var(--warm-mid)]">점검일 *</label>
-          <DatePicker value={date} onChange={setDate}
-            className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">점검일 *</label>
+        <DatePicker value={date} onChange={setDate}
+          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+      </div>
+
+      {hasLocations ? (
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''}</label>
+          {item.locations.map(loc => (
+            <div key={loc.id} className="flex items-center gap-2">
+              <span className="text-xs text-[var(--warm-mid)] w-24 shrink-0 truncate">{loc.name}</span>
+              <input
+                type="text" inputMode="decimal"
+                value={locationQtys[loc.id] ?? ''}
+                onChange={e => setLocationQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                placeholder="0"
+                className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+            </div>
+          ))}
+          {locationTotal !== null && (
+            <p className="text-[10px] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
+              → 합계 <strong>{Math.round(locationTotal * 100) / 100}{stockUnit ?? ''}</strong>
+            </p>
+          )}
         </div>
+      ) : (
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">잔량 *{stockUnit ? ` (${stockUnit})` : ''}</label>
           <input type="text" inputMode="decimal" value={qty} onChange={e => setQty(e.target.value.replace(/[^0-9.]/g, ''))}
             placeholder="0"
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
         </div>
-      </div>
+      )}
+
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)}
@@ -751,6 +892,214 @@ function CheckForm({ item, onCancel, onDone }: {
         </Btn>
       </div>
     </form>
+  )
+}
+
+// ── 위치 관리 모달 — property-level CRUD
+function LocationSettingsModal({ onClose }: { onClose: () => void }) {
+  const [locs, setLocs]     = useState<StorageLocationItem[]>([])
+  const [newName, setNewName] = useState('')
+  const [editId, setEditId]   = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [pending, setPending]   = useState(false)
+  const [error, setError]       = useState('')
+
+  const reload = () => getStorageLocations().then(setLocs)
+  useEffect(() => { reload() }, [])
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newName.trim()) return
+    setPending(true); setError('')
+    const res = await createStorageLocation(newName)
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    setNewName(''); reload()
+  }
+
+  const handleUpdate = async (id: string) => {
+    if (!editName.trim()) return
+    setPending(true); setError('')
+    const res = await updateStorageLocation(id, editName)
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    setEditId(null); reload()
+  }
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`'${name}' 위치를 삭제하시겠습니까?\n이 위치가 할당된 품목에서도 자동으로 제거됩니다.`)) return
+    setPending(true)
+    const res = await deleteStorageLocation(id)
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    reload()
+  }
+
+  return (
+    <Modal open onClose={onClose} title="보관 위치 관리" subtitle="창고 / 4층 주방 / 손님실 등 보관 장소를 등록하세요" width="sm">
+      <div className="px-5 sm:px-6 py-4 space-y-4">
+        {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+        {locs.length === 0 && !pending && (
+          <p className="text-sm text-[var(--warm-muted)] text-center py-4">등록된 위치가 없습니다.</p>
+        )}
+        <ul className="space-y-1.5">
+          {locs.map(loc => (
+            <li key={loc.id} className="flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-xl px-3 py-2">
+              {editId === loc.id ? (
+                <>
+                  <input
+                    autoFocus
+                    type="text" value={editName}
+                    onChange={e => setEditName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleUpdate(loc.id); if (e.key === 'Escape') setEditId(null) }}
+                    className="flex-1 bg-transparent text-sm text-[var(--warm-dark)] outline-none border-b border-[var(--coral)]" />
+                  <button type="button" onClick={() => handleUpdate(loc.id)} disabled={pending}
+                    className="text-xs font-semibold text-[var(--coral)] disabled:opacity-40 px-2 py-1">저장</button>
+                  <button type="button" onClick={() => setEditId(null)}
+                    className="text-xs text-[var(--warm-muted)] px-2 py-1">취소</button>
+                </>
+              ) : (
+                <>
+                  <span className="flex-1 text-sm text-[var(--warm-dark)]">{loc.name}</span>
+                  <button type="button" onClick={() => { setEditId(loc.id); setEditName(loc.name) }}
+                    className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>
+                  <button type="button" onClick={() => handleDelete(loc.id, loc.name)} disabled={pending}
+                    className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-red-50">삭제</button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+        <form onSubmit={handleAdd} className="flex gap-2">
+          <input
+            type="text" value={newName} onChange={e => setNewName(e.target.value)}
+            placeholder="새 위치 이름 (예: 창고)"
+            className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+          <Btn type="submit" variant="primary" size="sm" disabled={pending || !newName.trim()}>추가</Btn>
+        </form>
+      </div>
+      <div className="border-t border-[var(--warm-border)] px-5 sm:px-6 py-3">
+        <ModalFooterActions onCancel={onClose}>
+          <Btn variant="primary" onClick={onClose}>완료</Btn>
+        </ModalFooterActions>
+      </div>
+    </Modal>
+  )
+}
+
+// ── 위치 일괄 할당 모달
+function BatchLocationModal({ selectedIds, onClose, onDone }: {
+  selectedIds: string[]; onClose: () => void; onDone: () => void
+}) {
+  const [allLocs, setAllLocs]   = useState<StorageLocationItem[]>([])
+  const [chosen, setChosen]     = useState<Set<string>>(new Set())
+  const [pending, setPending]   = useState(false)
+  const [error, setError]       = useState('')
+
+  useEffect(() => { getStorageLocations().then(setAllLocs) }, [])
+
+  const toggle = (id: string) => setChosen(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
+  })
+
+  const handleApply = async () => {
+    setPending(true); setError('')
+    const res = await batchSetItemLocations(selectedIds, Array.from(chosen))
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    pushToast('success', `${res.count}개 품목에 위치 할당 완료`)
+    onDone()
+  }
+
+  return (
+    <Modal open onClose={onClose} title="위치 일괄 할당" subtitle={`${selectedIds.length}개 품목에 동일 위치를 적용합니다`} width="sm">
+      <div className="px-5 sm:px-6 py-4 space-y-3">
+        {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+        {allLocs.length === 0 ? (
+          <p className="text-sm text-[var(--warm-muted)] text-center py-4">등록된 위치가 없습니다. 먼저 "위치 관리"에서 추가하세요.</p>
+        ) : (
+          <>
+            <p className="text-xs text-[var(--warm-muted)]">선택된 위치로 교체합니다. 기존 위치는 모두 제거됩니다.</p>
+            <div className="flex flex-wrap gap-2">
+              {allLocs.map(loc => (
+                <button key={loc.id} type="button" onClick={() => toggle(loc.id)}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${chosen.has(loc.id)
+                    ? 'bg-[var(--coral)] text-white border-[var(--coral)]'
+                    : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
+                  {loc.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+      <div className="border-t border-[var(--warm-border)] px-5 sm:px-6 py-3">
+        <ModalFooterActions onCancel={onClose}>
+          <Btn variant="primary" onClick={handleApply} disabled={pending || allLocs.length === 0}>
+            {pending ? '적용 중...' : '적용'}
+          </Btn>
+        </ModalFooterActions>
+      </div>
+    </Modal>
+  )
+}
+
+// ── 품목별 위치 할당 (SettingsForm 내 서브 섹션)
+function LocationAssignSection({ trackedItemId, initialLocations }: {
+  trackedItemId: string; initialLocations: StorageLocationItem[]
+}) {
+  const [allLocs, setAllLocs]     = useState<StorageLocationItem[]>([])
+  const [selected, setSelected]   = useState<Set<string>>(new Set(initialLocations.map(l => l.id)))
+  const [pending, setPending]     = useState(false)
+  const [saved, setSaved]         = useState(false)
+  const [error, setError]         = useState('')
+
+  useEffect(() => { getStorageLocations().then(setAllLocs) }, [])
+
+  if (allLocs.length === 0) return null
+
+  const toggle = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+    setSaved(false)
+  }
+
+  const handleSave = async () => {
+    setPending(true); setError(''); setSaved(false)
+    const res = await setItemLocations(trackedItemId, Array.from(selected))
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    setSaved(true)
+  }
+
+  return (
+    <div className="space-y-2 pt-2 border-t border-[var(--warm-border)]/60">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">보관 위치</label>
+        {saved && <span className="text-[10px] text-emerald-600">저장됨</span>}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {allLocs.map(loc => (
+          <button
+            key={loc.id}
+            type="button"
+            onClick={() => toggle(loc.id)}
+            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${selected.has(loc.id)
+              ? 'bg-[var(--coral)] text-white border-[var(--coral)]'
+              : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
+            {loc.name}
+          </button>
+        ))}
+      </div>
+      {error && <p className="text-xs text-red-500">{error}</p>}
+      <Btn type="button" variant="secondary" size="sm" onClick={handleSave} disabled={pending}>
+        {pending ? '저장 중...' : '위치 저장'}
+      </Btn>
+      <p className="text-[10px] text-[var(--warm-muted)]">재고 점검 시 선택된 위치별로 잔량을 나눠서 입력할 수 있습니다.</p>
+    </div>
   )
 }
 

@@ -1211,3 +1211,62 @@ export async function finalizeContractScan(input: {
     return { ok: false, error: `업로드 마무리 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
   }
 }
+
+// ── 일괄 편집
+export async function batchUpdateTenants(
+  tenantIds: string[],
+  data: {
+    // Tenant 필드
+    nationality?: string | null
+    gender?: string
+    // LeaseTerm 필드 (가장 최근 활성·예약 계약에 적용)
+    depositAmount?: number
+    dueDay?: string | null
+    status?: string
+  },
+): Promise<{ ok: true; tenantCount: number; leaseCount: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    if (tenantIds.length === 0) return { ok: false, error: '선택된 입주자가 없습니다.' }
+
+    const tenantFields: Record<string, unknown> = {}
+    if ('nationality' in data) tenantFields.nationality = data.nationality
+    if ('gender' in data && data.gender) tenantFields.gender = data.gender
+
+    const leaseFields: Record<string, unknown> = {}
+    if ('depositAmount' in data && data.depositAmount != null) leaseFields.depositAmount = data.depositAmount
+    if ('dueDay' in data) leaseFields.dueDay = data.dueDay
+    if ('status' in data && data.status) leaseFields.status = data.status
+
+    let tenantCount = 0
+    let leaseCount = 0
+
+    if (Object.keys(tenantFields).length > 0) {
+      const r = await prisma.tenant.updateMany({
+        where: { id: { in: tenantIds }, propertyId },
+        data: tenantFields,
+      })
+      tenantCount = r.count
+    }
+
+    if (Object.keys(leaseFields).length > 0) {
+      const r = await prisma.leaseTerm.updateMany({
+        where: {
+          tenantId: { in: tenantIds },
+          status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] },
+        },
+        data: leaseFields,
+      })
+      leaseCount = r.count
+    }
+
+    if (tenantCount === 0 && leaseCount === 0) return { ok: false, error: '변경할 항목이 없습니다.' }
+    revalidatePath('/tenants')
+    revalidatePath('/rooms')
+    return { ok: true, tenantCount, leaseCount }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
