@@ -4,14 +4,14 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 
 const ico = {
-  viewBox: '0 0 22 22',
+  viewBox: '0 0 24 24',
   fill: 'none',
   stroke: 'currentColor',
-  strokeWidth: '1.5',
+  strokeWidth: '1.6',
   strokeLinecap: 'round' as const,
   strokeLinejoin: 'round' as const,
-  width: 22,
-  height: 22,
+  width: 20,
+  height: 20,
 }
 
 const NAV_ITEMS = [
@@ -66,7 +66,7 @@ export default function BottomNav() {
             key={href}
             href={linkHref}
             /* HIG: 탭 아이템 최소 높이 49pt, 아이콘+레이블 수직 중앙 */
-            className="flex-1 flex flex-col items-center justify-center gap-1 py-3 transition-colors"
+            className="flex-1 flex flex-col items-center justify-center gap-1 py-3 transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
             style={{ color: isActive ? 'var(--coral)' : 'var(--warm-muted)', minHeight: 49 }}
           >
             <Icon />

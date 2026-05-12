@@ -58,11 +58,12 @@ export function Badge({
   const toneCls = isSolid ? SOLID_CLS[tone as SemanticTone] : (PALE_CLS[tone as string] ?? PALE_CLS['pale-coral'])
   const ringCls = isSolid ? '' : 'ring-1'
   const sizeCls = size === 'md' ? 'text-xs px-2.5 py-1' : 'text-[11px] px-2 py-0.5'
-  const fontCls = mono
+  // 솔리드 톤은 항상 mono+uppercase (가이드 명시). 페일 톤은 mono prop으로 opt-in.
+  const fontCls = (isSolid || mono)
     ? 'mono tnum font-bold uppercase tracking-wider'
     : 'font-medium'
-  // 가이드 명시: 솔리드 뱃지는 r-md(6), 페일은 r-pill(999)도 OK. 기본은 r-md.
-  const radiusCls = isSolid ? 'rounded-md' : 'rounded-full'
+  // 가이드 명시: 솔리드 뱃지는 r-sm(6px), 페일은 r-pill(999)도 OK.
+  const radiusCls = isSolid ? 'rounded-sm' : 'rounded-full'
   return (
     <span className={`inline-flex items-center gap-1 ${radiusCls} ${ringCls} ${toneCls} ${sizeCls} ${fontCls} ${className}`}>
       {icon && <span className="leading-none">{icon}</span>}

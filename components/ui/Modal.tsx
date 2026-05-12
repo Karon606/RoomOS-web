@@ -38,7 +38,7 @@ export function Modal({
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className={`bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full ${WIDTH_CLS[width]} flex flex-col max-h-[90vh]`}
+        className={`bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl shadow-lift w-full ${WIDTH_CLS[width]} flex flex-col max-h-[90vh]`}
         onClick={e => e.stopPropagation()}
       >
         {(title || onBack) && (
@@ -48,9 +48,9 @@ export function Modal({
                 <button
                   type="button"
                   onClick={onBack}
-                  className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors shrink-0"
+                  className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] w-11 h-11 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors shrink-0"
                   title="뒤로"
-                >‹</button>
+                ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
               )}
               <div className="min-w-0">
                 {typeof title === 'string'
@@ -63,9 +63,9 @@ export function Modal({
             <button
               type="button"
               onClick={onClose}
-              className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors shrink-0"
+              className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] w-11 h-11 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors shrink-0"
               title="닫기"
-            >✕</button>
+            ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
           </div>
         )}
         <div className={`flex-1 overflow-y-auto ${bodyClassName}`}>
@@ -99,7 +99,7 @@ export function ModalFooterActions({
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2.5 min-h-[40px] text-sm rounded-xl bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] border border-[var(--warm-border)] transition-colors"
+          className="px-4 py-2.5 min-h-[40px] text-sm rounded-lg bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] border border-[var(--warm-border)] transition-colors"
         >
           {cancelLabel}
         </button>

@@ -1272,7 +1272,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
         {/* 헤더 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
           {loading ? (
-            <div className="h-5 w-32 bg-[var(--sand)] rounded animate-pulse" />
+            <div className="h-5 w-32 bg-[var(--cream-3)] rounded animate-pulse" />
           ) : (
             <div>
               <h2 className="text-base font-bold text-[var(--warm-dark)]">
@@ -2344,7 +2344,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 style={{ borderBottom: i < visibleUnpaid.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}
                               >
                                 <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
-                                  style={{ background: 'var(--sand)', fontSize: 11, color: '#c08050' }}>
+                                  style={{ background: 'var(--cream-3)', fontSize: 11, color: 'var(--ink-mute)' }}>
                                   {l.tenantName.slice(0, 1)}
                                 </div>
                                 <div className="flex-1 min-w-0">

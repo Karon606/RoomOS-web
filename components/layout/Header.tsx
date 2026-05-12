@@ -298,7 +298,7 @@ function MonthPicker({
           onClick={() => onSelect(todayMonth)}
           className="flex-1 py-3 text-sm rounded-xl transition-colors font-medium"
           style={current === todayMonth
-            ? { background: 'var(--coral-light)', color: '#fff', cursor: 'default' }
+            ? { background: 'var(--persimmon)', color: '#fff', cursor: 'default' }
             : { background: 'var(--canvas)', color: 'var(--warm-mid)' }}
         >
           이번달

@@ -6,7 +6,7 @@ import { RoomOSWordmark } from '@/components/brand/RoomOSWordmark'
 
 // ── SVG Icons — RoomOS Design Guide v2 (Lucide style)
 //   24×24 viewBox · stroke-width 1.6 · round caps/joins · currentColor
-const ico = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '1.6', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, width: 18, height: 18, style: { flexShrink: 0 } }
+const ico = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '1.6', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, width: 20, height: 20, style: { flexShrink: 0 } }
 
 // 대시보드 — LayoutGrid (4 rect)
 function IcoDashboard() {
@@ -168,7 +168,7 @@ function NavContent({
                   onClick={onClose}
                   /* HIG: 최소 44pt 터치 타겟 — py-3.5로 달성 (14×2 + 아이콘17 = 45px) */
                   className={[
-                    'flex items-center transition-colors min-h-[44px]',
+                    'flex items-center transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset min-h-[44px]',
                     drawer
                       ? 'gap-2.5 px-5 py-3.5 border-l-[2.5px]'
                       : 'gap-0 py-3.5 justify-center border-l-0 lg:gap-2.5 lg:px-5 lg:justify-start lg:border-l-[2.5px]',

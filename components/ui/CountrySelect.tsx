@@ -289,7 +289,7 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-left focus:outline-none focus:border-[var(--coral)] transition-colors"
+        className="w-full flex items-center gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-3 py-2.5 text-sm text-left focus:outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(232,74,26,0.12)] transition-colors"
       >
         {selected ? (
           <>
@@ -314,7 +314,7 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="국가 검색..."
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)]"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-3 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--persimmon)] focus:shadow-[0_0_0_3px_rgba(232,74,26,0.12)]"
             />
           </div>
 
@@ -374,7 +374,7 @@ function CountryItem({
       onClick={() => onSelect(country)}
       className={`w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors text-left ${
         selected
-          ? 'bg-[var(--coral-light)] text-[var(--coral)]'
+          ? 'bg-[var(--persimmon-l)] text-[var(--persimmon)]'
           : 'text-[var(--warm-dark)] hover:bg-[var(--canvas)]'
       }`}
     >
