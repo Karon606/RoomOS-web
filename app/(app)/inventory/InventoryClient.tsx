@@ -238,6 +238,11 @@ function InventoryCard({ row, onOpen, selectMode, isSelected }: { row: Inventory
               ? `${Math.round(row.avgUnitPrice).toLocaleString()}원${priceUnit ? `/${priceUnit}` : ''}`
               : '—'}
           </p>
+          {row.lastUnitPrice != null && row.lastUnitPrice !== row.avgUnitPrice && (
+            <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">
+              최근 {Math.round(row.lastUnitPrice).toLocaleString()}원{priceUnit ? `/${priceUnit}` : ''}
+            </p>
+          )}
         </div>
       </div>
       {row.memo && (
