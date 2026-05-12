@@ -34,6 +34,7 @@ export type InventoryRow = {
   lastUnitPrice: number | null  // 가장 최근 구매의 단가
   pendingPurchases: PendingPurchase[]  // 수령 대기 중인 구매 내역
   locations: StorageLocationItem[]    // 이 품목이 보관되는 위치 목록
+  lastCheckLocationBreakdown: LocationQtyEntry[]  // 최신 실사의 위치별 잔량
 }
 
 export type PricePoint = {
@@ -57,7 +58,9 @@ export type StorageLocationItem = {
   sortOrder: number
 }
 
+export type LocationQtyEntry = { locationId: string; locationName: string; qty: number }
+
 export type TimelineEntry =
-  | { type: 'check';    id: string; date: Date; createdAt: Date; remainingQty: number; memo: string | null }
+  | { type: 'check';    id: string; date: Date; createdAt: Date; remainingQty: number; memo: string | null; locationBreakdown: LocationQtyEntry[] }
   | { type: 'purchase'; id: string; date: Date; createdAt: Date; qtyValue: number; qtyUnit: string | null; specValue: number | null; specUnit: string | null; amount: number; vendor: string | null; memo: string | null; receivedAt: Date | null }
   | { type: 'addition'; id: string; date: Date; createdAt: Date; addedQty: number; source: string | null; memo: string | null }

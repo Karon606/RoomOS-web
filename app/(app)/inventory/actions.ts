@@ -6,7 +6,7 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
-import { TRACKED_CATEGORIES, type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem } from './constants'
+import { TRACKED_CATEGORIES, type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry } from './constants'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -100,7 +100,16 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
     where: { propertyId, isArchived: false },
     orderBy: [{ category: 'asc' }, { label: 'asc' }],
     include: {
-      stockChecks: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }], take: 2 },
+      stockChecks: {
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        take: 2,
+        include: {
+          locationBreakdown: {
+            include: { storageLocation: { select: { id: true, name: true } } },
+            orderBy: { storageLocation: { sortOrder: 'asc' } },
+          },
+        },
+      },
     },
   })
 
@@ -247,6 +256,11 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
       lastUnitPrice,
       pendingPurchases,
       locations,
+      lastCheckLocationBreakdown: (last?.locationBreakdown ?? []).map(lb => ({
+        locationId: lb.storageLocationId,
+        locationName: lb.storageLocation.name,
+        qty: lb.remainingQty,
+      })) satisfies LocationQtyEntry[],
     })
   }
   return rows
@@ -352,7 +366,16 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
   if (!item) return null
 
   const [checks, additions, purchases] = await Promise.all([
-    prisma.stockCheck.findMany({ where: { trackedItemId }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }),
+    prisma.stockCheck.findMany({
+      where: { trackedItemId },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        locationBreakdown: {
+          include: { storageLocation: { select: { id: true, name: true } } },
+          orderBy: { storageLocation: { sortOrder: 'asc' } },
+        },
+      },
+    }),
     prisma.stockAddition.findMany({ where: { trackedItemId }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }),
     prisma.expense.findMany({
       where: {
@@ -367,7 +390,15 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
   ])
 
   const timeline: TimelineEntry[] = [
-    ...checks.map(c => ({ type: 'check' as const, id: c.id, date: c.date, createdAt: c.createdAt, remainingQty: c.remainingQty, memo: c.memo })),
+    ...checks.map(c => ({
+      type: 'check' as const,
+      id: c.id, date: c.date, createdAt: c.createdAt, remainingQty: c.remainingQty, memo: c.memo,
+      locationBreakdown: c.locationBreakdown.map(lb => ({
+        locationId: lb.storageLocationId,
+        locationName: lb.storageLocation.name,
+        qty: lb.remainingQty,
+      })) satisfies LocationQtyEntry[],
+    })),
     ...additions.map(a => ({ type: 'addition' as const, id: a.id, date: a.date, createdAt: a.createdAt, addedQty: a.addedQty, source: a.source, memo: a.memo })),
     ...purchases.filter(p => p.qtyValue != null).map(p => ({
       type: 'purchase' as const,

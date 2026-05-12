@@ -33,7 +33,7 @@ import {
   setItemLocations,
   batchSetItemLocations,
 } from './actions'
-import { type StorageLocationItem } from './constants'
+import { type StorageLocationItem, type LocationQtyEntry } from './constants'
 
 const CATEGORY_TINT: Record<string, { bg: string; fg: string }> = {
   '부식비':       { bg: 'rgba(232,137,58,0.10)',  fg: '#e8893a' },
@@ -161,11 +161,11 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
       {/* 배치 액션 바 */}
       {selectMode && selected.size > 0 && (
         <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
-          <div className="flex items-center gap-3 bg-[var(--warm-dark)] text-white rounded-2xl px-4 py-3 shadow-xl pointer-events-auto mx-4">
+          <div className="flex items-center gap-3 bg-[var(--ink)] text-[var(--canvas)] rounded-2xl px-4 py-3 shadow-xl pointer-events-auto mx-4">
             <span className="text-sm font-medium">{selected.size}개 선택됨</span>
-            <div className="w-px h-4 bg-white/20" />
+            <div className="w-px h-4 bg-[var(--canvas)]/20" />
             <button type="button" onClick={() => setShowBatchLoc(true)}
-              className="text-sm font-semibold text-[var(--honey)] hover:text-yellow-200 transition-colors">
+              className="text-sm font-semibold text-[var(--coral)] hover:text-[var(--coral-dark)] transition-colors">
               위치 일괄 할당
             </button>
           </div>
@@ -245,9 +245,16 @@ function InventoryCard({ row, onOpen, selectMode, isSelected }: { row: Inventory
       )}
       {row.locations.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {row.locations.map(loc => (
-            <span key={loc.id} className="text-[10px] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">{loc.name}</span>
-          ))}
+          {row.lastCheckLocationBreakdown.length > 0
+            ? row.lastCheckLocationBreakdown.map(lb => (
+                <span key={lb.locationId} className="text-[10px] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
+                  {lb.locationName} {fmtQty(lb.qty, stockUnit)}
+                </span>
+              ))
+            : row.locations.map(loc => (
+                <span key={loc.id} className="text-[10px] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">{loc.name}</span>
+              ))
+          }
         </div>
       )}
       {row.lastPeriodConsumption != null && row.lastPeriodDays != null && (
@@ -733,6 +740,15 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
           <div className="min-w-0">
             <p className="text-xs text-[var(--warm-muted)]">{fmtDate(entry.date)} · 점검</p>
             <p className="text-sm font-medium text-[var(--warm-dark)]">잔량 {fmtQty(entry.remainingQty, stockUnit)}</p>
+            {entry.locationBreakdown.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {entry.locationBreakdown.map(lb => (
+                  <span key={lb.locationId} className="text-[10px] bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
+                    {lb.locationName} {fmtQty(lb.qty, stockUnit)}
+                  </span>
+                ))}
+              </div>
+            )}
             {entry.memo && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">{entry.memo}</p>}
           </div>
         </div>
@@ -753,9 +769,9 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
       ? `${entry.specValue}${entry.specUnit} × ${fmtQty(entry.qtyValue, entry.qtyUnit)}`
       : null
     return (
-      <li className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 ${isPendingReceipt ? 'border border-amber-300/70 bg-amber-50/40' : 'border border-[var(--warm-border)]/60'}`}>
+      <li className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 ${isPendingReceipt ? 'border border-[var(--honey)]/40 bg-[var(--honey)]/10' : 'border border-[var(--warm-border)]/60'}`}>
         <div className="min-w-0 flex items-center gap-2">
-          <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${isPendingReceipt ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+          <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${isPendingReceipt ? 'bg-[var(--honey)]' : 'bg-[var(--status-paid-strong)]'}`} />
           <div className="min-w-0">
             <p className="text-xs text-[var(--warm-muted)]">
               {fmtDate(entry.date)} · {isPendingReceipt ? '구매 (수령 대기)' : '구매 (지출)'}{packLabel ? ` · ${packLabel}` : ''}
@@ -769,7 +785,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
             type="button"
             disabled={pending}
             onClick={() => onConfirmReceipt(entry.id)}
-            className="text-xs font-semibold text-emerald-700 hover:text-emerald-900 disabled:opacity-40 shrink-0 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-emerald-50 whitespace-nowrap">
+            className="text-xs font-semibold text-[var(--status-paid-fg)] hover:text-[var(--status-paid-strong)] disabled:opacity-40 shrink-0 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--status-paid-bg)] whitespace-nowrap">
             수령 확인
           </button>
         )}
@@ -779,7 +795,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, onDeleteCheck, onDeleteAddit
   return (
     <li className="flex items-center justify-between gap-2 border border-[var(--warm-border)]/60 rounded-xl px-3 py-2">
       <div className="min-w-0 flex items-center gap-2">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--honey)] shrink-0" />
         <div className="min-w-0">
           <p className="text-xs text-[var(--warm-muted)]">{fmtDate(entry.date)} · 무상 입수{entry.source ? ` (${entry.source})` : ''}</p>
           <p className="text-sm font-medium text-[var(--warm-dark)]">+ {fmtQty(entry.addedQty, stockUnit)}</p>
