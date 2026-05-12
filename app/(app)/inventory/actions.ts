@@ -708,6 +708,74 @@ export async function deleteStockAddition(id: string): Promise<{ ok: true } | { 
   }
 }
 
+export async function updateStockAddition(id: string, data: {
+  date?: string; addedQty?: number; source?: string | null; memo?: string | null
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const a = await prisma.stockAddition.findUnique({ where: { id }, include: { trackedItem: true } })
+    if (!a || a.trackedItem.propertyId !== propertyId) return { ok: false, error: '입수 기록을 찾을 수 없습니다.' }
+    if (data.addedQty !== undefined && data.addedQty <= 0) return { ok: false, error: '입수 수량은 0보다 커야 합니다.' }
+    await prisma.stockAddition.update({
+      where: { id },
+      data: {
+        ...(data.date ? { date: new Date(data.date) } : {}),
+        ...(data.addedQty !== undefined ? { addedQty: data.addedQty } : {}),
+        ...(data.source !== undefined ? { source: data.source || null } : {}),
+        ...(data.memo !== undefined ? { memo: data.memo || null } : {}),
+      },
+    })
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function updateExpenseFromInventory(id: string, data: {
+  date?: string; amount?: number; vendor?: string | null; memo?: string | null
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const e = await prisma.expense.findUnique({ where: { id } })
+    if (!e || e.propertyId !== propertyId) return { ok: false, error: '구매 기록을 찾을 수 없습니다.' }
+    await prisma.expense.update({
+      where: { id },
+      data: {
+        ...(data.date ? { date: new Date(data.date) } : {}),
+        ...(data.amount !== undefined ? { amount: data.amount } : {}),
+        ...(data.vendor !== undefined ? { vendor: data.vendor || null } : {}),
+        ...(data.memo !== undefined ? { memo: data.memo || null } : {}),
+      },
+    })
+    revalidatePath('/inventory')
+    revalidatePath('/expenses')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function deleteExpenseFromInventory(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const e = await prisma.expense.findUnique({ where: { id } })
+    if (!e || e.propertyId !== propertyId) return { ok: false, error: '구매 기록을 찾을 수 없습니다.' }
+    await prisma.expense.delete({ where: { id } })
+    revalidatePath('/inventory')
+    revalidatePath('/expenses')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // ── 기존 지출 내역에서 (category, itemLabel, qtyUnit) 자동 시드
 // 같은 (category, label) 안에서 spec/qtyUnit 변형이 여럿이면 sub-label을 붙여 별도 카드로 추적.
 // 예) 음식물쓰레기봉투 5L vs 10L → 별도 카드 / 키친타월 (롤) vs (팩) → 별도 카드
