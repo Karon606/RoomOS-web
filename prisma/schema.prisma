@@ -119,6 +119,7 @@ model Property {
   businessInfo     Json?     // 사업자 정보. shape: { name, registrationNo, ceoName, address }
   stampDriveFileId String?   // 도장 PNG (Drive 파일 ID, 투명 배경 권장)
   logoDriveFileId  String?   // 영업장 로고 (Drive 파일 ID, 계약서 헤더 좌측 표시)
+  floorPlanData    Json?     // 도면 데이터. shape: { elements: FloorPlanElement[], canvasWidth, canvasHeight }
   createdAt        DateTime  @default(now())
   updatedAt   DateTime @updatedAt
 
