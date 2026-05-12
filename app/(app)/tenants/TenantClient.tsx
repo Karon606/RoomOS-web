@@ -1326,7 +1326,7 @@ export default function TenantClient({
                 </div>
                 {/* 보증금 · 거주기간 */}
                 {((lease?.depositAmount ?? 0) > 0 || lease?.moveInDate) && (() => {
-                  const isReservation = lease && ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(lease.status)
+                  const isReservation = lease && ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status)
                   return (
                     <div className="flex items-center gap-2 text-xs flex-wrap mt-1">
                       {(lease?.depositAmount ?? 0) > 0 && (
@@ -1665,13 +1665,13 @@ export default function TenantClient({
                                 } />
                                 <InfoItem label="납부방식"   value={PT_LABEL[lease.paymentTiming] ?? lease.paymentTiming} />
                                 <InfoItem
-                                  label={['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(lease.status) ? '입주 희망일' : '입주일'}
+                                  label={['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status) ? '입주 희망일' : '입주일'}
                                   value={fmtDate(lease.moveInDate)}
                                 />
-                                {['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(lease.status) && lease.inquiryAt && (
+                                {['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status) && lease.inquiryAt && (
                                   <InfoItem label="입실 문의 일시" value={fmtDateTime(lease.inquiryAt)} />
                                 )}
-                                {!['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(lease.status) && (
+                                {!['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status) && (
                                   <InfoItem label="거주기간" value={calcStayPeriod(lease.moveInDate, lease.moveOutDate ?? undefined)} />
                                 )}
                                 {lease.expectedMoveOut && <InfoItem label="퇴실 예정일" value={fmtDate(lease.expectedMoveOut)} />}
