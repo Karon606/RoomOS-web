@@ -77,18 +77,18 @@ type SortDir = 'asc' | 'desc'
 // ── 열 정의 ─────────────────────────────────────────────────────
 
 const COL_DEFS = [
-  { key: 'englishName',   label: '영어이름', defaultOn: false, tabs: ['active', 'past', 'dropped'] },
-  { key: 'nationality',   label: '국적',     defaultOn: true,  tabs: ['active', 'past', 'dropped'] },
-  { key: 'gender',        label: '성별',     defaultOn: true,  tabs: ['active', 'past', 'dropped'] },
-  { key: 'job',           label: '직업',     defaultOn: false, tabs: ['active', 'past', 'dropped'] },
-  { key: 'contact',       label: '연락처',   defaultOn: true,  tabs: ['active', 'past', 'dropped'] },
-  { key: 'payMethod',     label: '결제수단', defaultOn: false, tabs: ['active', 'past', 'dropped'] },
-  { key: 'depositAmount', label: '보증금',   defaultOn: true,  tabs: ['active', 'past', 'dropped'] },
-  { key: 'rentAmount',    label: '월 이용료', defaultOn: true, tabs: ['active', 'past', 'dropped'] },
-  { key: 'dueDay',        label: '납부일',   defaultOn: true,  tabs: ['active'] },
-  { key: 'stayPeriod',    label: '거주기간', defaultOn: true,  tabs: ['active', 'past', 'dropped'] },
-  { key: 'status',        label: '상태',     defaultOn: true,  tabs: ['active', 'past', 'dropped'] },
-  { key: 'scheduledDate', label: '예정일',   defaultOn: false, tabs: ['active'] },
+  { key: 'englishName',   label: '영어이름', defaultOn: false, tabs: ['residents', 'inquiry', 'past', 'dropped'] },
+  { key: 'nationality',   label: '국적',     defaultOn: true,  tabs: ['residents', 'inquiry', 'past', 'dropped'] },
+  { key: 'gender',        label: '성별',     defaultOn: true,  tabs: ['residents', 'inquiry', 'past', 'dropped'] },
+  { key: 'job',           label: '직업',     defaultOn: false, tabs: ['residents', 'inquiry', 'past', 'dropped'] },
+  { key: 'contact',       label: '연락처',   defaultOn: true,  tabs: ['residents', 'inquiry', 'past', 'dropped'] },
+  { key: 'payMethod',     label: '결제수단', defaultOn: false, tabs: ['residents', 'inquiry', 'past', 'dropped'] },
+  { key: 'depositAmount', label: '보증금',   defaultOn: true,  tabs: ['residents', 'inquiry', 'past', 'dropped'] },
+  { key: 'rentAmount',    label: '월 이용료', defaultOn: true, tabs: ['residents', 'inquiry', 'past', 'dropped'] },
+  { key: 'dueDay',        label: '납부일',   defaultOn: true,  tabs: ['residents'] },
+  { key: 'stayPeriod',    label: '거주기간', defaultOn: true,  tabs: ['residents', 'past'] },
+  { key: 'status',        label: '상태',     defaultOn: true,  tabs: ['residents', 'inquiry', 'past', 'dropped'] },
+  { key: 'scheduledDate', label: '예정일',   defaultOn: false, tabs: ['residents'] },
   { key: 'moveOutDate',   label: '퇴실일',   defaultOn: true,  tabs: ['past'] },
 ] as const
 type ColKey = (typeof COL_DEFS)[number]['key']
@@ -137,15 +137,20 @@ const GENDER_LABEL: Record<string, string> = {
 const PT_LABEL: Record<string, string> = { PREPAID: '선납', POSTPAID: '후납' }
 
 // active 탭 내 빠른 상태 필터
-const ACTIVE_FILTERS = [
-  { key: 'all',             label: '전체' },
-  { key: 'ACTIVE',          label: '거주중' },
-  { key: 'RESERVED',        label: '예약' },
+const RESIDENT_FILTERS = [
+  { key: 'all',              label: '전체' },
+  { key: 'ACTIVE',           label: '거주중' },
   { key: 'CHECKOUT_PENDING', label: '퇴실 예정' },
-  { key: 'TOUR',            label: '투어' },
-  { key: 'NON_RESIDENT',    label: '비거주자' },
+  { key: 'NON_RESIDENT',     label: '비거주자' },
 ] as const
-type ActiveFilter = (typeof ACTIVE_FILTERS)[number]['key']
+type ResidentFilter = (typeof RESIDENT_FILTERS)[number]['key']
+
+const INQUIRY_FILTERS = [
+  { key: 'all',      label: '전체' },
+  { key: 'RESERVED', label: '예약' },
+  { key: 'TOUR',     label: '투어' },
+] as const
+type InquiryFilter = (typeof INQUIRY_FILTERS)[number]['key']
 
 const PAST_FILTERS = [
   { key: 'all',         label: '전체' },
@@ -352,8 +357,9 @@ export default function TenantClient({
   const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  const [filter, setFilter]             = useState<'active' | 'past' | 'dropped'>('active')
-  const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
+  const [filter, setFilter]             = useState<'residents' | 'inquiry' | 'past' | 'dropped'>('residents')
+  const [residentFilter, setResidentFilter] = useState<ResidentFilter>('all')
+  const [inquiryFilter, setInquiryFilter]   = useState<InquiryFilter>('all')
   const [pastFilter, setPastFilter]     = useState<PastFilter>('all')
   const [floorFilter, setFloorFilter]   = useState('')
   const [search, setSearch]             = useUrlState('q', '')
@@ -462,16 +468,21 @@ export default function TenantClient({
     const status = t.leaseTerms[0]?.status ?? ''
 
     // 탭 필터
-    const isActive   = ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'].includes(status)
+    const isResident = ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(status)
+    const isInquiry  = ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(status)
     const isDropped  = status === 'CANCELLED'
-    if (filter === 'active'  && !isActive)  return false
-    if (filter === 'past'    && (isActive || isDropped)) return false
-    if (filter === 'dropped' && !isDropped) return false
+    if (filter === 'residents' && !isResident) return false
+    if (filter === 'inquiry'   && !isInquiry)  return false
+    if (filter === 'past'      && (isResident || isInquiry || isDropped)) return false
+    if (filter === 'dropped'   && !isDropped)  return false
 
     // 빠른 상태 필터
-    if (filter === 'active') {
-      if (activeFilter === 'TOUR' && !['WAITING_TOUR', 'TOUR_DONE'].includes(status)) return false
-      if (activeFilter !== 'all' && activeFilter !== 'TOUR' && status !== activeFilter) return false
+    if (filter === 'residents') {
+      if (residentFilter !== 'all' && status !== residentFilter) return false
+    }
+    if (filter === 'inquiry') {
+      if (inquiryFilter === 'TOUR' && !['WAITING_TOUR', 'TOUR_DONE'].includes(status)) return false
+      if (inquiryFilter !== 'all' && inquiryFilter !== 'TOUR' && status !== inquiryFilter) return false
     }
     if (filter === 'past') {
       if (pastFilter !== 'all' && status !== pastFilter) return false
@@ -869,11 +880,14 @@ export default function TenantClient({
 
   // ── 인원수 ────────────────────────────────────────────────────
 
-  const activeCount   = initialTenants.filter(t =>
-    ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'].includes(t.leaseTerms[0]?.status ?? '')
+  const residentsCount = initialTenants.filter(t =>
+    ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(t.leaseTerms[0]?.status ?? '')
   ).length
-  const droppedCount  = initialTenants.filter(t => t.leaseTerms[0]?.status === 'CANCELLED').length
-  const pastCount     = initialTenants.length - activeCount - droppedCount
+  const inquiryCount   = initialTenants.filter(t =>
+    ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(t.leaseTerms[0]?.status ?? '')
+  ).length
+  const droppedCount   = initialTenants.filter(t => t.leaseTerms[0]?.status === 'CANCELLED').length
+  const pastCount      = initialTenants.length - residentsCount - inquiryCount - droppedCount
 
   const getTenantFloor = (t: typeof initialTenants[0]) => {
     const room = t.leaseTerms[0]?.room
@@ -917,9 +931,10 @@ export default function TenantClient({
       {/* 탭 */}
       <div className="flex gap-2 flex-wrap">
         {([
-          { key: 'active',  label: `입주/예약자 (${activeCount})` },
-          { key: 'past',    label: `퇴실자 내역 (${pastCount})` },
-          { key: 'dropped', label: `입실 취소 내역 (${droppedCount})` },
+          { key: 'residents', label: `입주자 (${residentsCount})` },
+          { key: 'inquiry',   label: `문의/예약자 (${inquiryCount})` },
+          { key: 'past',      label: `퇴실자 내역 (${pastCount})` },
+          { key: 'dropped',   label: `입실 취소 내역 (${droppedCount})` },
         ] as const).map(tab => (
           <button key={tab.key} onClick={() => setFilter(tab.key)}
             className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
@@ -933,11 +948,15 @@ export default function TenantClient({
 
       {/* 빠른 상태 필터 */}
       <div className="flex gap-2 flex-wrap items-center">
-        {(filter === 'dropped' ? [] : (filter === 'active' ? ACTIVE_FILTERS : PAST_FILTERS)).map(f => {
-          const cur = filter === 'active' ? activeFilter : pastFilter
-          const set = filter === 'active'
-            ? (v: string) => setActiveFilter(v as ActiveFilter)
-            : (v: string) => setPastFilter(v as PastFilter)
+        {(filter === 'dropped' ? [] :
+          filter === 'residents' ? RESIDENT_FILTERS :
+          filter === 'inquiry'   ? INQUIRY_FILTERS  : PAST_FILTERS
+        ).map(f => {
+          const cur = filter === 'residents' ? residentFilter : filter === 'inquiry' ? inquiryFilter : pastFilter
+          const set =
+            filter === 'residents' ? (v: string) => setResidentFilter(v as ResidentFilter) :
+            filter === 'inquiry'   ? (v: string) => setInquiryFilter(v as InquiryFilter) :
+                                     (v: string) => setPastFilter(v as PastFilter)
           return (
             <button key={f.key} onClick={() => set(f.key)}
               className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
