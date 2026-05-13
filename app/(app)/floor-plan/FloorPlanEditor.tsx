@@ -225,7 +225,7 @@ function PropertiesPanel({
 function BottomSheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="md:hidden fixed bottom-0 inset-x-0 z-40 rounded-t-2xl border-t border-[var(--warm-border)] shadow-xl"
-      style={{ background: 'var(--cream)', maxHeight: '55vh', display: 'flex', flexDirection: 'column' }}>
+      style={{ background: 'var(--cream)', maxHeight: '72vh', display: 'flex', flexDirection: 'column' }}>
       <div className="flex justify-center pt-2 pb-1 shrink-0">
         <div className="w-10 h-1 rounded-full bg-[var(--warm-border)]" />
       </div>
@@ -867,8 +867,10 @@ export default function FloorPlanEditor({
 
       {editMode && selectedIds.length > 1 && (
         <BottomSheet title={`${selectedIds.length}개 선택됨`} onClose={() => setSelectedIds([])}>
-          <div className="p-4 pb-2 space-y-3">
-            <p className="text-xs text-[var(--warm-muted)]">
+          {/* 정렬 먼저 — 복사/삭제보다 자주 쓰임 */}
+          <AlignPanel count={selectedIds.length} onAlign={alignElements} />
+          <div className="border-t border-[var(--warm-border)] px-4 py-3 space-y-2.5">
+            <p className="text-[11px] text-[var(--warm-muted)]">
               {transformMode ? '핸들로 함께 이동·크기 변경·회전할 수 있습니다.' : '이동 모드 — 크기·회전을 바꾸려면 상단 변형 버튼을 켜세요.'}
             </p>
             <button onClick={copySelected}
@@ -879,9 +881,6 @@ export default function FloorPlanEditor({
               className="w-full text-sm text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 rounded-xl py-3 transition-colors font-medium">
               선택 삭제 ({selectedIds.length}개)
             </button>
-          </div>
-          <div className="border-t border-[var(--warm-border)] pt-3">
-            <AlignPanel count={selectedIds.length} onAlign={alignElements} />
           </div>
         </BottomSheet>
       )}
