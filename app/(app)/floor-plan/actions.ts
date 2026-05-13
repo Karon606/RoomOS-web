@@ -129,7 +129,7 @@ export async function parseFloorPlanImage(
           ]}],
           generationConfig: {
             temperature: 0.1,
-            maxOutputTokens: 8192,
+            maxOutputTokens: 32768,
             responseMimeType: 'application/json',
             responseSchema: {
               type: 'ARRAY',
@@ -187,6 +187,16 @@ export async function parseFloorPlanImage(
           try { objs.push(JSON.parse(t)) } catch { /* skip malformed lines */ }
         }
         if (objs.length > 0) recovered = objs
+      }
+      // Salvage partial array: truncate after last complete element boundary
+      if (!recovered) {
+        const s = cleaned.trim()
+        if (s.startsWith('[')) {
+          const lastBoundary = Math.max(s.lastIndexOf('},'), s.lastIndexOf('}]'))
+          if (lastBoundary > 0) {
+            try { recovered = JSON.parse(s.slice(0, lastBoundary + 1) + ']') } catch { /* give up */ }
+          }
+        }
       }
       if (!recovered) return { ok: false, error: `JSON 파싱 실패 — 응답: ${cleaned.slice(0, 120)}` }
       parsed = recovered
