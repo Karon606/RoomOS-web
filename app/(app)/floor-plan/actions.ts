@@ -127,7 +127,7 @@ export async function parseFloorPlanImage(
             { text: prompt },
             { inline_data: { mime_type: mimeType || 'image/jpeg', data: base64 } },
           ]}],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 4096, responseMimeType: 'application/json' },
+          generationConfig: { temperature: 0.1, maxOutputTokens: 8192, responseMimeType: 'application/json' },
         }),
       }
     )
@@ -155,14 +155,24 @@ export async function parseFloorPlanImage(
         return { ok: false, error: 'AI 응답을 해석할 수 없습니다.' }
       }
     } catch {
-      // Last resort: find a JSON array anywhere in the raw text
+      // Try to find a JSON array anywhere in the raw text
       const m = cleaned.match(/\[[\s\S]*\]/)
+      let recovered: any[] | null = null
       if (m) {
-        try { parsed = JSON.parse(m[0]) }
-        catch { return { ok: false, error: `JSON 파싱 실패 — 응답: ${cleaned.slice(0, 120)}` } }
-      } else {
-        return { ok: false, error: `JSON 파싱 실패 — 응답: ${cleaned.slice(0, 120)}` }
+        try { recovered = JSON.parse(m[0]) } catch { /* fall through */ }
       }
+      // Try JSON Lines format: Gemini sometimes emits one object per line instead of an array
+      if (!recovered) {
+        const objs: any[] = []
+        for (const line of cleaned.split(/\n/)) {
+          const t = line.trim()
+          if (!t.startsWith('{')) continue
+          try { objs.push(JSON.parse(t)) } catch { /* skip malformed lines */ }
+        }
+        if (objs.length > 0) recovered = objs
+      }
+      if (!recovered) return { ok: false, error: `JSON 파싱 실패 — 응답: ${cleaned.slice(0, 120)}` }
+      parsed = recovered
     }
 
     const validTypes = new Set<string>(['room','corridor','kitchen','bathroom','stairs','entrance','emergency_exit','window','label'])
