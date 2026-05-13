@@ -832,11 +832,17 @@ export default function FloorPlanEditor({
         {editMode && selectedIds.length > 1 && (
           <div className="hidden md:flex md:flex-col w-52 shrink-0 border-l border-[var(--warm-border)] overflow-y-auto"
             style={{ background: 'var(--cream)' }}>
-            <div className="p-4 pb-2 space-y-3">
+            <div className="px-4 pt-4 pb-2">
               <p className="text-xs font-semibold text-[var(--warm-dark)]">{selectedIds.length}개 선택됨</p>
-              <p className="text-[11px] text-[var(--warm-muted)]">
+              <p className="text-[11px] text-[var(--warm-muted)] mt-1">
                 {transformMode ? '핸들로 함께 이동·크기 변경·회전' : '함께 이동 가능 · 크기·회전은 변형 모드 켜기'}
               </p>
+            </div>
+            {/* 정렬 먼저 */}
+            <div className="border-t border-[var(--warm-border)] pt-3">
+              <AlignPanel count={selectedIds.length} onAlign={alignElements} />
+            </div>
+            <div className="border-t border-[var(--warm-border)] px-4 py-3 space-y-2">
               <button onClick={copySelected}
                 className="w-full text-xs border border-[var(--warm-border)] bg-[var(--canvas)] rounded-lg py-2 text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
                 복사
@@ -845,9 +851,6 @@ export default function FloorPlanEditor({
                 className="w-full text-xs text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 rounded-lg py-2 transition-colors">
                 선택 삭제
               </button>
-            </div>
-            <div className="border-t border-[var(--warm-border)] pt-3">
-              <AlignPanel count={selectedIds.length} onAlign={alignElements} />
             </div>
           </div>
         )}
