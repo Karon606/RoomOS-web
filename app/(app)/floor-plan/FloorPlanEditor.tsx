@@ -890,25 +890,8 @@ export default function FloorPlanEditor({
         </BottomSheet>
       )}
 
-      {editMode && selectedIds.length > 1 && (
-        <BottomSheet title={`${selectedIds.length}개 선택됨`} onClose={() => setSelectedIds([])}>
-          {/* 정렬 먼저 — 복사/삭제보다 자주 쓰임 */}
-          <AlignPanel count={selectedIds.length} onAlign={alignElements} />
-          <div className="border-t border-[var(--warm-border)] px-4 py-3 space-y-2.5">
-            <p className="text-[11px] text-[var(--warm-muted)]">
-              {transformMode ? '핸들로 함께 이동·크기 변경·회전할 수 있습니다.' : '이동 모드 — 크기·회전을 바꾸려면 상단 변형 버튼을 켜세요.'}
-            </p>
-            <button onClick={copySelected}
-              className="w-full text-sm border border-[var(--warm-border)] bg-[var(--canvas)] rounded-xl py-3 text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
-              복사 ({selectedIds.length}개)
-            </button>
-            <button onClick={deleteSelected}
-              className="w-full text-sm text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 rounded-xl py-3 transition-colors font-medium">
-              선택 삭제 ({selectedIds.length}개)
-            </button>
-          </div>
-        </BottomSheet>
-      )}
+      {/* 다중 선택 BottomSheet는 제거 — 모든 화면 크기에서 상단 툴바 + 우측 패널이 역할 담당.
+          캔버스를 가리는 문제 + 해상도 낮은 데스크탑에서 중복 노출 문제 해소. */}
 
       {/* 다중 선택 모드 안내 (모바일) */}
       {editMode && multiSelectMode && selectedIds.length === 0 && (

@@ -55,11 +55,11 @@ export default function AppShell({
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex flex-col flex-1 overflow-hidden">
+        {/* fallback은 실제 헤더와 동일한 외형 — 내용물만 없앤 투명 껍데기.
+            이렇게 해야 router.refresh() 중에도 헤더 영역이 깜박이지 않는다. */}
         <Suspense fallback={
-          <div className="h-14 md:h-16 flex items-center px-4 md:px-6 shrink-0"
-               style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }}>
-            <span className="text-sm" style={{ color: 'var(--warm-muted)' }}>로딩 중...</span>
-          </div>
+          <div className="h-14 md:h-16 shrink-0"
+               style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }} />
         }>
           <Header user={user} onMenuClick={() => setSidebarOpen(true)} startNavigation={startNavigation} />
         </Suspense>
