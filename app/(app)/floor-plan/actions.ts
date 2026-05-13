@@ -138,7 +138,7 @@ export async function parseFloorPlanImage(
 중요 규칙:
 - 하나의 연속된 공간은 반드시 하나의 요소로만 출력 (절대 쪼개지 말 것)
 - 공간 유형은 색상·텍스트·형태를 종합해서 판단:
-  · 회색·밝은회색 통로 형태 → "corridor"
+  · 회색·밝은회색이고 여러 방을 연결하는 긴 통로 형태 → 반드시 "corridor"로 인식 (복도는 절대 빠뜨리지 말 것)
   · 어두운회색·검정 → "stairs"
   · 파란계열 → "bathroom" 또는 "kitchen"
   · 주황·빨강 → "entrance"
@@ -254,6 +254,12 @@ export async function parseFloorPlanImage(
     }
 
     const validTypes = new Set<string>(['room','corridor','kitchen','bathroom','stairs','entrance','emergency_exit','window','label'])
+    const defaultLabel: Record<string, string> = {
+      room: '방', corridor: '복도', kitchen: '주방', bathroom: '화장실',
+      stairs: '계단실', entrance: '출입구', emergency_exit: '비상구', window: '창문',
+    }
+    // Gemini가 영어 type명을 label로 그대로 내보낼 때 한국어로 교체
+    const englishTypeNames = new Set(['room','corridor','kitchen','bathroom','stairs','entrance','emergency_exit','window','label'])
 
     const elements: FloorPlanElement[] = parsed
       .filter((el: any) => validTypes.has(el?.type) && Array.isArray(el?.points) && el.points.length >= 3)
@@ -278,7 +284,12 @@ export async function parseFloorPlanImage(
           width: Math.max(20, Math.round(maxX - minX)),
           height: Math.max(20, Math.round(maxY - minY)),
           rotation: 0,
-          label: String(el.label ?? '').trim() || el.type,
+          label: (() => {
+            const raw = String(el.label ?? '').trim()
+            // 영어 type명 그대로 나온 경우 or 비어있는 경우 → 한국어 기본값
+            if (!raw || englishTypeNames.has(raw.toLowerCase())) return defaultLabel[el.type] ?? el.type
+            return raw
+          })(),
           roomNo: el.roomNo ? String(el.roomNo).trim() : undefined,
           points: flatPoints,
         } satisfies FloorPlanElement
