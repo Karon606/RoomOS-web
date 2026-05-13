@@ -1,14 +1,19 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Stage, Layer, Rect, Text, Group, Transformer, Line } from 'react-konva'
-import { type FloorPlanData, type FloorPlanElement, type ElementType, saveFloorPlan } from './actions'
+import { Stage, Layer, Rect, Text, Group, Transformer, Line, Circle } from 'react-konva'
+import {
+  type FloorPlanData, type FloorPlanElement, type FloorData,
+  type ElementType, saveFloorPlan, parseFloorPlanImage,
+} from './actions'
 import { pushToast } from '@/lib/saveStatus'
 
 // ── 상수 ─────────────────────────────────────────────────────
 const GRID = 20
 const SNAP_D = 8
 const MAX_HISTORY = 50
+const DEFAULT_W = 800
+const DEFAULT_H = 600
 
 const ELEMENT_DEFAULTS: Record<ElementType, { label: string; width: number; height: number; fill: string; stroke: string }> = {
   room:           { label: '방',    width: 80,  height: 80,  fill: '#f5f1ea', stroke: '#4d3e2e' },
@@ -34,16 +39,34 @@ const TYPE_LABEL: Record<ElementType, string> = {
 
 function genId() { return Math.random().toString(36).slice(2, 10) }
 
+// ── 다각형 유틸 ──────────────────────────────────────────────
+function polyBBox(points: number[]) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (let i = 0; i < points.length; i += 2) {
+    if (points[i] < minX) minX = points[i]; if (points[i] > maxX) maxX = points[i]
+    if (points[i + 1] < minY) minY = points[i + 1]; if (points[i + 1] > maxY) maxY = points[i + 1]
+  }
+  return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY }
+}
+
+// Adjusts el.x/y so bounding box origin is 0,0 relative to element; updates width/height.
+function normalizePoly(el: FloorPlanElement): FloorPlanElement {
+  if (!el.points) return el
+  const { minX, minY, w, h } = polyBBox(el.points)
+  const pts = el.points.map((v, i) => i % 2 === 0 ? v - minX : v - minY)
+  return { ...el, x: el.x + minX, y: el.y + minY, width: Math.max(20, w), height: Math.max(20, h), points: pts }
+}
+
 // ── 정렬 아이콘 ──────────────────────────────────────────────
 const _i = { viewBox: '0 0 20 20', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, width: 16, height: 16 }
-function IcoAlignLeft()     { return <svg {..._i}><line x1="4"  y1="3"  x2="4"  y2="17"/><rect x="4"  y="5"  width="7"  height="3.5" rx="0.8" fill="currentColor" stroke="none"/><rect x="4"  y="11.5" width="12" height="3.5" rx="0.8" fill="currentColor" stroke="none"/></svg> }
-function IcoAlignRight()    { return <svg {..._i}><line x1="16" y1="3"  x2="16" y2="17"/><rect x="5"  y="5"  width="11" height="3.5" rx="0.8" fill="currentColor" stroke="none"/><rect x="9"  y="11.5" width="7"  height="3.5" rx="0.8" fill="currentColor" stroke="none"/></svg> }
-function IcoAlignTop()      { return <svg {..._i}><line x1="3"  y1="4"  x2="17" y2="4" /><rect x="5"  y="4"  width="3.5" height="7"  rx="0.8" fill="currentColor" stroke="none"/><rect x="11.5" y="4" width="3.5" height="12" rx="0.8" fill="currentColor" stroke="none"/></svg> }
-function IcoAlignBottom()   { return <svg {..._i}><line x1="3"  y1="16" x2="17" y2="16"/><rect x="5"  y="9"  width="3.5" height="7"  rx="0.8" fill="currentColor" stroke="none"/><rect x="11.5" y="4" width="3.5" height="12" rx="0.8" fill="currentColor" stroke="none"/></svg> }
-function IcoAlignCenterH()  { return <svg {..._i}><line x1="10" y1="3"  x2="10" y2="17"/><rect x="3"  y="5"  width="14" height="3.5" rx="0.8" fill="currentColor" stroke="none"/><rect x="5"  y="11.5" width="10" height="3.5" rx="0.8" fill="currentColor" stroke="none"/></svg> }
-function IcoAlignCenterV()  { return <svg {..._i}><line x1="3"  y1="10" x2="17" y2="10"/><rect x="5"  y="3"  width="3.5" height="14" rx="0.8" fill="currentColor" stroke="none"/><rect x="11.5" y="5" width="3.5" height="10" rx="0.8" fill="currentColor" stroke="none"/></svg> }
-function IcoDistributeH()   { return <svg {..._i}><line x1="3"  y1="3"  x2="3"  y2="17"/><line x1="17" y1="3"  x2="17" y2="17"/><rect x="7.5" y="6" width="5" height="8" rx="0.8" fill="currentColor" stroke="none"/></svg> }
-function IcoDistributeV()   { return <svg {..._i}><line x1="3"  y1="3"  x2="17" y2="3" /><line x1="3"  y1="17" x2="17" y2="17"/><rect x="6"  y="7.5" width="8" height="5" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoAlignLeft()    { return <svg {..._i}><line x1="4"  y1="3"  x2="4"  y2="17"/><rect x="4"  y="5"  width="7"  height="3.5" rx="0.8" fill="currentColor" stroke="none"/><rect x="4"  y="11.5" width="12" height="3.5" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoAlignRight()   { return <svg {..._i}><line x1="16" y1="3"  x2="16" y2="17"/><rect x="5"  y="5"  width="11" height="3.5" rx="0.8" fill="currentColor" stroke="none"/><rect x="9"  y="11.5" width="7"  height="3.5" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoAlignTop()     { return <svg {..._i}><line x1="3"  y1="4"  x2="17" y2="4" /><rect x="5"  y="4"  width="3.5" height="7"  rx="0.8" fill="currentColor" stroke="none"/><rect x="11.5" y="4" width="3.5" height="12" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoAlignBottom()  { return <svg {..._i}><line x1="3"  y1="16" x2="17" y2="16"/><rect x="5"  y="9"  width="3.5" height="7"  rx="0.8" fill="currentColor" stroke="none"/><rect x="11.5" y="4" width="3.5" height="12" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoAlignCenterH() { return <svg {..._i}><line x1="10" y1="3"  x2="10" y2="17"/><rect x="3"  y="5"  width="14" height="3.5" rx="0.8" fill="currentColor" stroke="none"/><rect x="5"  y="11.5" width="10" height="3.5" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoAlignCenterV() { return <svg {..._i}><line x1="3"  y1="10" x2="17" y2="10"/><rect x="5"  y="3"  width="3.5" height="14" rx="0.8" fill="currentColor" stroke="none"/><rect x="11.5" y="5" width="3.5" height="10" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoDistributeH()  { return <svg {..._i}><line x1="3"  y1="3"  x2="3"  y2="17"/><line x1="17" y1="3"  x2="17" y2="17"/><rect x="7.5" y="6" width="5" height="8" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoDistributeV()  { return <svg {..._i}><line x1="3"  y1="3"  x2="17" y2="3" /><line x1="3"  y1="17" x2="17" y2="17"/><rect x="6"  y="7.5" width="8" height="5" rx="0.8" fill="currentColor" stroke="none"/></svg> }
 
 // ── 스냅 ─────────────────────────────────────────────────────
 function applySnap(x: number, y: number, w: number, h: number, others: FloorPlanElement[]): { x: number; y: number } {
@@ -106,6 +129,7 @@ function PlanElement({
   }
 
   const textColor = (el.type === 'entrance' || el.type === 'emergency_exit') ? '#fff' : '#2a1f15'
+  const isPolygon = !!el.points
 
   return (
     <Group
@@ -119,14 +143,25 @@ function PlanElement({
       onDragMove={handleDragMove}
       onDragEnd={(e: any) => onDragEnd(el.id, Math.round(e.target.x()), Math.round(e.target.y()))}
     >
-      <Rect
-        width={el.width} height={el.height}
-        fill={bgFill}
-        stroke={isSelected ? '#e84a1a' : def.stroke}
-        strokeWidth={isSelected ? 2 : 1}
-        cornerRadius={el.type === 'room' ? 4 : 2}
-        shadowEnabled={isSelected} shadowColor="rgba(232,74,26,0.3)" shadowBlur={8}
-      />
+      {isPolygon ? (
+        <Line
+          points={el.points!}
+          closed
+          fill={bgFill}
+          stroke={isSelected ? '#e84a1a' : def.stroke}
+          strokeWidth={isSelected ? 2 : 1}
+          shadowEnabled={isSelected} shadowColor="rgba(232,74,26,0.3)" shadowBlur={8}
+        />
+      ) : (
+        <Rect
+          width={el.width} height={el.height}
+          fill={bgFill}
+          stroke={isSelected ? '#e84a1a' : def.stroke}
+          strokeWidth={isSelected ? 2 : 1}
+          cornerRadius={el.type === 'room' ? 4 : 2}
+          shadowEnabled={isSelected} shadowColor="rgba(232,74,26,0.3)" shadowBlur={8}
+        />
+      )}
       <Text
         text={el.label} width={el.width} height={el.height}
         align="center" verticalAlign="middle"
@@ -148,20 +183,57 @@ function PlanElement({
 
 // ── 속성 패널 ────────────────────────────────────────────────
 function PropertiesPanel({
-  el, rooms, onChange, onDelete, onCommit,
+  el, rooms, onChange, onDelete, onCommit, onToggleVertexEdit, isVertexEditing,
 }: {
   el: FloorPlanElement
   rooms: { id: string; roomNo: string }[]
   onChange: (patch: Partial<FloorPlanElement>) => void
   onDelete: () => void
-  onCommit: () => void   // 입력 blur 시 히스토리 스냅샷 저장
+  onCommit: () => void
+  onToggleVertexEdit: () => void
+  isVertexEditing: boolean
 }) {
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  const isPolygon = !!el.points
+
+  const convertToPolygon = () => {
+    const pts = [0, 0, el.width, 0, el.width, el.height, 0, el.height]
+    onChange({ points: pts })
+    onCommit()
+  }
+  const convertToRect = () => {
+    onChange({ points: undefined })
+    onCommit()
+  }
+
   return (
     <div className="space-y-3 p-4">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-[var(--warm-dark)]">{TYPE_LABEL[el.type]}</p>
         <button onClick={onDelete} className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition-colors">삭제</button>
+      </div>
+
+      {/* 도형 변환 */}
+      <div className="flex gap-1.5">
+        {isPolygon ? (
+          <>
+            <button
+              onClick={onToggleVertexEdit}
+              className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${isVertexEditing ? 'text-white border-transparent' : 'border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)]'}`}
+              style={isVertexEditing ? { background: 'var(--coral)' } : {}}>
+              {isVertexEditing ? '정점 편집 중' : '정점 편집'}
+            </button>
+            <button onClick={convertToRect}
+              className="flex-1 text-xs py-1.5 rounded-lg border border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-[var(--coral)] transition-colors">
+              직사각형으로
+            </button>
+          </>
+        ) : (
+          <button onClick={convertToPolygon}
+            className="w-full text-xs py-1.5 rounded-lg border border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
+            다각형으로 변환
+          </button>
+        )}
       </div>
 
       <div className="space-y-1">
@@ -182,20 +254,22 @@ function PropertiesPanel({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1">
-          <p className="text-[11px] text-[var(--warm-muted)]">너비 px</p>
-          <input type="number" className={inputCls} value={el.width}
-            onChange={e => onChange({ width: Number(e.target.value) })}
-            onBlur={e => { if (Number(e.target.value) < 1) onChange({ width: 20 }); onCommit() }} />
+      {!isPolygon && (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <p className="text-[11px] text-[var(--warm-muted)]">너비 px</p>
+            <input type="number" className={inputCls} value={el.width}
+              onChange={e => onChange({ width: Number(e.target.value) })}
+              onBlur={e => { if (Number(e.target.value) < 1) onChange({ width: 20 }); onCommit() }} />
+          </div>
+          <div className="space-y-1">
+            <p className="text-[11px] text-[var(--warm-muted)]">높이 px</p>
+            <input type="number" className={inputCls} value={el.height}
+              onChange={e => onChange({ height: Number(e.target.value) })}
+              onBlur={e => { if (Number(e.target.value) < 1) onChange({ height: 20 }); onCommit() }} />
+          </div>
         </div>
-        <div className="space-y-1">
-          <p className="text-[11px] text-[var(--warm-muted)]">높이 px</p>
-          <input type="number" className={inputCls} value={el.height}
-            onChange={e => onChange({ height: Number(e.target.value) })}
-            onBlur={e => { if (Number(e.target.value) < 1) onChange({ height: 20 }); onCommit() }} />
-        </div>
-      </div>
+      )}
 
       <div className="space-y-1">
         <p className="text-[11px] text-[var(--warm-muted)]">회전 (°)</p>
@@ -221,9 +295,9 @@ function PropertiesPanel({
   )
 }
 
-// ── 모바일 하단 시트 (드래그 가능) ──────────────────────────
+// ── 모바일 하단 시트 ──────────────────────────────────────────
 function BottomSheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  const INIT_H = 360
+  const INIT_H = 380
   const MIN_H  = 120
   const MAX_H  = () => window.innerHeight * 0.88
 
@@ -244,11 +318,8 @@ function BottomSheet({ title, onClose, children }: { title: string; onClose: () 
   return (
     <div className="md:hidden fixed bottom-0 inset-x-0 z-40 rounded-t-2xl border-t border-[var(--warm-border)] shadow-xl"
       style={{ background: 'var(--cream)', height, display: 'flex', flexDirection: 'column' }}>
-      {/* 드래그 핸들 — 실제로 올리고 내릴 수 있음 */}
-      <div
-        className="flex justify-center pt-2 pb-1 shrink-0 cursor-ns-resize touch-none select-none"
-        onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
-      >
+      <div className="flex justify-center pt-2 pb-1 shrink-0 cursor-ns-resize touch-none select-none"
+        onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
         <div className="w-10 h-1.5 rounded-full bg-[var(--warm-border)]" />
       </div>
       <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--warm-border)] shrink-0">
@@ -269,12 +340,12 @@ type AlignType = 'left' | 'right' | 'top' | 'bottom' | 'centerH' | 'centerV' | '
 function AlignPanel({ count, onAlign }: { count: number; onAlign: (type: AlignType) => void }) {
   const btnCls = 'flex items-center justify-center w-9 h-9 rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors disabled:opacity-30'
   const items: { type: AlignType; Icon: () => React.ReactElement; title: string; min: number }[] = [
-    { type: 'left',        Icon: IcoAlignLeft,    title: '좌측 정렬',      min: 2 },
+    { type: 'left',        Icon: IcoAlignLeft,    title: '좌측 정렬',       min: 2 },
     { type: 'centerH',     Icon: IcoAlignCenterH, title: '수평 가운데 정렬', min: 2 },
-    { type: 'right',       Icon: IcoAlignRight,   title: '우측 정렬',      min: 2 },
-    { type: 'top',         Icon: IcoAlignTop,     title: '상단 정렬',      min: 2 },
+    { type: 'right',       Icon: IcoAlignRight,   title: '우측 정렬',       min: 2 },
+    { type: 'top',         Icon: IcoAlignTop,     title: '상단 정렬',       min: 2 },
     { type: 'centerV',     Icon: IcoAlignCenterV, title: '수직 가운데 정렬', min: 2 },
-    { type: 'bottom',      Icon: IcoAlignBottom,  title: '하단 정렬',      min: 2 },
+    { type: 'bottom',      Icon: IcoAlignBottom,  title: '하단 정렬',       min: 2 },
     { type: 'distributeH', Icon: IcoDistributeH,  title: '수평 균등 배분',  min: 3 },
     { type: 'distributeV', Icon: IcoDistributeV,  title: '수직 균등 배분',  min: 3 },
   ]
@@ -296,6 +367,82 @@ function AlignPanel({ count, onAlign }: { count: number; onAlign: (type: AlignTy
   )
 }
 
+// ── AI 도면 인식 모달 ─────────────────────────────────────────
+function AiImportModal({
+  canvasWidth, canvasHeight, onConfirm, onCancel,
+}: {
+  canvasWidth: number
+  canvasHeight: number
+  onConfirm: (elements: FloorPlanElement[]) => void
+  onCancel: () => void
+}) {
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+  const [preview, setPreview] = useState<FloorPlanElement[] | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const handleFile = async (file: File) => {
+    setPending(true); setError(''); setPreview(null)
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader()
+      r.onload = () => resolve((r.result as string).split(',')[1])
+      r.onerror = reject
+      r.readAsDataURL(file)
+    })
+    const res = await parseFloorPlanImage(base64, file.type || 'image/jpeg', canvasWidth, canvasHeight)
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    if (res.elements.length === 0) { setError('평면도 요소를 찾을 수 없습니다. 더 선명한 이미지를 사용해보세요.'); return }
+    setPreview(res.elements)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={onCancel}>
+      <div className="bg-[var(--cream)] rounded-2xl w-full max-w-sm p-6 space-y-4" onClick={e => e.stopPropagation()}>
+        <h2 className="text-sm font-semibold text-[var(--warm-dark)]">AI 도면 인식</h2>
+        <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
+          평면도 사진을 업로드하면 AI가 방, 복도, 계단 등을 자동으로 인식하여 추가합니다.
+        </p>
+        {!preview ? (
+          <>
+            <button onClick={() => fileRef.current?.click()} disabled={pending}
+              className="w-full py-10 border-2 border-dashed border-[var(--warm-border)] rounded-xl text-xs text-[var(--warm-muted)] hover:border-[var(--coral)] transition-colors disabled:opacity-50">
+              {pending ? 'AI 분석 중…' : '이미지 선택 (JPG, PNG)'}
+            </button>
+            <input ref={fileRef} type="file" accept="image/*" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }} />
+            {error && <p className="text-xs text-red-500">{error}</p>}
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-[var(--warm-muted)]">{preview.length}개 요소를 인식했습니다.</p>
+            <ul className="text-xs text-[var(--warm-dark)] space-y-1 max-h-44 overflow-y-auto border border-[var(--warm-border)] rounded-lg p-2">
+              {preview.map((el, i) => (
+                <li key={i} className="flex items-center gap-2">
+                  <span className="text-[var(--warm-muted)] w-12 shrink-0">{TYPE_LABEL[el.type]}</span>
+                  <span>{el.label}{el.roomNo ? ` (${el.roomNo}호)` : ''}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex gap-2">
+              <button onClick={() => setPreview(null)}
+                className="flex-1 py-2 text-xs border border-[var(--warm-border)] rounded-lg text-[var(--warm-muted)] hover:border-[var(--coral)] transition-colors">
+                다시 선택
+              </button>
+              <button onClick={() => onConfirm(preview)}
+                className="flex-1 py-2 text-xs rounded-lg text-white font-medium"
+                style={{ background: 'var(--coral)' }}>
+                도면에 추가
+              </button>
+            </div>
+          </>
+        )}
+        <button onClick={onCancel} className="w-full text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] py-1">취소</button>
+      </div>
+    </div>
+  )
+}
+
 // ── 메인 에디터 ──────────────────────────────────────────────
 export default function FloorPlanEditor({
   initialData, rooms, roomStatuses, viewOnly = false,
@@ -305,26 +452,62 @@ export default function FloorPlanEditor({
   roomStatuses: Record<string, { isVacant: boolean; tenantName?: string }>
   viewOnly?: boolean
 }) {
-  const DEFAULT_W = 800, DEFAULT_H = 600
-  const initEls = initialData?.elements ?? []
+  // ── 층 초기화 ─────────────────────────────────────────────
+  const initFloors = (): { floors: { id: string; label: string }[]; activeId: string; firstEls: FloorPlanElement[]; cw: number; ch: number } => {
+    const data = initialData ?? { floors: [{ id: genId(), label: '1층', elements: [], canvasWidth: DEFAULT_W, canvasHeight: DEFAULT_H }] }
+    const fl = data.floors
+    return {
+      floors: fl.map(f => ({ id: f.id, label: f.label })),
+      activeId: fl[0].id,
+      firstEls: fl[0].elements,
+      cw: fl[0].canvasWidth ?? DEFAULT_W,
+      ch: fl[0].canvasHeight ?? DEFAULT_H,
+    }
+  }
+  const _init = initFloors()
+
+  const [floors, setFloors]             = useState<{ id: string; label: string }[]>(_init.floors)
+  const [activeFloorId, setActiveFloorId] = useState(_init.activeId)
+  const [canvasWidth]                   = useState(_init.cw)
+  const [canvasHeight]                  = useState(_init.ch)
+  const [elements, setElements]         = useState<FloorPlanElement[]>(_init.firstEls)
+
+  // Non-active floors' elements
+  const floorElementsRef = useRef<Map<string, FloorPlanElement[]>>(new Map())
+  useEffect(() => {
+    if (!initialData) return
+    initialData.floors.forEach((f, i) => {
+      if (i === 0) return
+      floorElementsRef.current.set(f.id, f.elements)
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [mounted, setMounted]               = useState(false)
-  const [elements, setElements]             = useState<FloorPlanElement[]>(initEls)
-  const [canvasWidth]                       = useState(initialData?.canvasWidth  ?? DEFAULT_W)
-  const [canvasHeight]                      = useState(initialData?.canvasHeight ?? DEFAULT_H)
   const [selectedIds, setSelectedIds]       = useState<string[]>([])
   const [editMode, setEditMode]             = useState(!viewOnly)
   const [multiSelectMode, setMultiSelectMode] = useState(false)
-  const [transformMode, setTransformMode]   = useState(false)   // 기본: 이동만. 활성화 시 리사이즈·회전 핸들 노출
+  const [transformMode, setTransformMode]   = useState(false)
   const [saving, setSaving]                 = useState(false)
   const [showGrid, setShowGrid]             = useState(true)
   const [selBox, setSelBox]                 = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const [clipboard, setClipboard]           = useState<FloorPlanElement[]>([])
 
+  // ── 다각형 그리기 ─────────────────────────────────────────
+  const [drawingPolygon, setDrawingPolygon]   = useState<{ type: ElementType; points: number[] } | null>(null)
+  const [drawCursor, setDrawCursor]           = useState<{ x: number; y: number } | null>(null)
+  const [showPolyMenu, setShowPolyMenu]       = useState(false)
+  const lastClickTimeRef                      = useRef(0)
+
+  // ── 정점 편집 ─────────────────────────────────────────────
+  const [vertexEditId, setVertexEditId]       = useState<string | null>(null)
+
+  // ── AI 임포트 ─────────────────────────────────────────────
+  const [aiImportOpen, setAiImportOpen]       = useState(false)
+
   // ── 히스토리 ─────────────────────────────────────────────
-  const historyRef      = useRef<FloorPlanElement[][]>([[...initEls]])
-  const historyIdxRef   = useRef(0)
-  const [historyIdx, setHistoryIdx] = useState(0)    // 재렌더 트리거용
+  const historyRef    = useRef<FloorPlanElement[][]>([[..._init.firstEls]])
+  const historyIdxRef = useRef(0)
+  const [historyIdx, setHistoryIdx] = useState(0)
 
   const canUndo = historyIdx > 0
   const canRedo = historyIdx < historyRef.current.length - 1
@@ -355,12 +538,12 @@ export default function FloorPlanEditor({
   }, [])
 
   // ── 안정적 ref ───────────────────────────────────────────
-  const elementsRef     = useRef(elements)
-  const selectedIdsRef  = useRef(selectedIds)
-  const clipboardRef    = useRef(clipboard)
-  useEffect(() => { elementsRef.current = elements },     [elements])
-  useEffect(() => { selectedIdsRef.current = selectedIds }, [selectedIds])
-  useEffect(() => { clipboardRef.current = clipboard },   [clipboard])
+  const elementsRef    = useRef(elements)
+  const selectedIdsRef = useRef(selectedIds)
+  const clipboardRef   = useRef(clipboard)
+  useEffect(() => { elementsRef.current = elements },        [elements])
+  useEffect(() => { selectedIdsRef.current = selectedIds },  [selectedIds])
+  useEffect(() => { clipboardRef.current = clipboard },      [clipboard])
 
   // ── Konva 내부 ref ────────────────────────────────────────
   const nodeRefs           = useRef<Map<string, any>>(new Map())
@@ -384,23 +567,84 @@ export default function FloorPlanEditor({
     return () => obs.disconnect()
   }, [canvasWidth])
 
-  // Transformer 노드 연결 (선택 변경 or 변형 모드 변경 시)
   useEffect(() => {
     if (!trRef.current || !mounted) return
     if (transformMode) {
       const nodes = selectedIds.map(id => nodeRefs.current.get(id)).filter(Boolean)
       trRef.current.nodes(nodes)
     } else {
-      trRef.current.nodes([])   // 이동 모드: 핸들 숨김
+      trRef.current.nodes([])
     }
     trRef.current.getLayer()?.batchDraw()
   }, [selectedIds, mounted, transformMode])
+
+  // ── 층 전환 ──────────────────────────────────────────────
+  const switchFloor = useCallback((newId: string) => {
+    setFloors(prev => prev) // no-op to flush
+    floorElementsRef.current.set(activeFloorId, elementsRef.current)
+    const newEls = floorElementsRef.current.get(newId) ?? []
+    setElements(newEls)
+    setActiveFloorId(newId)
+    setSelectedIds([])
+    setVertexEditId(null)
+    setDrawingPolygon(null)
+    setDrawCursor(null)
+    historyRef.current = [[...newEls]]
+    historyIdxRef.current = 0
+    setHistoryIdx(0)
+  }, [activeFloorId])
+
+  const addFloor = useCallback(() => {
+    floorElementsRef.current.set(activeFloorId, elementsRef.current)
+    const id = genId()
+    const label = `${floors.length + 1}층`
+    setFloors(prev => [...prev, { id, label }])
+    floorElementsRef.current.set(id, [])
+    setElements([])
+    setActiveFloorId(id)
+    setSelectedIds([])
+    setVertexEditId(null)
+    setDrawingPolygon(null)
+    historyRef.current = [[]]
+    historyIdxRef.current = 0
+    setHistoryIdx(0)
+  }, [activeFloorId, floors.length])
+
+  const deleteFloor = useCallback((id: string) => {
+    if (floors.length <= 1) return
+    const newFloors = floors.filter(f => f.id !== id)
+    floorElementsRef.current.delete(id)
+    if (id === activeFloorId) {
+      const newActive = newFloors[0]
+      const newEls = floorElementsRef.current.get(newActive.id) ?? []
+      setElements(newEls)
+      setActiveFloorId(newActive.id)
+      setSelectedIds([])
+      historyRef.current = [[...newEls]]
+      historyIdxRef.current = 0
+      setHistoryIdx(0)
+    }
+    setFloors(newFloors)
+  }, [floors, activeFloorId])
+
+  const renameFloor = useCallback((id: string) => {
+    const current = floors.find(f => f.id === id)?.label ?? ''
+    const name = window.prompt('층 이름 변경', current)
+    if (name !== null && name.trim()) {
+      setFloors(prev => prev.map(f => f.id === id ? { ...f, label: name.trim() } : f))
+    }
+  }, [floors])
 
   // ── 키보드 단축키 ─────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
+      if (e.key === 'Escape') {
+        if (drawingPolygon) { setDrawingPolygon(null); setDrawCursor(null); return }
+        if (vertexEditId) { setVertexEditId(null); return }
+        setSelectedIds([]); setMultiSelectMode(false); return
+      }
       const meta = e.metaKey || e.ctrlKey
       if (meta && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
       if (meta && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo() }
@@ -410,11 +654,10 @@ export default function FloorPlanEditor({
         const newEls = elementsRef.current.filter(el => !selectedIdsRef.current.includes(el.id))
         setElements(newEls); setSelectedIds([]); pushHistory(newEls)
       }
-      if (e.key === 'Escape') { setSelectedIds([]); setMultiSelectMode(false) }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [undo, redo, pushHistory]) // copySelected/pasteClipboard ref 안정적
+  }, [undo, redo, pushHistory, drawingPolygon, vertexEditId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── ref 등록 ─────────────────────────────────────────────
   const registerRef = useCallback((id: string, node: any) => {
@@ -424,12 +667,13 @@ export default function FloorPlanEditor({
 
   // ── 클릭 ─────────────────────────────────────────────────
   const handleElementClick = useCallback((id: string, shiftKey: boolean) => {
+    if (vertexEditId && vertexEditId !== id) { setVertexEditId(null); return }
     if (shiftKey || multiSelectMode) {
       setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id])
     } else {
       setSelectedIds([id])
     }
-  }, [multiSelectMode])
+  }, [multiSelectMode, vertexEditId])
 
   // ── 드래그 ───────────────────────────────────────────────
   const handleDragStart = useCallback((id: string) => {
@@ -438,11 +682,9 @@ export default function FloorPlanEditor({
     draggingGroup.current = ids
     dragStartPositions.current.clear()
     ids.forEach(sid => {
-      // React state를 source of truth로 사용 — transform 후 node.x()가 발산하는 것 방지
       const elData = elementsRef.current.find(e => e.id === sid)
       if (elData) {
         dragStartPositions.current.set(sid, { x: elData.x, y: elData.y })
-        // Konva 노드도 React state에 맞게 동기화
         const node = nodeRefs.current.get(sid)
         if (node) { node.x(elData.x); node.y(elData.y) }
       } else {
@@ -492,15 +734,18 @@ export default function FloorPlanEditor({
       const newX   = Math.round(node.x())
       const newY   = Math.round(node.y())
       const newRot = Math.round(node.rotation())
-      const newW   = Math.round(Math.max(20, el.width  * scaleX))
-      const newH   = Math.round(Math.max(20, el.height * scaleY))
-      // scale·offset·skew 잔류값 전부 초기화 — 이후 drag 시 위치 발산 방지
       node.setAttrs({ x: newX, y: newY, scaleX: 1, scaleY: 1, rotation: newRot, offsetX: 0, offsetY: 0, skewX: 0, skewY: 0 })
+      if (el.points) {
+        const newPts = el.points.map((v, i) => Math.round(i % 2 === 0 ? v * scaleX : v * scaleY))
+        const { w, h } = polyBBox(newPts)
+        return { ...el, x: newX, y: newY, width: Math.max(20, w), height: Math.max(20, h), rotation: newRot, points: newPts }
+      }
+      const newW = Math.round(Math.max(20, el.width  * scaleX))
+      const newH = Math.round(Math.max(20, el.height * scaleY))
       return { ...el, x: newX, y: newY, width: newW, height: newH, rotation: newRot }
     })
     setElements(newEls)
     pushHistory(newEls)
-    // React 재렌더 후 Transformer 바운딩박스 재계산
     requestAnimationFrame(() => {
       if (!trRef.current) return
       const nodes = selectedIdsRef.current.map(id => nodeRefs.current.get(id)).filter(Boolean)
@@ -535,23 +780,22 @@ export default function FloorPlanEditor({
 
   const deleteSelected = useCallback(() => {
     const newEls = elementsRef.current.filter(e => !selectedIdsRef.current.includes(e.id))
-    setElements(newEls); setSelectedIds([]); pushHistory(newEls)
+    setElements(newEls); setSelectedIds([])
+    setVertexEditId(null); pushHistory(newEls)
   }, [pushHistory])
 
   const clearAll = useCallback(() => {
-    setElements([]); setSelectedIds([]); pushHistory([])
+    setElements([]); setSelectedIds([]); setVertexEditId(null); pushHistory([])
   }, [pushHistory])
 
   // ── 정렬 ─────────────────────────────────────────────────
   const alignElements = useCallback((type: AlignType) => {
     const sel = elementsRef.current.filter(e => selectedIdsRef.current.includes(e.id))
     if (sel.length < 2) return
-
     const minX = Math.min(...sel.map(e => e.x))
     const maxX = Math.max(...sel.map(e => e.x + e.width))
     const minY = Math.min(...sel.map(e => e.y))
     const maxY = Math.max(...sel.map(e => e.y + e.height))
-
     let patchMap: Map<string, Partial<FloorPlanElement>> | null = null
 
     if (type === 'distributeH' && sel.length >= 3) {
@@ -584,10 +828,8 @@ export default function FloorPlanEditor({
         default: return el
       }
     })
-
     setElements(newEls)
     pushHistory(newEls)
-    // Konva 노드 즉시 동기화 (재렌더 전 깜빡임 방지)
     newEls.forEach(el => {
       if (!selectedIdsRef.current.includes(el.id)) return
       const node = nodeRefs.current.get(el.id)
@@ -618,23 +860,92 @@ export default function FloorPlanEditor({
     pushHistory(newEls)
   }, [pushHistory])
 
+  // ── AI 임포트 확인 ────────────────────────────────────────
+  const handleAiImportConfirm = useCallback((imported: FloorPlanElement[]) => {
+    setAiImportOpen(false)
+    const newEls = [...elementsRef.current, ...imported]
+    setElements(newEls)
+    setSelectedIds(imported.map(e => e.id))
+    pushHistory(newEls)
+    pushToast('success', `${imported.length}개 요소를 추가했습니다`)
+  }, [pushHistory])
+
   // ── 저장 ─────────────────────────────────────────────────
   const handleSave = async () => {
     setSaving(true)
-    const res = await saveFloorPlan({ elements, canvasWidth, canvasHeight })
+    floorElementsRef.current.set(activeFloorId, elementsRef.current)
+    const allFloors: FloorData[] = floors.map(f => ({
+      id: f.id,
+      label: f.label,
+      elements: floorElementsRef.current.get(f.id) ?? [],
+      canvasWidth,
+      canvasHeight,
+    }))
+    const res = await saveFloorPlan({ floors: allFloors })
     setSaving(false)
     if (res.ok) pushToast('success', '도면 저장됨')
     else pushToast('error', res.error)
   }
 
-  // ── 드래그 선택 ──────────────────────────────────────────
+  // ── 다각형 그리기 ─────────────────────────────────────────
+  const startDrawPolygon = (type: ElementType) => {
+    setShowPolyMenu(false)
+    setSelectedIds([])
+    setVertexEditId(null)
+    setDrawingPolygon({ type, points: [] })
+    setDrawCursor(null)
+  }
+
+  const finalizePolygon = useCallback((rawPts: number[]) => {
+    // Remove the last vertex (added by the first click of the double-click sequence)
+    const pts = rawPts.slice(0, -2)
+    if (pts.length < 6) { setDrawingPolygon(null); setDrawCursor(null); return }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (let i = 0; i < pts.length; i += 2) {
+      if (pts[i] < minX) minX = pts[i]; if (pts[i] > maxX) maxX = pts[i]
+      if (pts[i+1] < minY) minY = pts[i+1]; if (pts[i+1] > maxY) maxY = pts[i+1]
+    }
+    const normPts = pts.map((v, i) => i % 2 === 0 ? v - minX : v - minY)
+    const def = ELEMENT_DEFAULTS[drawingPolygon!.type]
+    const el: FloorPlanElement = {
+      id: genId(), type: drawingPolygon!.type,
+      x: minX, y: minY,
+      width: Math.max(20, maxX - minX), height: Math.max(20, maxY - minY),
+      rotation: 0, label: def.label, points: normPts,
+    }
+    const newEls = [...elementsRef.current, el]
+    setElements(newEls)
+    setSelectedIds([el.id])
+    pushHistory(newEls)
+    setDrawingPolygon(null)
+    setDrawCursor(null)
+  }, [drawingPolygon, pushHistory])
+
+  // ── 정점 편집 ─────────────────────────────────────────────
+  const handleVertexDrag = useCallback((elId: string, vi: number, nx: number, ny: number) => {
+    setElements(prev => prev.map(el => {
+      if (el.id !== elId || !el.points) return el
+      const newPts = [...el.points]
+      newPts[vi * 2]     = Math.round(nx - el.x)
+      newPts[vi * 2 + 1] = Math.round(ny - el.y)
+      return normalizePoly({ ...el, points: newPts })
+    }))
+  }, [])
+
+  const handleVertexDragEnd = useCallback(() => {
+    pushHistory(elementsRef.current)
+  }, [pushHistory])
+
+  // ── Stage 이벤트 ──────────────────────────────────────────
   const getCanvasPos = (stage: any) => {
     const pos = stage.getPointerPosition()
     return pos ? { x: pos.x / scale, y: pos.y / scale } : null
   }
 
   const handlePointerDownStage = (e: any) => {
+    if (drawingPolygon) return  // handled by onClick
     if (!editMode || e.target !== e.target.getStage() || isDraggingElement.current) return
+    if (vertexEditId) { setVertexEditId(null); return }
     const pos = getCanvasPos(e.target.getStage())
     if (!pos) return
     selStartRef.current = pos
@@ -642,6 +953,11 @@ export default function FloorPlanEditor({
   }
 
   const handlePointerMoveStage = (e: any) => {
+    if (drawingPolygon) {
+      const pos = getCanvasPos(e.target.getStage())
+      if (pos) setDrawCursor(pos)
+      return
+    }
     if (!selStartRef.current || isDraggingElement.current) return
     const pos = getCanvasPos(e.target.getStage())
     if (!pos) return
@@ -652,6 +968,7 @@ export default function FloorPlanEditor({
   }
 
   const handlePointerUpStage = () => {
+    if (drawingPolygon) return
     if (!selStartRef.current) return
     if (selBox && (selBox.w > 5 || selBox.h > 5)) {
       const { x, y, w, h } = selBox
@@ -662,10 +979,34 @@ export default function FloorPlanEditor({
     selStartRef.current = null; setSelBox(null)
   }
 
+  const handleStageClick = (e: any) => {
+    if (!drawingPolygon) return
+    const now = Date.now()
+    if (now - lastClickTimeRef.current < 350) return  // skip second click of dblclick
+    lastClickTimeRef.current = now
+    const pos = getCanvasPos(e.target.getStage())
+    if (!pos) return
+    setDrawingPolygon(prev => prev
+      ? { ...prev, points: [...prev.points, Math.round(pos.x), Math.round(pos.y)] }
+      : null
+    )
+  }
+
+  const handleStageDblClick = (e: any) => {
+    if (!drawingPolygon) return
+    // drawingPolygon.points already has the vertex from the first click of this dblclick.
+    // finalizePolygon will trim the redundant last vertex.
+    finalizePolygon(drawingPolygon.points)
+  }
+
   // ── 편집 모드 전환 ────────────────────────────────────────
   const toggleEditMode = () => {
     setEditMode(v => {
-      if (v) { setMultiSelectMode(false); setTransformMode(false); setSelectedIds([]) }
+      if (v) {
+        setMultiSelectMode(false); setTransformMode(false)
+        setSelectedIds([]); setVertexEditId(null)
+        setDrawingPolygon(null); setDrawCursor(null)
+      }
       return !v
     })
   }
@@ -675,63 +1016,82 @@ export default function FloorPlanEditor({
     : null
 
   // ── 버튼 스타일 ───────────────────────────────────────────
-  const btn = 'px-3 py-2 text-xs rounded-lg border transition-colors shrink-0 min-h-[44px] flex items-center gap-1'
-  const btnOn  = (color = 'var(--coral)') => `${btn} text-white border-transparent` + ` bg-[${color}]`
+  const btn    = 'px-3 py-2 text-xs rounded-lg border transition-colors shrink-0 min-h-[44px] flex items-center gap-1'
+  const btnOn  = (color = 'var(--coral)') => `${btn} text-white border-transparent`
   const btnOff = `${btn} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)]`
   const btnGray = `${btn} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-mid)]`
   const divider = <div className="w-px h-5 bg-[var(--warm-border)] mx-0.5 shrink-0" />
 
+  // ── 그리기 중 preview 포인트 ──────────────────────────────
+  const drawPreviewPoints = drawingPolygon && drawCursor
+    ? [...drawingPolygon.points, drawCursor.x, drawCursor.y]
+    : drawingPolygon?.points ?? []
+
   return (
     <div className="flex flex-col h-full">
+      {/* ── 층 탭 ── */}
+      <div className="flex items-center gap-0 border-b border-[var(--warm-border)] overflow-x-auto shrink-0"
+        style={{ background: 'var(--canvas)' }}>
+        {floors.map(fl => (
+          <div key={fl.id}
+            className={`flex items-center gap-1 px-3 py-2 text-xs border-r border-[var(--warm-border)] cursor-pointer whitespace-nowrap transition-colors shrink-0 ${fl.id === activeFloorId ? 'font-semibold text-[var(--coral)]' : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
+            style={fl.id === activeFloorId ? { background: 'var(--cream)' } : {}}
+            onClick={() => fl.id !== activeFloorId && switchFloor(fl.id)}
+            onDoubleClick={() => renameFloor(fl.id)}>
+            {fl.label}
+            {floors.length > 1 && !viewOnly && (
+              <button
+                onClick={e => { e.stopPropagation(); if (window.confirm(`'${fl.label}'을 삭제할까요?`)) deleteFloor(fl.id) }}
+                className="ml-0.5 w-4 h-4 flex items-center justify-center text-[var(--warm-muted)] hover:text-red-400 rounded-full text-[10px] leading-none">
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+        {!viewOnly && (
+          <button onClick={addFloor}
+            className="px-3 py-2 text-xs text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors shrink-0">
+            + 층 추가
+          </button>
+        )}
+      </div>
+
       {/* ── 툴바 ── */}
       {!viewOnly && (
         <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[var(--warm-border)] shrink-0 overflow-x-auto"
           style={{ background: 'var(--cream)' }}>
 
-          {/* 편집 모드 */}
           <button onClick={toggleEditMode}
-            className={editMode ? btnOn() : btnGray}
-            style={editMode ? { backgroundColor: 'var(--coral)' } : {}}>
+            className={editMode ? `${btnOn()} bg-[var(--coral)]` : btnGray}>
             {editMode ? '편집 중' : '편집'}
           </button>
 
           {editMode && (<>
-            {/* 다중 선택 모드 */}
+            {/* 다중·변형 모드 */}
             <button onClick={() => setMultiSelectMode(v => !v)}
-              className={multiSelectMode ? btnOn('#3b82f6') : btnGray}
-              style={multiSelectMode ? { backgroundColor: '#3b82f6' } : {}}
-              title="다중 선택 (터치 기기용 Shift 대체)">
+              className={multiSelectMode ? `${btnOn()} bg-blue-500` : btnGray}>
               다중{multiSelectMode && ' ✓'}
             </button>
-
-            {/* 변형 모드 — 비활성 시 핸들 없음 → 실수로 리사이즈 방지 */}
             <button onClick={() => setTransformMode(v => !v)}
-              className={transformMode ? btnOn('#7c3aed') : btnGray}
-              style={transformMode ? { backgroundColor: '#7c3aed' } : {}}
-              title="변형 모드 활성화 시 크기·회전 핸들 표시 (비활성: 이동만 가능)">
+              className={transformMode ? `${btnOn()} bg-purple-600` : btnGray}>
               {transformMode ? '변형 중' : '변형'}
             </button>
 
             {divider}
 
-            {/* 되돌리기 / 다시실행 */}
-            <button onClick={undo} disabled={!canUndo}
-              className={`${btnGray} disabled:opacity-30`} title="되돌리기 (Ctrl+Z)">↩</button>
-            <button onClick={redo} disabled={!canRedo}
-              className={`${btnGray} disabled:opacity-30`} title="다시실행 (Ctrl+Y)">↪</button>
+            {/* 되돌리기 */}
+            <button onClick={undo} disabled={!canUndo} className={`${btnGray} disabled:opacity-30`} title="되돌리기 (Ctrl+Z)">↩</button>
+            <button onClick={redo} disabled={!canRedo} className={`${btnGray} disabled:opacity-30`} title="다시실행 (Ctrl+Y)">↪</button>
 
             {divider}
 
-            {/* 복사 / 붙여넣기 */}
-            <button onClick={copySelected} disabled={selectedIds.length === 0}
-              className={`${btnGray} disabled:opacity-30`} title="복사 (Ctrl+C)">복사</button>
-            <button onClick={pasteClipboard} disabled={clipboard.length === 0}
-              className={`${btnGray} disabled:opacity-30`} title="붙여넣기 (Ctrl+V)">붙여넣기</button>
+            {/* 복사/붙여넣기 */}
+            <button onClick={copySelected} disabled={selectedIds.length === 0} className={`${btnGray} disabled:opacity-30`}>복사</button>
+            <button onClick={pasteClipboard} disabled={clipboard.length === 0} className={`${btnGray} disabled:opacity-30`}>붙여넣기</button>
 
             {elements.length > 0 && (
               <button onClick={clearAll}
-                className={`${btn} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-red-300 hover:text-red-400`}
-                title="전체 지우기 (↩ 되돌리기로 복구 가능)">
+                className={`${btn} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-red-300 hover:text-red-400`}>
                 전체 지우기
               </button>
             )}
@@ -741,10 +1101,51 @@ export default function FloorPlanEditor({
             {/* 요소 추가 */}
             <span className="text-[10px] text-[var(--warm-muted)] shrink-0 hidden sm:inline">추가:</span>
             {PALETTE.map(type => (
-              <button key={type} onClick={() => addElement(type)} className={btnOff}>
-                {TYPE_LABEL[type]}
-              </button>
+              <button key={type} onClick={() => addElement(type)} className={btnOff}>{TYPE_LABEL[type]}</button>
             ))}
+
+            {divider}
+
+            {/* 다각형 그리기 */}
+            <div className="relative shrink-0">
+              {drawingPolygon ? (
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-[var(--coral)] font-medium">
+                    {TYPE_LABEL[drawingPolygon.type]} 그리는 중 ({Math.floor(drawingPolygon.points.length / 2)}개)
+                  </span>
+                  {drawingPolygon.points.length >= 6 && (
+                    <button onClick={() => finalizePolygon(drawingPolygon.points)}
+                      className={`${btn} bg-[var(--coral)] border-transparent text-white`}>완료</button>
+                  )}
+                  <button onClick={() => { setDrawingPolygon(null); setDrawCursor(null) }}
+                    className={btnGray}>취소</button>
+                </div>
+              ) : (
+                <button onClick={() => setShowPolyMenu(v => !v)}
+                  className={showPolyMenu ? `${btnOn()} bg-[var(--coral)]` : btnOff}>
+                  다각형 ▾
+                </button>
+              )}
+              {showPolyMenu && !drawingPolygon && (
+                <div className="absolute top-full left-0 mt-1 z-30 rounded-xl border border-[var(--warm-border)] shadow-lg overflow-hidden"
+                  style={{ background: 'var(--cream)', minWidth: 120 }}>
+                  {PALETTE.filter(t => t !== 'label').map(type => (
+                    <button key={type} onClick={() => startDrawPolygon(type)}
+                      className="w-full text-left px-3 py-2 text-xs text-[var(--warm-dark)] hover:bg-[var(--canvas)] transition-colors">
+                      {TYPE_LABEL[type]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {divider}
+
+            {/* AI 도면 인식 */}
+            <button onClick={() => setAiImportOpen(true)}
+              className={btnOff}>
+              AI 인식
+            </button>
 
             {selectedIds.length > 0 && (<>
               {divider}
@@ -769,11 +1170,23 @@ export default function FloorPlanEditor({
         </div>
       )}
 
-      {/* ── 변형 모드 안내 (데스크탑) ── */}
-      {editMode && !transformMode && selectedIds.length > 0 && (
+      {/* ── 변형 모드 안내 ── */}
+      {editMode && !transformMode && !drawingPolygon && selectedIds.length > 0 && (
         <div className="hidden md:flex items-center justify-center py-1 text-[11px] text-[var(--warm-muted)] border-b border-[var(--warm-border)]"
           style={{ background: 'var(--canvas)' }}>
-          이동 모드 — 크기·회전 변경이 필요하면 <strong className="mx-1 text-[#7c3aed]">변형</strong> 버튼을 활성화하세요
+          이동 모드 — 크기·회전 변경이 필요하면 <strong className="mx-1 text-purple-600">변형</strong> 버튼을 활성화하세요
+        </div>
+      )}
+
+      {/* ── 다각형 그리기 안내 ── */}
+      {drawingPolygon && (
+        <div className="flex items-center justify-center py-1.5 text-[11px] font-medium border-b border-[var(--warm-border)]"
+          style={{ background: '#fff7ed', color: 'var(--coral)' }}>
+          {drawingPolygon.points.length === 0
+            ? '캔버스를 클릭하여 첫 번째 꼭짓점을 추가하세요'
+            : drawingPolygon.points.length < 6
+              ? `꼭짓점 추가 중 (${Math.floor(drawingPolygon.points.length / 2)}개) — 최소 3개 필요`
+              : `꼭짓점 ${Math.floor(drawingPolygon.points.length / 2)}개 — 더블클릭하거나 완료 버튼을 눌러 닫으세요`}
         </div>
       )}
 
@@ -781,7 +1194,11 @@ export default function FloorPlanEditor({
       <div className="flex flex-1 overflow-hidden relative">
         {/* 캔버스 */}
         <div ref={containerRef} className="flex-1 overflow-auto"
-          style={{ background: 'var(--cream-2, #f0ebe0)', touchAction: editMode ? 'none' : 'auto' }}>
+          style={{
+            background: 'var(--cream-2, #f0ebe0)',
+            touchAction: (editMode && !drawingPolygon) ? 'none' : 'auto',
+            cursor: drawingPolygon ? 'crosshair' : 'default',
+          }}>
           {mounted && (
             <div style={{ width: canvasWidth * scale, height: canvasHeight * scale }}>
               <Stage
@@ -793,6 +1210,8 @@ export default function FloorPlanEditor({
                 onTouchStart={handlePointerDownStage}
                 onTouchMove={handlePointerMoveStage}
                 onTouchEnd={handlePointerUpStage}
+                onClick={handleStageClick}
+                onDblClick={handleStageDblClick}
               >
                 <Layer>
                   <Rect width={canvasWidth} height={canvasHeight} fill="#faf6ef" listening={false} />
@@ -802,7 +1221,7 @@ export default function FloorPlanEditor({
                     <PlanElement
                       key={el.id} el={el}
                       isSelected={selectedIds.includes(el.id)}
-                      editMode={editMode}
+                      editMode={editMode && !drawingPolygon}
                       roomStatus={el.roomNo ? roomStatuses[el.roomNo] : undefined}
                       onElementClick={handleElementClick}
                       onDragStart={handleDragStart}
@@ -813,7 +1232,47 @@ export default function FloorPlanEditor({
                     />
                   ))}
 
-                  {/* 변형 모드일 때만 핸들 노출 */}
+                  {/* 정점 편집 핸들 */}
+                  {vertexEditId && (() => {
+                    const el = elements.find(e => e.id === vertexEditId)
+                    if (!el?.points) return null
+                    return el.points.reduce<React.ReactNode[]>((acc, _, idx) => {
+                      if (idx % 2 !== 0) return acc
+                      const vi = idx / 2
+                      const cx = el.x + el.points![idx]
+                      const cy = el.y + el.points![idx + 1]
+                      acc.push(
+                        <Circle key={vi}
+                          x={cx} y={cy} radius={6}
+                          fill="white" stroke="#e84a1a" strokeWidth={1.5}
+                          draggable
+                          onDragMove={(e: any) => handleVertexDrag(el.id, vi, e.target.x(), e.target.y())}
+                          onDragEnd={handleVertexDragEnd}
+                        />
+                      )
+                      return acc
+                    }, [])
+                  })()}
+
+                  {/* 다각형 그리기 preview */}
+                  {drawingPolygon && drawPreviewPoints.length >= 4 && (
+                    <Line
+                      points={drawPreviewPoints}
+                      stroke="var(--coral)" strokeWidth={1.5}
+                      dash={[4, 3]} listening={false}
+                      fill="rgba(232,74,26,0.08)"
+                      closed={drawingPolygon.points.length >= 6}
+                    />
+                  )}
+                  {drawingPolygon && drawingPolygon.points.length >= 2 && drawPreviewPoints.length >= 2 && (
+                    <Circle
+                      x={drawingPolygon.points[0]}
+                      y={drawingPolygon.points[1]}
+                      radius={5} fill="var(--coral)"
+                      listening={false}
+                    />
+                  )}
+
                   <Transformer
                     ref={trRef}
                     rotateEnabled
@@ -839,7 +1298,7 @@ export default function FloorPlanEditor({
         </div>
 
         {/* 데스크탑 속성 패널 */}
-        {editMode && singleSelected && (
+        {editMode && !drawingPolygon && singleSelected && (
           <div className="hidden md:block w-52 shrink-0 border-l border-[var(--warm-border)] overflow-y-auto"
             style={{ background: 'var(--cream)' }}>
             <PropertiesPanel
@@ -847,11 +1306,13 @@ export default function FloorPlanEditor({
               onChange={patch => updateElement(singleSelected.id, patch)}
               onDelete={deleteSelected}
               onCommit={commitHistory}
+              onToggleVertexEdit={() => setVertexEditId(v => v === singleSelected.id ? null : singleSelected.id)}
+              isVertexEditing={vertexEditId === singleSelected.id}
             />
           </div>
         )}
 
-        {editMode && selectedIds.length > 1 && (
+        {editMode && !drawingPolygon && selectedIds.length > 1 && (
           <div className="hidden md:flex md:flex-col w-52 shrink-0 border-l border-[var(--warm-border)] overflow-y-auto"
             style={{ background: 'var(--cream)' }}>
             <div className="px-4 pt-4 pb-2">
@@ -860,7 +1321,6 @@ export default function FloorPlanEditor({
                 {transformMode ? '핸들로 함께 이동·크기 변경·회전' : '함께 이동 가능 · 크기·회전은 변형 모드 켜기'}
               </p>
             </div>
-            {/* 정렬 먼저 */}
             <div className="border-t border-[var(--warm-border)] pt-3">
               <AlignPanel count={selectedIds.length} onAlign={alignElements} />
             </div>
@@ -879,28 +1339,42 @@ export default function FloorPlanEditor({
       </div>
 
       {/* 모바일 하단 시트 */}
-      {editMode && singleSelected && (
+      {editMode && !drawingPolygon && singleSelected && (
         <BottomSheet title={TYPE_LABEL[singleSelected.type]} onClose={() => setSelectedIds([])}>
           <PropertiesPanel
             el={singleSelected} rooms={rooms}
             onChange={patch => updateElement(singleSelected.id, patch)}
             onDelete={deleteSelected}
             onCommit={commitHistory}
+            onToggleVertexEdit={() => setVertexEditId(v => v === singleSelected.id ? null : singleSelected.id)}
+            isVertexEditing={vertexEditId === singleSelected.id}
           />
         </BottomSheet>
       )}
 
-      {/* 다중 선택 BottomSheet는 제거 — 모든 화면 크기에서 상단 툴바 + 우측 패널이 역할 담당.
-          캔버스를 가리는 문제 + 해상도 낮은 데스크탑에서 중복 노출 문제 해소. */}
-
-      {/* 다중 선택 모드 안내 (모바일) */}
-      {editMode && multiSelectMode && selectedIds.length === 0 && (
+      {/* 다중 선택 안내 (모바일) */}
+      {editMode && multiSelectMode && selectedIds.length === 0 && !drawingPolygon && (
         <div className="md:hidden fixed bottom-4 inset-x-4 z-30 pointer-events-none">
           <div className="rounded-xl px-4 py-2.5 text-xs text-center text-[var(--warm-dark)]"
             style={{ background: 'rgba(250,246,239,0.95)', border: '1px solid var(--warm-border)' }}>
             요소를 탭하여 선택하세요. 여러 개 선택 가능합니다.
           </div>
         </div>
+      )}
+
+      {/* AI 임포트 모달 */}
+      {aiImportOpen && (
+        <AiImportModal
+          canvasWidth={canvasWidth}
+          canvasHeight={canvasHeight}
+          onConfirm={handleAiImportConfirm}
+          onCancel={() => setAiImportOpen(false)}
+        />
+      )}
+
+      {/* 다각형 메뉴 외부 클릭 닫기 */}
+      {showPolyMenu && (
+        <div className="fixed inset-0 z-20" onClick={() => setShowPolyMenu(false)} />
       )}
     </div>
   )

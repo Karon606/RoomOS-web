@@ -8,6 +8,8 @@ import { getPaymentMethods } from '@/app/(app)/settings/actions'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
+import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
+import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
 
 // ── 헬퍼 ──────────────────────────────────────────────────────
 
@@ -1338,9 +1340,10 @@ export default async function DashboardPage({
     select: { name: true },
   })
 
-  const [dashboardData, paymentMethods] = await Promise.all([
+  const [dashboardData, paymentMethods, floorPlanData] = await Promise.all([
     getDashboardData(propertyId, targetMonth),
     getPaymentMethods(),
+    getFloorPlan(),
   ])
 
   return (
@@ -1353,6 +1356,22 @@ export default async function DashboardPage({
           <DataButtons />
         </Suspense>
       </div>
+
+      {/* ── 평면 배치도 (도면이 있을 때만 표시) ──────────────── */}
+      {floorPlanData && (() => {
+        const rooms = dashboardData.rooms.map(r => ({ id: r.roomNo, roomNo: r.roomNo }))
+        const roomStatuses: Record<string, { isVacant: boolean; tenantName?: string }> = {}
+        dashboardData.rooms.forEach(r => {
+          roomStatuses[r.roomNo] = { isVacant: r.isVacant, tenantName: r.tenantName ?? undefined }
+        })
+        return (
+          <FloorPlanWidget
+            floorPlanData={floorPlanData}
+            rooms={rooms}
+            roomStatuses={roomStatuses}
+          />
+        )
+      })()}
 
       {/* ── 대시보드 ──────────────────────────────────────────── */}
       <DashboardClient data={dashboardData} targetMonth={targetMonth} paymentMethods={paymentMethods} />

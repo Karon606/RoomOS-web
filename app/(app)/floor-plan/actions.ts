@@ -31,12 +31,38 @@ export type FloorPlanElement = {
   label: string
   roomNo?: string
   fill?: string
+  points?: number[]  // flat [x1,y1,x2,y2,...] relative to (x,y). Present → polygon shape.
 }
 
-export type FloorPlanData = {
+export type FloorData = {
+  id: string
+  label: string
   elements: FloorPlanElement[]
   canvasWidth: number
   canvasHeight: number
+}
+
+export type FloorPlanData = {
+  floors: FloorData[]
+}
+
+function _genId() { return Math.random().toString(36).slice(2, 10) }
+
+function migrateToMultiFloor(raw: any): FloorPlanData {
+  if (!raw) {
+    return { floors: [{ id: _genId(), label: '1층', elements: [], canvasWidth: 800, canvasHeight: 600 }] }
+  }
+  if (Array.isArray(raw?.floors)) return raw as FloorPlanData
+  // Legacy format: { elements, canvasWidth, canvasHeight }
+  return {
+    floors: [{
+      id: _genId(),
+      label: '1층',
+      elements: (raw.elements ?? []) as FloorPlanElement[],
+      canvasWidth: raw.canvasWidth ?? 800,
+      canvasHeight: raw.canvasHeight ?? 600,
+    }],
+  }
 }
 
 export async function getFloorPlan(): Promise<FloorPlanData | null> {
@@ -46,7 +72,7 @@ export async function getFloorPlan(): Promise<FloorPlanData | null> {
     select: { floorPlanData: true },
   })
   if (!prop?.floorPlanData) return null
-  return prop.floorPlanData as FloorPlanData
+  return migrateToMultiFloor(prop.floorPlanData)
 }
 
 export async function saveFloorPlan(data: FloorPlanData): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -59,6 +85,100 @@ export async function saveFloorPlan(data: FloorPlanData): Promise<{ ok: true } |
     revalidatePath('/dashboard')
     revalidatePath('/floor-plan')
     return { ok: true }
+  } catch (e) {
+    return { ok: false, error: String(e) }
+  }
+}
+
+export async function parseFloorPlanImage(
+  base64: string,
+  mimeType: string,
+  canvasWidth: number,
+  canvasHeight: number,
+): Promise<{ ok: true; elements: FloorPlanElement[] } | { ok: false; error: string }> {
+  try {
+    await getPropertyId()
+    const apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
+
+    const prompt = `이것은 건물 평면도(floor plan) 이미지입니다. 이미지에서 방, 복도, 계단, 주방, 화장실, 출입구 등 모든 공간 요소를 감지하여 JSON 배열로만 응답하세요. 다른 설명, 마크다운, 코드블록 없이 순수 JSON만 출력하세요.
+
+각 요소 스키마:
+{
+  "type": "room"|"corridor"|"kitchen"|"bathroom"|"stairs"|"entrance"|"emergency_exit"|"window"|"label",
+  "label": "표시할 이름 (예: 101호, 복도, 계단실, 주방)",
+  "roomNo": "호실 번호 (type이 room이고 번호가 보일 때만, 예: '101')",
+  "points": [[x1,y1],[x2,y2],...]
+}
+
+좌표 규칙:
+- points는 각 공간의 실제 경계를 나타내는 다각형 꼭짓점 (최소 3개)
+- 직사각형 공간은 4개, 비정형 공간은 더 많이
+- 좌표는 이미지 전체 크기 기준 0.0~1.0 사이 소수 (소수점 3자리), 좌상단=(0,0), 우하단=(1,1)
+- 평면도가 아닌 이미지면: [] 반환`
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [
+            { text: prompt },
+            { inline_data: { mime_type: mimeType || 'image/jpeg', data: base64 } },
+          ]}],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 4096, responseMimeType: 'application/json' },
+        }),
+      }
+    )
+
+    if (!res.ok) {
+      const errTxt = await res.text()
+      return { ok: false, error: `Gemini API 오류 (${res.status}): ${errTxt.slice(0, 200)}` }
+    }
+    const json = await res.json()
+    const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    if (!text) return { ok: false, error: 'AI 응답이 비어있습니다.' }
+
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
+    let parsed: any[]
+    try { parsed = JSON.parse(cleaned) } catch {
+      return { ok: false, error: 'AI 응답을 JSON으로 해석하지 못했습니다.' }
+    }
+    if (!Array.isArray(parsed)) return { ok: false, error: 'AI 응답이 배열 형식이 아닙니다.' }
+
+    const validTypes = new Set<string>(['room','corridor','kitchen','bathroom','stairs','entrance','emergency_exit','window','label'])
+
+    const elements: FloorPlanElement[] = parsed
+      .filter((el: any) => validTypes.has(el?.type) && Array.isArray(el?.points) && el.points.length >= 3)
+      .map((el: any) => {
+        const pts: [number, number][] = el.points.map((p: any) => [
+          Math.max(0, Math.min(1, Number(Array.isArray(p) ? p[0] : (p.x ?? 0)))),
+          Math.max(0, Math.min(1, Number(Array.isArray(p) ? p[1] : (p.y ?? 0)))),
+        ])
+        const scaledXs = pts.map(p => p[0] * canvasWidth)
+        const scaledYs = pts.map(p => p[1] * canvasHeight)
+        const minX = Math.min(...scaledXs), maxX = Math.max(...scaledXs)
+        const minY = Math.min(...scaledYs), maxY = Math.max(...scaledYs)
+        const flatPoints = pts.flatMap(p => [
+          Math.round(p[0] * canvasWidth - minX),
+          Math.round(p[1] * canvasHeight - minY),
+        ])
+        return {
+          id: _genId(),
+          type: el.type as ElementType,
+          x: Math.round(minX),
+          y: Math.round(minY),
+          width: Math.max(20, Math.round(maxX - minX)),
+          height: Math.max(20, Math.round(maxY - minY)),
+          rotation: 0,
+          label: String(el.label ?? '').trim() || el.type,
+          roomNo: el.roomNo ? String(el.roomNo).trim() : undefined,
+          points: flatPoints,
+        } satisfies FloorPlanElement
+      })
+
+    return { ok: true, elements }
   } catch (e) {
     return { ok: false, error: String(e) }
   }
