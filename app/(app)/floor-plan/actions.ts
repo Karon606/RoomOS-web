@@ -133,21 +133,31 @@ export async function parseFloorPlanImage(
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
 
-    const prompt = `이것은 건물 평면도(floor plan) 이미지입니다. 이미지에서 방, 복도, 계단, 주방, 화장실, 출입구 등 모든 공간 요소를 감지하여 JSON 배열로만 응답하세요.
+    const prompt = `이것은 건물 평면도(floor plan) 이미지입니다. 이미지에 보이는 각 공간을 하나의 요소로 인식하여 JSON 배열로 응답하세요.
+
+중요 규칙:
+- 하나의 연속된 공간은 반드시 하나의 요소로만 출력 (절대 쪼개지 말 것)
+- 공간 유형은 색상·텍스트·형태를 종합해서 판단:
+  · 회색·밝은회색 통로 형태 → "corridor"
+  · 어두운회색·검정 → "stairs"
+  · 파란계열 → "bathroom" 또는 "kitchen"
+  · 주황·빨강 → "entrance"
+  · 분홍·보라 → "bathroom"
+  · 나머지 일반 공간 → "room"
+- 텍스트 레이블이 있으면 그대로 label에 사용
 
 각 요소 스키마:
 {
   "type": "room"|"corridor"|"kitchen"|"bathroom"|"stairs"|"entrance"|"emergency_exit"|"window"|"label",
-  "label": "표시할 이름 (예: 101호, 복도, 계단실, 주방)",
-  "roomNo": "호실 번호 (type이 room이고 번호가 보일 때만, 예: '101')",
+  "label": "공간 이름 (텍스트가 없으면 type 기반으로: 방/복도/계단실/주방/화장실/출입구)",
+  "roomNo": "호실 번호 (type이 room이고 번호가 보일 때만)",
   "points": [[x1,y1],[x2,y2],...]
 }
 
 좌표 규칙:
-- points는 각 공간의 실제 벽 경계를 정확히 따르는 다각형 꼭짓점
-- 절대로 외접 bounding box(직사각형 근사)로 단순화하지 말 것 — 실제 벽선의 모든 꺾임점을 꼭짓점으로 추가
-- L자·ㄷ자·사다리꼴·복잡한 형태 모두 실제 윤곽 그대로 표현
-- 좌표는 이미지 전체 크기 기준 0.0~1.0 소수 (소수점 3자리), 좌상단=(0,0), 우하단=(1,1)
+- points는 공간의 실제 외곽선 꼭짓점 — L자·ㄷ자 등 비직사각형은 실제 형태 그대로
+- 직사각형이면 4개, 꺾임이 있으면 그만큼 추가
+- 좌표는 이미지 전체 기준 0.0~1.0 소수 (소수점 3자리), 좌상단=(0,0), 우하단=(1,1)
 - 평면도가 아닌 이미지면: [] 반환`
 
     const reqBody = JSON.stringify({
