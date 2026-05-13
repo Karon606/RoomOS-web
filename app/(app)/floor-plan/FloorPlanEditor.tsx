@@ -34,6 +34,17 @@ const TYPE_LABEL: Record<ElementType, string> = {
 
 function genId() { return Math.random().toString(36).slice(2, 10) }
 
+// ── 정렬 아이콘 ──────────────────────────────────────────────
+const _i = { viewBox: '0 0 20 20', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, width: 16, height: 16 }
+function IcoAlignLeft()     { return <svg {..._i}><line x1="4"  y1="3"  x2="4"  y2="17"/><rect x="4"  y="5"  width="7"  height="3.5" rx="0.8" fill="currentColor" stroke="none"/><rect x="4"  y="11.5" width="12" height="3.5" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoAlignRight()    { return <svg {..._i}><line x1="16" y1="3"  x2="16" y2="17"/><rect x="5"  y="5"  width="11" height="3.5" rx="0.8" fill="currentColor" stroke="none"/><rect x="9"  y="11.5" width="7"  height="3.5" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoAlignTop()      { return <svg {..._i}><line x1="3"  y1="4"  x2="17" y2="4" /><rect x="5"  y="4"  width="3.5" height="7"  rx="0.8" fill="currentColor" stroke="none"/><rect x="11.5" y="4" width="3.5" height="12" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoAlignBottom()   { return <svg {..._i}><line x1="3"  y1="16" x2="17" y2="16"/><rect x="5"  y="9"  width="3.5" height="7"  rx="0.8" fill="currentColor" stroke="none"/><rect x="11.5" y="4" width="3.5" height="12" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoAlignCenterH()  { return <svg {..._i}><line x1="10" y1="3"  x2="10" y2="17"/><rect x="3"  y="5"  width="14" height="3.5" rx="0.8" fill="currentColor" stroke="none"/><rect x="5"  y="11.5" width="10" height="3.5" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoAlignCenterV()  { return <svg {..._i}><line x1="3"  y1="10" x2="17" y2="10"/><rect x="5"  y="3"  width="3.5" height="14" rx="0.8" fill="currentColor" stroke="none"/><rect x="11.5" y="5" width="3.5" height="10" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoDistributeH()   { return <svg {..._i}><line x1="3"  y1="3"  x2="3"  y2="17"/><line x1="17" y1="3"  x2="17" y2="17"/><rect x="7.5" y="6" width="5" height="8" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+function IcoDistributeV()   { return <svg {..._i}><line x1="3"  y1="3"  x2="17" y2="3" /><line x1="3"  y1="17" x2="17" y2="17"/><rect x="6"  y="7.5" width="8" height="5" rx="0.8" fill="currentColor" stroke="none"/></svg> }
+
 // ── 스냅 ─────────────────────────────────────────────────────
 function applySnap(x: number, y: number, w: number, h: number, others: FloorPlanElement[]): { x: number; y: number } {
   const xC: number[] = [Math.round(x / GRID) * GRID, Math.round((x + w) / GRID) * GRID - w]
@@ -226,6 +237,39 @@ function BottomSheet({ title, onClose, children }: { title: string; onClose: () 
         </button>
       </div>
       <div className="overflow-y-auto flex-1">{children}</div>
+    </div>
+  )
+}
+
+// ── 정렬 패널 ────────────────────────────────────────────────
+type AlignType = 'left' | 'right' | 'top' | 'bottom' | 'centerH' | 'centerV' | 'distributeH' | 'distributeV'
+
+function AlignPanel({ count, onAlign }: { count: number; onAlign: (type: AlignType) => void }) {
+  const btnCls = 'flex items-center justify-center w-9 h-9 rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors disabled:opacity-30'
+  const items: { type: AlignType; Icon: () => React.ReactElement; title: string; min: number }[] = [
+    { type: 'left',        Icon: IcoAlignLeft,    title: '좌측 정렬',      min: 2 },
+    { type: 'centerH',     Icon: IcoAlignCenterH, title: '수평 가운데 정렬', min: 2 },
+    { type: 'right',       Icon: IcoAlignRight,   title: '우측 정렬',      min: 2 },
+    { type: 'top',         Icon: IcoAlignTop,     title: '상단 정렬',      min: 2 },
+    { type: 'centerV',     Icon: IcoAlignCenterV, title: '수직 가운데 정렬', min: 2 },
+    { type: 'bottom',      Icon: IcoAlignBottom,  title: '하단 정렬',      min: 2 },
+    { type: 'distributeH', Icon: IcoDistributeH,  title: '수평 균등 배분',  min: 3 },
+    { type: 'distributeV', Icon: IcoDistributeV,  title: '수직 균등 배분',  min: 3 },
+  ]
+  return (
+    <div className="px-4 pb-3 space-y-1.5">
+      <p className="text-[11px] text-[var(--warm-muted)]">정렬</p>
+      <div className="grid grid-cols-4 gap-1.5">
+        {items.map(({ type, Icon, title, min }) => (
+          <button key={type} onClick={() => onAlign(type)} disabled={count < min}
+            title={title} className={btnCls}>
+            <Icon />
+          </button>
+        ))}
+      </div>
+      <p className="text-[10px] text-[var(--warm-muted)] leading-tight">
+        좌→우→우측끝 / 위→가운데→아래 · 배분은 3개 이상
+      </p>
     </div>
   )
 }
@@ -474,6 +518,60 @@ export default function FloorPlanEditor({
 
   const clearAll = useCallback(() => {
     setElements([]); setSelectedIds([]); pushHistory([])
+  }, [pushHistory])
+
+  // ── 정렬 ─────────────────────────────────────────────────
+  const alignElements = useCallback((type: AlignType) => {
+    const sel = elementsRef.current.filter(e => selectedIdsRef.current.includes(e.id))
+    if (sel.length < 2) return
+
+    const minX = Math.min(...sel.map(e => e.x))
+    const maxX = Math.max(...sel.map(e => e.x + e.width))
+    const minY = Math.min(...sel.map(e => e.y))
+    const maxY = Math.max(...sel.map(e => e.y + e.height))
+
+    let patchMap: Map<string, Partial<FloorPlanElement>> | null = null
+
+    if (type === 'distributeH' && sel.length >= 3) {
+      const sorted = [...sel].sort((a, b) => a.x - b.x)
+      const totalW = sorted.reduce((s, e) => s + e.width, 0)
+      const gap = (maxX - minX - totalW) / (sorted.length - 1)
+      let cur = minX
+      patchMap = new Map()
+      sorted.forEach(e => { patchMap!.set(e.id, { x: Math.round(cur) }); cur += e.width + gap })
+    } else if (type === 'distributeV' && sel.length >= 3) {
+      const sorted = [...sel].sort((a, b) => a.y - b.y)
+      const totalH = sorted.reduce((s, e) => s + e.height, 0)
+      const gap = (maxY - minY - totalH) / (sorted.length - 1)
+      let cur = minY
+      patchMap = new Map()
+      sorted.forEach(e => { patchMap!.set(e.id, { y: Math.round(cur) }); cur += e.height + gap })
+    }
+
+    const newEls = elementsRef.current.map(el => {
+      if (!selectedIdsRef.current.includes(el.id)) return el
+      if (patchMap) return { ...el, ...(patchMap.get(el.id) ?? {}) }
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
+      switch (type) {
+        case 'left':    return { ...el, x: minX }
+        case 'right':   return { ...el, x: maxX - el.width }
+        case 'top':     return { ...el, y: minY }
+        case 'bottom':  return { ...el, y: maxY - el.height }
+        case 'centerH': return { ...el, x: Math.round(cx - el.width  / 2) }
+        case 'centerV': return { ...el, y: Math.round(cy - el.height / 2) }
+        default: return el
+      }
+    })
+
+    setElements(newEls)
+    pushHistory(newEls)
+    // Konva 노드 즉시 동기화 (재렌더 전 깜빡임 방지)
+    newEls.forEach(el => {
+      if (!selectedIdsRef.current.includes(el.id)) return
+      const node = nodeRefs.current.get(el.id)
+      if (node) { node.x(el.x); node.y(el.y) }
+    })
+    trRef.current?.getLayer()?.batchDraw()
   }, [pushHistory])
 
   // ── 복사/붙여넣기 ─────────────────────────────────────────
@@ -732,20 +830,25 @@ export default function FloorPlanEditor({
         )}
 
         {editMode && selectedIds.length > 1 && (
-          <div className="hidden md:flex md:flex-col w-52 shrink-0 border-l border-[var(--warm-border)] p-4 gap-3"
+          <div className="hidden md:flex md:flex-col w-52 shrink-0 border-l border-[var(--warm-border)] overflow-y-auto"
             style={{ background: 'var(--cream)' }}>
-            <p className="text-xs font-semibold text-[var(--warm-dark)]">{selectedIds.length}개 선택됨</p>
-            <p className="text-[11px] text-[var(--warm-muted)]">
-              {transformMode ? '핸들로 함께 이동·크기 변경·회전' : '함께 이동 가능 · 크기·회전은 변형 모드 켜기'}
-            </p>
-            <button onClick={copySelected}
-              className="text-xs border border-[var(--warm-border)] bg-[var(--canvas)] rounded-lg py-2 text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
-              복사
-            </button>
-            <button onClick={deleteSelected}
-              className="text-xs text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 rounded-lg py-2 transition-colors">
-              선택 삭제
-            </button>
+            <div className="p-4 pb-2 space-y-3">
+              <p className="text-xs font-semibold text-[var(--warm-dark)]">{selectedIds.length}개 선택됨</p>
+              <p className="text-[11px] text-[var(--warm-muted)]">
+                {transformMode ? '핸들로 함께 이동·크기 변경·회전' : '함께 이동 가능 · 크기·회전은 변형 모드 켜기'}
+              </p>
+              <button onClick={copySelected}
+                className="w-full text-xs border border-[var(--warm-border)] bg-[var(--canvas)] rounded-lg py-2 text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
+                복사
+              </button>
+              <button onClick={deleteSelected}
+                className="w-full text-xs text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 rounded-lg py-2 transition-colors">
+                선택 삭제
+              </button>
+            </div>
+            <div className="border-t border-[var(--warm-border)] pt-3">
+              <AlignPanel count={selectedIds.length} onAlign={alignElements} />
+            </div>
           </div>
         )}
       </div>
@@ -764,7 +867,7 @@ export default function FloorPlanEditor({
 
       {editMode && selectedIds.length > 1 && (
         <BottomSheet title={`${selectedIds.length}개 선택됨`} onClose={() => setSelectedIds([])}>
-          <div className="p-4 space-y-3">
+          <div className="p-4 pb-2 space-y-3">
             <p className="text-xs text-[var(--warm-muted)]">
               {transformMode ? '핸들로 함께 이동·크기 변경·회전할 수 있습니다.' : '이동 모드 — 크기·회전을 바꾸려면 상단 변형 버튼을 켜세요.'}
             </p>
@@ -776,6 +879,9 @@ export default function FloorPlanEditor({
               className="w-full text-sm text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 rounded-xl py-3 transition-colors font-medium">
               선택 삭제 ({selectedIds.length}개)
             </button>
+          </div>
+          <div className="border-t border-[var(--warm-border)] pt-3">
+            <AlignPanel count={selectedIds.length} onAlign={alignElements} />
           </div>
         </BottomSheet>
       )}
