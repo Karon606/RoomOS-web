@@ -7,7 +7,7 @@ import { pushToast } from '@/lib/saveStatus'
 
 // ── 상수 ─────────────────────────────────────────────────────
 const GRID = 20
-const SNAP_D = 8   // snap 발동 거리 (canvas px)
+const SNAP_D = 8
 
 const ELEMENT_DEFAULTS: Record<ElementType, { label: string; width: number; height: number; fill: string; stroke: string }> = {
   room:           { label: '방',    width: 80,  height: 80,  fill: '#f5f1ea', stroke: '#4d3e2e' },
@@ -34,40 +34,23 @@ const TYPE_LABEL: Record<ElementType, string> = {
 function genId() { return Math.random().toString(36).slice(2, 10) }
 
 // ── 스냅 ─────────────────────────────────────────────────────
-function applySnap(
-  x: number, y: number, w: number, h: number,
-  others: FloorPlanElement[],
-): { x: number; y: number } {
-  // x 스냅 후보 (el.left 기준)
-  const xCandidates: number[] = [
-    Math.round(x / GRID) * GRID,          // left → 그리드
-    Math.round((x + w) / GRID) * GRID - w, // right → 그리드
+function applySnap(x: number, y: number, w: number, h: number, others: FloorPlanElement[]): { x: number; y: number } {
+  const xC: number[] = [
+    Math.round(x / GRID) * GRID,
+    Math.round((x + w) / GRID) * GRID - w,
   ]
-  for (const o of others) {
-    xCandidates.push(o.x, o.x + o.width, o.x - w, o.x + o.width - w)
-  }
-
-  // y 스냅 후보 (el.top 기준)
-  const yCandidates: number[] = [
+  const yC: number[] = [
     Math.round(y / GRID) * GRID,
     Math.round((y + h) / GRID) * GRID - h,
   ]
   for (const o of others) {
-    yCandidates.push(o.y, o.y + o.height, o.y - h, o.y + o.height - h)
+    xC.push(o.x, o.x + o.width, o.x - w, o.x + o.width - w)
+    yC.push(o.y, o.y + o.height, o.y - h, o.y + o.height - h)
   }
-
-  let rx = x, bestDX = SNAP_D
-  for (const cx of xCandidates) {
-    const d = Math.abs(cx - x)
-    if (d < bestDX) { bestDX = d; rx = cx }
-  }
-
-  let ry = y, bestDY = SNAP_D
-  for (const cy of yCandidates) {
-    const d = Math.abs(cy - y)
-    if (d < bestDY) { bestDY = d; ry = cy }
-  }
-
+  let rx = x, bx = SNAP_D
+  for (const c of xC) { const d = Math.abs(c - x); if (d < bx) { bx = d; rx = c } }
+  let ry = y, by = SNAP_D
+  for (const c of yC) { const d = Math.abs(c - y); if (d < by) { by = d; ry = c } }
   return { x: rx, y: ry }
 }
 
@@ -99,12 +82,10 @@ function PlanElement({
   allElements: FloorPlanElement[]
 }) {
   const groupRef = useRef<any>(null)
-  const def = ELEMENT_DEFAULTS[el.type]
-  const fill = el.fill ?? def.fill
-  const bgFill =
-    el.type === 'room' && roomStatus != null
-      ? roomStatus.isVacant ? '#f0fdf4' : '#fff7ed'
-      : fill
+  const def      = ELEMENT_DEFAULTS[el.type]
+  const fill     = el.fill ?? def.fill
+  const bgFill   = el.type === 'room' && roomStatus != null
+    ? (roomStatus.isVacant ? '#f0fdf4' : '#fff7ed') : fill
 
   useEffect(() => {
     registerRef(el.id, groupRef.current)
@@ -113,10 +94,8 @@ function PlanElement({
 
   const handleDragMove = (e: any) => {
     const node = e.target
-    const others = allElements.filter(o => o.id !== el.id)
-    const snapped = applySnap(node.x(), node.y(), el.width, el.height, others)
-    node.x(snapped.x)
-    node.y(snapped.y)
+    const snapped = applySnap(node.x(), node.y(), el.width, el.height, allElements.filter(o => o.id !== el.id))
+    node.x(snapped.x); node.y(snapped.y)
     onDragMove(el.id, snapped.x, snapped.y)
   }
 
@@ -141,18 +120,14 @@ function PlanElement({
         stroke={isSelected ? '#e84a1a' : def.stroke}
         strokeWidth={isSelected ? 2 : 1}
         cornerRadius={el.type === 'room' ? 4 : 2}
-        shadowEnabled={isSelected}
-        shadowColor="rgba(232,74,26,0.3)"
-        shadowBlur={8}
+        shadowEnabled={isSelected} shadowColor="rgba(232,74,26,0.3)" shadowBlur={8}
       />
       <Text
-        text={el.label}
-        width={el.width} height={el.height}
+        text={el.label} width={el.width} height={el.height}
         align="center" verticalAlign="middle"
         fontSize={el.type === 'room' ? 11 : 10}
         fontFamily="Pretendard Variable, Pretendard, sans-serif"
-        fill={textColor}
-        wrap="word" padding={2}
+        fill={textColor} wrap="word" padding={2}
       />
       {el.type === 'room' && roomStatus && (
         <Text
@@ -175,22 +150,22 @@ function PropertiesPanel({
   onChange: (patch: Partial<FloorPlanElement>) => void
   onDelete: () => void
 }) {
-  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
   return (
-    <div className="space-y-3 p-3">
+    <div className="space-y-3 p-4">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold text-[var(--warm-dark)]">{TYPE_LABEL[el.type]}</p>
-        <button onClick={onDelete} className="text-[10px] text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition-colors">삭제</button>
+        <p className="text-xs font-semibold text-[var(--warm-dark)]">{TYPE_LABEL[el.type]}</p>
+        <button onClick={onDelete} className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition-colors">삭제</button>
       </div>
 
       <div className="space-y-1">
-        <p className="text-[10px] text-[var(--warm-muted)]">표시 이름</p>
+        <p className="text-[11px] text-[var(--warm-muted)]">표시 이름</p>
         <input className={inputCls} value={el.label} onChange={e => onChange({ label: e.target.value })} />
       </div>
 
       {el.type === 'room' && (
         <div className="space-y-1">
-          <p className="text-[10px] text-[var(--warm-muted)]">연결 호실</p>
+          <p className="text-[11px] text-[var(--warm-muted)]">연결 호실</p>
           <select className={inputCls} value={el.roomNo ?? ''} onChange={e => onChange({ roomNo: e.target.value || undefined })}>
             <option value="">연결 없음</option>
             {rooms.map(r => <option key={r.id} value={r.roomNo}>{r.roomNo}호</option>)}
@@ -198,15 +173,15 @@ function PropertiesPanel({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
-          <p className="text-[10px] text-[var(--warm-muted)]">너비 px</p>
+          <p className="text-[11px] text-[var(--warm-muted)]">너비 px</p>
           <input type="number" className={inputCls} value={el.width}
             onChange={e => onChange({ width: Number(e.target.value) })}
             onBlur={e => { if (Number(e.target.value) < 1) onChange({ width: 20 }) }} />
         </div>
         <div className="space-y-1">
-          <p className="text-[10px] text-[var(--warm-muted)]">높이 px</p>
+          <p className="text-[11px] text-[var(--warm-muted)]">높이 px</p>
           <input type="number" className={inputCls} value={el.height}
             onChange={e => onChange({ height: Number(e.target.value) })}
             onBlur={e => { if (Number(e.target.value) < 1) onChange({ height: 20 }) }} />
@@ -214,22 +189,46 @@ function PropertiesPanel({
       </div>
 
       <div className="space-y-1">
-        <p className="text-[10px] text-[var(--warm-muted)]">회전 (°)</p>
+        <p className="text-[11px] text-[var(--warm-muted)]">회전 (°)</p>
         <input type="number" className={inputCls} value={el.rotation}
           onChange={e => onChange({ rotation: Number(e.target.value) })} />
       </div>
 
       {el.type !== 'label' && (
         <div className="space-y-1">
-          <p className="text-[10px] text-[var(--warm-muted)]">배경색</p>
+          <p className="text-[11px] text-[var(--warm-muted)]">배경색</p>
           <div className="flex items-center gap-2">
             <input type="color" value={el.fill ?? ELEMENT_DEFAULTS[el.type].fill}
               onChange={e => onChange({ fill: e.target.value })}
-              className="w-8 h-7 rounded cursor-pointer border border-[var(--warm-border)]" />
-            <button onClick={() => onChange({ fill: undefined })} className="text-[10px] text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">초기화</button>
+              className="w-9 h-8 rounded cursor-pointer border border-[var(--warm-border)]" />
+            <button onClick={() => onChange({ fill: undefined })} className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">초기화</button>
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── 모바일 하단 시트 래퍼 ────────────────────────────────────
+function BottomSheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div
+      className="md:hidden fixed bottom-0 inset-x-0 z-40 rounded-t-2xl border-t border-[var(--warm-border)] shadow-xl"
+      style={{ background: 'var(--cream)', maxHeight: '55vh', display: 'flex', flexDirection: 'column' }}
+    >
+      {/* 드래그 핸들 */}
+      <div className="flex justify-center pt-2 pb-1 shrink-0">
+        <div className="w-10 h-1 rounded-full bg-[var(--warm-border)]" />
+      </div>
+      {/* 헤더 */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--warm-border)] shrink-0">
+        <p className="text-sm font-semibold text-[var(--warm-dark)]">{title}</p>
+        <button
+          onClick={onClose}
+          className="w-8 h-8 flex items-center justify-center rounded-full text-[var(--warm-muted)] hover:bg-[var(--warm-border)] transition-colors text-lg leading-none"
+        >×</button>
+      </div>
+      <div className="overflow-y-auto flex-1">{children}</div>
     </div>
   )
 }
@@ -245,30 +244,27 @@ export default function FloorPlanEditor({
 }) {
   const DEFAULT_W = 800, DEFAULT_H = 600
 
-  const [mounted, setMounted]       = useState(false)
-  const [elements, setElements]     = useState<FloorPlanElement[]>(initialData?.elements ?? [])
-  const [canvasWidth]               = useState(initialData?.canvasWidth  ?? DEFAULT_W)
-  const [canvasHeight]              = useState(initialData?.canvasHeight ?? DEFAULT_H)
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [editMode, setEditMode]     = useState(!viewOnly)
-  const [saving, setSaving]         = useState(false)
-  const [showGrid, setShowGrid]     = useState(true)
-  const [selBox, setSelBox]         = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const [mounted, setMounted]           = useState(false)
+  const [elements, setElements]         = useState<FloorPlanElement[]>(initialData?.elements ?? [])
+  const [canvasWidth]                   = useState(initialData?.canvasWidth  ?? DEFAULT_W)
+  const [canvasHeight]                  = useState(initialData?.canvasHeight ?? DEFAULT_H)
+  const [selectedIds, setSelectedIds]   = useState<string[]>([])
+  const [editMode, setEditMode]         = useState(!viewOnly)
+  const [multiSelectMode, setMultiSelectMode] = useState(false)
+  const [saving, setSaving]             = useState(false)
+  const [showGrid, setShowGrid]         = useState(true)
+  const [selBox, setSelBox]             = useState<{ x: number; y: number; w: number; h: number } | null>(null)
 
   const containerRef   = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
 
-  // Konva 노드 ref 맵 (id → Konva.Group)
-  const nodeRefs       = useRef<Map<string, any>>(new Map())
-  const trRef          = useRef<any>(null)
-  const selectedIdsRef = useRef<string[]>([])
-
-  // 드래그 관련 ref
-  const dragStartPositions = useRef<Map<string, { x: number; y: number }>>(new Map())
-  const draggingGroup      = useRef<string[]>([])
-
-  // 드래그 선택 관련 ref
-  const selStartRef = useRef<{ x: number; y: number } | null>(null)
+  const nodeRefs            = useRef<Map<string, any>>(new Map())
+  const trRef               = useRef<any>(null)
+  const selectedIdsRef      = useRef<string[]>([])
+  const dragStartPositions  = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const draggingGroup       = useRef<string[]>([])
+  const isDraggingElement   = useRef(false)
+  const selStartRef         = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => { setMounted(true) }, [])
   useEffect(() => { selectedIdsRef.current = selectedIds }, [selectedIds])
@@ -281,7 +277,6 @@ export default function FloorPlanEditor({
     return () => obs.disconnect()
   }, [canvasWidth])
 
-  // Transformer → 선택된 노드들 연결
   useEffect(() => {
     if (!trRef.current || !mounted) return
     const nodes = selectedIds.map(id => nodeRefs.current.get(id)).filter(Boolean)
@@ -289,7 +284,7 @@ export default function FloorPlanEditor({
     trRef.current.getLayer()?.batchDraw()
   }, [selectedIds, mounted])
 
-  // Delete 키로 선택 요소 삭제
+  // Delete / Escape 키
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName
@@ -298,7 +293,7 @@ export default function FloorPlanEditor({
         setElements(prev => prev.filter(el => !selectedIdsRef.current.includes(el.id)))
         setSelectedIds([])
       }
-      if (e.key === 'Escape') setSelectedIds([])
+      if (e.key === 'Escape') { setSelectedIds([]); setMultiSelectMode(false) }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -310,17 +305,18 @@ export default function FloorPlanEditor({
     else nodeRefs.current.delete(id)
   }, [])
 
-  // ── 요소 클릭 (단일/shift 다중) ──────────────────────────
+  // ── 요소 클릭 ────────────────────────────────────────────
   const handleElementClick = useCallback((id: string, shiftKey: boolean) => {
-    if (shiftKey) {
+    if (shiftKey || multiSelectMode) {
       setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id])
     } else {
       setSelectedIds([id])
     }
-  }, [])
+  }, [multiSelectMode])
 
-  // ── 드래그 시작 ──────────────────────────────────────────
+  // ── 드래그 ───────────────────────────────────────────────
   const handleDragStart = useCallback((id: string) => {
+    isDraggingElement.current = true
     const ids = selectedIdsRef.current.includes(id) ? selectedIdsRef.current : [id]
     draggingGroup.current = ids
     dragStartPositions.current.clear()
@@ -331,7 +327,6 @@ export default function FloorPlanEditor({
     if (!selectedIdsRef.current.includes(id)) setSelectedIds([id])
   }, [])
 
-  // ── 드래그 중 (snap 적용된 좌표 받음) ────────────────────
   const handleDragMove = useCallback((id: string, nx: number, ny: number) => {
     const start = dragStartPositions.current.get(id)
     if (!start) return
@@ -344,11 +339,10 @@ export default function FloorPlanEditor({
     })
   }, [])
 
-  // ── 드래그 종료 ──────────────────────────────────────────
   const handleDragEnd = useCallback((id: string, nx: number, ny: number) => {
+    isDraggingElement.current = false
     const start = dragStartPositions.current.get(id)
-    const dx = start ? nx - start.x : 0
-    const dy = start ? ny - start.y : 0
+    const dx = start ? nx - start.x : 0, dy = start ? ny - start.y : 0
     const ids = draggingGroup.current
     setElements(prev => prev.map(el => {
       if (!ids.includes(el.id)) return el
@@ -360,7 +354,7 @@ export default function FloorPlanEditor({
     draggingGroup.current = []
   }, [])
 
-  // ── Transform 종료 ───────────────────────────────────────
+  // ── Transform ────────────────────────────────────────────
   const handleTransformEnd = useCallback(() => {
     setElements(prev => prev.map(el => {
       if (!selectedIdsRef.current.includes(el.id)) return el
@@ -370,8 +364,7 @@ export default function FloorPlanEditor({
       node.scaleX(1); node.scaleY(1)
       return {
         ...el,
-        x: Math.round(node.x()),
-        y: Math.round(node.y()),
+        x: Math.round(node.x()), y: Math.round(node.y()),
         width:    Math.round(Math.max(20, el.width  * scaleX)),
         height:   Math.round(Math.max(20, el.height * scaleY)),
         rotation: Math.round(node.rotation()),
@@ -390,16 +383,17 @@ export default function FloorPlanEditor({
     }
     setElements(prev => [...prev, el])
     setSelectedIds([el.id])
+    setMultiSelectMode(false)
   }
 
   const updateElement = useCallback((id: string, patch: Partial<FloorPlanElement>) => {
     setElements(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e))
   }, [])
 
-  const deleteSelected = () => {
-    setElements(prev => prev.filter(e => !selectedIds.includes(e.id)))
+  const deleteSelected = useCallback(() => {
+    setElements(prev => prev.filter(e => !selectedIdsRef.current.includes(e.id)))
     setSelectedIds([])
-  }
+  }, [])
 
   // ── 저장 ─────────────────────────────────────────────────
   const handleSave = async () => {
@@ -410,35 +404,34 @@ export default function FloorPlanEditor({
     else pushToast('error', res.error)
   }
 
-  // ── 드래그 선택 (Stage 빈 영역) ──────────────────────────
+  // ── 드래그 선택 (마우스 + 터치 공용) ──────────────────────
   const getCanvasPos = (stage: any) => {
     const pos = stage.getPointerPosition()
     return pos ? { x: pos.x / scale, y: pos.y / scale } : null
   }
 
-  const handleStageMouseDown = (e: any) => {
-    if (!editMode || e.target !== e.target.getStage()) return
+  const handlePointerDownStage = (e: any) => {
+    if (!editMode || e.target !== e.target.getStage() || isDraggingElement.current) return
     const pos = getCanvasPos(e.target.getStage())
     if (!pos) return
     selStartRef.current = pos
-    setSelBox({ x: pos.x, y: pos.y, w: 0, h: 0 })
+    setSelBox(null)
     setSelectedIds([])
   }
 
-  const handleStageMouseMove = (e: any) => {
-    if (!selStartRef.current) return
+  const handlePointerMoveStage = (e: any) => {
+    if (!selStartRef.current || isDraggingElement.current) return
     const pos = getCanvasPos(e.target.getStage())
     if (!pos) return
     const { x: sx, y: sy } = selStartRef.current
-    setSelBox({
-      x: Math.min(sx, pos.x), y: Math.min(sy, pos.y),
-      w: Math.abs(pos.x - sx), h: Math.abs(pos.y - sy),
-    })
+    const w = Math.abs(pos.x - sx), h = Math.abs(pos.y - sy)
+    if (w < 6 && h < 6) return
+    setSelBox({ x: Math.min(sx, pos.x), y: Math.min(sy, pos.y), w, h })
   }
 
-  const handleStageMouseUp = () => {
+  const handlePointerUpStage = () => {
     if (!selStartRef.current) return
-    if (selBox && (selBox.w > 4 || selBox.h > 4)) {
+    if (selBox && (selBox.w > 5 || selBox.h > 5)) {
       const { x, y, w, h } = selBox
       const hit = elements
         .filter(el => el.x < x + w && el.x + el.width > x && el.y < y + h && el.y + el.height > y)
@@ -449,13 +442,22 @@ export default function FloorPlanEditor({
     setSelBox(null)
   }
 
-  // ── 속성 패널 표시 대상 ───────────────────────────────────
+  // ── 편집 모드 전환 ────────────────────────────────────────
+  const toggleEditMode = () => {
+    setEditMode(v => {
+      if (v) { setMultiSelectMode(false); setSelectedIds([]) }
+      return !v
+    })
+  }
+
   const singleSelected = selectedIds.length === 1
     ? elements.find(e => e.id === selectedIds[0]) ?? null
     : null
 
-  const btnBase = 'px-2.5 py-1.5 text-xs rounded-lg border transition-colors shrink-0'
-  const btnIdle = `${btnBase} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)]`
+  // ── 버튼 스타일 ───────────────────────────────────────────
+  const btn = 'px-3 py-2 text-xs rounded-lg border transition-colors shrink-0 min-h-[44px] flex items-center justify-center'
+  const btnIdle = `${btn} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)]`
+  const btnActive = `${btn} text-white border-transparent`
 
   return (
     <div className="flex flex-col h-full">
@@ -463,61 +465,84 @@ export default function FloorPlanEditor({
       {!viewOnly && (
         <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[var(--warm-border)] shrink-0 overflow-x-auto"
           style={{ background: 'var(--cream)' }}>
-          <button
-            onClick={() => { setEditMode(v => !v); setSelectedIds([]) }}
-            className={`${btnBase} font-medium ${editMode
-              ? 'bg-[var(--coral)] border-[var(--coral)] text-white'
-              : 'bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-mid)]'}`}>
+
+          {/* 편집 모드 토글 */}
+          <button onClick={toggleEditMode}
+            className={`${btnActive} ${editMode ? 'bg-[var(--coral)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'}`}>
             {editMode ? '편집 중' : '편집'}
           </button>
 
           {editMode && (
             <>
-              <div className="w-px h-4 bg-[var(--warm-border)] mx-0.5" />
-              <span className="text-[10px] text-[var(--warm-muted)] shrink-0">+ 추가:</span>
+              {/* 다중 선택 모드 (터치 기기용 Shift 대체) */}
+              <button
+                onClick={() => setMultiSelectMode(v => !v)}
+                className={`${btnActive} ${multiSelectMode
+                  ? 'bg-blue-500'
+                  : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'
+                }`}
+                title="다중 선택 모드 — 탭으로 여러 요소 선택 (터치 기기용)"
+              >
+                다중{multiSelectMode ? ' ✓' : ''}
+              </button>
+
+              <div className="w-px h-5 bg-[var(--warm-border)] mx-0.5 shrink-0" />
+              <span className="text-[10px] text-[var(--warm-muted)] shrink-0 hidden sm:inline">추가:</span>
+
               {PALETTE.map(type => (
                 <button key={type} onClick={() => addElement(type)} className={btnIdle}>
                   {TYPE_LABEL[type]}
                 </button>
               ))}
+
               {selectedIds.length > 0 && (
                 <>
-                  <div className="w-px h-4 bg-[var(--warm-border)] mx-0.5" />
+                  <div className="w-px h-5 bg-[var(--warm-border)] mx-0.5 shrink-0" />
                   <button onClick={deleteSelected}
-                    className={`${btnBase} bg-red-50 border-red-200 text-red-500 hover:bg-red-100`}>
+                    className={`${btn} bg-red-50 border border-red-200 text-red-500 hover:bg-red-100`}>
                     삭제 ({selectedIds.length})
                   </button>
                 </>
               )}
-              <div className="w-px h-4 bg-[var(--warm-border)] mx-0.5" />
+
+              <div className="w-px h-5 bg-[var(--warm-border)] mx-0.5 shrink-0" />
             </>
           )}
 
-          <label className="flex items-center gap-1 text-xs text-[var(--warm-mid)] cursor-pointer shrink-0 ml-auto">
+          <label className="flex items-center gap-1.5 text-xs text-[var(--warm-mid)] cursor-pointer shrink-0 ml-auto min-h-[44px]">
             <input type="checkbox" checked={showGrid} onChange={e => setShowGrid(e.target.checked)} className="accent-[var(--coral)]" />
             그리드
           </label>
 
           <button onClick={handleSave} disabled={saving}
-            className={`${btnBase} font-medium bg-[var(--ink)] border-[var(--ink)] text-[var(--canvas)] hover:opacity-80 disabled:opacity-50`}>
+            className={`${btnActive} bg-[var(--ink)] hover:opacity-80 disabled:opacity-50 border border-transparent`}>
             {saving ? '저장 중…' : '저장'}
           </button>
         </div>
       )}
 
       {/* ── 본문 ── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
         {/* 캔버스 */}
-        <div ref={containerRef} className="flex-1 overflow-auto" style={{ background: 'var(--cream-2, #f0ebe0)' }}>
+        <div
+          ref={containerRef}
+          className="flex-1 overflow-auto"
+          style={{
+            background: 'var(--cream-2, #f0ebe0)',
+            touchAction: editMode ? 'none' : 'auto',  // 편집 모드에서 터치 드래그 = 스크롤 충돌 방지
+          }}
+        >
           {mounted && (
             <div style={{ width: canvasWidth * scale, height: canvasHeight * scale }}>
               <Stage
                 width={canvasWidth * scale} height={canvasHeight * scale}
                 scaleX={scale} scaleY={scale}
-                onMouseDown={handleStageMouseDown}
-                onMouseMove={handleStageMouseMove}
-                onMouseUp={handleStageMouseUp}
-                onTouchEnd={() => { selStartRef.current = null; setSelBox(null) }}
+                onMouseDown={handlePointerDownStage}
+                onMouseMove={handlePointerMoveStage}
+                onMouseUp={handlePointerUpStage}
+                onTouchStart={handlePointerDownStage}
+                onTouchMove={handlePointerMoveStage}
+                onTouchEnd={handlePointerUpStage}
               >
                 <Layer>
                   <Rect width={canvasWidth} height={canvasHeight} fill="#faf6ef" listening={false} />
@@ -525,8 +550,7 @@ export default function FloorPlanEditor({
 
                   {elements.map(el => (
                     <PlanElement
-                      key={el.id}
-                      el={el}
+                      key={el.id} el={el}
                       isSelected={selectedIds.includes(el.id)}
                       editMode={editMode}
                       roomStatus={el.roomNo ? roomStatuses[el.roomNo] : undefined}
@@ -539,7 +563,6 @@ export default function FloorPlanEditor({
                     />
                   ))}
 
-                  {/* 단일 Transformer — 선택된 모든 노드 관리 */}
                   <Transformer
                     ref={trRef}
                     rotateEnabled
@@ -551,12 +574,10 @@ export default function FloorPlanEditor({
                     })}
                   />
 
-                  {/* 드래그 선택 박스 */}
                   {selBox && selBox.w > 0 && (
                     <Rect
                       x={selBox.x} y={selBox.y} width={selBox.w} height={selBox.h}
-                      fill="rgba(74,144,232,0.08)"
-                      stroke="#4a90e8" strokeWidth={1}
+                      fill="rgba(74,144,232,0.08)" stroke="#4a90e8" strokeWidth={1}
                       dash={[4, 3]} listening={false}
                     />
                   )}
@@ -566,32 +587,63 @@ export default function FloorPlanEditor({
           )}
         </div>
 
-        {/* 속성 패널 — 단일 선택 시만 */}
+        {/* ── 데스크탑 속성 패널 (md 이상) ── */}
         {editMode && singleSelected && (
-          <div className="w-48 shrink-0 border-l border-[var(--warm-border)] overflow-y-auto"
+          <div className="hidden md:block w-52 shrink-0 border-l border-[var(--warm-border)] overflow-y-auto"
             style={{ background: 'var(--cream)' }}>
             <PropertiesPanel
-              el={singleSelected}
-              rooms={rooms}
+              el={singleSelected} rooms={rooms}
               onChange={patch => updateElement(singleSelected.id, patch)}
-              onDelete={() => { deleteSelected() }}
+              onDelete={deleteSelected}
             />
           </div>
         )}
 
-        {/* 다중 선택 패널 */}
         {editMode && selectedIds.length > 1 && (
-          <div className="w-48 shrink-0 border-l border-[var(--warm-border)] p-3"
+          <div className="hidden md:flex md:flex-col w-52 shrink-0 border-l border-[var(--warm-border)] p-4 gap-3"
             style={{ background: 'var(--cream)' }}>
-            <p className="text-[11px] font-semibold text-[var(--warm-dark)] mb-2">{selectedIds.length}개 선택됨</p>
-            <p className="text-[10px] text-[var(--warm-muted)] mb-3">핸들로 함께 이동·크기 변경·회전</p>
+            <p className="text-xs font-semibold text-[var(--warm-dark)]">{selectedIds.length}개 선택됨</p>
+            <p className="text-[11px] text-[var(--warm-muted)]">핸들로 함께 이동·크기 변경·회전</p>
             <button onClick={deleteSelected}
-              className="w-full text-xs text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 rounded-lg py-1.5 transition-colors">
+              className="text-xs text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 rounded-lg py-2 transition-colors">
               선택 삭제
             </button>
           </div>
         )}
       </div>
+
+      {/* ── 모바일 하단 시트 (md 미만) ── */}
+      {editMode && singleSelected && (
+        <BottomSheet title={TYPE_LABEL[singleSelected.type]} onClose={() => setSelectedIds([])}>
+          <PropertiesPanel
+            el={singleSelected} rooms={rooms}
+            onChange={patch => updateElement(singleSelected.id, patch)}
+            onDelete={deleteSelected}
+          />
+        </BottomSheet>
+      )}
+
+      {editMode && selectedIds.length > 1 && (
+        <BottomSheet title={`${selectedIds.length}개 선택됨`} onClose={() => setSelectedIds([])}>
+          <div className="p-4 space-y-3">
+            <p className="text-xs text-[var(--warm-muted)]">핸들로 함께 이동·크기 변경·회전할 수 있습니다.</p>
+            <button onClick={deleteSelected}
+              className="w-full text-sm text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 rounded-xl py-3 transition-colors font-medium">
+              선택 삭제 ({selectedIds.length}개)
+            </button>
+          </div>
+        </BottomSheet>
+      )}
+
+      {/* 다중 선택 모드 안내 (모바일) */}
+      {editMode && multiSelectMode && selectedIds.length === 0 && (
+        <div className="md:hidden fixed bottom-4 inset-x-4 z-30 pointer-events-none">
+          <div className="rounded-xl px-4 py-2.5 text-xs text-center text-[var(--warm-dark)]"
+            style={{ background: 'rgba(250,246,239,0.95)', border: '1px solid var(--warm-border)' }}>
+            요소를 탭하여 선택하세요. 여러 개를 선택할 수 있습니다.
+          </div>
+        </div>
+      )}
     </div>
   )
 }
