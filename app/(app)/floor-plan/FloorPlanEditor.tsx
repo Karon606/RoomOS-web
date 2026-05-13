@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Stage, Layer, Rect, Text, Group, Transformer, Line, Circle } from 'react-konva'
+import { Stage, Layer, Rect, Text, Group, Transformer, Line, Circle, Image as KonvaImage } from 'react-konva'
 import {
   type FloorPlanData, type FloorPlanElement, type FloorData,
   type ElementType, saveFloorPlan, parseFloorPlanImage,
@@ -373,22 +373,25 @@ function AiImportModal({
 }: {
   canvasWidth: number
   canvasHeight: number
-  onConfirm: (elements: FloorPlanElement[]) => void
+  onConfirm: (elements: FloorPlanElement[], imgDataUrl: string) => void
   onCancel: () => void
 }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<FloorPlanElement[] | null>(null)
+  const [imgDataUrl, setImgDataUrl] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const handleFile = async (file: File) => {
     setPending(true); setError(''); setPreview(null)
-    const base64 = await new Promise<string>((resolve, reject) => {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
       const r = new FileReader()
-      r.onload = () => resolve((r.result as string).split(',')[1])
+      r.onload = () => resolve(r.result as string)
       r.onerror = reject
       r.readAsDataURL(file)
     })
+    setImgDataUrl(dataUrl)
+    const base64 = dataUrl.split(',')[1]
     const res = await parseFloorPlanImage(base64, file.type || 'image/jpeg', canvasWidth, canvasHeight)
     setPending(false)
     if (!res.ok) { setError(res.error); return }
@@ -429,7 +432,7 @@ function AiImportModal({
                 className="flex-1 py-2 text-xs border border-[var(--warm-border)] rounded-lg text-[var(--warm-muted)] hover:border-[var(--coral)] transition-colors">
                 다시 선택
               </button>
-              <button onClick={() => onConfirm(preview)}
+              <button onClick={() => onConfirm(preview!, imgDataUrl)}
                 className="flex-1 py-2 text-xs rounded-lg text-white font-medium"
                 style={{ background: 'var(--coral)' }}>
                 도면에 추가
@@ -503,6 +506,20 @@ export default function FloorPlanEditor({
 
   // ── AI 임포트 ─────────────────────────────────────────────
   const [aiImportOpen, setAiImportOpen]       = useState(false)
+
+  // ── 배경 도면 이미지 ──────────────────────────────────────
+  const [bgDataUrl, setBgDataUrl]             = useState<string>('')
+  const [bgImg, setBgImg]                     = useState<HTMLImageElement | null>(null)
+  const [showBg, setShowBg]                   = useState(true)
+  const bgDataUrlRef                          = useRef('')
+  const floorBgRef                            = useRef<Map<string, string>>(new Map())
+  useEffect(() => { bgDataUrlRef.current = bgDataUrl }, [bgDataUrl])
+  useEffect(() => {
+    if (!bgDataUrl) { setBgImg(null); return }
+    const img = new window.Image()
+    img.onload = () => setBgImg(img)
+    img.src = bgDataUrl
+  }, [bgDataUrl])
 
   // ── 히스토리 ─────────────────────────────────────────────
   const historyRef    = useRef<FloorPlanElement[][]>([[..._init.firstEls]])
@@ -582,9 +599,11 @@ export default function FloorPlanEditor({
   const switchFloor = useCallback((newId: string) => {
     setFloors(prev => prev) // no-op to flush
     floorElementsRef.current.set(activeFloorId, elementsRef.current)
+    floorBgRef.current.set(activeFloorId, bgDataUrlRef.current)
     const newEls = floorElementsRef.current.get(newId) ?? []
     setElements(newEls)
     setActiveFloorId(newId)
+    setBgDataUrl(floorBgRef.current.get(newId) ?? '')
     setSelectedIds([])
     setVertexEditId(null)
     setDrawingPolygon(null)
@@ -861,12 +880,13 @@ export default function FloorPlanEditor({
   }, [pushHistory])
 
   // ── AI 임포트 확인 ────────────────────────────────────────
-  const handleAiImportConfirm = useCallback((imported: FloorPlanElement[]) => {
+  const handleAiImportConfirm = useCallback((imported: FloorPlanElement[], imgDataUrl: string) => {
     setAiImportOpen(false)
     const newEls = [...elementsRef.current, ...imported]
     setElements(newEls)
     setSelectedIds(imported.map(e => e.id))
     pushHistory(newEls)
+    if (imgDataUrl) { setBgDataUrl(imgDataUrl); setShowBg(true) }
     pushToast('success', `${imported.length}개 요소를 추가했습니다`)
   }, [pushHistory])
 
@@ -1147,6 +1167,15 @@ export default function FloorPlanEditor({
               AI 인식
             </button>
 
+            {bgDataUrl && (<>
+              {divider}
+              <button onClick={() => setShowBg(v => !v)}
+                className={showBg ? `${btnOn()} bg-amber-500` : btnOff}
+                title="업로드한 도면 배경 이미지 표시/숨기기">
+                도면 배경
+              </button>
+            </>)}
+
             {selectedIds.length > 0 && (<>
               {divider}
               <button onClick={deleteSelected}
@@ -1215,6 +1244,15 @@ export default function FloorPlanEditor({
               >
                 <Layer>
                   <Rect width={canvasWidth} height={canvasHeight} fill="#faf6ef" listening={false} />
+                  {showBg && bgImg && (
+                    <KonvaImage
+                      image={bgImg}
+                      x={0} y={0}
+                      width={canvasWidth} height={canvasHeight}
+                      opacity={0.25}
+                      listening={false}
+                    />
+                  )}
                   {showGrid && <GridLines width={canvasWidth} height={canvasHeight} />}
 
                   {elements.map(el => (
