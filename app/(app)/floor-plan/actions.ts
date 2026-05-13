@@ -133,31 +133,29 @@ export async function parseFloorPlanImage(
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
 
-    const prompt = `이것은 건물 평면도(floor plan) 이미지입니다. 이미지에 보이는 각 공간을 하나의 요소로 인식하여 JSON 배열로 응답하세요.
+    const prompt = `이것은 건물 평면도(floor plan) 이미지입니다. 이미지에 보이는 각 공간 구역을 인식하여 JSON 배열로 응답하세요.
 
-중요 규칙:
+규칙:
 - 하나의 연속된 공간은 반드시 하나의 요소로만 출력 (절대 쪼개지 말 것)
-- 공간 유형은 색상·텍스트·형태를 종합해서 판단:
-  · 회색·밝은회색이고 여러 방을 연결하는 긴 통로 형태 → 반드시 "corridor"로 인식 (복도는 절대 빠뜨리지 말 것)
-  · 어두운회색·검정 → "stairs"
-  · 파란계열 → "bathroom" 또는 "kitchen"
-  · 주황·빨강 → "entrance"
-  · 분홍·보라 → "bathroom"
-  · 나머지 일반 공간 → "room"
-- 텍스트 레이블이 있으면 그대로 label에 사용
+- 공간 유형(type)은 이미지 안에 적힌 텍스트 레이블 또는 공간의 구조적 기능으로 판단
+  · 여러 방을 연결하는 통로 → "corridor"
+  · 계단 형태 → "stairs"
+  · 출입문 위치 → "entrance"
+  · 이미지에 텍스트가 있으면 그 텍스트를 우선
+  · 판단 불가능한 일반 공간 → "room"
+- label은 이미지 안의 텍스트 그대로 사용, 없으면 type명의 한국어(방/복도/계단실/출입구/주방/화장실)
 
 각 요소 스키마:
 {
   "type": "room"|"corridor"|"kitchen"|"bathroom"|"stairs"|"entrance"|"emergency_exit"|"window"|"label",
-  "label": "공간 이름 (텍스트가 없으면 type 기반으로: 방/복도/계단실/주방/화장실/출입구)",
-  "roomNo": "호실 번호 (type이 room이고 번호가 보일 때만)",
+  "label": "공간 이름",
+  "roomNo": "호실 번호 (있을 때만)",
   "points": [[x1,y1],[x2,y2],...]
 }
 
-좌표 규칙:
-- points는 공간의 실제 외곽선 꼭짓점 — L자·ㄷ자 등 비직사각형은 실제 형태 그대로
-- 직사각형이면 4개, 꺾임이 있으면 그만큼 추가
-- 좌표는 이미지 전체 기준 0.0~1.0 소수 (소수점 3자리), 좌상단=(0,0), 우하단=(1,1)
+좌표:
+- 공간의 실제 외곽선 꼭짓점, L자·ㄷ자 등 비직사각형은 꺾이는 모든 점 포함
+- 이미지 전체 기준 0.0~1.0 소수 (소수점 3자리), 좌상단=(0,0), 우하단=(1,1)
 - 평면도가 아닌 이미지면: [] 반환`
 
     const reqBody = JSON.stringify({
