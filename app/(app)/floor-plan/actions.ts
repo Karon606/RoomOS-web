@@ -142,10 +142,28 @@ export async function parseFloorPlanImage(
 
     const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
     let parsed: any[]
-    try { parsed = JSON.parse(cleaned) } catch {
-      return { ok: false, error: 'AI 응답을 JSON으로 해석하지 못했습니다.' }
+    try {
+      const j = JSON.parse(cleaned)
+      if (Array.isArray(j)) {
+        parsed = j
+      } else if (j && typeof j === 'object') {
+        // Gemini sometimes wraps the array: { elements: [...] } or { rooms: [...] }
+        const arrVal = Object.values(j).find(v => Array.isArray(v))
+        if (arrVal) { parsed = arrVal as any[] }
+        else return { ok: false, error: `AI 응답 형식 오류 (키: ${Object.keys(j).join(', ')})` }
+      } else {
+        return { ok: false, error: 'AI 응답을 해석할 수 없습니다.' }
+      }
+    } catch {
+      // Last resort: find a JSON array anywhere in the raw text
+      const m = cleaned.match(/\[[\s\S]*\]/)
+      if (m) {
+        try { parsed = JSON.parse(m[0]) }
+        catch { return { ok: false, error: `JSON 파싱 실패 — 응답: ${cleaned.slice(0, 120)}` } }
+      } else {
+        return { ok: false, error: `JSON 파싱 실패 — 응답: ${cleaned.slice(0, 120)}` }
+      }
     }
-    if (!Array.isArray(parsed)) return { ok: false, error: 'AI 응답이 배열 형식이 아닙니다.' }
 
     const validTypes = new Set<string>(['room','corridor','kitchen','bathroom','stairs','entrance','emergency_exit','window','label'])
 
