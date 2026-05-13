@@ -150,41 +150,44 @@ export async function parseFloorPlanImage(
 - 좌표는 이미지 전체 크기 기준 0.0~1.0 소수 (소수점 3자리), 좌상단=(0,0), 우하단=(1,1)
 - 평면도가 아닌 이미지면: [] 반환`
 
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [
-            { text: prompt },
-            { inline_data: { mime_type: mimeType || 'image/jpeg', data: base64 } },
-          ]}],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 65536,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: 'ARRAY',
-              items: {
-                type: 'OBJECT',
-                properties: {
-                  type: { type: 'STRING' },
-                  label: { type: 'STRING' },
-                  roomNo: { type: 'STRING' },
-                  points: { type: 'ARRAY', items: { type: 'ARRAY', items: { type: 'NUMBER' } } },
-                },
-                required: ['type', 'points'],
-              },
+    const reqBody = JSON.stringify({
+      contents: [{ parts: [
+        { text: prompt },
+        { inline_data: { mime_type: mimeType || 'image/jpeg', data: base64 } },
+      ]}],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 65536,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              type: { type: 'STRING' },
+              label: { type: 'STRING' },
+              roomNo: { type: 'STRING' },
+              points: { type: 'ARRAY', items: { type: 'ARRAY', items: { type: 'NUMBER' } } },
             },
+            required: ['type', 'points'],
           },
-        }),
-      }
-    )
+        },
+      },
+    })
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
+    const fetchOpts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: reqBody }
+
+    let res = await fetch(geminiUrl, fetchOpts)
+    // 503/429는 일시적 과부하 — 3초 후 1회 재시도
+    if (res.status === 503 || res.status === 429) {
+      await new Promise(r => setTimeout(r, 3000))
+      res = await fetch(geminiUrl, fetchOpts)
+    }
 
     if (!res.ok) {
       const errTxt = await res.text()
-      return { ok: false, error: `Gemini API 오류 (${res.status}): ${errTxt.slice(0, 200)}` }
+      const hint = res.status === 503 ? ' (서버 과부하 — 잠시 후 다시 시도해 주세요)' : ''
+      return { ok: false, error: `Gemini API 오류 (${res.status})${hint}: ${errTxt.slice(0, 200)}` }
     }
     const json = await res.json()
     const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
