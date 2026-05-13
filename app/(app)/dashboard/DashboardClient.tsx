@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
+import { Loading } from '@/components/ui/Loading'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { getTrendData, type TrendRange, type TrendPoint } from './actions'
 import {
@@ -1739,7 +1740,7 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
         </div>
 
         {loading ? (
-          <div className="px-5 py-8 text-center text-sm text-[var(--warm-muted)]">불러오는 중…</div>
+          <Loading />
         ) : !info ? (
           <div className="px-5 py-8 text-center text-sm text-[var(--warm-muted)]">입주자 정보를 찾을 수 없습니다.</div>
         ) : (

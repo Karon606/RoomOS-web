@@ -19,6 +19,7 @@ import {
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { Btn } from '@/components/ui/Btn'
+import { Loading } from '@/components/ui/Loading'
 import { chartColor } from '@/lib/chartColors'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -2822,7 +2823,7 @@ export default function FinanceClient({
 
             {/* 목록 */}
             {recMgmtLoading ? (
-              <p className="text-xs text-[var(--warm-muted)] text-center py-4">불러오는 중...</p>
+              <Loading py={4} />
             ) : recMgmtList.length === 0 && !showRecMgmtForm ? (
               <p className="text-sm text-[var(--warm-muted)] text-center py-3">등록된 고정 지출이 없습니다.</p>
             ) : (

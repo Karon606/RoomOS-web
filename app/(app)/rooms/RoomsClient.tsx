@@ -8,6 +8,7 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { Loading } from '@/components/ui/Loading'
 import { formatPhone } from '@/lib/formatPhone'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
@@ -1858,7 +1859,7 @@ function TenantInfoModal({ tenantId, onClose, onBack }: { tenantId: string; onCl
         </div>
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
           {!info ? (
-            <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
+            <Loading />
           ) : (
             <>
               <div className="space-y-2">
@@ -1953,7 +1954,7 @@ function RoomInfoModal({ roomId, onClose, onBack }: { roomId: string; onClose: (
         </div>
         <div className="overflow-y-auto flex-1">
           {!info ? (
-            <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
+            <Loading />
           ) : (
             <>
               {info.photos.length > 0 && (

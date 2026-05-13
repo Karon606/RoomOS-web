@@ -9,6 +9,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { Loading } from '@/components/ui/Loading'
 import { Modal as SharedModal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { useUrlState } from '@/lib/useUrlState'
@@ -1654,7 +1655,7 @@ function RoomMgrTenantInfoModal({ tenantId, onClose, onBack }: { tenantId: strin
         </div>
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
           {!info ? (
-            <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
+            <Loading />
           ) : (
             <>
               <div className="space-y-2">
@@ -1751,7 +1752,7 @@ function RoomMgrSettlementInfoModal({
         </div>
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
           {!info ? (
-            <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
+            <Loading />
           ) : (
             <>
               <p className="text-[10px] text-[var(--warm-muted)]">총 수납·잔액·이월액은 입금일 기준입니다. 매출은 귀속 월로 별도 인식됩니다.</p>

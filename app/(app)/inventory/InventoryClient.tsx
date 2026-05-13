@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { Loading } from '@/components/ui/Loading'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -445,7 +446,7 @@ function DetailModal({ row, onClose, onChange }: {
       ) : undefined}
     >
       {!data ? (
-        <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
+        <Loading />
       ) : mode === 'check' ? (
         <CheckForm item={data.item} lastCheckBreakdown={row.lastCheckLocationBreakdown} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : mode === 'addition' ? (
@@ -1473,7 +1474,7 @@ function ExcludedItemsModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal open onClose={onClose} title="제외 항목 복구" subtitle="삭제·병합으로 재고 추적에서 제외된 품목을 다시 활성화합니다." width="sm">
       {loading ? (
-        <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중...</p>
+        <Loading />
       ) : items.length === 0 ? (
         <p className="text-sm text-[var(--warm-muted)] text-center py-8">제외된 품목이 없습니다.</p>
       ) : (
