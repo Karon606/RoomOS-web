@@ -127,7 +127,24 @@ export async function parseFloorPlanImage(
             { text: prompt },
             { inline_data: { mime_type: mimeType || 'image/jpeg', data: base64 } },
           ]}],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 8192, responseMimeType: 'application/json' },
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 8192,
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: 'ARRAY',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  type: { type: 'STRING' },
+                  label: { type: 'STRING' },
+                  roomNo: { type: 'STRING' },
+                  points: { type: 'ARRAY', items: { type: 'ARRAY', items: { type: 'NUMBER' } } },
+                },
+                required: ['type', 'points'],
+              },
+            },
+          },
         }),
       }
     )
