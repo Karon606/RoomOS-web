@@ -101,7 +101,7 @@ export async function parseFloorPlanImage(
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
 
-    const prompt = `이것은 건물 평면도(floor plan) 이미지입니다. 이미지에서 방, 복도, 계단, 주방, 화장실, 출입구 등 모든 공간 요소를 감지하여 JSON 배열로만 응답하세요. 다른 설명, 마크다운, 코드블록 없이 순수 JSON만 출력하세요.
+    const prompt = `이것은 건물 평면도(floor plan) 이미지입니다. 이미지에서 방, 복도, 계단, 주방, 화장실, 출입구 등 모든 공간 요소를 감지하여 JSON 배열로만 응답하세요.
 
 각 요소 스키마:
 {
@@ -112,9 +112,10 @@ export async function parseFloorPlanImage(
 }
 
 좌표 규칙:
-- points는 각 공간의 실제 경계를 나타내는 다각형 꼭짓점 (최소 3개)
-- 직사각형 공간은 4개, 비정형 공간은 더 많이
-- 좌표는 이미지 전체 크기 기준 0.0~1.0 사이 소수 (소수점 3자리), 좌상단=(0,0), 우하단=(1,1)
+- points는 각 공간의 실제 벽 경계를 정확히 따르는 다각형 꼭짓점
+- 절대로 외접 bounding box(직사각형 근사)로 단순화하지 말 것 — 실제 벽선의 모든 꺾임점을 꼭짓점으로 추가
+- L자·ㄷ자·사다리꼴·복잡한 형태 모두 실제 윤곽 그대로 표현
+- 좌표는 이미지 전체 크기 기준 0.0~1.0 소수 (소수점 3자리), 좌상단=(0,0), 우하단=(1,1)
 - 평면도가 아닌 이미지면: [] 반환`
 
     const res = await fetch(

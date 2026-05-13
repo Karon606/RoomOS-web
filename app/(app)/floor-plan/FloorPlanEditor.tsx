@@ -586,14 +586,14 @@ export default function FloorPlanEditor({
 
   useEffect(() => {
     if (!trRef.current || !mounted) return
-    if (transformMode) {
+    if (transformMode && !vertexEditId) {
       const nodes = selectedIds.map(id => nodeRefs.current.get(id)).filter(Boolean)
       trRef.current.nodes(nodes)
     } else {
       trRef.current.nodes([])
     }
     trRef.current.getLayer()?.batchDraw()
-  }, [selectedIds, mounted, transformMode])
+  }, [selectedIds, mounted, transformMode, vertexEditId])
 
   // ── 층 전환 ──────────────────────────────────────────────
   const switchFloor = useCallback((newId: string) => {
@@ -955,6 +955,14 @@ export default function FloorPlanEditor({
   const handleVertexDragEnd = useCallback(() => {
     pushHistory(elementsRef.current)
   }, [pushHistory])
+
+  const toggleVertexEdit = useCallback((id: string) => {
+    setVertexEditId(prev => {
+      if (prev === id) return null
+      setTransformMode(false) // Transformer와 정점 핸들이 겹치지 않도록
+      return id
+    })
+  }, [])
 
   // ── Stage 이벤트 ──────────────────────────────────────────
   const getCanvasPos = (stage: any) => {
@@ -1344,7 +1352,7 @@ export default function FloorPlanEditor({
               onChange={patch => updateElement(singleSelected.id, patch)}
               onDelete={deleteSelected}
               onCommit={commitHistory}
-              onToggleVertexEdit={() => setVertexEditId(v => v === singleSelected.id ? null : singleSelected.id)}
+              onToggleVertexEdit={() => toggleVertexEdit(singleSelected.id)}
               isVertexEditing={vertexEditId === singleSelected.id}
             />
           </div>
@@ -1384,7 +1392,7 @@ export default function FloorPlanEditor({
             onChange={patch => updateElement(singleSelected.id, patch)}
             onDelete={deleteSelected}
             onCommit={commitHistory}
-            onToggleVertexEdit={() => setVertexEditId(v => v === singleSelected.id ? null : singleSelected.id)}
+            onToggleVertexEdit={() => toggleVertexEdit(singleSelected.id)}
             isVertexEditing={vertexEditId === singleSelected.id}
           />
         </BottomSheet>
