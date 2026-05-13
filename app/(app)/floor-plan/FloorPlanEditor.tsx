@@ -456,6 +456,10 @@ export default function FloorPlanEditor({
     setElements(newEls); setSelectedIds([]); pushHistory(newEls)
   }, [pushHistory])
 
+  const clearAll = useCallback(() => {
+    setElements([]); setSelectedIds([]); pushHistory([])
+  }, [pushHistory])
+
   // ── 복사/붙여넣기 ─────────────────────────────────────────
   const copySelected = useCallback(() => {
     const toCopy = elementsRef.current.filter(e => selectedIdsRef.current.includes(e.id))
@@ -587,6 +591,14 @@ export default function FloorPlanEditor({
               className={`${btnGray} disabled:opacity-30`} title="복사 (Ctrl+C)">복사</button>
             <button onClick={pasteClipboard} disabled={clipboard.length === 0}
               className={`${btnGray} disabled:opacity-30`} title="붙여넣기 (Ctrl+V)">붙여넣기</button>
+
+            {elements.length > 0 && (
+              <button onClick={clearAll}
+                className={`${btn} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-red-300 hover:text-red-400`}
+                title="전체 지우기 (↩ 되돌리기로 복구 가능)">
+                전체 지우기
+              </button>
+            )}
 
             {divider}
 
