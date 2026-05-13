@@ -372,8 +372,17 @@ export default function FloorPlanEditor({
     draggingGroup.current = ids
     dragStartPositions.current.clear()
     ids.forEach(sid => {
-      const node = nodeRefs.current.get(sid)
-      if (node) dragStartPositions.current.set(sid, { x: node.x(), y: node.y() })
+      // React state를 source of truth로 사용 — transform 후 node.x()가 발산하는 것 방지
+      const elData = elementsRef.current.find(e => e.id === sid)
+      if (elData) {
+        dragStartPositions.current.set(sid, { x: elData.x, y: elData.y })
+        // Konva 노드도 React state에 맞게 동기화
+        const node = nodeRefs.current.get(sid)
+        if (node) { node.x(elData.x); node.y(elData.y) }
+      } else {
+        const node = nodeRefs.current.get(sid)
+        if (node) dragStartPositions.current.set(sid, { x: Math.round(node.x()), y: Math.round(node.y()) })
+      }
     })
     if (!selectedIdsRef.current.includes(id)) setSelectedIds([id])
   }, [])
@@ -414,17 +423,24 @@ export default function FloorPlanEditor({
       const node = nodeRefs.current.get(el.id)
       if (!node) return el
       const scaleX = node.scaleX(), scaleY = node.scaleY()
-      node.scaleX(1); node.scaleY(1)
-      return {
-        ...el,
-        x: Math.round(node.x()), y: Math.round(node.y()),
-        width:    Math.round(Math.max(20, el.width  * scaleX)),
-        height:   Math.round(Math.max(20, el.height * scaleY)),
-        rotation: Math.round(node.rotation()),
-      }
+      const newX   = Math.round(node.x())
+      const newY   = Math.round(node.y())
+      const newRot = Math.round(node.rotation())
+      const newW   = Math.round(Math.max(20, el.width  * scaleX))
+      const newH   = Math.round(Math.max(20, el.height * scaleY))
+      // scale·offset·skew 잔류값 전부 초기화 — 이후 drag 시 위치 발산 방지
+      node.setAttrs({ x: newX, y: newY, scaleX: 1, scaleY: 1, rotation: newRot, offsetX: 0, offsetY: 0, skewX: 0, skewY: 0 })
+      return { ...el, x: newX, y: newY, width: newW, height: newH, rotation: newRot }
     })
     setElements(newEls)
     pushHistory(newEls)
+    // React 재렌더 후 Transformer 바운딩박스 재계산
+    requestAnimationFrame(() => {
+      if (!trRef.current) return
+      const nodes = selectedIdsRef.current.map(id => nodeRefs.current.get(id)).filter(Boolean)
+      trRef.current.nodes(nodes)
+      trRef.current.getLayer()?.batchDraw()
+    })
   }, [pushHistory])
 
   // ── 요소 추가 ────────────────────────────────────────────
