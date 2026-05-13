@@ -44,6 +44,7 @@ export type FloorData = {
 
 export type FloorPlanData = {
   floors: FloorData[]
+  showOnDashboard?: boolean
 }
 
 function _genId() { return Math.random().toString(36).slice(2, 10) }
@@ -73,6 +74,26 @@ export async function getFloorPlan(): Promise<FloorPlanData | null> {
   })
   if (!prop?.floorPlanData) return null
   return migrateToMultiFloor(prop.floorPlanData)
+}
+
+export async function setFloorPlanDashboardVisibility(show: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const propertyId = await getPropertyId()
+    const prop = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { floorPlanData: true },
+    })
+    const current = migrateToMultiFloor(prop?.floorPlanData ?? null)
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { floorPlanData: { ...current, showOnDashboard: show } as object },
+    })
+    revalidatePath('/dashboard')
+    revalidatePath('/floor-plan')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: String(e) }
+  }
 }
 
 export async function saveFloorPlan(data: FloorPlanData): Promise<{ ok: true } | { ok: false; error: string }> {

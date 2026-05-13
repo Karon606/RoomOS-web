@@ -1357,8 +1357,8 @@ export default async function DashboardPage({
         </Suspense>
       </div>
 
-      {/* ── 평면 배치도 (도면이 있을 때만 표시) ──────────────── */}
-      {floorPlanData && (() => {
+      {/* ── 평면 배치도 (도면 페이지에서 켠 경우에만 표시) ─── */}
+      {floorPlanData?.showOnDashboard && (() => {
         const rooms = dashboardData.rooms.map(r => ({ id: r.roomNo, roomNo: r.roomNo }))
         const roomStatuses: Record<string, { isVacant: boolean; tenantName?: string }> = {}
         dashboardData.rooms.forEach(r => {

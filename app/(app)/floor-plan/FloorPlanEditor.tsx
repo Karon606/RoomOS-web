@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { Stage, Layer, Rect, Text, Group, Transformer, Line, Circle, Image as KonvaImage } from 'react-konva'
 import {
   type FloorPlanData, type FloorPlanElement, type FloorData,
-  type ElementType, saveFloorPlan, parseFloorPlanImage,
+  type ElementType, saveFloorPlan, parseFloorPlanImage, setFloorPlanDashboardVisibility,
 } from './actions'
 import { pushToast } from '@/lib/saveStatus'
 
@@ -523,6 +523,16 @@ export default function FloorPlanEditor({
 
   // ── AI 임포트 ─────────────────────────────────────────────
   const [aiImportOpen, setAiImportOpen]       = useState(false)
+
+  // ── 대시보드 표시 토글 ────────────────────────────────────
+  const [showOnDashboard, setShowOnDashboard] = useState(initialData?.showOnDashboard ?? false)
+  const [dashToggling, setDashToggling]       = useState(false)
+  const handleDashboardToggle = useCallback(async (val: boolean) => {
+    setShowOnDashboard(val)
+    setDashToggling(true)
+    await setFloorPlanDashboardVisibility(val)
+    setDashToggling(false)
+  }, [])
 
   // ── 배경 도면 이미지 ──────────────────────────────────────
   const [bgDataUrl, setBgDataUrl]             = useState<string>('')
@@ -1215,6 +1225,23 @@ export default function FloorPlanEditor({
           <label className="flex items-center gap-1.5 text-xs text-[var(--warm-mid)] cursor-pointer shrink-0 ml-auto min-h-[44px]">
             <input type="checkbox" checked={showGrid} onChange={e => setShowGrid(e.target.checked)} className="accent-[var(--coral)]" />
             그리드
+          </label>
+
+          {/* 대시보드 표시 토글 */}
+          <label className={`flex items-center gap-1.5 text-xs cursor-pointer shrink-0 min-h-[44px] ${dashToggling ? 'opacity-50' : ''}`}
+            style={{ color: showOnDashboard ? 'var(--coral)' : 'var(--warm-muted)' }}>
+            <span className="whitespace-nowrap">대시보드 표시</span>
+            <div className="relative inline-flex items-center">
+              <input
+                type="checkbox"
+                className="sr-only"
+                checked={showOnDashboard}
+                disabled={dashToggling}
+                onChange={e => handleDashboardToggle(e.target.checked)}
+              />
+              <div className={`w-8 h-4 rounded-full transition-colors duration-200 ${showOnDashboard ? 'bg-[var(--coral)]' : 'bg-[var(--warm-border)]'}`} />
+              <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform duration-200 ${showOnDashboard ? 'translate-x-4' : 'translate-x-0'}`} />
+            </div>
           </label>
 
           <button onClick={handleSave} disabled={saving}
