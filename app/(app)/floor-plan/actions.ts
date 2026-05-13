@@ -90,6 +90,38 @@ export async function saveFloorPlan(data: FloorPlanData): Promise<{ ok: true } |
   }
 }
 
+// 잘린 JSON 텍스트에서 완성된 JSON 객체만 추출 (괄호 카운팅)
+function extractCompleteObjects(text: string): any[] {
+  const objs: any[] = []
+  let i = 0
+  while (i < text.length) {
+    const start = text.indexOf('{', i)
+    if (start === -1) break
+    let depth = 0
+    let inStr = false
+    let esc = false
+    let j = start
+    for (; j < text.length; j++) {
+      const c = text[j]
+      if (esc) { esc = false; continue }
+      if (c === '\\' && inStr) { esc = true; continue }
+      if (c === '"') { inStr = !inStr; continue }
+      if (!inStr) {
+        if (c === '{') depth++
+        else if (c === '}') {
+          if (--depth === 0) {
+            try { objs.push(JSON.parse(text.slice(start, j + 1))) } catch { /* malformed */ }
+            break
+          }
+        }
+      }
+    }
+    if (depth > 0) break // 잘린 객체 — 이후 복구 불가
+    i = j + 1
+  }
+  return objs
+}
+
 export async function parseFloorPlanImage(
   base64: string,
   mimeType: string,
@@ -130,7 +162,7 @@ export async function parseFloorPlanImage(
           ]}],
           generationConfig: {
             temperature: 0.1,
-            maxOutputTokens: 32768,
+            maxOutputTokens: 65536,
             responseMimeType: 'application/json',
             responseSchema: {
               type: 'ARRAY',
@@ -195,11 +227,16 @@ export async function parseFloorPlanImage(
         if (s.startsWith('[')) {
           const lastBoundary = Math.max(s.lastIndexOf('},'), s.lastIndexOf('}]'))
           if (lastBoundary > 0) {
-            try { recovered = JSON.parse(s.slice(0, lastBoundary + 1) + ']') } catch { /* give up */ }
+            try { recovered = JSON.parse(s.slice(0, lastBoundary + 1) + ']') } catch { /* fall through */ }
           }
         }
       }
-      if (!recovered) return { ok: false, error: `JSON 파싱 실패 — 응답: ${cleaned.slice(0, 120)}` }
+      // 괄호 카운팅으로 완성된 객체 개별 추출 (첫 요소가 잘린 경우에도 동작)
+      if (!recovered) {
+        const objs = extractCompleteObjects(cleaned)
+        if (objs.length > 0) recovered = objs
+      }
+      if (!recovered) return { ok: false, error: `JSON 파싱 실패 (${cleaned.length}자) — 응답: ${cleaned.slice(0, 120)}` }
       parsed = recovered
     }
 
