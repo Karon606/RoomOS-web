@@ -377,10 +377,17 @@ function AiImportModal({
   onCancel: () => void
 }) {
   const [pending, setPending] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<FloorPlanElement[] | null>(null)
   const [imgDataUrl, setImgDataUrl] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!pending) { setElapsed(0); return }
+    const t = setInterval(() => setElapsed(s => s + 1), 1000)
+    return () => clearInterval(t)
+  }, [pending])
 
   const handleFile = async (file: File) => {
     setPending(true); setError(''); setPreview(null)
@@ -408,10 +415,20 @@ function AiImportModal({
         </p>
         {!preview ? (
           <>
-            <button onClick={() => fileRef.current?.click()} disabled={pending}
-              className="w-full py-10 border-2 border-dashed border-[var(--warm-border)] rounded-xl text-xs text-[var(--warm-muted)] hover:border-[var(--coral)] transition-colors disabled:opacity-50">
-              {pending ? 'AI 분석 중…' : '이미지 선택 (JPG, PNG)'}
-            </button>
+            {pending ? (
+              <div className="w-full py-8 flex flex-col items-center gap-3 border-2 border-dashed border-[var(--warm-border)] rounded-xl">
+                <div className="w-7 h-7 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
+                <p className="text-xs font-medium text-[var(--warm-dark)]">AI 분석 중… {elapsed}초</p>
+                <p className="text-[11px] text-[var(--warm-muted)] text-center px-4">
+                  {elapsed < 10 ? '이미지를 전송하고 있습니다' : elapsed < 25 ? '공간 요소를 인식하고 있습니다' : '좌표를 계산하고 있습니다 — 거의 다 됐어요'}
+                </p>
+              </div>
+            ) : (
+              <button onClick={() => fileRef.current?.click()}
+                className="w-full py-10 border-2 border-dashed border-[var(--warm-border)] rounded-xl text-xs text-[var(--warm-muted)] hover:border-[var(--coral)] transition-colors">
+                이미지 선택 (JPG, PNG)
+              </button>
+            )}
             <input ref={fileRef} type="file" accept="image/*" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }} />
             {error && <p className="text-xs text-red-500">{error}</p>}
