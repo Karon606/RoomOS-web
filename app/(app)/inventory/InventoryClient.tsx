@@ -18,6 +18,8 @@ import {
   createTrackedItem,
   updateTrackedItem,
   archiveTrackedItem,
+  getArchivedTrackedItems,
+  unarchiveTrackedItem,
   mergeTrackedItems,
   createStockCheck,
   createStockAddition,
@@ -67,8 +69,9 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
   const [error, setError]                 = useState('')
   const [selectMode, setSelectMode]       = useState(false)
   const [selected, setSelected]           = useState<Set<string>>(new Set())
-  const [showBatchLoc, setShowBatchLoc]   = useState(false)
+  const [showBatchLoc, setShowBatchLoc]     = useState(false)
   const [showBatchCheck, setShowBatchCheck] = useState(false)
+  const [showExcluded, setShowExcluded]     = useState(false)
 
   const toggleSelect = (id: string) => setSelected(prev => {
     const next = new Set(prev)
@@ -119,6 +122,7 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
           </Btn>
           <Btn variant="secondary" size="sm" onClick={() => setShowBatchCheck(true)}>위치별 점검</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setShowLocations(true)}>위치 관리</Btn>
+          <Btn variant="secondary" size="sm" onClick={() => setShowExcluded(true)}>제외 항목 복구</Btn>
           <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
           <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
         </div>
@@ -154,6 +158,7 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
         ))
       )}
 
+      {showExcluded  && <ExcludedItemsModal onClose={() => { setShowExcluded(false); router.refresh() }} />}
       {showLocations && <LocationSettingsModal onClose={() => { setShowLocations(false); router.refresh() }} />}
       {showBatchCheck && <LocationBatchCheckModal rows={rows} onClose={() => setShowBatchCheck(false)} onDone={() => { setShowBatchCheck(false); router.refresh() }} />}
       {showAdd && <AddItemModal onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); router.refresh() }} />}
@@ -1441,6 +1446,56 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
         </div>
       </div>
     </div>
+  )
+}
+
+// ── 제외 항목 복구 모달 ─────────────────────────────────────
+// 병합·삭제로 재고 추적에서 빠진 품목을 다시 활성화합니다.
+function ExcludedItemsModal({ onClose }: { onClose: () => void }) {
+  type ArchivedItem = { id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; expenseCount: number }
+  const [items, setItems]   = useState<ArchivedItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [pending, startTransition] = useTransition()
+
+  useEffect(() => {
+    getArchivedTrackedItems().then(data => { setItems(data); setLoading(false) })
+  }, [])
+
+  const handleRestore = (id: string) => {
+    startTransition(async () => {
+      const res = await unarchiveTrackedItem(id)
+      if (!res.ok) { pushToast('error', res.error); return }
+      setItems(prev => prev.filter(i => i.id !== id))
+      pushToast('success', '품목이 복구되었습니다.')
+    })
+  }
+
+  return (
+    <Modal open onClose={onClose} title="제외 항목 복구" subtitle="삭제·병합으로 재고 추적에서 제외된 품목을 다시 활성화합니다." width="sm">
+      {loading ? (
+        <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중...</p>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-[var(--warm-muted)] text-center py-8">제외된 품목이 없습니다.</p>
+      ) : (
+        <div className="space-y-2 max-h-96 overflow-y-auto">
+          {items.map(it => (
+            <div key={it.id} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)]">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{it.label}</p>
+                <p className="text-[11px] text-[var(--warm-muted)]">
+                  {it.category}{it.specUnit ? ` · ${it.specUnit}` : ''}{it.qtyUnit ? ` · ${it.qtyUnit}` : ''}
+                  {it.expenseCount > 0 && <span className="ml-1">· 관련 지출 {it.expenseCount}건</span>}
+                </p>
+              </div>
+              <Btn variant="secondary" size="sm" onClick={() => handleRestore(it.id)} disabled={pending}>복구</Btn>
+            </div>
+          ))}
+        </div>
+      )}
+      <ModalFooterActions>
+        <Btn variant="secondary" onClick={onClose}>닫기</Btn>
+      </ModalFooterActions>
+    </Modal>
   )
 }
 

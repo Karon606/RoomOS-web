@@ -18,40 +18,28 @@ async function getPropertyId() {
   return propertyId
 }
 
-// ── 카테고리·라벨 매칭으로 그 기간의 구매량 합계
+// ── 카테고리·라벨 매칭으로 구매량 합계
 // useSpecBase=true 면 qtyValue × specValue (kg, 매 같은 규격 단위) 로 환산
 //
-// fromCreatedAt 제공 시: from 날짜와 동일한 날에는 createdAt > fromCreatedAt 인 것만 포함.
-// → "점검 직후 같은 날 구매"를 currentStock 계산에 반영하기 위함.
-// → 소모량(consumption) 계산처럼 from~to 순수 기간만 볼 때는 fromCreatedAt 생략.
+// 재고 반입 시점은 구매일(date)이 아닌 승인일(receivedAt)을 기준으로 한다.
+// → 구매는 과거에 했어도 승인(수령 확인)한 날짜가 실질적 재고 증가 시점이기 때문.
+// → afterReceivedAt: 이 시점 이후에 승인된 구매만 (gt). beforeReceivedAt: 이 시점 이전 (lte).
 async function sumPurchases(
   propertyId: string, category: string, label: string, qtyUnit: string | null,
-  from: Date | null, to: Date | null, useSpecBase: boolean,
-  fromCreatedAt?: Date | null,
+  afterReceivedAt: Date | null,
+  beforeReceivedAt: Date | null,
+  useSpecBase: boolean,
 ): Promise<number> {
   const conditions: any[] = [
     { propertyId },
     { category },
     { itemLabel: label },
-    { receivedAt: { not: null } },  // 수령 확인된 구매만 재고에 반영
+    { receivedAt: { not: null } },
     { excludeFromInventory: false },
     ...(qtyUnit ? [{ qtyUnit }] : []),
-    ...(to ? [{ date: { lte: to } }] : []),
+    ...(afterReceivedAt  ? [{ receivedAt: { gt:  afterReceivedAt  } }] : []),
+    ...(beforeReceivedAt ? [{ receivedAt: { lte: beforeReceivedAt } }] : []),
   ]
-
-  if (from != null) {
-    if (fromCreatedAt != null) {
-      // 같은 날 점검 이후 기록된 구매도 포함 (date 동일 + createdAt 이후)
-      conditions.push({
-        OR: [
-          { date: { gt: from } },
-          { AND: [{ date: { equals: from } }, { createdAt: { gt: fromCreatedAt } }] },
-        ],
-      })
-    } else {
-      conditions.push({ date: { gt: from } })
-    }
-  }
 
   const where = { AND: conditions }
 
@@ -147,8 +135,9 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
 
     let currentStock: number | null = null
     if (last) {
-      // fromCreatedAt 전달 → 점검과 같은 날이라도 점검 이후 기록된 구매·입수 반영
-      const incomingPurchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, last.date, today, useSpec, last.createdAt)
+      // 승인일(receivedAt) 기준: 점검 기록이 생성된 이후 승인된 구매만 반영
+      // → 구매일이 과거여도 승인 전에 실사한 재고 수량이 currentStock에 포함되지 않도록 방지
+      const incomingPurchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, last.createdAt, null, useSpec)
       const incomingAdditions = await sumAdditions(it.id, last.date, today, last.createdAt)
       currentStock = last.remainingQty + incomingPurchases + incomingAdditions
     }
@@ -156,14 +145,37 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
     let lastPeriodConsumption: number | null = null
     let lastPeriodDays: number | null = null
     if (last && prev) {
-      // 소모량 계산: prev~last 기간 구매량. fromCreatedAt 없이 date.gt 사용 (기간 기준)
-      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, prev.date, last.date, useSpec)
+      // 소모량: prevCheck 기록 후~lastCheck 기록 시점 사이에 승인된 구매만
+      // → 이 구간 밖에서 승인된 구매가 소모량 계산을 왜곡하지 않도록
+      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, prev.createdAt, last.createdAt, useSpec)
       const additions = await sumAdditions(it.id, prev.date, last.date)
       lastPeriodConsumption = (prev.remainingQty + purchases + additions) - last.remainingQty
       lastPeriodDays = Math.max(1, Math.round((last.date.getTime() - prev.date.getTime()) / 86400000))
+    } else if (last && !prev) {
+      // 점검 1회만 있는 경우: 최초 승인 구매일을 기준점으로 소모량 추정
+      const firstPurchase = await prisma.expense.findFirst({
+        where: {
+          propertyId, category: it.category, itemLabel: it.label,
+          ...(it.qtyUnit ? { qtyUnit: it.qtyUnit } : {}),
+          receivedAt: { not: null, lte: last.createdAt },
+          excludeFromInventory: false, qtyValue: { gt: 0 },
+        },
+        orderBy: { receivedAt: 'asc' },
+        select: { receivedAt: true },
+      })
+      if (firstPurchase?.receivedAt) {
+        // 최초 구매 승인 ~ 실사 사이의 총 입수량
+        const totalPurchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, null, last.createdAt, useSpec)
+        const totalAdditions = await sumAdditions(it.id, null, last.date)
+        const consumed = totalPurchases + totalAdditions - last.remainingQty
+        const days = Math.max(1, Math.round((last.date.getTime() - firstPurchase.receivedAt.getTime()) / 86400000))
+        if (consumed > 0) {
+          lastPeriodConsumption = consumed
+          lastPeriodDays = days
+        }
+      }
     }
 
-    // 최근 90일 평균: 점검 두 개 이상이면 그 사이 소모량 / 일수
     let avgDaily: number | null = null
     if (lastPeriodConsumption != null && lastPeriodDays && lastPeriodDays > 0 && lastPeriodConsumption > 0) {
       avgDaily = lastPeriodConsumption / lastPeriodDays
@@ -613,6 +625,40 @@ export async function archiveTrackedItem(id: string): Promise<{ ok: true } | { o
     const it = await prisma.trackedItem.findFirst({ where: { id, propertyId } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     await prisma.trackedItem.update({ where: { id }, data: { isArchived: true } })
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// ── 보관처리된 품목 목록 (복구 대상)
+export async function getArchivedTrackedItems(): Promise<{
+  id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; expenseCount: number
+}[]> {
+  const propertyId = await getPropertyId()
+  const items = await prisma.trackedItem.findMany({
+    where: { propertyId, isArchived: true },
+    orderBy: [{ category: 'asc' }, { label: 'asc' }],
+    select: { id: true, category: true, label: true, specUnit: true, qtyUnit: true },
+  })
+  return Promise.all(items.map(async it => {
+    const expenseCount = await prisma.expense.count({
+      where: { propertyId, category: it.category, itemLabel: it.label, excludeFromInventory: false },
+    })
+    return { ...it, expenseCount }
+  }))
+}
+
+// ── 보관 해제 (복구)
+export async function unarchiveTrackedItem(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id, propertyId, isArchived: true } })
+    if (!it) return { ok: false, error: '보관된 품목을 찾을 수 없습니다.' }
+    await prisma.trackedItem.update({ where: { id }, data: { isArchived: false } })
     revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
