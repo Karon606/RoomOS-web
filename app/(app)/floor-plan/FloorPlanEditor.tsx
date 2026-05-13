@@ -221,13 +221,35 @@ function PropertiesPanel({
   )
 }
 
-// ── 모바일 하단 시트 ─────────────────────────────────────────
+// ── 모바일 하단 시트 (드래그 가능) ──────────────────────────
 function BottomSheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const INIT_H = 360
+  const MIN_H  = 120
+  const MAX_H  = () => window.innerHeight * 0.88
+
+  const [height, setHeight] = useState(INIT_H)
+  const drag = useRef<{ startY: number; startH: number } | null>(null)
+
+  const onDown = (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    drag.current = { startY: e.clientY, startH: height }
+  }
+  const onMove = (e: React.PointerEvent) => {
+    if (!drag.current) return
+    const newH = Math.max(MIN_H, Math.min(MAX_H(), drag.current.startH + drag.current.startY - e.clientY))
+    setHeight(newH)
+  }
+  const onUp = () => { drag.current = null }
+
   return (
     <div className="md:hidden fixed bottom-0 inset-x-0 z-40 rounded-t-2xl border-t border-[var(--warm-border)] shadow-xl"
-      style={{ background: 'var(--cream)', maxHeight: '72vh', display: 'flex', flexDirection: 'column' }}>
-      <div className="flex justify-center pt-2 pb-1 shrink-0">
-        <div className="w-10 h-1 rounded-full bg-[var(--warm-border)]" />
+      style={{ background: 'var(--cream)', height, display: 'flex', flexDirection: 'column' }}>
+      {/* 드래그 핸들 — 실제로 올리고 내릴 수 있음 */}
+      <div
+        className="flex justify-center pt-2 pb-1 shrink-0 cursor-ns-resize touch-none select-none"
+        onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+      >
+        <div className="w-10 h-1.5 rounded-full bg-[var(--warm-border)]" />
       </div>
       <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--warm-border)] shrink-0">
         <p className="text-sm font-semibold text-[var(--warm-dark)]">{title}</p>
