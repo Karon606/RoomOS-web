@@ -596,6 +596,213 @@ async function compressImageForOcr(
   return { base64, dataUrl }
 }
 
+// ─── Receipt scan utilities ───────────────────────────────────────────────
+
+type CropPt = { x: number; y: number }
+type CropCorners = { tl: CropPt; tr: CropPt; br: CropPt; bl: CropPt }
+
+function gaussSolve(A: number[][], b: number[]): number[] {
+  const n = b.length
+  const M = A.map((row, i) => [...row, b[i]])
+  for (let c = 0; c < n; c++) {
+    let max = c
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[max][c])) max = r
+    ;[M[c], M[max]] = [M[max], M[c]]
+    for (let r = 0; r < n; r++) {
+      if (r === c) continue
+      const f = M[r][c] / M[c][c]
+      for (let j = c; j <= n; j++) M[r][j] -= f * M[c][j]
+    }
+  }
+  return M.map((row, i) => row[n] / row[i])
+}
+
+function buildHomography(srcPts: [number, number][], dstPts: [number, number][]): number[][] {
+  const A: number[][] = [], b: number[] = []
+  for (let i = 0; i < 4; i++) {
+    const [sx, sy] = srcPts[i], [dx, dy] = dstPts[i]
+    A.push([sx, sy, 1, 0, 0, 0, -sx * dx, -sy * dx]); b.push(dx)
+    A.push([0, 0, 0, sx, sy, 1, -sx * dy, -sy * dy]); b.push(dy)
+  }
+  const h = gaussSolve(A, b)
+  return [[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], 1]]
+}
+
+function applyHomographyPt(H: number[][], x: number, y: number): [number, number] {
+  const w = H[2][0] * x + H[2][1] * y + H[2][2]
+  return [(H[0][0] * x + H[0][1] * y + H[0][2]) / w, (H[1][0] * x + H[1][1] * y + H[1][2]) / w]
+}
+
+function detectDocumentCorners(bitmap: ImageBitmap): CropCorners {
+  const SIZE = 320
+  const sc = Math.min(SIZE / bitmap.width, SIZE / bitmap.height)
+  const cW = Math.round(bitmap.width * sc), cH = Math.round(bitmap.height * sc)
+  const canvas = document.createElement('canvas')
+  canvas.width = cW; canvas.height = cH
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, cW, cH)
+  const { data } = canvas.getContext('2d')!.getImageData(0, 0, cW, cH)
+  const px = (x: number, y: number) => { const i = (y * cW + x) * 4; return [data[i], data[i + 1], data[i + 2]] }
+  const c4 = [px(0, 0), px(cW - 1, 0), px(cW - 1, cH - 1), px(0, cH - 1)]
+  const bg = [c4.reduce((s, p) => s + p[0], 0) / 4, c4.reduce((s, p) => s + p[1], 0) / 4, c4.reduce((s, p) => s + p[2], 0) / 4]
+  let left = cW, top = cH, right = 0, bottom = 0
+  for (let y = 0; y < cH; y++) for (let x = 0; x < cW; x++) {
+    const [r, g, b] = px(x, y)
+    if (Math.abs(r - bg[0]) + Math.abs(g - bg[1]) + Math.abs(b - bg[2]) > 40) {
+      if (x < left) left = x; if (x > right) right = x
+      if (y < top) top = y; if (y > bottom) bottom = y
+    }
+  }
+  const pad = 0.03
+  if (left >= right || top >= bottom)
+    return { tl: { x: pad, y: pad }, tr: { x: 1 - pad, y: pad }, br: { x: 1 - pad, y: 1 - pad }, bl: { x: pad, y: 1 - pad } }
+  const nx = (v: number) => Math.max(0, Math.min(1, v / cW))
+  const ny = (v: number) => Math.max(0, Math.min(1, v / cH))
+  return { tl: { x: nx(left), y: ny(top) }, tr: { x: nx(right), y: ny(top) }, br: { x: nx(right), y: ny(bottom) }, bl: { x: nx(left), y: ny(bottom) } }
+}
+
+async function warpReceiptToRect(bitmap: ImageBitmap, corners: CropCorners): Promise<{ dataUrl: string; base64: string }> {
+  const iW = bitmap.width, iH = bitmap.height
+  const tl: [number, number] = [corners.tl.x * iW, corners.tl.y * iH]
+  const tr: [number, number] = [corners.tr.x * iW, corners.tr.y * iH]
+  const br: [number, number] = [corners.br.x * iW, corners.br.y * iH]
+  const bl: [number, number] = [corners.bl.x * iW, corners.bl.y * iH]
+  const dist = (a: [number, number], b: [number, number]) => Math.hypot(b[0] - a[0], b[1] - a[1])
+  const oW = Math.max(1, Math.round(Math.max(dist(tl, tr), dist(bl, br))))
+  const oH = Math.max(1, Math.round(Math.max(dist(tl, bl), dist(tr, br))))
+  const H = buildHomography([[0, 0], [oW, 0], [oW, oH], [0, oH]], [tl, tr, br, bl])
+  const srcCanvas = document.createElement('canvas')
+  srcCanvas.width = iW; srcCanvas.height = iH
+  srcCanvas.getContext('2d')!.drawImage(bitmap, 0, 0)
+  const src = srcCanvas.getContext('2d')!.getImageData(0, 0, iW, iH).data
+  const outCanvas = document.createElement('canvas')
+  outCanvas.width = oW; outCanvas.height = oH
+  const outCtx = outCanvas.getContext('2d')!
+  const outImg = outCtx.createImageData(oW, oH)
+  const out = outImg.data
+  for (let y = 0; y < oH; y++) {
+    for (let x = 0; x < oW; x++) {
+      const [sx, sy] = applyHomographyPt(H, x, y)
+      const x0 = Math.floor(sx), y0 = Math.floor(sy), x1 = x0 + 1, y1 = y0 + 1
+      const fx = sx - x0, fy = sy - y0
+      const oi = (y * oW + x) * 4
+      const ch = (px: number, py: number, c: number) => (px < 0 || py < 0 || px >= iW || py >= iH) ? 255 : src[(py * iW + px) * 4 + c]
+      for (let c = 0; c < 4; c++)
+        out[oi + c] = (ch(x0, y0, c) * (1 - fx) * (1 - fy) + ch(x1, y0, c) * fx * (1 - fy) + ch(x0, y1, c) * (1 - fx) * fy + ch(x1, y1, c) * fx * fy + 0.5) | 0
+    }
+  }
+  outCtx.putImageData(outImg, 0, 0)
+  const dataUrl = outCanvas.toDataURL('image/jpeg', 0.92)
+  return { dataUrl, base64: dataUrl.replace(/^data:image\/jpeg;base64,/, '') }
+}
+
+function dataUrlToFile(dataUrl: string, name: string): File {
+  const [header, b64] = dataUrl.split(',')
+  const mime = (header.match(/:(.*?);/) ?? ['', 'image/jpeg'])[1]
+  const bytes = atob(b64); const arr = new Uint8Array(bytes.length)
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+  return new File([arr], name, { type: mime })
+}
+
+// ─── ReceiptScanModal ─────────────────────────────────────────────────────
+
+function CornerHandle({ cx, cy, containerRef, onMove }: {
+  cx: number; cy: number
+  containerRef: React.RefObject<HTMLDivElement | null>
+  onMove: (x: number, y: number) => void
+}) {
+  const SIZE = 28
+  return (
+    <div
+      style={{
+        position: 'absolute', left: cx - SIZE / 2, top: cy - SIZE / 2,
+        width: SIZE, height: SIZE, borderRadius: '50%',
+        background: 'var(--coral)', border: '3px solid white',
+        cursor: 'grab', touchAction: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.5)', zIndex: 2,
+      }}
+      onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId) }}
+      onPointerMove={e => {
+        if (!(e.buttons & 1)) return
+        const rect = containerRef.current?.getBoundingClientRect()
+        if (!rect) return
+        onMove(Math.max(0, Math.min(rect.width, e.clientX - rect.left)), Math.max(0, Math.min(rect.height, e.clientY - rect.top)))
+      }}
+    />
+  )
+}
+
+function ReceiptScanModal({ bitmap, onConfirm, onCancel }: {
+  bitmap: ImageBitmap
+  onConfirm: (result: { dataUrl: string; base64: string }) => void
+  onCancel: () => void
+}) {
+  const MAX_DIM = Math.min(window.innerWidth * 0.92, window.innerHeight * 0.62, 520)
+  const sc = Math.min(MAX_DIM / bitmap.width, MAX_DIM / bitmap.height)
+  const dW = Math.round(bitmap.width * sc), dH = Math.round(bitmap.height * sc)
+  const [corners, setCorners] = useState<CropCorners>(() => detectDocumentCorners(bitmap))
+  const [processing, setProcessing] = useState(false)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current; if (!canvas) return
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, dW, dH)
+  }, [bitmap, dW, dH])
+
+  const moveCorner = (key: keyof CropCorners, x: number, y: number) =>
+    setCorners(prev => ({ ...prev, [key]: { x: x / dW, y: y / dH } }))
+
+  const handleConfirm = async () => {
+    setProcessing(true)
+    try {
+      const MAX = 1600
+      const compSc = Math.min(1, MAX / Math.max(bitmap.width, bitmap.height))
+      const cW = Math.round(bitmap.width * compSc), cH = Math.round(bitmap.height * compSc)
+      const compCanvas = document.createElement('canvas')
+      compCanvas.width = cW; compCanvas.height = cH
+      compCanvas.getContext('2d')!.drawImage(bitmap, 0, 0, cW, cH)
+      const compBitmap = await createImageBitmap(compCanvas)
+      const result = await warpReceiptToRect(compBitmap, corners)
+      compBitmap.close?.()
+      onConfirm(result)
+    } catch {
+      const c = document.createElement('canvas'); c.width = bitmap.width; c.height = bitmap.height
+      c.getContext('2d')!.drawImage(bitmap, 0, 0)
+      const dataUrl = c.toDataURL('image/jpeg', 0.85)
+      onConfirm({ dataUrl, base64: dataUrl.replace(/^data:image\/jpeg;base64,/, '') })
+    } finally { setProcessing(false) }
+  }
+
+  const pts = `${corners.tl.x*dW},${corners.tl.y*dH} ${corners.tr.x*dW},${corners.tr.y*dH} ${corners.br.x*dW},${corners.br.y*dH} ${corners.bl.x*dW},${corners.bl.y*dH}`
+
+  return (
+    <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-black/92">
+      <p className="text-white text-sm font-medium mb-4 px-4 text-center">모서리를 드래그해서 영수증 테두리를 맞추세요</p>
+      <div ref={containerRef} className="relative" style={{ width: dW, height: dH, touchAction: 'none' }}>
+        <canvas ref={canvasRef} width={dW} height={dH} className="block rounded-xl" />
+        <svg className="absolute inset-0 pointer-events-none rounded-xl" width={dW} height={dH}>
+          <path fillRule="evenodd" fill="rgba(0,0,0,0.45)"
+            d={`M0,0 L${dW},0 L${dW},${dH} L0,${dH} Z M${pts.replace(/ /g,' L')} Z`} />
+          <polygon points={pts} fill="none" stroke="var(--coral)" strokeWidth="2.5" />
+        </svg>
+        {(['tl', 'tr', 'br', 'bl'] as const).map(key => (
+          <CornerHandle key={key} cx={corners[key].x * dW} cy={corners[key].y * dH}
+            containerRef={containerRef} onMove={(x, y) => moveCorner(key, x, y)} />
+        ))}
+      </div>
+      <div className="flex gap-3 mt-6">
+        <button type="button" onClick={onCancel}
+          className="px-6 py-2.5 rounded-xl bg-white/15 text-white text-sm font-medium hover:bg-white/25 transition-colors">
+          취소
+        </button>
+        <button type="button" onClick={handleConfirm} disabled={processing}
+          className="px-6 py-2.5 rounded-xl bg-[var(--coral)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-60 transition-opacity">
+          {processing ? '처리 중…' : '영역 확정'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function toDateInput(d: Date | string | null | undefined) {
   if (!d) return ''
   return kstYmdStr(new Date(d))
@@ -771,57 +978,74 @@ export default function FinanceClient({
   const [editReceiptUrl, setEditReceiptUrl] = useState('')
   const [receiptUploading, setReceiptUploading] = useState(false)
   const [addExpCategory, setAddExpCategory]   = useState(EXPENSE_CATEGORIES[0])
-  // 영수증 OCR (지출 등록 폼)
-  const [addExpVendor, setAddExpVendor]     = useState('')
-  const [addExpAmount, setAddExpAmount]     = useState<number | undefined>(undefined)
-  const [addExpDetail, setAddExpDetail]     = useState('')
-  const [ocrPending, setOcrPending]         = useState(false)
-  const [ocrError, setOcrError]             = useState('')
-  const [ocrPreview, setOcrPreview]         = useState<string | null>(null)
-  const ocrFileRef                          = useRef<HTMLInputElement | null>(null)
+  // 영수증 스캔 (공통)
+  const [addExpVendor, setAddExpVendor]       = useState('')
+  const [addExpAmount, setAddExpAmount]       = useState<number | undefined>(undefined)
+  const [addExpDetail, setAddExpDetail]       = useState('')
+  const [scanBitmap, setScanBitmap]           = useState<ImageBitmap | null>(null)
+  const [scanCropped, setScanCropped]         = useState<{ dataUrl: string; base64: string } | null>(null)
+  const [scanOcrPending, setScanOcrPending]   = useState(false)
+  const [scanOcrError, setScanOcrError]       = useState('')
+  const scanTargetRef                         = useRef<'add' | 'edit'>('add')
   const [editExpCategory, setEditExpCategory] = useState('')
   const [addItems, setAddItems]   = useState<ItemPickState[]>([])
   const [editItems, setEditItems] = useState<ItemPickState[]>([])
 
-  // 영수증 OCR 핸들러 — 사진을 클라이언트에서 압축(max 1600px JPEG 0.85) 후
-  // base64로 Server Action에 전달. iPhone 원본 사진은 5~12MB라 그대로 보내면
-  // Server Action 페이로드 한도(10MB)를 초과해 throw가 일어남.
-  // 영수증은 글씨만 읽으면 되니 1600px이면 OCR 정확도 변화 거의 없음.
-  const handleReceiptOcr = async (file: File) => {
-    setOcrError('')
-    setOcrPending(true)
+  // 파일 선택 → 이미지면 스캔 모달, PDF면 바로 업로드
+  const handleOpenScan = async (file: File, target: 'add' | 'edit') => {
+    if (!file.type.startsWith('image/')) {
+      const setter = target === 'add' ? setAddReceiptUrl : setEditReceiptUrl
+      await handleReceiptUpload(file, setter)
+      return
+    }
+    const bitmap = await createImageBitmap(file)
+    scanTargetRef.current = target
+    setScanCropped(null)
+    setScanOcrError('')
+    setScanBitmap(bitmap)
+  }
+
+  const handleScanConfirm = (result: { dataUrl: string; base64: string }) => {
+    setScanBitmap(prev => { prev?.close?.(); return null })
+    setScanCropped(result)
+  }
+
+  const handleScanCancel = () => {
+    setScanBitmap(prev => { prev?.close?.(); return null })
+  }
+
+  // 크롭 결과를 스토리지에 업로드
+  const handleScanUpload = async () => {
+    if (!scanCropped) return
+    const setter = scanTargetRef.current === 'add' ? setAddReceiptUrl : setEditReceiptUrl
+    await handleReceiptUpload(dataUrlToFile(scanCropped.dataUrl, 'receipt.jpg'), setter)
+    setScanCropped(null)
+  }
+
+  // OCR 채우기 + 첨부 (지출 등록 폼 전용)
+  const handleScanAndOcr = async () => {
+    if (!scanCropped) return
+    setScanOcrPending(true)
+    setScanOcrError('')
     try {
-      const { base64, dataUrl } = await compressImageForOcr(file, 1600, 0.85)
-      setOcrPreview(dataUrl)
-      const res = await analyzeReceiptWithGemini(base64, 'image/jpeg')
-      if (!res.ok) { setOcrError(res.error); setOcrPending(false); return }
-      const d = res.data
-      if (d.date) setAddExpDate(d.date)
-      if (d.vendor) setAddExpVendor(d.vendor)
-      if (d.category && EXPENSE_CATEGORIES.includes(d.category)) setAddExpCategory(d.category)
-      if (d.items.length > 0 && ITEM_PRESETS[d.category ?? '']) {
-        // 다중 품목 — addItems에 주입
-        setAddItems(d.items.map(it => ({
-          label:     it.label,
-          specValue: it.specValue ?? '',
-          specUnit:  it.specUnit  ?? '',
-          qtyValue:  it.qtyValue  ?? '',
-          qtyUnit:   it.qtyUnit   ?? '',
-          amount:    it.amount,
-        })))
-        setAddExpAmount(d.items.reduce((s, it) => s + it.amount, 0))
-      } else {
-        setAddItems([])
-        if (d.totalAmount) setAddExpAmount(d.totalAmount)
-        if (d.items.length > 0) {
-          setAddExpDetail(d.items.map(it => `[${it.label}] ${it.amount.toLocaleString()}원`).join(', '))
+      const res = await analyzeReceiptWithGemini(scanCropped.base64, 'image/jpeg')
+      if (!res.ok) { setScanOcrError(res.error) }
+      else {
+        const d = res.data
+        if (d.date) setAddExpDate(d.date)
+        if (d.vendor) setAddExpVendor(d.vendor)
+        if (d.category && EXPENSE_CATEGORIES.includes(d.category)) setAddExpCategory(d.category)
+        if (d.items.length > 0 && ITEM_PRESETS[d.category ?? '']) {
+          setAddItems(d.items.map(it => ({ label: it.label, specValue: it.specValue ?? '', specUnit: it.specUnit ?? '', qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '', amount: it.amount })))
+          setAddExpAmount(d.items.reduce((s, it) => s + it.amount, 0))
+        } else {
+          setAddItems([])
+          if (d.totalAmount) setAddExpAmount(d.totalAmount)
+          if (d.items.length > 0) setAddExpDetail(d.items.map(it => `[${it.label}] ${it.amount.toLocaleString()}원`).join(', '))
         }
       }
-      setOcrPending(false)
-    } catch (err) {
-      setOcrError(`영수증 처리 실패: ${(err as Error).message ?? '알 수 없는 오류'}`)
-      setOcrPending(false)
-    }
+      await handleScanUpload()
+    } finally { setScanOcrPending(false) }
   }
 
   // ── 수익 탭 상태 ─────────────────────────────────────────────
@@ -1364,7 +1588,7 @@ export default function FinanceClient({
               className="px-4 py-2 bg-[var(--canvas)] border border-[var(--warm-border)] hover:border-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
               고정 지출 관리
             </button>
-            <button onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setOcrPreview(null); setOcrError(''); setError('') }}
+            <button onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setScanCropped(null); setScanOcrError(''); setError('') }}
               className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
               + 지출 등록
             </button>
@@ -2308,18 +2532,27 @@ export default function FinanceClient({
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">영수증</label>
                     <input type="hidden" name="receiptUrl" value={editReceiptUrl} />
-                    <label className="flex items-center justify-center gap-1.5 w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2 cursor-pointer hover:border-[var(--coral)] transition-colors">
-                      <span className="text-lg">📎</span>
-                      <span className="text-xs text-[var(--warm-muted)]">{receiptUploading ? '업로드 중...' : editReceiptUrl ? '파일 변경' : '파일 선택'}</span>
-                      <input type="file" accept="image/*,application/pdf" className="hidden" disabled={receiptUploading}
-                        onChange={async e => { const f = e.target.files?.[0]; if (f) await handleReceiptUpload(f, setEditReceiptUrl) }} />
-                    </label>
-                    {editReceiptUrl && (
+                    {scanCropped && scanTargetRef.current === 'edit' ? (
+                      <div className="space-y-2">
+                        <img src={scanCropped.dataUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증 미리보기" />
+                        <button type="button" onClick={handleScanUpload} disabled={receiptUploading}
+                          className="w-full py-2 text-xs font-medium rounded-xl bg-[var(--coral)] text-white disabled:opacity-60 transition-opacity">
+                          {receiptUploading ? '업로드 중…' : '첨부'}
+                        </button>
+                      </div>
+                    ) : editReceiptUrl ? (
                       <div className="relative">
                         <img src={editReceiptUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
                         <button type="button" onClick={() => setEditReceiptUrl('')}
                           className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none">✕</button>
                       </div>
+                    ) : (
+                      <label className="flex items-center justify-center gap-1.5 w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2.5 cursor-pointer hover:border-[var(--coral)] transition-colors">
+                        <span className="text-lg">📷</span>
+                        <span className="text-xs text-[var(--warm-muted)]">{receiptUploading ? '업로드 중…' : '영수증 첨부'}</span>
+                        <input type="file" accept="image/*,application/pdf" className="hidden" disabled={receiptUploading}
+                          onChange={async e => { const f = e.target.files?.[0]; if (f) { await handleOpenScan(f, 'edit'); e.target.value = '' } }} />
+                      </label>
                     )}
                   </div>
                   {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -2469,41 +2702,6 @@ export default function FinanceClient({
               <input type="hidden" name="financeName" value={addExpAccName} />
               <input type="hidden" name="roomId" value={addExpRoomId} />
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                {/* 영수증 OCR (Gemini Vision) */}
-                <div className="rounded-xl border border-[var(--coral)]/30 bg-[var(--coral)]/5 px-3 py-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-xs font-semibold text-[var(--coral)]">영수증 사진으로 자동 입력</span>
-                    </div>
-                    <input
-                      ref={ocrFileRef}
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                      onChange={e => {
-                        const f = e.target.files?.[0]
-                        if (f) handleReceiptOcr(f)
-                        e.target.value = ''
-                      }}
-                    />
-                    <button
-                      type="button"
-                      disabled={ocrPending}
-                      onClick={() => ocrFileRef.current?.click()}
-                      className="text-xs px-3 py-1.5 bg-[var(--coral)] hover:opacity-90 text-white rounded-lg transition-opacity disabled:opacity-50 shrink-0">
-                      {ocrPending ? '분석 중...' : '📷 인식'}
-                    </button>
-                  </div>
-                  {ocrPreview && !ocrPending && (
-                    <div className="flex items-center gap-2">
-                      <img src={ocrPreview} alt="영수증" className="h-12 w-12 object-cover rounded-lg" />
-                      <p className="text-[10px] text-[var(--warm-muted)] flex-1">분석 결과를 폼에 채웠습니다. 필요하면 수정해서 저장하세요.</p>
-                    </div>
-                  )}
-                  {ocrError && <p className="text-[10px] text-red-500">{ocrError}</p>}
-                </div>
-
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
@@ -2612,18 +2810,34 @@ export default function FinanceClient({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">영수증</label>
                   <input type="hidden" name="receiptUrl" value={addReceiptUrl} />
-                  <label className="flex items-center justify-center gap-1.5 w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2 cursor-pointer hover:border-[var(--coral)] transition-colors">
-                    <span className="text-lg">📎</span>
-                    <span className="text-xs text-[var(--warm-muted)]">{receiptUploading ? '업로드 중...' : addReceiptUrl ? '파일 변경' : '파일 선택'}</span>
-                    <input type="file" accept="image/*,application/pdf" className="hidden" disabled={receiptUploading}
-                      onChange={async e => { const f = e.target.files?.[0]; if (f) await handleReceiptUpload(f, setAddReceiptUrl) }} />
-                  </label>
-                  {addReceiptUrl && (
+                  {scanCropped && scanTargetRef.current === 'add' ? (
+                    <div className="space-y-2">
+                      <img src={scanCropped.dataUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증 미리보기" />
+                      <div className="flex gap-2">
+                        <button type="button" onClick={handleScanAndOcr} disabled={scanOcrPending || receiptUploading}
+                          className="flex-1 py-2 text-xs font-semibold rounded-xl bg-[var(--coral)] text-white disabled:opacity-60 transition-opacity">
+                          {scanOcrPending ? '분석 중…' : '자동 입력 + 첨부'}
+                        </button>
+                        <button type="button" onClick={handleScanUpload} disabled={scanOcrPending || receiptUploading}
+                          className="flex-1 py-2 text-xs font-medium rounded-xl border border-[var(--warm-border)] text-[var(--warm-dark)] disabled:opacity-60 transition-opacity">
+                          {receiptUploading ? '업로드 중…' : '첨부만'}
+                        </button>
+                      </div>
+                      {scanOcrError && <p className="text-[10px] text-red-500">{scanOcrError}</p>}
+                    </div>
+                  ) : addReceiptUrl ? (
                     <div className="relative">
                       <img src={addReceiptUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
                       <button type="button" onClick={() => setAddReceiptUrl('')}
                         className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none">✕</button>
                     </div>
+                  ) : (
+                    <label className="flex items-center justify-center gap-1.5 w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2.5 cursor-pointer hover:border-[var(--coral)] transition-colors">
+                      <span className="text-lg">📷</span>
+                      <span className="text-xs text-[var(--warm-muted)]">{receiptUploading ? '업로드 중…' : '영수증 첨부 · 자동 입력'}</span>
+                      <input type="file" accept="image/*,application/pdf" className="hidden" disabled={receiptUploading}
+                        onChange={async e => { const f = e.target.files?.[0]; if (f) { await handleOpenScan(f, 'add'); e.target.value = '' } }} />
+                    </label>
                   )}
                 </div>
                 {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -2969,6 +3183,11 @@ export default function FinanceClient({
           </div>
         </div>
       </div>
+    )}
+
+    {/* 영수증 스캔 모달 (전체화면) */}
+    {scanBitmap && (
+      <ReceiptScanModal bitmap={scanBitmap} onConfirm={handleScanConfirm} onCancel={handleScanCancel} />
     )}
     </>
   )
@@ -3414,6 +3633,7 @@ function ReserveTab({
         )}
       </div>
     </div>
+
   )
 }
 
