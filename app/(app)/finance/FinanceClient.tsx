@@ -1240,6 +1240,16 @@ export default function FinanceClient({
   const bankAccounts    = financialAccounts.filter(a => a.type === 'BANK_ACCOUNT')
   const prepaidAccounts = financialAccounts.filter(a => a.type === 'PREPAID')
 
+  // 등록된 선불 계정 브랜드를 결제수단 목록에 자동 병합
+  const effectivePaymentMethods = (() => {
+    const methods = [...paymentMethods]
+    for (const acc of prepaidAccounts) {
+      const name = acc.brand ?? accName(acc)
+      if (name && !methods.includes(name)) methods.push(name)
+    }
+    return methods
+  })()
+
   const filteredExpenses = expenses.filter(e => {
     if (expFilter.method   !== 'all' && e.payMethod !== expFilter.method) return false
     if (expFilter.category !== 'all' && e.category  !== expFilter.category) return false
@@ -1589,7 +1599,7 @@ export default function FinanceClient({
             <select value={expFilter.method} onChange={e => setExpFilter(f => ({ ...f, method: e.target.value }))}
               className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-full px-3 py-1.5 outline-none">
               <option value="all">결제수단 (전체)</option>
-              {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+              {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <select value={expFilter.category} onChange={e => setExpFilter(f => ({ ...f, category: e.target.value }))}
               className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-full px-3 py-1.5 outline-none">
@@ -2516,7 +2526,7 @@ export default function FinanceClient({
                     <select name="payMethod" value={editExpMethod}
                       onChange={e => { setEditExpMethod(e.target.value); setEditExpAccId(''); setEditExpAccName('') }}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                      {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                      {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                   </div>
                   {editExpMethod === '계좌이체' && bankAccounts.length > 0 && (
@@ -2805,7 +2815,7 @@ export default function FinanceClient({
                   <select name="payMethod" value={addExpMethod}
                     onChange={e => { setAddExpMethod(e.target.value); setAddExpAccId(''); setAddExpAccName('') }}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                    {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                    {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
                 {addExpMethod === '계좌이체' && bankAccounts.length > 0 && (
@@ -3038,7 +3048,7 @@ export default function FinanceClient({
                   <select value={recMgmtForm.payMethod} onChange={e => setRecMgmtForm(p => ({ ...p, payMethod: e.target.value }))}
                     className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                     <option value="">선택 안 함</option>
-                    {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                    {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
                 <div className="flex gap-4">
@@ -3160,8 +3170,8 @@ export default function FinanceClient({
                 <label className="text-xs text-[var(--warm-muted)]">결제수단</label>
                 <select value={recRecPayMethod} onChange={e => setRecRecPayMethod(e.target.value)}
                   className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                  {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
-                  {!paymentMethods.includes('계좌이체') && <option value="계좌이체">계좌이체</option>}
+                  {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                  {!effectivePaymentMethods.includes('계좌이체') && <option value="계좌이체">계좌이체</option>}
                 </select>
               </div>
               <div className="space-y-1">
