@@ -108,7 +108,7 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
   // 위치 정보 일괄 조회 — 루프 내 N+1 방지
   const allItemLocations = await prisma.trackedItemLocation.findMany({
     where: { trackedItemId: { in: items.map(i => i.id) } },
-    include: { storageLocation: { select: { id: true, name: true, sortOrder: true } } },
+    include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true } } },
   })
 
   // 수령 대기 구매 일괄 조회 — 루프 내 N+1 방지
@@ -228,7 +228,7 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
 
     const locations: StorageLocationItem[] = allItemLocations
       .filter(l => l.trackedItemId === it.id)
-      .map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder }))
+      .map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder, isHub: l.storageLocation.isHub }))
       .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
 
     const pendingPurchases: PendingPurchase[] = allPending
@@ -260,7 +260,9 @@ export async function getInventoryOverview(): Promise<InventoryRow[]> {
       memo: it.memo,
       trackUnit: (it.trackUnit === 'qty' ? 'qty' : 'spec') as 'spec' | 'qty',
       isArchived: it.isArchived,
+      lastCheckId: last?.id ?? null,
       lastCheckDate: last?.date ?? null,
+      lastCheckCreatedAt: last?.createdAt ?? null,
       lastRemainingQty: last?.remainingQty ?? null,
       currentStock,
       avgDaily,
@@ -375,7 +377,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
     where: { id: trackedItemId, propertyId },
     include: {
       locations: {
-        include: { storageLocation: { select: { id: true, name: true, sortOrder: true } } },
+        include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true } } },
         orderBy: { storageLocation: { sortOrder: 'asc' } },
       },
     },
@@ -415,6 +417,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         locationId: lb.storageLocationId,
         locationName: lb.storageLocation.name,
         qty: lb.remainingQty,
+        fromHubQty: lb.fromHubQty ?? undefined,
       })) satisfies LocationQtyEntry[],
     })),
     ...additions.map(a => ({ type: 'addition' as const, id: a.id, date: a.date, createdAt: a.createdAt, addedQty: a.addedQty, source: a.source, memo: a.memo })),
@@ -431,7 +434,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       id: item.id, category: item.category, label: item.label,
       specUnit: item.specUnit, qtyUnit: item.qtyUnit, memo: item.memo,
       trackUnit: (item.trackUnit === 'qty' ? 'qty' : 'spec') as 'spec' | 'qty',
-      locations: item.locations.map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder })),
+      locations: item.locations.map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder, isHub: l.storageLocation.isHub })),
     },
     timeline,
   }
@@ -670,8 +673,7 @@ export async function unarchiveTrackedItem(id: string): Promise<{ ok: true } | {
 // ── StockCheck CRUD
 export async function createStockCheck(data: {
   trackedItemId: string; date: string; remainingQty: number; memo?: string
-  // 위치별 잔량 — 제공 시 남은 합계는 locationQtys의 합, 아니면 remainingQty 그대로
-  locationQtys?: { storageLocationId: string; qty: number }[]
+  locationQtys?: { storageLocationId: string; qty: number; fromHubQty?: number }[]
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -690,6 +692,7 @@ export async function createStockCheck(data: {
             create: data.locationQtys.map(lq => ({
               storageLocationId: lq.storageLocationId,
               remainingQty: lq.qty,
+              fromHubQty: lq.fromHubQty ?? null,
             })),
           },
         } : {}),
@@ -707,7 +710,7 @@ export async function updateStockCheck(id: string, data: {
   date?: string
   memo?: string | null
   remainingQty?: number
-  locationQtys?: { storageLocationId: string; qty: number }[]
+  locationQtys?: { storageLocationId: string; qty: number; fromHubQty?: number }[]
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -737,6 +740,7 @@ export async function updateStockCheck(id: string, data: {
             stockCheckId: id,
             storageLocationId: lq.storageLocationId,
             remainingQty: lq.qty,
+            fromHubQty: lq.fromHubQty ?? null,
           })),
         })
       }
@@ -1026,9 +1030,24 @@ export async function getStorageLocations(): Promise<StorageLocationItem[]> {
   const locs = await prisma.storageLocation.findMany({
     where: { propertyId },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    select: { id: true, name: true, sortOrder: true },
+    select: { id: true, name: true, sortOrder: true, isHub: true },
   })
   return locs
+}
+
+export async function toggleStorageLocationHub(id: string, isHub: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const loc = await prisma.storageLocation.findFirst({ where: { id, propertyId } })
+    if (!loc) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    await prisma.storageLocation.update({ where: { id }, data: { isHub } })
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 export async function createStorageLocation(name: string): Promise<{ ok: true; id: string } | { ok: false; error: string }> {

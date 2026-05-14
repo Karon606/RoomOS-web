@@ -37,6 +37,7 @@ import {
   createStorageLocation,
   updateStorageLocation,
   deleteStorageLocation,
+  toggleStorageLocationHub,
   setItemLocations,
   batchSetItemLocations,
 } from './actions'
@@ -58,6 +59,22 @@ const fmtDate = (d: Date | string | null) => {
   if (!d) return '—'
   const dt = new Date(d)
   return `${dt.getFullYear()}.${String(dt.getMonth() + 1).padStart(2, '0')}.${String(dt.getDate()).padStart(2, '0')}`
+}
+
+const fmtTime = (d: Date | string) => {
+  const dt = new Date(d)
+  // KST = UTC+9
+  const kst = new Date(dt.getTime() + 9 * 3600000)
+  return `${String(kst.getUTCHours()).padStart(2, '0')}:${String(kst.getUTCMinutes()).padStart(2, '0')}`
+}
+
+// KST 기준 날짜가 같은지 비교 (두 Date 모두)
+const isSameKstDay = (a: Date, b: Date) => {
+  const toKst = (d: Date) => {
+    const k = new Date(d.getTime() + 9 * 3600000)
+    return `${k.getUTCFullYear()}-${k.getUTCMonth()}-${k.getUTCDate()}`
+  }
+  return toKst(a) === toKst(b)
 }
 
 export default function InventoryClient({ initialRows }: { initialRows: InventoryRow[] }) {
@@ -822,13 +839,16 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
         <div className="min-w-0 flex items-center gap-2">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--coral)] shrink-0" />
           <div className="min-w-0">
-            <p className="text-xs text-[var(--warm-muted)]">{fmtDate(entry.date)} · 점검</p>
+            <p className="text-xs text-[var(--warm-muted)]">{fmtDate(entry.date)} · 점검 · <span className="tabular-nums">{fmtTime(entry.createdAt)}</span></p>
             <p className="text-sm font-medium text-[var(--warm-dark)]">잔량 {fmtQty(entry.remainingQty, stockUnit)}</p>
             {entry.locationBreakdown.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-1">
                 {entry.locationBreakdown.map(lb => (
                   <span key={lb.locationId} className="text-[10px] bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
                     {lb.locationName} {fmtQty(lb.qty, stockUnit)}
+                    {lb.fromHubQty != null && lb.fromHubQty > 0 && (
+                      <span className="ml-1 text-amber-600">(+창고 {fmtQty(lb.fromHubQty, stockUnit)})</span>
+                    )}
                   </span>
                 ))}
               </div>
@@ -1302,19 +1322,19 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
   const [date, setDate] = useState(kstYmdStr())
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
+  const [mergeChoice, setMergeChoice] = useState<'merge' | 'new' | null>(null)
+  const [confirmItems, setConfirmItems] = useState<InventoryRow[]>([])
 
   useEffect(() => { getStorageLocations().then(setLocs) }, [])
 
-  // 선택 위치에 보관되는 품목 필터
   const locItems = locId
     ? rows.filter(r => !r.isArchived && r.locations.some(l => l.id === locId))
     : []
 
-  // 위치별 잔량 입력 상태: itemId → qty string
   const [qtys, setQtys] = useState<Record<string, string>>({})
+  const [fromHubQtys, setFromHubQtys] = useState<Record<string, string>>({})
   const [touched, setTouched] = useState<Set<string>>(new Set())
 
-  // 위치 변경 시 이전 수량 pre-fill
   useEffect(() => {
     if (!locId) return
     const init: Record<string, string> = {}
@@ -1323,7 +1343,10 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
       init[r.id] = prev != null ? String(prev.qty) : ''
     })
     setQtys(init)
+    setFromHubQtys({})
     setTouched(new Set())
+    setMergeChoice(null)
+    setConfirmItems([])
   }, [locId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = (itemId: string, val: string) => {
@@ -1332,25 +1355,40 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
   }
   const confirmAll = () => setTouched(new Set(locItems.map(r => r.id)))
 
-  const handleSave = async () => {
-    // 입력값이 있는 품목만 저장
+  const doSave = async (forceMerge?: boolean) => {
     const toSave = locItems.filter(r => qtys[r.id] !== '' && qtys[r.id] != null)
     if (toSave.length === 0) { setError('저장할 수량이 없습니다.'); return }
     setPending(true); setError('')
+    const locName = locs.find(l => l.id === locId)?.name ?? ''
+    const now = Date.now()
     try {
       await Promise.all(toSave.map(r => {
         const thisLocQty = Number(qtys[r.id]) || 0
-        // 다른 위치는 이전 점검 수량 carry-over
+        const fromHub = Number(fromHubQtys[r.id]) || 0
         const otherLocs = r.lastCheckLocationBreakdown
           .filter(lb => lb.locationId !== locId)
-          .map(lb => ({ storageLocationId: lb.locationId, qty: lb.qty }))
-        const locationQtys = [{ storageLocationId: locId, qty: thisLocQty }, ...otherLocs]
+          .map(lb => ({ storageLocationId: lb.locationId, qty: lb.qty, fromHubQty: lb.fromHubQty }))
+        const locationQtys = [
+          { storageLocationId: locId, qty: thisLocQty, fromHubQty: fromHub > 0 ? fromHub : undefined },
+          ...otherLocs,
+        ]
         const remainingQty = locationQtys.reduce((s, l) => s + l.qty, 0)
-        const stockUnit = r.trackUnit === 'qty' ? r.qtyUnit : (r.specUnit ?? r.qtyUnit)
+
+        // 6h 이내 같은 날 기존 점검 존재 → 자동 머지
+        const sameDay = r.lastCheckId && r.lastCheckCreatedAt && isSameKstDay(new Date(r.lastCheckCreatedAt), new Date())
+        const within6h = r.lastCheckCreatedAt && (now - new Date(r.lastCheckCreatedAt).getTime()) < 6 * 3600_000
+        const shouldMerge = forceMerge || (sameDay && within6h)
+
+        if (shouldMerge && r.lastCheckId) {
+          return updateStockCheck(r.lastCheckId, {
+            remainingQty,
+            locationQtys: locationQtys.filter(l => l.qty > 0),
+          })
+        }
         return createStockCheck({
           trackedItemId: r.id, date, remainingQty,
           locationQtys: locationQtys.filter(l => l.qty > 0),
-          memo: `위치별 점검 (${locs.find(l => l.id === locId)?.name ?? ''})${stockUnit ? '' : ''}`,
+          memo: `위치별 점검 (${locName})`,
         })
       }))
       onDone()
@@ -1359,6 +1397,24 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
     } finally {
       setPending(false)
     }
+  }
+
+  const handleSave = async () => {
+    const toSave = locItems.filter(r => qtys[r.id] !== '' && qtys[r.id] != null)
+    if (toSave.length === 0) { setError('저장할 수량이 없습니다.'); return }
+
+    // 같은 날, 6h 초과 → 사용자 확인 필요
+    const now = Date.now()
+    const needsConfirm = toSave.filter(r =>
+      r.lastCheckId && r.lastCheckCreatedAt &&
+      isSameKstDay(new Date(r.lastCheckCreatedAt), new Date()) &&
+      (now - new Date(r.lastCheckCreatedAt).getTime()) >= 6 * 3600_000
+    )
+    if (needsConfirm.length > 0 && mergeChoice === null) {
+      setConfirmItems(needsConfirm)
+      return
+    }
+    await doSave(mergeChoice === 'merge')
   }
 
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
@@ -1411,26 +1467,42 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
                 const prev = r.lastCheckLocationBreakdown.find(lb => lb.locationId === locId)
                 const isTouched = touched.has(r.id)
                 const isPrefilled = !isTouched && prev != null
+                // 이 품목의 허브 위치 (현재 선택 위치가 아닌 것)
+                const hubLoc = r.locations.find(l => l.isHub && l.id !== locId)
                 return (
-                  <div key={r.id} className="flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-[var(--warm-dark)] truncate">{r.label}</p>
-                      <p className="text-[10px] text-[var(--warm-muted)]">{r.category}</p>
+                  <div key={r.id} className="space-y-1">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-[var(--warm-dark)] truncate">{r.label}</p>
+                        <p className="text-[10px] text-[var(--warm-muted)]">{r.category}</p>
+                      </div>
+                      <div className="relative w-28 shrink-0">
+                        <input
+                          type="text" inputMode="decimal"
+                          value={qtys[r.id] ?? ''}
+                          onChange={e => handleChange(r.id, e.target.value)}
+                          placeholder="0"
+                          className={`w-full bg-[var(--canvas)] border rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--coral)] transition-colors ${
+                            isPrefilled ? 'border-[var(--warm-border)]/50 text-[var(--ink-mute)]' : 'border-[var(--warm-border)] text-[var(--warm-dark)]'
+                          }`} />
+                        {isPrefilled && (
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[var(--ink-mute)] bg-[var(--canvas)] pl-0.5">이전</span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">{stockUnit ?? ''}</span>
                     </div>
-                    <div className="relative w-28 shrink-0">
-                      <input
-                        type="text" inputMode="decimal"
-                        value={qtys[r.id] ?? ''}
-                        onChange={e => handleChange(r.id, e.target.value)}
-                        placeholder="0"
-                        className={`w-full bg-[var(--canvas)] border rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--coral)] transition-colors ${
-                          isPrefilled ? 'border-[var(--warm-border)]/50 text-[var(--ink-mute)]' : 'border-[var(--warm-border)] text-[var(--warm-dark)]'
-                        }`} />
-                      {isPrefilled && (
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[var(--ink-mute)] bg-[var(--canvas)] pl-0.5">이전</span>
-                      )}
-                    </div>
-                    <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">{stockUnit ?? ''}</span>
+                    {hubLoc && (qtys[r.id] ?? '') !== '' && (
+                      <div className="flex items-center gap-2 pl-1">
+                        <span className="text-[10px] text-amber-600 w-24 shrink-0">└ {hubLoc.name}에서</span>
+                        <input
+                          type="text" inputMode="decimal"
+                          value={fromHubQtys[r.id] ?? ''}
+                          onChange={e => setFromHubQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                          placeholder="이동 수량 (선택)"
+                          className="flex-1 bg-[var(--canvas)] border border-amber-200 rounded-xl px-3 py-1.5 text-xs text-amber-700 outline-none focus:border-amber-400" />
+                        <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">{stockUnit ?? ''}</span>
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -1439,6 +1511,17 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
           {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
         </div>
 
+        {confirmItems.length > 0 && mergeChoice === null && (
+          <div className="border-t border-amber-200 bg-amber-50 px-5 py-3 shrink-0 space-y-2">
+            <p className="text-xs font-medium text-amber-800">
+              {confirmItems.length}개 품목에 오늘 이미 점검 기록이 있습니다. 기존 기록에 합칠까요?
+            </p>
+            <div className="flex gap-2">
+              <Btn variant="secondary" size="sm" fullWidth onClick={() => { setMergeChoice('new'); doSave(false) }}>새 기록으로</Btn>
+              <Btn variant="primary" size="sm" fullWidth onClick={() => { setMergeChoice('merge'); doSave(true) }}>기존에 합치기</Btn>
+            </div>
+          </div>
+        )}
         <div className="border-t border-[var(--warm-border)] px-5 py-3 flex gap-2 shrink-0">
           <Btn variant="secondary" fullWidth onClick={onClose}>취소</Btn>
           <Btn variant="primary" fullWidth onClick={handleSave} disabled={pending || !locId || locItems.length === 0}>
@@ -1566,6 +1649,18 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
               ) : (
                 <>
                   <span className="flex-1 text-sm text-[var(--warm-dark)]">{loc.name}</span>
+                  <button
+                    type="button"
+                    title={loc.isHub ? '허브(창고) 해제' : '허브(창고)로 지정'}
+                    onClick={async () => {
+                      setPending(true)
+                      await toggleStorageLocationHub(loc.id, !loc.isHub)
+                      reload()
+                      setPending(false)
+                    }}
+                    className={`text-[10px] px-2 py-1 rounded-lg border transition-colors ${loc.isHub ? 'bg-amber-50 border-amber-200 text-amber-700' : 'border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-amber-300 hover:text-amber-600'}`}>
+                    {loc.isHub ? '허브 ✓' : '허브'}
+                  </button>
                   <button type="button" onClick={() => { setEditId(loc.id); setEditName(loc.name) }}
                     className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>
                   <button type="button" onClick={() => handleDelete(loc.id, loc.name)} disabled={pending}
@@ -1583,7 +1678,10 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
           <Btn type="submit" variant="primary" size="sm" disabled={pending || !newName.trim()}>추가</Btn>
         </form>
       </div>
-      <div className="border-t border-[var(--warm-border)] px-5 sm:px-6 py-3">
+      <div className="border-t border-[var(--warm-border)] px-5 sm:px-6 py-3 space-y-2">
+        <p className="text-[10px] text-[var(--warm-muted)]">
+          <strong className="text-amber-600">허브</strong>로 지정한 위치(예: 창고)는 위치별 점검 시 "이동 수량" 입력란이 표시됩니다.
+        </p>
         <ModalFooterActions onCancel={onClose}>
           <Btn variant="primary" onClick={onClose}>완료</Btn>
         </ModalFooterActions>

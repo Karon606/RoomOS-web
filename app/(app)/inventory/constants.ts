@@ -23,7 +23,9 @@ export type InventoryRow = {
   memo: string | null              // 재고 파악 기준 등 자유 메모
   trackUnit: 'spec' | 'qty'        // 'spec' = qty×spec 환산 (쌀, 물티슈), 'qty' = qty만 (폐기물 봉투)
   isArchived: boolean
+  lastCheckId: string | null
   lastCheckDate: Date | null
+  lastCheckCreatedAt: Date | null
   lastRemainingQty: number | null
   currentStock: number | null
   avgDaily: number | null
@@ -56,11 +58,17 @@ export type StorageLocationItem = {
   id: string
   name: string
   sortOrder: number
+  isHub: boolean
 }
 
-export type LocationQtyEntry = { locationId: string; locationName: string; qty: number }
+export type LocationQtyEntry = {
+  locationId: string
+  locationName: string
+  qty: number
+  fromHubQty?: number  // 이 점검 시 허브(창고)에서 이 위치로 이동한 수량
+}
 
 export type TimelineEntry =
-  | { type: 'check';    id: string; date: Date; createdAt: Date; remainingQty: number; memo: string | null; locationBreakdown: LocationQtyEntry[] }
+  | { type: 'check';    id: string; date: Date; createdAt: Date; remainingQty: number; memo: string | null; locationBreakdown: LocationQtyEntry[]; isHub?: boolean }
   | { type: 'purchase'; id: string; date: Date; createdAt: Date; qtyValue: number; qtyUnit: string | null; specValue: number | null; specUnit: string | null; amount: number; vendor: string | null; memo: string | null; receivedAt: Date | null }
   | { type: 'addition'; id: string; date: Date; createdAt: Date; addedQty: number; source: string | null; memo: string | null }

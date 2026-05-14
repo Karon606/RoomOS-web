@@ -717,6 +717,7 @@ model StorageLocation {
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   name       String
   sortOrder  Int      @default(0)
+  isHub      Boolean  @default(false)  // true = 창고/허브 역할 (위치별 점검 시 이동 수량 추적용)
   createdAt  DateTime @default(now())
 
   trackedItems        TrackedItemLocation[]
@@ -745,6 +746,7 @@ model StockCheckLocation {
   stockCheckId      String @db.Uuid
   storageLocationId String @db.Uuid
   remainingQty      Float
+  fromHubQty        Float?  // 이 점검 시 허브(창고)에서 이 위치로 이동한 수량
 
   stockCheck      StockCheck      @relation(fields: [stockCheckId], references: [id], onDelete: Cascade)
   storageLocation StorageLocation @relation(fields: [storageLocationId], references: [id], onDelete: Cascade)
