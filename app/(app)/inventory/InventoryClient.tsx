@@ -387,6 +387,7 @@ function DetailModal({ row, onClose, onChange }: {
   const [tab, setTab]   = useState<'timeline' | 'monthly' | 'price'>('timeline')
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
+  const [loadingId, setLoadingId] = useState<string | null>(null)
 
   const reload = () => Promise.all([
     getInventoryDetail(trackedItemId).then(setData),
@@ -409,37 +410,31 @@ function DetailModal({ row, onClose, onChange }: {
 
   const handleDeleteCheck = (id: string) => {
     if (!confirm('이 점검 기록을 삭제하시겠습니까?')) return
-    startTransition(async () => {
-      const release = trackSave()
-      try {
-        const res = await deleteStockCheck(id)
-        if (res.ok) { reload(); onChange(); pushToast('success', '점검 기록 삭제됨') }
-        else { setError(res.error); pushToast('error', res.error) }
-      } finally { release() }
-    })
+    setLoadingId(id)
+    const release = trackSave()
+    deleteStockCheck(id).then(res => {
+      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '점검 기록 삭제됨') }) }
+      else { setLoadingId(null); setError(res.error); pushToast('error', res.error); release() }
+    }).catch(() => { setLoadingId(null); release() })
   }
 
   const handleDeleteAddition = (id: string) => {
     if (!confirm('이 입수 기록을 삭제하시겠습니까?')) return
-    startTransition(async () => {
-      const release = trackSave()
-      try {
-        const res = await deleteStockAddition(id)
-        if (res.ok) { reload(); onChange(); pushToast('success', '입수 기록 삭제됨') }
-        else { setError(res.error); pushToast('error', res.error) }
-      } finally { release() }
-    })
+    setLoadingId(id)
+    const release = trackSave()
+    deleteStockAddition(id).then(res => {
+      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '입수 기록 삭제됨') }) }
+      else { setLoadingId(null); setError(res.error); pushToast('error', res.error); release() }
+    }).catch(() => { setLoadingId(null); release() })
   }
 
   const handleConfirmReceipt = (expenseId: string) => {
-    startTransition(async () => {
-      const release = trackSave()
-      try {
-        const res = await confirmReceipt(expenseId)
-        if (res.ok) { reload(); onChange(); pushToast('success', '수령 확인 완료') }
-        else { setError(res.error); pushToast('error', res.error) }
-      } finally { release() }
-    })
+    setLoadingId(expenseId)
+    const release = trackSave()
+    confirmReceipt(expenseId).then(res => {
+      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '수령 확인 완료') }) }
+      else { setLoadingId(null); setError(res.error); pushToast('error', res.error); release() }
+    }).catch(() => { setLoadingId(null); release() })
   }
 
   const detailStockUnit = data ? (data.item.trackUnit === 'qty' ? data.item.qtyUnit : (data.item.specUnit ?? data.item.qtyUnit)) : null
@@ -484,7 +479,7 @@ function DetailModal({ row, onClose, onChange }: {
                 <p className="text-sm text-[var(--warm-muted)] text-center py-6">기록이 없습니다.</p>
               ) : (
                 <ul className="space-y-1.5">
-                  {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} pending={pending} />)}
+                  {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
                 </ul>
               )
             )}
@@ -804,15 +799,16 @@ function MergeSection({ currentId, currentLabel, category, onDone }: {
   )
 }
 
-function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck, onDeleteAddition, onConfirmReceipt, onChanged, pending }: {
+function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck, onDeleteAddition, onConfirmReceipt, onChanged, loadingId }: {
   entry: TimelineEntry; stockUnit: string | null; trackUnit: 'spec' | 'qty'
   itemLocations: StorageLocationItem[]
   onDeleteCheck: (id: string) => void
   onDeleteAddition: (id: string) => void
   onConfirmReceipt?: (id: string) => void
   onChanged: () => void
-  pending: boolean
+  loadingId: string | null
 }) {
+  const pending = loadingId === entry.id
   const [editing, setEditing] = useState(false)
   const [savePending, setSavePending] = useState(false)
   const [editError, setEditError] = useState('')
@@ -905,9 +901,16 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
           <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${isPendingReceipt ? 'bg-[var(--honey)]' : 'bg-[var(--status-paid-strong)]'}`} />
           <div className="min-w-0">
             <p className="text-xs text-[var(--warm-muted)]">
-              {fmtDate(entry.date)} · {isPendingReceipt ? '구매 (수령 대기)' : '구매 (지출)'}{packLabel ? ` · ${packLabel}` : ''}
+              구매일 {fmtDate(entry.date)}{packLabel ? ` · ${packLabel}` : ''}
             </p>
             <p className="text-sm font-medium text-[var(--warm-dark)]">+ {fmtQty(baseQty, baseUnit)}{entry.amount > 0 ? ` (${entry.amount.toLocaleString()}원)` : ''}</p>
+            {isPendingReceipt ? (
+              <p className="text-[10px] text-[var(--honey)] mt-0.5">수령 대기 중</p>
+            ) : entry.receivedAt ? (
+              <p className="text-[10px] text-[var(--status-paid-fg)] mt-0.5">
+                수령 확정 {fmtDate(entry.receivedAt)} <span className="tabular-nums">{fmtTime(entry.receivedAt)}</span>
+              </p>
+            ) : null}
             {(entry.vendor || entry.memo) && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">{entry.vendor ?? ''}{entry.vendor && entry.memo ? ' · ' : ''}{entry.memo ?? ''}</p>}
           </div>
         </div>
@@ -1126,7 +1129,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   entry: TimelineEntry & { type: 'purchase' }
   stockUnit: string | null
   onCancel: () => void
-  onSave: (data: { date?: string; amount?: number; vendor?: string | null; memo?: string | null }) => Promise<void>
+  onSave: (data: { date?: string; amount?: number; vendor?: string | null; memo?: string | null; receivedAt?: string | null }) => Promise<void>
   onDelete: () => Promise<void>
   pending: boolean
   error: string
@@ -1136,7 +1139,25 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   const [vendor, setVendor] = useState(entry.vendor ?? '')
   const [memo, setMemo]     = useState(entry.memo ?? '')
 
+  // 수령 확정일시
+  const initReceivedDate = entry.receivedAt
+    ? (() => { const d = new Date(entry.receivedAt); const k = new Date(d.getTime() + 9*3600000); return `${k.getUTCFullYear()}-${String(k.getUTCMonth()+1).padStart(2,'0')}-${String(k.getUTCDate()).padStart(2,'0')}` })()
+    : ''
+  const initReceivedTime = entry.receivedAt
+    ? (() => { const d = new Date(entry.receivedAt); const k = new Date(d.getTime() + 9*3600000); return `${String(k.getUTCHours()).padStart(2,'0')}:${String(k.getUTCMinutes()).padStart(2,'0')}` })()
+    : ''
+  const [receivedDate, setReceivedDate] = useState(initReceivedDate)
+  const [receivedTime, setReceivedTime] = useState(initReceivedTime)
+
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+
+  const buildReceivedAt = () => {
+    if (!receivedDate) return undefined  // 변경 없음
+    if (receivedDate === 'clear') return null  // 수령 대기로 되돌리기
+    const time = receivedTime || '00:00'
+    // KST → UTC 변환
+    return new Date(`${receivedDate}T${time}:00+09:00`).toISOString()
+  }
 
   return (
     <li className="border border-[var(--warm-border)] rounded-xl px-3 py-3 space-y-2 bg-[var(--canvas)]">
@@ -1144,7 +1165,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
       {error && <p className="text-xs text-red-500">{error}</p>}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <p className="text-[10px] text-[var(--warm-muted)] mb-1">날짜</p>
+          <p className="text-[10px] text-[var(--warm-muted)] mb-1">구매일</p>
           <DatePicker value={date} onChange={setDate} />
         </div>
         <div>
@@ -1160,6 +1181,19 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
         <p className="text-[10px] text-[var(--warm-muted)] mb-1">메모</p>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} />
       </div>
+      {/* 수령 확정일시 */}
+      <div className="space-y-1">
+        <p className="text-[10px] text-[var(--warm-muted)]">수령 확정일시</p>
+        <div className="flex gap-2 items-center">
+          <DatePicker value={receivedDate} onChange={setReceivedDate} className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+          <input type="time" value={receivedTime} onChange={e => setReceivedTime(e.target.value)}
+            className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-2 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+          {receivedDate && (
+            <button type="button" onClick={() => { setReceivedDate('clear'); setReceivedTime('') }}
+              className="text-[10px] text-red-400 hover:text-red-600 whitespace-nowrap">미수령으로</button>
+          )}
+        </div>
+      </div>
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onDelete} disabled={pending}
           className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 px-2 py-1.5 rounded-lg hover:bg-red-50">재고에서 제외</button>
@@ -1167,7 +1201,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
         <button type="button" onClick={onCancel} disabled={pending}
           className="text-xs text-[var(--warm-muted)] px-3 py-1.5 rounded-lg hover:bg-[var(--cream)]">취소</button>
         <Btn variant="primary" size="sm" disabled={pending}
-          onClick={() => onSave({ date, amount: amount ? Number(amount) : undefined, vendor: vendor || null, memo: memo || null })}>
+          onClick={() => onSave({ date, amount: amount ? Number(amount) : undefined, vendor: vendor || null, memo: memo || null, receivedAt: buildReceivedAt() })}>
           {pending ? '저장 중…' : '저장'}
         </Btn>
       </div>

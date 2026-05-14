@@ -838,6 +838,7 @@ export async function updateStockAddition(id: string, data: {
 
 export async function updateExpenseFromInventory(id: string, data: {
   date?: string; amount?: number; vendor?: string | null; memo?: string | null
+  receivedAt?: string | null  // ISO 문자열 or null(수령 대기로 되돌리기)
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -851,6 +852,7 @@ export async function updateExpenseFromInventory(id: string, data: {
         ...(data.amount !== undefined ? { amount: data.amount } : {}),
         ...(data.vendor !== undefined ? { vendor: data.vendor || null } : {}),
         ...(data.memo !== undefined ? { memo: data.memo || null } : {}),
+        ...(data.receivedAt !== undefined ? { receivedAt: data.receivedAt ? new Date(data.receivedAt) : null } : {}),
       },
     })
     revalidatePath('/inventory')

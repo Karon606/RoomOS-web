@@ -391,8 +391,31 @@ const PAY_METHODS_EXP    = ['계좌이체', '신용카드', '체크카드', '현
 // 부가 수익 전용 입금수단 — '보유 보증금'은 보증금 카테고리에서 선택 가능 (다른 카테고리/모달엔 노출 X)
 const PAY_METHODS_INC    = ['계좌이체', '현금', '보유 보증금', '기타']
 const ACCOUNT_TYPE_LABEL: Record<string, string> = {
-  BANK_ACCOUNT: '은행계좌', CREDIT_CARD: '신용카드', DEBIT_CARD: '체크카드',
+  BANK_ACCOUNT: '은행계좌', CREDIT_CARD: '신용카드', DEBIT_CARD: '체크카드', PREPAID: '선불/상품권',
 }
+
+const PREPAID_BRANDS: { name: string; domain: string }[] = [
+  { name: '네이버페이머니',   domain: 'pay.naver.com' },
+  { name: '카카오페이머니',   domain: 'kakaopay.com' },
+  { name: '토스머니',         domain: 'toss.im' },
+  { name: '쿠팡캐시',         domain: 'coupang.com' },
+  { name: '서울페이',         domain: 'seoulpay.kr' },
+  { name: '제로페이',         domain: 'zeropay.or.kr' },
+  { name: '페이코',           domain: 'payco.com' },
+  { name: 'SSG머니',          domain: 'ssg.com' },
+  { name: '삼성페이머니',     domain: 'samsung.com' },
+  { name: '하나머니',         domain: 'hanabank.com' },
+  { name: 'KB Pay',           domain: 'kbstar.com' },
+  { name: 'NH페이',           domain: 'nonghyup.com' },
+  { name: '우리페이',         domain: 'wooribank.com' },
+  { name: 'BC페이북',         domain: 'bccard.com' },
+  { name: '롯데캐시',         domain: 'lotteon.com' },
+  { name: '11페이',           domain: '11st.co.kr' },
+  { name: '스타벅스카드',     domain: 'starbucks.co.kr' },
+  { name: 'GS&POINT',         domain: 'gsfresh.com' },
+  { name: '티머니',           domain: 'tmoney.co.kr' },
+  { name: '코레일페이',       domain: 'letskorail.com' },
+]
 
 const BANKS: { name: string; domain: string }[] = [
   { name: '신한은행',       domain: 'shinhan.com' },
@@ -1213,8 +1236,9 @@ export default function FinanceClient({
   }
 
   // ── 파생 데이터 ──────────────────────────────────────────────
-  const cardAccounts = financialAccounts.filter(a => a.type === 'CREDIT_CARD' || a.type === 'DEBIT_CARD')
-  const bankAccounts = financialAccounts.filter(a => a.type === 'BANK_ACCOUNT')
+  const cardAccounts    = financialAccounts.filter(a => a.type === 'CREDIT_CARD' || a.type === 'DEBIT_CARD')
+  const bankAccounts    = financialAccounts.filter(a => a.type === 'BANK_ACCOUNT')
+  const prepaidAccounts = financialAccounts.filter(a => a.type === 'PREPAID')
 
   const filteredExpenses = expenses.filter(e => {
     if (expFilter.method   !== 'all' && e.payMethod !== expFilter.method) return false
@@ -2160,12 +2184,13 @@ export default function FinanceClient({
                   <option value="BANK_ACCOUNT">은행계좌</option>
                   <option value="CREDIT_CARD">신용카드</option>
                   <option value="DEBIT_CARD">체크카드</option>
+                  <option value="PREPAID">선불/상품권</option>
                 </select>
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-[var(--warm-mid)]">
-                  {assetType === 'BANK_ACCOUNT' ? '은행' : '카드'} *
+                  {assetType === 'BANK_ACCOUNT' ? '은행' : assetType === 'PREPAID' ? '서비스' : '카드'} *
                 </label>
                 <div className="flex items-center gap-2">
                   <BrandLogo name={assetBrand} size={22} />
@@ -2175,6 +2200,7 @@ export default function FinanceClient({
                     <option value="">선택하세요</option>
                     {(assetType === 'BANK_ACCOUNT' ? BANKS
                       : assetType === 'CREDIT_CARD' ? CREDIT_CARDS
+                      : assetType === 'PREPAID' ? PREPAID_BRANDS
                       : DEBIT_CARDS
                     ).map(b => (
                       <option key={b.name} value={b.name}>{b.name}</option>
@@ -2285,6 +2311,7 @@ export default function FinanceClient({
                     { type: 'BANK_ACCOUNT', label: '은행계좌' },
                     { type: 'CREDIT_CARD',  label: '신용카드' },
                     { type: 'DEBIT_CARD',   label: '체크카드' },
+                    { type: 'PREPAID',      label: '선불/상품권' },
                   ] as const
                 ).map(({ type, label }) => {
                   const group = financialAccounts.filter(a => a.type === type)
@@ -2511,6 +2538,17 @@ export default function FinanceClient({
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                         <option value="">선택 안함</option>
                         {cardAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {prepaidAccounts.length > 0 && prepaidAccounts.some(a => editExpMethod === a.brand || editExpMethod === accName(a)) && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">선불 계정 선택</label>
+                      <select value={editExpAccId}
+                        onChange={e => pickAccount(e.target.value, setEditExpAccId, setEditExpAccName)}
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                        <option value="">선택 안함</option>
+                        {prepaidAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
                       </select>
                     </div>
                   )}
@@ -2789,6 +2827,17 @@ export default function FinanceClient({
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       <option value="">선택 안함</option>
                       {cardAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+                    </select>
+                  </div>
+                )}
+                {prepaidAccounts.length > 0 && prepaidAccounts.some(a => addExpMethod === a.brand || addExpMethod === accName(a)) && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">선불 계정 선택</label>
+                    <select value={addExpAccId}
+                      onChange={e => pickAccount(e.target.value, setAddExpAccId, setAddExpAccName)}
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                      <option value="">선택 안함</option>
+                      {prepaidAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
                     </select>
                   </div>
                 )}
