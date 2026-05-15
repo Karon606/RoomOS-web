@@ -405,7 +405,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         excludeFromInventory: false,
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, memo: true, receivedAt: true },
+      select: { id: true, date: true, createdAt: true, qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, amount: true, vendor: true, memo: true, receivedAt: true, receivedLocation: { select: { name: true } } },
     }),
   ])
 
@@ -426,6 +426,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       id: p.id, date: p.date, createdAt: p.createdAt, qtyValue: p.qtyValue ?? 0, qtyUnit: p.qtyUnit,
       specValue: p.specValue, specUnit: p.specUnit,
       amount: p.amount, vendor: p.vendor, memo: p.memo, receivedAt: p.receivedAt,
+      receivedLocationName: p.receivedLocation?.name ?? null,
     })),
   ].sort((a, b) => b.date.getTime() - a.date.getTime() || b.createdAt.getTime() - a.createdAt.getTime())
 
@@ -1157,13 +1158,16 @@ export async function batchSetItemLocations(trackedItemIds: string[], locationId
 }
 
 // ── 수령 확인
-export async function confirmReceipt(expenseId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function confirmReceipt(expenseId: string, locationId?: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const expense = await prisma.expense.findFirst({ where: { id: expenseId, propertyId } })
     if (!expense) return { ok: false, error: '구매 내역을 찾을 수 없습니다.' }
-    await prisma.expense.update({ where: { id: expenseId }, data: { receivedAt: new Date() } })
+    await prisma.expense.update({
+      where: { id: expenseId },
+      data: { receivedAt: new Date(), ...(locationId ? { receivedLocationId: locationId } : {}) },
+    })
     revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {

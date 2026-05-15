@@ -428,10 +428,10 @@ function DetailModal({ row, onClose, onChange }: {
     }).catch(() => { setLoadingId(null); release() })
   }
 
-  const handleConfirmReceipt = (expenseId: string) => {
+  const handleConfirmReceipt = (expenseId: string, locationId?: string) => {
     setLoadingId(expenseId)
     const release = trackSave()
-    confirmReceipt(expenseId).then(res => {
+    confirmReceipt(expenseId, locationId).then(res => {
       if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '수령 확인 완료') }) }
       else { setLoadingId(null); setError(res.error); pushToast('error', res.error); release() }
     }).catch(() => { setLoadingId(null); release() })
@@ -804,7 +804,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
   itemLocations: StorageLocationItem[]
   onDeleteCheck: (id: string) => void
   onDeleteAddition: (id: string) => void
-  onConfirmReceipt?: (id: string) => void
+  onConfirmReceipt?: (id: string, locationId?: string) => void
   onChanged: () => void
   loadingId: string | null
 }) {
@@ -812,6 +812,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
   const [editing, setEditing] = useState(false)
   const [savePending, setSavePending] = useState(false)
   const [editError, setEditError] = useState('')
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
 
   // ── 점검
   if (entry.type === 'check') {
@@ -896,35 +897,62 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
     }
 
     return (
-      <li className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 ${isPendingReceipt ? 'border border-[var(--honey)]/40 bg-[var(--honey)]/10' : 'border border-[var(--warm-border)]/60'}`}>
-        <div className="min-w-0 flex items-center gap-2">
-          <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${isPendingReceipt ? 'bg-[var(--honey)]' : 'bg-[var(--status-paid-strong)]'}`} />
-          <div className="min-w-0">
-            <p className="text-xs text-[var(--warm-muted)]">
-              구매일 {fmtDate(entry.date)}{packLabel ? ` · ${packLabel}` : ''}
-            </p>
-            <p className="text-sm font-medium text-[var(--warm-dark)]">+ {fmtQty(baseQty, baseUnit)}{entry.amount > 0 ? ` (${entry.amount.toLocaleString()}원)` : ''}</p>
-            {isPendingReceipt ? (
-              <p className="text-[10px] text-[var(--honey)] mt-0.5">수령 대기 중</p>
-            ) : entry.receivedAt ? (
-              <p className="text-[10px] text-[var(--status-paid-fg)] mt-0.5">
-                수령 확정 {fmtDate(entry.receivedAt)} <span className="tabular-nums">{fmtTime(entry.receivedAt)}</span>
+      <li className={`rounded-xl px-3 py-2 ${isPendingReceipt ? 'border border-[var(--honey)]/40 bg-[var(--honey)]/10' : 'border border-[var(--warm-border)]/60'}`}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0 flex items-center gap-2">
+            <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${isPendingReceipt ? 'bg-[var(--honey)]' : 'bg-[var(--status-paid-strong)]'}`} />
+            <div className="min-w-0">
+              <p className="text-xs text-[var(--warm-muted)]">
+                구매일 {fmtDate(entry.date)}{packLabel ? ` · ${packLabel}` : ''}
               </p>
-            ) : null}
-            {(entry.vendor || entry.memo) && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">{entry.vendor ?? ''}{entry.vendor && entry.memo ? ' · ' : ''}{entry.memo ?? ''}</p>}
+              <p className="text-sm font-medium text-[var(--warm-dark)]">+ {fmtQty(baseQty, baseUnit)}{entry.amount > 0 ? ` (${entry.amount.toLocaleString()}원)` : ''}</p>
+              {isPendingReceipt ? (
+                <p className="text-[10px] text-[var(--honey)] mt-0.5">수령 대기 중</p>
+              ) : entry.receivedAt ? (
+                <p className="text-[10px] text-[var(--status-paid-fg)] mt-0.5">
+                  수령 확정 {fmtDate(entry.receivedAt)} <span className="tabular-nums">{fmtTime(entry.receivedAt)}</span>
+                  {entry.receivedLocationName && <span className="ml-1">· {entry.receivedLocationName}</span>}
+                </p>
+              ) : null}
+              {(entry.vendor || entry.memo) && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">{entry.vendor ?? ''}{entry.vendor && entry.memo ? ' · ' : ''}{entry.memo ?? ''}</p>}
+            </div>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {isPendingReceipt && onConfirmReceipt && !showLocationPicker && (
+              <button type="button" disabled={pending}
+                onClick={() => setShowLocationPicker(true)}
+                className="text-xs font-semibold text-[var(--status-paid-fg)] hover:text-[var(--status-paid-strong)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--status-paid-bg)] whitespace-nowrap">
+                수령 확인
+              </button>
+            )}
+            <button type="button" disabled={pending} onClick={() => setEditing(true)}
+              className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>
           </div>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {isPendingReceipt && onConfirmReceipt && (
-            <button type="button" disabled={pending}
-              onClick={() => onConfirmReceipt(entry.id)}
-              className="text-xs font-semibold text-[var(--status-paid-fg)] hover:text-[var(--status-paid-strong)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--status-paid-bg)] whitespace-nowrap">
-              수령 확인
-            </button>
-          )}
-          <button type="button" disabled={pending} onClick={() => setEditing(true)}
-            className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>
-        </div>
+        {isPendingReceipt && showLocationPicker && onConfirmReceipt && (
+          <div className="mt-2 pt-2 border-t border-[var(--honey)]/30">
+            <p className="text-[10px] text-[var(--warm-muted)] mb-1.5">어느 위치로 입고됩니까?</p>
+            <div className="flex flex-wrap gap-1.5">
+              {itemLocations.map(loc => (
+                <button key={loc.id} type="button" disabled={pending}
+                  onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id, loc.id) }}
+                  className={`text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-40 ${loc.isHub ? 'border-amber-300 bg-amber-50 text-amber-700 font-medium' : 'border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)]'}`}>
+                  {loc.isHub ? '🏬 ' : ''}{loc.name}
+                </button>
+              ))}
+              <button type="button" disabled={pending}
+                onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id) }}
+                className="text-xs px-2.5 py-1 rounded-lg border border-dashed border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40">
+                위치 없이 확정
+              </button>
+              <button type="button"
+                onClick={() => setShowLocationPicker(false)}
+                className="text-xs px-2.5 py-1 rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">
+                취소
+              </button>
+            </div>
+          </div>
+        )}
       </li>
     )
   }

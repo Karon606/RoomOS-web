@@ -433,6 +433,9 @@ model Expense {
   recurringExpenseId   String?            @db.Uuid
   recurringExpense     RecurringExpense?  @relation(fields: [recurringExpenseId], references: [id])
 
+  receivedLocationId   String?            @db.Uuid
+  receivedLocation     StorageLocation?   @relation(fields: [receivedLocationId], references: [id], onDelete: SetNull)
+
   reserveSettlements   ReserveTransaction[] @relation("ExpenseReserveSettlement")
 
   @@index([propertyId, date])
@@ -726,6 +729,7 @@ model StorageLocation {
 
   trackedItems        TrackedItemLocation[]
   stockCheckLocations StockCheckLocation[]
+  receivedExpenses    Expense[]
 
   @@unique([propertyId, name])
   @@index([propertyId, sortOrder])
