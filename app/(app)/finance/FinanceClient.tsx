@@ -1710,78 +1710,63 @@ export default function FinanceClient({
                     <EmptyState label="지출 내역이 없습니다" />
                   </div>
                 ) : (
-                  <div className="sm:hidden space-y-2">
+                  <div className="sm:hidden space-y-1.5">
                     {items.map(item => {
                       if (item.kind === 'expense') {
                         const e = item.exp
+                        const isUnsettled = e.settleStatus === 'UNSETTLED'
+                        const isFixed = !!e.recurringExpenseId
+                        const meta = [e.payMethod, e.financialAccount ? accName(e.financialAccount) : null].filter(Boolean).join(' · ')
                         return (
                           <div key={e.id}
                             onClick={() => { setDetailExp(e); setDetailExpEdit(false); setError('') }}
-                            className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 cursor-pointer active:opacity-70 transition-opacity">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs text-[var(--warm-muted)]">{fmtDate(e.date)}</span>
-                              <div className="flex items-center gap-1.5">
-                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ring-1
-                                  ${e.settleStatus === 'UNSETTLED' ? 'bg-red-50 text-red-600 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
-                                  {e.settleStatus === 'UNSETTLED' ? '미정산' : '정산완료'}
-                                </span>
-                                <span className="text-sm font-bold text-red-500"><MoneyDisplay amount={e.amount} prefix="-" alwaysFull /></span>
+                            className={`bg-[var(--cream)] border rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity ${isUnsettled ? 'border-red-200/60' : 'border-[var(--warm-border)]'}`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 mb-0.5">
+                                  {isFixed && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-0.5" />}
+                                  <span className="text-[10px] text-[var(--coral)] font-medium">{e.category}</span>
+                                  {isUnsettled && <span className="text-[10px] text-red-500 font-medium">· 미정산</span>}
+                                </div>
+                                <p className="text-sm text-[var(--warm-dark)] truncate">{[e.vendor, e.detail].filter(Boolean).join(' · ') || '—'}</p>
+                                <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">
+                                  {fmtDate(e.date)}{meta ? ` · ${meta}` : ''}
+                                  {e.memo ? ` · ${e.memo}` : ''}
+                                </p>
                               </div>
-                            </div>
-                            <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20">{e.category}</span>
-                              {e.recurringExpenseId && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 ring-1 ring-amber-200 font-medium">고정</span>}
-                              {e.recurringExpense?.isVariable && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-500 ring-1 ring-blue-100">변동</span>}
-                              {e.payMethod && <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{e.payMethod}</span>}
-                              {e.financialAccount && <span className="text-[10px] text-[var(--warm-muted)]">{accName(e.financialAccount)}</span>}
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              {(e.vendor || e.detail || e.memo) && (
-                                <p className="text-xs text-[var(--warm-dark)] truncate">{[e.vendor, e.detail, e.memo].filter(Boolean).join(' · ')}</p>
-                              )}
-                              {e.receiptUrl && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--coral-pale)] text-[var(--coral)] font-medium shrink-0">영수증</span>}
+                              <div className="text-right shrink-0">
+                                <p className="text-sm font-semibold text-red-500"><MoneyDisplay amount={e.amount} prefix="-" alwaysFull /></p>
+                                {e.receiptUrl && <span className="text-[9px] text-[var(--coral)]">영수증</span>}
+                              </div>
                             </div>
                           </div>
                         )
                       }
                       // 미확인 고정 지출 카드
                       const r = item.rec
-                      // 예약 금액이 있으면 우선 prefill, 없으면 평균 또는 기본 금액
                       const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
                       return (
                         <div key={`rec-${r.id}`}
                           onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.payMethod ?? '계좌이체'); setRecRecAccId(r.financialAccountId ?? ''); setRecError('') }}
-                          className="bg-amber-50/40 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-2xl p-4 cursor-pointer hover:bg-amber-50/70 dark:hover:bg-amber-500/15 active:opacity-70 transition-colors">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs text-[var(--warm-muted)]">{item.dateStr.slice(5).replace('-', '/')} 납부일</span>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 ring-1 ring-amber-200 font-medium">
-                                {r.isAutoDebit ? '자동이체 확인' : '지출 확인 필요'}
-                              </span>
-                              <div className="text-right">
-                                <span className="text-sm font-bold text-red-500">
-                                  <MoneyDisplay amount={expectedAmt} prefix="-" />
-                                </span>
-                                {r.isVariable && (
-                                  <p className="text-[9px] text-blue-400 mt-0.5">
-                                    {r.historicalAvg ? '과거 평균 기준 예상치' : '예상치'}
-                                  </p>
-                                )}
+                          className="border border-amber-200 rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity bg-amber-50/30">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-0.5" />
+                                <span className="text-[10px] text-amber-600 font-medium">{r.category}</span>
+                                <span className="text-[10px] text-[var(--warm-muted)]">고정{r.isVariable ? ' · 변동' : ''}</span>
                               </div>
+                              <p className="text-sm text-[var(--warm-dark)] font-medium truncate">{r.title}</p>
+                              <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">
+                                {item.dateStr.slice(5).replace('-', '/')} 납부{r.isAutoDebit ? ' · 자동이체' : ''}
+                                {r.pendingAmount != null ? ` · 예약금액 있음` : ''}
+                              </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-sm font-semibold text-red-500"><MoneyDisplay amount={expectedAmt} prefix="-" /></p>
+                              {r.isVariable && <p className="text-[9px] text-[var(--warm-muted)] mt-0.5">예상치</p>}
                             </div>
                           </div>
-                          <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 ring-1 ring-amber-200 font-medium">고정</span>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20">{r.category}</span>
-                            {r.payMethod && <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{r.payMethod}</span>}
-                            {r.isVariable && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-500 ring-1 ring-blue-100">변동</span>}
-                            {r.pendingAmount != null && (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200 font-medium">
-                                예약 {r.pendingAmount.toLocaleString()}원
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-[var(--warm-dark)] font-medium">{r.title}{r.memo ? ` · ${r.memo}` : ''}</p>
                         </div>
                       )
                     })}
@@ -1817,28 +1802,27 @@ export default function FinanceClient({
                                 className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer">
                                 <td className="px-4 py-3 text-xs text-[var(--warm-mid)] overflow-hidden"><span className="truncate block">{fmtDate(e.date)}</span></td>
                                 <td className="px-4 py-3 overflow-hidden">
-                                  <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] whitespace-nowrap">{e.payMethod ?? '—'}</span>
-                                  {e.financialAccount && <div className="text-xs text-[var(--warm-muted)] mt-0.5 truncate">{accName(e.financialAccount)}</div>}
+                                  <p className="text-xs text-[var(--warm-dark)] truncate">{e.payMethod ?? '—'}</p>
+                                  {e.financialAccount && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">{accName(e.financialAccount)}</p>}
                                 </td>
                                 <td className="px-4 py-3 overflow-hidden">
-                                  <div className="flex items-center gap-1 flex-wrap">
-                                    <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20 whitespace-nowrap">{e.category}</span>
-                                    {e.recurringExpenseId && <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-600 ring-1 ring-amber-200 whitespace-nowrap font-medium">고정</span>}
-                                    {e.recurringExpense?.isVariable && <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-500 ring-1 ring-blue-100 whitespace-nowrap">변동</span>}
+                                  <div className="flex items-center gap-1.5">
+                                    {e.recurringExpenseId && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="고정지출" />}
+                                    <span className="text-xs text-[var(--coral)] font-medium truncate">{e.category}</span>
+                                    {e.recurringExpense?.isVariable && <span className="text-[10px] text-[var(--warm-muted)] shrink-0">변동</span>}
                                   </div>
                                 </td>
                                 <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
                                   <div className="flex items-center gap-1.5">
                                     <span className="truncate">{e.detail ?? '—'}</span>
-                                    {e.receiptUrl && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--coral-pale)] text-[var(--coral)] font-medium shrink-0">영수증</span>}
+                                    {e.receiptUrl && <span className="text-[9px] text-[var(--coral)] shrink-0">영수증</span>}
                                   </div>
                                 </td>
                                 <td className="px-4 py-3 text-sm font-semibold text-red-500 overflow-hidden"><span className="truncate block"><MoneyDisplay amount={e.amount} prefix="-" /></span></td>
                                 <td className="px-4 py-3 overflow-hidden">
-                                  <span className={`inline-flex items-center text-xs px-2 py-1 rounded-full font-medium ring-1 whitespace-nowrap
-                                    ${e.settleStatus === 'UNSETTLED' ? 'bg-red-50 text-red-600 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
-                                    {e.settleStatus === 'UNSETTLED' ? '미정산' : '정산완료'}
-                                  </span>
+                                  {e.settleStatus === 'UNSETTLED'
+                                    ? <span className="text-xs text-red-500 font-medium">미정산</span>
+                                    : <span className="text-xs text-[var(--warm-muted)]">정산완료</span>}
                                 </td>
                               </tr>
                             )
@@ -1859,10 +1843,11 @@ export default function FinanceClient({
                                 <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] whitespace-nowrap">{r.payMethod ?? '—'}</span>
                               </td>
                               <td className="px-4 py-3 overflow-hidden">
-                                <div className="flex items-center gap-1">
-                                  <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-600 ring-1 ring-amber-200 whitespace-nowrap font-medium">고정</span>
-                                  <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20 whitespace-nowrap">{r.category}</span>
-                                </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                                    <span className="text-xs text-[var(--coral)] font-medium truncate">{r.category}</span>
+                                    {r.isVariable && <span className="text-[10px] text-[var(--warm-muted)] shrink-0">변동</span>}
+                                  </div>
                               </td>
                               <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
                                 <span className="truncate block font-medium">{r.title}</span>
@@ -1871,15 +1856,11 @@ export default function FinanceClient({
                                 <span className="text-sm font-semibold text-red-500 truncate block">
                                   <MoneyDisplay amount={expectedAmt} prefix="-" />
                                 </span>
-                                {r.isVariable && (
-                                  <span className="text-[9px] text-blue-400">
-                                    {r.historicalAvg ? '과거 평균 기준 예상치' : '예상치'}
-                                  </span>
-                                )}
+                                {r.isVariable && <span className="text-[10px] text-[var(--warm-muted)]">예상치</span>}
                               </td>
                               <td className="px-4 py-3 overflow-hidden">
-                                <span className="inline-flex items-center text-xs px-2 py-1 rounded-full font-medium ring-1 whitespace-nowrap bg-amber-50 text-amber-600 ring-amber-200">
-                                  {r.isAutoDebit ? '자동이체 확인' : '확인 필요'}
+                                <span className="text-xs text-amber-600 font-medium">
+                                  {r.isAutoDebit ? '자동이체' : '확인 필요'}
                                 </span>
                               </td>
                             </tr>

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { DM_Mono, Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider, themeBootstrapScript } from '@/components/theme/ThemeProvider'
+import { FontSizeProvider, fontSizeBootstrapScript } from '@/components/theme/FontSizeProvider'
 
 // 가이드 명시: Numbers·Mono·Meta는 DM Mono
 const dmMono = DM_Mono({
@@ -29,13 +30,13 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'RoomOS',
+  title: '스테이음',
   description: '고시원·원룸텔 스마트 관리 시스템',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'RoomOS',
+    title: '스테이음',
   },
   icons: {
     icon: '/icon.svg',
@@ -59,9 +60,12 @@ export default function RootLayout({
         />
         {/* FOUC 방지 — hydration 전에 .dark 클래스 미리 토글. localStorage 읽어 즉시 적용. */}
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
+        <script dangerouslySetInnerHTML={{ __html: fontSizeBootstrapScript }} />
       </head>
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <FontSizeProvider>
+          <ThemeProvider>{children}</ThemeProvider>
+        </FontSizeProvider>
       </body>
     </html>
   )

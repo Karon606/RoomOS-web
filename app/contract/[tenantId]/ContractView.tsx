@@ -513,7 +513,7 @@ export default function ContractView({ data }: { data: ContractData }) {
         </div>
 
         {/* 우측 하단 이스터에그 — Brand Guide 정식 워드마크(SVG) 사용 */}
-        <div className="made-with" aria-label="Made with RoomOS">
+        <div className="made-with" aria-label="Made with 스테이음">
           <span className="made-with-prefix">Made with</span>
           <RoomOSWordmark height={11} className="made-with-wm" />
         </div>
@@ -639,7 +639,7 @@ export default function ContractView({ data }: { data: ContractData }) {
           box-sizing: border-box;
         }
 
-        /* Made with RoomOS — 콘텐츠 끝에 우측 정렬로 흐름 배치.
+        /* Made with 스테이음 — 콘텐츠 끝에 우측 정렬로 흐름 배치.
            paper 강제 page-height 시 빈 2페이지가 생겨서 흐름 배치로 회피.
            본문이 거의 페이지를 채우므로 시각적으로 footer 효과 동일. */
         .made-with {

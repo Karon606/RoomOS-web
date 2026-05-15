@@ -24,6 +24,7 @@ import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { Btn } from '@/components/ui/Btn'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { useTheme, type ThemeMode } from '@/components/theme/ThemeProvider'
+import { useFontSize, type FontSizeLevel } from '@/components/theme/FontSizeProvider'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -849,7 +850,7 @@ export default function SettingsForm({
           {isOwner && (
             <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
               <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">멤버 초대</h2>
-              <p className="text-xs text-[var(--warm-muted)] mb-4">초대할 멤버가 먼저 <a href="/login" className="underline">RoomOS에 Google로 로그인</a>한 후 이메일을 입력해주세요.</p>
+              <p className="text-xs text-[var(--warm-muted)] mb-4">초대할 멤버가 먼저 <a href="/login" className="underline">스테이음에 Google로 로그인</a>한 후 이메일을 입력해주세요.</p>
               <div className="space-y-3">
                 <input
                   type="email"
@@ -1125,46 +1126,113 @@ function BizField({ label, value, onChange }: { label: string; value: string; on
 }
 
 // ── 화면(테마) 탭 ─────────────────────────────────────────────────
+const FONT_SIZE_OPTIONS: { key: FontSizeLevel; label: string; desc: string; basePx: number }[] = [
+  { key: 'compact', label: '작게',   desc: '한 화면에 더 많은 정보 — 데이터 집중형',  basePx: 14 },
+  { key: 'default', label: '기본',   desc: '권장 크기',                               basePx: 16 },
+  { key: 'large',   label: '크게',   desc: '가독성 우선 — 눈이 불편한 경우 권장',     basePx: 18 },
+  { key: 'xlarge',  label: '아주 크게', desc: '최대 크기',                            basePx: 20 },
+]
+
+function FontSizePreview({ basePx }: { basePx: number }) {
+  const scale = basePx / 16
+  return (
+    <div
+      className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-3 space-y-1.5 overflow-hidden"
+      style={{ fontSize: `${basePx}px` }}
+    >
+      <div className="flex items-center justify-between">
+        <span style={{ fontSize: `${0.625 * scale}rem`, lineHeight: 1.4 }} className="text-[var(--warm-muted)]">2026년 5월 15일</span>
+        <span style={{ fontSize: `${0.875 * scale}rem` }} className="font-bold text-red-500">-58만원</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span style={{ fontSize: `${0.625 * scale}rem` }} className="px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)]">통신비</span>
+        <span style={{ fontSize: `${0.75 * scale}rem` }} className="text-[var(--warm-dark)]">인터넷 요금</span>
+      </div>
+      <span style={{ fontSize: `${0.625 * scale}rem` }} className="text-[var(--warm-muted)]">계좌이체 · 하나은행</span>
+    </div>
+  )
+}
+
 function AppearanceTab() {
   const { mode, setMode, isDark } = useTheme()
-  const options: { key: ThemeMode; label: string; desc: string }[] = [
+  const { level, setLevel } = useFontSize()
+
+  const themeOptions: { key: ThemeMode; label: string; desc: string }[] = [
     { key: 'system', label: '시스템 따라', desc: '기기 설정(라이트/다크)에 자동으로 맞춤' },
     { key: 'light',  label: '라이트',     desc: '항상 밝은 화면' },
     { key: 'dark',   label: '다크',       desc: '항상 어두운 화면 — 야간·OLED 권장' },
     { key: 'time',   label: '시간 기반',  desc: '오전 6시~오후 6시 라이트, 그 외 다크' },
   ]
+
   return (
-    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5 space-y-4">
-      <div>
-        <h2 className="text-sm font-semibold text-[var(--warm-dark)]">테마</h2>
-        <p className="text-xs text-[var(--warm-muted)] mt-0.5">
-          현재 적용: <span className="font-medium text-[var(--warm-dark)]">{isDark ? '다크' : '라이트'}</span>
-        </p>
+    <div className="space-y-4">
+      {/* 테마 */}
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-[var(--warm-dark)]">테마</h2>
+          <p className="text-xs text-[var(--warm-muted)] mt-0.5">
+            현재 적용: <span className="font-medium text-[var(--warm-dark)]">{isDark ? '다크' : '라이트'}</span>
+          </p>
+        </div>
+        <div className="space-y-2">
+          {themeOptions.map(o => {
+            const selected = mode === o.key
+            return (
+              <button
+                key={o.key}
+                type="button"
+                onClick={() => setMode(o.key)}
+                className={`w-full text-left px-4 py-3 rounded-xl border transition-colors flex items-start gap-3
+                  ${selected
+                    ? 'border-[var(--persimmon)] bg-[var(--persimmon-l)]'
+                    : 'border-[var(--warm-border)] bg-[var(--canvas)] hover:border-[var(--warm-muted)]'}`}
+              >
+                <span className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0
+                  ${selected ? 'border-[var(--persimmon)]' : 'border-[var(--warm-border)]'}`}>
+                  {selected && <span className="w-2 h-2 rounded-full bg-[var(--persimmon)]" />}
+                </span>
+                <span className="flex-1">
+                  <span className={`block text-sm font-medium ${selected ? 'text-[var(--persimmon-d)]' : 'text-[var(--warm-dark)]'}`}>{o.label}</span>
+                  <span className="block text-xs text-[var(--warm-muted)] mt-0.5">{o.desc}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
-      <div className="space-y-2">
-        {options.map(o => {
-          const selected = mode === o.key
-          return (
-            <button
-              key={o.key}
-              type="button"
-              onClick={() => setMode(o.key)}
-              className={`w-full text-left px-4 py-3 rounded-xl border transition-colors flex items-start gap-3
-                ${selected
-                  ? 'border-[var(--persimmon)] bg-[var(--persimmon-l)]'
-                  : 'border-[var(--warm-border)] bg-[var(--canvas)] hover:border-[var(--warm-muted)]'}`}
-            >
-              <span className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0
-                ${selected ? 'border-[var(--persimmon)]' : 'border-[var(--warm-border)]'}`}>
-                {selected && <span className="w-2 h-2 rounded-full bg-[var(--persimmon)]" />}
-              </span>
-              <span className="flex-1">
-                <span className={`block text-sm font-medium ${selected ? 'text-[var(--persimmon-d)]' : 'text-[var(--warm-dark)]'}`}>{o.label}</span>
-                <span className="block text-xs text-[var(--warm-muted)] mt-0.5">{o.desc}</span>
-              </span>
-            </button>
-          )
-        })}
+
+      {/* 글씨 크기 */}
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-[var(--warm-dark)]">글씨 크기</h2>
+          <p className="text-xs text-[var(--warm-muted)] mt-0.5">앱 전체 텍스트 크기 — 이 기기에만 적용됩니다</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {FONT_SIZE_OPTIONS.map(o => {
+            const selected = level === o.key
+            return (
+              <button
+                key={o.key}
+                type="button"
+                onClick={() => setLevel(o.key)}
+                className={`text-left px-3 py-3 rounded-xl border transition-colors flex flex-col gap-2
+                  ${selected
+                    ? 'border-[var(--persimmon)] bg-[var(--persimmon-l)]'
+                    : 'border-[var(--warm-border)] bg-[var(--canvas)] hover:border-[var(--warm-muted)]'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0
+                    ${selected ? 'border-[var(--persimmon)]' : 'border-[var(--warm-border)]'}`}>
+                    {selected && <span className="w-2 h-2 rounded-full bg-[var(--persimmon)]" />}
+                  </span>
+                  <span className={`text-sm font-medium ${selected ? 'text-[var(--persimmon-d)]' : 'text-[var(--warm-dark)]'}`}>{o.label}</span>
+                </div>
+                <FontSizePreview basePx={o.basePx} />
+                <span className="text-[10px] text-[var(--warm-muted)] leading-snug">{o.desc}</span>
+              </button>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

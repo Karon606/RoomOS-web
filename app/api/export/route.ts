@@ -389,10 +389,10 @@ export async function GET(request: NextRequest) {
   }
 
   const filename = scope === 'month'
-    ? `RoomOS_${targetMonth}.xlsx`
+    ? `Stayeum_${targetMonth}.xlsx`
     : scope === 'year'
-      ? `RoomOS_${yyyy}년.xlsx`
-      : 'RoomOS_전체.xlsx'
+      ? `Stayeum_${yyyy}년.xlsx`
+      : 'Stayeum_전체.xlsx'
 
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
   return new NextResponse(buf, {
