@@ -351,9 +351,10 @@ model FinancialAccount {
   linkedAccount   FinancialAccount?  @relation("CardToAccount", fields: [linkedAccountId], references: [id])
   linkedCards     FinancialAccount[] @relation("CardToAccount")
 
-  expenses     Expense[]
-  extraIncomes ExtraIncome[]
-  reserveLinks ReserveTransaction[] @relation("ReserveLinkedAccount")
+  expenses          Expense[]
+  extraIncomes      ExtraIncome[]
+  reserveLinks      ReserveTransaction[] @relation("ReserveLinkedAccount")
+  recurringExpenses RecurringExpense[]
 
   @@map("financial_accounts")
 }
@@ -646,7 +647,9 @@ model RecurringExpense {
   amount          Int
   category        String
   dueDay          Int
-  payMethod       String?
+  payMethod           String?
+  financialAccountId  String?   @db.Uuid
+  financialAccount    FinancialAccount? @relation(fields: [financialAccountId], references: [id], onDelete: SetNull)
   isAutoDebit     Boolean   @default(false)
   isVariable      Boolean   @default(false)
   alertDaysBefore Int       @default(7)

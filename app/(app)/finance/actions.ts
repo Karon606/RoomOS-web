@@ -678,6 +678,7 @@ export type RecurringExpenseWithStatus = {
   category: string
   dueDay: number
   payMethod: string | null
+  financialAccountId: string | null
   isAutoDebit: boolean
   isVariable: boolean
   alertDaysBefore: number
@@ -758,6 +759,7 @@ export async function getRecurringExpensesWithStatus(month: string): Promise<Rec
       category:          re.category,
       dueDay:            re.dueDay,
       payMethod:         re.payMethod,
+      financialAccountId: re.financialAccountId,
       isAutoDebit:       re.isAutoDebit,
       isVariable:        isVar,
       alertDaysBefore:   re.alertDaysBefore,
@@ -780,6 +782,7 @@ export async function recordRecurringExpense(data: {
   amount: number
   date: string
   payMethod?: string
+  financialAccountId?: string
   memo?: string
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
@@ -787,9 +790,11 @@ export async function recordRecurringExpense(data: {
     const propertyId = await getPropertyId()
     const recurring = await prisma.recurringExpense.findUnique({
       where: { id: data.recurringExpenseId },
-      select: { category: true, title: true, payMethod: true },
+      select: { category: true, title: true, payMethod: true, financialAccountId: true },
     })
     if (!recurring) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
+
+    const resolvedAccountId = data.financialAccountId ?? recurring.financialAccountId ?? null
 
     await prisma.$transaction([
       prisma.expense.create({
@@ -800,6 +805,7 @@ export async function recordRecurringExpense(data: {
           category:            recurring.category,
           detail:              recurring.title,
           payMethod:           data.payMethod ?? recurring.payMethod ?? '계좌이체',
+          financialAccountId:  resolvedAccountId,
           memo:                data.memo ?? null,
           settleStatus:        (data.payMethod ?? recurring.payMethod) === '신용카드' ? 'UNSETTLED' : 'SETTLED',
           recurringExpenseId:  data.recurringExpenseId,

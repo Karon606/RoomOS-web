@@ -1089,6 +1089,7 @@ export default function FinanceClient({
   const [recRecDate, setRecRecDate]     = useState('')
   const [recRecMemo, setRecRecMemo]     = useState('')
   const [recRecPayMethod, setRecRecPayMethod] = useState('')
+  const [recRecAccId, setRecRecAccId]   = useState('')
   const [recError, setRecError]         = useState('')
 
   // ── 고정 지출 관리 모달 상태 ─────────────────────────────────
@@ -1097,7 +1098,7 @@ export default function FinanceClient({
   const [recMgmtLoading, setRecMgmtLoading] = useState(false)
   const [editingRecMgmt, setEditingRecMgmt] = useState<RecurringExpenseRow | null>(null)
   const [showRecMgmtForm, setShowRecMgmtForm] = useState(false)
-  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '' })
+  const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '' })
   const [recMgmtPending, startRecMgmtTransition] = useTransition()
   const [recMgmtError, setRecMgmtError] = useState('')
 
@@ -1116,13 +1117,13 @@ export default function FinanceClient({
     const defaultActiveSince = acquisitionDate
       ? kstYmdStr(new Date(acquisitionDate))
       : ''
-    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, priorYearAmount: '', memo: '' })
+    setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, priorYearAmount: '', memo: '' })
     setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
   const openEditRecMgmt = (r: RecurringExpenseRow) => {
     setEditingRecMgmt(r)
-    setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', priorYearAmount: r.priorYearAmount ? r.priorYearAmount.toString() : '', memo: r.memo ?? '' })
+    setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', priorYearAmount: r.priorYearAmount ? r.priorYearAmount.toString() : '', memo: r.memo ?? '' })
     setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
@@ -1133,6 +1134,7 @@ export default function FinanceClient({
       category: recMgmtForm.category,
       dueDay: parseInt(recMgmtForm.dueDay) || 25,
       payMethod: recMgmtForm.payMethod || undefined,
+      financialAccountId: recMgmtForm.financialAccountId || null,
       isAutoDebit: recMgmtForm.isAutoDebit,
       isVariable: recMgmtForm.isVariable,
       alertDaysBefore: parseInt(recMgmtForm.alertDaysBefore) || 7,
@@ -1748,7 +1750,7 @@ export default function FinanceClient({
                       const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
                       return (
                         <div key={`rec-${r.id}`}
-                          onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.payMethod ?? '계좌이체'); setRecError('') }}
+                          onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.payMethod ?? '계좌이체'); setRecRecAccId(r.financialAccountId ?? ''); setRecError('') }}
                           className="bg-amber-50/40 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-2xl p-4 cursor-pointer hover:bg-amber-50/70 dark:hover:bg-amber-500/15 active:opacity-70 transition-colors">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-xs text-[var(--warm-muted)]">{item.dateStr.slice(5).replace('-', '/')} 납부일</span>
@@ -1847,7 +1849,7 @@ export default function FinanceClient({
                       const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
                           return (
                             <tr key={`rec-${r.id}`}
-                              onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.payMethod ?? '계좌이체'); setRecError('') }}
+                              onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.payMethod ?? '계좌이체'); setRecRecAccId(r.financialAccountId ?? ''); setRecError('') }}
                               className="border-b border-[var(--warm-border)] bg-[var(--canvas)]/40 hover:bg-[var(--canvas)] transition-colors cursor-pointer"
                               style={{ boxShadow: 'inset 3px 0 0 #fbbf24' }}>
                               <td className="px-4 py-3 text-xs text-[var(--warm-muted)] overflow-hidden">
@@ -3045,12 +3047,42 @@ export default function FinanceClient({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">결제 수단 (선택)</label>
-                  <select value={recMgmtForm.payMethod} onChange={e => setRecMgmtForm(p => ({ ...p, payMethod: e.target.value }))}
+                  <select value={recMgmtForm.payMethod} onChange={e => setRecMgmtForm(p => ({ ...p, payMethod: e.target.value, financialAccountId: '' }))}
                     className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                     <option value="">선택 안 함</option>
                     {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
+                {recMgmtForm.payMethod === '계좌이체' && bankAccounts.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">출금 계좌 (선택)</label>
+                    <select value={recMgmtForm.financialAccountId} onChange={e => setRecMgmtForm(p => ({ ...p, financialAccountId: e.target.value }))}
+                      className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                      <option value="">선택 안함</option>
+                      {bankAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+                    </select>
+                  </div>
+                )}
+                {(recMgmtForm.payMethod === '신용카드' || recMgmtForm.payMethod === '체크카드') && cardAccounts.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">카드 선택 (선택)</label>
+                    <select value={recMgmtForm.financialAccountId} onChange={e => setRecMgmtForm(p => ({ ...p, financialAccountId: e.target.value }))}
+                      className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                      <option value="">선택 안함</option>
+                      {cardAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+                    </select>
+                  </div>
+                )}
+                {prepaidAccounts.length > 0 && prepaidAccounts.some(a => recMgmtForm.payMethod === a.brand || recMgmtForm.payMethod === accName(a)) && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">선불 계정 선택 (선택)</label>
+                    <select value={recMgmtForm.financialAccountId} onChange={e => setRecMgmtForm(p => ({ ...p, financialAccountId: e.target.value }))}
+                      className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                      <option value="">선택 안함</option>
+                      {prepaidAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div className="flex gap-4">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={recMgmtForm.isAutoDebit} onChange={e => setRecMgmtForm(p => ({ ...p, isAutoDebit: e.target.checked }))} className="accent-[var(--coral)]" />
@@ -3112,6 +3144,8 @@ export default function FinanceClient({
                       </div>
                       <p className="text-xs text-[var(--warm-muted)] mt-0.5">
                         매월 {r.dueDay}일 · {r.amount.toLocaleString()}원 · {r.category}
+                        {r.payMethod && <> · {r.payMethod}</>}
+                        {r.financialAccountName && <> ({r.financialAccountName})</>}
                       </p>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
@@ -3168,7 +3202,7 @@ export default function FinanceClient({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs text-[var(--warm-muted)]">결제수단</label>
-                <select value={recRecPayMethod} onChange={e => setRecRecPayMethod(e.target.value)}
+                <select value={recRecPayMethod} onChange={e => { setRecRecPayMethod(e.target.value); setRecRecAccId('') }}
                   className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                   {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                   {!effectivePaymentMethods.includes('계좌이체') && <option value="계좌이체">계좌이체</option>}
@@ -3181,6 +3215,36 @@ export default function FinanceClient({
                   className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
               </div>
             </div>
+            {recRecPayMethod === '계좌이체' && bankAccounts.length > 0 && (
+              <div className="space-y-1">
+                <label className="text-xs text-[var(--warm-muted)]">출금 계좌</label>
+                <select value={recRecAccId} onChange={e => setRecRecAccId(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                  <option value="">선택 안함</option>
+                  {bankAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+                </select>
+              </div>
+            )}
+            {(recRecPayMethod === '신용카드' || recRecPayMethod === '체크카드') && cardAccounts.length > 0 && (
+              <div className="space-y-1">
+                <label className="text-xs text-[var(--warm-muted)]">카드 선택</label>
+                <select value={recRecAccId} onChange={e => setRecRecAccId(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                  <option value="">선택 안함</option>
+                  {cardAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+                </select>
+              </div>
+            )}
+            {prepaidAccounts.length > 0 && prepaidAccounts.some(a => recRecPayMethod === a.brand || recRecPayMethod === accName(a)) && (
+              <div className="space-y-1">
+                <label className="text-xs text-[var(--warm-muted)]">선불 계정</label>
+                <select value={recRecAccId} onChange={e => setRecRecAccId(e.target.value)}
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                  <option value="">선택 안함</option>
+                  {prepaidAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+                </select>
+              </div>
+            )}
             {recError && <p className="text-red-400 text-xs">{recError}</p>}
             {recordingRec.pendingAmount != null && (
               <p className="text-[10px] text-[var(--warm-muted)] -mt-1">
@@ -3209,6 +3273,7 @@ export default function FinanceClient({
                         amount: recRecAmount,
                         date: recRecDate,
                         payMethod: recRecPayMethod || undefined,
+                        financialAccountId: recRecAccId || undefined,
                         memo: recRecMemo || undefined,
                       })
                       if (!res.ok) { setRecError(res.error); return }

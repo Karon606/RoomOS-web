@@ -708,6 +708,8 @@ export type RecurringExpenseRow = {
   category: string
   dueDay: number
   payMethod: string | null
+  financialAccountId: string | null
+  financialAccountName: string | null
   isAutoDebit: boolean
   isVariable: boolean
   alertDaysBefore: number
@@ -722,17 +724,27 @@ export async function getRecurringExpenses(): Promise<RecurringExpenseRow[]> {
   const list = await prisma.recurringExpense.findMany({
     where: { propertyId },
     orderBy: { dueDay: 'asc' },
-    select: { id: true, title: true, amount: true, category: true, dueDay: true, payMethod: true, isAutoDebit: true, isVariable: true, alertDaysBefore: true, isActive: true, activeSince: true, priorYearAmount: true, memo: true },
+    select: {
+      id: true, title: true, amount: true, category: true, dueDay: true,
+      payMethod: true, financialAccountId: true,
+      financialAccount: { select: { brand: true, alias: true } },
+      isAutoDebit: true, isVariable: true, alertDaysBefore: true,
+      isActive: true, activeSince: true, priorYearAmount: true, memo: true,
+    },
   })
   return list.map(r => ({
     ...r,
+    financialAccountName: r.financialAccount
+      ? (r.financialAccount.alias || r.financialAccount.brand)
+      : null,
+    financialAccount: undefined,
     activeSince: r.activeSince ? new Date(r.activeSince).toISOString().slice(0, 10) : null,
   }))
 }
 
 export async function addRecurringExpense(data: {
   title: string; amount: number; category: string; dueDay: number
-  payMethod?: string; isAutoDebit?: boolean; isVariable?: boolean; alertDaysBefore?: number; activeSince?: string; priorYearAmount?: number; memo?: string
+  payMethod?: string; financialAccountId?: string | null; isAutoDebit?: boolean; isVariable?: boolean; alertDaysBefore?: number; activeSince?: string; priorYearAmount?: number; memo?: string
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -753,7 +765,7 @@ export async function addRecurringExpense(data: {
 
 export async function updateRecurringExpense(id: string, data: Partial<{
   title: string; amount: number; category: string; dueDay: number
-  payMethod: string | null; isAutoDebit: boolean; isVariable: boolean; alertDaysBefore: number; isActive: boolean; activeSince: string | null; priorYearAmount: number | null; memo: string | null
+  payMethod: string | null; financialAccountId: string | null; isAutoDebit: boolean; isVariable: boolean; alertDaysBefore: number; isActive: boolean; activeSince: string | null; priorYearAmount: number | null; memo: string | null
 }>): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
