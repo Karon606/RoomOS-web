@@ -207,7 +207,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
     <div className="space-y-2">
       <div className="flex items-baseline gap-2">
         <h2 className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>{title}</h2>
-        {hint && <span className="text-[10px]" style={{ color: 'var(--warm-muted)' }}>{hint}</span>}
+        {hint && <span className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>{hint}</span>}
       </div>
       {children}
     </div>
@@ -233,7 +233,7 @@ function Card({ row, onCheck, onEdit, muted }: { row: ChecklistRow; onCheck: () 
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>{row.title}</span>
             {row.isActive && (
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full"
+              <span className="text-[0.625rem] font-medium px-2 py-0.5 rounded-full"
                 style={{ background: chip.bg, color: chip.color }}>
                 {chip.label}
               </span>
@@ -242,7 +242,7 @@ function Card({ row, onCheck, onEdit, muted }: { row: ChecklistRow; onCheck: () 
           {row.memo && (
             <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--warm-muted)' }}>{row.memo}</p>
           )}
-          <div className="flex items-center gap-2 text-[11px] flex-wrap mt-2" style={{ color: 'var(--warm-muted)' }}>
+          <div className="flex items-center gap-2 text-[0.6875rem] flex-wrap mt-2" style={{ color: 'var(--warm-muted)' }}>
             <span>{intervalLabel(row.intervalDays)}</span>
             <span>·</span>
             <span>마지막 {fmtRelative(row.lastCheckedAt)}</span>
@@ -440,10 +440,10 @@ function CheckModal({
                   <div key={log.id} className="bg-[var(--canvas)] rounded-lg px-3 py-2 flex items-center gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium" style={{ color: 'var(--warm-dark)' }}>{fmtKorDate(log.checkedAt)}</p>
-                      {log.memo && <p className="text-[11px] truncate" style={{ color: 'var(--warm-muted)' }}>{log.memo}</p>}
+                      {log.memo && <p className="text-[0.6875rem] truncate" style={{ color: 'var(--warm-muted)' }}>{log.memo}</p>}
                     </div>
                     <button onClick={() => onDeleteLog(log.id)} disabled={isPending}
-                      className="text-[10px] text-red-500 hover:text-red-600 px-2 py-1 disabled:opacity-50">
+                      className="text-[0.625rem] text-red-500 hover:text-red-600 px-2 py-1 disabled:opacity-50">
                       삭제
                     </button>
                   </div>

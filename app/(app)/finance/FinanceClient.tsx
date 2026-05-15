@@ -259,7 +259,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true }: {
   const SpecQtyInputs = () => (
     <div className="space-y-2">
       {prevUnits && (prevUnits.specUnit || prevUnits.qtyUnit) && (
-        <p className="text-[10px] text-[var(--warm-muted)]">
+        <p className="text-[0.625rem] text-[var(--warm-muted)]">
           직전 사용:{' '}
           {prevUnits.specUnit && <span className="text-[var(--warm-mid)]">규격 {prevUnits.specUnit}</span>}
           {prevUnits.specUnit && prevUnits.qtyUnit && <span className="mx-1">·</span>}
@@ -268,7 +268,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true }: {
       )}
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
-          <label className="text-[10px] text-[var(--warm-muted)]">규격</label>
+          <label className="text-[0.625rem] text-[var(--warm-muted)]">규격</label>
           <div className="flex gap-1">
             <input type="text" inputMode="decimal" placeholder="0" value={specValue}
               onChange={e => setSpecValue(e.target.value.replace(/[^0-9.]/g, ''))} className={numCls} />
@@ -277,7 +277,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true }: {
           </div>
         </div>
         <div className="space-y-1">
-          <label className="text-[10px] text-[var(--warm-muted)]">수량</label>
+          <label className="text-[0.625rem] text-[var(--warm-muted)]">수량</label>
           <div className="flex gap-1">
             <input type="text" inputMode="decimal" placeholder="1" value={qtyValue}
               onChange={e => setQtyValue(e.target.value.replace(/[^0-9.]/g, ''))} className={numCls} />
@@ -288,14 +288,14 @@ function ItemSelector({ category, value, onChange, allowMulti = true }: {
       </div>
       {allowMulti && (
         <div className="space-y-1">
-          <label className="text-[10px] text-[var(--warm-muted)]">금액 <span className="text-[var(--warm-muted)]">(이 품목 분)</span></label>
+          <label className="text-[0.625rem] text-[var(--warm-muted)]">금액 <span className="text-[var(--warm-muted)]">(이 품목 분)</span></label>
           <div className="flex gap-1 items-center">
             <input type="text" inputMode="numeric"
               value={amountStr ? Number(amountStr.replace(/[^0-9]/g, '')).toLocaleString() : ''}
               onChange={e => setAmountStr(e.target.value.replace(/[^0-9]/g, ''))}
               placeholder="0"
               className={amtCls} />
-            <span className="text-[10px] text-[var(--warm-muted)] shrink-0">원</span>
+            <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">원</span>
           </div>
         </div>
       )}
@@ -319,14 +319,14 @@ function ItemSelector({ category, value, onChange, allowMulti = true }: {
                     placeholder="금액"
                     className="w-20 bg-[var(--cream)] border border-[var(--coral)]/30 rounded-md px-1.5 py-0.5 text-xs text-[var(--warm-dark)] text-right outline-none focus:border-[var(--coral)]"
                   />
-                  <span className="text-[10px]">원</span>
+                  <span className="text-[0.625rem]">원</span>
                 </div>
               )}
               <button type="button" onClick={() => removeItem(idx)} className="hover:text-red-600 leading-none text-sm shrink-0">×</button>
             </div>
           ))}
           {allowMulti && items.length > 1 && (
-            <p className="text-[10px] text-[var(--warm-muted)] text-right">
+            <p className="text-[0.625rem] text-[var(--warm-muted)] text-right">
               합계 {totalItemAmount.toLocaleString()}원
             </p>
           )}
@@ -353,7 +353,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true }: {
         <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[var(--warm-dark)]">
-              {activeLabel}{fetching && <span className="ml-1 text-[10px] text-[var(--warm-muted)]">단위 불러오는 중…</span>}
+              {activeLabel}{fetching && <span className="ml-1 text-[0.625rem] text-[var(--warm-muted)]">단위 불러오는 중…</span>}
             </span>
             <button type="button" onClick={() => setActiveLabel(null)}
               className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none">✕</button>
@@ -372,7 +372,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true }: {
               className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none">✕</button>
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] text-[var(--warm-muted)]">품목명</label>
+            <label className="text-[0.625rem] text-[var(--warm-muted)]">품목명</label>
             <input type="text" placeholder="예: 고추장" value={customLabel} onChange={e => setCustomLabel(e.target.value)} className={textCls} />
           </div>
           {SpecQtyInputs()}
@@ -571,8 +571,8 @@ function StackedBar({
   return (
     <div className="flex items-center gap-2">
       <div className="w-16 shrink-0">
-        <span className="text-[11px] font-medium text-[var(--warm-dark)] leading-tight block">{label}</span>
-        {sublabel && <span className="text-[10px] text-[var(--warm-muted)] leading-tight block">{sublabel}</span>}
+        <span className="text-[0.6875rem] font-medium text-[var(--warm-dark)] leading-tight block">{label}</span>
+        {sublabel && <span className="text-[0.625rem] text-[var(--warm-muted)] leading-tight block">{sublabel}</span>}
       </div>
       <div className="flex-1 bg-[var(--canvas)] rounded-full h-4 overflow-hidden">
         {total > 0 ? (
@@ -586,7 +586,7 @@ function StackedBar({
           <div className="h-full w-0" />
         )}
       </div>
-      <span className="text-[11px] font-medium text-[var(--warm-dark)] font-mono w-16 text-right shrink-0">
+      <span className="text-[0.6875rem] font-medium text-[var(--warm-dark)] font-mono w-16 text-right shrink-0">
         {total > 0 ? fmtKorMoney(total) : '—'}
       </span>
     </div>
@@ -1491,7 +1491,7 @@ export default function FinanceClient({
                     <div className="flex items-center gap-1">
                       <span className="text-[var(--warm-muted)]">고정 지출 (예정)</span>
                       {recPendingTotal > 0 && (
-                        <span className="text-[9px] bg-amber-400/15 text-amber-600 px-1.5 py-0.5 rounded-full font-medium">
+                        <span className="text-[0.5625rem] bg-amber-400/15 text-amber-600 px-1.5 py-0.5 rounded-full font-medium">
                           {recUnrecordedCount}건 미기록
                         </span>
                       )}
@@ -1549,7 +1549,7 @@ export default function FinanceClient({
                     <span className="text-xs font-medium text-[var(--warm-dark)] font-mono shrink-0">
                       {amt.toLocaleString()}원
                     </span>
-                    <span className="text-[10px] text-[var(--warm-muted)] w-6 text-right shrink-0">{pct}%</span>
+                    <span className="text-[0.625rem] text-[var(--warm-muted)] w-6 text-right shrink-0">{pct}%</span>
                   </div>
                 )
               })}
@@ -1725,18 +1725,18 @@ export default function FinanceClient({
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5 mb-0.5">
                                   {isFixed && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-0.5" />}
-                                  <span className="text-[10px] text-[var(--coral)] font-medium">{e.category}</span>
-                                  {isUnsettled && <span className="text-[10px] text-red-500 font-medium">· 미정산</span>}
+                                  <span className="text-[0.625rem] text-[var(--coral)] font-medium">{e.category}</span>
+                                  {isUnsettled && <span className="text-[0.625rem] text-red-500 font-medium">· 미정산</span>}
                                 </div>
                                 <p className="text-sm text-[var(--warm-dark)] truncate">{[e.vendor, e.detail].filter(Boolean).join(' · ') || '—'}</p>
-                                <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">
+                                <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">
                                   {fmtDate(e.date)}{meta ? ` · ${meta}` : ''}
                                   {e.memo ? ` · ${e.memo}` : ''}
                                 </p>
                               </div>
                               <div className="text-right shrink-0">
                                 <p className="text-sm font-semibold text-red-500"><MoneyDisplay amount={e.amount} prefix="-" alwaysFull /></p>
-                                {e.receiptUrl && <span className="text-[9px] text-[var(--coral)]">영수증</span>}
+                                {e.receiptUrl && <span className="text-[0.5625rem] text-[var(--coral)]">영수증</span>}
                               </div>
                             </div>
                           </div>
@@ -1753,18 +1753,18 @@ export default function FinanceClient({
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5 mb-0.5">
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-0.5" />
-                                <span className="text-[10px] text-amber-600 font-medium">{r.category}</span>
-                                <span className="text-[10px] text-[var(--warm-muted)]">고정{r.isVariable ? ' · 변동' : ''}</span>
+                                <span className="text-[0.625rem] text-amber-600 font-medium">{r.category}</span>
+                                <span className="text-[0.625rem] text-[var(--warm-muted)]">고정{r.isVariable ? ' · 변동' : ''}</span>
                               </div>
                               <p className="text-sm text-[var(--warm-dark)] font-medium truncate">{r.title}</p>
-                              <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">
+                              <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">
                                 {item.dateStr.slice(5).replace('-', '/')} 납부{r.isAutoDebit ? ' · 자동이체' : ''}
                                 {r.pendingAmount != null ? ` · 예약금액 있음` : ''}
                               </p>
                             </div>
                             <div className="text-right shrink-0">
                               <p className="text-sm font-semibold text-red-500"><MoneyDisplay amount={expectedAmt} prefix="-" /></p>
-                              {r.isVariable && <p className="text-[9px] text-[var(--warm-muted)] mt-0.5">예상치</p>}
+                              {r.isVariable && <p className="text-[0.5625rem] text-[var(--warm-muted)] mt-0.5">예상치</p>}
                             </div>
                           </div>
                         </div>
@@ -1803,19 +1803,19 @@ export default function FinanceClient({
                                 <td className="px-4 py-3 text-xs text-[var(--warm-mid)] overflow-hidden"><span className="truncate block">{fmtDate(e.date)}</span></td>
                                 <td className="px-4 py-3 overflow-hidden">
                                   <p className="text-xs text-[var(--warm-dark)] truncate">{e.payMethod ?? '—'}</p>
-                                  {e.financialAccount && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">{accName(e.financialAccount)}</p>}
+                                  {e.financialAccount && <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">{accName(e.financialAccount)}</p>}
                                 </td>
                                 <td className="px-4 py-3 overflow-hidden">
                                   <div className="flex items-center gap-1.5">
                                     {e.recurringExpenseId && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="고정지출" />}
                                     <span className="text-xs text-[var(--coral)] font-medium truncate">{e.category}</span>
-                                    {e.recurringExpense?.isVariable && <span className="text-[10px] text-[var(--warm-muted)] shrink-0">변동</span>}
+                                    {e.recurringExpense?.isVariable && <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">변동</span>}
                                   </div>
                                 </td>
                                 <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
                                   <div className="flex items-center gap-1.5">
                                     <span className="truncate">{e.detail ?? '—'}</span>
-                                    {e.receiptUrl && <span className="text-[9px] text-[var(--coral)] shrink-0">영수증</span>}
+                                    {e.receiptUrl && <span className="text-[0.5625rem] text-[var(--coral)] shrink-0">영수증</span>}
                                   </div>
                                 </td>
                                 <td className="px-4 py-3 text-sm font-semibold text-red-500 overflow-hidden"><span className="truncate block"><MoneyDisplay amount={e.amount} prefix="-" /></span></td>
@@ -1846,7 +1846,7 @@ export default function FinanceClient({
                                   <div className="flex items-center gap-1.5">
                                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
                                     <span className="text-xs text-[var(--coral)] font-medium truncate">{r.category}</span>
-                                    {r.isVariable && <span className="text-[10px] text-[var(--warm-muted)] shrink-0">변동</span>}
+                                    {r.isVariable && <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">변동</span>}
                                   </div>
                               </td>
                               <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
@@ -1856,7 +1856,7 @@ export default function FinanceClient({
                                 <span className="text-sm font-semibold text-red-500 truncate block">
                                   <MoneyDisplay amount={expectedAmt} prefix="-" />
                                 </span>
-                                {r.isVariable && <span className="text-[10px] text-[var(--warm-muted)]">예상치</span>}
+                                {r.isVariable && <span className="text-[0.625rem] text-[var(--warm-muted)]">예상치</span>}
                               </td>
                               <td className="px-4 py-3 overflow-hidden">
                                 <span className="text-xs text-amber-600 font-medium">
@@ -1880,10 +1880,10 @@ export default function FinanceClient({
                         <div key={rec.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 opacity-50">
                           <div className="flex items-center justify-between mb-1.5">
                             <span className="text-xs text-[var(--warm-muted)]">매월 {rec.dueDay}일</span>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 ring-1 ring-blue-200 font-medium">{rec.activeSince?.slice(0, 7)} 활성화</span>
+                            <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 ring-1 ring-blue-200 font-medium">{rec.activeSince?.slice(0, 7)} 활성화</span>
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20">{rec.category}</span>
+                            <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20">{rec.category}</span>
                           </div>
                           <div className="flex justify-between">
                             <p className="text-xs text-[var(--warm-dark)] font-medium">{rec.title}</p>
@@ -1903,7 +1903,7 @@ export default function FinanceClient({
                               <td className="px-4 py-3 text-sm text-[var(--warm-muted)]">{rec.title}</td>
                               <td className="px-4 py-3 text-sm text-[var(--warm-muted)] text-right"><MoneyDisplay amount={rec.amount} prefix="-" /></td>
                               <td className="px-4 py-3 text-right w-32">
-                                <span className="text-[10px] font-semibold text-blue-500 bg-blue-500/10 px-2 py-1 rounded-lg">{rec.activeSince?.slice(0, 7)} 활성화</span>
+                                <span className="text-[0.625rem] font-semibold text-blue-500 bg-blue-500/10 px-2 py-1 rounded-lg">{rec.activeSince?.slice(0, 7)} 활성화</span>
                               </td>
                             </tr>
                           ))}
@@ -1963,12 +1963,12 @@ export default function FinanceClient({
                   </div>
                   {/* 카테고리 + 입금수단 */}
                   <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">{i.category}</span>
+                    <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">{i.category}</span>
                     {i.payMethod && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{i.payMethod}</span>
+                      <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{i.payMethod}</span>
                     )}
                     {i.financialAccount && (
-                      <span className="text-[10px] text-[var(--warm-muted)]">{accName(i.financialAccount)}</span>
+                      <span className="text-[0.625rem] text-[var(--warm-muted)]">{accName(i.financialAccount)}</span>
                     )}
                   </div>
                   {/* 세부항목 · 메모 */}
@@ -2311,7 +2311,7 @@ export default function FinanceClient({
                   if (group.length === 0) return null
                   return (
                     <div key={type} className="border-b border-[var(--warm-border)] last:border-0">
-                      <p className="px-5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--warm-muted)]">{label}</p>
+                      <p className="px-5 pt-3 pb-1 text-[0.625rem] font-semibold uppercase tracking-wide text-[var(--warm-muted)]">{label}</p>
                       <div className="divide-y divide-[var(--warm-border)]/50">
                         {group.map(a => (
                           <div key={a.id} className="px-5 py-3.5 flex items-center gap-3">
@@ -2448,7 +2448,7 @@ export default function FinanceClient({
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">
-                        금액 *{editItems.length > 1 && <span className="text-[10px] text-[var(--warm-muted)] font-normal ml-1">(품목 합계 자동)</span>}
+                        금액 *{editItems.length > 1 && <span className="text-[0.625rem] text-[var(--warm-muted)] font-normal ml-1">(품목 합계 자동)</span>}
                       </label>
                       {editItems.length > 1 ? (
                         <div className="relative">
@@ -2741,7 +2741,7 @@ export default function FinanceClient({
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">
-                      금액 *{addItems.length >= 1 && <span className="text-[10px] text-[var(--warm-muted)] font-normal ml-1">(품목 합계 자동)</span>}
+                      금액 *{addItems.length >= 1 && <span className="text-[0.625rem] text-[var(--warm-muted)] font-normal ml-1">(품목 합계 자동)</span>}
                     </label>
                     {addItems.length >= 1 ? (
                       <div className="relative">
@@ -2865,7 +2865,7 @@ export default function FinanceClient({
                           {receiptUploading ? '업로드 중…' : '첨부만'}
                         </button>
                       </div>
-                      {scanOcrError && <p className="text-[10px] text-red-500">{scanOcrError}</p>}
+                      {scanOcrError && <p className="text-[0.625rem] text-red-500">{scanOcrError}</p>}
                     </div>
                   ) : addReceiptUrl ? (
                     <div className="relative">
@@ -3015,13 +3015,13 @@ export default function FinanceClient({
                   <input type="number" min={0} max={30} value={recMgmtForm.alertDaysBefore}
                     onChange={e => setRecMgmtForm(p => ({ ...p, alertDaysBefore: e.target.value }))}
                     className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
-                  <p className="text-[10px] text-[var(--warm-muted)]">자동이체 항목은 주말·공휴일이면 다음 영업일 기준으로 알림이 계산됩니다.</p>
+                  <p className="text-[0.625rem] text-[var(--warm-muted)]">자동이체 항목은 주말·공휴일이면 다음 영업일 기준으로 알림이 계산됩니다.</p>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">활성화 시작일 (선택)</label>
                   <DatePicker value={recMgmtForm.activeSince} onChange={v => setRecMgmtForm(p => ({ ...p, activeSince: v }))}
                     className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
-                  <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
+                  <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
                     이 항목이 실제로 내 부담이 되는 첫 날짜입니다. 입력하지 않으면 즉시 활성화됩니다.<br />
                     예) 인터넷 요금 결제일 25일이 양도인 부담이면, 다음 달부터 내 부담 → 다음달 25일 입력.
                   </p>
@@ -3073,7 +3073,7 @@ export default function FinanceClient({
                     <input type="checkbox" checked={recMgmtForm.isVariable} onChange={e => setRecMgmtForm(p => ({ ...p, isVariable: e.target.checked }))} className="accent-[var(--coral)]" />
                     <div>
                       <span className="text-xs text-[var(--warm-dark)]">변동 금액</span>
-                      <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">전기·수도 등 매달 달라지는 항목</p>
+                      <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">전기·수도 등 매달 달라지는 항목</p>
                     </div>
                   </label>
                 </div>
@@ -3081,7 +3081,7 @@ export default function FinanceClient({
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">전년동월 실적 (선택)</label>
                     <MoneyInput value={Number(recMgmtForm.priorYearAmount) || 0} onChange={v => setRecMgmtForm(p => ({ ...p, priorYearAmount: v > 0 ? String(v) : '' }))} placeholder="0원" />
-                    <p className="text-[10px] text-[var(--warm-muted)]">작년 같은 달 실제 납부액 — 최근 3개월 평균과 함께 예상치 계산에 반영됩니다.</p>
+                    <p className="text-[0.625rem] text-[var(--warm-muted)]">작년 같은 달 실제 납부액 — 최근 3개월 평균과 함께 예상치 계산에 반영됩니다.</p>
                   </div>
                 )}
                 <div className="space-y-1.5">
@@ -3119,9 +3119,9 @@ export default function FinanceClient({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{r.title}</p>
-                        {r.isAutoDebit && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">자동이체</span>}
-                        {!r.isActive && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">비활성</span>}
-                        {r.activeSince && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600">{r.activeSince.slice(0, 7)}부터</span>}
+                        {r.isAutoDebit && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">자동이체</span>}
+                        {!r.isActive && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">비활성</span>}
+                        {r.activeSince && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600">{r.activeSince.slice(0, 7)}부터</span>}
                       </div>
                       <p className="text-xs text-[var(--warm-muted)] mt-0.5">
                         매월 {r.dueDay}일 · {r.amount.toLocaleString()}원 · {r.category}
@@ -3174,7 +3174,7 @@ export default function FinanceClient({
                 <label className="text-xs text-[var(--warm-muted)]">
                   금액
                   {recordingRec.historicalAvg && (
-                    <span className="ml-1 text-blue-400 text-[10px]">평균 {recordingRec.historicalAvg.toLocaleString()}원</span>
+                    <span className="ml-1 text-blue-400 text-[0.625rem]">평균 {recordingRec.historicalAvg.toLocaleString()}원</span>
                   )}
                 </label>
                 <MoneyInput value={recRecAmount} onChange={v => setRecRecAmount(v)} placeholder="0원" />
@@ -3228,7 +3228,7 @@ export default function FinanceClient({
             )}
             {recError && <p className="text-red-400 text-xs">{recError}</p>}
             {recordingRec.pendingAmount != null && (
-              <p className="text-[10px] text-[var(--warm-muted)] -mt-1">
+              <p className="text-[0.625rem] text-[var(--warm-muted)] -mt-1">
                 예약된 금액 {recordingRec.pendingAmount.toLocaleString()}원이 자동 입력되었습니다.
                 <button type="button"
                   onClick={() => {
@@ -3368,11 +3368,11 @@ function DepositTab({ summary, ledger, totalBalance }: {
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="text-sm font-semibold text-[var(--warm-dark)]">{d.tenantName}</span>
                       {d.roomNo && <span className="text-xs text-[var(--warm-muted)]">· {d.roomNo}호</span>}
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
+                      <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                         {DEPOSIT_STATUS_LABEL[d.status] ?? d.status}
                       </span>
                       {d.hasNoInRecord && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                        <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
                           입금 거래 기록 없음
                         </span>
                       )}
@@ -3395,7 +3395,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
                     <p className="text-sm font-bold" style={{ color: d.balance > 0 ? '#7c3aed' : 'var(--warm-muted)' }}>
                       {d.balance.toLocaleString()}원
                     </p>
-                    <p className="text-[10px] text-[var(--warm-muted)]">현재 잔고</p>
+                    <p className="text-[0.625rem] text-[var(--warm-muted)]">현재 잔고</p>
                   </div>
                 </li>
               ))}
@@ -3568,7 +3568,7 @@ function ReserveTab({
             <p className="text-base font-semibold" style={{ color: '#0d9488' }}>
               −<MoneyDisplay amount={monthly.depositFromThisMonthRevenue} />
             </p>
-            <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">예비비로 적립된 금액</p>
+            <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">예비비로 적립된 금액</p>
           </div>
         </div>
       </div>
@@ -3617,7 +3617,7 @@ function ReserveTab({
                     </option>
                   ))}
                 </select>
-                <p className="text-[10px] text-[var(--warm-muted)]">선택 후 금액 비우면 잔여 전액, 입력하면 부분 정산</p>
+                <p className="text-[0.625rem] text-[var(--warm-muted)]">선택 후 금액 비우면 잔여 전액, 입력하면 부분 정산</p>
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-[var(--warm-mid)]">정산 금액 (선택)</label>
@@ -3705,7 +3705,7 @@ function ReserveTab({
                     <span className={`text-xs font-semibold ${typeColor(t.type)}`}>{typeLabel(t.type)}</span>
                     <span className="text-xs text-[var(--warm-muted)]">{new Date(t.date).toISOString().slice(0, 10)}</span>
                     {t.type === 'DEPOSIT' && t.sourceMonth && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
+                      <span className="text-[0.625rem] px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                         출처 {t.sourceMonth}
                       </span>
                     )}

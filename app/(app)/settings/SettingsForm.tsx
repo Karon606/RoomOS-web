@@ -708,20 +708,20 @@ export default function SettingsForm({
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                     {expenseCategs.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
-                  <p className="text-[10px] text-[var(--warm-muted)]">카테고리 추가·수정은 위 '지출 카테고리 관리'에서 할 수 있습니다.</p>
+                  <p className="text-[0.625rem] text-[var(--warm-muted)]">카테고리 추가·수정은 위 '지출 카테고리 관리'에서 할 수 있습니다.</p>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">알림 (납부일 N일 전)</label>
                   <input type="number" min={0} max={30} value={recForm.alertDaysBefore}
                     onChange={e => setRecForm(p => ({ ...p, alertDaysBefore: e.target.value }))}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
-                  <p className="text-[10px] text-[var(--warm-muted)]">자동이체 항목은 주말·공휴일이면 다음 영업일 기준으로 알림이 계산됩니다.</p>
+                  <p className="text-[0.625rem] text-[var(--warm-muted)]">자동이체 항목은 주말·공휴일이면 다음 영업일 기준으로 알림이 계산됩니다.</p>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">활성화 시작일 (선택)</label>
                   <DatePicker value={recForm.activeSince} onChange={v => setRecForm(p => ({ ...p, activeSince: v }))}
                     className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
-                  <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
+                  <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
                     이 항목이 실제로 <strong>내 부담</strong>이 되는 첫 날짜입니다.<br />
                     예) 인터넷 요금 결제일이 25일이고 4월25일분이 3월 사용분이면, 양도인이 부담하는 마지막 청구가 4월 → 내 부담 시작은 <strong>5월 청구분(5월25일)</strong>부터이므로 2026-05-25 입력.<br />
                     입력하지 않으면 즉시 활성화됩니다.
@@ -744,7 +744,7 @@ export default function SettingsForm({
                     <input type="checkbox" checked={recForm.isVariable} onChange={e => setRecForm(p => ({ ...p, isVariable: e.target.checked }))} className="accent-[var(--coral)]" />
                     <div>
                       <span className="text-xs text-[var(--warm-dark)]">변동 금액</span>
-                      <p className="text-[10px] text-[var(--warm-muted)] leading-tight mt-0.5">전기·수도 등 매달 금액이 달라지는 항목</p>
+                      <p className="text-[0.625rem] text-[var(--warm-muted)] leading-tight mt-0.5">전기·수도 등 매달 금액이 달라지는 항목</p>
                     </div>
                   </label>
                 </div>
@@ -774,8 +774,8 @@ export default function SettingsForm({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{r.title}</p>
-                      {r.isAutoDebit && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">자동이체</span>}
-                      {!r.isActive && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">비활성</span>}
+                      {r.isAutoDebit && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">자동이체</span>}
+                      {!r.isActive && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">비활성</span>}
                     </div>
                     <p className="text-xs text-[var(--warm-muted)] mt-0.5">
                       매월 {r.dueDay >= 30 ? '말일' : `${r.dueDay}일`} · {r.amount.toLocaleString()}원 · {r.category} · {r.alertDaysBefore}일 전 알림
@@ -995,7 +995,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-xl px-3 py-2 text-[11px] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+      <div className="rounded-xl px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
         영업장 로고는 <span className="font-semibold text-[var(--warm-dark)]">기본정보 탭</span>에서 등록·관리합니다 (사이드바·대시보드 등 다른 위치에서도 함께 사용).
       </div>
 
@@ -1104,9 +1104,9 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
           </button>
         </div>
 
-        <div className="rounded-lg px-3 py-2 text-[11px] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)' }}>
+        <div className="rounded-lg px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)' }}>
           본문에서 다음 변수를 사용하면 출력 시 입실자 정보로 자동 치환됩니다:
-          <span className="block mt-1 font-mono text-[10px]">
+          <span className="block mt-1 font-mono text-[0.625rem]">
             {`{{name}} {{phone}} {{birth}} {{job}} {{gender}} {{smoking}} {{deposit}} {{checkInDate}} {{roomNo}} {{checkOutDate}} {{rentFee}} {{emergencyContact}}`}
           </span>
         </div>
@@ -1228,7 +1228,7 @@ function AppearanceTab() {
                   <span className={`text-sm font-medium ${selected ? 'text-[var(--persimmon-d)]' : 'text-[var(--warm-dark)]'}`}>{o.label}</span>
                 </div>
                 <FontSizePreview basePx={o.basePx} />
-                <span className="text-[10px] text-[var(--warm-muted)] leading-snug">{o.desc}</span>
+                <span className="text-[0.625rem] text-[var(--warm-muted)] leading-snug">{o.desc}</span>
               </button>
             )
           })}
@@ -1294,7 +1294,7 @@ function OptionSection({
         <h2 className="text-sm font-semibold text-[var(--warm-dark)]">{title}</h2>
         {onReset && (
           <button onClick={onReset}
-            className="shrink-0 text-[11px] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] border border-[var(--warm-border)] rounded-lg px-2 py-0.5 transition-colors">
+            className="shrink-0 text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] border border-[var(--warm-border)] rounded-lg px-2 py-0.5 transition-colors">
             기본값으로 초기화
           </button>
         )}
@@ -1312,13 +1312,13 @@ function OptionSection({
                 <button
                   onClick={() => move(idx, -1)}
                   disabled={idx === 0}
-                  className="w-6 h-5 flex items-center justify-center rounded text-[var(--warm-mid)] hover:text-[var(--warm-dark)] disabled:opacity-20 transition-colors text-[10px] leading-none">
+                  className="w-6 h-5 flex items-center justify-center rounded text-[var(--warm-mid)] hover:text-[var(--warm-dark)] disabled:opacity-20 transition-colors text-[0.625rem] leading-none">
                   ▲
                 </button>
                 <button
                   onClick={() => move(idx, 1)}
                   disabled={idx === items.length - 1}
-                  className="w-6 h-5 flex items-center justify-center rounded text-[var(--warm-mid)] hover:text-[var(--warm-dark)] disabled:opacity-20 transition-colors text-[10px] leading-none">
+                  className="w-6 h-5 flex items-center justify-center rounded text-[var(--warm-mid)] hover:text-[var(--warm-dark)] disabled:opacity-20 transition-colors text-[0.625rem] leading-none">
                   ▼
                 </button>
               </div>
@@ -1333,7 +1333,7 @@ function OptionSection({
                   className="flex-1 bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-sm text-[var(--warm-dark)] outline-none"
                 />
                 <button onClick={saveEdit}
-                  className="shrink-0 text-[10px] px-2 py-1 rounded-lg text-white transition-colors"
+                  className="shrink-0 text-[0.625rem] px-2 py-1 rounded-lg text-white transition-colors"
                   style={{ background: 'var(--coral)' }}>저장</button>
                 <button onClick={() => setEditingItem(null)}
                   className="shrink-0 text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">취소</button>
@@ -1346,7 +1346,7 @@ function OptionSection({
                     className="shrink-0 text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
                 )}
                 <button onClick={() => onDelete(item)}
-                  className="shrink-0 text-[10px] text-red-400 hover:text-red-300 transition-colors px-1">삭제</button>
+                  className="shrink-0 text-[0.625rem] text-red-400 hover:text-red-300 transition-colors px-1">삭제</button>
               </>
             )}
           </div>
@@ -1367,7 +1367,7 @@ function OptionSection({
           </button>
         </div>
         {isDuplicate && (
-          <p className="text-[11px] text-red-400">이미 존재하는 항목입니다.</p>
+          <p className="text-[0.6875rem] text-red-400">이미 존재하는 항목입니다.</p>
         )}
       </div>
     </div>

@@ -169,7 +169,7 @@ function CheckoutRefundModal({
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
             />
             {exceedsMax && (
-              <p className="text-[11px] text-red-500">환불 금액은 최대 {maxRefund.toLocaleString()}원입니다.</p>
+              <p className="text-[0.6875rem] text-red-500">환불 금액은 최대 {maxRefund.toLocaleString()}원입니다.</p>
             )}
           </div>
 
@@ -184,7 +184,7 @@ function CheckoutRefundModal({
                 <span className="font-medium">{unreturned.toLocaleString()}원</span>
               </div>
             )}
-            <p className="text-[10px] pt-1" style={{ color: 'var(--warm-muted)' }}>
+            <p className="text-[0.625rem] pt-1" style={{ color: 'var(--warm-muted)' }}>
               미환불분은 부가수익 카테고리 &apos;보증금&apos; · 입금수단 &apos;보유 보증금&apos;으로 자동 등록됩니다.
             </p>
           </div>
@@ -280,7 +280,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
             </div>
             <div className="min-w-0">
               <p className="text-sm font-bold leading-snug" style={{ color: 'var(--ink-2)' }}>{alert.text}</p>
-              <span className="inline-block mt-1.5 text-[10px] font-semibold rounded-full px-2 py-0.5"
+              <span className="inline-block mt-1.5 text-[0.625rem] font-semibold rounded-full px-2 py-0.5"
                 style={{ background: hexToRgba(alert.dotColor, 0.12), color: alert.dotColor }}>
                 {alert.timeLabel}{alert.exactDate ? ` · ${alert.exactDate}` : ''}
               </span>
@@ -292,7 +292,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
         {/* 후보 리스트 (희망 호실/조건 매칭 그룹) */}
         {alert.wishCandidates && alert.wishCandidates.length > 0 ? (
           <div className="px-5 py-4 space-y-2" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
-            <p className="text-[11px] font-semibold" style={{ color: 'var(--warm-muted)' }}>
+            <p className="text-[0.6875rem] font-semibold" style={{ color: 'var(--warm-muted)' }}>
               {alert.wishRoomNo ? `${alert.wishRoomNo}호 매칭 후보` : '매칭 후보'} · {alert.wishCandidates.length}명 (등록 순)
             </p>
             <div className="space-y-1.5">
@@ -304,13 +304,13 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors hover:bg-[var(--canvas)]"
                   style={{ borderColor: 'var(--warm-border)' }}
                 >
-                  <span className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[11px] font-bold"
+                  <span className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[0.6875rem] font-bold"
                     style={{ background: c.rank === 1 ? 'rgba(34,197,94,0.18)' : 'var(--canvas)', color: c.rank === 1 ? '#16a34a' : 'var(--warm-mid)' }}>
                     {c.rank}
                   </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold truncate" style={{ color: 'var(--warm-dark)' }}>{c.tenantName}님</p>
-                    <p className="text-[10px] mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+                    <p className="text-[0.625rem] mt-0.5" style={{ color: 'var(--warm-muted)' }}>
                       {c.matchedBy === 'conditions' ? '조건 매칭' : '호실 지정'}
                     </p>
                   </div>
@@ -447,7 +447,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
                 <div className="flex items-center gap-1.5">
                   <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>금액 *</label>
                   {alert.recurringIsVariable && alert.recurringHistoricalAvg && (
-                    <span className="text-[10px] rounded-full px-1.5 py-0.5" style={{ background: 'rgba(99,102,241,0.1)', color: '#6366f1' }}
+                    <span className="text-[0.625rem] rounded-full px-1.5 py-0.5" style={{ background: 'rgba(99,102,241,0.1)', color: '#6366f1' }}
                       title="과거 동일 항목 결제 기록의 평균">
                       과거 평균 {fmtKorMoney(alert.recurringHistoricalAvg)}
                     </span>
@@ -572,9 +572,9 @@ function AlertsStrip({ alerts, onOpenAlert }: {
       <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b shrink-0" style={{ borderColor: DIVIDER_COLOR }}>
         <div className="flex items-center gap-2">
           <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)' }}>알림</h3>
-          <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>미처리</span>
+          <span className="rounded-full text-[0.5625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>미처리</span>
         </div>
-        <span className="rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>
+        <span className="rounded-full text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>
           {alerts.length}건
         </span>
       </div>
@@ -592,10 +592,10 @@ function AlertsStrip({ alerts, onOpenAlert }: {
               style={{ background: 'rgba(0,0,0,0.015)' }}
             >
               <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: meta.color }} />
-              <span className="text-[11px] font-semibold flex-1 text-left" style={{ color: 'var(--ink-2)' }}>
+              <span className="text-[0.6875rem] font-semibold flex-1 text-left" style={{ color: 'var(--ink-2)' }}>
                 {meta.label}
               </span>
-              <span className="text-[10px] font-medium" style={{ color: 'var(--warm-muted)' }}>
+              <span className="text-[0.625rem] font-medium" style={{ color: 'var(--warm-muted)' }}>
                 {g.items.length}건
               </span>
               <span className="text-[var(--warm-muted)] text-xs ml-1" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 150ms' }}>›</span>
@@ -617,7 +617,7 @@ function AlertsStrip({ alerts, onOpenAlert }: {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink-2)' }}>{item.text}</p>
-                          <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+                          <p className="text-[0.625rem] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
                             {item.timeLabel}{item.exactDate ? ` · ${item.exactDate}` : ''}
                           </p>
                         </div>
@@ -1333,14 +1333,14 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                         { label: thirdLabel, value: thirdValue, color: thirdColor },
                       ].map(item => (
                         <div key={item.label} className="rounded-xl p-3 text-center" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
-                          <p className="text-[10px] text-[var(--warm-muted)] mb-1">{item.label}</p>
+                          <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">{item.label}</p>
                           <p className="text-xs font-bold mono tnum" style={{ color: item.color }}>{item.value}</p>
                         </div>
                       ))}
                     </div>
                     {/* carryOver(이월) 별도 보조 표시 — 0이 아닐 때만 */}
                     {carryOver !== 0 && (
-                      <p className="text-[11px] text-[var(--warm-muted)] mt-1.5 text-center">
+                      <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-1.5 text-center">
                         {carryOver < 0 ? (
                           <>이월 미수 <span className="text-red-500 font-medium mono tnum">{Math.abs(carryOver).toLocaleString()}원</span> 포함</>
                         ) : (
@@ -1407,7 +1407,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                         <div>
                           <p className="text-xs font-semibold text-amber-700">양도인 수납</p>
                           <button onClick={() => { setAutoPayDate(getAutoDefault()); setEditingAutoPay(true) }}
-                            className="text-[10px] text-amber-600 mt-0.5 hover:underline text-left">
+                            className="text-[0.625rem] text-amber-600 mt-0.5 hover:underline text-left">
                             {getDueDateStr()} 납부 (자동) · <span className="underline">날짜 수정</span>
                           </button>
                         </div>
@@ -1467,21 +1467,21 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                   )}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <p className="text-[10px] text-[var(--warm-muted)]">금액</p>
+                      <p className="text-[0.625rem] text-[var(--warm-muted)]">금액</p>
                       <input type="text" inputMode="numeric"
                         value={payAmount.toLocaleString()}
                         onChange={e => setPayAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                     </div>
                     <div className="space-y-1">
-                      <p className="text-[10px] text-[var(--warm-muted)]">납부일</p>
+                      <p className="text-[0.625rem] text-[var(--warm-muted)]">납부일</p>
                       <DatePicker value={payDate} onChange={setPayDate}
                         className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <p className="text-[10px] text-[var(--warm-muted)]">납부방법</p>
+                      <p className="text-[0.625rem] text-[var(--warm-muted)]">납부방법</p>
                       <select name="payMethod"
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                         <option value="">선택 안 함</option>
@@ -1489,13 +1489,13 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                       </select>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-[10px] text-[var(--warm-muted)]">메모</p>
+                      <p className="text-[0.625rem] text-[var(--warm-muted)]">메모</p>
                       <input name="memo" type="text"
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                     </div>
                   </div>
                   {isDepositMode && payAmount > lease!.depositAmount && (
-                    <p className="text-[10px] text-[var(--coral)]">
+                    <p className="text-[0.625rem] text-[var(--coral)]">
                       초과금 {(payAmount - lease!.depositAmount).toLocaleString()}원 → {targetMonth} 이용료 처리
                     </p>
                   )}
@@ -1557,8 +1557,8 @@ function DashPayRow({ p, isPreAcq, onEdit, onDelete, color }: {
       <div>
         <p className={`text-xs ${textColor}`}>
           {p.seqNo}회차 · {fmtD(p.payDate)} · {p.payMethod ?? '—'}
-          {color === 'purple' && <span className="ml-1.5 text-[10px] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>}
-          {isPreAcq && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
+          {color === 'purple' && <span className="ml-1.5 text-[0.625rem] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>}
+          {isPreAcq && <span className="ml-1.5 text-[0.625rem] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
         </p>
         {p.memo && !p.isDeposit && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
       </div>
@@ -1584,24 +1584,24 @@ function DashEditRow({ editAmount, editDate, editPayMethod, editMemo, setEditAmo
     <div className={`rounded-xl border ${borderColor} ${bg} px-3 py-2.5 space-y-2`}>
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
-          <p className="text-[10px] text-[var(--warm-muted)]">금액</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)]">금액</p>
           <input type="text" inputMode="numeric" value={editAmount.toLocaleString()} onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
         </div>
         <div className="space-y-1">
-          <p className="text-[10px] text-[var(--warm-muted)]">납부일</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)]">납부일</p>
           <DatePicker value={editDate} onChange={setEditDate}
             className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
-          <p className="text-[10px] text-[var(--warm-muted)]">납부방법</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)]">납부방법</p>
           <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)} placeholder="계좌이체, 현금…"
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
         </div>
         <div className="space-y-1">
-          <p className="text-[10px] text-[var(--warm-muted)]">메모</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)]">메모</p>
           <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
         </div>
@@ -1679,7 +1679,7 @@ function RoomDetailPopup({ room, onClose, onOpenPayment, onOpenTenantInfo }: {
               <span className="text-[var(--warm-muted)]">예약 이용료</span>
               <span className="font-semibold" style={{ color: 'var(--coral)' }}>
                 {room.scheduledRent.toLocaleString()}원
-                {room.rentUpdateDate && <span className="text-[10px] font-normal ml-1 opacity-70">({room.rentUpdateDate} 적용)</span>}
+                {room.rentUpdateDate && <span className="text-[0.625rem] font-normal ml-1 opacity-70">({room.rentUpdateDate} 적용)</span>}
               </span>
             </div>
           )}
@@ -1746,7 +1746,7 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
         ) : (
           <div className="px-5 py-4 space-y-2 text-sm max-h-[70vh] overflow-y-auto">
             {/* 기본 정보 */}
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-1">기본 정보</p>
+            <p className="text-[0.625rem] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-1">기본 정보</p>
             {info.gender && (
               <div className="flex justify-between">
                 <span className="text-[var(--warm-muted)]">성별</span>
@@ -1776,7 +1776,7 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
             {info.contacts.length > 0 && (
               <>
                 <div className="border-t border-[var(--warm-border)] pt-2 mt-1">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-2">연락처</p>
+                  <p className="text-[0.625rem] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-2">연락처</p>
                   {info.contacts.map((c, i) => (
                     <div key={i} className="flex justify-between mb-1">
                       <span className="text-[var(--warm-muted)]">{CONTACT_LABEL[c.contactType] ?? c.contactType}</span>
@@ -1790,7 +1790,7 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
             {/* 계약 정보 */}
             {lease && (
               <div className="border-t border-[var(--warm-border)] pt-2 mt-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-2">계약 정보</p>
+                <p className="text-[0.625rem] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-2">계약 정보</p>
                 <div className="flex justify-between mb-1">
                   <span className="text-[var(--warm-muted)]">호실</span>
                   <span className="text-[var(--warm-dark)] font-medium">{fmtRoomNo(lease.room?.roomNo)}</span>
@@ -1833,7 +1833,7 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
             {/* 메모 */}
             {info.memo && (
               <div className="border-t border-[var(--warm-border)] pt-2 mt-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-1">메모</p>
+                <p className="text-[0.625rem] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-1">메모</p>
                 <p className="text-xs text-[var(--warm-dark)] whitespace-pre-wrap">{info.memo}</p>
               </div>
             )}
@@ -2275,7 +2275,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
 
                     {/* ── 순이익 섹션 ── */}
                     {(() => {
-                      const expectedNet = data.netProfit + data.unpaidAmount
+                      const expectedNet = data.totalExpected - data.expectedExpense
                       const currentNet  = data.netProfit
                       const pct = expectedNet > 0 ? Math.max(0, Math.min(100, Math.round((currentNet / expectedNet) * 100))) : 0
                       return (
@@ -2322,10 +2322,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                     <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
                       <div className="flex items-center gap-2">
                         <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)' }}>이달 미수납</h3>
-                        <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
+                        <span className="rounded-full text-[0.5625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
                       </div>
                       {data.unpaidCount > 0 && (
-                        <span className="rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>
+                        <span className="rounded-full text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>
                           {data.unpaidCount}건
                         </span>
                       )}
@@ -2352,14 +2352,14 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   <p className="text-xs font-semibold truncate flex items-center gap-1" style={{ color: 'var(--ink-2)' }}>
                                     {fmtRoomNo(l.roomNo)} {l.tenantName}
                                     {l.daysOverdue != null && l.daysOverdue >= 7 && (
-                                      <span className="rounded-full text-[9px] font-bold px-1.5 py-0.5" style={{ background: '#dc2626', color: '#fff' }}>
+                                      <span className="rounded-full text-[0.5625rem] font-bold px-1.5 py-0.5" style={{ background: '#dc2626', color: '#fff' }}>
                                         {l.daysOverdue}일 경과
                                       </span>
                                     )}
                                   </p>
-                                  <p className="text-[10px] font-medium mt-0.5" style={{ color: dl.color }}>{dl.text}</p>
+                                  <p className="text-[0.625rem] font-medium mt-0.5" style={{ color: dl.color }}>{dl.text}</p>
                                 </div>
-                                <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>
+                                <span className="rounded-full shrink-0 text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>
                                   {fmtKorMoney(l.unpaidAmount)}
                                 </span>
                               </button>
@@ -2389,10 +2389,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                     <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
                       <div className="flex items-center gap-2">
                         <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)' }}>납입 완료</h3>
-                        <span className="rounded-full text-[9px] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
+                        <span className="rounded-full text-[0.5625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
                       </div>
                       {data.activity.length > 0 && (
-                        <span className="rounded-full text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
+                        <span className="rounded-full text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
                           {data.activity.length}건
                         </span>
                       )}
@@ -2415,9 +2415,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink-2)' }}>{fmtRoomNo(item.roomNo)} {item.tenantName}</p>
-                                <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</p>
+                                <p className="text-[0.625rem] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</p>
                               </div>
-                              <span className="rounded-full shrink-0 text-[10px] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
+                              <span className="rounded-full shrink-0 text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
                                 {fmtKorMoney(item.amount)}
                               </span>
                             </button>

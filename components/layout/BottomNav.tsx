@@ -71,7 +71,7 @@ export default function BottomNav() {
           >
             <Icon />
             {/* HIG: 탭 레이블 최소 11pt */}
-            <span className="text-[11px] font-medium leading-none">{label}</span>
+            <span className="text-[0.6875rem] font-medium leading-none">{label}</span>
           </Link>
         )
       })}

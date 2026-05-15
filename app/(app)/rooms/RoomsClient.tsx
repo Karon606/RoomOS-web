@@ -761,7 +761,7 @@ export default function RoomsClient({
                   : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
               }`}>
               {label}
-              {active && <span className="text-[10px]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+              {active && <span className="text-[0.625rem]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
             </button>
           )
         })}
@@ -785,7 +785,7 @@ export default function RoomsClient({
                 </div>
                 <div className="flex flex-col items-end gap-0.5">
                   {room.status === 'NON_RESIDENT' && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-orange-50 text-orange-700 ring-1 ring-orange-200">비거주</span>
+                    <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium bg-orange-50 text-orange-700 ring-1 ring-orange-200">비거주</span>
                   )}
                   {room.status === 'RESERVED' ? (
                     <>
@@ -795,7 +795,7 @@ export default function RoomsClient({
                       {room.moveInDate && (() => {
                         const days = Math.round((new Date(room.moveInDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
                         return (
-                          <span className="text-[10px] font-medium text-blue-500">
+                          <span className="text-[0.625rem] font-medium text-blue-500">
                             {days > 0 ? `D-${days} 입주 예정` : days === 0 ? '오늘 입주' : `입주 예정일 ${Math.abs(days)}일 경과`}
                           </span>
                         )
@@ -825,7 +825,7 @@ export default function RoomsClient({
                           {badgeText}
                         </span>
                         {!room.isPaid && dueInfo && (
-                          <span className={`text-[10px] font-medium ${dueInfo.days === 0 ? 'text-orange-500' : 'text-red-400'}`}>
+                          <span className={`text-[0.625rem] font-medium ${dueInfo.days === 0 ? 'text-orange-500' : 'text-red-400'}`}>
                             {dueInfo.days === 0 ? '오늘' : `${dueInfo.days}일 초과`}
                           </span>
                         )}
@@ -833,7 +833,7 @@ export default function RoomsClient({
                           const [, mm, dd] = room.expectedMoveOut.split('-')
                           const days = Math.round((new Date(room.expectedMoveOut).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
                           return (
-                            <span className="text-[10px] font-medium text-yellow-700">
+                            <span className="text-[0.625rem] font-medium text-yellow-700">
                               {days > 0 ? `D-${days} (${Number(mm)}/${Number(dd)} 퇴실)` : days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 퇴실` : `${Number(mm)}/${Number(dd)} 퇴실 (${Math.abs(days)}일 경과)`}
                             </span>
                           )
@@ -842,7 +842,7 @@ export default function RoomsClient({
                           const [, mm, dd] = room.nextDueDate!.split('-')
                           const days = Math.round((new Date(room.nextDueDate!).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
                           return (
-                            <span className="text-[10px] font-medium text-blue-500">
+                            <span className="text-[0.625rem] font-medium text-blue-500">
                               {days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`}
                             </span>
                           )
@@ -850,7 +850,7 @@ export default function RoomsClient({
                         {room.isPaid && !showCheckout && !isAwaiting && room.latePaidAt && (() => {
                           const [, mm, dd] = room.latePaidAt.split('-')
                           return (
-                            <span className="text-[10px] font-medium text-amber-600">
+                            <span className="text-[0.625rem] font-medium text-amber-600">
                               {Number(mm)}/{Number(dd)} 지연납부
                             </span>
                           )
@@ -1232,7 +1232,7 @@ export default function RoomsClient({
                       </p>
                     </div>
                   </div>
-                  <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
+                  <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
                     총 수납·잔액·이월액은 귀속월 기준입니다. 지연 입금된 record도 그 귀속월에 인식됩니다.
                   </p>
 
@@ -1313,7 +1313,7 @@ export default function RoomsClient({
                               <div>
                                 <p className="text-xs font-semibold text-amber-700">양도인 수납</p>
                                 <button onClick={() => { setAutoPayDate(getAutoDefault()); setEditingAutoPay(true) }}
-                                  className="text-[10px] text-amber-600 mt-0.5 hover:underline text-left">
+                                  className="text-[0.625rem] text-amber-600 mt-0.5 hover:underline text-left">
                                   {getDueDate(selectedRoom.dueDay, targetMonth)} 납부 (자동) · <span className="underline">날짜 수정</span>
                                 </button>
                               </div>
@@ -1334,21 +1334,21 @@ export default function RoomsClient({
                               <div key={p.id} className="rounded-xl border border-[var(--coral)] bg-[var(--canvas)] px-3 py-2.5 space-y-2">
                                 <div className="grid grid-cols-2 gap-2">
                                   <div className="space-y-1">
-                                    <p className="text-[10px] text-[var(--warm-muted)]">금액</p>
+                                    <p className="text-[0.625rem] text-[var(--warm-muted)]">금액</p>
                                     <input type="text" inputMode="numeric"
                                       value={editAmount.toLocaleString()}
                                       onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
-                                    <p className="text-[10px] text-[var(--warm-muted)]">납부일</p>
+                                    <p className="text-[0.625rem] text-[var(--warm-muted)]">납부일</p>
                                     <DatePicker value={editDate} onChange={setEditDate}
                                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
                                   </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                   <div className="space-y-1">
-                                    <p className="text-[10px] text-[var(--warm-muted)]">납부방법</p>
+                                    <p className="text-[0.625rem] text-[var(--warm-muted)]">납부방법</p>
                                     <select value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                                       {!['계좌이체', '현금', '신용카드', '기타'].includes(editPayMethod) && editPayMethod && (
@@ -1361,14 +1361,14 @@ export default function RoomsClient({
                                     </select>
                                   </div>
                                   <div className="space-y-1">
-                                    <p className="text-[10px] text-[var(--warm-muted)]">메모</p>
+                                    <p className="text-[0.625rem] text-[var(--warm-muted)]">메모</p>
                                     <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                 </div>
                                 {!p.isDeposit && (
                                   <div className="space-y-1">
-                                    <p className="text-[10px] text-[var(--warm-muted)]">귀속월 (이 record가 인식되는 월)</p>
+                                    <p className="text-[0.625rem] text-[var(--warm-muted)]">귀속월 (이 record가 인식되는 월)</p>
                                     <select value={editTargetMonth} onChange={e => setEditTargetMonth(e.target.value)}
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                                       {/* 현재 record의 targetMonth가 옵션 목록에 없을 수 있어 항상 포함 */}
@@ -1416,10 +1416,10 @@ export default function RoomsClient({
                               <div>
                                 <p className={`text-xs ${p.isDeposit ? 'text-purple-600' : prevOwner ? 'text-amber-600' : 'text-[var(--warm-mid)]'}`}>
                                   {p.seqNo}회차 · {fmtDate(p.payDate)} · {p.payMethod ?? '—'}
-                                  {p.isDeposit && <span className="ml-1.5 text-[10px] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>}
-                                  {prevOwner && <span className="ml-1.5 text-[10px] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
+                                  {p.isDeposit && <span className="ml-1.5 text-[0.625rem] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>}
+                                  {prevOwner && <span className="ml-1.5 text-[0.625rem] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
                                   {!p.isDeposit && (
-                                    <span className={`ml-1.5 text-[10px] font-semibold rounded px-1 py-0.5 ${
+                                    <span className={`ml-1.5 text-[0.625rem] font-semibold rounded px-1 py-0.5 ${
                                       p.targetMonth === targetMonth
                                         ? 'bg-emerald-100 text-emerald-700'
                                         : p.targetMonth < targetMonth
@@ -1441,12 +1441,12 @@ export default function RoomsClient({
                                 {canEdit && (
                                   <div className="flex gap-1.5 ml-1">
                                     <button onClick={() => handleUpdatePayment(p)}
-                                      className="text-[10px] font-medium px-2 py-1 rounded-lg border transition-colors"
+                                      className="text-[0.625rem] font-medium px-2 py-1 rounded-lg border transition-colors"
                                       style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
                                       수정
                                     </button>
                                     <button onClick={() => handleDeletePayment(p.id)}
-                                      className="text-[10px] font-medium px-2 py-1 rounded-lg border border-red-200 text-red-500 transition-colors">
+                                      className="text-[0.625rem] font-medium px-2 py-1 rounded-lg border border-red-200 text-red-500 transition-colors">
                                       삭제
                                     </button>
                                   </div>
@@ -1667,7 +1667,7 @@ export default function RoomsClient({
                 <div className="flex-1 overflow-y-auto p-6 space-y-3">
                   {!isDepositMode && !isCleaningFeeMode && (
                     <>
-                      <p className="text-[10px] text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed">
+                      <p className="text-[0.625rem] text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed">
                         기본은 미수가 있는 가장 오래된 월부터 자동 충당(FIFO·발생주의)입니다. 특정 월로 귀속시키려면 아래에서 직접 선택하세요.
                       </p>
                       <div className="space-y-1">
@@ -1694,7 +1694,7 @@ export default function RoomsClient({
                           })}
                         </select>
                         {forcedTm !== 'auto' && (
-                          <p className="text-[10px] text-amber-600 leading-relaxed">
+                          <p className="text-[0.625rem] text-amber-600 leading-relaxed">
                             FIFO 우회 — 입력 금액이 한 달 이용료를 초과하면 그 다음 달로 이월됩니다.
                           </p>
                         )}
@@ -1916,7 +1916,7 @@ function TenantInfoModal({ tenantId, onClose, onBack }: { tenantId: string; onCl
 function InfoCol({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="space-y-0.5">
-      <p className="text-[11px] text-[var(--warm-muted)]">{label}</p>
+      <p className="text-[0.6875rem] text-[var(--warm-muted)]">{label}</p>
       <p className="text-sm text-[var(--warm-dark)]">{value}</p>
     </div>
   )

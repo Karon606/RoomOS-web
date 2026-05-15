@@ -469,7 +469,7 @@ export default function RoomManageClient({
         <option value="">선택</option>
         {types.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
-      <p className="text-[10px] text-[var(--warm-muted)]">방 타입 추가·관리는 환경설정에서 할 수 있습니다.</p>
+      <p className="text-[0.625rem] text-[var(--warm-muted)]">방 타입 추가·관리는 환경설정에서 할 수 있습니다.</p>
     </div>
   )
 
@@ -709,15 +709,15 @@ export default function RoomManageClient({
                   <div className="flex items-center gap-2">
                     <span className="text-base font-bold text-[var(--coral)]">{fmtRoomNo(room.roomNo)}</span>
                     {room.floor && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
+                      <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                         {room.floor}층
                       </span>
                     )}
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${rs.badgeClass}`}>
+                    <span className={`text-[0.625rem] px-2 py-0.5 rounded-full font-medium shrink-0 ${rs.badgeClass}`}>
                       {rs.label}
                     </span>
                     {room.nonResidentRent != null && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200">
+                      <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200">
                         비거주
                       </span>
                     )}
@@ -1005,7 +1005,7 @@ export default function RoomManageClient({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium text-[var(--warm-mid)]">비거주 이용료 설정</p>
-                  <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">일반 이용료와 별도로 비거주자 전용 금액을 설정합니다</p>
+                  <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">일반 이용료와 별도로 비거주자 전용 금액을 설정합니다</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer shrink-0">
                   <input type="checkbox" className="sr-only" checked={addNrEnabled} onChange={e => setAddNrEnabled(e.target.checked)} />
@@ -1132,7 +1132,7 @@ export default function RoomManageClient({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium text-[var(--warm-mid)]">비거주 이용료 설정</p>
-                  <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">일반 이용료와 별도로 비거주자 전용 금액을 설정합니다</p>
+                  <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">일반 이용료와 별도로 비거주자 전용 금액을 설정합니다</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer shrink-0">
                   <input type="checkbox" className="sr-only" checked={nrEnabled} onChange={e => setNrEnabled(e.target.checked)} />
@@ -1196,7 +1196,7 @@ export default function RoomManageClient({
                     <div className="aspect-square rounded-lg bg-[var(--canvas)] flex flex-col items-center justify-center gap-1">
                       <div className="w-5 h-5 border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
                       {photoProgress && (
-                        <span className="text-[10px] text-[var(--warm-muted)]">{photoProgress.percent}%</span>
+                        <span className="text-[0.625rem] text-[var(--warm-muted)]">{photoProgress.percent}%</span>
                       )}
                     </div>
                   )}
@@ -1208,14 +1208,14 @@ export default function RoomManageClient({
                     ? <div className="flex flex-col items-center gap-1">
                         <div className="w-5 h-5 border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
                         {photoProgress && (
-                          <span className="text-[10px] text-[var(--warm-muted)]">{photoProgress.percent}%</span>
+                          <span className="text-[0.625rem] text-[var(--warm-muted)]">{photoProgress.percent}%</span>
                         )}
                       </div>
                     : <p className="text-xs text-[var(--warm-muted)]">클릭하여 사진 업로드</p>}
                 </div>
               )}
               {photoProgress && photoProgress.total > 1 && (
-                <p className="text-[10px] text-[var(--warm-muted)] text-right">
+                <p className="text-[0.625rem] text-[var(--warm-muted)] text-right">
                   업로드 중 ({photoProgress.current}/{photoProgress.total}) · {photoProgress.percent}%
                 </p>
               )}
@@ -1367,7 +1367,7 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, windowTypeOptions, direct
             </div>
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input type="checkbox" checked={clearScheduled} onChange={e => { setClearScheduled(e.target.checked); if (e.target.checked) setScheduledRent(undefined) }} className="rounded" />
-              <span className="text-[10px] text-[var(--warm-muted)]">예약이용료 삭제</span>
+              <span className="text-[0.625rem] text-[var(--warm-muted)]">예약이용료 삭제</span>
             </label>
           </div>
         </div>
@@ -1450,7 +1450,7 @@ function SelectField({ label, name, options, defaultValue, hint }: {
         <option value="">선택</option>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
-      {hint && <p className="text-[10px] text-[var(--warm-muted)]">{hint}</p>}
+      {hint && <p className="text-[0.625rem] text-[var(--warm-muted)]">{hint}</p>}
     </div>
   )
 }
@@ -1712,7 +1712,7 @@ function RoomMgrTenantInfoModal({ tenantId, onClose, onBack }: { tenantId: strin
 function RmInfoCol({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="space-y-0.5">
-      <p className="text-[11px] text-[var(--warm-muted)]">{label}</p>
+      <p className="text-[0.6875rem] text-[var(--warm-muted)]">{label}</p>
       <p className="text-sm text-[var(--warm-dark)]">{value}</p>
     </div>
   )
@@ -1755,7 +1755,7 @@ function RoomMgrSettlementInfoModal({
             <Loading />
           ) : (
             <>
-              <p className="text-[10px] text-[var(--warm-muted)]">총 수납·잔액·이월액은 입금일 기준입니다. 매출은 귀속 월로 별도 인식됩니다.</p>
+              <p className="text-[0.625rem] text-[var(--warm-muted)]">총 수납·잔액·이월액은 입금일 기준입니다. 매출은 귀속 월로 별도 인식됩니다.</p>
               <div className="grid grid-cols-3 gap-2">
                 <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
                   <p className="text-xs text-[var(--warm-muted)]">총 수납</p>

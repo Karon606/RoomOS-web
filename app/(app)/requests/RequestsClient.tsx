@@ -364,17 +364,17 @@ export default function RequestsClient({
                 {/* 메타 행 */}
                 <div className="flex items-center gap-2 flex-wrap mb-2">
                   {r.isUrgent && !resolved && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-red-50 text-red-600 ring-1 ring-red-200">
+                    <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-semibold bg-red-50 text-red-600 ring-1 ring-red-200">
                       긴급
                     </span>
                   )}
                   {c && (
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ring-1 ${c.bg} ${c.fg} ${c.ring}`}>
+                    <span className={`text-[0.625rem] px-2 py-0.5 rounded-full font-medium ring-1 ${c.bg} ${c.fg} ${c.ring}`}>
                       {r.category}
                     </span>
                   )}
                   {resolved && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+                    <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
                       완료
                     </span>
                   )}
@@ -390,12 +390,12 @@ export default function RequestsClient({
                       {r.tenant?.name ?? '입주자 미상'}{roomNo && ` · ${roomNo}호`}
                     </Link>
                   )}
-                  <span className="text-[10px] text-[var(--warm-muted)]">요청 {fmtDate(r.requestDate)}</span>
+                  <span className="text-[0.625rem] text-[var(--warm-muted)]">요청 {fmtDate(r.requestDate)}</span>
                   {r.targetDate && !resolved && (
-                    <span className="text-[10px] font-medium text-amber-600">목표 {fmtDate(r.targetDate)}</span>
+                    <span className="text-[0.625rem] font-medium text-amber-600">목표 {fmtDate(r.targetDate)}</span>
                   )}
                   {resolved && (
-                    <span className="text-[10px] text-emerald-600">완료 {fmtDate(r.resolvedAt)}</span>
+                    <span className="text-[0.625rem] text-emerald-600">완료 {fmtDate(r.resolvedAt)}</span>
                   )}
                 </div>
 

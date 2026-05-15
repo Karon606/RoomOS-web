@@ -159,7 +159,7 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
             <div className="flex items-center gap-2">
               <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: CATEGORY_TINT[g.cat]?.fg ?? '#999' }} />
               <h2 className="text-sm font-semibold text-[var(--warm-dark)]">{g.cat}</h2>
-              <span className="text-[11px] text-[var(--warm-muted)]">{g.rows.length}품목</span>
+              <span className="text-[0.6875rem] text-[var(--warm-muted)]">{g.rows.length}품목</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {g.rows.map(r => (
@@ -227,7 +227,7 @@ function InventoryCard({ row, onOpen, selectMode, isSelected }: { row: Inventory
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-bold text-[var(--warm-dark)] truncate">{row.label}</p>
-          <p className="text-[10px] mt-0.5" style={{ color: tint?.fg }}>{row.category}</p>
+          <p className="text-[0.625rem] mt-0.5" style={{ color: tint?.fg }}>{row.category}</p>
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
           {lowStock && <Badge tone="danger" mono>소진 임박</Badge>}
@@ -238,43 +238,43 @@ function InventoryCard({ row, onOpen, selectMode, isSelected }: { row: Inventory
       </div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
         <div>
-          <p className="text-[10px] text-[var(--warm-muted)]">현재 잔량</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)]">현재 잔량</p>
           <p className="text-sm font-semibold text-[var(--warm-dark)]">{fmtQty(row.currentStock, stockUnit)}</p>
         </div>
         <div>
-          <p className="text-[10px] text-[var(--warm-muted)]">평균 소모/일</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)]">평균 소모/일</p>
           <p className="text-sm font-medium text-[var(--warm-mid)]">
             {row.avgDaily != null ? fmtQty(row.avgDaily, stockUnit) : '—'}
           </p>
         </div>
         <div>
-          <p className="text-[10px] text-[var(--warm-muted)]">소진 예상</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)]">소진 예상</p>
           <p className="text-sm font-medium text-[var(--warm-mid)]">
             {row.daysUntilEmpty != null ? `${row.daysUntilEmpty}일` : '—'}
-            <span className="text-[10px] text-[var(--warm-muted)] ml-1">/ 알림 D-{row.alertThresholdDays}</span>
+            <span className="text-[0.625rem] text-[var(--warm-muted)] ml-1">/ 알림 D-{row.alertThresholdDays}</span>
           </p>
         </div>
         <div>
-          <p className="text-[10px] text-[var(--warm-muted)]">평균 단가</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)]">평균 단가</p>
           <p className="text-sm font-medium text-[var(--warm-mid)]">
             {row.avgUnitPrice != null
               ? `${Math.round(row.avgUnitPrice).toLocaleString()}원${priceUnit ? `/${priceUnit}` : ''}`
               : '—'}
           </p>
           {row.lastUnitPrice != null && row.lastUnitPrice !== row.avgUnitPrice && (
-            <p className="text-[10px] text-[var(--warm-muted)] mt-0.5">
+            <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">
               최근 {Math.round(row.lastUnitPrice).toLocaleString()}원{priceUnit ? `/${priceUnit}` : ''}
             </p>
           )}
         </div>
       </div>
       {row.memo && (
-        <p className="text-[10px] text-[var(--warm-mid)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-2 py-1.5 leading-relaxed whitespace-pre-wrap">
+        <p className="text-[0.625rem] text-[var(--warm-mid)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-2 py-1.5 leading-relaxed whitespace-pre-wrap">
           메모 · {row.memo}
         </p>
       )}
       {row.reorderMemo && (
-        <p className="text-[10px] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2 py-1.5 leading-relaxed">
+        <p className="text-[0.625rem] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2 py-1.5 leading-relaxed">
           발주 · {row.reorderMemo}
         </p>
       )}
@@ -282,18 +282,18 @@ function InventoryCard({ row, onOpen, selectMode, isSelected }: { row: Inventory
         <div className="flex flex-wrap gap-1">
           {row.lastCheckLocationBreakdown.length > 0
             ? row.lastCheckLocationBreakdown.map(lb => (
-                <span key={lb.locationId} className="text-[10px] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
+                <span key={lb.locationId} className="text-[0.625rem] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
                   {lb.locationName} {fmtQty(lb.qty, stockUnit)}
                 </span>
               ))
             : row.locations.map(loc => (
-                <span key={loc.id} className="text-[10px] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">{loc.name}</span>
+                <span key={loc.id} className="text-[0.625rem] bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">{loc.name}</span>
               ))
           }
         </div>
       )}
       {row.lastPeriodConsumption != null && row.lastPeriodDays != null && (
-        <p className="text-[10px] text-[var(--warm-muted)] pt-1.5 border-t border-[var(--warm-border)]/60">
+        <p className="text-[0.625rem] text-[var(--warm-muted)] pt-1.5 border-t border-[var(--warm-border)]/60">
           최근 {row.lastPeriodDays}일 동안 {fmtQty(row.lastPeriodConsumption, stockUnit)} 소모 · 최근 점검 {fmtDate(row.lastCheckDate)}
         </p>
       )}
@@ -519,11 +519,11 @@ function MonthlyInflowList({ rows, stockUnit }: { rows: MonthlyInflowRow[]; stoc
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2">
         <div className="bg-[var(--canvas)] rounded-xl p-3">
-          <p className="text-[10px] text-[var(--warm-muted)]">전체 입수량</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)]">전체 입수량</p>
           <p className="text-sm font-bold text-[var(--warm-dark)] mt-0.5">{Math.round(totalAll * 100) / 100}{u}</p>
         </div>
         <div className="bg-[var(--canvas)] rounded-xl p-3">
-          <p className="text-[10px] text-[var(--warm-muted)]">전체 구매 비용</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)]">전체 구매 비용</p>
           <p className="text-sm font-bold text-[var(--warm-dark)] mt-0.5">{totalAmt.toLocaleString()}원</p>
         </div>
       </div>
@@ -542,22 +542,22 @@ function MonthlyInflowList({ rows, stockUnit }: { rows: MonthlyInflowRow[]; stoc
               <div className="space-y-1">
                 {r.purchaseQty > 0 && (
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">구매</span>
+                    <span className="text-[0.625rem] text-[var(--warm-muted)] w-8 shrink-0">구매</span>
                     <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
                       <div className="h-full rounded-full" style={{ width: `${Math.min(100, purchasePct)}%`, background: '#6aab7e' }} />
                     </div>
-                    <span className="text-[10px] text-[var(--warm-muted)] w-24 text-right shrink-0 tabular-nums">
+                    <span className="text-[0.625rem] text-[var(--warm-muted)] w-24 text-right shrink-0 tabular-nums">
                       {Math.round(r.purchaseQty * 100) / 100}{u} · {r.purchaseAmount.toLocaleString()}원
                     </span>
                   </div>
                 )}
                 {r.additionQty > 0 && (
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">무상</span>
+                    <span className="text-[0.625rem] text-[var(--warm-muted)] w-8 shrink-0">무상</span>
                     <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
                       <div className="h-full rounded-full" style={{ width: `${Math.min(100, additionPct)}%`, background: '#d4a847' }} />
                     </div>
-                    <span className="text-[10px] text-[var(--warm-muted)] w-24 text-right shrink-0 tabular-nums">
+                    <span className="text-[0.625rem] text-[var(--warm-muted)] w-24 text-right shrink-0 tabular-nums">
                       {Math.round(r.additionQty * 100) / 100}{u}
                     </span>
                   </div>
@@ -591,7 +591,7 @@ function PriceChart({ points, unitLabel, qtyUnit }: { points: PricePoint[]; unit
   return (
     <div className="space-y-3">
       <div className="bg-[var(--canvas)] rounded-xl p-3 space-y-2">
-        <div className="flex items-center justify-between text-[10px] text-[var(--warm-muted)]">
+        <div className="flex items-center justify-between text-[0.625rem] text-[var(--warm-muted)]">
           <span>최저 {Math.round(minP).toLocaleString()}원{unitSuffix}</span>
           <span>최고 {Math.round(maxP).toLocaleString()}원{unitSuffix}</span>
         </div>
@@ -607,7 +607,7 @@ function PriceChart({ points, unitLabel, qtyUnit }: { points: PricePoint[]; unit
             <span className="text-[var(--warm-dark)] font-medium">
               {Math.round(p.unitPrice).toLocaleString()}원{unitSuffix}
             </span>
-            <span className="text-[10px] text-[var(--warm-muted)]">
+            <span className="text-[0.625rem] text-[var(--warm-muted)]">
               {p.qty}{qtyUnit ?? ''} · {p.amount.toLocaleString()}원
             </span>
           </li>
@@ -654,7 +654,7 @@ function SettingsForm({ row, onCancel, onDone }: {
         <input type="text" value={labelEdit} onChange={e => setLabelEdit(e.target.value)}
           placeholder="예: 키친타월 (롤타입)"
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-        <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
+        <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
           이 라벨을 바꾸면 같은 (카테고리·기존 라벨·{row.qtyUnit ?? '단위'}) 매칭되는 지출 내역의 품목명도 자동 갱신됩니다.
           예) '키친타월' → '키친타월 (롤타입)' / '음식물쓰레기봉투' → '음식물쓰레기봉투 5L'
         </p>
@@ -665,7 +665,7 @@ function SettingsForm({ row, onCancel, onDone }: {
         <input type="text" inputMode="numeric" value={thresholdDays}
           onChange={e => setThresholdDays(e.target.value.replace(/[^0-9]/g, ''))}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-        <p className="text-[10px] text-[var(--warm-muted)]">예: 3 → 소진 예상이 3일 이하면 알림</p>
+        <p className="text-[0.625rem] text-[var(--warm-muted)]">예: 3 → 소진 예상이 3일 이하면 알림</p>
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">재고 추적 단위</label>
@@ -679,7 +679,7 @@ function SettingsForm({ row, onCancel, onDone }: {
             수량 단위{row.qtyUnit ? ` (${row.qtyUnit})` : ''}
           </button>
         </div>
-        <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
+        <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
           규격 단위: 쌀 1포대(20kg) 같이 규격으로 환산해서 추적 (kg, 매, ml).<br/>
           수량 단위: 종량제봉투 50L짜리 30매처럼 매(개) 단위로만 추적 (사이즈는 라벨에 적기).
         </p>
@@ -690,7 +690,7 @@ function SettingsForm({ row, onCancel, onDone }: {
           rows={3}
           placeholder="예: 창고에 온전히 남아있는 양만 잔량으로 카운트. 주방 쌀통은 제외"
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
-        <p className="text-[10px] text-[var(--warm-muted)]">잔량 점검 시 무엇을 세는지·어디 보관분만 카운트하는지 등 기준을 적어두면 일관성 유지에 도움됩니다.</p>
+        <p className="text-[0.625rem] text-[var(--warm-muted)]">잔량 점검 시 무엇을 세는지·어디 보관분만 카운트하는지 등 기준을 적어두면 일관성 유지에 도움됩니다.</p>
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">발주 메모</label>
@@ -754,7 +754,7 @@ function MergeSection({ currentId, currentLabel, category, onDone }: {
           병합
         </Btn>
       </div>
-      <p className="text-[10px] text-[var(--warm-muted)] leading-relaxed">
+      <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
         예: 라면처럼 봉지·박스가 섞여도 한 카드로 합쳐 추적하고 싶을 때. 사이즈가 의미 있는 폐기물 봉투는 분리 유지 권장.
       </p>
 
@@ -767,7 +767,7 @@ function MergeSection({ currentId, currentLabel, category, onDone }: {
             {/* 방향 표시 + 스왑 버튼 */}
             <div className="flex items-center gap-2">
               <div className="flex-1 text-center">
-                <p className="text-[10px] text-[var(--warm-muted)] mb-0.5">삭제될 카드</p>
+                <p className="text-[0.625rem] text-[var(--warm-muted)] mb-0.5">삭제될 카드</p>
                 <p className="text-sm font-semibold text-[var(--warm-dark)] truncate">{srcLabel}</p>
               </div>
               <button type="button" onClick={() => setReversed(r => !r)}
@@ -775,12 +775,12 @@ function MergeSection({ currentId, currentLabel, category, onDone }: {
                 ⇄
               </button>
               <div className="flex-1 text-center">
-                <p className="text-[10px] text-[var(--warm-muted)] mb-0.5">기록이 합쳐질 카드</p>
+                <p className="text-[0.625rem] text-[var(--warm-muted)] mb-0.5">기록이 합쳐질 카드</p>
                 <p className="text-sm font-semibold text-[var(--coral)] truncate">{destLabel}</p>
               </div>
             </div>
 
-            <ul className="text-[11px] text-[var(--warm-muted)] space-y-1 leading-relaxed">
+            <ul className="text-[0.6875rem] text-[var(--warm-muted)] space-y-1 leading-relaxed">
               <li>· <strong className="text-[var(--warm-dark)]">{srcLabel}</strong>의 지출·점검·무상입수 기록이 모두 <strong className="text-[var(--warm-dark)]">{destLabel}</strong>로 이전됩니다.</li>
               <li>· <strong className="text-[var(--warm-dark)]">{srcLabel}</strong> 카드는 삭제됩니다.</li>
               <li>· 대상 카드의 수량 단위 필터는 해제(다양한 포장 합산)됩니다.</li>
@@ -841,7 +841,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
             {entry.locationBreakdown.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-1">
                 {entry.locationBreakdown.map(lb => (
-                  <span key={lb.locationId} className="text-[10px] bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
+                  <span key={lb.locationId} className="text-[0.625rem] bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
                     {lb.locationName} {fmtQty(lb.qty, stockUnit)}
                     {lb.fromHubQty != null && lb.fromHubQty > 0 && (
                       <span className="ml-1 text-amber-600">(+창고 {fmtQty(lb.fromHubQty, stockUnit)})</span>
@@ -850,7 +850,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
                 ))}
               </div>
             )}
-            {entry.memo && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">{entry.memo}</p>}
+            {entry.memo && <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">{entry.memo}</p>}
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -907,14 +907,14 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
               </p>
               <p className="text-sm font-medium text-[var(--warm-dark)]">+ {fmtQty(baseQty, baseUnit)}{entry.amount > 0 ? ` (${entry.amount.toLocaleString()}원)` : ''}</p>
               {isPendingReceipt ? (
-                <p className="text-[10px] text-[var(--honey)] mt-0.5">수령 대기 중</p>
+                <p className="text-[0.625rem] text-[var(--honey)] mt-0.5">수령 대기 중</p>
               ) : entry.receivedAt ? (
-                <p className="text-[10px] text-[var(--status-paid-fg)] mt-0.5">
+                <p className="text-[0.625rem] text-[var(--status-paid-fg)] mt-0.5">
                   수령 확정 {fmtDate(entry.receivedAt)} <span className="tabular-nums">{fmtTime(entry.receivedAt)}</span>
                   {entry.receivedLocationName && <span className="ml-1">· {entry.receivedLocationName}</span>}
                 </p>
               ) : null}
-              {(entry.vendor || entry.memo) && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">{entry.vendor ?? ''}{entry.vendor && entry.memo ? ' · ' : ''}{entry.memo ?? ''}</p>}
+              {(entry.vendor || entry.memo) && <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">{entry.vendor ?? ''}{entry.vendor && entry.memo ? ' · ' : ''}{entry.memo ?? ''}</p>}
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
@@ -931,7 +931,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
         </div>
         {isPendingReceipt && showLocationPicker && onConfirmReceipt && (
           <div className="mt-2 pt-2 border-t border-[var(--honey)]/30">
-            <p className="text-[10px] text-[var(--warm-muted)] mb-1.5">어느 위치로 입고됩니까?</p>
+            <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1.5">어느 위치로 입고됩니까?</p>
             <div className="flex flex-wrap gap-1.5">
               {itemLocations.map(loc => (
                 <button key={loc.id} type="button" disabled={pending}
@@ -988,7 +988,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
         <div className="min-w-0">
           <p className="text-xs text-[var(--warm-muted)]">{fmtDate(entry.date)} · 무상 입수{entry.source ? ` (${entry.source})` : ''}</p>
           <p className="text-sm font-medium text-[var(--warm-dark)]">+ {fmtQty(entry.addedQty, stockUnit)}</p>
-          {entry.memo && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">{entry.memo}</p>}
+          {entry.memo && <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">{entry.memo}</p>}
         </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
@@ -1058,19 +1058,19 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
       {error && <p className="text-xs text-red-500">{error}</p>}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <p className="text-[10px] text-[var(--warm-muted)] mb-1">날짜</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">날짜</p>
           <DatePicker value={date} onChange={setDate} />
         </div>
         {!hasLocations && (
           <div>
-            <p className="text-[10px] text-[var(--warm-muted)] mb-1">잔량{stockUnit ? ` (${stockUnit})` : ''}</p>
+            <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">잔량{stockUnit ? ` (${stockUnit})` : ''}</p>
             <input type="number" min="0" step="any" value={qty} onChange={e => setQty(e.target.value)} className={inputCls} />
           </div>
         )}
       </div>
       {hasLocations && (
         <div className="space-y-1.5">
-          <p className="text-[10px] text-[var(--warm-muted)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''} · 합계 {locationTotal ?? 0}{stockUnit ?? ''}</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''} · 합계 {locationTotal ?? 0}{stockUnit ?? ''}</p>
           {locationSources.map(l => (
             <div key={l.id} className="flex items-center gap-2">
               <span className="text-xs text-[var(--warm-mid)] w-20 shrink-0 truncate">{l.name}</span>
@@ -1083,7 +1083,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
         </div>
       )}
       <div>
-        <p className="text-[10px] text-[var(--warm-muted)] mb-1">메모</p>
+        <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">메모</p>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} />
       </div>
       <div className="flex gap-2 pt-1 justify-end">
@@ -1121,20 +1121,20 @@ function AdditionEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
       {error && <p className="text-xs text-red-500">{error}</p>}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <p className="text-[10px] text-[var(--warm-muted)] mb-1">날짜</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">날짜</p>
           <DatePicker value={date} onChange={setDate} />
         </div>
         <div>
-          <p className="text-[10px] text-[var(--warm-muted)] mb-1">수량{stockUnit ? ` (${stockUnit})` : ''}</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">수량{stockUnit ? ` (${stockUnit})` : ''}</p>
           <input type="number" min="0" step="any" value={qty} onChange={e => setQty(e.target.value)} className={inputCls} />
         </div>
       </div>
       <div>
-        <p className="text-[10px] text-[var(--warm-muted)] mb-1">출처</p>
+        <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">출처</p>
         <input type="text" value={source} onChange={e => setSource(e.target.value)} placeholder="예: 샘플, 증정" className={inputCls} />
       </div>
       <div>
-        <p className="text-[10px] text-[var(--warm-muted)] mb-1">메모</p>
+        <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">메모</p>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} />
       </div>
       <div className="flex gap-2 pt-1">
@@ -1189,36 +1189,36 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
 
   return (
     <li className="border border-[var(--warm-border)] rounded-xl px-3 py-3 space-y-2 bg-[var(--canvas)]">
-      <p className="text-xs font-medium text-[var(--warm-mid)]">구매 수정 <span className="text-[10px] font-normal text-[var(--warm-muted)]">— 수정 내용은 지출 페이지에도 반영됩니다</span></p>
+      <p className="text-xs font-medium text-[var(--warm-mid)]">구매 수정 <span className="text-[0.625rem] font-normal text-[var(--warm-muted)]">— 수정 내용은 지출 페이지에도 반영됩니다</span></p>
       {error && <p className="text-xs text-red-500">{error}</p>}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <p className="text-[10px] text-[var(--warm-muted)] mb-1">구매일</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">구매일</p>
           <DatePicker value={date} onChange={setDate} />
         </div>
         <div>
-          <p className="text-[10px] text-[var(--warm-muted)] mb-1">금액 (원)</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">금액 (원)</p>
           <input type="number" min="0" step="1" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" className={inputCls} />
         </div>
       </div>
       <div>
-        <p className="text-[10px] text-[var(--warm-muted)] mb-1">구매처</p>
+        <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">구매처</p>
         <input type="text" value={vendor} onChange={e => setVendor(e.target.value)} placeholder="예: 고구마켓" className={inputCls} />
       </div>
       <div>
-        <p className="text-[10px] text-[var(--warm-muted)] mb-1">메모</p>
+        <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">메모</p>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} />
       </div>
       {/* 수령 확정일시 */}
       <div className="space-y-1">
-        <p className="text-[10px] text-[var(--warm-muted)]">수령 확정일시</p>
+        <p className="text-[0.625rem] text-[var(--warm-muted)]">수령 확정일시</p>
         <div className="flex gap-2 items-center">
           <DatePicker value={receivedDate} onChange={setReceivedDate} className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
           <input type="time" value={receivedTime} onChange={e => setReceivedTime(e.target.value)}
             className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-2 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
           {receivedDate && (
             <button type="button" onClick={() => { setReceivedDate('clear'); setReceivedTime('') }}
-              className="text-[10px] text-red-400 hover:text-red-600 whitespace-nowrap">미수령으로</button>
+              className="text-[0.625rem] text-red-400 hover:text-red-600 whitespace-nowrap">미수령으로</button>
           )}
         </div>
       </div>
@@ -1315,7 +1315,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
             <label className="text-xs font-medium text-[var(--warm-mid)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''}</label>
             {hasPrev && touched.size < item.locations.length && (
               <button type="button" onClick={confirmAll}
-                className="text-[10px] text-[var(--coral)] hover:underline">
+                className="text-[0.625rem] text-[var(--coral)] hover:underline">
                 모두 이전 수량으로 확인
               </button>
             )}
@@ -1338,14 +1338,14 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
                         : 'border-[var(--warm-border)] text-[var(--warm-dark)]'
                     }`} />
                   {isPrefilled && (
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] text-[var(--ink-mute)] bg-[var(--canvas)] pl-1">이전</span>
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[0.5625rem] text-[var(--ink-mute)] bg-[var(--canvas)] pl-1">이전</span>
                   )}
                 </div>
               </div>
             )
           })}
           {locationTotal !== null && (
-            <p className="text-[10px] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
+            <p className="text-[0.625rem] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
               → 합계 <strong>{Math.round(locationTotal * 100) / 100}{stockUnit ?? ''}</strong>
             </p>
           )}
@@ -1488,7 +1488,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)] shrink-0">
           <div>
             <h2 className="text-sm font-bold text-[var(--warm-dark)]">위치별 점검</h2>
-            <p className="text-[11px] text-[var(--warm-muted)] mt-0.5">한 위치에서 여러 품목을 한 번에 기록합니다</p>
+            <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">한 위치에서 여러 품목을 한 번에 기록합니다</p>
           </div>
           <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl w-8 h-8 flex items-center justify-center">✕</button>
         </div>
@@ -1496,7 +1496,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
         <div className="px-5 py-3 border-b border-[var(--warm-border)] shrink-0 space-y-2">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <p className="text-[10px] text-[var(--warm-muted)] mb-1">점검 위치</p>
+              <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">점검 위치</p>
               <select value={locId} onChange={e => setLocId(e.target.value)}
                 className={inputCls}>
                 <option value="">위치 선택…</option>
@@ -1504,7 +1504,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
               </select>
             </div>
             <div>
-              <p className="text-[10px] text-[var(--warm-muted)] mb-1">점검일</p>
+              <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">점검일</p>
               <DatePicker value={date} onChange={setDate}
                 className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
             </div>
@@ -1521,7 +1521,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
               {locItems.some(r => r.lastCheckLocationBreakdown.some(lb => lb.locationId === locId)) && touched.size < locItems.length && (
                 <div className="flex justify-end">
                   <button type="button" onClick={confirmAll}
-                    className="text-[10px] text-[var(--coral)] hover:underline">모두 이전 수량으로 확인</button>
+                    className="text-[0.625rem] text-[var(--coral)] hover:underline">모두 이전 수량으로 확인</button>
                 </div>
               )}
               {locItems.map(r => {
@@ -1536,7 +1536,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
                     <div className="flex items-center gap-3">
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-[var(--warm-dark)] truncate">{r.label}</p>
-                        <p className="text-[10px] text-[var(--warm-muted)]">{r.category}</p>
+                        <p className="text-[0.625rem] text-[var(--warm-muted)]">{r.category}</p>
                       </div>
                       <div className="relative w-28 shrink-0">
                         <input
@@ -1548,21 +1548,21 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
                             isPrefilled ? 'border-[var(--warm-border)]/50 text-[var(--ink-mute)]' : 'border-[var(--warm-border)] text-[var(--warm-dark)]'
                           }`} />
                         {isPrefilled && (
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[var(--ink-mute)] bg-[var(--canvas)] pl-0.5">이전</span>
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[0.5625rem] text-[var(--ink-mute)] bg-[var(--canvas)] pl-0.5">이전</span>
                         )}
                       </div>
-                      <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">{stockUnit ?? ''}</span>
+                      <span className="text-[0.625rem] text-[var(--warm-muted)] w-8 shrink-0">{stockUnit ?? ''}</span>
                     </div>
                     {hubLoc && (qtys[r.id] ?? '') !== '' && (
                       <div className="flex items-center gap-2 pl-1">
-                        <span className="text-[10px] text-amber-600 w-24 shrink-0">└ {hubLoc.name}에서</span>
+                        <span className="text-[0.625rem] text-amber-600 w-24 shrink-0">└ {hubLoc.name}에서</span>
                         <input
                           type="text" inputMode="decimal"
                           value={fromHubQtys[r.id] ?? ''}
                           onChange={e => setFromHubQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                           placeholder="이동 수량 (선택)"
                           className="flex-1 bg-[var(--canvas)] border border-amber-200 rounded-xl px-3 py-1.5 text-xs text-amber-700 outline-none focus:border-amber-400" />
-                        <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">{stockUnit ?? ''}</span>
+                        <span className="text-[0.625rem] text-[var(--warm-muted)] w-8 shrink-0">{stockUnit ?? ''}</span>
                       </div>
                     )}
                   </div>
@@ -1628,7 +1628,7 @@ function ExcludedItemsModal({ onClose }: { onClose: () => void }) {
             <div key={it.id} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)]">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{it.label}</p>
-                <p className="text-[11px] text-[var(--warm-muted)]">
+                <p className="text-[0.6875rem] text-[var(--warm-muted)]">
                   {it.category}{it.specUnit ? ` · ${it.specUnit}` : ''}{it.qtyUnit ? ` · ${it.qtyUnit}` : ''}
                   {it.expenseCount > 0 && <span className="ml-1">· 관련 지출 {it.expenseCount}건</span>}
                 </p>
@@ -1720,7 +1720,7 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
                       reload()
                       setPending(false)
                     }}
-                    className={`text-[10px] px-2 py-1 rounded-lg border transition-colors ${loc.isHub ? 'bg-amber-50 border-amber-200 text-amber-700' : 'border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-amber-300 hover:text-amber-600'}`}>
+                    className={`text-[0.625rem] px-2 py-1 rounded-lg border transition-colors ${loc.isHub ? 'bg-amber-50 border-amber-200 text-amber-700' : 'border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-amber-300 hover:text-amber-600'}`}>
                     {loc.isHub ? '허브 ✓' : '허브'}
                   </button>
                   <button type="button" onClick={() => { setEditId(loc.id); setEditName(loc.name) }}
@@ -1741,7 +1741,7 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
         </form>
       </div>
       <div className="border-t border-[var(--warm-border)] px-5 sm:px-6 py-3 space-y-2">
-        <p className="text-[10px] text-[var(--warm-muted)]">
+        <p className="text-[0.625rem] text-[var(--warm-muted)]">
           <strong className="text-amber-600">허브</strong>로 지정한 위치(예: 창고)는 위치별 점검 시 "이동 수량" 입력란이 표시됩니다.
         </p>
         <ModalFooterActions onCancel={onClose}>
@@ -1844,7 +1844,7 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
     <div className="space-y-2 pt-2 border-t border-[var(--warm-border)]/60">
       <div className="flex items-center justify-between">
         <label className="text-xs font-medium text-[var(--warm-mid)]">보관 위치</label>
-        {saved && <span className="text-[10px] text-emerald-600">저장됨</span>}
+        {saved && <span className="text-[0.625rem] text-emerald-600">저장됨</span>}
       </div>
       <div className="flex flex-wrap gap-2">
         {allLocs.map(loc => (
@@ -1863,7 +1863,7 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
       <Btn type="button" variant="secondary" size="sm" onClick={handleSave} disabled={pending}>
         {pending ? '저장 중...' : '위치 저장'}
       </Btn>
-      <p className="text-[10px] text-[var(--warm-muted)]">재고 점검 시 선택된 위치별로 잔량을 나눠서 입력할 수 있습니다.</p>
+      <p className="text-[0.625rem] text-[var(--warm-muted)]">재고 점검 시 선택된 위치별로 잔량을 나눠서 입력할 수 있습니다.</p>
     </div>
   )
 }
@@ -1912,7 +1912,7 @@ function AdditionForm({ item, onCancel, onDone }: {
         <>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="text-[10px] text-[var(--warm-muted)]">규격</label>
+              <label className="text-[0.625rem] text-[var(--warm-muted)]">규격</label>
               <div className="flex gap-1 items-center">
                 <input type="text" inputMode="decimal" value={specQty}
                   onChange={e => setSpecQty(e.target.value.replace(/[^0-9.]/g, ''))}
@@ -1922,7 +1922,7 @@ function AdditionForm({ item, onCancel, onDone }: {
               </div>
             </div>
             <div className="space-y-1.5">
-              <label className="text-[10px] text-[var(--warm-muted)]">수량</label>
+              <label className="text-[0.625rem] text-[var(--warm-muted)]">수량</label>
               <div className="flex gap-1 items-center">
                 <input type="text" inputMode="decimal" value={packQty}
                   onChange={e => setPackQty(e.target.value.replace(/[^0-9.]/g, ''))}
@@ -1933,7 +1933,7 @@ function AdditionForm({ item, onCancel, onDone }: {
             </div>
           </div>
           {computed > 0 && (
-            <p className="text-[10px] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
+            <p className="text-[0.625rem] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
               → 입수량 합계 <strong>{Math.round(computed * 100) / 100}{item.specUnit}</strong>
             </p>
           )}

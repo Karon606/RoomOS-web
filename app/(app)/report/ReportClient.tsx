@@ -165,8 +165,8 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
             <div key={q.q} className="bg-[var(--canvas)] rounded-xl p-3">
               <p className="text-xs text-[var(--warm-muted)]">{q.q}분기</p>
               <p className="text-sm font-bold mt-1 text-[var(--warm-dark)]">{fmt(q.revenue)}</p>
-              <p className="text-[11px] text-[var(--warm-muted)] mt-0.5">지출 {fmt(q.expense)}</p>
-              <p className={`text-[11px] mt-0.5 font-semibold ${q.profit > 0 ? 'text-emerald-600' : q.profit < 0 ? 'text-red-500' : 'text-[var(--warm-muted)]'}`}>
+              <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">지출 {fmt(q.expense)}</p>
+              <p className={`text-[0.6875rem] mt-0.5 font-semibold ${q.profit > 0 ? 'text-emerald-600' : q.profit < 0 ? 'text-red-500' : 'text-[var(--warm-muted)]'}`}>
                 {q.profit === 0 ? '—' : (q.profit > 0 ? '+' : '-') + Math.abs(q.profit).toLocaleString() + '원'}
               </p>
             </div>
@@ -179,7 +179,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4">
           <div className="flex items-baseline gap-2 mb-3">
             <h3 className="text-sm font-semibold text-[var(--warm-dark)]">카테고리별 지출 비중</h3>
-            <span className="text-[11px] text-[var(--warm-muted)]">{summary.year}년 연간 합계 기준</span>
+            <span className="text-[0.6875rem] text-[var(--warm-muted)]">{summary.year}년 연간 합계 기준</span>
           </div>
           <div className="space-y-2">
             {summary.expenseByCategory.map(c => {
@@ -196,7 +196,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                     />
                   </div>
                   <span className="text-xs text-[var(--warm-mid)] w-24 text-right shrink-0">
-                    {fmt(c.amount)} <span className="text-[10px] text-[var(--warm-muted)]">({c.percent}%)</span>
+                    {fmt(c.amount)} <span className="text-[0.625rem] text-[var(--warm-muted)]">({c.percent}%)</span>
                   </span>
                 </div>
               )
@@ -234,7 +234,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                     <span className="flex items-center gap-1.5">
                       <span className="text-[var(--warm-mid)]">{fmt(prevRow?.revenue ?? 0)}</span>
                       {prevRow && r.revenue > 0 && delta !== 0 && (
-                        <span className={`text-[10px] font-semibold ${delta > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        <span className={`text-[0.625rem] font-semibold ${delta > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                           {(delta > 0 ? '▲' : '▼')} {Math.abs(delta).toLocaleString()}원
                         </span>
                       )}
@@ -244,18 +244,18 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
               </div>
               <div className="space-y-1 pt-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">수익</span>
+                  <span className="text-[0.625rem] text-[var(--warm-muted)] w-8 shrink-0">수익</span>
                   <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${Math.min(100, incomePct)}%`, minWidth: incomeTotal > 0 ? 2 : 0, background: '#6aab7e' }} />
                   </div>
-                  <span className="text-[10px] text-[var(--warm-muted)] tabular-nums w-12 text-right shrink-0">{fmtMan(incomeTotal)}</span>
+                  <span className="text-[0.625rem] text-[var(--warm-muted)] tabular-nums w-12 text-right shrink-0">{fmtMan(incomeTotal)}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-[var(--warm-muted)] w-8 shrink-0">지출</span>
+                  <span className="text-[0.625rem] text-[var(--warm-muted)] w-8 shrink-0">지출</span>
                   <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${Math.min(100, expensePct)}%`, minWidth: r.expense > 0 ? 2 : 0, background: 'var(--coral)' }} />
                   </div>
-                  <span className="text-[10px] text-[var(--warm-muted)] tabular-nums w-12 text-right shrink-0">{fmtMan(r.expense)}</span>
+                  <span className="text-[0.625rem] text-[var(--warm-muted)] tabular-nums w-12 text-right shrink-0">{fmtMan(r.expense)}</span>
                 </div>
               </div>
             </div>
@@ -281,7 +281,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                   <span className="flex items-center gap-1.5">
                     <span className="text-[var(--warm-mid)]">{fmt(summary.prevYear.totalRevenue)}</span>
                     {totalDelta !== 0 && (
-                      <span className={`text-[10px] font-semibold ${totalDelta > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      <span className={`text-[0.625rem] font-semibold ${totalDelta > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                         {(totalDelta > 0 ? '▲' : '▼')} {Math.abs(totalDelta).toLocaleString()}원
                       </span>
                     )}
@@ -324,7 +324,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                       <td className="px-4 py-3 text-right">
                         <div className="text-[var(--warm-mid)] text-xs">{fmt(prevRow?.revenue ?? 0)}</div>
                         {prevRow && r.revenue > 0 && (
-                          <div className={`text-[10px] mt-0.5 font-semibold ${
+                          <div className={`text-[0.625rem] mt-0.5 font-semibold ${
                             delta > 0 ? 'text-emerald-600' : delta < 0 ? 'text-red-500' : 'text-[var(--warm-muted)]'
                           }`}>
                             {delta === 0 ? '—' : (delta > 0 ? '▲' : '▼') + ' ' + Math.abs(delta).toLocaleString() + '원'}
@@ -346,13 +346,13 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                           <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
                             <div className="h-full rounded-full" style={{ width: `${Math.min(100, incomePct)}%`, minWidth: incomeTotal > 0 ? 2 : 0, background: '#6aab7e' }} />
                           </div>
-                          <span className="text-[10px] text-[var(--warm-muted)] tabular-nums w-10 text-right shrink-0">{fmtMan(incomeTotal)}</span>
+                          <span className="text-[0.625rem] text-[var(--warm-muted)] tabular-nums w-10 text-right shrink-0">{fmtMan(incomeTotal)}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
                             <div className="h-full rounded-full" style={{ width: `${Math.min(100, expensePct)}%`, minWidth: r.expense > 0 ? 2 : 0, background: 'var(--coral)' }} />
                           </div>
-                          <span className="text-[10px] text-[var(--warm-muted)] tabular-nums w-10 text-right shrink-0">{fmtMan(r.expense)}</span>
+                          <span className="text-[0.625rem] text-[var(--warm-muted)] tabular-nums w-10 text-right shrink-0">{fmtMan(r.expense)}</span>
                         </div>
                       </div>
                     </td>
@@ -368,7 +368,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                     {summary.prevYear.totalRevenue > 0 && (() => {
                       const totalDelta = summary.totalRevenue - summary.prevYear.totalRevenue
                       return (
-                        <div className={`text-[10px] mt-0.5 font-semibold ${
+                        <div className={`text-[0.625rem] mt-0.5 font-semibold ${
                           totalDelta > 0 ? 'text-emerald-600' : totalDelta < 0 ? 'text-red-500' : 'text-[var(--warm-muted)]'
                         }`}>
                           {totalDelta === 0 ? '—' : (totalDelta > 0 ? '▲' : '▼') + ' ' + Math.abs(totalDelta).toLocaleString() + '원'}
@@ -390,7 +390,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
         </div>
       </div>
 
-      <p className="text-[11px] text-[var(--warm-muted)] leading-relaxed">
+      <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
         매출은 임대 서비스가 제공된 월(targetMonth) 기준으로 인식됩니다. 입금 지연이 있어도 매출은 발생월에 잡히며,
         '월말 미수'는 그 월말 시점까지 회수되지 않은 채권 누적액입니다.
       </p>
@@ -468,7 +468,7 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
           </table>
         </div>
       </div>
-      <p className="text-[11px] text-[var(--warm-muted)] leading-relaxed">
+      <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
         예상 매출 = 호실별 점유 일정 × 임대료(예정 가격 적용일 반영). 예상 지출/기타 수익 = 전년 동월 실적,
         없으면 최근 3개월 평균. 입주 예정·퇴실 예정 일정도 반영되며, 미확정 변수가 많을수록 실제 결과와 차이가 날 수 있습니다.
       </p>
@@ -519,7 +519,7 @@ function AISection() {
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6 text-center space-y-3">
           <div className="w-6 h-6 mx-auto border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
           <p className="text-xs text-[var(--coral)] animate-pulse">데이터 수집 + AI 분석 중...</p>
-          <p className="text-[10px] text-[var(--warm-muted)]">10~20초 소요됩니다</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)]">10~20초 소요됩니다</p>
         </div>
       )}
 

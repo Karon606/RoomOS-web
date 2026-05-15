@@ -237,7 +237,7 @@ function PropertiesPanel({
       </div>
 
       <div className="space-y-1">
-        <p className="text-[11px] text-[var(--warm-muted)]">표시 이름</p>
+        <p className="text-[0.6875rem] text-[var(--warm-muted)]">표시 이름</p>
         <input className={inputCls} value={el.label}
           onChange={e => onChange({ label: e.target.value })}
           onBlur={onCommit} />
@@ -245,7 +245,7 @@ function PropertiesPanel({
 
       {el.type === 'room' && (
         <div className="space-y-1">
-          <p className="text-[11px] text-[var(--warm-muted)]">연결 호실</p>
+          <p className="text-[0.6875rem] text-[var(--warm-muted)]">연결 호실</p>
           <select className={inputCls} value={el.roomNo ?? ''}
             onChange={e => { onChange({ roomNo: e.target.value || undefined }); onCommit() }}>
             <option value="">연결 없음</option>
@@ -257,13 +257,13 @@ function PropertiesPanel({
       {!isPolygon && (
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
-            <p className="text-[11px] text-[var(--warm-muted)]">너비 px</p>
+            <p className="text-[0.6875rem] text-[var(--warm-muted)]">너비 px</p>
             <input type="number" className={inputCls} value={el.width}
               onChange={e => onChange({ width: Number(e.target.value) })}
               onBlur={e => { if (Number(e.target.value) < 1) onChange({ width: 20 }); onCommit() }} />
           </div>
           <div className="space-y-1">
-            <p className="text-[11px] text-[var(--warm-muted)]">높이 px</p>
+            <p className="text-[0.6875rem] text-[var(--warm-muted)]">높이 px</p>
             <input type="number" className={inputCls} value={el.height}
               onChange={e => onChange({ height: Number(e.target.value) })}
               onBlur={e => { if (Number(e.target.value) < 1) onChange({ height: 20 }); onCommit() }} />
@@ -272,7 +272,7 @@ function PropertiesPanel({
       )}
 
       <div className="space-y-1">
-        <p className="text-[11px] text-[var(--warm-muted)]">회전 (°)</p>
+        <p className="text-[0.6875rem] text-[var(--warm-muted)]">회전 (°)</p>
         <input type="number" className={inputCls} value={el.rotation}
           onChange={e => onChange({ rotation: Number(e.target.value) })}
           onBlur={onCommit} />
@@ -280,7 +280,7 @@ function PropertiesPanel({
 
       {el.type !== 'label' && (
         <div className="space-y-1">
-          <p className="text-[11px] text-[var(--warm-muted)]">배경색</p>
+          <p className="text-[0.6875rem] text-[var(--warm-muted)]">배경색</p>
           <div className="flex items-center gap-2">
             <input type="color" value={el.fill ?? ELEMENT_DEFAULTS[el.type].fill}
               onChange={e => onChange({ fill: e.target.value })}
@@ -351,7 +351,7 @@ function AlignPanel({ count, onAlign }: { count: number; onAlign: (type: AlignTy
   ]
   return (
     <div className="px-4 pb-3 space-y-1.5">
-      <p className="text-[11px] text-[var(--warm-muted)]">정렬</p>
+      <p className="text-[0.6875rem] text-[var(--warm-muted)]">정렬</p>
       <div className="grid grid-cols-4 gap-1.5">
         {items.map(({ type, Icon, title, min }) => (
           <button key={type} onClick={() => onAlign(type)} disabled={count < min}
@@ -360,7 +360,7 @@ function AlignPanel({ count, onAlign }: { count: number; onAlign: (type: AlignTy
           </button>
         ))}
       </div>
-      <p className="text-[10px] text-[var(--warm-muted)] leading-tight">
+      <p className="text-[0.625rem] text-[var(--warm-muted)] leading-tight">
         좌→우→우측끝 / 위→가운데→아래 · 배분은 3개 이상
       </p>
     </div>
@@ -419,7 +419,7 @@ function AiImportModal({
               <div className="w-full py-8 flex flex-col items-center gap-3 border-2 border-dashed border-[var(--warm-border)] rounded-xl">
                 <div className="w-7 h-7 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
                 <p className="text-xs font-medium text-[var(--warm-dark)]">AI 분석 중… {elapsed}초</p>
-                <p className="text-[11px] text-[var(--warm-muted)] text-center px-4">
+                <p className="text-[0.6875rem] text-[var(--warm-muted)] text-center px-4">
                   {elapsed < 10 ? '이미지를 전송하고 있습니다' : elapsed < 25 ? '공간 요소를 인식하고 있습니다' : '좌표를 계산하고 있습니다 — 거의 다 됐어요'}
                 </p>
               </div>
@@ -1097,7 +1097,7 @@ export default function FloorPlanEditor({
             {floors.length > 1 && !viewOnly && (
               <button
                 onClick={e => { e.stopPropagation(); if (window.confirm(`'${fl.label}'을 삭제할까요?`)) deleteFloor(fl.id) }}
-                className="ml-0.5 w-4 h-4 flex items-center justify-center text-[var(--warm-muted)] hover:text-red-400 rounded-full text-[10px] leading-none">
+                className="ml-0.5 w-4 h-4 flex items-center justify-center text-[var(--warm-muted)] hover:text-red-400 rounded-full text-[0.625rem] leading-none">
                 ×
               </button>
             )}
@@ -1154,7 +1154,7 @@ export default function FloorPlanEditor({
             {divider}
 
             {/* 요소 추가 */}
-            <span className="text-[10px] text-[var(--warm-muted)] shrink-0 hidden sm:inline">추가:</span>
+            <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0 hidden sm:inline">추가:</span>
             {PALETTE.map(type => (
               <button key={type} onClick={() => addElement(type)} className={btnOff}>{TYPE_LABEL[type]}</button>
             ))}
@@ -1253,7 +1253,7 @@ export default function FloorPlanEditor({
 
       {/* ── 변형 모드 안내 ── */}
       {editMode && !transformMode && !drawingPolygon && selectedIds.length > 0 && (
-        <div className="hidden md:flex items-center justify-center py-1 text-[11px] text-[var(--warm-muted)] border-b border-[var(--warm-border)]"
+        <div className="hidden md:flex items-center justify-center py-1 text-[0.6875rem] text-[var(--warm-muted)] border-b border-[var(--warm-border)]"
           style={{ background: 'var(--canvas)' }}>
           이동 모드 — 크기·회전 변경이 필요하면 <strong className="mx-1 text-purple-600">변형</strong> 버튼을 활성화하세요
         </div>
@@ -1261,7 +1261,7 @@ export default function FloorPlanEditor({
 
       {/* ── 다각형 그리기 안내 ── */}
       {drawingPolygon && (
-        <div className="flex items-center justify-center py-1.5 text-[11px] font-medium border-b border-[var(--warm-border)]"
+        <div className="flex items-center justify-center py-1.5 text-[0.6875rem] font-medium border-b border-[var(--warm-border)]"
           style={{ background: '#fff7ed', color: 'var(--coral)' }}>
           {drawingPolygon.points.length === 0
             ? '캔버스를 클릭하여 첫 번째 꼭짓점을 추가하세요'
@@ -1407,7 +1407,7 @@ export default function FloorPlanEditor({
             style={{ background: 'var(--cream)' }}>
             <div className="px-4 pt-4 pb-2">
               <p className="text-xs font-semibold text-[var(--warm-dark)]">{selectedIds.length}개 선택됨</p>
-              <p className="text-[11px] text-[var(--warm-muted)] mt-1">
+              <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-1">
                 {transformMode ? '핸들로 함께 이동·크기 변경·회전' : '함께 이동 가능 · 크기·회전은 변형 모드 켜기'}
               </p>
             </div>

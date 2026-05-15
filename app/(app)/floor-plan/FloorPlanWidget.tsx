@@ -21,7 +21,7 @@ export default function FloorPlanWidget({
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--warm-border)] shrink-0">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>평면 배치도</h2>
-          <span className="text-[11px] px-1.5 py-0.5 rounded"
+          <span className="text-[0.6875rem] px-1.5 py-0.5 rounded"
             style={{ background: 'var(--canvas)', color: 'var(--warm-muted)', border: '1px solid var(--warm-border)' }}>
             읽기 전용
           </span>

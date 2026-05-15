@@ -57,7 +57,7 @@ export function Badge({
   const isSolid = tone in SOLID_CLS
   const toneCls = isSolid ? SOLID_CLS[tone as SemanticTone] : (PALE_CLS[tone as string] ?? PALE_CLS['pale-coral'])
   const ringCls = isSolid ? '' : 'ring-1'
-  const sizeCls = size === 'md' ? 'text-xs px-2.5 py-1' : 'text-[11px] px-2 py-0.5'
+  const sizeCls = size === 'md' ? 'text-xs px-2.5 py-1' : 'text-[0.6875rem] px-2 py-0.5'
   // 솔리드 톤은 항상 mono+uppercase (가이드 명시). 페일 톤은 mono prop으로 opt-in.
   const fontCls = (isSolid || mono)
     ? 'mono tnum font-bold uppercase tracking-wider'

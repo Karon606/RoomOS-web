@@ -198,7 +198,7 @@ function NavContent({
                   }}
                 >
                   <Icon />
-                  <span className={`text-[13px] ${drawer ? 'block' : 'hidden lg:block'}`}>
+                  <span className={`text-[0.8125rem] ${drawer ? 'block' : 'hidden lg:block'}`}>
                     {label}
                   </span>
                 </Link>

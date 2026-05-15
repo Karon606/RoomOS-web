@@ -56,7 +56,7 @@ export function Modal({
                 {typeof title === 'string'
                   ? <h2 className="text-base font-bold text-[var(--warm-dark)] truncate">{title}</h2>
                   : title}
-                {subtitle && <p className="text-[10px] text-[var(--warm-muted)] mt-0.5 truncate">{subtitle}</p>}
+                {subtitle && <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">{subtitle}</p>}
               </div>
               {headerExtra}
             </div>
