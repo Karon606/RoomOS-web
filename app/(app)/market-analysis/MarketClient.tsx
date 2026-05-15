@@ -255,7 +255,7 @@ function CompetitorModal({
     border: '1px solid var(--warm-border)',
     borderRadius: 12,
     padding: '8px 12px',
-    fontSize: 14,
+    fontSize: '0.875rem',
     background: 'var(--canvas)',
     color: 'var(--warm-dark)',
     width: '100%',
@@ -273,7 +273,7 @@ function CompetitorModal({
   }
 
   const labelStyle: React.CSSProperties = {
-    fontSize: 12,
+    fontSize: '0.75rem',
     fontWeight: 600,
     color: 'var(--warm-muted)',
     marginBottom: 4,
@@ -295,10 +295,10 @@ function CompetitorModal({
           className="flex items-center justify-between shrink-0"
           style={{ padding: '16px 20px', borderBottom: '1px solid var(--warm-border)' }}
         >
-          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--warm-dark)' }}>
+          <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--warm-dark)' }}>
             {initial ? '경쟁업체 수정' : '경쟁업체 추가'}
           </span>
-          <button onClick={onClose} style={{ color: 'var(--warm-muted)', fontSize: 20, lineHeight: 1 }}>×</button>
+          <button onClick={onClose} style={{ color: 'var(--warm-muted)', fontSize: '1.25rem', lineHeight: 1 }}>×</button>
         </div>
 
         {/* Body */}
@@ -338,7 +338,7 @@ function CompetitorModal({
               <button
                 type="button"
                 onClick={addPriceRow}
-                style={{ fontSize: 12, color: 'var(--coral)', fontWeight: 600 }}
+                style={{ fontSize: '0.75rem', color: 'var(--coral)', fontWeight: 600 }}
               >
                 + 행 추가
               </button>
@@ -386,7 +386,7 @@ function CompetitorModal({
                     <button
                       type="button"
                       onClick={() => removePriceRow(i)}
-                      style={{ color: '#b91c1c', fontSize: 18, lineHeight: 1, flexShrink: 0 }}
+                      style={{ color: '#b91c1c', fontSize: '1.125rem', lineHeight: 1, flexShrink: 0 }}
                     >
                       ×
                     </button>
@@ -441,7 +441,7 @@ function CompetitorModal({
                   </div>
                   {/* 보증금 행 */}
                   <div className="flex items-center gap-3">
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: 'var(--warm-dark)', flexShrink: 0 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.8125rem', color: 'var(--warm-dark)', flexShrink: 0 }}>
                       <input
                         type="checkbox"
                         checked={row.hasDeposit ?? false}
@@ -482,7 +482,7 @@ function CompetitorModal({
           style={{ padding: '12px 20px', borderTop: '1px solid var(--warm-border)' }}
         >
           {saveError && (
-            <div style={{ fontSize: 13, color: '#b91c1c', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, padding: '8px 12px' }}>
+            <div style={{ fontSize: '0.8125rem', color: '#b91c1c', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, padding: '8px 12px' }}>
               {saveError}
             </div>
           )}
@@ -549,7 +549,7 @@ function NaverSearchPanel({
             border: '1px solid var(--warm-border)',
             borderRadius: 10,
             padding: '8px 12px',
-            fontSize: 14,
+            fontSize: '0.875rem',
             background: 'var(--cream)',
             color: 'var(--warm-dark)',
             outline: 'none',
@@ -564,7 +564,7 @@ function NaverSearchPanel({
         </Btn>
       </div>
       {searched && results.length === 0 && (
-        <p style={{ fontSize: 13, color: 'var(--warm-muted)', textAlign: 'center', padding: '8px 0' }}>
+        <p style={{ fontSize: '0.8125rem', color: 'var(--warm-muted)', textAlign: 'center', padding: '8px 0' }}>
           결과 없음 (네이버 API 키 미설정 시 결과가 빈 상태로 반환됩니다)
         </p>
       )}
@@ -580,10 +580,10 @@ function NaverSearchPanel({
           }}
           onClick={() => onSelect(item)}
         >
-          <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--warm-dark)' }}>
+          <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--warm-dark)' }}>
             {stripHtml(item.title)}
           </div>
-          <div style={{ fontSize: 12, color: 'var(--warm-muted)', marginTop: 2 }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--warm-muted)', marginTop: 2 }}>
             {item.roadAddress || item.address}
           </div>
         </div>
@@ -853,7 +853,7 @@ export default function MarketClient({
   }
 
   const sectionTitle: React.CSSProperties = {
-    fontSize: 15,
+    fontSize: '0.9375rem',
     fontWeight: 700,
     color: 'var(--warm-dark)',
     marginBottom: 12,
@@ -873,7 +873,7 @@ export default function MarketClient({
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--warm-dark)' }}>시세 조사</h1>
-          <p style={{ fontSize: 13, color: 'var(--warm-muted)', marginTop: 2 }}>{property.name}</p>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--warm-muted)', marginTop: 2 }}>{property.name}</p>
         </div>
         <Btn onClick={handleNewSurvey} disabled={isPending} variant="primary">
           + 새 조사 시작
@@ -894,7 +894,7 @@ export default function MarketClient({
             onClick={() => setTab(t)}
             style={{
               padding: '8px 16px',
-              fontSize: 14,
+              fontSize: '0.875rem',
               fontWeight: tab === t ? 700 : 400,
               color: tab === t ? 'var(--coral)' : 'var(--warm-muted)',
               borderBottom: tab === t ? '2px solid var(--coral)' : '2px solid transparent',
@@ -936,7 +936,7 @@ export default function MarketClient({
                   padding: '12px 20px',
                 }}
               >
-                <span style={{ fontSize: 13, color: 'var(--warm-muted)' }}>
+                <span style={{ fontSize: '0.8125rem', color: 'var(--warm-muted)' }}>
                   조사일: <strong style={{ color: 'var(--warm-dark)' }}>{fmtDate(activeSurvey.surveyedAt)}</strong>
                 </span>
                 <Btn
@@ -953,7 +953,7 @@ export default function MarketClient({
               <div style={card}>
                 <p style={sectionTitle}>내 영업장 현황</p>
                 {myRoomTypes.length === 0 ? (
-                  <p style={{ fontSize: 13, color: 'var(--warm-muted)' }}>등록된 호실이 없습니다.</p>
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--warm-muted)' }}>등록된 호실이 없습니다.</p>
                 ) : (
                   <div className="flex flex-wrap gap-3">
                     {myRoomTypes.map(rt => (
@@ -967,10 +967,10 @@ export default function MarketClient({
                           minWidth: 120,
                         }}
                       >
-                        <div style={{ fontSize: 12, color: 'var(--warm-muted)', marginBottom: 2 }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--warm-muted)', marginBottom: 2 }}>
                           {rt.type} ({rt.count}개)
                         </div>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--warm-dark)' }}>
+                        <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--warm-dark)' }}>
                           {fmtMoney(rt.avgPrice)}
                         </div>
                       </div>
@@ -1015,7 +1015,7 @@ export default function MarketClient({
 
                 {/* Competitor list */}
                 {activeSurvey.competitors.length === 0 ? (
-                  <p style={{ fontSize: 13, color: 'var(--warm-muted)', marginTop: 8 }}>
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--warm-muted)', marginTop: 8 }}>
                     등록된 경쟁업체가 없습니다.
                   </p>
                 ) : (
@@ -1034,10 +1034,10 @@ export default function MarketClient({
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div>
-                              <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--warm-dark)' }}>
+                              <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--warm-dark)' }}>
                                 {c.name}
                               </div>
-                              <div style={{ fontSize: 12, color: 'var(--warm-muted)', marginTop: 2 }}>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--warm-muted)', marginTop: 2 }}>
                                 {c.address}
                               </div>
                               {c.naverPlaceUrl && (
@@ -1045,7 +1045,7 @@ export default function MarketClient({
                                   href={c.naverPlaceUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  style={{ fontSize: 12, color: 'var(--coral)', marginTop: 2, display: 'block' }}
+                                  style={{ fontSize: '0.75rem', color: 'var(--coral)', marginTop: 2, display: 'block' }}
                                 >
                                   네이버 플레이스 →
                                 </a>
@@ -1086,7 +1086,7 @@ export default function MarketClient({
                                   key={i}
                                   className="rounded-lg"
                                   style={{
-                                    fontSize: 12,
+                                    fontSize: '0.75rem',
                                     padding: '3px 8px',
                                     background: 'var(--cream)',
                                     border: '1px solid var(--warm-border)',
@@ -1112,7 +1112,7 @@ export default function MarketClient({
                             </div>
                           )}
                           {c.notes && (
-                            <div style={{ fontSize: 12, color: 'var(--warm-muted)', marginTop: 8 }}>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--warm-muted)', marginTop: 8 }}>
                               메모: {c.notes}
                             </div>
                           )}
@@ -1136,7 +1136,7 @@ export default function MarketClient({
                       className="rounded-xl transition-colors"
                       style={{
                         padding: '8px 16px',
-                        fontSize: 13,
+                        fontSize: '0.8125rem',
                         fontWeight: strategy === s ? 700 : 400,
                         background: strategy === s ? 'var(--coral)' : 'var(--canvas)',
                         color: strategy === s ? '#fff' : 'var(--warm-muted)',
@@ -1165,7 +1165,7 @@ export default function MarketClient({
                       padding: '10px 14px',
                       background: '#fee2e2',
                       color: '#b91c1c',
-                      fontSize: 13,
+                      fontSize: '0.8125rem',
                       border: '1px solid #fca5a5',
                     }}
                   >
@@ -1178,14 +1178,14 @@ export default function MarketClient({
                     {/* Recommended prices table */}
                     {recommendedPrices.length > 0 && (
                       <div style={{ marginBottom: 16 }}>
-                        <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--warm-dark)', marginBottom: 8 }}>
+                        <p style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--warm-dark)', marginBottom: 8 }}>
                           권장 단가
                         </p>
                         <div
                           className="rounded-xl overflow-hidden"
                           style={{ border: '1px solid var(--warm-border)' }}
                         >
-                          <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+                          <table style={{ width: '100%', fontSize: '0.8125rem', borderCollapse: 'collapse' }}>
                             <thead>
                               <tr style={{ background: 'var(--canvas)' }}>
                                 <th
@@ -1247,7 +1247,7 @@ export default function MarketClient({
                                   >
                                     {fmtMoney(rp.price)}
                                   </td>
-                                  <td style={{ padding: '8px 12px', color: 'var(--warm-muted)', fontSize: 12 }}>
+                                  <td style={{ padding: '8px 12px', color: 'var(--warm-muted)', fontSize: '0.75rem' }}>
                                     {rp.reason}
                                   </td>
                                 </tr>
@@ -1265,7 +1265,7 @@ export default function MarketClient({
                         background: 'var(--canvas)',
                         border: '1px solid var(--warm-border)',
                         padding: '14px 16px',
-                        fontSize: 13,
+                        fontSize: '0.8125rem',
                         color: 'var(--warm-dark)',
                         lineHeight: 1.75,
                         whiteSpace: 'pre-wrap',
@@ -1294,10 +1294,10 @@ export default function MarketClient({
             <div key={survey.id} style={card}>
               <div className="flex items-start justify-between gap-2 flex-wrap">
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--warm-dark)' }}>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--warm-dark)' }}>
                     {fmtDate(survey.surveyedAt)}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--warm-muted)', marginTop: 2 }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--warm-muted)', marginTop: 2 }}>
                     경쟁업체 {survey.competitors.length}곳
                     {survey.strategy && ` · ${survey.strategy} 전략`}
                   </div>
@@ -1340,7 +1340,7 @@ export default function MarketClient({
                     <div style={{ marginBottom: 12 }}>
                       <p
                         style={{
-                          fontSize: 12,
+                          fontSize: '0.75rem',
                           fontWeight: 700,
                           color: 'var(--warm-muted)',
                           marginBottom: 8,
@@ -1363,10 +1363,10 @@ export default function MarketClient({
                               marginBottom: 6,
                             }}
                           >
-                            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--warm-dark)' }}>
+                            <div style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--warm-dark)' }}>
                               {c.name}
                             </div>
-                            <div style={{ fontSize: 12, color: 'var(--warm-muted)' }}>{c.address}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--warm-muted)' }}>{c.address}</div>
                             {prices.length > 0 && (
                               <div className="flex flex-wrap gap-1" style={{ marginTop: 6 }}>
                                 {prices.map((p, i) => (
@@ -1374,7 +1374,7 @@ export default function MarketClient({
                                     key={i}
                                     className="rounded-md"
                                     style={{
-                                      fontSize: 11,
+                                      fontSize: '0.6875rem',
                                       padding: '2px 6px',
                                       background: 'var(--cream)',
                                       border: '1px solid var(--warm-border)',
@@ -1408,7 +1408,7 @@ export default function MarketClient({
                   <div>
                     <p
                       style={{
-                        fontSize: 12,
+                        fontSize: '0.75rem',
                         fontWeight: 700,
                         color: 'var(--warm-muted)',
                         marginBottom: 8,
@@ -1431,7 +1431,7 @@ export default function MarketClient({
                             className="rounded-lg transition-colors"
                             style={{
                               padding: '6px 12px',
-                              fontSize: 12,
+                              fontSize: '0.75rem',
                               fontWeight: selected ? 700 : 400,
                               background: selected ? 'var(--coral)' : 'var(--canvas)',
                               color: selected ? '#fff' : 'var(--warm-muted)',
@@ -1461,7 +1461,7 @@ export default function MarketClient({
                           padding: '8px 12px',
                           background: '#fee2e2',
                           color: '#b91c1c',
-                          fontSize: 12,
+                          fontSize: '0.75rem',
                           border: '1px solid #fca5a5',
                         }}
                       >
@@ -1478,7 +1478,7 @@ export default function MarketClient({
                                 key={i}
                                 className="rounded-lg"
                                 style={{
-                                  fontSize: 12,
+                                  fontSize: '0.75rem',
                                   padding: '4px 10px',
                                   background: 'rgba(244,98,58,0.08)',
                                   border: '1px solid rgba(244,98,58,0.2)',
@@ -1497,7 +1497,7 @@ export default function MarketClient({
                             background: 'var(--canvas)',
                             border: '1px solid var(--warm-border)',
                             padding: '12px 14px',
-                            fontSize: 12,
+                            fontSize: '0.75rem',
                             color: 'var(--warm-dark)',
                             lineHeight: 1.7,
                             whiteSpace: 'pre-wrap',

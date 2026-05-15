@@ -162,7 +162,7 @@ function NavContent({
               className={drawer ? 'block' : 'hidden lg:block'}
               style={{
                 padding: '12px 20px 4px',
-                fontSize: 11,
+                fontSize: '0.6875rem',
                 fontWeight: 600,
                 letterSpacing: '0.07em',
                 textTransform: 'uppercase',
