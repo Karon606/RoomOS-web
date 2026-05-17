@@ -117,6 +117,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     recurringExpenses,
     recurringExpensesThisMonth,
     allHistoricalPayments,
+    reserveTxnsRaw,
+    allMonthPayments,
   ] = await Promise.all([
     prisma.leaseTerm.findMany({
       // RESERVED는 아직 입주 안 한 상태 → 미수 합산 대상에서 제외
@@ -340,6 +342,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       },
       select: { leaseTermId: true, targetMonth: true, actualAmount: true, payDate: true, memo: true },
     }),
+    prisma.reserveTransaction.findMany({
+      where: { propertyId },
+      select: { type: true, amount: true, date: true, sourceMonth: true },
+    }),
+    prisma.paymentRecord.findMany({
+      where: { propertyId, targetMonth, isDeposit: false },
+      select: { leaseTermId: true, actualAmount: true },
+    }),
   ])
 
   // ── 이달 집계 ────────────────────────────────────────────────
@@ -362,10 +372,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const totalDeposit = depositAgg._sum.depositAmount ?? 0
 
   // ── 예비비 잔고 + 이달 적립/사용 ─────────────────────────────────
-  const reserveTxns = await prisma.reserveTransaction.findMany({
-    where: { propertyId },
-    select: { type: true, amount: true, date: true, sourceMonth: true },
-  })
+  const reserveTxns = reserveTxnsRaw
   let reserveBalance = 0
   let reserveMonthlyDeposit = 0
   let reserveMonthlyWithdraw = 0
@@ -434,10 +441,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   expectedExpense += Math.round((nonRecurringPast._sum.amount ?? 0) / 3)
 
   // 완납 여부 판단 — viewMonth(targetMonth) 기준 그 월의 납부 이력으로 평가
-  const allMonthPayments = await prisma.paymentRecord.findMany({
-    where: { propertyId, targetMonth, isDeposit: false },
-    select: { leaseTermId: true, actualAmount: true },
-  })
   const paymentByLeaseForStatus = allMonthPayments.reduce((acc, p) => {
     acc[p.leaseTermId] = (acc[p.leaseTermId] ?? 0) + p.actualAmount
     return acc
@@ -1335,12 +1338,8 @@ export default async function DashboardPage({
   const { month } = await searchParams
   const targetMonth = month ?? kstMonthStr()
 
-  const property = await prisma.property.findUnique({
-    where: { id: propertyId },
-    select: { name: true },
-  })
-
-  const [dashboardData, paymentMethods, floorPlanData] = await Promise.all([
+  const [property, dashboardData, paymentMethods, floorPlanData] = await Promise.all([
+    prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } }),
     getDashboardData(propertyId, targetMonth),
     getPaymentMethods(),
     getFloorPlan(),

@@ -1,5 +1,6 @@
 'use server'
 
+import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
@@ -33,7 +34,7 @@ async function getMyUserId() {
   return user.id
 }
 
-export async function getPropertySettings() {
+export const getPropertySettings = cache(async function getPropertySettings() {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
@@ -57,7 +58,7 @@ export async function getPropertySettings() {
     logoDriveFileId,
     logoThumbnailUrl: logoDriveFileId ? buildDriveThumbnailUrl(logoDriveFileId, 300) : null,
   }
-}
+})
 
 export async function getRoomTypeOptions(): Promise<string[]> {
   const propertyId = await getPropertyId()
@@ -174,7 +175,7 @@ export async function deleteRoomDirectionOption(name: string) {
 
 // ── 부가수익 카테고리 관리 ──────────────────────────────────────────
 
-export async function getIncomeCategories(): Promise<string[]> {
+export const getIncomeCategories = cache(async function getIncomeCategories(): Promise<string[]> {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
@@ -182,7 +183,7 @@ export async function getIncomeCategories(): Promise<string[]> {
   })
   const raw = (property as any)?.incomeCategories ?? '건조기,세탁기,자판기,이자수익,기타'
   return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
-}
+})
 
 export async function addIncomeCategory(name: string) {
   await requireEdit()
@@ -213,7 +214,7 @@ export async function deleteIncomeCategory(name: string) {
 
 const DEFAULT_EXPENSE_CATEGORIES = '부식비,소모품비,폐기물 처리비,수선유지비,공과금,마케팅/광고비,인건비,청소용역비,관리비,임대료,통신/렌탈/보험료,세금/수수료,보증금 반환'
 
-export async function getExpenseCategories(): Promise<string[]> {
+export const getExpenseCategories = cache(async function getExpenseCategories(): Promise<string[]> {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
@@ -221,7 +222,7 @@ export async function getExpenseCategories(): Promise<string[]> {
   })
   const raw = (property as any)?.expenseCategories ?? DEFAULT_EXPENSE_CATEGORIES
   return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
-}
+})
 
 export async function addExpenseCategory(name: string) {
   await requireEdit()
@@ -317,7 +318,7 @@ export async function renameOption(field: ReorderableField, oldValue: string, ne
 
 const DEFAULT_PAYMENT_METHODS = '계좌이체,신용카드,체크카드,현금'
 
-export async function getPaymentMethods(): Promise<string[]> {
+export const getPaymentMethods = cache(async function getPaymentMethods(): Promise<string[]> {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
@@ -325,7 +326,7 @@ export async function getPaymentMethods(): Promise<string[]> {
   })
   const raw = (property as any)?.paymentMethods ?? DEFAULT_PAYMENT_METHODS
   return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
-}
+})
 
 export async function addPaymentMethod(name: string) {
   await requireEdit()
