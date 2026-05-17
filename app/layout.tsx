@@ -3,6 +3,7 @@ import { DM_Mono, Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider, themeBootstrapScript } from '@/components/theme/ThemeProvider'
 import { FontSizeProvider, fontSizeBootstrapScript } from '@/components/theme/FontSizeProvider'
+import NavProgress from '@/components/layout/NavProgress'
 
 // 가이드 명시: Numbers·Mono·Meta는 DM Mono
 const dmMono = DM_Mono({
@@ -63,6 +64,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: fontSizeBootstrapScript }} />
       </head>
       <body>
+        <NavProgress />
         <FontSizeProvider>
           <ThemeProvider>{children}</ThemeProvider>
         </FontSizeProvider>
