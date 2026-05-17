@@ -1840,6 +1840,12 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
     setSaved(true)
   }
 
+  // 선택한 보관 위치가 처음 상태와 달라졌는지 — 달라졌으면 '위치 저장'을 강조
+  const initialIds = initialLocations.map(l => l.id)
+  const dirty =
+    initialIds.length !== selected.size ||
+    initialIds.some(id => !selected.has(id))
+
   return (
     <div className="space-y-2 pt-2 border-t border-[var(--warm-border)]/60">
       <div className="flex items-center justify-between">
@@ -1860,9 +1866,20 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
         ))}
       </div>
       {error && <p className="text-xs text-red-500">{error}</p>}
-      <Btn type="button" variant="secondary" size="sm" onClick={handleSave} disabled={pending}>
+      <Btn
+        type="button"
+        variant={dirty && !saved ? 'primary' : 'secondary'}
+        size="sm"
+        onClick={handleSave}
+        disabled={pending}
+      >
         {pending ? '저장 중...' : '위치 저장'}
       </Btn>
+      {dirty && !saved && (
+        <p className="text-[0.625rem] text-[var(--coral)]">
+          변경한 보관 위치는 위치 저장 버튼을 눌러야 반영됩니다.
+        </p>
+      )}
       <p className="text-[0.625rem] text-[var(--warm-muted)]">재고 점검 시 선택된 위치별로 잔량을 나눠서 입력할 수 있습니다.</p>
     </div>
   )
