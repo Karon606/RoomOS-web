@@ -2,6 +2,8 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { useState } from 'react'
+import { AsYouType } from 'libphonenumber-js'
+import { AddressSearch } from '@/components/ui/AddressSearch'
 import { syncUserToDB } from './actions'
 
 type Mode = 'login' | 'signup' | 'forgot'
@@ -21,16 +23,36 @@ function mapError(msg: string) {
   return '오류가 발생했습니다. 잠시 후 다시 시도해주세요'
 }
 
+// 비밀번호 규칙: 영문·숫자·특수문자 포함 8자 이상
+// (대문자 입력은 항상 허용 — 영문 검사는 대/소문자 모두 통과, 대문자를 필수로 요구하지 않음)
+const PW_RULES: { label: string; test: (p: string) => boolean }[] = [
+  { label: '8자 이상',  test: p => p.length >= 8 },
+  { label: '영문',      test: p => /[A-Za-z]/.test(p) },
+  { label: '숫자',      test: p => /[0-9]/.test(p) },
+  { label: '특수문자',  test: p => /[^A-Za-z0-9]/.test(p) },
+]
+const isPasswordValid = (p: string) => PW_RULES.every(r => r.test(p))
+
+function Label({ children, required }: { children: React.ReactNode; required?: boolean }) {
+  return (
+    <label className="block text-xs font-medium mb-1 px-1" style={{ color: 'var(--warm-dark)' }}>
+      {children}
+      {required && <span style={{ color: 'var(--persimmon)' }}> *</span>}
+    </label>
+  )
+}
+
 export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
-  const [mode, setMode]         = useState<Mode>('login')
-  const [email, setEmail]       = useState('')
-  const [password, setPassword] = useState('')
-  const [realName, setRealName] = useState('')
-  const [phone, setPhone]       = useState('')
-  const [address, setAddress]   = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState<string | null>(null)
-  const [success, setSuccess]   = useState<string | null>(null)
+  const [mode, setMode]                   = useState<Mode>('login')
+  const [email, setEmail]                 = useState('')
+  const [password, setPassword]           = useState('')
+  const [realName, setRealName]           = useState('')
+  const [phone, setPhone]                 = useState('')
+  const [addressBase, setAddressBase]     = useState('')
+  const [addressDetail, setAddressDetail] = useState('')
+  const [loading, setLoading]             = useState(false)
+  const [error, setError]                 = useState<string | null>(null)
+  const [success, setSuccess]             = useState<string | null>(null)
 
   const supabase = createClient()
 
@@ -40,12 +62,23 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
     setSuccess(null)
   }
 
+  // 입력하는 대로 한국 전화번호 형식(010-0000-0000)으로 하이픈 자동 삽입
+  const handlePhoneChange = (raw: string) => {
+    const digits = raw.replace(/\D/g, '').slice(0, 11)
+    setPhone(new AsYouType('KR').input(digits))
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setSuccess(null)
-    setLoading(true)
 
+    if (mode === 'signup' && !isPasswordValid(password)) {
+      setError('비밀번호는 영문·숫자·특수문자를 포함해 8자 이상이어야 합니다')
+      return
+    }
+
+    setLoading(true)
     try {
       if (mode === 'forgot') {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -59,6 +92,7 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
       if (mode === 'signup') {
         const { error } = await supabase.auth.signUp({ email, password })
         if (error) throw error
+        const address = [addressBase, addressDetail].map(s => s.trim()).filter(Boolean).join(' ')
         await syncUserToDB({ realName, phone, address })
         setSuccess('가입이 완료됐습니다. 이메일로 로그인해주세요.')
         reset('login')
@@ -85,6 +119,10 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
+      <p className="text-[11px] px-1" style={{ color: 'var(--warm-muted)' }}>
+        <span style={{ color: 'var(--persimmon)' }}>*</span> 표시는 필수 입력 항목입니다
+      </p>
+
       {error && (
         <p className="text-sm rounded-xl px-3 py-2.5"
            style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444' }}>
@@ -101,61 +139,88 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
       {/* 회원가입 전용 필드 */}
       {mode === 'signup' && (
         <>
-          <input
-            type="text"
-            placeholder="이름 (실명)"
-            value={realName}
-            onChange={e => setRealName(e.target.value)}
-            required
-            autoComplete="name"
-            className={inputCls}
-            style={inputStyle}
-          />
-          <input
-            type="tel"
-            placeholder="전화번호 (예: 010-1234-5678)"
-            value={phone}
-            onChange={e => setPhone(e.target.value)}
-            autoComplete="tel"
-            className={inputCls}
-            style={inputStyle}
-          />
-          <input
-            type="text"
-            placeholder="주소 (선택)"
-            value={address}
-            onChange={e => setAddress(e.target.value)}
-            autoComplete="street-address"
-            className={inputCls}
-            style={inputStyle}
+          <div>
+            <Label required>이름 (실명)</Label>
+            <input
+              type="text"
+              placeholder="홍길동"
+              value={realName}
+              onChange={e => setRealName(e.target.value)}
+              required
+              autoComplete="name"
+              className={inputCls}
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <Label required>전화번호</Label>
+            <input
+              type="tel"
+              inputMode="numeric"
+              placeholder="010-1234-5678"
+              value={phone}
+              onChange={e => handlePhoneChange(e.target.value)}
+              required
+              autoComplete="tel"
+              className={inputCls}
+              style={inputStyle}
+            />
+          </div>
+          <AddressSearch
+            label="주소"
+            address={addressBase}
+            detail={addressDetail}
+            onAddressChange={setAddressBase}
+            onDetailChange={setAddressDetail}
           />
           <div className="h-px" style={{ background: 'var(--warm-border)' }} />
         </>
       )}
 
-      <input
-        type="email"
-        placeholder="이메일"
-        value={email}
-        onChange={e => setEmail(e.target.value)}
-        required
-        autoComplete="email"
-        className={inputCls}
-        style={inputStyle}
-      />
-
-      {mode !== 'forgot' && (
+      <div>
+        <Label required>이메일</Label>
         <input
-          type="password"
-          placeholder="비밀번호 (6자 이상)"
-          value={password}
-          onChange={e => setPassword(e.target.value)}
+          type="email"
+          placeholder="example@email.com"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
           required
-          minLength={6}
-          autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+          autoComplete="email"
           className={inputCls}
           style={inputStyle}
         />
+      </div>
+
+      {mode !== 'forgot' && (
+        <div>
+          <Label required>비밀번호</Label>
+          <input
+            type="password"
+            placeholder={mode === 'signup' ? '영문·숫자·특수문자 8자 이상' : '비밀번호'}
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            required
+            autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+            className={inputCls}
+            style={inputStyle}
+          />
+          {mode === 'signup' && (
+            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 px-1">
+              {PW_RULES.map(r => {
+                const ok = r.test(password)
+                return (
+                  <span
+                    key={r.label}
+                    className="text-[11px] flex items-center gap-0.5"
+                    style={{ color: ok ? '#059669' : 'var(--warm-muted)' }}
+                  >
+                    {ok ? '✓' : '·'} {r.label}
+                  </span>
+                )
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       <button
