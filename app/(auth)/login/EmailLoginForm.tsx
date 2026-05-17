@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { useState } from 'react'
+import { syncUserToDB } from './actions'
 
 type Mode = 'login' | 'signup' | 'forgot'
 
@@ -62,6 +63,7 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
 
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
+      await syncUserToDB()
       window.location.href = returnTo ?? '/property-select'
     } catch (err: unknown) {
       setError(mapError(err instanceof Error ? err.message : String(err)))
