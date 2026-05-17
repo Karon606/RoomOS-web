@@ -1,7 +1,7 @@
 # 스테이음 작업 로그
 
 마지막 업데이트: 2026-05-18
-브랜치: main (0b23ae7)
+브랜치: main (c75126e)
 
 ## 완료된 것
 
@@ -72,6 +72,20 @@
   · 추가 — 기존 데이터는 유지, 엑셀의 행만 추가 (엑셀에 1~2줄만 있어도 그것만 추가)
   · 중복 선택 — 중복 데이터가 있으면 부분적으로 선택해 적용
 - 참고: 기존 import/export 존재 (app/api/export, app/api/import, import/preview)
+
+### 영업장 랜딩 페이지 + 유입 트래킹
+- 영업장 홍보용 공개 페이지를 stayeum.com 하위 경로로 제공
+- URL 구조: `stayeum.com/stay/<영업장-슬러그>` — 접두어 `/stay/`, 확장자(.html) 없음
+  (슬러그를 루트에 직결하면 앱 라우트와 충돌 위험 → `/stay/` 접두어 사용)
+- 바로 할 일 — thestay-jegi 페이지 이전:
+  · 출처 https://thestay-jegi.netlify.app — 확인 결과 순수 정적 HTML
+    (HTML 1장 + 이미지 몇 개, 프레임워크 없음)
+  · public/stay/thestay-jegi/ 에 HTML·이미지 배치 → stayeum.com/stay/thestay-jegi 서빙
+  · 이미지 상대경로는 <base> 태그로 처리
+- 비전 — 스테이음 성장 시 회원이 각자 영업장 페이지를 만들·관리하는 기능
+  · 유입 트래킹(페이지뷰·방문자·referrer/UTM)을 회원 대시보드에 노출
+  · 앱이 직접 서빙하므로 트래킹 가능 (Vercel Analytics 또는 자체 DB 기록)
+- 외부 사이트 리버스 프록시 방식은 비채택 — 트래킹 불가·에셋 경로 문제
 
 ### #6 국가 서류·양식 페이지 (Phase C — 별도 세션 권장)
 - DocumentTemplate 모델 신규 설계
