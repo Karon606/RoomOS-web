@@ -1,38 +1,46 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import LoginButton from './LoginButton'
-import { RoomOSWordmark } from '@/components/brand/RoomOSWordmark'
+import EmailLoginForm from './EmailLoginForm'
+import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 
-function RoomOSLogo() {
-  return <RoomOSWordmark height={36} />
+function StayeumLogo() {
+  return <StayeumWordmark height={36} />
 }
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ returnTo?: string; error?: string }>
+  searchParams: Promise<{ returnTo?: string; error?: string; message?: string }>
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (user) redirect('/dashboard')
 
-  const { returnTo, error } = await searchParams
+  const { returnTo, error, message } = await searchParams
 
   return (
     <main className="min-h-screen flex items-center justify-center p-4"
           style={{ background: 'var(--canvas)' }}>
       <div className="w-full max-w-sm space-y-8 px-2">
         <div className="text-center space-y-3">
-          <RoomOSLogo />
+          <StayeumLogo />
           <p className="text-sm" style={{ color: 'var(--warm-muted)' }}>고시원·원룸텔 스마트 관리 시스템</p>
         </div>
 
-        <div className="rounded-2xl p-8 space-y-6"
+        <div className="rounded-2xl p-8 space-y-5"
              style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           <div>
             <h2 className="text-lg font-semibold" style={{ color: 'var(--warm-dark)' }}>로그인 / 회원가입</h2>
-            <p className="text-xs mt-1" style={{ color: 'var(--warm-muted)' }}>구글 계정으로 로그인하면 자동으로 가입됩니다</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--warm-muted)' }}>이메일 또는 구글 계정으로 시작하세요</p>
           </div>
+
+          {message === 'password_updated' && (
+            <div className="rounded-xl p-3"
+                 style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
+              <p className="text-sm" style={{ color: '#059669' }}>비밀번호가 변경됐습니다. 새 비밀번호로 로그인해주세요.</p>
+            </div>
+          )}
 
           {error && (
             <div className="rounded-xl p-3"
@@ -40,6 +48,14 @@ export default async function LoginPage({
               <p className="text-red-500 text-sm">로그인에 실패했습니다. 다시 시도해주세요.</p>
             </div>
           )}
+
+          <EmailLoginForm returnTo={returnTo} />
+
+          <div className="flex items-center gap-3 py-1">
+            <div className="flex-1 h-px" style={{ background: 'var(--warm-border)' }} />
+            <span className="text-xs" style={{ color: 'var(--warm-muted)' }}>또는</span>
+            <div className="flex-1 h-px" style={{ background: 'var(--warm-border)' }} />
+          </div>
 
           <LoginButton returnTo={returnTo} />
         </div>
