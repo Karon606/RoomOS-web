@@ -2,10 +2,10 @@ import { getMyProperties } from './actions'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import PropertyList from './PropertyList'
-import { RoomOSWordmark } from '@/components/brand/RoomOSWordmark'
+import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 
-function RoomOSLogo() {
-  return <RoomOSWordmark height={36} />
+function StayeumLogo() {
+  return <StayeumWordmark height={36} />
 }
 
 export default async function PropertySelectPage() {
@@ -20,7 +20,7 @@ export default async function PropertySelectPage() {
           style={{ background: 'var(--canvas)' }}>
       <div className="w-full max-w-lg space-y-6">
         <div className="text-center space-y-3">
-          <RoomOSLogo />
+          <StayeumLogo />
           <div className="space-y-1 pt-1">
             <h1 className="text-xl font-semibold" style={{ color: 'var(--warm-dark)' }}>영업장 선택</h1>
             <p className="text-sm" style={{ color: 'var(--warm-muted)' }}>

@@ -5,7 +5,7 @@ import { User } from '@supabase/supabase-js'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 
-const MONTH_KEY = 'roomos_selected_month'
+const MONTH_KEY = 'stayeum_selected_month'
 
 function todayMonthStr() {
   const now = new Date()
@@ -68,7 +68,7 @@ export default function Header({
 
   // 새 탭·앱 재진입 시: 마지막으로 본 달과 오늘 달이 다르면 즉시 갱신
   useEffect(() => {
-    const SEEN_KEY = 'roomos_seen_month'
+    const SEEN_KEY = 'stayeum_seen_month'
     const seen = sessionStorage.getItem(SEEN_KEY)
     if (seen !== todayMonth) {
       sessionStorage.setItem(SEEN_KEY, todayMonth)

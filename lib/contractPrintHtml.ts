@@ -155,7 +155,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .business-stamp { flex: 0 0 auto; width: 14mm; height: 14mm; display: inline-flex; align-items: center; justify-content: center; }
   .business-stamp-image { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-  /* Made with RoomOS — 본문 끝에 흐름으로 두어 빈 페이지 안 생기게.
+  /* Made with Stayeum — 본문 끝에 흐름으로 두어 빈 페이지 안 생기게.
      본문이 거의 페이지를 채우므로 시각적으로 footer 효과 동일 */
   .made-with { margin-top: 14pt; text-align: right; display: flex; justify-content: flex-end; align-items: center; gap: 5px; }
 
@@ -217,9 +217,9 @@ export function buildContractPrintHtml(d: PrintContractData): string {
       </div>
     </div>
 
-    <div class="made-with" aria-label="Made with RoomOS">
+    <div class="made-with" aria-label="Made with Stayeum">
       <span class="made-with-prefix">Made with</span>
-      <span class="made-with-wordmark">Room<span class="o">O</span>S</span>
+      <span class="made-with-wordmark">Stay<span class="o">eum</span></span>
     </div>
   </div>
 </body>

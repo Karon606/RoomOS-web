@@ -491,7 +491,7 @@ const DEBIT_CARDS: { name: string; domain: string }[] = [
 
 const ALL_BRANDS = [...BANKS, ...CREDIT_CARDS, ...DEBIT_CARDS]
 
-const FIN_WIDTHS_KEY = 'roomos_finance_col_widths'
+const FIN_WIDTHS_KEY = 'stayeum_finance_col_widths'
 
 const DEFAULT_FIN_WIDTHS: Record<string, number> = {
   expDate: 120, expMethod: 120, expCategory: 110, expDetail: 200, expAmount: 100, expSettle: 110,
@@ -979,10 +979,10 @@ export default function FinanceClient({
   // 미확인 고정 지출 가시성: 'all' = 전체, 'soon' = 결제일 D-3 이내(과거 도래 포함)만
   const [recVisibility, setRecVisibility] = useState<'all' | 'soon'>(() => {
     if (typeof window === 'undefined') return 'soon'
-    return (localStorage.getItem('roomos-rec-visibility') as 'all' | 'soon') ?? 'soon'
+    return (localStorage.getItem('stayeum-rec-visibility') as 'all' | 'soon') ?? 'soon'
   })
   useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('roomos-rec-visibility', recVisibility)
+    if (typeof window !== 'undefined') localStorage.setItem('stayeum-rec-visibility', recVisibility)
   }, [recVisibility])
   const [showAddExp, setShowAddExp]       = useState(false)
   const [addExpDate, setAddExpDate]       = useState(() => kstYmdStr())

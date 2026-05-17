@@ -2,9 +2,9 @@
 
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { RoomOSWordmark } from '@/components/brand/RoomOSWordmark'
+import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 
-// ── SVG Icons — RoomOS Design Guide v2 (Lucide style)
+// ── SVG Icons — Stayeum Design Guide v2 (Lucide style)
 //   24×24 viewBox · stroke-width 1.6 · round caps/joins · currentColor
 const ico = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '1.6', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, width: 20, height: 20, style: { flexShrink: 0 } }
 
@@ -52,7 +52,7 @@ function IcoRequests() {
 function IcoFloorPlan() {
   return <svg {...ico}><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12M15 3v6"/></svg>
 }
-// RoomOS Lab — Flask/Beaker
+// Stayeum Lab — Flask/Beaker
 function IcoLab() {
   return <svg {...ico}><path d="M9 3h6M9 3v7l-5 9h16l-5-9V3"/><path d="M6.5 15.5h11"/></svg>
 }
@@ -94,7 +94,7 @@ const NAV_GROUPS = [
     ],
   },
   {
-    label: 'RoomOS Lab',
+    label: '스테이음 Lab',
     items: [
       { href: '/floor-plan', label: '도면', Icon: IcoFloorPlan },
     ],
@@ -110,12 +110,12 @@ const NAV_GROUPS = [
 // ── Logo variants ──────────────────────────────────────────────────
 // 가이드 § 01 WORDMARK: 통합 워드마크 (마크+텍스트 일체) 사용
 function LogoFull() {
-  return <RoomOSWordmark height={22} />
+  return <StayeumWordmark height={22} />
 }
 
 // 가이드 § 02 SYMBOL MARK: 선 마크만 (아이콘 크기 컨텍스트)
 function LogoMark() {
-  return <RoomOSWordmark height={30} markOnly />
+  return <StayeumWordmark height={30} markOnly />
 }
 
 // ── NavContent ─────────────────────────────────────────────────────

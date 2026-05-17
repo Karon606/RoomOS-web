@@ -11,7 +11,7 @@ export function SplashScreen() {
       className="fixed inset-0 z-[200] flex items-center justify-center"
       style={{ background: 'var(--canvas, #f5f1ea)', color: 'var(--ink, #1a1a1a)' }}
       aria-busy="true"
-      aria-label="RoomOS 로딩 중"
+      aria-label="스테이음 로딩 중"
     >
       <style>{`
         @keyframes roos-l1 {

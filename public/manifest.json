@@ -1,6 +1,6 @@
 {
-  "name": "RoomOS",
-  "short_name": "RoomOS",
+  "name": "스테이음",
+  "short_name": "스테이음",
   "description": "고시원·원룸텔 스마트 관리 시스템",
   "start_url": "/",
   "display": "standalone",

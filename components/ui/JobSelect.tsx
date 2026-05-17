@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 
-const STORAGE_KEY = 'roomos_custom_jobs'
+const STORAGE_KEY = 'stayeum_custom_jobs'
 
 const DEFAULT_JOBS = [
   '직장인',

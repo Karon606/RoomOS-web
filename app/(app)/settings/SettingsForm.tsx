@@ -1399,7 +1399,7 @@ function BackupButton() {
       const ts = new Date().toISOString().slice(0, 10)
       const a = document.createElement('a')
       a.href = url
-      a.download = `roomos-backup-${ts}.json`
+      a.download = `stayeum-backup-${ts}.json`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)

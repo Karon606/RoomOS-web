@@ -93,8 +93,8 @@ const COL_DEFS = [
 ] as const
 type ColKey = (typeof COL_DEFS)[number]['key']
 
-const COL_VIS_KEY    = 'roomos_tenant_col_vis'
-const COL_WIDTHS_KEY = 'roomos_tenant_col_widths'
+const COL_VIS_KEY    = 'stayeum_tenant_col_vis'
+const COL_WIDTHS_KEY = 'stayeum_tenant_col_widths'
 
 const DEFAULT_WIDTHS: Record<string, number> = {
   roomNo: 72, name: 140,

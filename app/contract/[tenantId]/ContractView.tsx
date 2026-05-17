@@ -9,7 +9,7 @@ import { renderContractText, type ContractTemplate, type ContractSection } from 
 import { kstYmdStr } from '@/lib/kstDate'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { trackSave, pushToast } from '@/lib/saveStatus'
-import { RoomOSWordmark } from '@/components/brand/RoomOSWordmark'
+import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 
 const fmtDate = (d: string | null) => {
   if (!d) return ''
@@ -515,7 +515,7 @@ export default function ContractView({ data }: { data: ContractData }) {
         {/* 우측 하단 이스터에그 — Brand Guide 정식 워드마크(SVG) 사용 */}
         <div className="made-with" aria-label="Made with 스테이음">
           <span className="made-with-prefix">Made with</span>
-          <RoomOSWordmark height={11} className="made-with-wm" />
+          <StayeumWordmark height={11} className="made-with-wm" />
         </div>
       </main>
       </div>

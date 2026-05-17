@@ -4,7 +4,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  /* ── M7 Ink × Persimmon — RoomOS Brand System ────────────────────
+  /* ── M7 Ink × Persimmon — Stayeum Brand System ────────────────────
      기존 변수명은 그대로 두고 hex만 M7 값으로 갱신.
      신규 코드는 아래 M7 정식 변수(--ink, --persimmon 등) 사용 권장. */
 

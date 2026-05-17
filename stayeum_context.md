@@ -1,4 +1,4 @@
-🏢 RoomOS 프로젝트 마스터 설계도 (Master Context)
+🏢 스테이음 프로젝트 마스터 설계도 (Master Context)
 1. 프로젝트 개요 및 미션
 목표: 기존 Google Apps Script(GAS) 기반의 '더 스테이' 관리 시스템을 Next.js + Prisma + Supabase 환경의 모던 웹 앱으로 이관 및 고도화.
 
@@ -17,7 +17,7 @@
 
 JavaScript
 // ============================================================
-// RoomOS - Code.gs (V4.0)
+// 스테이음 - Code.gs (V4.0)
 // ============================================================
 
 const SPREADSHEET_ID = '1OLTVviv4ZPNRrzS18MJLEx18Sz6KISa6yChRdyIODCA';
@@ -36,7 +36,7 @@ const SHEET = {
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('index')
-    .setTitle('RoomOS')
+    .setTitle('스테이음')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -955,7 +955,7 @@ function updateTenantDepositOnly(tenantId, depositAmt) {
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>RoomOS</title>
+<title>스테이음</title>
 <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>

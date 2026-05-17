@@ -105,7 +105,7 @@ const DEFAULT_VACANT_VIS = Object.fromEntries(
   VACANT_COL_DEFS.map(c => [c.key, c.defaultOn])
 ) as Record<VacantColKey, boolean>
 
-const COL_WIDTHS_KEY = 'roomos_rooms_col_widths'
+const COL_WIDTHS_KEY = 'stayeum_rooms_col_widths'
 
 const DEFAULT_WIDTHS: Record<string, number> = {
   roomNo: 80, tenantName: 140,

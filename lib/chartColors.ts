@@ -1,7 +1,7 @@
 /**
- * RoomOS Chart Color System
+ * Stayeum Chart Color System
  * 브랜드 웜톤 기반 10색 팔레트 — 지출/수익 카테고리 그래프 전용
- * Design: RoomOS Chart Colors.html
+ * Design: Stayeum Chart Colors.html
  */
 
 export const CHART_COLORS = [

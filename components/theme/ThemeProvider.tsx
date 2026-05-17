@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 
 export type ThemeMode = 'light' | 'dark' | 'system' | 'time'
 
-const STORAGE_KEY = 'roomos-theme'
+const STORAGE_KEY = 'stayeum-theme'
 const DEFAULT_MODE: ThemeMode = 'system'
 
 // 시간 기반: KST 기준 06:00 ~ 18:00 light, 그 외 dark.
