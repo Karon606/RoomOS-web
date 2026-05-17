@@ -1,7 +1,7 @@
 # 스테이음 작업 로그
 
 마지막 업데이트: 2026-05-18
-브랜치: main (cee77d5)
+브랜치: main (250696e)
 
 ## 완료된 것
 
@@ -98,11 +98,28 @@
   · 한국 SaaS면 포트원·토스페이먼츠 권장 (정기결제)
   · 플랜·구독·7일 무료체험·쿠폰 모델, 결제 웹훅, 기능 게이팅, 결제 UI
 
-### 브랜드·디자인 — Claude Design에서 진행 중
-- 로고 시안·메인 컬러·전반 UI/UX를 Claude Design(claude.ai)에서 작업 중
-  (프로젝트: "stayeum", "더스테이원룸텔 제기역점 로고")
-- 확정되면 결과물(SVG 로고·워드마크, hex 컬러, UI 시안)을 앱에 반영
-- 이게 풀리면 "로고 확정 후" 대기 항목(이메일 템플릿 재디자인, RoomOS 텍스트 잔재 정리)도 함께 해소
+### 앱 전체 리브랜딩 — Claude Design 가이드 반영 (우선순위 높음, 큰 작업)
+Claude Design에서 stayeum 브랜드 가이드 확정 (Arch Symbol + Brand & Design Guide).
+앱 전반을 새 브랜드로 재스킨 — 현 Persimmon(#e84a1a 주황) → Terracotta 팔레트.
+
+핵심 컬러 토큰:
+- Terracotta #A03C2E (primary·CTA·로고) / hover #7C2D26 / soft #B85042
+- Camel #C8A07D · Sand #F2D9B8 / #F5E5CC
+- Cream #FBF6EF / #F5EDE0 · Page(배경) #E8DDD0
+- Ink #3D2418 / #7A6553 / #A89380 · Success #1A6E4C
+- 폰트: Pretendard(본문·UI) / DM Mono(숫자·KPI) / Plus Jakarta Sans(로고 전용) — 이미 적용됨
+
+새 로고 — Arch Symbol (단일 filled path, viewBox "0 0 130 100"):
+  M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82 A 8.5 8.5 0 0 1 104 82 C 104 44 80 26 55 26 C 30 26 28 44 28 82 A 10 10 0 0 1 8 82 Z
+워드마크: stay(ink) + eum(terracotta) · 한글 스테이(ink) + 음(terracotta)
+
+적용 단계:
+1. app/globals.css 컬러 토큰 재매핑 — 앱이 CSS 변수 기반이라 이 파일로 대부분 자동 재스킨 (최고 레버리지)
+2. 로고 교체 — StayeumWordmark / SplashScreen / AppShell의 PageLoadingOverlay / 파비콘·앱아이콘(/icon.svg 등)을 Arch Symbol로
+3. 컴포넌트 미세조정 — radius·badge·button 등 가이드와 대조
+4. 전 페이지 육안 검증
+→ 규모가 크므로 별도 집중 세션 권장. 전체 가이드 원본은 Claude Design에 보관됨.
+이 작업이 끝나면 이메일 템플릿 재디자인·"RoomOS" 텍스트 잔재 정리도 함께 해소.
 
 ### #6 국가 서류·양식 페이지 (Phase C — 별도 세션 권장)
 - DocumentTemplate 모델 신규 설계
