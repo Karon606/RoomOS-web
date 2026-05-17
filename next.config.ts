@@ -18,6 +18,18 @@ const nextConfig: NextConfig = {
     // Tailwind(atomic CSS)는 번들이 작아 inline이 유리: CSS link 렌더블로킹 제거
     inlineCss: true,
   },
+  // Vercel 기본 도메인(stayeum.vercel.app)으로 들어온 요청을 커스텀 도메인으로 영구 이동(308).
+  // 프리뷰 배포 URL(stayeum-<hash>.vercel.app 등)은 host가 달라 매칭되지 않으므로 영향 없음.
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'stayeum.vercel.app' }],
+        destination: 'https://www.stayeum.com/:path*',
+        permanent: true,
+      },
+    ]
+  },
 };
 
 export default nextConfig;
