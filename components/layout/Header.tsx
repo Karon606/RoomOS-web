@@ -1,7 +1,6 @@
 'use client'
 
 import { signOut } from '@/app/property-select/actions'
-import { User } from '@supabase/supabase-js'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 
@@ -12,12 +11,18 @@ function todayMonthStr() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
+// 레이아웃이 getClaims()로 넘기는 최소 사용자 정보 (Header에서 쓰는 필드만)
+export type AppUser = {
+  email?: string
+  user_metadata?: { avatar_url?: string; full_name?: string }
+}
+
 export default function Header({
   user,
   onMenuClick,
   startNavigation,
 }: {
-  user: User
+  user: AppUser
   onMenuClick?: () => void
   startNavigation?: (fn: () => void) => void
 }) {

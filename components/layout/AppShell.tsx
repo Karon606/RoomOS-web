@@ -2,10 +2,9 @@
 
 import { useState, useTransition, Suspense } from 'react'
 import Sidebar from '@/components/layout/Sidebar'
-import Header from '@/components/layout/Header'
+import Header, { type AppUser } from '@/components/layout/Header'
 import BottomNav from '@/components/layout/BottomNav'
 import SaveFeedback from '@/components/feedback/SaveFeedback'
-import { User } from '@supabase/supabase-js'
 
 function PageLoadingOverlay() {
   return (
@@ -44,7 +43,7 @@ export default function AppShell({
   user,
   children,
 }: {
-  user: User
+  user: AppUser
   children: React.ReactNode
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
