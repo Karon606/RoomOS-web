@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin:0; padding:0; background-color:#f4efe6; font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4efe6;">
+    <tr>
+      <td align="center" style="padding:40px 16px;">
+        <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px; width:100%; background-color:#ffffff; border:1px solid #ebe1cf; border-radius:16px;">
+          <tr>
+            <td style="padding:32px 32px 8px 32px;">
+              <span style="font-size:24px; font-weight:700; letter-spacing:-0.5px; color:#1f1b16;">Stay<span style="color:#e84a1a;">eum</span></span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 32px 8px 32px;">
+              <h1 style="margin:0 0 12px 0; font-size:20px; font-weight:700; color:#1f1b16;">스테이음에 초대되었습니다</h1>
+              <p style="margin:0; font-size:14px; line-height:1.7; color:#5c5246;">
+                고시원·원룸텔 스마트 관리 시스템 스테이음에 초대되었습니다.<br>
+                아래 버튼을 눌러 가입을 완료해 주세요.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 32px;">
+              <table role="presentation" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" bgcolor="#e84a1a" style="border-radius:12px;">
+                    <a href="{{ .ConfirmationURL }}" target="_blank" style="display:inline-block; padding:14px 28px; font-size:15px; font-weight:600; color:#ffffff; text-decoration:none; border-radius:12px;">초대 수락하고 시작하기</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 32px 24px 32px;">
+              <p style="margin:0 0 6px 0; font-size:12px; color:#8a7c68;">버튼이 열리지 않으면 아래 주소를 복사해 브라우저에 붙여넣어 주세요.</p>
+              <p style="margin:0; font-size:12px; line-height:1.6; word-break:break-all;">
+                <a href="{{ .ConfirmationURL }}" style="color:#e84a1a;">{{ .ConfirmationURL }}</a>
+              </p>
+            </td>
+          </tr>
+          <tr><td style="padding:0 32px;"><div style="height:1px; background-color:#ebe1cf;"></div></td></tr>
+          <tr>
+            <td style="padding:20px 32px 32px 32px;">
+              <p style="margin:0 0 4px 0; font-size:12px; line-height:1.6; color:#8a7c68;">본인과 무관한 메일이라면 무시하셔도 됩니다.</p>
+              <p style="margin:0; font-size:12px; color:#b3a78f;">© 2026 스테이음 · 고시원·원룸텔 스마트 관리 시스템</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

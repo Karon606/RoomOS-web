@@ -1,7 +1,7 @@
 # 스테이음 작업 로그
 
-마지막 업데이트: 2026-05-11
-브랜치: main (40e7908)
+마지막 업데이트: 2026-05-18
+브랜치: main (f4aa156)
 
 ## 현재 상태
 Phase A 완료, Phase B는 rewind로 코드 손실 → 다음 세션에서 재구현
@@ -47,6 +47,32 @@ ALTER TABLE "tenant_requests"
   - #6 국가 서류·양식 페이지
   - DocumentTemplate 모델 신규 설계
   - 카테고리·태그·다운로드 링크/파일 업로드 + 안내 페이지 링크
+
+## 이메일/인증 인프라 (2026-05-18)
+
+구축 완료: stayeum.com 도메인 연결(Vercel)+SSL, Resend 발송 인프라+도메인
+인증(DKIM/SPF/DMARC), Supabase 커스텀 SMTP(Resend) 연결, 이메일 템플릿 5종
+브랜드화(가입확인·비번재설정·재인증·이메일변경·초대).
+
+### @stayeum.com 이메일 수신 — 나중에 꼭
+- 현재 stayeum.com은 발송만 가능, 수신 불가 (받는 메일함 없음)
+- Cloudflare Email Routing(무료)으로 @stayeum.com → Gmail 포워딩 설정 필요
+- 설정·수신 확인 후 Supabase 계정 이메일을 gunwoo80@gmail.com → @stayeum.com으로 변경
+- 순서: Email Routing 설정 → 수신 테스트 → Supabase에서 이메일 변경
+- 정식 메일함(IMAP/자체발신)이 필요해지면 Google Workspace·Zoho Mail 검토
+  (Synology 등 자체호스팅은 발송 신뢰도 문제로 비권장)
+
+### 관리자 초대 기능 — 미구현
+- Supabase 초대 이메일 템플릿은 등록됨, 기능 자체는 없음
+- 앱에 "이메일 입력 → 초대" 관리자 화면 개발 필요
+- inviteUserByEmail (Supabase admin API — service role key, 서버사이드 전용)
+- UserPropertyRole(STAFF 등) 권한 부여 흐름과 연계 설계
+
+### 이메일 템플릿 디자인 — 임시 상태
+- 5종 템플릿 임시 디자인 적용 (퍼시몬 카드형)
+- 로고·브랜드 디자인 확정 후 일괄 재디자인 예정
+- 같은 트리거로 RoomOS 텍스트 잔재 정리도 함께 (현재 의도적으로 남겨둠)
+- [ ] 템플릿 HTML 원본을 레포 docs/email-templates/에 보관할지 결정
 
 ## 참고
 - Phase B 완료 커밋: `git show 801e572` (rewind 전 결과물 참고용)

@@ -13,6 +13,7 @@ const ERROR_MAP: [string, string][] = [
   ['User already registered',                 '이미 가입된 이메일입니다'],
   ['Password should be at least 6 characters','비밀번호는 6자 이상이어야 합니다'],
   ['Email not confirmed',                     '이메일 인증이 필요합니다. 메일함을 확인해주세요'],
+  ['you can only request this',               '잠시 후 다시 시도해주세요. 잠깐 기다린 뒤 재요청할 수 있습니다'],
   ['signup is disabled',                      '현재 회원가입이 비활성화되어 있습니다'],
 ]
 
@@ -53,6 +54,7 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
   const [loading, setLoading]             = useState(false)
   const [error, setError]                 = useState<string | null>(null)
   const [success, setSuccess]             = useState<string | null>(null)
+  const [needsConfirm, setNeedsConfirm]   = useState(false)
 
   const supabase = createClient()
 
@@ -60,6 +62,7 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
     setMode(next)
     setError(null)
     setSuccess(null)
+    setNeedsConfirm(false)
   }
 
   // 입력하는 대로 한국 전화번호 형식(010-0000-0000)으로 하이픈 자동 삽입
@@ -72,6 +75,7 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
     e.preventDefault()
     setError(null)
     setSuccess(null)
+    setNeedsConfirm(false)
 
     if (mode === 'signup' && !isPasswordValid(password)) {
       setError('비밀번호는 영문·숫자·특수문자를 포함해 8자 이상이어야 합니다')
@@ -104,6 +108,25 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
       await syncUserToDB()
       window.location.href = returnTo ?? '/property-select'
     } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setNeedsConfirm(msg.includes('Email not confirmed'))
+      setError(mapError(msg))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 미인증 계정 — 인증 메일 재발송 (로그인 시도만으론 메일이 재발송되지 않음)
+  const handleResendConfirmation = async () => {
+    setError(null)
+    setSuccess(null)
+    setLoading(true)
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email })
+      if (error) throw error
+      setNeedsConfirm(false)
+      setSuccess('인증 메일을 다시 보냈습니다. 메일함을 확인해주세요.')
+    } catch (err: unknown) {
       setError(mapError(err instanceof Error ? err.message : String(err)))
     } finally {
       setLoading(false)
@@ -134,6 +157,18 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
            style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: '#059669' }}>
           {success}
         </p>
+      )}
+
+      {needsConfirm && (
+        <button
+          type="button"
+          onClick={handleResendConfirmation}
+          disabled={loading}
+          className="w-full py-2.5 rounded-xl text-sm font-medium transition-opacity disabled:opacity-60"
+          style={{ background: 'var(--persimmon-l)', color: 'var(--persimmon)', border: '1px solid var(--warm-border)' }}
+        >
+          인증 메일 다시 보내기
+        </button>
       )}
 
       {/* 회원가입 전용 필드 */}
