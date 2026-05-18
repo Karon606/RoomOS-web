@@ -672,28 +672,47 @@ export async function unarchiveTrackedItem(id: string): Promise<{ ok: true } | {
 }
 
 // ── StockCheck CRUD
+// 위치별 잔량 입력 1건
+type LocQty = { storageLocationId: string; qty: number; fromHubQty?: number; fromLocationId?: string }
+
+// 재고 이동 보정 — "B에서 A로 N 이동" 선언이 있으면 같은 점검 안에서 출처(B) 수량을 N 차감.
+// → 출처를 다시 점검하지 않아도 총량·소모량이 맞는다.
+function applyTransfers(lqs: LocQty[]): LocQty[] {
+  const adj = lqs.map(l => ({ ...l }))
+  for (const lq of adj) {
+    if (lq.fromLocationId && lq.fromHubQty && lq.fromHubQty > 0) {
+      const src = adj.find(x => x.storageLocationId === lq.fromLocationId)
+      if (src) src.qty = Math.max(0, src.qty - lq.fromHubQty)
+    }
+  }
+  return adj
+}
+
 export async function createStockCheck(data: {
   trackedItemId: string; date: string; remainingQty: number; memo?: string
-  locationQtys?: { storageLocationId: string; qty: number; fromHubQty?: number }[]
+  locationQtys?: LocQty[]
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const it = await prisma.trackedItem.findFirst({ where: { id: data.trackedItemId, propertyId } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
-    if (data.remainingQty < 0) return { ok: false, error: '잔량은 0 이상이어야 합니다.' }
+    const adjusted = data.locationQtys && data.locationQtys.length > 0 ? applyTransfers(data.locationQtys) : null
+    const total = adjusted ? adjusted.reduce((s, l) => s + l.qty, 0) : data.remainingQty
+    if (total < 0) return { ok: false, error: '잔량은 0 이상이어야 합니다.' }
     const r = await prisma.stockCheck.create({
       data: {
         trackedItemId: data.trackedItemId,
         date: new Date(data.date),
-        remainingQty: data.remainingQty,
+        remainingQty: total,
         memo: data.memo || null,
-        ...(data.locationQtys && data.locationQtys.length > 0 ? {
+        ...(adjusted ? {
           locationBreakdown: {
-            create: data.locationQtys.map(lq => ({
+            create: adjusted.map(lq => ({
               storageLocationId: lq.storageLocationId,
               remainingQty: lq.qty,
               fromHubQty: lq.fromHubQty ?? null,
+              fromLocationId: lq.fromLocationId ?? null,
             })),
           },
         } : {}),
@@ -711,7 +730,7 @@ export async function updateStockCheck(id: string, data: {
   date?: string
   memo?: string | null
   remainingQty?: number
-  locationQtys?: { storageLocationId: string; qty: number; fromHubQty?: number }[]
+  locationQtys?: LocQty[]
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -719,9 +738,8 @@ export async function updateStockCheck(id: string, data: {
     const c = await prisma.stockCheck.findUnique({ where: { id }, include: { trackedItem: true } })
     if (!c || c.trackedItem.propertyId !== propertyId) return { ok: false, error: '점검 기록을 찾을 수 없습니다.' }
 
-    const finalQty = data.locationQtys && data.locationQtys.length > 0
-      ? data.locationQtys.reduce((s, lq) => s + lq.qty, 0)
-      : data.remainingQty
+    const adjusted = data.locationQtys && data.locationQtys.length > 0 ? applyTransfers(data.locationQtys) : null
+    const finalQty = adjusted ? adjusted.reduce((s, lq) => s + lq.qty, 0) : data.remainingQty
 
     if (finalQty !== undefined && finalQty < 0) return { ok: false, error: '잔량은 0 이상이어야 합니다.' }
 
@@ -734,14 +752,15 @@ export async function updateStockCheck(id: string, data: {
           ...(finalQty !== undefined ? { remainingQty: finalQty } : {}),
         },
       })
-      if (data.locationQtys && data.locationQtys.length > 0) {
+      if (adjusted) {
         await tx.stockCheckLocation.deleteMany({ where: { stockCheckId: id } })
         await tx.stockCheckLocation.createMany({
-          data: data.locationQtys.map(lq => ({
+          data: adjusted.map(lq => ({
             stockCheckId: id,
             storageLocationId: lq.storageLocationId,
             remainingQty: lq.qty,
             fromHubQty: lq.fromHubQty ?? null,
+            fromLocationId: lq.fromLocationId ?? null,
           })),
         })
       }

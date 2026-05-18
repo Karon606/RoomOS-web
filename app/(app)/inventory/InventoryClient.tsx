@@ -1393,6 +1393,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
 
   const [qtys, setQtys] = useState<Record<string, string>>({})
   const [fromHubQtys, setFromHubQtys] = useState<Record<string, string>>({})
+  const [fromHubSrc, setFromHubSrc] = useState<Record<string, string>>({})  // 이동 유입 출처 위치
   const [touched, setTouched] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -1404,6 +1405,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
     })
     setQtys(init)
     setFromHubQtys({})
+    setFromHubSrc({})
     setTouched(new Set())
     setMergeChoice(null)
     setConfirmItems([])
@@ -1425,11 +1427,17 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
       await Promise.all(toSave.map(r => {
         const thisLocQty = Number(qtys[r.id]) || 0
         const fromHub = Number(fromHubQtys[r.id]) || 0
+        const fromSrc = fromHubSrc[r.id] || ''
+        const hasTransfer = fromHub > 0 && !!fromSrc
         const otherLocs = r.lastCheckLocationBreakdown
           .filter(lb => lb.locationId !== locId)
-          .map(lb => ({ storageLocationId: lb.locationId, qty: lb.qty, fromHubQty: lb.fromHubQty }))
+          .map(lb => ({ storageLocationId: lb.locationId, qty: lb.qty }))
         const locationQtys = [
-          { storageLocationId: locId, qty: thisLocQty, fromHubQty: fromHub > 0 ? fromHub : undefined },
+          {
+            storageLocationId: locId, qty: thisLocQty,
+            fromHubQty:     hasTransfer ? fromHub : undefined,
+            fromLocationId: hasTransfer ? fromSrc : undefined,
+          },
           ...otherLocs,
         ]
         const remainingQty = locationQtys.reduce((s, l) => s + l.qty, 0)
@@ -1527,8 +1535,9 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
                 const prev = r.lastCheckLocationBreakdown.find(lb => lb.locationId === locId)
                 const isTouched = touched.has(r.id)
                 const isPrefilled = !isTouched && prev != null
-                // 이 품목의 허브 위치 (현재 선택 위치가 아닌 것)
-                const hubLoc = r.locations.find(l => l.isHub && l.id !== locId)
+                // 이 품목의 다른 위치들 — 이동 유입 출처 후보. 허브 우선 정렬.
+                const srcLocs = r.locations.filter(l => l.id !== locId)
+                  .sort((a, b) => (b.isHub ? 1 : 0) - (a.isHub ? 1 : 0))
                 return (
                   <div key={r.id} className="space-y-1">
                     <div className="flex items-center gap-3">
@@ -1551,16 +1560,24 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
                       </div>
                       <span className="text-[0.625rem] text-[var(--warm-muted)] w-8 shrink-0">{stockUnit ?? ''}</span>
                     </div>
-                    {hubLoc && (qtys[r.id] ?? '') !== '' && (
+                    {srcLocs.length > 0 && (qtys[r.id] ?? '') !== '' && (
                       <div className="flex items-center gap-2 pl-1">
-                        <span className="text-[0.625rem] text-amber-600 w-24 shrink-0">└ {hubLoc.name}에서</span>
+                        <span className="text-[0.625rem] text-amber-600 shrink-0">└ 이동 유입</span>
+                        <select
+                          value={fromHubSrc[r.id] ?? ''}
+                          onChange={e => setFromHubSrc(p => ({ ...p, [r.id]: e.target.value }))}
+                          className="bg-[var(--canvas)] border border-amber-200 rounded-xl px-2 py-1.5 text-xs text-amber-700 outline-none focus:border-amber-400">
+                          <option value="">출처 선택</option>
+                          {srcLocs.map(l => <option key={l.id} value={l.id}>{l.name}에서</option>)}
+                        </select>
                         <input
                           type="text" inputMode="decimal"
                           value={fromHubQtys[r.id] ?? ''}
                           onChange={e => setFromHubQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                          placeholder="이동 수량 (선택)"
-                          className="flex-1 bg-[var(--canvas)] border border-amber-200 rounded-xl px-3 py-1.5 text-xs text-amber-700 outline-none focus:border-amber-400" />
-                        <span className="text-[0.625rem] text-[var(--warm-muted)] w-8 shrink-0">{stockUnit ?? ''}</span>
+                          placeholder="수량"
+                          disabled={!fromHubSrc[r.id]}
+                          className="w-16 bg-[var(--canvas)] border border-amber-200 rounded-xl px-2.5 py-1.5 text-xs text-amber-700 outline-none focus:border-amber-400 disabled:opacity-40" />
+                        <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">{stockUnit ?? ''}</span>
                       </div>
                     )}
                   </div>

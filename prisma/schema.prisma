@@ -732,6 +732,7 @@ model StorageLocation {
 
   trackedItems        TrackedItemLocation[]
   stockCheckLocations StockCheckLocation[]
+  transferSources     StockCheckLocation[] @relation("StockTransferSource")
   receivedExpenses    Expense[]
 
   @@unique([propertyId, name])
@@ -757,10 +758,12 @@ model StockCheckLocation {
   stockCheckId      String @db.Uuid
   storageLocationId String @db.Uuid
   remainingQty      Float
-  fromHubQty        Float?  // 이 점검 시 허브(창고)에서 이 위치로 이동한 수량
+  fromHubQty        Float?  // 유입 수량 — 출처 위치에서 이 위치로 옮겨온 양 (재고 이동)
+  fromLocationId    String? @db.Uuid  // 유입 출처 위치 (null+fromHubQty면 레거시 허브 이동)
 
-  stockCheck      StockCheck      @relation(fields: [stockCheckId], references: [id], onDelete: Cascade)
-  storageLocation StorageLocation @relation(fields: [storageLocationId], references: [id], onDelete: Cascade)
+  stockCheck      StockCheck       @relation(fields: [stockCheckId], references: [id], onDelete: Cascade)
+  storageLocation StorageLocation  @relation(fields: [storageLocationId], references: [id], onDelete: Cascade)
+  fromLocation    StorageLocation? @relation("StockTransferSource", fields: [fromLocationId], references: [id])
 
   @@unique([stockCheckId, storageLocationId])
   @@map("stock_check_locations")
