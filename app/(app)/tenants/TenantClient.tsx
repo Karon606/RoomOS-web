@@ -22,6 +22,7 @@ import { useUrlState } from '@/lib/useUrlState'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SortSelect } from '@/components/ui/SortSelect'
+import { STATUS_LABEL, STATUS_BADGE as STATUS_COLOR, CARD_TONE, tenantCardTone } from '@/lib/statusColors'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
@@ -115,21 +116,7 @@ function loadColWidths(): Record<string, number> | null {
 
 // ── 상수 ─────────────────────────────────────────────────────────
 
-const STATUS_LABEL: Record<string, string> = {
-  ACTIVE: '거주중', RESERVED: '예약', CHECKOUT_PENDING: '퇴실 예정',
-  CHECKED_OUT: '퇴실', WAITING_TOUR: '투어 대기', TOUR_DONE: '투어 완료', CANCELLED: '입실 취소',
-  NON_RESIDENT: '비거주자',
-}
-const STATUS_COLOR: Record<string, string> = {
-  ACTIVE:           'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-  RESERVED:         'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
-  CHECKOUT_PENDING: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-  CHECKED_OUT:      'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]',
-  WAITING_TOUR:     'bg-purple-50 text-purple-700 ring-1 ring-purple-200',
-  TOUR_DONE:        'bg-[var(--coral)]/10 text-[var(--coral)] ring-1 ring-[var(--coral)]/30',
-  CANCELLED:        'bg-red-50 text-red-600 ring-1 ring-red-200',
-  NON_RESIDENT:     'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
-}
+// STATUS_LABEL · STATUS_COLOR(=STATUS_BADGE) 는 lib/statusColors 에서 import — 브랜드 색 단일 출처
 const REG_LABEL: Record<string, string> = {
   NOT_REPORTED: '미신고', REGISTERED: '완료', EXEMPTED: '해당없음',
 }
@@ -1286,7 +1273,7 @@ export default function TenantClient({
             return (
               <div key={tenant.id}
                 onClick={() => selectMode ? toggleSelectTenant(tenant.id) : (setDetailTenant(tenant), setDetailTab('info'))}
-                className={`bg-[var(--cream)] rounded-2xl p-4 cursor-pointer active:opacity-70 transition-opacity ${selectMode && selectedIds.has(tenant.id) ? 'border-2 border-[var(--coral)] ring-2 ring-[var(--coral)]/20' : 'border border-[var(--warm-border)]'}`}
+                className={`rounded-2xl p-4 cursor-pointer active:opacity-70 transition-opacity ${selectMode && selectedIds.has(tenant.id) ? 'bg-[var(--cream)] border-2 border-[var(--coral)] ring-2 ring-[var(--coral)]/20' : `border ${CARD_TONE[tenantCardTone(status)]}`}`}
               >
                 {/* 첫 줄: 호실(또는 희망 조건/미배정) + 이름 + 상태 */}
                 <div className="flex items-center justify-between mb-1.5">

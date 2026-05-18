@@ -71,6 +71,18 @@
   --status-unpaid-fg:   #a16207;
   --status-vacant-bg:   rgba(200,160,120,0.12); /* 공실 */
   --status-vacant-fg:   #7a6a55;
+
+  /* 입주·계약 상태 — 뱃지(bg/fg) + 카드 틴트.
+     ⚠ 잠정값 — Claude Design 브랜드 가이드 확정 대기. 확정 시 이 값만 교체. */
+  --st-live-bg:     #e7efe2;   /* 거주중 — Success 파생 페일 그린 */
+  --st-live-fg:     #1a6e4c;   /* guide Success */
+  --st-leaving-bg:  #f4e4bc;   /* 퇴실 예정 — Honey 파생 페일 */
+  --st-leaving-fg:  #876810;   /* Honey 파생 진한 톤 */
+  --st-incoming-bg: #ead9bf;   /* 예약·비거주 — Camel/Sand 파생 페일 */
+  --st-incoming-fg: #6e5536;   /* Camel 파생 진한 톤 */
+  --st-card-live:   #eef3ea;   /* 거주중 카드 배경 — 은은한 그린 */
+  --st-card-accent: #2f7d56;   /* 거주중 카드 좌측 액센트 바 */
+
   /* 강조 보조색 — 보증금(purple), 예비비(teal) */
   --accent-deposit: #7c3aed;
   --accent-reserve: #0d9488;
@@ -190,6 +202,17 @@ html.dark {
   --status-unpaid-fg:   #fcd34d;                /* amber-300 */
   --status-vacant-bg:   rgba(168,152,128,0.16); /* warm muted */
   --status-vacant-fg:   #c8b89a;                /* 밝은 베이지 */
+
+  /* 입주·계약 상태 — 다크 톤 (잠정값 — Claude Design 확정 대기) */
+  --st-live-bg:     rgba(74,222,128,0.14);
+  --st-live-fg:     #7fcfa3;
+  --st-leaving-bg:  rgba(245,184,0,0.16);
+  --st-leaving-fg:  #e6c265;
+  --st-incoming-bg: rgba(200,160,125,0.18);
+  --st-incoming-fg: #d8c09a;
+  --st-card-live:   rgba(74,222,128,0.08);
+  --st-card-accent: #4a9d72;
+
   /* 강조 — 다크에서 더 밝게 */
   --accent-deposit: #a78bfa;                    /* violet-400 */
   --accent-reserve: #5eead4;                    /* teal-300 */

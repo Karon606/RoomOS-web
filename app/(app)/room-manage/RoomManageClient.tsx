@@ -16,6 +16,7 @@ import { useUrlState } from '@/lib/useUrlState'
 import { kstMonthStr } from '@/lib/kstDate'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SortSelect } from '@/components/ui/SortSelect'
+import { CARD_TONE, CARD_ACCENT, statusBadge, type CardTone } from '@/lib/statusColors'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
@@ -53,36 +54,23 @@ type Room = {
   }[]
 }
 
-// 호실 상태 라벨/색상 — lease term 상태 우선, 없으면 isVacant 기반
-type RoomStatus = { label: '공실' | '예약' | '거주중' | '퇴실 예정'; badgeClass: string; borderClass: string; isVacant: boolean }
+// 호실 상태 — 카드 톤(거주중·퇴실예정=초록 / 공실·예약=회색) + 세부 뱃지.
+// 거주중·공실은 카드 색만으로 구분(뱃지 X), 예약·퇴실예정만 뱃지로 표시.
+type RoomStatus = {
+  label: '공실' | '예약' | '거주중' | '퇴실 예정'
+  tone: CardTone
+  showCardBadge: boolean
+  badgeClass: string
+}
 function getRoomStatus(r: Room): RoomStatus {
   const lease = r.leaseTerms[0]
-  if (!lease) {
-    return {
-      label: '공실', isVacant: true,
-      badgeClass: 'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]',
-      borderClass: 'border-[var(--warm-border)]',
-    }
-  }
-  if (lease.status === 'RESERVED') {
-    return {
-      label: '예약', isVacant: false,
-      badgeClass: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-      borderClass: 'border-amber-300/50',
-    }
-  }
-  if (lease.status === 'CHECKOUT_PENDING') {
-    return {
-      label: '퇴실 예정', isVacant: false,
-      badgeClass: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
-      borderClass: 'border-blue-300/50',
-    }
-  }
-  return {
-    label: '거주중', isVacant: false,
-    badgeClass: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-    borderClass: 'border-[var(--coral)]/40',
-  }
+  if (!lease)
+    return { label: '공실', tone: 'vacant', showCardBadge: false, badgeClass: statusBadge(null) }
+  if (lease.status === 'RESERVED')
+    return { label: '예약', tone: 'vacant', showCardBadge: true, badgeClass: statusBadge('RESERVED') }
+  if (lease.status === 'CHECKOUT_PENDING')
+    return { label: '퇴실 예정', tone: 'live', showCardBadge: true, badgeClass: statusBadge('CHECKOUT_PENDING') }
+  return { label: '거주중', tone: 'live', showCardBadge: false, badgeClass: statusBadge('ACTIVE') }
 }
 
 // 구 enum 값 → 한국어 표시 (마이그레이션 전 데이터 호환)
@@ -692,24 +680,35 @@ export default function RoomManageClient({
             const tenant = currentTenant(room)
             const thumb  = room.photos[0]
             const rs     = getRoomStatus(room)
+            const selected = selectMode && selectedIds.has(room.id)
             return (
               <div key={room.id}
                 onClick={() => selectMode ? toggleSelectRoom(room.id) : (setDetailRoom(room), setError(''))}
-                className={`bg-[var(--cream)] border rounded-2xl overflow-hidden cursor-pointer active:opacity-70 transition-opacity flex items-stretch ${selectMode && selectedIds.has(room.id) ? 'border-2 border-[var(--coral)] ring-2 ring-[var(--coral)]/20' : rs.borderClass}`}>
+                className={`border rounded-2xl overflow-hidden cursor-pointer active:opacity-70 transition-opacity flex items-stretch ${
+                  selected
+                    ? 'bg-[var(--cream)] border-2 border-[var(--coral)] ring-2 ring-[var(--coral)]/20'
+                    : CARD_TONE[rs.tone]
+                }`}>
+                {/* 상태 액센트 바 (거주중·퇴실예정) */}
+                {!selected && CARD_ACCENT[rs.tone] && (
+                  <div className="w-1 shrink-0" style={{ background: CARD_ACCENT[rs.tone]! }} aria-hidden="true" />
+                )}
                 {/* 정보 */}
                 <div className="flex-1 p-4 min-w-0 space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-base font-bold text-[var(--coral)]">{fmtRoomNo(room.roomNo)}</span>
+                    <span className={`text-base font-bold ${rs.tone === 'vacant' ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'}`}>{fmtRoomNo(room.roomNo)}</span>
                     {room.floor && (
                       <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                         {room.floor}층
                       </span>
                     )}
-                    <span className={`text-[0.625rem] px-2 py-0.5 rounded-full font-medium shrink-0 ${rs.badgeClass}`}>
-                      {rs.label}
-                    </span>
+                    {rs.showCardBadge && (
+                      <span className={`text-[0.625rem] px-2 py-0.5 rounded-full font-medium shrink-0 ${rs.badgeClass}`}>
+                        {rs.label}
+                      </span>
+                    )}
                     {room.nonResidentRent != null && (
-                      <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200">
+                      <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--st-incoming-bg)] text-[var(--st-incoming-fg)] ring-1 ring-[var(--st-incoming-fg)]/30">
                         비거주
                       </span>
                     )}
