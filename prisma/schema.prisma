@@ -296,6 +296,7 @@ model LeaseTerm {
   overrideDueDay     String?            // 특정 월 임시 납부일
   overrideDueDayMonth String?           // 적용 대상 월 "YYYY-MM"
   overrideDueDayReason String?          // 조정 사유
+  prevOwnerSettleMenu String            @default("auto")  // 양도인 정산 메뉴 노출 — auto|show|hide
   payMethod          String?
   cashReceipt        String?
   registrationStatus RegistrationStatus @default(NOT_REPORTED)
@@ -375,6 +376,7 @@ model PaymentRecord {
   seqNo          Int      @default(1)
   isPaid         Boolean  @default(false)
   isDeposit      Boolean  @default(false)
+  isPrevOwner    Boolean  @default(false)  // 양도인 정산 — 이 달은 양도인이 받음 (현 소유주 장부·미납 제외)
   payDate        DateTime @db.Date
   payMethod      String?
   memo           String?

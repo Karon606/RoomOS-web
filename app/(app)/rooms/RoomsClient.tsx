@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
-import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getTenantQuickInfo, getRoomQuickInfo, getTargetMonthOptions, type TargetMonthOption } from './actions'
+import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getTenantQuickInfo, getRoomQuickInfo, getTargetMonthOptions, savePrevOwnerSettle, getPrevOwnerSettleState, type TargetMonthOption } from './actions'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -70,6 +70,7 @@ type PaymentRecord = {
   memo: string | null
   isPaid: boolean
   isDeposit: boolean
+  isPrevOwner: boolean
 }
 
 // ── 열 설정 ──────────────────────────────────────────────────────
@@ -219,6 +220,7 @@ export default function RoomsClient({
   const [roomInfoId, setRoomInfoId]     = useState<string | null>(null)
   const [paymentHistory, setPaymentHistory] = useState<PaymentRecord[]>([])
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
+  const [prevOwnerCanSettle, setPrevOwnerCanSettle] = useState(false)  // 양도인 정산 메뉴 노출
   const [showPayModal, setShowPayModal] = useState(false)
   const [showPayForm, setShowPayForm] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
@@ -436,6 +438,7 @@ export default function RoomsClient({
     setOverrideReason('')
     setEditingPayId(null)
     setPaymentHistory([])
+    setPrevOwnerCanSettle(false)
     setShowPayModal(true)
     if (room.leaseTermId) {
       setLoadingHistory(true)
@@ -443,6 +446,9 @@ export default function RoomsClient({
       setPaymentHistory(records as PaymentRecord[])
       setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
       setLoadingHistory(false)
+      getPrevOwnerSettleState(room.leaseTermId, targetMonth)
+        .then(s => setPrevOwnerCanSettle(s.canSettle))
+        .catch(() => setPrevOwnerCanSettle(false))
     }
   }
 
@@ -1162,7 +1168,7 @@ export default function RoomsClient({
                   {/* 납부 내역 */}
                   {(loadingHistory || paymentHistory.length > 0 || selectedRoom.prevPaidThisMonth) && (() => {
                     const isPreAcq = (p: PaymentRecord) => !!(payAcquisitionDate && new Date(p.payDate) < payAcquisitionDate)
-                    const prevOwnerPaid = paymentHistory.filter(p => !p.isDeposit && isPreAcq(p)).reduce((s, p) => s + p.actualAmount, 0)
+                    const prevOwnerPaid = paymentHistory.filter(p => !p.isDeposit && (isPreAcq(p) || p.isPrevOwner)).reduce((s, p) => s + p.actualAmount, 0)
                     // 양도인 자동 완납 — 수납 기록 없이 납부일이 귀속 기준일 이전인 경우
                     const isAutoPaidNoBilling = selectedRoom.prevPaidThisMonth && paymentHistory.filter(p => !p.isDeposit).length === 0
                     const getDueDate = (dueDay: string | null, month: string) => {
@@ -1251,7 +1257,7 @@ export default function RoomsClient({
                           </div>
                         )}
                         {!loadingHistory && paymentHistory.map(p => {
-                          const prevOwner = !p.isDeposit && isPreAcq(p)
+                          const prevOwner = !p.isDeposit && (isPreAcq(p) || p.isPrevOwner)
                           if (editingPayId === p.id) {
                             return (
                               <div key={p.id} className="rounded-xl border border-[var(--coral)] bg-[var(--canvas)] px-3 py-2.5 space-y-2">
@@ -1571,6 +1577,27 @@ export default function RoomsClient({
                     호실 정보
                   </button>
                   <div className="flex-1" />
+                  {canEdit && prevOwnerCanSettle && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!selectedRoom.leaseTermId) return
+                        if (!confirm(`${Number(targetMonth.slice(5))}월 임대료를 양도인 정산으로 처리할까요?\n이 달은 현 소유주 미납·매출 집계에서 제외됩니다.`)) return
+                        startTransition(async () => {
+                          const release = trackSave()
+                          try {
+                            const res = await savePrevOwnerSettle(selectedRoom.leaseTermId!, targetMonth)
+                            if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+                            pushToast('success', '양도인 정산 처리됨')
+                            setShowPayModal(false)
+                            router.refresh()
+                          } finally { release() }
+                        })
+                      }}
+                      className="px-3 py-2 text-xs font-medium rounded-lg bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors">
+                      양도인 정산
+                    </button>
+                  )}
                   {canEdit && (
                     <button
                       onClick={() => { setShowPayForm(true); setError('') }}
