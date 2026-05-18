@@ -62,9 +62,9 @@
   --chart-10: #4d3e2e;   /* extra — ink-3 */
 
   /* Status (의미) — 페일 셀 / 강조 페어. 라이트 톤. 다크는 .dark에서 override */
-  --status-paid-bg:     rgba(26,110,76,0.12);   /* 납부 완료 */
-  --status-paid-fg:     #1a6e4c;                /* guide Success */
-  --status-paid-strong: #1a6e4c;                /* 솔리드 (b-success) */
+  --status-paid-bg:     rgba(85,108,58,0.10);   /* 납부 완료 — v1.1 Warm Olive */
+  --status-paid-fg:     #4e6834;                /* v1.1 --success */
+  --status-paid-strong: #7a9a52;                /* 솔리드 (b-success) — Warm Olive */
   --status-await-bg:    rgba(59,130,246,0.12);  /* 납부 예정 */
   --status-await-fg:    #1e40af;
   --status-unpaid-bg:   rgba(234,179,8,0.18);   /* 미납 */
@@ -76,8 +76,8 @@
      카드 베이스 = 카드의 종류(거주/비거주/일반), 뱃지 = 예외 상황(미납·납부예정 등).
      정상 상태는 뱃지 없이 카드 베이스만으로 표현. */
   /* 카드 베이스 3종 */
-  --card-resident-bg: rgba(26,110,76,0.06);   /* 거주 중 — Success 6%, 따뜻한 이끼 톤 */
-  --card-resident-bd: rgba(26,110,76,0.18);
+  --card-resident-bg: rgba(85,108,58,0.08);   /* 거주 중 — v1.1 Warm Olive 톤 */
+  --card-resident-bd: rgba(85,108,58,0.20);
   --card-vacant-bg:   var(--cream-soft);      /* 비거주·공실 (opacity 0.72 함께) */
   --card-vacant-bd:   var(--warm-border);
   --card-neutral-bg:  var(--cream);           /* 수납·재고 등 일반 데이터 카드 */
@@ -117,13 +117,14 @@
   --color-sand:         var(--sand);
   --color-sand-2:       var(--sand-2);
 
-  /* M7 가이드 radius 토큰 — Tailwind rounded-* 기본값 override
-     r-sm 6 (입력·뱃지) · r-md 10 (카드 small) · r-lg 14 (카드/KPI)
-     r-xl 18 (모달/앱아이콘) · r-pill 999 (칩/필터) */
+  /* Brand Guide v1.1 radius 토큰 — Tailwind rounded-* 기본값 override
+     r-xs 4 (칩·태그 내) · r-sm 6 (입력·뱃지) · r-md 8 (버튼 sm)
+     r-lg 10 (버튼 md·카드 sm) · r-xl 14 (카드·KPI) · r-2xl 18 (모달·앱아이콘) */
+  --radius-xs:   4px;
   --radius-sm:   6px;
-  --radius-md:   10px;
-  --radius-lg:   14px;
-  --radius-xl:   18px;
+  --radius-md:   8px;
+  --radius-lg:   10px;
+  --radius-xl:   14px;
   --radius-2xl:  18px;
   --radius-3xl:  24px;
 
@@ -204,9 +205,9 @@ html.dark {
   --chart-1:  #fbf6ef;       /* ops — light ink in dark mode */
 
   /* Status — 다크 적합 톤. 배경 alpha 약간 ↑, 텍스트는 밝은 톤으로 */
-  --status-paid-bg:     rgba(74,222,128,0.18);  /* emerald-400 alpha */
-  --status-paid-fg:     #6ee7b7;                /* emerald-300 */
-  --status-paid-strong: #4ade80;                /* solid */
+  --status-paid-bg:     rgba(124,154,82,0.20);  /* Warm Olive — 다크 */
+  --status-paid-fg:     #a8c47e;                /* 밝은 올리브 */
+  --status-paid-strong: #8fae5e;                /* solid */
   --status-await-bg:    rgba(96,165,250,0.18);  /* blue-400 alpha */
   --status-await-fg:    #93c5fd;                /* blue-300 */
   --status-unpaid-bg:   rgba(251,191,36,0.20);  /* amber-400 alpha */
@@ -215,8 +216,8 @@ html.dark {
   --status-vacant-fg:   #c8b89a;                /* 밝은 베이지 */
 
   /* 상태 카드·뱃지 — 다크 톤. vacant/neutral/info 는 cream·border 변수라 자동 대응 */
-  --card-resident-bg: rgba(74,222,128,0.10);
-  --card-resident-bd: rgba(74,222,128,0.22);
+  --card-resident-bg: rgba(124,154,82,0.14);
+  --card-resident-bd: rgba(124,154,82,0.28);
   --badge-unpaid-bg:  #b85042;
   --badge-unpaid-fg:  #fbf6ef;
   --badge-await-bg:   rgba(242,217,184,0.22);
@@ -294,8 +295,8 @@ a, button, [role="button"], input[type="button"], input[type="submit"], input[ty
     --persimmon-l:  #f2dfd8;
     --coral-pale:   #f2dfd8;
     --chart-1:      #3d2418;
-    --status-paid-bg:  rgba(26,110,76,0.12);
-    --status-paid-fg:  #1a6e4c;
+    --status-paid-bg:  rgba(85,108,58,0.10);
+    --status-paid-fg:  #4e6834;
     --status-unpaid-bg: rgba(234,179,8,0.18);
     --status-unpaid-fg: #a16207;
   }
