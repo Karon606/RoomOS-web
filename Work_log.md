@@ -53,6 +53,17 @@
 - 정식 메일함(IMAP/자체발신) 필요 시 Google Workspace·Zoho Mail 검토
   (Synology 등 자체호스팅은 발송 신뢰도 문제로 비권장)
 
+### 구글 로그인 시 supabase.co 도메인 노출 제거 — 나중에
+- 구글로 로그인할 때 브라우저에 "yzzxuafsvfuzlwvkiuad.supabase.co(으)로 이동…"이
+  잠깐 노출됨 — Supabase가 자동 생성한 프로젝트 서브도메인이 OAuth 리다이렉트에
+  그대로 보이는 것
+- 완전 제거(유료): Supabase Custom Domain 설정 → auth.stayeum.com 등 브랜드
+  도메인으로 auth 엔드포인트 교체. Custom Domain 애드온 ~$10/월 + Pro 플랜
+  ($25/월) 필요 → 결제·구독(PG) 도입으로 Pro 올라갈 때 묶어서 처리 권장
+- 무료로 가능한 것: Google Cloud OAuth 동의 화면 브랜딩(앱 이름·로고·지원
+  이메일). 단 동의 화면만 정돈될 뿐 리다이렉트 중 supabase.co 표시는 안 사라짐
+- 표시는 리다이렉트 통과 중 잠깐이라 체감 짧음 → 우선순위 낮음, 나중에
+
 ### 이메일 템플릿 디자인 재작업 — 로고 확정 후
 - 현재 5종 템플릿은 임시 디자인 (퍼시몬 카드형)
 - 로고·브랜드 디자인 확정 후 docs/email-templates/ 수정 → Supabase 대시보드 재반영
