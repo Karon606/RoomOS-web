@@ -34,9 +34,9 @@ export function SplashScreen() {
       `}</style>
 
       <svg
-        viewBox="8 8 366 74"
+        viewBox="8 8 366 84"
         width="250"
-        height="51"
+        height="57"
         fill="none"
         style={{ color: 'inherit' }}
         aria-hidden="true"

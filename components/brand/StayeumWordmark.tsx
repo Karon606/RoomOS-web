@@ -27,11 +27,12 @@ export function StayeumWordmark({
   className?: string
   style?: React.CSSProperties
 }) {
-  // 콘텐츠 타이트 viewBox: x 8 시작, y 8–82 (74 높이)
+  // 콘텐츠 타이트 viewBox: x 8 시작, y 8–92 (84 높이)
+  // 높이는 84 — Arch 발끝의 둥근 캡(반원 호)이 y≈92까지 내려옴. 82로 자르면 캡이 잘림.
   // full 폭 366 = arch(~121) + gap + "stayeum" 텍스트 여유분 (글리프 클리핑 방지)
-  const VB = markOnly ? '8 8 113 74' : '8 8 366 74'
+  const VB = markOnly ? '8 8 113 84' : '8 8 366 84'
   const VB_W = markOnly ? 113 : 366
-  const w = height * (VB_W / 74)
+  const w = height * (VB_W / 84)
 
   return (
     <svg

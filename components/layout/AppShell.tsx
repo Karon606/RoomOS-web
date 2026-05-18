@@ -19,7 +19,7 @@ function PageLoadingOverlay() {
         .stm-pulse { transform-box: fill-box; transform-origin: center;
                      animation: stm-pulse 1.4s ease-in-out infinite; }
       `}</style>
-      <svg width="54" height="35" viewBox="8 8 113 74" xmlns="http://www.w3.org/2000/svg" aria-label="로딩 중">
+      <svg width="54" height="40" viewBox="8 8 113 84" xmlns="http://www.w3.org/2000/svg" aria-label="로딩 중">
         <path className="stm-pulse" d={ARCH_PATH} fill="var(--persimmon)" />
       </svg>
     </div>

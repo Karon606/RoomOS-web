@@ -18,7 +18,7 @@ const ARCH =
 // rx=22 → 둥근 모서리(브라우저 표시용) · rx=0 → 풀블리드(OS 마스킹용)
 const svg = (rx) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
   <rect width="100" height="100" rx="${rx}" fill="#a03c2e"/>
-  <path transform="translate(14.5 25.25) scale(0.55)" d="${ARCH}" fill="#fbf6ef"/>
+  <path transform="translate(14.5 22.5) scale(0.55)" d="${ARCH}" fill="#fbf6ef"/>
 </svg>`
 
 const targets = [
