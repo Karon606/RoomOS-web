@@ -772,7 +772,7 @@ export async function savePrevOwnerSettle(
 export async function getPrevOwnerSettleState(
   leaseTermId: string,
   viewMonth: string,
-): Promise<{ canSettle: boolean; settledMonths: string[] }> {
+): Promise<{ canSettle: boolean; settledMonths: string[]; menuMode: string }> {
   const lease = await prisma.leaseTerm.findUnique({
     where: { id: leaseTermId },
     select: {
@@ -780,23 +780,37 @@ export async function getPrevOwnerSettleState(
       property: { select: { acquisitionDate: true, prevOwnerCutoffDate: true } },
     },
   })
-  if (!lease) return { canSettle: false, settledMonths: [] }
+  if (!lease) return { canSettle: false, settledMonths: [], menuMode: 'auto' }
   const settled = await prisma.paymentRecord.findMany({
     where: { leaseTermId, isPrevOwner: true },
     select: { targetMonth: true },
   })
   const settledMonths = settled.map(r => r.targetMonth)
-  const menu = lease.prevOwnerSettleMenu
-  if (menu === 'hide') return { canSettle: false, settledMonths }
-  if (menu === 'show') return { canSettle: true, settledMonths }
+  const menuMode = lease.prevOwnerSettleMenu
+  if (menuMode === 'hide') return { canSettle: false, settledMonths, menuMode }
+  if (menuMode === 'show') return { canSettle: true, settledMonths, menuMode }
   const cutoffRaw = lease.property.prevOwnerCutoffDate ?? lease.property.acquisitionDate
-  if (!cutoffRaw) return { canSettle: false, settledMonths }
+  if (!cutoffRaw) return { canSettle: false, settledMonths, menuMode }
   const c = new Date(cutoffRaw)
   const acqM = `${c.getFullYear()}-${String(c.getMonth() + 1).padStart(2, '0')}`
   const nx = new Date(c.getFullYear(), c.getMonth() + 1, 1)
   const acqNext = `${nx.getFullYear()}-${String(nx.getMonth() + 1).padStart(2, '0')}`
   const inWindow = viewMonth === acqM || viewMonth === acqNext
-  return { canSettle: inWindow && settledMonths.length === 0, settledMonths }
+  return { canSettle: inWindow && settledMonths.length === 0, settledMonths, menuMode }
+}
+
+// 양도인 정산 메뉴 표시 모드 변경 (auto|show|hide) — 세입자별 override
+export async function setPrevOwnerSettleMenu(
+  leaseTermId: string,
+  mode: 'auto' | 'show' | 'hide',
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const lease = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { id: true } })
+  if (!lease) return { ok: false, error: '계약을 찾을 수 없습니다.' }
+  await prisma.leaseTerm.update({ where: { id: leaseTermId }, data: { prevOwnerSettleMenu: mode } })
+  revalidatePath('/rooms')
+  return { ok: true }
 }
 
 // 보증금 수납 등록 (초과금은 이용료로 분리 저장)

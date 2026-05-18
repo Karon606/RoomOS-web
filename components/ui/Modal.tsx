@@ -49,7 +49,9 @@ export function Modal({
       onClick={onClose}
     >
       <div
-        className={`bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl shadow-lift w-full ${WIDTH_CLS[width]} flex flex-col max-h-full`}
+        className={`bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl shadow-lift w-full ${WIDTH_CLS[width]} flex flex-col`}
+        // 뷰포트 기준 calc — 안전영역 안쪽으로 최대 높이 한정 (% 는 안 풀려 헤더가 잘림)
+        style={{ maxHeight: 'calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem)' }}
         onClick={e => e.stopPropagation()}
       >
         {(title || onBack) && (

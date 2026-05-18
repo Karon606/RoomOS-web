@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
-import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getTenantQuickInfo, getRoomQuickInfo, getTargetMonthOptions, savePrevOwnerSettle, getPrevOwnerSettleState, type TargetMonthOption } from './actions'
+import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getTenantQuickInfo, getRoomQuickInfo, getTargetMonthOptions, savePrevOwnerSettle, getPrevOwnerSettleState, setPrevOwnerSettleMenu, type TargetMonthOption } from './actions'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -221,6 +221,7 @@ export default function RoomsClient({
   const [paymentHistory, setPaymentHistory] = useState<PaymentRecord[]>([])
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
   const [prevOwnerCanSettle, setPrevOwnerCanSettle] = useState(false)  // 양도인 정산 메뉴 노출
+  const [prevOwnerMenuMode, setPrevOwnerMenuMode] = useState<string>('auto')  // auto|show|hide
   const [showPayModal, setShowPayModal] = useState(false)
   const [showPayForm, setShowPayForm] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
@@ -447,7 +448,7 @@ export default function RoomsClient({
       setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
       setLoadingHistory(false)
       getPrevOwnerSettleState(room.leaseTermId, targetMonth)
-        .then(s => setPrevOwnerCanSettle(s.canSettle))
+        .then(s => { setPrevOwnerCanSettle(s.canSettle); setPrevOwnerMenuMode(s.menuMode) })
         .catch(() => setPrevOwnerCanSettle(false))
     }
   }
@@ -1551,7 +1552,32 @@ export default function RoomsClient({
                 })()}
 
                 {/* 읽기 전용 푸터 */}
-                <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0 flex-wrap">
+                <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0 flex-wrap items-center">
+                  {canEdit && selectedRoom.leaseTermId && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-[0.625rem] text-[var(--warm-muted)]">양도인 메뉴</span>
+                      <select
+                        value={prevOwnerMenuMode}
+                        onChange={e => {
+                          const mode = e.target.value as 'auto' | 'show' | 'hide'
+                          setPrevOwnerMenuMode(mode)
+                          startTransition(async () => {
+                            const release = trackSave()
+                            try {
+                              await setPrevOwnerSettleMenu(selectedRoom.leaseTermId!, mode)
+                              const s = await getPrevOwnerSettleState(selectedRoom.leaseTermId!, targetMonth)
+                              setPrevOwnerCanSettle(s.canSettle)
+                              pushToast('success', '양도인 정산 메뉴 설정 변경됨')
+                            } finally { release() }
+                          })
+                        }}
+                        className="text-[0.625rem] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-1.5 py-1 text-[var(--warm-dark)] outline-none">
+                        <option value="auto">자동</option>
+                        <option value="show">항상 표시</option>
+                        <option value="hide">숨김</option>
+                      </select>
+                    </div>
+                  )}
                   {selectedRoom.tenantId && (
                     <button
                       type="button"
