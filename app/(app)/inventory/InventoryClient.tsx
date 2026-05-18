@@ -832,7 +832,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
     return (
       <li className="flex items-center justify-between gap-2 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2">
         <div className="min-w-0 flex items-center gap-2">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--coral)] shrink-0" />
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
           <div className="min-w-0">
             <p className="text-xs text-[var(--warm-muted)]">{fmtDate(entry.date)} · 점검 · <span className="tabular-nums">{fmtTime(entry.createdAt)}</span></p>
             <p className="text-sm font-medium text-[var(--warm-dark)]">잔량 {fmtQty(entry.remainingQty, stockUnit)}</p>
@@ -898,7 +898,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
       <li className={`rounded-xl px-3 py-2 ${isPendingReceipt ? 'border border-[var(--honey)]/40 bg-[var(--honey)]/10' : 'border border-[var(--warm-border)]/60'}`}>
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 flex items-center gap-2">
-            <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${isPendingReceipt ? 'bg-[var(--honey)]' : 'bg-[var(--status-paid-strong)]'}`} />
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M12 5v13M6 12l6 6 6-6" /></svg>
             <div className="min-w-0">
               <p className="text-xs text-[var(--warm-muted)]">
                 구매일 {fmtDate(entry.date)}{packLabel ? ` · ${packLabel}` : ''}
@@ -982,7 +982,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
   return (
     <li className="flex items-center justify-between gap-2 border border-[var(--warm-border)]/60 rounded-xl px-3 py-2">
       <div className="min-w-0 flex items-center gap-2">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--honey)] shrink-0" />
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M12 5v13M6 12l6 6 6-6" /></svg>
         <div className="min-w-0">
           <p className="text-xs text-[var(--warm-muted)]">{fmtDate(entry.date)} · 무상 입수{entry.source ? ` (${entry.source})` : ''}</p>
           <p className="text-sm font-medium text-[var(--warm-dark)]">+ {fmtQty(entry.addedQty, stockUnit)}</p>

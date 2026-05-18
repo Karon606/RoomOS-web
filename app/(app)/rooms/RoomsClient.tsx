@@ -15,6 +15,8 @@ import { useUrlState } from '@/lib/useUrlState'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SortSelect } from '@/components/ui/SortSelect'
+import { RoomCard } from '@/components/ui/RoomCard'
+import { StatusBadge } from '@/components/ui/StatusBadge'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
@@ -765,91 +767,57 @@ export default function RoomsClient({
         {displayed.map(room => {
           const dueInfo = !room.isPaid ? getEffectiveDueInfo(room, targetMonth) : null
           return (
-            <div key={room.roomId}
-              onClick={() => !room.isFutureMonth && openPayModal(room)}
-              className={`bg-[var(--cream)] border rounded-2xl px-4 py-3.5 transition-colors
-                ${room.isFutureMonth ? 'opacity-50' : 'cursor-pointer active:bg-[var(--canvas)]/60'}
-                ${!room.isPaid ? 'border-red-200' : 'border-[var(--warm-border)]'}`}>
+            <RoomCard key={room.roomId}
+              kind="neutral"
+              onClick={room.isFutureMonth ? undefined : () => openPayModal(room)}
+              className={`px-4 py-3.5 ${room.isFutureMonth ? 'opacity-50' : ''}`}>
               {/* 첫 줄: 호실 + 수납상태 */}
               <div className="flex items-start justify-between">
                 <div className="flex items-baseline gap-1.5">
                   <span className="text-base font-bold text-[var(--coral)]">{fmtRoomNo(room.roomNo)}</span>
                   {room.type && <span className="text-xs text-[var(--warm-muted)]">{room.type}</span>}
                 </div>
-                <div className="flex flex-col items-end gap-0.5">
-                  {room.status === 'NON_RESIDENT' && (
-                    <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium bg-orange-50 text-orange-700 ring-1 ring-orange-200">비거주</span>
-                  )}
-                  {room.status === 'RESERVED' ? (
-                    <>
-                      <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 ring-1 ring-blue-200">
-                        {room.isReservationConfirmed ? '예약 확정' : '예약'}
-                      </span>
-                      {room.moveInDate && (() => {
-                        const days = Math.round((new Date(room.moveInDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
-                        return (
-                          <span className="text-[0.625rem] font-medium text-blue-500">
-                            {days > 0 ? `D-${days} 입주 예정` : days === 0 ? '오늘 입주' : `입주 예정일 ${Math.abs(days)}일 경과`}
-                          </span>
-                        )
-                      })()}
-                    </>
-                  ) : (() => {
+                <div className="flex flex-col items-end gap-1">
+                  {room.status === 'NON_RESIDENT' && <StatusBadge tone="info">비거주</StatusBadge>}
+                  {room.status === 'RESERVED' ? (() => {
+                    let sub: string | undefined
+                    if (room.moveInDate) {
+                      const days = Math.round((new Date(room.moveInDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                      sub = days > 0 ? `D-${days} 입주 예정` : days === 0 ? '오늘 입주' : `입주 예정일 ${Math.abs(days)}일 경과`
+                    }
+                    return <StatusBadge tone="movein" sub={sub}>{room.isReservationConfirmed ? '예약 확정' : '예약'}</StatusBadge>
+                  })() : (() => {
                     const isAwaiting = room.isPaid && room.nextDueDate && room.nextDueAmount > 0
                     // 퇴실 예정 배지는 expectedMoveOut이 viewMonth 안(또는 그 이전)일 때만 표시
-                    // 522호처럼 7월 퇴실 예정인데 5월 페이지에서는 정상 납부 흐름
                     const checkoutMonth = room.expectedMoveOut?.slice(0, 7) ?? null
                     const showCheckout = room.status === 'CHECKOUT_PENDING'
-                      && room.isPaid
-                      && !!checkoutMonth
-                      && checkoutMonth <= targetMonth
-                    // M7 가이드: 의미 강한 라벨은 솔리드 톤. 대기성 라벨은 페일.
-                    const badgeClass = !room.isPaid
-                      ? 'bg-[var(--persimmon)] text-white'                      // danger — 미납
-                      : showCheckout
-                        ? 'bg-[var(--honey)] text-[var(--ink)]'                 // warn — 퇴실 예정
-                        : isAwaiting
-                          ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'     // 페일 blue — 대기
-                          : 'bg-[#6a9f3a] text-white'                           // success — 완납
-                    const badgeText = !room.isPaid ? '미납' : showCheckout ? '퇴실 예정' : isAwaiting ? '납부 예정' : '완납'
-                    return (
-                      <>
-                        <span className={`text-xs px-2.5 py-0.5 rounded-md font-bold ${badgeClass}`}>
-                          {badgeText}
-                        </span>
-                        {!room.isPaid && dueInfo && (
-                          <span className={`text-[0.625rem] font-medium ${dueInfo.days === 0 ? 'text-orange-500' : 'text-red-400'}`}>
-                            {dueInfo.days === 0 ? '오늘' : `${dueInfo.days}일 초과`}
-                          </span>
-                        )}
-                        {showCheckout && room.expectedMoveOut && (() => {
-                          const [, mm, dd] = room.expectedMoveOut.split('-')
-                          const days = Math.round((new Date(room.expectedMoveOut).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
-                          return (
-                            <span className="text-[0.625rem] font-medium text-yellow-700">
-                              {days > 0 ? `D-${days} (${Number(mm)}/${Number(dd)} 퇴실)` : days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 퇴실` : `${Number(mm)}/${Number(dd)} 퇴실 (${Math.abs(days)}일 경과)`}
-                            </span>
-                          )
-                        })()}
-                        {!showCheckout && isAwaiting && (() => {
-                          const [, mm, dd] = room.nextDueDate!.split('-')
-                          const days = Math.round((new Date(room.nextDueDate!).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
-                          return (
-                            <span className="text-[0.625rem] font-medium text-blue-500">
-                              {days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`}
-                            </span>
-                          )
-                        })()}
-                        {room.isPaid && !showCheckout && !isAwaiting && room.latePaidAt && (() => {
-                          const [, mm, dd] = room.latePaidAt.split('-')
-                          return (
-                            <span className="text-[0.625rem] font-medium text-amber-600">
-                              {Number(mm)}/{Number(dd)} 지연납부
-                            </span>
-                          )
-                        })()}
-                      </>
-                    )
+                      && room.isPaid && !!checkoutMonth && checkoutMonth <= targetMonth
+                    // 미납 — 예외, 솔리드 Terracotta
+                    if (!room.isPaid) {
+                      const sub = dueInfo ? (dueInfo.days === 0 ? '오늘' : `${dueInfo.days}일 초과`) : undefined
+                      return <StatusBadge tone="unpaid" sub={sub}>미납</StatusBadge>
+                    }
+                    // 퇴실 예정 — Camel
+                    if (showCheckout && room.expectedMoveOut) {
+                      const [, mm, dd] = room.expectedMoveOut.split('-')
+                      const days = Math.round((new Date(room.expectedMoveOut).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                      const sub = days > 0 ? `D-${days} (${Number(mm)}/${Number(dd)} 퇴실)` : days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 퇴실` : `${Number(mm)}/${Number(dd)} 퇴실 (${Math.abs(days)}일 경과)`
+                      return <StatusBadge tone="exit" sub={sub}>퇴실 예정</StatusBadge>
+                    }
+                    if (showCheckout) return <StatusBadge tone="exit">퇴실 예정</StatusBadge>
+                    // 납부 예정 — 알림 필요, Sand
+                    if (isAwaiting) {
+                      const [, mm, dd] = room.nextDueDate!.split('-')
+                      const days = Math.round((new Date(room.nextDueDate!).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                      const sub = days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`
+                      return <StatusBadge tone="await" sub={sub}>납부 예정</StatusBadge>
+                    }
+                    // 완납 — 뱃지 없음. 지연납부 이력만 작은 텍스트로
+                    if (room.latePaidAt) {
+                      const [, mm, dd] = room.latePaidAt.split('-')
+                      return <span className="text-[0.625rem] font-medium text-[var(--warm-muted)]">{Number(mm)}/{Number(dd)} 지연납부</span>
+                    }
+                    return null
                   })()}
                 </div>
               </div>
@@ -872,15 +840,15 @@ export default function RoomsClient({
                                           ? -room.balance : 0
                   const totalUnpaid    = carryUnpaid + viewUnpaid
                   if (totalUnpaid > 0) {
-                    return <span className="text-red-500">미수 -<MoneyDisplay amount={totalUnpaid} /></span>
+                    return <span className="font-medium text-[var(--coral)]">미수 -<MoneyDisplay amount={totalUnpaid} /></span>
                   }
                   if (room.balance > 0) {
-                    return <span className="text-emerald-600">선납 +<MoneyDisplay amount={room.balance} /></span>
+                    return <span className="text-[var(--warm-mid)]">선납 +<MoneyDisplay amount={room.balance} /></span>
                   }
                   return null
                 })()}
                 {room.isPaid && room.nextDueDate && room.nextDueAmount > 0 && (
-                  <span className="text-blue-600">
+                  <span className="text-[var(--warm-mid)]">
                     예정 <MoneyDisplay amount={room.nextDueAmount} />
                   </span>
                 )}
@@ -890,7 +858,7 @@ export default function RoomsClient({
                   </span>
                 )}
               </div>
-            </div>
+            </RoomCard>
           )
         })}
         {displayed.length === 0 && (
@@ -1000,80 +968,42 @@ export default function RoomsClient({
                   {colVis.status && (
                     <td className="px-4 py-4">
                       <div className="flex flex-col gap-1 items-center text-center">
-                        {room.status === 'NON_RESIDENT' && (
-                          <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-orange-50 text-orange-700 ring-1 ring-orange-200 mb-0.5">
-                            비거주
-                          </span>
-                        )}
-                        {room.status === 'RESERVED' ? (
-                          <>
-                            <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-blue-50 text-blue-700 ring-1 ring-blue-200">
-                              {room.isReservationConfirmed ? '예약 확정' : '예약'}
-                            </span>
-                            {room.moveInDate && (() => {
-                              const days = Math.round((new Date(room.moveInDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
-                              return (
-                                <span className="text-xs text-blue-500 font-medium">
-                                  {days > 0 ? `D-${days} 입주 예정` : days === 0 ? '오늘 입주' : `${Math.abs(days)}일 경과`}
-                                </span>
-                              )
-                            })()}
-                          </>
-                        ) : (() => {
+                        {room.status === 'NON_RESIDENT' && <StatusBadge tone="info">비거주</StatusBadge>}
+                        {room.status === 'RESERVED' ? (() => {
+                          let sub: string | undefined
+                          if (room.moveInDate) {
+                            const days = Math.round((new Date(room.moveInDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                            sub = days > 0 ? `D-${days} 입주 예정` : days === 0 ? '오늘 입주' : `${Math.abs(days)}일 경과`
+                          }
+                          return <StatusBadge tone="movein" sub={sub}>{room.isReservationConfirmed ? '예약 확정' : '예약'}</StatusBadge>
+                        })() : (() => {
                           const isAwaiting = room.isPaid && room.nextDueDate && room.nextDueAmount > 0
                           const checkoutMonth = room.expectedMoveOut?.slice(0, 7) ?? null
                           const showCheckout = room.status === 'CHECKOUT_PENDING'
-                            && room.isPaid
-                            && !!checkoutMonth
-                            && checkoutMonth <= targetMonth
-                          // M7 가이드: 의미 강한 라벨은 솔리드 톤
-                          const badgeClass = !room.isPaid
-                            ? 'bg-[var(--persimmon)] text-white'
-                            : showCheckout
-                              ? 'bg-[var(--honey)] text-[var(--ink)]'
-                              : isAwaiting
-                                ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'
-                                : 'bg-[#6a9f3a] text-white'
-                          const badgeText = !room.isPaid ? '미납' : showCheckout ? '퇴실 예정' : isAwaiting ? '납부 예정' : '완납'
-                          return (
-                            <>
-                              <span className={`text-xs px-2.5 py-1 rounded-md font-bold ${badgeClass}`}>
-                                {badgeText}
-                              </span>
-                              {!room.isPaid && (() => {
-                                const info = getEffectiveDueInfo(room, targetMonth)
-                                if (!info) return null
-                                if (info.days === 0) return <span className="text-xs text-orange-600 font-medium">오늘</span>
-                                return <span className="text-xs text-red-400">{info.days}일 초과</span>
-                              })()}
-                              {showCheckout && room.expectedMoveOut && (() => {
-                                const [, mm, dd] = room.expectedMoveOut.split('-')
-                                const days = Math.round((new Date(room.expectedMoveOut).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
-                                return (
-                                  <span className="text-xs text-yellow-700 font-medium">
-                                    {days > 0 ? `D-${days} (${Number(mm)}/${Number(dd)} 퇴실)` : days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 퇴실` : `${Number(mm)}/${Number(dd)} 퇴실 (${Math.abs(days)}일 경과)`}
-                                  </span>
-                                )
-                              })()}
-                              {!showCheckout && isAwaiting && (() => {
-                                const [, mm, dd] = room.nextDueDate!.split('-')
-                                const days = Math.round((new Date(room.nextDueDate!).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
-                                return (
-                                  <span className="text-xs text-blue-500 font-medium">
-                                    {days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`}
-                                  </span>
-                                )
-                              })()}
-                              {room.isPaid && !showCheckout && !isAwaiting && room.latePaidAt && (() => {
-                                const [, mm, dd] = room.latePaidAt.split('-')
-                                return (
-                                  <span className="text-xs text-amber-600 font-medium">
-                                    {Number(mm)}/{Number(dd)} 지연납부
-                                  </span>
-                                )
-                              })()}
-                            </>
-                          )
+                            && room.isPaid && !!checkoutMonth && checkoutMonth <= targetMonth
+                          if (!room.isPaid) {
+                            const info = getEffectiveDueInfo(room, targetMonth)
+                            const sub = info ? (info.days === 0 ? '오늘' : `${info.days}일 초과`) : undefined
+                            return <StatusBadge tone="unpaid" sub={sub}>미납</StatusBadge>
+                          }
+                          if (showCheckout && room.expectedMoveOut) {
+                            const [, mm, dd] = room.expectedMoveOut.split('-')
+                            const days = Math.round((new Date(room.expectedMoveOut).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                            const sub = days > 0 ? `D-${days} (${Number(mm)}/${Number(dd)} 퇴실)` : days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 퇴실` : `${Number(mm)}/${Number(dd)} 퇴실 (${Math.abs(days)}일 경과)`
+                            return <StatusBadge tone="exit" sub={sub}>퇴실 예정</StatusBadge>
+                          }
+                          if (showCheckout) return <StatusBadge tone="exit">퇴실 예정</StatusBadge>
+                          if (isAwaiting) {
+                            const [, mm, dd] = room.nextDueDate!.split('-')
+                            const days = Math.round((new Date(room.nextDueDate!).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+                            const sub = days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`
+                            return <StatusBadge tone="await" sub={sub}>납부 예정</StatusBadge>
+                          }
+                          if (room.latePaidAt) {
+                            const [, mm, dd] = room.latePaidAt.split('-')
+                            return <span className="text-xs font-medium text-[var(--warm-muted)]">{Number(mm)}/{Number(dd)} 지연납부</span>
+                          }
+                          return null
                         })()}
                       </div>
                     </td>
@@ -1414,10 +1344,8 @@ export default function RoomsClient({
                                   {!p.isDeposit && (
                                     <span className={`ml-1.5 text-[0.625rem] font-semibold rounded px-1 py-0.5 ${
                                       p.targetMonth === targetMonth
-                                        ? 'bg-emerald-100 text-emerald-700'
-                                        : p.targetMonth < targetMonth
-                                          ? 'bg-blue-100 text-blue-700'
-                                          : 'bg-indigo-100 text-indigo-700'
+                                        ? 'bg-[var(--cream-2)] text-[var(--warm-mid)]'
+                                        : 'bg-[var(--badge-await-bg)] text-[var(--badge-await-fg)]'
                                     }`}>
                                       귀속 {Number(p.targetMonth.slice(5))}월
                                       {p.targetMonth < targetMonth && ' (지난 미납분)'}
