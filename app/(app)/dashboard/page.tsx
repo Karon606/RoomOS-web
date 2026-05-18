@@ -127,7 +127,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }),
     prisma.paymentRecord.findMany({
       where: {
-        propertyId, targetMonth, isDeposit: false,
+        propertyId, targetMonth, isDeposit: false, isPrevOwner: false,
         ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}),
       },
       select: { leaseTermId: true, actualAmount: true },
@@ -185,6 +185,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         propertyId,
         targetMonth: { in: last6Months },
         isDeposit: false,
+        isPrevOwner: false,
         ...(acquisitionDate ? { payDate: { gte: acquisitionDate } } : {}),
       },
       select: { targetMonth: true, actualAmount: true },
@@ -264,6 +265,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         where: {
           propertyId,
           isDeposit: false,
+          isPrevOwner: false,
           payDate: { gte: monthStart, lte: monthEnd },
           NOT: { memo: { contains: '[납입일변경]' } },
         },
@@ -340,14 +342,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         isDeposit: false,
         targetMonth: { lte: realTodayMonthStr },
       },
-      select: { leaseTermId: true, targetMonth: true, actualAmount: true, payDate: true, memo: true },
+      select: { leaseTermId: true, targetMonth: true, actualAmount: true, payDate: true, memo: true, isPrevOwner: true },
     }),
     prisma.reserveTransaction.findMany({
       where: { propertyId },
       select: { type: true, amount: true, date: true, sourceMonth: true },
     }),
     prisma.paymentRecord.findMany({
-      where: { propertyId, targetMonth, isDeposit: false },
+      where: { propertyId, targetMonth, isDeposit: false, isPrevOwner: false },
       select: { leaseTermId: true, actualAmount: true },
     }),
   ])
@@ -760,9 +762,18 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // ── 누적 미납 상세 — 발생주의(targetMonth 기반) ──────────
   // "오늘 월 이하의 targetMonth로 인식된 매출" vs "청구 가능 월 수 × 임대료"의 차이
   // (allHistoricalPayments는 이미 targetMonth ≤ realTodayMonthStr 필터됨)
+  // 양도인 정산(isPrevOwner) record가 있는 (lease, month) — 그 월은 양도인 몫이므로
+  // 현 원장 청구·매출 인식에서 제외 (수납 페이지 rooms/actions.ts의 prevOwnerMonths와 동일 정책)
+  const prevOwnerMonthsByLease: Record<string, Set<string>> = {}
+  for (const p of allHistoricalPayments) {
+    if (!p.isPrevOwner) continue
+    ;(prevOwnerMonthsByLease[p.leaseTermId] ??= new Set()).add(p.targetMonth)
+  }
+
   const accrualByLease: Record<string, number> = {}
   for (const p of allHistoricalPayments) {
-    // cutoff 이전 (양도인) 제외
+    // cutoff 이전 (양도인) 제외 + 양도인 정산 record 제외
+    if (p.isPrevOwner) continue
     if (acquisitionDate && new Date(p.payDate) < acquisitionDate) continue
     accrualByLease[p.leaseTermId] = (accrualByLease[p.leaseTermId] ?? 0) + p.actualAmount
   }
@@ -771,6 +782,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const opPaidInCutoffMonthByLease: Record<string, number> = {}
   if (cutoffMonthStr && acquisitionDate) {
     for (const p of allHistoricalPayments) {
+      if (p.isPrevOwner) continue
       if (p.targetMonth !== cutoffMonthStr) continue
       if (new Date(p.payDate) < acquisitionDate) continue
       opPaidInCutoffMonthByLease[p.leaseTermId] = (opPaidInCutoffMonthByLease[p.leaseTermId] ?? 0) + p.actualAmount
@@ -780,6 +792,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // viewMonth(targetMonth) 기준 누적 미납 — viewMonth가 과거이면 그 월말 시점, 현재/미래면 오늘 시점과 동일
   const accrualByLeaseForView: Record<string, number> = {}
   for (const p of allHistoricalPayments) {
+    if (p.isPrevOwner) continue
     if (p.targetMonth > targetMonth) continue
     if (acquisitionDate && new Date(p.payDate) < acquisitionDate) continue
     accrualByLeaseForView[p.leaseTermId] = (accrualByLeaseForView[p.leaseTermId] ?? 0) + p.actualAmount
@@ -823,9 +836,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const months = monthRange(firstMonth, targetMonth)
     let billableMonths = 0
     const billableMonthList: string[] = []
+    const lPrevOwnerMonths = prevOwnerMonthsByLease[l.id]
     for (const mon of months) {
       if (mon === cutoffMonthStr && acqMonthAutoPaid) continue
       if (prevOwnerLeaseIds.has(l.id) && mon === cutoffMonthStr) continue
+      // 양도인 정산 처리된 월 — 현 원장 청구 제외
+      if (lPrevOwnerMonths?.has(mon)) continue
       if (moveOutMonth && mon > moveOutMonth) continue
       billableMonths++
       billableMonthList.push(mon)

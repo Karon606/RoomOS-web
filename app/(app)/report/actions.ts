@@ -66,8 +66,15 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
       isDeposit: false,
       targetMonth: { in: months },
     },
-    select: { targetMonth: true, actualAmount: true, leaseTermId: true, payDate: true },
+    select: { targetMonth: true, actualAmount: true, leaseTermId: true, payDate: true, isPrevOwner: true },
   })
+
+  // 양도인 정산(isPrevOwner) record가 있는 (lease, month) — 그 월은 양도인 몫이므로 청구·매출 제외
+  const prevOwnerMonthsByLease: Record<string, Set<string>> = {}
+  for (const p of payments) {
+    if (!p.isPrevOwner) continue
+    ;(prevOwnerMonthsByLease[p.leaseTermId] ??= new Set()).add(p.targetMonth)
+  }
 
   // lease별 임대료 맵 — 매출 계산 시 임대료 상한 적용 (선납 과입금분 매출 미포함)
   const allLeases = await prisma.leaseTerm.findMany({
@@ -80,6 +87,7 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
   const receivedByMonthLease: Record<string, Record<string, number>> = {}
   for (const m of months) receivedByMonthLease[m] = {}
   for (const p of payments) {
+    if (p.isPrevOwner) continue
     if (cutoffDate && new Date(p.payDate) < cutoffDate) continue
     const map = receivedByMonthLease[p.targetMonth]
     if (!map) continue
@@ -146,6 +154,7 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
   const receivedByLeaseUntilMonth: Record<string, Record<string, number>> = {}
   for (const m of months) receivedByLeaseUntilMonth[m] = {}
   for (const p of payments) {
+    if (p.isPrevOwner) continue
     if (cutoffDate && new Date(p.payDate) < cutoffDate) continue
     for (const m of months) {
       if (p.targetMonth <= m) {
@@ -197,9 +206,11 @@ export async function getAnnualReport(year: string, includePrev = true): Promise
         !!(cutoffMonthStr && firstMonth === cutoffMonthStr && !isNaN(dueDayNum) && dueDayNum < cutoffDay)
 
       const ms = monthRange(firstMonth, month)
+      const lPrevOwnerMonths = prevOwnerMonthsByLease[l.id]
       let billable = 0
       for (const mn of ms) {
         if (mn === cutoffMonthStr && acqMonthDueBeforeCutoff) continue
+        if (lPrevOwnerMonths?.has(mn)) continue
         if (moveOutMonth && mn > moveOutMonth) continue
         billable++
       }
@@ -504,7 +515,7 @@ async function gatherDiagnostics(): Promise<PropertyDiagnostics> {
   }
 
   const yearPayments = await prisma.paymentRecord.findMany({
-    where: { propertyId, isDeposit: false, targetMonth: { in: trendMonths } },
+    where: { propertyId, isDeposit: false, isPrevOwner: false, targetMonth: { in: trendMonths } },
     select: { targetMonth: true, expectedAmount: true, actualAmount: true },
   })
   const expectedByMonth: Record<string, number> = {}
@@ -522,7 +533,7 @@ async function gatherDiagnostics(): Promise<PropertyDiagnostics> {
     where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } },
     select: {
       id: true, rentAmount: true, dueDay: true, moveInDate: true,
-      paymentRecords: { where: { isDeposit: false }, select: { targetMonth: true, actualAmount: true, expectedAmount: true } },
+      paymentRecords: { where: { isDeposit: false, isPrevOwner: false }, select: { targetMonth: true, actualAmount: true, expectedAmount: true } },
     },
   })
   let totalUnpaid = 0
