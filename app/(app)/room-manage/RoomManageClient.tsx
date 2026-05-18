@@ -17,6 +17,7 @@ import { kstMonthStr } from '@/lib/kstDate'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SortSelect } from '@/components/ui/SortSelect'
 import { CARD_TONE, CARD_ACCENT, statusBadge, type CardTone } from '@/lib/statusColors'
+import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
@@ -73,6 +74,15 @@ function getRoomStatus(r: Room): RoomStatus {
   return { label: '거주중', tone: 'live', showCardBadge: false, badgeClass: statusBadge('ACTIVE') }
 }
 
+// 카드 표시 항목 — 이용자가 켜고 끌 수 있는 필드 (호실번호·상태는 항상 표시)
+const RM_CARD_FIELDS: FieldDef[] = [
+  { key: 'floor',     label: '층' },
+  { key: 'tenant',    label: '입주자' },
+  { key: 'spec',      label: '타입·창문·면적' },
+  { key: 'scheduled', label: '예정 이용료' },
+  { key: 'photo',     label: '사진' },
+]
+
 // 구 enum 값 → 한국어 표시 (마이그레이션 전 데이터 호환)
 const WINDOW_TYPE_LABEL: Record<string, string> = {
   OUTER: '외창', INNER: '내창',
@@ -120,6 +130,7 @@ export default function RoomManageClient({
   const [search, setSearch]     = useUrlState('q', '')
   const [sortKey, setSortKey]   = useState<'roomNo' | 'baseRent' | 'vacancy'>('roomNo')
   const [sortDir, setSortDir]   = useState<'asc' | 'desc'>('asc')
+  const [cardFields, toggleCardField] = useDisplayFields('roomManage.cardFields', RM_CARD_FIELDS)
 
   // 필터
   type AreaPyeongRange  = '' | '<1' | '1-2' | '2-3' | '3+'
@@ -642,8 +653,8 @@ export default function RoomManageClient({
         </div>
       )}
 
-      {/* 정렬 */}
-      <div>
+      {/* 정렬 + 표시 항목 */}
+      <div className="flex items-center justify-between gap-2">
         <SortSelect
           ariaLabel="호실 정렬 기준"
           value={sortKey}
@@ -656,6 +667,7 @@ export default function RoomManageClient({
             { value: 'baseRent', label: '이용료' },
           ]}
         />
+        <DisplayFieldsMenu fields={RM_CARD_FIELDS} visible={cardFields} onToggle={toggleCardField} />
       </div>
 
       {/* 에러 */}
@@ -697,7 +709,7 @@ export default function RoomManageClient({
                 <div className="flex-1 p-4 min-w-0 space-y-1">
                   <div className="flex items-center gap-2">
                     <span className={`text-base font-bold ${rs.tone === 'vacant' ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'}`}>{fmtRoomNo(room.roomNo)}</span>
-                    {room.floor && (
+                    {cardFields.floor && room.floor && (
                       <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                         {room.floor}층
                       </span>
@@ -713,30 +725,32 @@ export default function RoomManageClient({
                       </span>
                     )}
                   </div>
-                  {tenant && <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant}</p>}
+                  {cardFields.tenant && tenant && <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant}</p>}
                   <div className="space-y-0.5 pt-0.5">
-                    <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-[var(--warm-muted)]">
-                      {room.type && <span>{room.type}</span>}
-                      {(room.windowType || room.direction) && (
-                        <span>
-                          {[
-                            room.windowType ? getWindowLabel(room.windowType) : null,
-                            room.direction  ? getDirectionLabel(room.direction) : null,
-                          ].filter(Boolean).join(' · ')}
-                        </span>
-                      )}
-                      {(room.areaPyeong || room.areaM2) && (
-                        <span>
-                          {[
-                            room.areaPyeong ? `${room.areaPyeong}평` : null,
-                            room.areaM2     ? `${room.areaM2}㎡`    : null,
-                          ].filter(Boolean).join(' / ')}
-                        </span>
-                      )}
-                    </div>
+                    {cardFields.spec && (
+                      <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-[var(--warm-muted)]">
+                        {room.type && <span>{room.type}</span>}
+                        {(room.windowType || room.direction) && (
+                          <span>
+                            {[
+                              room.windowType ? getWindowLabel(room.windowType) : null,
+                              room.direction  ? getDirectionLabel(room.direction) : null,
+                            ].filter(Boolean).join(' · ')}
+                          </span>
+                        )}
+                        {(room.areaPyeong || room.areaM2) && (
+                          <span>
+                            {[
+                              room.areaPyeong ? `${room.areaPyeong}평` : null,
+                              room.areaM2     ? `${room.areaM2}㎡`    : null,
+                            ].filter(Boolean).join(' / ')}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <p className="text-sm font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></p>
-                    {room.scheduledRent != null && (
-                      <p className="text-xs text-amber-500">
+                    {cardFields.scheduled && room.scheduledRent != null && (
+                      <p className="text-xs text-[var(--st-leaving-fg)]">
                         → <MoneyDisplay amount={room.scheduledRent} />
                         {room.rentUpdateDate && <span className="text-[var(--warm-muted)] ml-1">({fmtDate(room.rentUpdateDate)})</span>}
                       </p>
@@ -744,17 +758,19 @@ export default function RoomManageClient({
                   </div>
                 </div>
                 {/* 썸네일 (오른쪽) */}
-                <div className="w-24 sm:w-28 shrink-0 bg-[var(--canvas)]">
-                  {thumb ? (
-                    <img src={thumb.storageUrl} alt={fmtRoomNo(room.roomNo)} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: 0.4 }}>
-                        <path d="M3 12 L12 4 L21 12 M5 10 V20 H19 V10" />
-                      </svg>
-                    </div>
-                  )}
-                </div>
+                {cardFields.photo && (
+                  <div className="w-24 sm:w-28 shrink-0 bg-[var(--canvas)]">
+                    {thumb ? (
+                      <img src={thumb.storageUrl} alt={fmtRoomNo(room.roomNo)} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: 0.4 }}>
+                          <path d="M3 12 L12 4 L21 12 M5 10 V20 H19 V10" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}

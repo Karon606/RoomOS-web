@@ -23,6 +23,7 @@ import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SortSelect } from '@/components/ui/SortSelect'
 import { STATUS_LABEL, STATUS_BADGE as STATUS_COLOR, CARD_TONE, tenantCardTone } from '@/lib/statusColors'
+import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
@@ -117,6 +118,13 @@ function loadColWidths(): Record<string, number> | null {
 // ── 상수 ─────────────────────────────────────────────────────────
 
 // STATUS_LABEL · STATUS_COLOR(=STATUS_BADGE) 는 lib/statusColors 에서 import — 브랜드 색 단일 출처
+
+// 카드 표시 항목 — 이용자가 켜고 끌 수 있는 필드 (호실·이름·상태는 항상 표시)
+const TENANT_CARD_FIELDS: FieldDef[] = [
+  { key: 'contact', label: '연락처' },
+  { key: 'payment', label: '월이용료·납부일' },
+  { key: 'deposit', label: '보증금·거주기간' },
+]
 const REG_LABEL: Record<string, string> = {
   NOT_REPORTED: '미신고', REGISTERED: '완료', EXEMPTED: '해당없음',
 }
@@ -354,6 +362,7 @@ export default function TenantClient({
   const [search, setSearch]             = useUrlState('q', '')
   const [sortKey, setSortKey]           = useState<SortKey>('roomNo')
   const [sortDir, setSortDir]           = useState<SortDir>('asc')
+  const [cardFields, toggleCardField]   = useDisplayFields('tenants.cardFields', TENANT_CARD_FIELDS)
   const [colVis, setColVis]             = useState<Record<ColKey, boolean>>(initColVis)
   const [showColMenu, setShowColMenu]   = useState(false)
   const [isPending, startTransition]    = useTransition()
@@ -1028,8 +1037,8 @@ export default function TenantClient({
         )}
       </div>
 
-      {/* 모바일 정렬 */}
-      <div className="sm:hidden">
+      {/* 모바일 정렬 + 표시 항목 */}
+      <div className="sm:hidden flex items-center justify-between gap-2">
         <SortSelect<SortKey>
           ariaLabel="입주자 정렬 기준"
           value={sortKey}
@@ -1047,6 +1056,7 @@ export default function TenantClient({
             { value: 'moveInDate',    label: '입실일' },
           ]}
         />
+        <DisplayFieldsMenu fields={TENANT_CARD_FIELDS} visible={cardFields} onToggle={toggleCardField} />
       </div>
 
       {/* 에러 */}
@@ -1315,19 +1325,21 @@ export default function TenantClient({
                   </span>
                 </div>
                 {/* 연락처 */}
-                {primary && (
+                {cardFields.contact && primary && (
                   <p className="text-xs text-[var(--warm-muted)] mb-2">{formatPhone(primary.contactValue)}</p>
                 )}
                 {/* 이용료 · 납부일 */}
-                <div className="flex items-center gap-2 text-xs flex-wrap">
-                  <span className="text-[var(--warm-muted)]">월이용료</span>
-                  <span className="font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={lease?.rentAmount ?? 0} /></span>
-                  <span className="text-[var(--warm-border)]">·</span>
-                  <span className="text-[var(--warm-muted)]">납부일</span>
-                  <span className="font-medium text-[var(--warm-dark)]">{fmtDueDay(lease?.dueDay)}</span>
-                </div>
+                {cardFields.payment && (
+                  <div className="flex items-center gap-2 text-xs flex-wrap">
+                    <span className="text-[var(--warm-muted)]">월이용료</span>
+                    <span className="font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={lease?.rentAmount ?? 0} /></span>
+                    <span className="text-[var(--warm-border)]">·</span>
+                    <span className="text-[var(--warm-muted)]">납부일</span>
+                    <span className="font-medium text-[var(--warm-dark)]">{fmtDueDay(lease?.dueDay)}</span>
+                  </div>
+                )}
                 {/* 보증금 · 거주기간 */}
-                {((lease?.depositAmount ?? 0) > 0 || lease?.moveInDate) && (() => {
+                {cardFields.deposit && ((lease?.depositAmount ?? 0) > 0 || lease?.moveInDate) && (() => {
                   const isReservation = lease && ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status)
                   return (
                     <div className="flex items-center gap-2 text-xs flex-wrap mt-1">
