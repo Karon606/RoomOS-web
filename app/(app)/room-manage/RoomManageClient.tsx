@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/Badge'
 import { useUrlState } from '@/lib/useUrlState'
 import { kstMonthStr } from '@/lib/kstDate'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
+import { SortSelect } from '@/components/ui/SortSelect'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
@@ -250,11 +251,6 @@ export default function RoomManageClient({
   const currentTenant = (room: Room) => room.leaseTerms[0]?.tenant?.name ?? null
 
   // 검색 · 정렬 적용
-  const handleSortRoom = (key: typeof sortKey) => {
-    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setSortKey(key); setSortDir('asc') }
-  }
-
   const filteredRooms = (() => {
     const q = search.trim().toLowerCase()
     const roomNoQ = filterRoomNo.trim().toLowerCase()
@@ -658,24 +654,20 @@ export default function RoomManageClient({
         </div>
       )}
 
-      {/* 정렬 칩 */}
-      <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-4 px-4 sm:mx-0 sm:px-0">
-        {([
-          { sk: 'roomNo'  as const, label: '호실순' },
-          { sk: 'vacancy' as const, label: '공실' },
-          { sk: 'baseRent'as const, label: '이용료' },
-        ]).map(({ sk, label }) => {
-          const active = sortKey === sk
-          return (
-            <button key={sk} onClick={() => handleSortRoom(sk)}
-              className={`shrink-0 flex items-center gap-0.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                active ? 'bg-[var(--coral)] text-white' : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
-              }`}
-            >
-              {label}{active ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
-            </button>
-          )
-        })}
+      {/* 정렬 */}
+      <div>
+        <SortSelect
+          ariaLabel="호실 정렬 기준"
+          value={sortKey}
+          dir={sortDir}
+          onChange={sk => { setSortKey(sk); setSortDir('asc') }}
+          onToggleDir={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
+          options={[
+            { value: 'roomNo',   label: '호실순' },
+            { value: 'vacancy',  label: '공실' },
+            { value: 'baseRent', label: '이용료' },
+          ]}
+        />
       </div>
 
       {/* 에러 */}
