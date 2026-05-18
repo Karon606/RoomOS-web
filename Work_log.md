@@ -114,12 +114,31 @@ Claude Design에서 stayeum 브랜드 가이드 확정 (Arch Symbol + Brand & De
 워드마크: stay(ink) + eum(terracotta) · 한글 스테이(ink) + 음(terracotta)
 
 적용 단계:
-1. app/globals.css 컬러 토큰 재매핑 — 앱이 CSS 변수 기반이라 이 파일로 대부분 자동 재스킨 (최고 레버리지)
-2. 로고 교체 — StayeumWordmark / SplashScreen / AppShell의 PageLoadingOverlay / 파비콘·앱아이콘(/icon.svg 등)을 Arch Symbol로
+1. ✅ app/globals.css 컬러 토큰 재매핑 완료 (2026-05-18)
+   - Terracotta: --persimmon #a03c2e / -d #7c2d26 / -l #f2dfd8(파생 페일 틴트)
+   - Ink: --ink·--ink-2 #3d2418 / --ink-3 #7a6553 / --ink-mute #a89380
+   - Surface: --cream #fbf6ef / --cream-2(Page) #e8ddd0 / --cream-3(테두리) #dccfbc(파생)
+   - 신규 토큰: --cream-soft #f5ede0(보조 표면), --camel #c8a07d, --sand/-2
+   - Success #1a6e4c → status-paid 계열 반영
+   - 다크모드·@theme inline·print 블록 모두 동기화
+   - 차트 팔레트(--chart-*)는 '브랜드와 분리' 주석대로 의도적으로 미변경
+2. ✅ 로고 교체 완료 (2026-05-18)
+   - 심볼: Floor Mark(4선) → Arch Symbol(단일 filled path)로 전환
+   - StayeumWordmark.tsx: Arch + 워드마크 재구성, ARCH_PATH 상수 export(심볼 단일 출처)
+     · 워드마크 표기 'Stay' → 'stay' 소문자 — 가이드 'stay(ink)+eum(terracotta)' 반영
+     · viewBox를 콘텐츠 타이트(8 8 …)로 잘라 height prop = 실제 로고 높이
+       (구 워드마크보다 가로폭이 더 컴팩트해짐 — 4단계 육안 검증 시 레이아웃 확인)
+   - SplashScreen.tsx: Arch 페이드인 애니메이션, "Room/OS" 잔재 → "stay/eum" 수정
+   - AppShell PageLoadingOverlay: 4바 슬라이드 → Arch 펄스 로더
+   - public/icon.svg: Terracotta 배경 + Cream Arch
+   - PNG 아이콘 재생성: scripts/gen-icons.mjs(sharp) — icon-192(둥근)/512(풀블리드)/apple-touch
+   - manifest.json·layout.tsx: theme #a03c2e / background #e8ddd0
+   - 남은 것: app/favicon.ico는 구 로고 그대로 (레거시 .ico, 모던 브라우저는 icon.svg 사용)
 3. 컴포넌트 미세조정 — radius·badge·button 등 가이드와 대조
-4. 전 페이지 육안 검증
+4. 전 페이지 육안 검증 — 특히 로고 사용처(로그인·비번재설정·영업장선택·Sidebar·계약뷰)
 → 규모가 크므로 별도 집중 세션 권장. 전체 가이드 원본은 Claude Design에 보관됨.
-이 작업이 끝나면 이메일 템플릿 재디자인·"RoomOS" 텍스트 잔재 정리도 함께 해소.
+이 작업이 끝나면 이메일 템플릿 재디자인도 함께 해소 ("RoomOS" 텍스트 잔재 중
+스플래시 화면분은 2단계에서 해결됨).
 
 ### #6 국가 서류·양식 페이지 (Phase C — 별도 세션 권장)
 - DocumentTemplate 모델 신규 설계

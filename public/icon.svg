@@ -1,10 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="22" fill="#f4623a"/>
-  <!-- 4-line floor mark (coral bg variant) -->
-  <g transform="translate(18, 20)">
-    <line x1="0" y1="4.5"  x2="56" y2="4.5"  stroke="#fbbf24" stroke-width="9" stroke-linecap="round"/>
-    <line x1="0" y1="21.5" x2="36" y2="21.5" stroke="#fffcf7" stroke-width="9" stroke-linecap="round" opacity="0.55"/>
-    <line x1="0" y1="38.5" x2="56" y2="38.5" stroke="#fffcf7" stroke-width="9" stroke-linecap="round" opacity="0.75"/>
-    <line x1="0" y1="55.5" x2="28" y2="55.5" stroke="#fffcf7" stroke-width="9" stroke-linecap="round" opacity="0.35"/>
-  </g>
+  <!-- Stayeum app icon — Terracotta 배경 + Arch Symbol (Cream) -->
+  <rect width="100" height="100" rx="22" fill="#a03c2e"/>
+  <path transform="translate(14.5 25.25) scale(0.55)"
+        d="M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82 A 8.5 8.5 0 0 1 104 82 C 104 44 80 26 55 26 C 30 26 28 44 28 82 A 10 10 0 0 1 8 82 Z"
+        fill="#fbf6ef"/>
 </svg>

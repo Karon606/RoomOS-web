@@ -1,14 +1,20 @@
-// 스테이음(Stayeum) 워드마크 — Brand Guide v2 (Floor Mark + Wordmark 통합)
+// 스테이음(Stayeum) 워드마크 — Brand Guide (Arch Symbol + Wordmark)
 //
-// 사양 (Logo System § 01 WORDMARK):
-//   font:        Plus Jakarta Sans — Stay = weight 300, eum = weight 700
+// 사양:
+//   symbol:  Arch Symbol — 단일 filled path (path coords x 8–121 / y 8–82)
+//   font:    Plus Jakarta Sans — stay = weight 300, eum = weight 700
 //   letter-spacing: -0.028em
-//   mark:        Floor 4선 (100%/65%/100%/50%), opacity 100/38/58/22%
 //
 // 색상 전략:
-//   Line 1 & "eum": #e84a1a persimmon 고정
-//   Line 2-4 & "Stay": currentColor 사용 → svg에 color: var(--ink) 설정
-//     → 라이트모드=#1a1a1a, 다크모드=#fbf6ee 자동 전환
+//   Arch & "eum": var(--persimmon) Terracotta 고정
+//   "stay": currentColor → svg에 color: var(--ink) 설정
+//     → 라이트=#3d2418 / 다크=#fbf6ef 자동 전환
+//
+// viewBox는 콘텐츠에 딱 맞게 잘라(8 8 …) height prop = 실제 로고 높이가 되도록 함.
+
+/** Arch Symbol — 단일 filled path. 브랜드 심볼의 단일 출처. */
+export const ARCH_PATH =
+  'M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82 A 8.5 8.5 0 0 1 104 82 C 104 44 80 26 55 26 C 30 26 28 44 28 82 A 10 10 0 0 1 8 82 Z'
 
 export function StayeumWordmark({
   height = 24,
@@ -21,38 +27,36 @@ export function StayeumWordmark({
   className?: string
   style?: React.CSSProperties
 }) {
-  const VB_W = markOnly ? 56 : 460
-  const VB_H = 56
-  const w = height * (VB_W / VB_H)
+  // 콘텐츠 타이트 viewBox: x 8 시작, y 8–82 (74 높이)
+  // full 폭 366 = arch(~121) + gap + "stayeum" 텍스트 여유분 (글리프 클리핑 방지)
+  const VB = markOnly ? '8 8 113 74' : '8 8 366 74'
+  const VB_W = markOnly ? 113 : 366
+  const w = height * (VB_W / 74)
 
   return (
     <svg
       width={w}
       height={height}
-      viewBox={`0 0 ${VB_W} ${VB_H}`}
+      viewBox={VB}
       fill="none"
       className={className}
-      style={{ color: 'var(--ink, #1a1a1a)', ...style }}
+      style={{ color: 'var(--ink, #3d2418)', ...style }}
       role="img"
       aria-label="스테이음"
     >
-      {/* Line 1: persimmon 고정 */}
-      <line x1="0" y1="6"  x2="48" y2="6"  stroke="#e84a1a"      strokeWidth="8" strokeLinecap="round"/>
-      {/* Lines 2-4: currentColor (var(--ink) 자동 상속) */}
-      <line x1="0" y1="22" x2="31" y2="22" stroke="currentColor" strokeWidth="8" strokeLinecap="round" opacity="0.38"/>
-      <line x1="0" y1="38" x2="48" y2="38" stroke="currentColor" strokeWidth="8" strokeLinecap="round" opacity="0.58"/>
-      <line x1="0" y1="54" x2="24" y2="54" stroke="currentColor" strokeWidth="8" strokeLinecap="round" opacity="0.22"/>
+      {/* Arch Symbol — Terracotta 고정 */}
+      <path d={ARCH_PATH} fill="var(--persimmon, #a03c2e)" />
 
       {!markOnly && (
         <text
-          x="68"
-          y="44"
+          x="143"
+          y="66"
           fontFamily="var(--font-plus-jakarta, 'Plus Jakarta Sans', sans-serif)"
-          fontSize="44"
-          letterSpacing="-1.2"
+          fontSize="56"
+          letterSpacing="-1.5"
         >
-          <tspan fontWeight="300" fill="currentColor">Stay</tspan>
-          <tspan fontWeight="700"  fill="#e84a1a">eum</tspan>
+          <tspan fontWeight="300" fill="currentColor">stay</tspan>
+          <tspan fontWeight="700" fill="var(--persimmon, #a03c2e)">eum</tspan>
         </text>
       )}
     </svg>

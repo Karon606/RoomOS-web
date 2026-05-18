@@ -5,36 +5,23 @@ import Sidebar from '@/components/layout/Sidebar'
 import Header, { type AppUser } from '@/components/layout/Header'
 import BottomNav from '@/components/layout/BottomNav'
 import SaveFeedback from '@/components/feedback/SaveFeedback'
+import { ARCH_PATH } from '@/components/brand/StayeumWordmark'
 
+// 페이지 전환용 경량 로더 — 브랜드 Arch Symbol이 호흡하듯 펄스
 function PageLoadingOverlay() {
   return (
     <div className="absolute inset-0 flex items-center justify-center z-[60]" style={{ background: 'var(--canvas)' }}>
       <style>{`
-        @keyframes roos-from-left {
-          0%   { transform: translateX(-54px); }
-          22%  { transform: translateX(0); }
-          72%  { transform: translateX(0); }
-          100% { transform: translateX(54px); }
+        @keyframes stm-pulse {
+          0%, 100% { opacity: 0.38; transform: scale(0.9); }
+          50%      { opacity: 1;    transform: scale(1); }
         }
-        @keyframes roos-from-right {
-          0%   { transform: translateX(54px); }
-          22%  { transform: translateX(0); }
-          72%  { transform: translateX(0); }
-          100% { transform: translateX(-54px); }
-        }
-        .rl-b1 { animation: roos-from-left  2.4s ease-in-out infinite 0s;    }
-        .rl-b2 { animation: roos-from-right 2.4s ease-in-out infinite 0.16s; }
-        .rl-b3 { animation: roos-from-left  2.4s ease-in-out infinite 0.32s; }
-        .rl-b4 { animation: roos-from-right 2.4s ease-in-out infinite 0.48s; }
+        .stm-pulse { transform-box: fill-box; transform-origin: center;
+                     animation: stm-pulse 1.4s ease-in-out infinite; }
       `}</style>
-      <div style={{ width: 54, height: 54, overflow: 'hidden', position: 'relative' }} aria-label="로딩 중">
-        <svg width="54" height="54" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{ overflow: 'visible' }}>
-          <g className="rl-b1"><line x1="3" y1="6"  x2="57" y2="6"  stroke="var(--persimmon)" strokeWidth="8" strokeLinecap="round" /></g>
-          <g className="rl-b2"><line x1="3" y1="23" x2="38" y2="23" stroke="var(--persimmon)" strokeWidth="8" strokeLinecap="round" opacity="0.5" /></g>
-          <g className="rl-b3"><line x1="3" y1="40" x2="57" y2="40" stroke="var(--persimmon)" strokeWidth="8" strokeLinecap="round" opacity="0.72" /></g>
-          <g className="rl-b4"><line x1="3" y1="57" x2="30" y2="57" stroke="var(--persimmon)" strokeWidth="8" strokeLinecap="round" opacity="0.38" /></g>
-        </svg>
-      </div>
+      <svg width="54" height="35" viewBox="8 8 113 74" xmlns="http://www.w3.org/2000/svg" aria-label="로딩 중">
+        <path className="stm-pulse" d={ARCH_PATH} fill="var(--persimmon)" />
+      </svg>
     </div>
   )
 }

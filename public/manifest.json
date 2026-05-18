@@ -4,8 +4,8 @@
   "description": "고시원·원룸텔 스마트 관리 시스템",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f5f0e8",
-  "theme_color": "#f4623a",
+  "background_color": "#e8ddd0",
+  "theme_color": "#a03c2e",
   "orientation": "portrait",
   "icons": [
     {
