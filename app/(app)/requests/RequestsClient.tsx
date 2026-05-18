@@ -12,6 +12,7 @@ import {
 } from '@/app/(app)/tenants/actions'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { kstYmdStr } from '@/lib/kstDate'
 
 type Request = Awaited<ReturnType<typeof getAllRequestsForProperty>>[number]
@@ -130,19 +131,6 @@ export default function RequestsClient({
       } finally { release() }
     })
   }
-
-  const filterBtn = (active: boolean, onClick: () => void, label: string, extraClass = '') => (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${extraClass} ${
-        active
-          ? 'bg-[var(--coral)] text-white'
-          : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
-      }`}
-    >
-      {label}
-    </button>
-  )
 
   return (
     <div className="space-y-4">
@@ -293,22 +281,31 @@ export default function RequestsClient({
       )}
 
       {/* 필터 바 */}
-      <div className="flex flex-wrap gap-2">
-        {filterBtn(filterStatus === 'unresolved', () => setFilterStatus('unresolved'), '미처리')}
-        {filterBtn(filterStatus === 'all',        () => setFilterStatus('all'),        '전체')}
-        {filterBtn(filterStatus === 'resolved',   () => setFilterStatus('resolved'),   '처리됨')}
+      <div className="flex flex-wrap items-center gap-2">
+        <SegmentedControl
+          size="sm"
+          ariaLabel="처리 상태"
+          value={filterStatus}
+          onChange={setFilterStatus}
+          options={[
+            { value: 'unresolved', label: '미처리' },
+            { value: 'all',        label: '전체' },
+            { value: 'resolved',   label: '처리됨' },
+          ]}
+        />
 
         <span className="w-px self-stretch bg-[var(--warm-border)] mx-1" />
 
+        <span className="text-xs font-medium text-[var(--warm-muted)]">카테고리</span>
         <button
           onClick={() => setFilterCategory('all')}
-          className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+          className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors ${
             filterCategory === 'all'
               ? 'bg-[var(--ink-2)] text-white'
-              : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)]'
+              : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)]'
           }`}
         >
-          전체 카테고리
+          전체
         </button>
         {CATEGORIES.map(cat => {
           const c      = CATEGORY_COLORS[cat]
@@ -317,10 +314,10 @@ export default function RequestsClient({
             <button
               key={cat}
               onClick={() => setFilterCategory(active ? 'all' : cat)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ring-1 ${
+              className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors ${
                 active
-                  ? `${c.bg} ${c.fg} ${c.ring} ring-2`
-                  : 'bg-[var(--cream)] text-[var(--warm-mid)] ring-[var(--warm-border)]'
+                  ? `${c.bg} ${c.fg} ring-1 ${c.ring}`
+                  : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)]'
               }`}
             >
               {cat}
@@ -332,10 +329,10 @@ export default function RequestsClient({
 
         <button
           onClick={() => setFilterUrgent(v => !v)}
-          className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+          className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors ${
             filterUrgent
               ? 'bg-[var(--coral)] text-white'
-              : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)]'
+              : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)]'
           }`}
         >
           긴급만

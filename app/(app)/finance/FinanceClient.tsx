@@ -26,6 +26,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import {
   DEFAULT_RECURRING_DUE_DAY,
   DEFAULT_RECURRING_CATEGORY,
@@ -1579,16 +1580,15 @@ export default function FinanceClient({
       )}
 
       {/* 서브탭 */}
-      <div id="finance-tabs" className="flex gap-1.5 overflow-x-auto scrollbar-hide scroll-mt-20">
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors rounded-full
-              ${tab === t.key
-                ? 'bg-[var(--coral)] text-white'
-                : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'}`}>
-            {t.label}
-          </button>
-        ))}
+      <div id="finance-tabs" className="scroll-mt-20">
+        <SegmentedControl
+          size="md"
+          scroll
+          ariaLabel="재무 탭"
+          value={tab}
+          onChange={setTab}
+          options={TABS.map(t => ({ value: t.key, label: t.label }))}
+        />
       </div>
 
       {/* ══════════════════════════════════════════════════════════
@@ -1599,18 +1599,18 @@ export default function FinanceClient({
           {/* 필터 + 합계 + 버튼 */}
           <div className="flex flex-wrap items-center gap-2">
             <select value={expFilter.method} onChange={e => setExpFilter(f => ({ ...f, method: e.target.value }))}
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-full px-3 py-1.5 outline-none">
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-lg px-3 py-1.5 outline-none">
               <option value="all">결제수단 (전체)</option>
               {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <select value={expFilter.category} onChange={e => setExpFilter(f => ({ ...f, category: e.target.value }))}
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-full px-3 py-1.5 outline-none">
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-lg px-3 py-1.5 outline-none">
               <option value="all">카테고리 (전체)</option>
               {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             {financialAccounts.length > 0 && (
               <select value={expFilter.finance} onChange={e => setExpFilter(f => ({ ...f, finance: e.target.value }))}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-full px-3 py-1.5 outline-none">
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-lg px-3 py-1.5 outline-none">
                 <option value="all">금융사 (전체)</option>
                 {financialAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
               </select>
@@ -1686,16 +1686,16 @@ export default function FinanceClient({
                 {/* 고정지출 가시성 토글 + 숨김 요약 */}
                 {isThisMonth && unconfirmedRecsFiltered.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2 -mb-1">
-                    <div className="inline-flex bg-[var(--cream)] border border-[var(--warm-border)] rounded-full p-0.5">
-                      <button onClick={() => setRecVisibility('all')}
-                        className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${recVisibility === 'all' ? 'bg-[var(--coral)] text-white' : 'text-[var(--warm-mid)]'}`}>
-                        전체 보기
-                      </button>
-                      <button onClick={() => setRecVisibility('soon')}
-                        className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${recVisibility === 'soon' ? 'bg-[var(--coral)] text-white' : 'text-[var(--warm-mid)]'}`}>
-                        결제일 D-3
-                      </button>
-                    </div>
+                    <SegmentedControl
+                      size="sm"
+                      ariaLabel="고정지출 표시"
+                      value={recVisibility}
+                      onChange={setRecVisibility}
+                      options={[
+                        { value: 'all',  label: '전체 보기' },
+                        { value: 'soon', label: '결제일 D-3' },
+                      ]}
+                    />
                     {recVisibility === 'soon' && hiddenRecs.length > 0 && (
                       <button onClick={() => setRecVisibility('all')}
                         className="text-xs text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
@@ -1925,12 +1925,12 @@ export default function FinanceClient({
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <select value={incFilter.method} onChange={e => setIncFilter(f => ({ ...f, method: e.target.value }))}
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-full px-3 py-1.5 outline-none">
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-lg px-3 py-1.5 outline-none">
               <option value="all">입금수단 (전체)</option>
               {PAY_METHODS_INC.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <select value={incFilter.category} onChange={e => setIncFilter(f => ({ ...f, category: e.target.value }))}
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-full px-3 py-1.5 outline-none">
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-lg px-3 py-1.5 outline-none">
               <option value="all">카테고리 (전체)</option>
               {incomeCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>

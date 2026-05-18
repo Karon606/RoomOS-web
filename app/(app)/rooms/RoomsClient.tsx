@@ -13,6 +13,8 @@ import { formatPhone } from '@/lib/formatPhone'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { SortSelect } from '@/components/ui/SortSelect'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
@@ -675,27 +677,25 @@ export default function RoomsClient({
 
       {/* 빠른 필터 + 열 설정 */}
       <div className="flex gap-2 flex-wrap items-center">
-        {[
-          { key: 'all',      label: `전체 ${occupied.length}실` },
-          { key: 'unpaid',   label: `미납 ${unpaidCount}실` },
-          { key: 'checkout', label: `퇴실 예정 ${checkoutCount}실` },
-          { key: 'awaiting', label: `납부 예정 ${awaitingCount}실` },
-          { key: 'paid',     label: `완납 ${paidCount}실` },
-        ].map(f => (
-          <button key={f.key}
-            onClick={() => setFilter(f.key as any)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors
-              ${filter === f.key
-                ? 'bg-[var(--coral)] text-white'
-                : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'}`}>
-            {f.label}
-          </button>
-        ))}
+        <SegmentedControl
+          size="sm"
+          scroll
+          ariaLabel="수납 상태 필터"
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: 'all',      label: `전체 ${occupied.length}실` },
+            { value: 'unpaid',   label: `미납 ${unpaidCount}실` },
+            { value: 'checkout', label: `퇴실 예정 ${checkoutCount}실` },
+            { value: 'awaiting', label: `납부 예정 ${awaitingCount}실` },
+            { value: 'paid',     label: `완납 ${paidCount}실` },
+          ]}
+        />
         {allFloors.length > 1 && (
           <select
             value={floorFilter}
             onChange={e => setFloorFilter(e.target.value)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors outline-none
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors outline-none
               ${floorFilter
                 ? 'bg-[var(--coral)] text-white border-[var(--coral)]'
                 : 'bg-[var(--cream)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}
@@ -736,35 +736,28 @@ export default function RoomsClient({
         </div>
       </div>
 
-      {/* 모바일 정렬 칩 */}
-      <div className="sm:hidden flex gap-1.5 overflow-x-auto pb-0.5 -mx-4 px-4">
-        {([
-          { sk: 'status'        as SortKey, label: '수납상태' },
-          { sk: 'roomNo'        as SortKey, label: '호실순' },
-          { sk: 'dueDay'        as SortKey, label: '납부일' },
-          { sk: 'balance'       as SortKey, label: '잔액' },
-          { sk: 'expected'      as SortKey, label: '이용료' },
-          { sk: 'totalPaid'     as SortKey, label: '총납부액' },
-          { sk: 'tenantName'    as SortKey, label: '입주자' },
-          { sk: 'depositAmount' as SortKey, label: '보증금' },
-          { sk: 'contact'       as SortKey, label: '연락처' },
-          { sk: 'type'          as SortKey, label: '타입' },
-          { sk: 'windowType'    as SortKey, label: '창문' },
-        ]).map(({ sk, label }) => {
-          const active = sortKey === sk
-          return (
-            <button key={sk}
-              onClick={() => handleSort(sk)}
-              className={`shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                active
-                  ? 'bg-[var(--coral)] text-white'
-                  : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
-              }`}>
-              {label}
-              {active && <span className="text-[0.625rem]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-            </button>
-          )
-        })}
+      {/* 모바일 정렬 */}
+      <div className="sm:hidden">
+        <SortSelect<SortKey>
+          ariaLabel="호실 정렬 기준"
+          value={sortKey}
+          dir={sortDir}
+          onChange={sk => { setSortKey(sk); setSortDir('desc') }}
+          onToggleDir={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
+          options={[
+            { value: 'status',        label: '수납상태' },
+            { value: 'roomNo',        label: '호실순' },
+            { value: 'dueDay',        label: '납부일' },
+            { value: 'balance',       label: '잔액' },
+            { value: 'expected',      label: '이용료' },
+            { value: 'totalPaid',     label: '총납부액' },
+            { value: 'tenantName',    label: '입주자' },
+            { value: 'depositAmount', label: '보증금' },
+            { value: 'contact',       label: '연락처' },
+            { value: 'type',          label: '타입' },
+            { value: 'windowType',    label: '창문' },
+          ]}
+        />
       </div>
 
       {/* 수납 현황 — 모바일 카드 뷰 */}

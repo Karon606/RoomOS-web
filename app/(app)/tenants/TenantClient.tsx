@@ -20,6 +20,8 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { SortSelect } from '@/components/ui/SortSelect'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
@@ -929,52 +931,50 @@ export default function TenantClient({
       </div>
 
       {/* 탭 */}
-      <div className="flex gap-2 flex-wrap">
-        {([
-          { key: 'residents', label: `입주자 (${residentsCount})` },
-          { key: 'inquiry',   label: `문의/예약자 (${inquiryCount})` },
-          { key: 'dropped',   label: `입실 취소자 (${droppedCount})` },
-          { key: 'past',      label: `퇴실자 (${pastCount})` },
-        ] as const).map(tab => (
-          <button key={tab.key} onClick={() => setFilter(tab.key)}
-            className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
-              filter === tab.key ? 'bg-[var(--coral)] text-white' : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div>
+        <SegmentedControl
+          size="md"
+          scroll
+          ariaLabel="입주자 구분"
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: 'residents', label: `입주자 (${residentsCount})` },
+            { value: 'inquiry',   label: `문의/예약자 (${inquiryCount})` },
+            { value: 'dropped',   label: `입실 취소자 (${droppedCount})` },
+            { value: 'past',      label: `퇴실자 (${pastCount})` },
+          ]}
+        />
       </div>
 
       {/* 빠른 상태 필터 */}
       <div className="flex gap-2 flex-wrap items-center">
-        {(filter === 'dropped' ? [] :
-          filter === 'residents' ? RESIDENT_FILTERS :
-          filter === 'inquiry'   ? INQUIRY_FILTERS  : PAST_FILTERS
-        ).map(f => {
-          const cur = filter === 'residents' ? residentFilter : filter === 'inquiry' ? inquiryFilter : pastFilter
+        {filter !== 'dropped' && (() => {
+          const opts = filter === 'residents' ? RESIDENT_FILTERS
+            : filter === 'inquiry' ? INQUIRY_FILTERS : PAST_FILTERS
+          const cur = (filter === 'residents' ? residentFilter
+            : filter === 'inquiry' ? inquiryFilter : pastFilter) as string
           const set =
             filter === 'residents' ? (v: string) => setResidentFilter(v as ResidentFilter) :
             filter === 'inquiry'   ? (v: string) => setInquiryFilter(v as InquiryFilter) :
                                      (v: string) => setPastFilter(v as PastFilter)
           return (
-            <button key={f.key} onClick={() => set(f.key)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                cur === f.key
-                  ? 'bg-[var(--coral)] text-white'
-                  : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
-              }`}
-            >
-              {f.label}
-            </button>
+            <SegmentedControl
+              size="sm"
+              scroll
+              ariaLabel="빠른 상태 필터"
+              value={cur}
+              onChange={set}
+              options={opts.map(f => ({ value: f.key as string, label: f.label }))}
+            />
           )
-        })}
+        })()}
 
         {allFloors.length > 1 && (
           <select
             value={floorFilter}
             onChange={e => setFloorFilter(e.target.value)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors outline-none
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors outline-none
               ${floorFilter
                 ? 'bg-[var(--coral)] text-white border-[var(--coral)]'
                 : 'bg-[var(--cream)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}
@@ -1041,29 +1041,25 @@ export default function TenantClient({
         )}
       </div>
 
-      {/* 모바일 정렬 칩 */}
-      <div className="sm:hidden flex gap-1.5 overflow-x-auto pb-0.5 -mx-4 px-4">
-        {([
-          { sk: 'status'        as SortKey, label: '상태' },
-          { sk: 'roomNo'        as SortKey, label: '호실순' },
-          { sk: 'name'          as SortKey, label: '이름' },
-          { sk: 'rentAmount'    as SortKey, label: '이용료' },
-          { sk: 'depositAmount' as SortKey, label: '보증금' },
-          { sk: 'dueDay'        as SortKey, label: '납부일' },
-          { sk: 'stayPeriod'    as SortKey, label: '거주기간' },
-          { sk: 'moveInDate'    as SortKey, label: '입실일' },
-        ]).map(({ sk, label }) => {
-          const active = sortKey === sk
-          return (
-            <button key={sk} onClick={() => handleSort(sk)}
-              className={`shrink-0 flex items-center gap-0.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                active ? 'bg-[var(--coral)] text-white' : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
-              }`}
-            >
-              {label}{active ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
-            </button>
-          )
-        })}
+      {/* 모바일 정렬 */}
+      <div className="sm:hidden">
+        <SortSelect<SortKey>
+          ariaLabel="입주자 정렬 기준"
+          value={sortKey}
+          dir={sortDir}
+          onChange={sk => { setSortKey(sk); setSortDir('asc') }}
+          onToggleDir={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
+          options={[
+            { value: 'status',        label: '상태' },
+            { value: 'roomNo',        label: '호실순' },
+            { value: 'name',          label: '이름' },
+            { value: 'rentAmount',    label: '이용료' },
+            { value: 'depositAmount', label: '보증금' },
+            { value: 'dueDay',        label: '납부일' },
+            { value: 'stayPeriod',    label: '거주기간' },
+            { value: 'moveInDate',    label: '입실일' },
+          ]}
+        />
       </div>
 
       {/* 에러 */}

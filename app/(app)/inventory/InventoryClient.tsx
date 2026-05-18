@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, TRACKED_CATEGORIES } from './constants'
 import {
   getInventoryDetail,
@@ -467,10 +468,18 @@ function DetailModal({ row, onClose, onChange }: {
         <SettingsForm row={row} onCancel={() => setMode('view')} onDone={() => { setMode('view'); onChange() }} />
       ) : (
         <>
-          <div className="flex gap-1 px-5 sm:px-6 pt-3 flex-wrap">
-            <TabBtn active={tab === 'timeline'} onClick={() => setTab('timeline')}>타임라인</TabBtn>
-            <TabBtn active={tab === 'monthly'}  onClick={() => setTab('monthly')}>월별 입수</TabBtn>
-            <TabBtn active={tab === 'price'}    onClick={() => setTab('price')}>단가 추이</TabBtn>
+          <div className="px-5 sm:px-6 pt-3">
+            <SegmentedControl
+              size="sm"
+              ariaLabel="품목 상세 탭"
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: 'timeline', label: '타임라인' },
+                { value: 'monthly',  label: '월별 입수' },
+                { value: 'price',    label: '단가 추이' },
+              ]}
+            />
           </div>
           <div className="px-5 sm:px-6 py-3 space-y-3">
             {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
@@ -493,17 +502,6 @@ function DetailModal({ row, onClose, onChange }: {
         </>
       )}
     </Modal>
-  )
-}
-
-function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button type="button" onClick={onClick}
-      className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${active
-        ? 'bg-[var(--coral)] text-white'
-        : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>
-      {children}
-    </button>
   )
 }
 
