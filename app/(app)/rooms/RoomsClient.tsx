@@ -957,7 +957,7 @@ export default function RoomsClient({
 
                   {colVis.balance && (
                     <td className="px-4 py-4 text-sm font-semibold">
-                      <span className={room.balance >= 0 ? 'text-emerald-600' : 'text-red-500'}>
+                      <span className={room.balance >= 0 ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'}>
                         {room.balance > 0
                           ? <MoneyDisplay amount={room.balance} prefix="+" />
                           : room.balance < 0

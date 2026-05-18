@@ -5,12 +5,13 @@ import React from 'react'
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'subtle'
 type Size = 'sm' | 'md' | 'lg'
 
+// Brand Guide v1.1 버튼 변형
 const VARIANT_CLS: Record<Variant, string> = {
   primary:   'bg-[var(--persimmon)] hover:bg-[var(--persimmon-d)] text-white border border-transparent',
-  secondary: 'bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] border border-[var(--warm-border)]',
-  danger:    'bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-transparent',
-  ghost:     'bg-transparent hover:bg-[var(--canvas)] text-[var(--warm-mid)] border border-transparent',
-  subtle:    'bg-[var(--canvas)]/60 hover:bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60',
+  secondary: 'bg-[var(--cream-soft)] hover:bg-[var(--sand)] text-[var(--warm-dark)] border border-[var(--warm-border)]',
+  danger:    'bg-[var(--coral)]/10 hover:bg-[var(--coral)]/20 text-[var(--coral-dark)] border border-[var(--coral)]/25',
+  ghost:     'bg-transparent hover:bg-[var(--cream-soft)] text-[var(--warm-mid)] border border-transparent',
+  subtle:    'bg-[var(--sand)]/40 hover:bg-[var(--sand-2)] text-[var(--warm-mid)] border border-[var(--camel)]/40',
 }
 
 // 모바일 터치 타겟: sm=36px, md=40px, lg=44px (HIG 권장 44px+)
