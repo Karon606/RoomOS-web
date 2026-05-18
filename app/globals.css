@@ -72,16 +72,27 @@
   --status-vacant-bg:   rgba(200,160,120,0.12); /* 공실 */
   --status-vacant-fg:   #7a6a55;
 
-  /* 입주·계약 상태 — 뱃지(bg/fg) + 카드 틴트.
-     ⚠ 잠정값 — Claude Design 브랜드 가이드 확정 대기. 확정 시 이 값만 교체. */
-  --st-live-bg:     #e7efe2;   /* 거주중 — Success 파생 페일 그린 */
-  --st-live-fg:     #1a6e4c;   /* guide Success */
-  --st-leaving-bg:  #f4e4bc;   /* 퇴실 예정 — Honey 파생 페일 */
-  --st-leaving-fg:  #876810;   /* Honey 파생 진한 톤 */
-  --st-incoming-bg: #ead9bf;   /* 예약·비거주 — Camel/Sand 파생 페일 */
-  --st-incoming-fg: #6e5536;   /* Camel 파생 진한 톤 */
-  --st-card-live:   #eef3ea;   /* 거주중 카드 배경 — 은은한 그린 */
-  --st-card-accent: #2f7d56;   /* 거주중 카드 좌측 액센트 바 */
+  /* 상태 카드·뱃지 — 통일 시스템 (RoomCard / StatusBadge).
+     카드 베이스 = 카드의 종류(거주/비거주/일반), 뱃지 = 예외 상황(미납·납부예정 등).
+     정상 상태는 뱃지 없이 카드 베이스만으로 표현. */
+  /* 카드 베이스 3종 */
+  --card-resident-bg: rgba(26,110,76,0.06);   /* 거주 중 — Success 6%, 따뜻한 이끼 톤 */
+  --card-resident-bd: rgba(26,110,76,0.18);
+  --card-vacant-bg:   var(--cream-soft);      /* 비거주·공실 (opacity 0.72 함께) */
+  --card-vacant-bd:   var(--warm-border);
+  --card-neutral-bg:  var(--cream);           /* 수납·재고 등 일반 데이터 카드 */
+  --card-neutral-bd:  var(--warm-border);
+  /* 뱃지 — 예외 상황 5종 (파란색 금지 → Sand/Camel/Terracotta로) */
+  --badge-unpaid-bg:  #a03c2e;                /* 미납 — Terracotta 솔리드 */
+  --badge-unpaid-fg:  #fbf6ef;
+  --badge-await-bg:   #f2d9b8;                /* 납부 예정 — Sand (파란색 대체) */
+  --badge-await-fg:   #7c2d26;
+  --badge-exit-bg:    rgba(200,160,125,0.30); /* 퇴실 예정 — Camel */
+  --badge-exit-fg:    #7c2d26;
+  --badge-movein-bg:  rgba(200,160,125,0.30); /* 입실 예정 — Camel */
+  --badge-movein-fg:  #7c2d26;
+  --badge-info-bg:    var(--cream-2);         /* 일반 정보 알림 — 중립 */
+  --badge-info-fg:    var(--ink-3);
 
   /* 강조 보조색 — 보증금(purple), 예비비(teal) */
   --accent-deposit: #7c3aed;
@@ -203,15 +214,17 @@ html.dark {
   --status-vacant-bg:   rgba(168,152,128,0.16); /* warm muted */
   --status-vacant-fg:   #c8b89a;                /* 밝은 베이지 */
 
-  /* 입주·계약 상태 — 다크 톤 (잠정값 — Claude Design 확정 대기) */
-  --st-live-bg:     rgba(74,222,128,0.14);
-  --st-live-fg:     #7fcfa3;
-  --st-leaving-bg:  rgba(245,184,0,0.16);
-  --st-leaving-fg:  #e6c265;
-  --st-incoming-bg: rgba(200,160,125,0.18);
-  --st-incoming-fg: #d8c09a;
-  --st-card-live:   rgba(74,222,128,0.08);
-  --st-card-accent: #4a9d72;
+  /* 상태 카드·뱃지 — 다크 톤. vacant/neutral/info 는 cream·border 변수라 자동 대응 */
+  --card-resident-bg: rgba(74,222,128,0.10);
+  --card-resident-bd: rgba(74,222,128,0.22);
+  --badge-unpaid-bg:  #b85042;
+  --badge-unpaid-fg:  #fbf6ef;
+  --badge-await-bg:   rgba(242,217,184,0.22);
+  --badge-await-fg:   #e7c79e;
+  --badge-exit-bg:    rgba(200,160,125,0.26);
+  --badge-exit-fg:    #d8bf9c;
+  --badge-movein-bg:  rgba(200,160,125,0.26);
+  --badge-movein-fg:  #d8bf9c;
 
   /* 강조 — 다크에서 더 밝게 */
   --accent-deposit: #a78bfa;                    /* violet-400 */

@@ -22,7 +22,9 @@ import { useUrlState } from '@/lib/useUrlState'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SortSelect } from '@/components/ui/SortSelect'
-import { STATUS_LABEL, STATUS_BADGE as STATUS_COLOR, CARD_TONE, tenantCardTone } from '@/lib/statusColors'
+import { STATUS_LABEL, leaseCardKind, statusException } from '@/lib/statusColors'
+import { RoomCard } from '@/components/ui/RoomCard'
+import { StatusBadge } from '@/components/ui/StatusBadge'
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 
 const fmtRoomNo = (no: string | null | undefined) =>
@@ -117,7 +119,12 @@ function loadColWidths(): Record<string, number> | null {
 
 // ── 상수 ─────────────────────────────────────────────────────────
 
-// STATUS_LABEL · STATUS_COLOR(=STATUS_BADGE) 는 lib/statusColors 에서 import — 브랜드 색 단일 출처
+// 상태 칩 — 예외 상태는 StatusBadge, 정상 상태는 조용한 텍스트 (상세·표 컨텍스트용)
+function StatusChip({ status }: { status: string }) {
+  const ex = statusException(status)
+  if (ex) return <StatusBadge tone={ex.tone}>{ex.label}</StatusBadge>
+  return <span className="text-xs font-medium text-[var(--warm-mid)]">{STATUS_LABEL[status] ?? status}</span>
+}
 
 // 카드 표시 항목 — 이용자가 켜고 끌 수 있는 필드 (호실·이름·상태는 항상 표시)
 const TENANT_CARD_FIELDS: FieldDef[] = [
@@ -1281,9 +1288,11 @@ export default function TenantClient({
             const status  = lease?.status ?? ''
             const stayPeriod = calcStayPeriod(lease?.moveInDate, lease?.moveOutDate ?? undefined)
             return (
-              <div key={tenant.id}
+              <RoomCard key={tenant.id}
+                kind={leaseCardKind(status)}
+                selected={selectMode && selectedIds.has(tenant.id)}
                 onClick={() => selectMode ? toggleSelectTenant(tenant.id) : (setDetailTenant(tenant), setDetailTab('info'))}
-                className={`rounded-2xl p-4 cursor-pointer active:opacity-70 transition-opacity ${selectMode && selectedIds.has(tenant.id) ? 'bg-[var(--cream)] border-2 border-[var(--coral)] ring-2 ring-[var(--coral)]/20' : `border ${CARD_TONE[tenantCardTone(status)]}`}`}
+                className="p-4"
               >
                 {/* 첫 줄: 호실(또는 희망 조건/미배정) + 이름 + 상태 */}
                 <div className="flex items-center justify-between mb-1.5">
@@ -1320,9 +1329,7 @@ export default function TenantClient({
                     })()}
                     <span className="text-sm font-semibold text-[var(--warm-dark)]">{tenant.name}</span>
                   </div>
-                  <span className={`text-[0.625rem] px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[status] ?? 'bg-[var(--canvas)] text-[var(--warm-muted)]'}`}>
-                    {STATUS_LABEL[status] ?? status}
-                  </span>
+                  {(() => { const ex = statusException(status); return ex && <StatusBadge tone={ex.tone}>{ex.label}</StatusBadge> })()}
                 </div>
                 {/* 연락처 */}
                 {cardFields.contact && primary && (
@@ -1361,7 +1368,7 @@ export default function TenantClient({
                     </div>
                   )
                 })()}
-              </div>
+              </RoomCard>
             )
           })}
         </div>
@@ -1499,13 +1506,11 @@ export default function TenantClient({
                           )
                         case 'status': {
                           const ddLabel = sched ? fmtDDay(sched.date) : null
-                          const ddColor = sched?.label === '입실' ? 'text-blue-600' : 'text-red-500'
+                          const ddColor = sched?.label === '입실' ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'
                           return (
                             <td key={c.key} className={tdBase}>
                               <div className="flex flex-col gap-0.5">
-                                <span className={`text-xs px-2.5 py-1 rounded-full font-medium self-start whitespace-nowrap ${STATUS_COLOR[status] ?? ''}`}>
-                                  {STATUS_LABEL[status] ?? status}
-                                </span>
+                                <span className="self-start"><StatusChip status={status} /></span>
                                 {ddLabel && <span className={`text-xs font-medium pl-1 whitespace-nowrap ${ddColor}`}>{ddLabel}</span>}
                               </div>
                             </td>
@@ -1578,9 +1583,7 @@ export default function TenantClient({
                       {detailEditMode ? '고객 정보 수정' : '고객 상세정보'}
                     </h2>
                     {!detailEditMode && (
-                      <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${STATUS_COLOR[status] ?? ''}`}>
-                        {STATUS_LABEL[status] ?? status}
-                      </span>
+                      <StatusChip status={status} />
                     )}
                     {!detailEditMode && lease?.isShortTerm && (
                       <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">

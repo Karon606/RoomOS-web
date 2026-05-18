@@ -16,7 +16,8 @@ import { useUrlState } from '@/lib/useUrlState'
 import { kstMonthStr } from '@/lib/kstDate'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SortSelect } from '@/components/ui/SortSelect'
-import { CARD_TONE, CARD_ACCENT, statusBadge, type CardTone } from '@/lib/statusColors'
+import { RoomCard, type CardKind } from '@/components/ui/RoomCard'
+import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 
 const fmtRoomNo = (no: string | null | undefined) =>
@@ -55,23 +56,22 @@ type Room = {
   }[]
 }
 
-// 호실 상태 — 카드 톤(거주중·퇴실예정=초록 / 공실·예약=회색) + 세부 뱃지.
-// 거주중·공실은 카드 색만으로 구분(뱃지 X), 예약·퇴실예정만 뱃지로 표시.
+// 호실 상태 — 카드 종류(거주중·퇴실예정=resident / 공실·예약=vacant) + 예외 뱃지.
+// 거주중·공실은 카드 베이스만으로 구분(뱃지 X), 예약·퇴실예정만 뱃지.
 type RoomStatus = {
-  label: '공실' | '예약' | '거주중' | '퇴실 예정'
-  tone: CardTone
-  showCardBadge: boolean
-  badgeClass: string
+  label: string
+  kind: CardKind
+  badge: { tone: BadgeTone; label: string } | null
 }
 function getRoomStatus(r: Room): RoomStatus {
   const lease = r.leaseTerms[0]
   if (!lease)
-    return { label: '공실', tone: 'vacant', showCardBadge: false, badgeClass: statusBadge(null) }
+    return { label: '공실', kind: 'vacant', badge: null }
   if (lease.status === 'RESERVED')
-    return { label: '예약', tone: 'vacant', showCardBadge: true, badgeClass: statusBadge('RESERVED') }
+    return { label: '예약', kind: 'vacant', badge: { tone: 'movein', label: '입실 예정' } }
   if (lease.status === 'CHECKOUT_PENDING')
-    return { label: '퇴실 예정', tone: 'live', showCardBadge: true, badgeClass: statusBadge('CHECKOUT_PENDING') }
-  return { label: '거주중', tone: 'live', showCardBadge: false, badgeClass: statusBadge('ACTIVE') }
+    return { label: '퇴실 예정', kind: 'resident', badge: { tone: 'exit', label: '퇴실 예정' } }
+  return { label: '거주중', kind: 'resident', badge: null }
 }
 
 // 카드 표시 항목 — 이용자가 켜고 끌 수 있는 필드 (호실번호·상태는 항상 표시)
@@ -694,36 +694,21 @@ export default function RoomManageClient({
             const rs     = getRoomStatus(room)
             const selected = selectMode && selectedIds.has(room.id)
             return (
-              <div key={room.id}
+              <RoomCard key={room.id}
+                kind={rs.kind}
+                selected={selected}
                 onClick={() => selectMode ? toggleSelectRoom(room.id) : (setDetailRoom(room), setError(''))}
-                className={`border rounded-2xl overflow-hidden cursor-pointer active:opacity-70 transition-opacity flex items-stretch ${
-                  selected
-                    ? 'bg-[var(--cream)] border-2 border-[var(--coral)] ring-2 ring-[var(--coral)]/20'
-                    : CARD_TONE[rs.tone]
-                }`}>
-                {/* 상태 액센트 바 (거주중·퇴실예정) */}
-                {!selected && CARD_ACCENT[rs.tone] && (
-                  <div className="w-1 shrink-0" style={{ background: CARD_ACCENT[rs.tone]! }} aria-hidden="true" />
-                )}
+                className="overflow-hidden flex items-stretch">
                 {/* 정보 */}
                 <div className="flex-1 p-4 min-w-0 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className={`text-base font-bold ${rs.tone === 'vacant' ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'}`}>{fmtRoomNo(room.roomNo)}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-base font-bold ${rs.kind === 'vacant' ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'}`}>{fmtRoomNo(room.roomNo)}</span>
                     {cardFields.floor && room.floor && (
                       <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                         {room.floor}층
                       </span>
                     )}
-                    {rs.showCardBadge && (
-                      <span className={`text-[0.625rem] px-2 py-0.5 rounded-full font-medium shrink-0 ${rs.badgeClass}`}>
-                        {rs.label}
-                      </span>
-                    )}
-                    {room.nonResidentRent != null && (
-                      <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--st-incoming-bg)] text-[var(--st-incoming-fg)] ring-1 ring-[var(--st-incoming-fg)]/30">
-                        비거주
-                      </span>
-                    )}
+                    {rs.badge && <StatusBadge tone={rs.badge.tone}>{rs.badge.label}</StatusBadge>}
                   </div>
                   {cardFields.tenant && tenant && <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant}</p>}
                   <div className="space-y-0.5 pt-0.5">
@@ -750,7 +735,7 @@ export default function RoomManageClient({
                     )}
                     <p className="text-sm font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></p>
                     {cardFields.scheduled && room.scheduledRent != null && (
-                      <p className="text-xs text-[var(--st-leaving-fg)]">
+                      <p className="text-xs text-[var(--warm-mid)]">
                         → <MoneyDisplay amount={room.scheduledRent} />
                         {room.rentUpdateDate && <span className="text-[var(--warm-muted)] ml-1">({fmtDate(room.rentUpdateDate)})</span>}
                       </p>
@@ -771,7 +756,7 @@ export default function RoomManageClient({
                     )}
                   </div>
                 )}
-              </div>
+              </RoomCard>
             )
           })}
         </div>
@@ -791,9 +776,10 @@ export default function RoomManageClient({
               <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
                 <div className="flex items-center gap-2.5">
                   <h2 className="text-base font-bold text-[var(--warm-dark)]">{fmtRoomNo(r.roomNo)}</h2>
-                  {(() => { const rs = getRoomStatus(r); return (
-                    <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${rs.badgeClass}`}>{rs.label}</span>
-                  )})()}
+                  {(() => { const rs = getRoomStatus(r); return rs.badge
+                    ? <StatusBadge tone={rs.badge.tone}>{rs.badge.label}</StatusBadge>
+                    : <span className="text-xs font-medium text-[var(--warm-mid)]">{rs.label}</span>
+                  })()}
                 </div>
                 <button onClick={closeDetail} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
               </div>
