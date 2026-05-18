@@ -4,35 +4,42 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  /* ── M7 Ink × Persimmon — Stayeum Brand System ────────────────────
-     기존 변수명은 그대로 두고 hex만 M7 값으로 갱신.
-     신규 코드는 아래 M7 정식 변수(--ink, --persimmon 등) 사용 권장. */
+  /* ── Stayeum Terracotta Brand System ─────────────────────────────
+     Claude Design 브랜드 가이드 반영. 기존 변수명은 그대로 두고
+     hex만 Terracotta 팔레트로 재매핑 — 앱이 CSS 변수 기반이라
+     이 파일만으로 전반이 자동 재스킨됨. */
 
-  /* M7 Surface — cream */
-  --cream:        #fbf6ee;   /* M7 cream — 메인 surface */
-  --cream-2:      #f5f1ea;   /* M7 cream-2 — 페이지 배경 */
-  --cream-3:      #ebe1cf;   /* M7 cream-3 — 테두리·디바이더 */
-  --canvas:       #f5f1ea;   /* alias → cream-2 */
+  /* Surface — cream */
+  --cream:        #fbf6ef;   /* Cream — 메인 surface (카드) */
+  --cream-soft:   #f5ede0;   /* Cream soft — 보조 표면 (중첩 패널·hover) */
+  --cream-2:      #e8ddd0;   /* Page — 페이지 배경 */
+  --cream-3:      #dccfbc;   /* 테두리·디바이더 (Page보다 짙은 톤) */
+  --canvas:       #e8ddd0;   /* alias → cream-2 */
 
-  /* M7 Ink — 구조·텍스트 */
-  --ink:          #1a1a1a;   /* primary 텍스트·차트 디폴트 */
-  --ink-2:        #2a1f15;   /* 본문 (이전 --warm-dark) */
-  --ink-3:        #4d3e2e;   /* 보조 텍스트 (이전 --warm-mid) */
-  --ink-mute:     #7a6a55;   /* placeholder·메타 (이전 --warm-muted) */
-  --warm-dark:    #2a1f15;   /* alias → ink-2 */
-  --warm-mid:     #4d3e2e;   /* alias → ink-3 */
-  --warm-muted:   #7a6a55;   /* alias → ink-mute */
-  --warm-border:  #ebe1cf;   /* alias → cream-3 */
+  /* Ink — 구조·텍스트 */
+  --ink:          #3d2418;   /* primary 텍스트·차트 디폴트 */
+  --ink-2:        #3d2418;   /* 본문 (이전 --warm-dark) */
+  --ink-3:        #7a6553;   /* 보조 텍스트 (이전 --warm-mid) */
+  --ink-mute:     #a89380;   /* placeholder·메타 (이전 --warm-muted) */
+  --warm-dark:    #3d2418;   /* alias → ink-2 */
+  --warm-mid:     #7a6553;   /* alias → ink-3 */
+  --warm-muted:   #a89380;   /* alias → ink-mute */
+  --warm-border:  #dccfbc;   /* alias → cream-3 */
 
-  /* M7 Persimmon — 단일 액센트 */
-  --persimmon:    #e84a1a;   /* CTA·강조·진행중 */
-  --persimmon-d:  #c83a10;   /* 호버·프레스 */
-  --persimmon-l:  #ffe6dc;   /* 페일 배경·뱃지 */
-  --coral:        #e84a1a;   /* alias → persimmon */
-  --coral-dark:   #c83a10;   /* alias → persimmon-d */
-  --coral-pale:   #ffe6dc;   /* alias → persimmon-l */
+  /* Terracotta — 단일 액센트 (primary·CTA·로고) */
+  --persimmon:    #a03c2e;   /* Terracotta — CTA·강조·진행중 */
+  --persimmon-d:  #7c2d26;   /* Terracotta hover — 호버·프레스 */
+  --persimmon-l:  #f2dfd8;   /* 페일 배경·뱃지 (Terracotta 페일 틴트) */
+  --coral:        #a03c2e;   /* alias → persimmon */
+  --coral-dark:   #7c2d26;   /* alias → persimmon-d */
+  --coral-pale:   #f2dfd8;   /* alias → persimmon-l */
 
-  /* M7 Honey — 경고·하이라이트 only (1% 미만 사용) */
+  /* Camel·Sand — 보조 웜 톤 (가이드 핵심 토큰) */
+  --camel:        #c8a07d;   /* Camel — 강조 보더·아이콘 보조 */
+  --sand:         #f2d9b8;   /* Sand — 웜 페일 배경 */
+  --sand-2:       #f5e5cc;   /* Sand light */
+
+  /* Honey — 경고·하이라이트 only (1% 미만 사용) */
   --honey:        #f5b800;
   --sun:          #f5b800;   /* alias → honey */
 
@@ -55,9 +62,9 @@
   --chart-10: #4d3e2e;   /* extra — ink-3 */
 
   /* Status (의미) — 페일 셀 / 강조 페어. 라이트 톤. 다크는 .dark에서 override */
-  --status-paid-bg:     rgba(16,185,129,0.12);  /* 납부 완료 */
-  --status-paid-fg:     #047857;
-  --status-paid-strong: #6a9f3a;                /* 솔리드 (b-success) */
+  --status-paid-bg:     rgba(26,110,76,0.12);   /* 납부 완료 */
+  --status-paid-fg:     #1a6e4c;                /* guide Success */
+  --status-paid-strong: #1a6e4c;                /* 솔리드 (b-success) */
   --status-await-bg:    rgba(59,130,246,0.12);  /* 납부 예정 */
   --status-await-fg:    #1e40af;
   --status-unpaid-bg:   rgba(234,179,8,0.18);   /* 미납 */
@@ -70,18 +77,22 @@
 }
 
 @theme inline {
-  /* M7 정식 변수 — Tailwind 클래스명으로도 사용 가능 */
+  /* 정식 변수 — Tailwind 클래스명으로도 사용 가능 */
   --color-ink:          var(--ink);
   --color-ink-2:        var(--ink-2);
   --color-ink-3:        var(--ink-3);
   --color-ink-mute:     var(--ink-mute);
   --color-cream:        var(--cream);
+  --color-cream-soft:   var(--cream-soft);
   --color-cream-2:      var(--cream-2);
   --color-cream-3:      var(--cream-3);
   --color-persimmon:    var(--persimmon);
   --color-persimmon-d:  var(--persimmon-d);
   --color-persimmon-l:  var(--persimmon-l);
   --color-honey:        var(--honey);
+  --color-camel:        var(--camel);
+  --color-sand:         var(--sand);
+  --color-sand-2:       var(--sand-2);
 
   /* M7 가이드 radius 토큰 — Tailwind rounded-* 기본값 override
      r-sm 6 (입력·뱃지) · r-md 10 (카드 small) · r-lg 14 (카드/KPI)
@@ -145,12 +156,13 @@ body {
 html.dark {
   /* Surface — 어두운 잉크 톤 */
   --cream:        #1a1815;   /* 메인 surface (다크 카드) */
+  --cream-soft:   #211e1a;   /* 보조 표면 (중첩 패널·hover) */
   --cream-2:      #0e0d0b;   /* 페이지 배경 */
   --cream-3:      #2a2620;   /* 테두리·디바이더 */
   --canvas:       #0e0d0b;   /* alias */
 
   /* Text — 다크에선 ink가 밝은 cream */
-  --ink:          #fbf6ee;   /* 1차 텍스트 */
+  --ink:          #fbf6ef;   /* 1차 텍스트 */
   --ink-2:        #ebe1cf;   /* 본문 */
   --ink-3:        #c8b89a;   /* 보조 */
   --ink-mute:     #a89880;   /* placeholder·메타 */
@@ -159,14 +171,14 @@ html.dark {
   --warm-muted:   #a89880;   /* alias → ink-mute */
   --warm-border:  #2a2620;   /* alias → cream-3 */
 
-  /* Persimmon·Honey — 동일 hex (가이드 명시) */
+  /* Terracotta·Honey — 동일 hex (가이드 명시) */
   /* persimmon-l는 다크에선 더 짙게 — 페일 배경이 너무 밝아 보이지 않도록 */
-  --persimmon-l:  #3a1a10;
-  --coral-pale:   #3a1a10;   /* alias */
+  --persimmon-l:  #3a1f18;
+  --coral-pale:   #3a1f18;   /* alias */
 
   /* Chart — 다크에서 미세 조정 (어두운 배경에 더 잘 보이게)
      원래 카테고리 색은 채도 높은 편이라 대부분 OK. ink(#1a1a1a)는 다크 배경이라 안 보여 cream으로 */
-  --chart-1:  #fbf6ee;       /* ops — light ink in dark mode */
+  --chart-1:  #fbf6ef;       /* ops — light ink in dark mode */
 
   /* Status — 다크 적합 톤. 배경 alpha 약간 ↑, 텍스트는 밝은 톤으로 */
   --status-paid-bg:     rgba(74,222,128,0.18);  /* emerald-400 alpha */
@@ -230,28 +242,29 @@ a, button, [role="button"], input[type="button"], input[type="submit"], input[ty
 
   /* 다크모드 여부와 무관하게 라이트모드 CSS 변수 강제 적용 */
   html, html.dark {
-    --cream:        #fbf6ee;
-    --cream-2:      #f5f1ea;
-    --cream-3:      #ebe1cf;
-    --canvas:       #f5f1ea;
-    --ink:          #1a1a1a;
-    --ink-2:        #2a1f15;
-    --ink-3:        #4d3e2e;
-    --ink-mute:     #7a6a55;
-    --warm-dark:    #2a1f15;
-    --warm-mid:     #4d3e2e;
-    --warm-muted:   #7a6a55;
-    --warm-border:  #ebe1cf;
-    --persimmon-l:  #ffe6dc;
-    --coral-pale:   #ffe6dc;
-    --chart-1:      #1a1a1a;
-    --status-paid-bg:  rgba(16,185,129,0.12);
-    --status-paid-fg:  #047857;
+    --cream:        #fbf6ef;
+    --cream-soft:   #f5ede0;
+    --cream-2:      #e8ddd0;
+    --cream-3:      #dccfbc;
+    --canvas:       #e8ddd0;
+    --ink:          #3d2418;
+    --ink-2:        #3d2418;
+    --ink-3:        #7a6553;
+    --ink-mute:     #a89380;
+    --warm-dark:    #3d2418;
+    --warm-mid:     #7a6553;
+    --warm-muted:   #a89380;
+    --warm-border:  #dccfbc;
+    --persimmon-l:  #f2dfd8;
+    --coral-pale:   #f2dfd8;
+    --chart-1:      #3d2418;
+    --status-paid-bg:  rgba(26,110,76,0.12);
+    --status-paid-fg:  #1a6e4c;
     --status-unpaid-bg: rgba(234,179,8,0.18);
     --status-unpaid-fg: #a16207;
   }
 
-  body { background: #fff !important; color: #1a1a1a !important; }
+  body { background: #fff !important; color: #3d2418 !important; }
   .no-print, nav, aside, header { display: none !important; }
   main { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
 
