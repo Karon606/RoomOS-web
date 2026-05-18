@@ -82,16 +82,20 @@
   --card-vacant-bd:   var(--warm-border);
   --card-neutral-bg:  var(--cream);           /* 수납·재고 등 일반 데이터 카드 */
   --card-neutral-bd:  var(--warm-border);
-  /* 뱃지 — 예외 상황 5종 (파란색 금지 → Sand/Camel/Terracotta로) */
-  --badge-unpaid-bg:  #a03c2e;                /* 미납 — Terracotta 솔리드 */
-  --badge-unpaid-fg:  #fbf6ef;
-  --badge-await-bg:   #f2d9b8;                /* 납부 예정 — Sand (파란색 대체) */
-  --badge-await-fg:   #7c2d26;
+  /* 뱃지 — Brand Guide v1.1 상태색 */
+  --badge-paid-bg:    rgba(85,108,58,0.12);   /* 완납·정상 — Warm Olive (b-success) */
+  --badge-paid-fg:    #4e6834;
+  --badge-await-bg:   #eff6ff;                /* 납부·입실 예정 — Blue (b-blue) */
+  --badge-await-fg:   #1e40af;
+  --badge-unpaid-bg:  rgba(180,120,10,0.13);  /* 미납 — Amber (b-warn) */
+  --badge-unpaid-fg:  #8b5e0a;
+  --badge-overdue-bg: #a03c2e;                /* 연체 — Terracotta 솔리드 (b-overdue) */
+  --badge-overdue-fg: #fbf6ef;
   --badge-exit-bg:    rgba(200,160,125,0.30); /* 퇴실 예정 — Camel */
   --badge-exit-fg:    #7c2d26;
   --badge-movein-bg:  rgba(200,160,125,0.30); /* 입실 예정 — Camel */
   --badge-movein-fg:  #7c2d26;
-  --badge-info-bg:    var(--cream-2);         /* 일반 정보 알림 — 중립 */
+  --badge-info-bg:    var(--cream-2);         /* 일반 정보 — 중립 */
   --badge-info-fg:    var(--ink-3);
 
   /* 강조 보조색 — 보증금(purple), 예비비(teal) */
@@ -218,10 +222,14 @@ html.dark {
   /* 상태 카드·뱃지 — 다크 톤. vacant/neutral/info 는 cream·border 변수라 자동 대응 */
   --card-resident-bg: rgba(124,154,82,0.14);
   --card-resident-bd: rgba(124,154,82,0.28);
-  --badge-unpaid-bg:  #b85042;
-  --badge-unpaid-fg:  #fbf6ef;
-  --badge-await-bg:   rgba(242,217,184,0.22);
-  --badge-await-fg:   #e7c79e;
+  --badge-paid-bg:    rgba(124,154,82,0.20);
+  --badge-paid-fg:    #a8c47e;
+  --badge-await-bg:   rgba(96,165,250,0.20);
+  --badge-await-fg:   #93c5fd;
+  --badge-unpaid-bg:  rgba(180,120,10,0.24);
+  --badge-unpaid-fg:  #d9a544;
+  --badge-overdue-bg: #b85042;
+  --badge-overdue-fg: #fbf6ef;
   --badge-exit-bg:    rgba(200,160,125,0.26);
   --badge-exit-fg:    #d8bf9c;
   --badge-movein-bg:  rgba(200,160,125,0.26);

@@ -6,14 +6,18 @@
 
 import type { ReactNode } from 'react'
 
-export type BadgeTone = 'unpaid' | 'await' | 'exit' | 'movein' | 'info'
+// Brand Guide v1.1 상태색 — paid(Olive) / await(Blue) / unpaid(Amber) /
+// overdue(Terracotta solid) / exit·movein(Camel) / info(중립)
+export type BadgeTone = 'paid' | 'await' | 'unpaid' | 'overdue' | 'exit' | 'movein' | 'info'
 
 const BADGE: Record<BadgeTone, { bg: string; fg: string }> = {
-  unpaid: { bg: 'var(--badge-unpaid-bg)', fg: 'var(--badge-unpaid-fg)' }, // 미납 — Terracotta 솔리드
-  await:  { bg: 'var(--badge-await-bg)',  fg: 'var(--badge-await-fg)'  }, // 납부 예정 — Sand
-  exit:   { bg: 'var(--badge-exit-bg)',   fg: 'var(--badge-exit-fg)'   }, // 퇴실 예정 — Camel
-  movein: { bg: 'var(--badge-movein-bg)', fg: 'var(--badge-movein-fg)' }, // 입실 예정 — Camel
-  info:   { bg: 'var(--badge-info-bg)',   fg: 'var(--badge-info-fg)'   }, // 일반 정보 — 중립
+  paid:    { bg: 'var(--badge-paid-bg)',    fg: 'var(--badge-paid-fg)'    }, // 완납·정상 — Warm Olive
+  await:   { bg: 'var(--badge-await-bg)',   fg: 'var(--badge-await-fg)'   }, // 납부·입실 예정 — Blue
+  unpaid:  { bg: 'var(--badge-unpaid-bg)',  fg: 'var(--badge-unpaid-fg)'  }, // 미납 — Amber
+  overdue: { bg: 'var(--badge-overdue-bg)', fg: 'var(--badge-overdue-fg)' }, // 연체 — Terracotta 솔리드
+  exit:    { bg: 'var(--badge-exit-bg)',    fg: 'var(--badge-exit-fg)'    }, // 퇴실 예정 — Camel
+  movein:  { bg: 'var(--badge-movein-bg)',  fg: 'var(--badge-movein-fg)'  }, // 입실 예정 — Camel
+  info:    { bg: 'var(--badge-info-bg)',    fg: 'var(--badge-info-fg)'    }, // 일반 정보 — 중립
 }
 
 export function StatusBadge({
