@@ -776,6 +776,7 @@ export default function RoomsClient({
           return (
             <RoomCard key={room.roomId}
               kind="neutral"
+              overdue={!!(dueInfo && dueInfo.days > 7)}
               onClick={room.isFutureMonth ? undefined : () => openPayModal(room)}
               className={`px-4 py-3.5 ${room.isFutureMonth ? 'opacity-50' : ''}`}>
               {/* 첫 줄: 호실 + 수납상태 */}
@@ -799,10 +800,11 @@ export default function RoomsClient({
                     const checkoutMonth = room.expectedMoveOut?.slice(0, 7) ?? null
                     const showCheckout = room.status === 'CHECKOUT_PENDING'
                       && room.isPaid && !!checkoutMonth && checkoutMonth <= targetMonth
-                    // 미납 — 예외, 솔리드 Terracotta
+                    // 미납 / 연체 — 7일 초과면 연체(Terracotta 솔리드), 그 외 미납(Amber)
                     if (!room.isPaid) {
                       const sub = dueInfo ? (dueInfo.days === 0 ? '오늘' : `${dueInfo.days}일 초과`) : undefined
-                      return <StatusBadge tone="unpaid" sub={sub}>미납</StatusBadge>
+                      const isOverdue = !!(dueInfo && dueInfo.days > 7)
+                      return <StatusBadge tone={isOverdue ? 'overdue' : 'unpaid'} sub={sub}>{isOverdue ? '연체' : '미납'}</StatusBadge>
                     }
                     // 퇴실 예정 — Camel
                     if (showCheckout && room.expectedMoveOut) {
@@ -819,12 +821,13 @@ export default function RoomsClient({
                       const sub = days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`
                       return <StatusBadge tone="await" sub={sub}>납부 예정</StatusBadge>
                     }
-                    // 완납 — 뱃지 없음. 지연납부 이력만 작은 텍스트로
+                    // 완납 — Olive 뱃지 (지연납부 이력이 있으면 sub로)
+                    let lateSub: string | undefined
                     if (room.latePaidAt) {
                       const [, mm, dd] = room.latePaidAt.split('-')
-                      return <span className="text-[0.625rem] font-medium text-[var(--warm-muted)]">{Number(mm)}/{Number(dd)} 지연납부</span>
+                      lateSub = `${Number(mm)}/${Number(dd)} 지연납부`
                     }
-                    return null
+                    return <StatusBadge tone="paid" sub={lateSub}>완납</StatusBadge>
                   })()}
                 </div>
               </div>
@@ -991,7 +994,8 @@ export default function RoomsClient({
                           if (!room.isPaid) {
                             const info = getEffectiveDueInfo(room, targetMonth)
                             const sub = info ? (info.days === 0 ? '오늘' : `${info.days}일 초과`) : undefined
-                            return <StatusBadge tone="unpaid" sub={sub}>미납</StatusBadge>
+                            const isOverdue = !!(info && info.days > 7)
+                            return <StatusBadge tone={isOverdue ? 'overdue' : 'unpaid'} sub={sub}>{isOverdue ? '연체' : '미납'}</StatusBadge>
                           }
                           if (showCheckout && room.expectedMoveOut) {
                             const [, mm, dd] = room.expectedMoveOut.split('-')
@@ -1006,11 +1010,12 @@ export default function RoomsClient({
                             const sub = days === 0 ? `오늘 ${Number(mm)}/${Number(dd)} 납부일` : `D-${days} (${Number(mm)}/${Number(dd)})`
                             return <StatusBadge tone="await" sub={sub}>납부 예정</StatusBadge>
                           }
+                          let lateSub: string | undefined
                           if (room.latePaidAt) {
                             const [, mm, dd] = room.latePaidAt.split('-')
-                            return <span className="text-xs font-medium text-[var(--warm-muted)]">{Number(mm)}/{Number(dd)} 지연납부</span>
+                            lateSub = `${Number(mm)}/${Number(dd)} 지연납부`
                           }
-                          return null
+                          return <StatusBadge tone="paid" sub={lateSub}>완납</StatusBadge>
                         })()}
                       </div>
                     </td>
