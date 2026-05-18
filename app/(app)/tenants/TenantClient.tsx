@@ -1593,7 +1593,7 @@ export default function TenantClient({
                     {!detailEditMode && sched && (() => {
                       const dd = fmtDDay(sched.date)
                       if (!dd) return null
-                      const color = sched.label === '입실' ? 'text-blue-400' : 'text-red-400'
+                      const color = sched.label === '입실' ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'
                       return <span className={`text-xs font-bold ${color}`}>{dd}</span>
                     })()}
                   </div>
@@ -2064,7 +2064,7 @@ export default function TenantClient({
                       <div className="flex-1" />
                       {status === 'RESERVED' && (
                         <button onClick={() => handleMoveIn(lease!.id, t.id, t.name)} disabled={isPending}
-                          className="px-3 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
+                          className="px-3 py-2 bg-[var(--coral)]/10 hover:bg-[var(--coral)]/15 text-[var(--coral)] text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
                           입실 처리
                         </button>
                       )}
@@ -2405,7 +2405,7 @@ export default function TenantClient({
                                   {p.seqNo}회차 · {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
                                   {prevOwner && <span className="ml-1.5 text-[0.625rem] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
                                   {!p.isDeposit && p.targetMonth !== targetMonth && (
-                                    <span className="ml-1.5 text-[0.625rem] font-semibold bg-blue-100 text-blue-700 rounded px-1 py-0.5">
+                                    <span className="ml-1.5 text-[0.625rem] font-semibold bg-[var(--badge-await-bg)] text-[var(--badge-await-fg)] rounded px-1 py-0.5">
                                       {p.targetMonth < targetMonth
                                         ? `${Number(p.targetMonth.slice(5))}월 미납분 처리`
                                         : `${Number(p.targetMonth.slice(5))}월 선납`}
