@@ -875,7 +875,8 @@ export default function TenantClient({
   const droppedCount   = initialTenants.filter(t => t.leaseTerms[0]?.status === 'CANCELLED').length
   const pastCount      = initialTenants.length - residentsCount - inquiryCount - droppedCount
 
-  const getTenantFloor = (t: typeof initialTenants[0]) => {
+  // function 선언 — 호이스팅되어 위쪽 필터(.filter, 478번 줄)에서도 TDZ 없이 안전하게 호출됨
+  function getTenantFloor(t: typeof initialTenants[0]) {
     const room = t.leaseTerms[0]?.room
     if (!room) return ''
     if (room.floor) return room.floor
