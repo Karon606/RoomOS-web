@@ -1038,6 +1038,8 @@ export async function changeDueDay(
     }
 
     revalidatePath('/tenants')
+    revalidatePath('/rooms')
+    revalidatePath('/dashboard')
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err

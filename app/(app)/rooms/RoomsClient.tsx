@@ -2,6 +2,8 @@
 
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getTenantQuickInfo, getRoomQuickInfo, getTargetMonthOptions, savePrevOwnerSettle, getPrevOwnerSettleState, setPrevOwnerSettleMenu, type TargetMonthOption } from './actions'
+import { changeDueDay } from '@/app/(app)/tenants/actions'
+import { calcProRata, PRORATE_BASE_DAYS } from '@/lib/prorate'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -271,6 +273,8 @@ export default function RoomsClient({
   const [confirmClearOverride, setConfirmClearOverride] = useState(false)
   const [overrideDateInput, setOverrideDateInput] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
+  const [showDueDayChange, setShowDueDayChange] = useState(false)
+  const [newDueDayInput, setNewDueDayInput] = useState('')
   const [payAmount, setPayAmount] = useState(0)
   const [payDateVal, setPayDateVal] = useState(kstYmdStr())
   const [isDepositMode, setIsDepositMode] = useState(false)
@@ -437,6 +441,8 @@ export default function RoomsClient({
     setConfirmClearOverride(false)
     setOverrideDateInput('')
     setOverrideReason('')
+    setShowDueDayChange(false)
+    setNewDueDayInput('')
     setEditingPayId(null)
     setPaymentHistory([])
     setPrevOwnerCanSettle(false)
@@ -451,6 +457,30 @@ export default function RoomsClient({
         .then(s => { setPrevOwnerCanSettle(s.canSettle); setPrevOwnerMenuMode(s.menuMode) })
         .catch(() => setPrevOwnerCanSettle(false))
     }
+  }
+
+  // 납입일 영구 변경(일할 정산) — 고객관리와 동일 기능, 수납관리에서도 사용
+  const handleChangeDueDayPerm = () => {
+    if (!selectedRoom?.leaseTermId || !newDueDayInput.trim()) return
+    const calc = calcProRata(selectedRoom.expected, selectedRoom.dueDay, newDueDayInput, targetMonth)
+    if (!calc || calc.type === 'none') return
+    const adjustAmount = calc.type === 'extra' ? -calc.amount : calc.amount
+    const leaseTermId = selectedRoom.leaseTermId
+    startTransition(async () => {
+      const release = trackSave()
+      try {
+        const res = await changeDueDay(leaseTermId, newDueDayInput.trim(), targetMonth, adjustAmount)
+        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        setShowDueDayChange(false)
+        setNewDueDayInput('')
+        setShowPayModal(false)
+        router.refresh()
+        pushToast('success', '납입일 변경됨')
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '변경 실패'
+        setError(msg); pushToast('error', msg)
+      } finally { release() }
+    })
   }
 
   // ?roomNo=xxx 딥링크 — 대시보드 팝업에서 넘어올 때 해당 호실 모달 자동 오픈
@@ -1555,6 +1585,87 @@ export default function RoomsClient({
                   </div>
                   )
                 })()}
+
+                {/* 납입일 영구 변경 (일할 정산) — 고객관리와 동일 */}
+                {canEdit && selectedRoom.leaseTermId && (
+                  <div className="border-t border-[var(--warm-border)] px-6 py-3 shrink-0">
+                    {!showDueDayChange ? (
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-medium text-[var(--warm-mid)]">납입일 영구 변경</p>
+                          <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">일할 정산 후 다음 달부터 계속 적용</p>
+                        </div>
+                        <button type="button"
+                          onClick={() => { setShowDueDayChange(true); setNewDueDayInput('') }}
+                          className="text-[0.6875rem] px-2 py-1 rounded transition-colors shrink-0"
+                          style={{ color: 'var(--coral)', border: '1px solid rgba(160,60,46,0.35)' }}>
+                          변경
+                        </button>
+                      </div>
+                    ) : (() => {
+                      const calc = newDueDayInput.trim()
+                        ? calcProRata(selectedRoom.expected, selectedRoom.dueDay, newDueDayInput, targetMonth)
+                        : null
+                      const canApply = !!calc && calc.type !== 'none'
+                      return (
+                        <div className="space-y-2.5">
+                          <p className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>
+                            납입일 영구 변경 — {targetMonth} 기준 일할 정산
+                          </p>
+                          <div className="flex items-end gap-3">
+                            <div className="flex-1 space-y-1">
+                              <label className="text-xs text-[var(--warm-muted)]">새 납입일</label>
+                              <input type="text" value={newDueDayInput}
+                                onChange={e => setNewDueDayInput(e.target.value)}
+                                placeholder="예: 25, 말일"
+                                className="w-full rounded-lg px-2.5 py-1.5 text-sm outline-none"
+                                style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }} />
+                            </div>
+                            <div className="text-xs pb-1.5" style={{ color: 'var(--warm-muted)' }}>
+                              현재 {selectedRoom.dueDay ? (selectedRoom.dueDay.includes('말') ? '말일' : `${selectedRoom.dueDay}일`) : '—'}
+                            </div>
+                          </div>
+                          {calc && calc.type !== 'none' && (
+                            <div className="rounded-lg px-3 py-2 text-xs font-medium"
+                              style={{
+                                background: calc.type === 'extra' ? 'rgba(160,60,46,0.10)' : 'rgba(122,154,82,0.12)',
+                                color: calc.type === 'extra' ? 'var(--coral-dark)' : '#4e6834',
+                                border: `1px solid ${calc.type === 'extra' ? 'rgba(160,60,46,0.20)' : 'rgba(122,154,82,0.25)'}`,
+                              }}>
+                              {calc.type === 'extra'
+                                ? `납입일 ${calc.days}일 늦어짐 → 추가납부 ${calc.amount.toLocaleString()}원 발생`
+                                : `납입일 ${calc.days}일 빨라짐 → 과입금 ${calc.amount.toLocaleString()}원 환급`}
+                              <span className="block mt-0.5 font-normal" style={{ color: 'var(--warm-muted)' }}>
+                                월 {selectedRoom.expected.toLocaleString()}원 ÷ {PRORATE_BASE_DAYS}일 × {calc.days}일
+                              </span>
+                            </div>
+                          )}
+                          {calc && calc.type === 'none' && (
+                            <p className="text-xs" style={{ color: 'var(--warm-muted)' }}>기존 납입일과 동일합니다.</p>
+                          )}
+                          {newDueDayInput.trim() && !calc && (
+                            <p className="text-xs" style={{ color: 'var(--coral)' }}>유효한 날짜를 입력하세요 (1~31 또는 말일)</p>
+                          )}
+                          <div className="flex gap-2">
+                            <button type="button"
+                              onClick={() => { setShowDueDayChange(false); setNewDueDayInput('') }}
+                              className="flex-1 py-1.5 text-xs rounded-lg transition-colors"
+                              style={{ background: 'var(--cream)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
+                              취소
+                            </button>
+                            <button type="button"
+                              disabled={isPending || !canApply}
+                              onClick={handleChangeDueDayPerm}
+                              className="flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors disabled:opacity-40"
+                              style={{ background: 'var(--coral)', color: '#fff' }}>
+                              {isPending ? '처리 중...' : '변경 적용'}
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )}
 
                 {/* 읽기 전용 푸터 */}
                 <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0 flex-wrap items-center">

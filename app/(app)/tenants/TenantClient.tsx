@@ -9,6 +9,7 @@ import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithG
 } from './actions'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getLeaseSettlementInfo, getRoomQuickInfo } from '@/app/(app)/rooms/actions'
+import { calcProRata, PRORATE_BASE_DAYS } from '@/lib/prorate'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { PhoneInput } from '@/components/ui/PhoneInput'
@@ -276,27 +277,7 @@ function getSortValue(t: Tenant, key: SortKey): string | number {
   }
 }
 
-// 납입일 변경 일할 계산 — 한 달은 항상 30일로 고정 (실제 월 길이와 무관)
-const PRORATE_BASE_DAYS = 30
-function calcProRata(rentAmount: number, oldDueDay: string | null, newDueDayStr: string, targetMonth: string) {
-  const str = newDueDayStr.trim()
-  if (!str) return null
-  const [y, m] = targetMonth.split('-').map(Number)
-  const daysInMonth = new Date(y, m, 0).getDate()
-  const parseDay = (d: string) => {
-    if (d.includes('말')) return daysInMonth
-    const n = parseInt(d, 10)
-    if (isNaN(n) || n < 1 || n > 31) return null
-    return Math.min(n, daysInMonth)
-  }
-  const oldDay = oldDueDay ? parseDay(oldDueDay) : null
-  const newDay = parseDay(str)
-  if (oldDay === null || newDay === null) return null
-  const diff = newDay - oldDay
-  if (diff === 0) return { days: 0, amount: 0, type: 'none' as const }
-  const amount = Math.floor(Math.abs(diff) * rentAmount / PRORATE_BASE_DAYS)
-  return { days: Math.abs(diff), amount, type: diff > 0 ? 'extra' as const : 'refund' as const }
-}
+// 납입일 변경 일할 계산(calcProRata)·PRORATE_BASE_DAYS — @/lib/prorate 로 이동 (수납관리와 공용)
 
 function loadColVis(): Record<ColKey, boolean> | null {
   if (typeof window === 'undefined') return null

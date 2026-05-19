@@ -37,7 +37,7 @@ export function Modal({
   if (!open) return null
   return (
     <div
-      className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center"
+      className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center"
       // 안전 영역(상태바·다이내믹 아일랜드·홈 인디케이터)을 피해 패딩 —
       // 모달 헤더의 닫기 버튼이 상태바에 가려지지 않도록.
       style={{

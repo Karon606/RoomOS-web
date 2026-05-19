@@ -1115,7 +1115,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       alertItems.push({
         category:  'unpaid',
         text:      `${l.tenantName}님 ${l.roomNo}호 미납 ${days}일 경과`,
-        link:      `/rooms?tenantId=${l.tenantId}`,
+        link:      `/tenants?tenantId=${l.tenantId}&tab=info`,
         dotColor:  '#dc2626',
         timeLabel: `${days}일 경과`,
         tenantId:  l.tenantId,
@@ -1131,7 +1131,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       alertItems.push({
         category:  'upcoming',
         text:      `${l.tenantName}님 ${l.roomNo}호 납부 예정`,
-        link:      `/rooms?tenantId=${l.tenantId}`,
+        link:      `/tenants?tenantId=${l.tenantId}&tab=info`,
         dotColor:  '#d4a847',
         timeLabel,
         tenantId:  l.tenantId,
@@ -1144,7 +1144,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       alertItems.push({
         category:  'unpaid',
         text:      `${l.tenantName}님 ${l.roomNo}호 오늘 납부일`,
-        link:      `/rooms?tenantId=${l.tenantId}`,
+        link:      `/tenants?tenantId=${l.tenantId}&tab=info`,
         dotColor:  '#dc2626',
         timeLabel: '오늘',
         tenantId:  l.tenantId,
