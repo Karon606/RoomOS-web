@@ -841,13 +841,21 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
                 {entry.locationBreakdown.map(lb => (
                   <span key={lb.locationId} className="text-[0.625rem] bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
                     {lb.locationName} {fmtQty(lb.qty, stockUnit)}
-                    {lb.fromHubQty != null && lb.fromHubQty > 0 && (
-                      <span className="ml-1 text-amber-600">(+창고 {fmtQty(lb.fromHubQty, stockUnit)})</span>
-                    )}
                   </span>
                 ))}
               </div>
             )}
+            {/* 이동 유입 — 출처 → 도착 · 수량, 한 줄씩 문장형으로 표시 */}
+            {entry.locationBreakdown
+              .filter(lb => lb.fromHubQty != null && lb.fromHubQty > 0)
+              .map(lb => {
+                const src = entry.locationBreakdown.find(x => x.locationId === lb.fromLocationId)
+                return (
+                  <p key={`mv-${lb.locationId}`} className="text-[0.625rem] text-amber-600 mt-0.5">
+                    ↳ {src?.locationName ?? '창고'} → {lb.locationName} · {fmtQty(lb.fromHubQty!, stockUnit)} 이동
+                  </p>
+                )
+              })}
             {entry.memo && <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">{entry.memo}</p>}
           </div>
         </div>

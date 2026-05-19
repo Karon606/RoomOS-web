@@ -418,6 +418,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         locationName: lb.storageLocation.name,
         qty: lb.remainingQty,
         fromHubQty: lb.fromHubQty ?? undefined,
+        fromLocationId: lb.fromLocationId ?? undefined,
       })) satisfies LocationQtyEntry[],
     })),
     ...additions.map(a => ({ type: 'addition' as const, id: a.id, date: a.date, createdAt: a.createdAt, addedQty: a.addedQty, source: a.source, memo: a.memo })),
