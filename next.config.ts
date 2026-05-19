@@ -30,6 +30,13 @@ const nextConfig: NextConfig = {
       },
     ]
   },
+  // 공개 공실 안내 페이지 — /members/<slug> 를 public/members/<slug>/index.html
+  // 정적 파일로 서빙. 영업장별 폴더만 추가하면 공개 페이지가 생기는 범용 구조.
+  async rewrites() {
+    return [
+      { source: '/members/:slug', destination: '/members/:slug/index.html' },
+    ]
+  },
 };
 
 export default nextConfig;
