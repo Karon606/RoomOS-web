@@ -101,6 +101,43 @@
   /* 강조 보조색 — 보증금(purple), 예비비(teal) */
   --accent-deposit: #7c3aed;
   --accent-reserve: #0d9488;
+
+  /* ── Brand Guide v1.2 토큰 alias — 기존 v1.1 토큰 위에 안전하게 추가 ──
+     신규 코드는 v1.2 토큰 사용 권장 (docs/brand-guide-v1.2.md).
+     v1.1 변수는 호환성 유지 위해 유지. v1.2 --cream-2 (#F5EDE0)는
+     v1.1 --cream-soft와 동일 값이라 --cream-2 alias는 추가하지 않음
+     (v1.1 --cream-2 = #E8DDD0은 페이지 배경 의미라 충돌). */
+
+  /* Terracotta — v1.2 */
+  --tc:           var(--persimmon);    /* #A03C2E */
+  --tc-d:         var(--persimmon-d);  /* #7C2D26 */
+  --tc-s:         #B85042;             /* Terracotta soft (중간 호버 톤) */
+
+  /* Sand soft */
+  --sand-s:       var(--sand-2);       /* #F5E5CC */
+
+  /* Ink — v1.2 (s=soft, m=mute) */
+  --ink-s:        var(--ink-3);        /* #7A6553 — 보조 텍스트 */
+  --ink-m:        var(--ink-mute);     /* #A89380 — placeholder·메타 */
+
+  /* Page bg — v1.1 cream-2 = v1.2 page (#E8DDD0) */
+  --page:         var(--cream-2);
+
+  /* Status — v1.2 명시 토큰 */
+  --success:      var(--status-paid-fg);    /* #4E6834 */
+  --success-bg:   var(--status-paid-bg);    /* rgba(85,108,58,.10) */
+  --overdue:      var(--persimmon);         /* #A03C2E */
+  --overdue-bg:   rgba(160,60,46,.18);
+
+  /* Border tokens — 카드·디바이더 표준 (v1.1는 var(--warm-border) 단일 hex 사용) */
+  --border:       rgba(61,36,24,.10);
+  --border-s:     rgba(61,36,24,.18);
+
+  /* Motion — v1.2 추가 토큰 */
+  --dur-load:     3200ms;     /* 브랜드 로더 1 사이클 */
+  --ease-default: ease;
+  --ease-in-out:  ease-in-out;
+  --ease-sharp:   cubic-bezier(.4, 0, .2, 1);
 }
 
 @theme inline {
