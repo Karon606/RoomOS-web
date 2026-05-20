@@ -3557,7 +3557,11 @@ function SettlementInfoModal({
         <div className="border-t border-[var(--warm-border)] px-6 py-3 flex justify-end shrink-0">
           <button
             type="button"
-            onClick={() => router.push(`/rooms?month=${targetMonth}`)}
+            onClick={() => {
+              const params = new URLSearchParams({ month: targetMonth })
+              if (info?.roomNo) params.set('roomNo', info.roomNo)
+              router.push(`/rooms?${params.toString()}`)
+            }}
             className="px-4 py-2 text-xs font-medium rounded-xl bg-[var(--coral)] hover:opacity-90 text-white transition-colors">
             수납 관리로 이동
           </button>
