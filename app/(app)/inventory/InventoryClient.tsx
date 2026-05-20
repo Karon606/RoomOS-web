@@ -1126,21 +1126,25 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
               <div key={l.id} className={l.isHub ? 'bg-[var(--honey)]/5 border border-[var(--honey)]/30 rounded-lg px-2 py-1.5 space-y-1' : 'space-y-1'}>
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{l.name}{l.isHub ? ' (허브)' : ''}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <input type="text" inputMode="decimal" placeholder="채우기 전"
-                    value={beforeStr}
-                    onChange={e => setBeforeQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                    className={`flex-1 ${inputCls}`} />
-                  <span className="text-xs text-[var(--warm-muted)] shrink-0">→</span>
-                  <input type="text" inputMode="decimal" placeholder="채운 후"
-                    value={afterStr}
-                    onChange={e => setAfterQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                    className={`flex-1 ${inputCls}`} />
                   {restocked > 0 && (
-                    <span className="text-[0.625rem] text-[var(--coral)] shrink-0 w-10 text-right">+{Math.round(restocked * 100) / 100}</span>
+                    <span className="text-[0.625rem] text-[var(--coral)] shrink-0">보충 +{Math.round(restocked * 100) / 100}</span>
                   )}
-                  {restocked === 0 && <span className="w-10 shrink-0" />}
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div>
+                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">채우기 전</p>
+                    <input type="text" inputMode="decimal" placeholder="0"
+                      value={beforeStr}
+                      onChange={e => setBeforeQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                      className={`w-full min-w-0 ${inputCls}`} />
+                  </div>
+                  <div>
+                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">채운 후</p>
+                    <input type="text" inputMode="decimal" placeholder="0"
+                      value={afterStr}
+                      onChange={e => setAfterQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                      className={`w-full min-w-0 ${inputCls}`} />
+                  </div>
                 </div>
               </div>
             )
@@ -1500,7 +1504,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
                 </div>
               )
             }
-            // 비허브 위치 행 — 전 → 후
+            // 비허브 위치 행 — 전 → 후 (grid 2cols, 라벨은 input 위)
             const beforeStr = beforeQtys[loc.id] ?? ''
             const afterStr  = afterQtys[loc.id] ?? ''
             const beforeN = beforeStr === '' ? null : Number(beforeStr)
@@ -1510,22 +1514,28 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
               <div key={loc.id} className="space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{loc.name}</span>
-                  {prevQty !== undefined && <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">이전 {prevQty}{stockUnit ?? ''}</span>}
+                  <div className="flex items-baseline gap-1.5 shrink-0">
+                    {restocked > 0 && (
+                      <span className="text-[0.625rem] text-[var(--coral)]">보충 +{Math.round(restocked * 100) / 100}</span>
+                    )}
+                    {prevQty !== undefined && <span className="text-[0.625rem] text-[var(--warm-muted)]">이전 {prevQty}{stockUnit ?? ''}</span>}
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs">
-                  <input type="text" inputMode="decimal"
-                    value={beforeStr} placeholder="채우기 전"
-                    onChange={e => setBeforeQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                    className={`flex-1 ${inputCls}`} />
-                  <span className="text-[var(--warm-muted)] shrink-0">→</span>
-                  <input type="text" inputMode="decimal"
-                    value={afterStr} placeholder="채운 후"
-                    onChange={e => setAfterQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                    className={`flex-1 ${inputCls}`} />
-                  {restocked > 0 && (
-                    <span className="text-[0.625rem] text-[var(--coral)] shrink-0 w-10 text-right">+{Math.round(restocked * 100) / 100}</span>
-                  )}
-                  {restocked === 0 && <span className="w-10 shrink-0" />}
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div>
+                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">채우기 전</p>
+                    <input type="text" inputMode="decimal" placeholder="0"
+                      value={beforeStr}
+                      onChange={e => setBeforeQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                      className={`w-full min-w-0 ${inputCls}`} />
+                  </div>
+                  <div>
+                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">채운 후</p>
+                    <input type="text" inputMode="decimal" placeholder="0"
+                      value={afterStr}
+                      onChange={e => setAfterQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                      className={`w-full min-w-0 ${inputCls}`} />
+                  </div>
                 </div>
               </div>
             )
