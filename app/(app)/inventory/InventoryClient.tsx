@@ -1436,18 +1436,31 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
   }
   const confirmAll = () => setTouched(new Set(locItems.map(r => r.id)))
 
+  // 저장 대상: 잔량 직접 입력했거나 이동 유입을 기록한 항목
+  const hasTransferEntry = (id: string) => Number(fromHubQtys[id]) > 0 && !!fromHubSrc[id]
+  const isItemDirty = (id: string) => (qtys[id] !== '' && qtys[id] != null) || hasTransferEntry(id)
+
   const doSave = async (forceMerge?: boolean) => {
-    const toSave = locItems.filter(r => qtys[r.id] !== '' && qtys[r.id] != null)
+    const toSave = locItems.filter(r => isItemDirty(r.id))
     if (toSave.length === 0) { setError('저장할 수량이 없습니다.'); return }
     setPending(true); setError('')
     const locName = locs.find(l => l.id === locId)?.name ?? ''
     const now = Date.now()
     try {
       await Promise.all(toSave.map(r => {
-        const thisLocQty = Number(qtys[r.id]) || 0
         const fromHub = Number(fromHubQtys[r.id]) || 0
         const fromSrc = fromHubSrc[r.id] || ''
         const hasTransfer = fromHub > 0 && !!fromSrc
+        const prevAtLoc = r.lastCheckLocationBreakdown.find(lb => lb.locationId === locId)
+        const prevQty = prevAtLoc?.qty ?? 0
+        // 잔량 직접 입력했으면 그 값. 안 만지고 이동 유입만 했으면 prev + 이동.
+        // 이동도 잔량도 둘 다 안 했으면 isItemDirty에서 걸렀으니 이 케이스는 없음.
+        const userTouched = touched.has(r.id)
+        const userQtyStr = qtys[r.id]
+        const userQtyEntered = userQtyStr !== '' && userQtyStr != null
+        const thisLocQty = (userTouched || userQtyEntered)
+          ? (Number(userQtyStr) || 0)
+          : prevQty + (hasTransfer ? fromHub : 0)
         const otherLocs = r.lastCheckLocationBreakdown
           .filter(lb => lb.locationId !== locId)
           .map(lb => ({ storageLocationId: lb.locationId, qty: lb.qty }))
@@ -1487,7 +1500,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
   }
 
   const handleSave = async () => {
-    const toSave = locItems.filter(r => qtys[r.id] !== '' && qtys[r.id] != null)
+    const toSave = locItems.filter(r => isItemDirty(r.id))
     if (toSave.length === 0) { setError('저장할 수량이 없습니다.'); return }
 
     // 같은 날, 6h 초과 → 사용자 확인 필요
@@ -1513,7 +1526,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)] shrink-0">
           <div>
             <h2 className="text-sm font-bold text-[var(--warm-dark)]">위치별 점검</h2>
-            <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">한 위치에서 여러 품목을 한 번에 기록합니다</p>
+            <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">한 위치에서 여러 품목을 한 번에 기록합니다 · <span className="text-amber-700">이동 유입을 입력하면 출처 위치의 재고가 자동 차감됩니다</span></p>
           </div>
           <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl w-8 h-8 flex items-center justify-center">✕</button>
         </div>
@@ -1579,7 +1592,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
                       </div>
                       <span className="text-[0.625rem] text-[var(--warm-muted)] w-8 shrink-0">{stockUnit ?? ''}</span>
                     </div>
-                    {srcLocs.length > 0 && (qtys[r.id] ?? '') !== '' && (
+                    {srcLocs.length > 0 && (
                       <div className="flex items-center gap-2 pl-1">
                         <span className="text-[0.625rem] text-amber-600 shrink-0">└ 이동 유입</span>
                         <select
@@ -1599,6 +1612,28 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
                         <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">{stockUnit ?? ''}</span>
                       </div>
                     )}
+                    {/* 저장 잔량 자동 계산 힌트 — 이동 유입 입력 시 prev + 이동 = N 안내 */}
+                    {(() => {
+                      const fromHub = Number(fromHubQtys[r.id]) || 0
+                      const fromSrc = fromHubSrc[r.id] || ''
+                      const hasTransfer = fromHub > 0 && !!fromSrc
+                      if (!hasTransfer) return null
+                      const prevQty = prev?.qty ?? 0
+                      const userTouched = touched.has(r.id)
+                      const userQtyStr = qtys[r.id]
+                      const userQtyEntered = userQtyStr !== '' && userQtyStr != null
+                      const finalQty = (userTouched || userQtyEntered)
+                        ? (Number(userQtyStr) || 0)
+                        : prevQty + fromHub
+                      const fromName = srcLocs.find(l => l.id === fromSrc)?.name ?? ''
+                      return (
+                        <p className="text-[0.625rem] text-amber-700 pl-[3.5rem]">
+                          → 저장 잔량 <strong>{finalQty}{stockUnit ?? ''}</strong>
+                          {!userTouched && !userQtyEntered && ` (이전 ${prevQty} + 유입 ${fromHub})`}
+                          {fromName && <span className="text-[var(--warm-muted)]"> · {fromName} −{fromHub}{stockUnit ?? ''} 자동 차감</span>}
+                        </p>
+                      )
+                    })()}
                   </div>
                 )
               })}
@@ -1621,7 +1656,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
         <div className="border-t border-[var(--warm-border)] px-5 py-3 flex gap-2 shrink-0">
           <Btn variant="secondary" fullWidth onClick={onClose}>취소</Btn>
           <Btn variant="primary" fullWidth onClick={handleSave} disabled={pending || !locId || locItems.length === 0}>
-            {pending ? '저장 중...' : `${locItems.filter(r => (qtys[r.id] ?? '') !== '').length}품목 저장`}
+            {pending ? '저장 중...' : `${locItems.filter(r => isItemDirty(r.id)).length}품목 저장`}
           </Btn>
         </div>
       </div>
