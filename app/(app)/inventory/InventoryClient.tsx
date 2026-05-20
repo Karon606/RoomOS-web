@@ -942,8 +942,8 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
               {itemLocations.map(loc => (
                 <button key={loc.id} type="button" disabled={pending}
                   onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id, loc.id) }}
-                  className={`text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-40 ${loc.isHub ? 'border-amber-300 bg-amber-50 text-amber-700 font-medium' : 'border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)]'}`}>
-                  {loc.isHub ? '🏬 ' : ''}{loc.name}
+                  className={`text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-40 ${loc.isHub ? 'border-[var(--honey)] bg-[var(--honey)]/10 text-[var(--ink)] font-medium' : 'border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)]'}`}>
+                  {loc.name}
                 </button>
               ))}
               <button type="button" disabled={pending}
@@ -1150,7 +1150,7 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
           <select value={storageLocationId} onChange={e => setStorageLocationId(e.target.value)} className={inputCls}>
             <option value="">위치 없이 기록</option>
             {itemLocations.map(loc => (
-              <option key={loc.id} value={loc.id}>{loc.isHub ? '🏬 ' : ''}{loc.name}</option>
+              <option key={loc.id} value={loc.id}>{loc.name}{loc.isHub ? ' (허브)' : ''}</option>
             ))}
           </select>
         </div>
@@ -2023,22 +2023,22 @@ function AdditionForm({ item, onCancel, onDone }: {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-[0.625rem] text-[var(--warm-muted)]">규격</label>
-              <div className="flex gap-1 items-center">
+              <div className="flex gap-1.5 items-center">
                 <input type="text" inputMode="decimal" value={specQty}
                   onChange={e => setSpecQty(e.target.value.replace(/[^0-9.]/g, ''))}
                   placeholder="0"
-                  className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-                <span className="text-xs text-[var(--warm-muted)] shrink-0 w-10 text-left">{item.specUnit}</span>
+                  className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                <span className="text-xs text-[var(--warm-muted)] shrink-0">{item.specUnit}</span>
               </div>
             </div>
             <div className="space-y-1.5">
               <label className="text-[0.625rem] text-[var(--warm-muted)]">수량</label>
-              <div className="flex gap-1 items-center">
+              <div className="flex gap-1.5 items-center">
                 <input type="text" inputMode="decimal" value={packQty}
                   onChange={e => setPackQty(e.target.value.replace(/[^0-9.]/g, ''))}
                   placeholder="1"
-                  className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-                <span className="text-xs text-[var(--warm-muted)] shrink-0 w-10 text-left">{item.qtyUnit ?? '개'}</span>
+                  className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                <span className="text-xs text-[var(--warm-muted)] shrink-0">{item.qtyUnit ?? '개'}</span>
               </div>
             </div>
           </div>
@@ -2074,7 +2074,7 @@ function AdditionForm({ item, onCancel, onDone }: {
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
             <option value="">위치 없이 기록</option>
             {item.locations.map(loc => (
-              <option key={loc.id} value={loc.id}>{loc.isHub ? '🏬 ' : ''}{loc.name}</option>
+              <option key={loc.id} value={loc.id}>{loc.name}{loc.isHub ? ' (허브)' : ''}</option>
             ))}
           </select>
         </div>
