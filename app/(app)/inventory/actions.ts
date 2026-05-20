@@ -1178,16 +1178,74 @@ export async function batchSetItemLocations(trackedItemIds: string[], locationId
 }
 
 // ── 수령 확인
+// locationId가 지정되면, 그 위치의 잔량에 수령 수량을 더한 StockCheck를 자동 생성한다.
+// 결과: 수령 확인 직후 재고 점검을 열면 해당 위치 잔량이 0이 아니라 수령된 만큼으로 prefill됨 (#3)
 export async function confirmReceipt(expenseId: string, locationId?: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const expense = await prisma.expense.findFirst({ where: { id: expenseId, propertyId } })
     if (!expense) return { ok: false, error: '구매 내역을 찾을 수 없습니다.' }
+
     await prisma.expense.update({
       where: { id: expenseId },
       data: { receivedAt: new Date(), ...(locationId ? { receivedLocationId: locationId } : {}) },
     })
+
+    // 위치 지정 + 수량 정보 있을 때만 자동 점검 생성
+    if (locationId && expense.qtyValue && expense.qtyValue > 0 && expense.itemLabel) {
+      const item = await prisma.trackedItem.findFirst({
+        where: {
+          propertyId, category: expense.category, label: expense.itemLabel,
+          ...(expense.qtyUnit ? { qtyUnit: expense.qtyUnit } : {}),
+          isArchived: false,
+        },
+        select: { id: true, trackUnit: true, specUnit: true, qtyUnit: true },
+      })
+
+      if (item) {
+        const receivedQty = item.trackUnit === 'spec' && expense.specValue
+          ? expense.qtyValue * expense.specValue
+          : expense.qtyValue
+
+        if (receivedQty > 0) {
+          const lastCheck = await prisma.stockCheck.findFirst({
+            where: { trackedItemId: item.id },
+            orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+            include: { locationBreakdown: true },
+          })
+          const prevByLoc = new Map<string, number>(
+            (lastCheck?.locationBreakdown ?? []).map(lb => [lb.storageLocationId, lb.remainingQty])
+          )
+          const prevAtTarget = prevByLoc.get(locationId) ?? 0
+          const newAtTarget = prevAtTarget + receivedQty
+          // 다른 위치는 이전 값 유지, 대상 위치만 +receivedQty
+          const allLocs: { storageLocationId: string; qty: number }[] = []
+          for (const [locId, qty] of prevByLoc) {
+            if (locId !== locationId && qty > 0) allLocs.push({ storageLocationId: locId, qty })
+          }
+          allLocs.push({ storageLocationId: locationId, qty: newAtTarget })
+          const totalQty = allLocs.reduce((s, l) => s + l.qty, 0)
+
+          const unit = item.trackUnit === 'spec' ? (item.specUnit ?? '') : (item.qtyUnit ?? '')
+          await prisma.stockCheck.create({
+            data: {
+              trackedItemId: item.id,
+              date: new Date(),
+              remainingQty: totalQty,
+              memo: `[수령 자동] +${receivedQty}${unit}`,
+              locationBreakdown: {
+                create: allLocs.filter(l => l.qty > 0).map(l => ({
+                  storageLocationId: l.storageLocationId,
+                  remainingQty: l.qty,
+                })),
+              },
+            },
+          })
+        }
+      }
+    }
+
     revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
