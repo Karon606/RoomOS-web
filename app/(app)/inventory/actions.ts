@@ -395,7 +395,11 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         },
       },
     }),
-    prisma.stockAddition.findMany({ where: { trackedItemId }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }),
+    prisma.stockAddition.findMany({
+      where: { trackedItemId },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      include: { storageLocation: { select: { id: true, name: true } } },
+    }),
     prisma.expense.findMany({
       where: {
         propertyId,
@@ -421,7 +425,12 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         fromLocationId: lb.fromLocationId ?? undefined,
       })) satisfies LocationQtyEntry[],
     })),
-    ...additions.map(a => ({ type: 'addition' as const, id: a.id, date: a.date, createdAt: a.createdAt, addedQty: a.addedQty, source: a.source, memo: a.memo })),
+    ...additions.map(a => ({
+      type: 'addition' as const,
+      id: a.id, date: a.date, createdAt: a.createdAt, addedQty: a.addedQty, source: a.source, memo: a.memo,
+      storageLocationId: a.storageLocationId,
+      storageLocationName: a.storageLocation?.name ?? null,
+    })),
     ...purchases.filter(p => p.qtyValue != null).map(p => ({
       type: 'purchase' as const,
       id: p.id, date: p.date, createdAt: p.createdAt, qtyValue: p.qtyValue ?? 0, qtyUnit: p.qtyUnit,
@@ -792,6 +801,7 @@ export async function deleteStockCheck(id: string): Promise<{ ok: true } | { ok:
 // ── StockAddition CRUD
 export async function createStockAddition(data: {
   trackedItemId: string; date: string; addedQty: number; source?: string; memo?: string
+  storageLocationId?: string | null
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -799,6 +809,10 @@ export async function createStockAddition(data: {
     const it = await prisma.trackedItem.findFirst({ where: { id: data.trackedItemId, propertyId } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     if (data.addedQty <= 0) return { ok: false, error: '입수 수량은 0보다 커야 합니다.' }
+    if (data.storageLocationId) {
+      const loc = await prisma.storageLocation.findFirst({ where: { id: data.storageLocationId, propertyId } })
+      if (!loc) return { ok: false, error: '보관 위치를 찾을 수 없습니다.' }
+    }
     const r = await prisma.stockAddition.create({
       data: {
         trackedItemId: data.trackedItemId,
@@ -806,6 +820,7 @@ export async function createStockAddition(data: {
         addedQty: data.addedQty,
         source: data.source || null,
         memo: data.memo || null,
+        storageLocationId: data.storageLocationId || null,
       },
     })
     revalidatePath('/inventory')
@@ -833,6 +848,7 @@ export async function deleteStockAddition(id: string): Promise<{ ok: true } | { 
 
 export async function updateStockAddition(id: string, data: {
   date?: string; addedQty?: number; source?: string | null; memo?: string | null
+  storageLocationId?: string | null
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -840,6 +856,10 @@ export async function updateStockAddition(id: string, data: {
     const a = await prisma.stockAddition.findUnique({ where: { id }, include: { trackedItem: true } })
     if (!a || a.trackedItem.propertyId !== propertyId) return { ok: false, error: '입수 기록을 찾을 수 없습니다.' }
     if (data.addedQty !== undefined && data.addedQty <= 0) return { ok: false, error: '입수 수량은 0보다 커야 합니다.' }
+    if (data.storageLocationId) {
+      const loc = await prisma.storageLocation.findFirst({ where: { id: data.storageLocationId, propertyId } })
+      if (!loc) return { ok: false, error: '보관 위치를 찾을 수 없습니다.' }
+    }
     await prisma.stockAddition.update({
       where: { id },
       data: {
@@ -847,6 +867,7 @@ export async function updateStockAddition(id: string, data: {
         ...(data.addedQty !== undefined ? { addedQty: data.addedQty } : {}),
         ...(data.source !== undefined ? { source: data.source || null } : {}),
         ...(data.memo !== undefined ? { memo: data.memo || null } : {}),
+        ...(data.storageLocationId !== undefined ? { storageLocationId: data.storageLocationId || null } : {}),
       },
     })
     revalidatePath('/inventory')

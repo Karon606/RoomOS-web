@@ -736,6 +736,7 @@ model StorageLocation {
   stockCheckLocations StockCheckLocation[]
   transferSources     StockCheckLocation[] @relation("StockTransferSource")
   receivedExpenses    Expense[]
+  stockAdditions      StockAddition[]
 
   @@unique([propertyId, name])
   @@index([propertyId, sortOrder])
@@ -773,14 +774,16 @@ model StockCheckLocation {
 
 // 무상 입수/이월 등 — 지출 외 추가 입고
 model StockAddition {
-  id             String      @id @default(uuid()) @db.Uuid
-  trackedItemId  String      @db.Uuid
-  trackedItem    TrackedItem @relation(fields: [trackedItemId], references: [id], onDelete: Cascade)
-  date           DateTime    @db.Date
-  addedQty       Float       // qtyUnit 기준 수량
-  source         String?     // 무상/기증/이월/기타
-  memo           String?
-  createdAt      DateTime    @default(now())
+  id                String           @id @default(uuid()) @db.Uuid
+  trackedItemId     String           @db.Uuid
+  trackedItem       TrackedItem      @relation(fields: [trackedItemId], references: [id], onDelete: Cascade)
+  date              DateTime         @db.Date
+  addedQty          Float            // qtyUnit 기준 수량
+  source            String?          // 무상/기증/이월/기타
+  memo              String?
+  storageLocationId String?          @db.Uuid  // 입고된 위치 (지출 수령과 같은 단일 위치 패턴)
+  storageLocation   StorageLocation? @relation(fields: [storageLocationId], references: [id], onDelete: SetNull)
+  createdAt         DateTime         @default(now())
 
   @@index([trackedItemId, date])
   @@map("stock_additions")

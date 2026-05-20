@@ -966,7 +966,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
   // ── 무상 입수 (StockAddition)
   if (editing) {
     return <AdditionEditForm
-      entry={entry} stockUnit={stockUnit}
+      entry={entry} stockUnit={stockUnit} itemLocations={itemLocations}
       onCancel={() => { setEditing(false); setEditError('') }}
       onSave={async (data) => {
         setSavePending(true); setEditError('')
@@ -992,7 +992,10 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
       <div className="min-w-0 flex items-center gap-2">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M12 5v13M6 12l6 6 6-6" /></svg>
         <div className="min-w-0">
-          <p className="text-xs text-[var(--warm-muted)]">{fmtDate(entry.date)} · 무상 입수{entry.source ? ` (${entry.source})` : ''}</p>
+          <p className="text-xs text-[var(--warm-muted)]">
+            {fmtDate(entry.date)} · 무상 입수{entry.source ? ` (${entry.source})` : ''}
+            {entry.storageLocationName && <span className="ml-1">· {entry.storageLocationName}</span>}
+          </p>
           <p className="text-sm font-medium text-[var(--warm-dark)]">+ {fmtQty(entry.addedQty, stockUnit)}</p>
           {entry.memo && <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">{entry.memo}</p>}
         </div>
@@ -1105,11 +1108,12 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
 }
 
 // ── 무상 입수 인라인 편집 폼
-function AdditionEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pending, error }: {
+function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, onDelete, pending, error }: {
   entry: TimelineEntry & { type: 'addition' }
   stockUnit: string | null
+  itemLocations: StorageLocationItem[]
   onCancel: () => void
-  onSave: (data: { date?: string; addedQty?: number; source?: string | null; memo?: string | null }) => Promise<void>
+  onSave: (data: { date?: string; addedQty?: number; source?: string | null; memo?: string | null; storageLocationId?: string | null }) => Promise<void>
   onDelete: () => Promise<void>
   pending: boolean
   error: string
@@ -1118,6 +1122,7 @@ function AdditionEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   const [qty, setQty]   = useState(String(entry.addedQty))
   const [source, setSource] = useState(entry.source ?? '')
   const [memo, setMemo]     = useState(entry.memo ?? '')
+  const [storageLocationId, setStorageLocationId] = useState<string>(entry.storageLocationId ?? '')
 
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
@@ -1139,6 +1144,17 @@ function AdditionEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
         <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">출처</p>
         <input type="text" value={source} onChange={e => setSource(e.target.value)} placeholder="예: 샘플, 증정" className={inputCls} />
       </div>
+      {itemLocations.length > 0 && (
+        <div>
+          <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">입고 위치</p>
+          <select value={storageLocationId} onChange={e => setStorageLocationId(e.target.value)} className={inputCls}>
+            <option value="">위치 없이 기록</option>
+            {itemLocations.map(loc => (
+              <option key={loc.id} value={loc.id}>{loc.isHub ? '🏬 ' : ''}{loc.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
       <div>
         <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">메모</p>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} />
@@ -1150,7 +1166,7 @@ function AdditionEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
         <button type="button" onClick={onCancel} disabled={pending}
           className="text-xs text-[var(--warm-muted)] px-3 py-1.5 rounded-lg hover:bg-[var(--cream)]">취소</button>
         <Btn variant="primary" size="sm" disabled={pending || !qty || Number(qty) <= 0}
-          onClick={() => onSave({ date, addedQty: Number(qty), source: source || null, memo: memo || null })}>
+          onClick={() => onSave({ date, addedQty: Number(qty), source: source || null, memo: memo || null, storageLocationId: storageLocationId || null })}>
           {pending ? '저장 중…' : '저장'}
         </Btn>
       </div>
@@ -1955,7 +1971,7 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
 }
 
 function AdditionForm({ item, onCancel, onDone }: {
-  item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty' }
+  item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   onCancel: () => void; onDone: () => void
 }) {
   // trackUnit='qty': specUnit 있어도 매(qtyUnit) 단위로 단일 입력
@@ -1967,6 +1983,11 @@ function AdditionForm({ item, onCancel, onDone }: {
   const [qtyOnly, setQtyOnly] = useState('')   // 규격 없는 품목용 단일 입력
   const [source, setSource] = useState('무상')
   const [memo, setMemo]     = useState('')
+  // 입고 위치 — 위치가 1개뿐이면(허브든 일반이든) 기본 선택, 아니면 허브 우선 기본
+  const defaultLocId = item.locations.length === 1
+    ? item.locations[0].id
+    : item.locations.find(l => l.isHub)?.id ?? ''
+  const [storageLocationId, setStorageLocationId] = useState<string>(defaultLocId)
   const [pending, startTransition] = useTransition()
   const [error, setError]   = useState('')
 
@@ -1980,7 +2001,10 @@ function AdditionForm({ item, onCancel, onDone }: {
     setError('')
     if (computed <= 0) { setError('수량은 0보다 커야 합니다.'); return }
     startTransition(async () => {
-      const res = await createStockAddition({ trackedItemId: item.id, date, addedQty: computed, source, memo: memo || undefined })
+      const res = await createStockAddition({
+        trackedItemId: item.id, date, addedQty: computed, source, memo: memo || undefined,
+        storageLocationId: storageLocationId || null,
+      })
       if (!res.ok) { setError(res.error); return }
       onDone()
     })
@@ -2043,6 +2067,18 @@ function AdditionForm({ item, onCancel, onDone }: {
           <option value="기타">기타</option>
         </select>
       </div>
+      {item.locations.length > 0 && (
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">입고 위치</label>
+          <select value={storageLocationId} onChange={e => setStorageLocationId(e.target.value)}
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
+            <option value="">위치 없이 기록</option>
+            {item.locations.map(loc => (
+              <option key={loc.id} value={loc.id}>{loc.isHub ? '🏬 ' : ''}{loc.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)}
