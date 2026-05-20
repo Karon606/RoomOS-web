@@ -2363,7 +2363,7 @@ export default function FinanceClient({
           모달: 지출 상세 / 수정
       ══════════════════════════════════════════════════════════ */}
       {detailExp && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
           onClick={() => { setDetailExp(null); setDetailExpEdit(false) }}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
             onClick={e => e.stopPropagation()}>
@@ -2622,7 +2622,7 @@ export default function FinanceClient({
           모달: 수익 상세 / 수정
       ══════════════════════════════════════════════════════════ */}
       {detailInc && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
           onClick={() => { setDetailInc(null); setDetailIncEdit(false) }}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
             onClick={e => e.stopPropagation()}>
@@ -2720,7 +2720,7 @@ export default function FinanceClient({
           모달: 지출 등록
       ══════════════════════════════════════════════════════════ */}
       {showAddExp && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
           onClick={() => setShowAddExp(false)}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
             onClick={e => e.stopPropagation()}>
@@ -2901,7 +2901,7 @@ export default function FinanceClient({
           모달: 수익 등록
       ══════════════════════════════════════════════════════════ */}
       {showAddInc && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
           onClick={() => setShowAddInc(false)}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
             onClick={e => e.stopPropagation()}>
@@ -2968,7 +2968,7 @@ export default function FinanceClient({
     {/* ── 고정 지출 관리 모달 ────────────────────────────────────── */}
 
     {showRecMgmt && (
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) { setShowRecMgmt(false); setShowRecMgmtForm(false) } }}>
+      <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) { setShowRecMgmt(false); setShowRecMgmtForm(false) } }}>
         <div className="bg-[var(--cream)] rounded-2xl w-full max-w-lg max-h-[90dvh] flex flex-col shadow-lift border border-[var(--warm-border)]">
           {/* 모달 헤더 */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
@@ -3150,7 +3150,7 @@ export default function FinanceClient({
     {/* ── 고정 지출 기록 모달 ────────────────────────────────────────── */}
     {recordingRec && (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+        className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
         onClick={e => { if (e.target === e.currentTarget) { setRecordingRec(null); setRecError('') } }}>
         <div className="bg-[var(--cream)] rounded-2xl w-full max-w-sm shadow-lift border border-[var(--warm-border)]">
           {/* 헤더 */}

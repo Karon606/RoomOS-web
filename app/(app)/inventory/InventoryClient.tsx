@@ -465,7 +465,7 @@ function DetailModal({ row, onClose, onChange }: {
       ) : mode === 'addition' ? (
         <AdditionForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : mode === 'settings' ? (
-        <SettingsForm row={row} onCancel={() => setMode('view')} onDone={() => { setMode('view'); onChange() }} />
+        <SettingsForm row={row} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : (
         <>
           <div className="px-5 sm:px-6 pt-3">
@@ -1182,12 +1182,15 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
     : ''
   const [receivedDate, setReceivedDate] = useState(initReceivedDate)
   const [receivedTime, setReceivedTime] = useState(initReceivedTime)
+  // 명시적 미수령 토글 — 'clear' sentinel 대신 별도 플래그로 DatePicker가
+  // 'clear' 문자열을 날짜로 파싱하려다 Invalid Date 표시되던 문제 해결
+  const [unreceived, setUnreceived] = useState(false)
 
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   const buildReceivedAt = () => {
+    if (unreceived) return null  // 수령 대기로 되돌리기
     if (!receivedDate) return undefined  // 변경 없음
-    if (receivedDate === 'clear') return null  // 수령 대기로 되돌리기
     const time = receivedTime || '00:00'
     // KST → UTC 변환
     return new Date(`${receivedDate}T${time}:00+09:00`).toISOString()
@@ -1218,15 +1221,23 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
       {/* 수령 확정일시 */}
       <div className="space-y-1">
         <p className="text-[0.625rem] text-[var(--warm-muted)]">수령 확정일시</p>
-        <div className="flex gap-2 items-center">
-          <DatePicker value={receivedDate} onChange={setReceivedDate} className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
-          <input type="time" value={receivedTime} onChange={e => setReceivedTime(e.target.value)}
-            className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-2 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-          {receivedDate && (
-            <button type="button" onClick={() => { setReceivedDate('clear'); setReceivedTime('') }}
-              className="text-[0.625rem] text-red-400 hover:text-red-600 whitespace-nowrap">미수령으로</button>
-          )}
-        </div>
+        {unreceived ? (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)]">
+            <span className="text-[0.6875rem] font-bold px-2 py-0.5 rounded bg-[var(--honey)]/15 text-[var(--honey-d,#8B5E0A)] tracking-wider">미수령</span>
+            <span className="text-[0.6875rem] text-[var(--warm-muted)]">저장 시 수령 대기로 되돌립니다</span>
+            <div className="flex-1" />
+            <Btn variant="ghost" size="sm" onClick={() => { setUnreceived(false); setReceivedDate(initReceivedDate || ''); setReceivedTime(initReceivedTime || '') }}>되돌리기</Btn>
+          </div>
+        ) : (
+          <div className="flex gap-2 items-center">
+            <DatePicker value={receivedDate} onChange={setReceivedDate} className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+            <input type="time" value={receivedTime} onChange={e => setReceivedTime(e.target.value)}
+              className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-2 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+            {entry.receivedAt && (
+              <Btn variant="danger" size="sm" onClick={() => { setUnreceived(true); setReceivedDate(''); setReceivedTime('') }}>미수령으로</Btn>
+            )}
+          </div>
+        )}
       </div>
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onDelete} disabled={pending}
@@ -1496,7 +1507,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[100] flex items-end sm:items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/60 z-[230] flex items-end sm:items-center justify-center" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-t-2xl sm:rounded-2xl w-full max-w-md flex flex-col max-h-[85vh]"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)] shrink-0">

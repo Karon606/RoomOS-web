@@ -1146,7 +1146,7 @@ export default function RoomsClient({
 
       {/* 수납 모달 */}
       {showPayModal && selectedRoom && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
           onClick={() => { setShowPayModal(false); setShowPayForm(false) }}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[88vh]"
             onClick={e => e.stopPropagation()}>
@@ -1926,7 +1926,7 @@ function TenantInfoModal({ tenantId, onClose, onBack }: { tenantId: string; onCl
   const lease = info?.leaseTerms?.[0]
   const statusLabel = lease?.status ? (STATUS_LABEL_RC[lease.status] ?? lease.status) : null
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[88vh]"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
@@ -2020,7 +2020,7 @@ function RoomInfoModal({ roomId, onClose, onBack }: { roomId: string; onClose: (
     getRoomQuickInfo(roomId).then(setInfo)
   }, [roomId])
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">

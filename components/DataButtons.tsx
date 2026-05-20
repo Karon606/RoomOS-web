@@ -254,7 +254,7 @@ export default function DataButtons() {
     const hasConflicts = preview.conflicts.length > 0
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}
+      <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}
         onClick={close}>
         <div className="w-full max-w-lg bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl flex flex-col max-h-[88vh]"
           onClick={e => e.stopPropagation()}>
@@ -347,7 +347,7 @@ export default function DataButtons() {
     const allErrors = Object.entries(results).flatMap(([sheet, r]) => r.errors.map(e => `[${sheet}] ${e}`))
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }}
+      <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }}
         onClick={close}>
         <div className="w-full max-w-sm bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6 space-y-4"
           onClick={e => e.stopPropagation()}>
@@ -422,7 +422,7 @@ export default function DataButtons() {
 
       {/* ── 내보내기 범위 선택 모달 ── */}
       {showExportModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/50 z-[200] flex items-end sm:items-center justify-center p-4"
           onClick={() => setShowExportModal(false)}>
           <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm"
             onClick={e => e.stopPropagation()}>

@@ -1057,7 +1057,7 @@ export default function TenantClient({
 
       {/* 삭제 확인 모달 */}
       {deleteTarget && (
-        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/70 z-[210] flex items-center justify-center p-4">
           <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm p-6 space-y-4">
             <div className="flex items-start gap-3">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--persimmon)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}>
@@ -1097,7 +1097,7 @@ export default function TenantClient({
         const unreturned = dep - depositReturnAmt
         const exceedsMax = depositReturnAmt > maxRefund
         return (
-          <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/70 z-[210] flex items-center justify-center p-4">
             <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden">
               <div className="px-5 py-4 border-b border-[var(--warm-border)]">
                 <p className="text-base font-bold text-[var(--warm-dark)]">보증금 환불</p>
@@ -1175,7 +1175,7 @@ export default function TenantClient({
         const dirLabel = diff > 0 ? '인상' : diff < 0 ? '인하' : '동결'
         const dirColor = diff > 0 ? 'text-rose-600' : diff < 0 ? 'text-emerald-600' : 'text-[var(--warm-dark)]'
         return (
-          <div className="fixed inset-0 bg-black/70 z-[70] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/70 z-[220] flex items-center justify-center p-4">
             <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-bold text-[var(--warm-dark)]">가격 변동 적용</h2>
@@ -1552,7 +1552,7 @@ export default function TenantClient({
         const paidMonths    = payments.filter(p => p.isPaid).length
 
         return (
-          <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
             onClick={closeDetail}>
             <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[88vh]"
               onClick={e => e.stopPropagation()}>
@@ -2111,7 +2111,7 @@ export default function TenantClient({
 
       {/* ── 입주자 추가 모달 ────────────────────────────────────────── */}
       {showAdd && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
           onClick={() => setShowAdd(false)}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh]"
             onClick={e => e.stopPropagation()}>
@@ -2138,7 +2138,7 @@ export default function TenantClient({
 
       {/* ── 입주자 수정 모달 ────────────────────────────────────────── */}
       {editTenant && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
           onClick={() => setEditTenant(null)}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh]"
             onClick={e => e.stopPropagation()}>
@@ -2182,7 +2182,7 @@ export default function TenantClient({
           return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})`
         }
         return (
-          <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
             onClick={closePayModal}>
             <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[88vh]"
               onClick={e => e.stopPropagation()}>
@@ -2709,7 +2709,7 @@ export default function TenantClient({
       {roomDetailId && (() => {
         const room = rooms.find(r => r.id === roomDetailId)
         return (
-          <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
             onClick={() => setRoomDetailId(null)}>
             <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm p-6 space-y-3"
               onClick={e => e.stopPropagation()}>
@@ -3505,7 +3505,7 @@ function SettlementInfoModal({
   }, [leaseTermId, targetMonth])
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[88vh]"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
@@ -3580,7 +3580,7 @@ function RoomInfoSimpleModal({
   useEffect(() => { getRoomQuickInfo(roomId).then(setInfo) }, [roomId])
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
@@ -3766,7 +3766,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[90vh]"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
