@@ -5,23 +5,13 @@ import Sidebar from '@/components/layout/Sidebar'
 import Header, { type AppUser } from '@/components/layout/Header'
 import BottomNav from '@/components/layout/BottomNav'
 import SaveFeedback from '@/components/feedback/SaveFeedback'
-import { ARCH_PATH } from '@/components/brand/StayeumWordmark'
+import { BrandLoader } from '@/components/brand/BrandLoader'
 
-// 페이지 전환용 경량 로더 — 브랜드 Arch Symbol이 호흡하듯 펄스
+// 페이지 전환용 경량 로더 — Brand Guide v1.2 의 Arch line-draw 모션 (워드마크 없음)
 function PageLoadingOverlay() {
   return (
     <div className="absolute inset-0 flex items-center justify-center z-[60]" style={{ background: 'var(--canvas)' }}>
-      <style>{`
-        @keyframes stm-pulse {
-          0%, 100% { opacity: 0.38; transform: scale(0.9); }
-          50%      { opacity: 1;    transform: scale(1); }
-        }
-        .stm-pulse { transform-box: fill-box; transform-origin: center;
-                     animation: stm-pulse 1.4s ease-in-out infinite; }
-      `}</style>
-      <svg width="54" height="40" viewBox="8 8 113 84" xmlns="http://www.w3.org/2000/svg" aria-label="로딩 중">
-        <path className="stm-pulse" d={ARCH_PATH} fill="var(--persimmon)" />
-      </svg>
+      <BrandLoader size="sm" />
     </div>
   )
 }
