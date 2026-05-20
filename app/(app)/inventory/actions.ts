@@ -421,6 +421,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         locationId: lb.storageLocationId,
         locationName: lb.storageLocation.name,
         qty: lb.remainingQty,
+        restockedQty: lb.restockedQty ?? undefined,
         fromHubQty: lb.fromHubQty ?? undefined,
         fromLocationId: lb.fromLocationId ?? undefined,
       })) satisfies LocationQtyEntry[],
@@ -683,10 +684,22 @@ export async function unarchiveTrackedItem(id: string): Promise<{ ok: true } | {
 
 // ── StockCheck CRUD
 // 위치별 잔량 입력 1건
-type LocQty = { storageLocationId: string; qty: number; fromHubQty?: number; fromLocationId?: string }
+// qty: "채운 후" 잔량 (보충했다면 보충 후, 안 했으면 실측 그대로)
+// restockedQty: 이번 점검에서 이 위치에 보충한 양 (NULL 또는 0 = 보충 없음).
+//               "채우기 전" 잔량 = qty - restockedQty.
+//               허브 자동 차감은 UI 단계에서 합계 restockedQty 만큼 허브 위치의 qty에서
+//               빼서 보낸다(서버는 받은 값을 그대로 저장만 함 — 동시성 안전 + 운영자 보정 가능).
+// fromHubQty/fromLocationId: 레거시 명시적 이동 — 신규 UI 미사용, 기존 점검 호환용.
+type LocQty = {
+  storageLocationId: string
+  qty: number
+  restockedQty?: number
+  fromHubQty?: number
+  fromLocationId?: string
+}
 
-// 재고 이동 보정 — "B에서 A로 N 이동" 선언이 있으면 같은 점검 안에서 출처(B) 수량을 N 차감.
-// → 출처를 다시 점검하지 않아도 총량·소모량이 맞는다.
+// (레거시) 명시적 위치 간 이동 보정 — fromHubQty 선언이 있으면 같은 점검 안에서 출처 수량 차감.
+// 신규 UI는 사용하지 않지만 기존 데이터·기존 화면 호환을 위해 유지.
 function applyTransfers(lqs: LocQty[]): LocQty[] {
   const adj = lqs.map(l => ({ ...l }))
   for (const lq of adj) {
@@ -721,6 +734,7 @@ export async function createStockCheck(data: {
             create: adjusted.map(lq => ({
               storageLocationId: lq.storageLocationId,
               remainingQty: lq.qty,
+              restockedQty: lq.restockedQty ?? null,
               fromHubQty: lq.fromHubQty ?? null,
               fromLocationId: lq.fromLocationId ?? null,
             })),
@@ -769,6 +783,7 @@ export async function updateStockCheck(id: string, data: {
             stockCheckId: id,
             storageLocationId: lq.storageLocationId,
             remainingQty: lq.qty,
+            restockedQty: lq.restockedQty ?? null,
             fromHubQty: lq.fromHubQty ?? null,
             fromLocationId: lq.fromLocationId ?? null,
           })),

@@ -755,14 +755,21 @@ model TrackedItemLocation {
   @@map("tracked_item_locations")
 }
 
-// 점검 시 위치별 잔량 — StockCheck.remainingQty = sum(이 테이블)
+// 점검 시 위치별 잔량 — StockCheck.remainingQty = sum(이 테이블의 remainingQty)
+//
+// remainingQty: 점검 시점의 "채운 후" 잔량 (보충했다면 보충 후 수량, 안 했으면 실측 수량)
+// restockedQty: 이번 점검에서 이 위치에 보충한 양 — "채우기 전" 잔량 = remainingQty - restockedQty.
+//               합계만큼 허브 위치의 remainingQty에서 자동 차감됨 (액션 단계에서 처리).
+// fromHubQty/fromLocationId: (레거시) 명시적 위치 간 이동 수량 — 기존 데이터 호환용,
+//               신규 UI는 restockedQty를 사용하고 허브 자동 차감으로 대체.
 model StockCheckLocation {
   id                String @id @default(uuid()) @db.Uuid
   stockCheckId      String @db.Uuid
   storageLocationId String @db.Uuid
   remainingQty      Float
-  fromHubQty        Float?  // 유입 수량 — 출처 위치에서 이 위치로 옮겨온 양 (재고 이동)
-  fromLocationId    String? @db.Uuid  // 유입 출처 위치 (null+fromHubQty면 레거시 허브 이동)
+  restockedQty      Float?  // 이번 점검에서 이 위치에 보충한 양 (NULL = 보충 없음)
+  fromHubQty        Float?  // (레거시) 명시적 이동 유입 수량
+  fromLocationId    String? @db.Uuid  // (레거시) 이동 유입 출처
 
   stockCheck      StockCheck       @relation(fields: [stockCheckId], references: [id], onDelete: Cascade)
   storageLocation StorageLocation  @relation(fields: [storageLocationId], references: [id], onDelete: Cascade)

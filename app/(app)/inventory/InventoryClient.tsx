@@ -838,20 +838,34 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
             <p className="text-sm font-medium text-[var(--warm-dark)]">잔량 {fmtQty(entry.remainingQty, stockUnit)}</p>
             {entry.locationBreakdown.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-1">
-                {entry.locationBreakdown.map(lb => (
-                  <span key={lb.locationId} className="text-[0.625rem] bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
-                    {lb.locationName} {fmtQty(lb.qty, stockUnit)}
-                  </span>
-                ))}
+                {entry.locationBreakdown.map(lb => {
+                  const restocked = lb.restockedQty ?? 0
+                  return (
+                    <span key={lb.locationId} className="text-[0.625rem] bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)]/60 rounded-full px-2 py-0.5">
+                      {lb.locationName} {fmtQty(lb.qty, stockUnit)}
+                      {restocked > 0 && <span className="ml-1 text-[var(--coral)]">+{Math.round(restocked * 100) / 100}</span>}
+                    </span>
+                  )
+                })}
               </div>
             )}
-            {/* 이동 유입 — 출처 → 도착 · 수량, 한 줄씩 문장형으로 표시 */}
+            {/* 보충 합계 — restockedQty 가 있으면 합계와 허브 차감 안내 */}
+            {(() => {
+              const restockTotal = entry.locationBreakdown.reduce((s, lb) => s + (lb.restockedQty ?? 0), 0)
+              if (restockTotal <= 0) return null
+              return (
+                <p className="text-[0.625rem] text-[var(--coral)] mt-0.5">
+                  ↳ 보충 +{Math.round(restockTotal * 100) / 100}{stockUnit ?? ''} (허브 자동 차감 반영)
+                </p>
+              )
+            })()}
+            {/* (레거시) 명시적 이동 유입 — fromHubQty 가 있는 점검만 */}
             {entry.locationBreakdown
               .filter(lb => lb.fromHubQty != null && lb.fromHubQty > 0)
               .map(lb => {
                 const src = entry.locationBreakdown.find(x => x.locationId === lb.fromLocationId)
                 return (
-                  <p key={`mv-${lb.locationId}`} className="text-[0.625rem] text-amber-600 mt-0.5">
+                  <p key={`mv-${lb.locationId}`} className="text-[0.625rem] text-[var(--honey)] mt-0.5">
                     ↳ {src?.locationName ?? '창고'} → {lb.locationName} · {fmtQty(lb.fromHubQty!, stockUnit)} 이동
                   </p>
                 )
@@ -1016,45 +1030,67 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
   stockUnit: string | null
   itemLocations: StorageLocationItem[]
   onCancel: () => void
-  onSave: (data: { date?: string; memo?: string | null; remainingQty?: number; locationQtys?: { storageLocationId: string; qty: number }[] }) => Promise<void>
+  onSave: (data: { date?: string; memo?: string | null; remainingQty?: number; locationQtys?: { storageLocationId: string; qty: number; restockedQty?: number }[] }) => Promise<void>
   pending: boolean
   error: string
 }) {
   const [date, setDate] = useState(entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10))
   const [memo, setMemo] = useState(entry.memo ?? '')
 
-  // 기존 점검에 위치별 기록이 있으면 그걸 사용, 없으면 아이템의 locations 목록으로 대체
-  const locationSources: { id: string; name: string }[] =
+  // 위치 source — 기존 breakdown이 있으면 우선, 없으면 아이템 locations 목록
+  const locationSources: { id: string; name: string; isHub: boolean }[] =
     entry.locationBreakdown.length > 0
-      ? entry.locationBreakdown.map(lb => ({ id: lb.locationId, name: lb.locationName }))
-      : itemLocations.map(l => ({ id: l.id, name: l.name }))
+      ? entry.locationBreakdown.map(lb => ({
+          id: lb.locationId, name: lb.locationName,
+          isHub: itemLocations.find(l => l.id === lb.locationId)?.isHub ?? false,
+        }))
+      : itemLocations.map(l => ({ id: l.id, name: l.name, isHub: l.isHub }))
 
   const hasLocations = locationSources.length > 0
 
-  const [qty, setQty] = useState(hasLocations ? '' : String(entry.remainingQty))
-  const [locationQtys, setLocationQtys] = useState<Record<string, string>>(
-    () => Object.fromEntries(
-      entry.locationBreakdown.length > 0
-        ? entry.locationBreakdown.map(lb => [lb.locationId, String(lb.qty)])
-        : itemLocations.map(l => [l.id, ''])
-    )
+  // 기존 데이터에서 전/후 역산: 전 = qty - restockedQty (restocked > 0일 때만)
+  const initial = Object.fromEntries(
+    entry.locationBreakdown.map(lb => {
+      const restocked = lb.restockedQty ?? 0
+      const before = restocked > 0 ? Math.max(0, lb.qty - restocked) : 0
+      return [lb.locationId, { before: restocked > 0 ? String(before) : '', after: String(lb.qty) }]
+    })
   )
 
-  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  const [beforeQtys, setBeforeQtys] = useState<Record<string, string>>(
+    () => Object.fromEntries(locationSources.map(l => [l.id, initial[l.id]?.before ?? '']))
+  )
+  const [afterQtys, setAfterQtys] = useState<Record<string, string>>(
+    () => Object.fromEntries(locationSources.map(l => [l.id, initial[l.id]?.after ?? '']))
+  )
+
+  const [qty, setQty] = useState(hasLocations ? '' : String(entry.remainingQty))
+
+  const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+
+  const restockSum = locationSources.filter(l => !l.isHub).reduce((s, l) => {
+    const b = Number(beforeQtys[l.id] || '0')
+    const a = Number(afterQtys[l.id] || '0')
+    return s + Math.max(0, a - b)
+  }, 0)
 
   const locationTotal = hasLocations
-    ? locationSources.reduce((s, l) => s + (Number(locationQtys[l.id]) || 0), 0)
-    : null
+    ? locationSources.reduce((s, l) => s + (Number(afterQtys[l.id]) || 0), 0)
+    : 0
 
   const handleSave = () => {
     if (hasLocations) {
       onSave({
-        date,
-        memo: memo || null,
-        locationQtys: locationSources.map(l => ({
-          storageLocationId: l.id,
-          qty: Number(locationQtys[l.id]) || 0,
-        })),
+        date, memo: memo || null,
+        locationQtys: locationSources.map(l => {
+          const before = Number(beforeQtys[l.id] || '0')
+          const after = Number(afterQtys[l.id] || '0')
+          const restocked = after > before ? after - before : 0
+          return {
+            storageLocationId: l.id, qty: after,
+            ...(restocked > 0 ? { restockedQty: restocked } : {}),
+          }
+        }),
       })
     } else {
       onSave({ date, memo: memo || null, remainingQty: Number(qty) })
@@ -1062,7 +1098,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
   }
 
   return (
-    <li className="border border-[var(--coral)]/30 rounded-xl px-3 py-3 space-y-2 bg-[var(--canvas)]">
+    <li className="border border-[var(--coral)]/30 rounded-xl px-3 py-3 space-y-2.5 bg-[var(--canvas)]">
       <p className="text-xs font-medium text-[var(--warm-mid)]">재고 점검 수정</p>
       {error && <p className="text-xs text-red-500">{error}</p>}
       <div className="grid grid-cols-2 gap-2">
@@ -1073,27 +1109,53 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
         {!hasLocations && (
           <div>
             <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">잔량{stockUnit ? ` (${stockUnit})` : ''}</p>
-            <input type="number" min="0" step="any" value={qty} onChange={e => setQty(e.target.value)} className={inputCls} />
+            <input type="number" min="0" step="any" value={qty} onChange={e => setQty(e.target.value)} className={`w-full ${inputCls}`} />
           </div>
         )}
       </div>
       {hasLocations && (
-        <div className="space-y-1.5">
-          <p className="text-[0.625rem] text-[var(--warm-muted)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''} · 합계 {locationTotal ?? 0}{stockUnit ?? ''}</p>
-          {locationSources.map(l => (
-            <div key={l.id} className="flex items-center gap-2">
-              <span className="text-xs text-[var(--warm-mid)] w-20 shrink-0 truncate">{l.name}</span>
-              <input type="number" min="0" step="any"
-                value={locationQtys[l.id] ?? ''}
-                onChange={e => setLocationQtys(prev => ({ ...prev, [l.id]: e.target.value }))}
-                className={inputCls} />
-            </div>
-          ))}
+        <div className="space-y-2">
+          <p className="text-[0.625rem] text-[var(--warm-muted)]">위치별 채우기 전 → 채운 후{stockUnit ? ` (${stockUnit})` : ''}</p>
+          {locationSources.map(l => {
+            const beforeStr = beforeQtys[l.id] ?? ''
+            const afterStr  = afterQtys[l.id] ?? ''
+            const b = beforeStr === '' ? null : Number(beforeStr)
+            const a = afterStr === '' ? null : Number(afterStr)
+            const restocked = (b !== null && a !== null && a > b) ? a - b : 0
+            return (
+              <div key={l.id} className={l.isHub ? 'bg-[var(--honey)]/5 border border-[var(--honey)]/30 rounded-lg px-2 py-1.5 space-y-1' : 'space-y-1'}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{l.name}{l.isHub ? ' (허브)' : ''}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <input type="text" inputMode="decimal" placeholder="채우기 전"
+                    value={beforeStr}
+                    onChange={e => setBeforeQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                    className={`flex-1 ${inputCls}`} />
+                  <span className="text-xs text-[var(--warm-muted)] shrink-0">→</span>
+                  <input type="text" inputMode="decimal" placeholder="채운 후"
+                    value={afterStr}
+                    onChange={e => setAfterQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                    className={`flex-1 ${inputCls}`} />
+                  {restocked > 0 && (
+                    <span className="text-[0.625rem] text-[var(--coral)] shrink-0 w-10 text-right">+{Math.round(restocked * 100) / 100}</span>
+                  )}
+                  {restocked === 0 && <span className="w-10 shrink-0" />}
+                </div>
+              </div>
+            )
+          })}
+          <div className="flex justify-between text-[0.625rem] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1">
+            {restockSum > 0
+              ? <span className="text-[var(--warm-mid)]">보충 합계 <strong className="text-[var(--coral)]">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
+              : <span className="text-[var(--warm-muted)]">보충 없음</span>}
+            <span className="text-[var(--warm-mid)]">잔량 <strong className="text-[var(--coral)]">{Math.round(locationTotal * 100) / 100}{stockUnit ?? ''}</strong></span>
+          </div>
         </div>
       )}
       <div>
         <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">메모</p>
-        <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={inputCls} />
+        <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={`w-full ${inputCls} text-left`} />
       </div>
       <div className="flex gap-2 pt-1 justify-end">
         <button type="button" onClick={onCancel} disabled={pending}
@@ -1283,12 +1345,24 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
   const prevMap = Object.fromEntries(lastCheckBreakdown.map(lb => [lb.locationId, lb.qty]))
   const hasPrev = lastCheckBreakdown.length > 0
 
-  // 위치별 잔량: 이전 수량으로 미리 채움
+  // 첫 허브 위치 (다중 허브면 첫 번째 — 보충량 자동 차감 대상)
+  const hubLoc = item.locations.find(l => l.isHub)
+  const hubPrev = hubLoc ? (prevMap[hubLoc.id] ?? 0) : 0
+
+  // 보충 모드: 이전 점검이 있을 때만. 첫 점검은 단순 잔량 입력.
+  const restockMode = hasPrev && hasLocations
+
+  // 단순 모드 — 위치별 잔량 1칸 (첫 점검 또는 위치 없음)
   const [locationQtys, setLocationQtys] = useState<Record<string, string>>(
     () => Object.fromEntries(item.locations.map(l => [l.id, prevMap[l.id] != null ? String(prevMap[l.id]) : '']))
   )
-  // 사용자가 직접 수정한 위치 추적
   const [touched, setTouched] = useState<Set<string>>(new Set())
+
+  // 보충 모드 — 위치별 "채우기 전" + "채운 후"
+  const [beforeQtys, setBeforeQtys] = useState<Record<string, string>>({})
+  const [afterQtys, setAfterQtys]   = useState<Record<string, string>>({})
+  // 허브 사용자 보정 여부 — true 면 자동 차감값을 덮어쓰지 않음
+  const [hubTouched, setHubTouched] = useState(false)
 
   const [qty, setQty]   = useState('')
   const [memo, setMemo] = useState('')
@@ -1301,31 +1375,80 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
   }
   const confirmAll = () => setTouched(new Set(item.locations.map(l => l.id)))
 
-  const locationTotal = hasLocations
-    ? item.locations.reduce((s, l) => s + (Number(locationQtys[l.id]) || 0), 0)
-    : null
+  // 비허브 위치들의 보충량 합계
+  const restockSum = restockMode
+    ? item.locations
+        .filter(l => !l.isHub)
+        .reduce((s, l) => {
+          const before = Number(beforeQtys[l.id] || '0')
+          const after  = Number(afterQtys[l.id] || '0')
+          return s + Math.max(0, after - before)
+        }, 0)
+    : 0
+
+  // 허브의 "채운 후" 자동 계산값 — 사용자가 직접 보정 안 했으면 사용
+  const hubAutoAfter = Math.max(0, hubPrev - restockSum)
+
+  // 저장용 위치별 데이터 계산
+  const buildLocationData = (): { storageLocationId: string; qty: number; restockedQty?: number }[] => {
+    if (!hasLocations) return []
+    if (restockMode) {
+      return item.locations.map(l => {
+        if (l.isHub) {
+          const userVal = afterQtys[l.id]
+          const finalQty = (hubTouched && userVal !== undefined && userVal !== '') ? Number(userVal) : hubAutoAfter
+          return { storageLocationId: l.id, qty: finalQty }
+        }
+        const beforeStr = beforeQtys[l.id] ?? ''
+        const afterStr  = afterQtys[l.id] ?? ''
+        const beforeN = beforeStr === '' ? null : Number(beforeStr)
+        const afterN  = afterStr  === '' ? null : Number(afterStr)
+        // 후만 입력 → 단순 잔량, 보충 없음
+        // 전·후 모두 입력 → 보충량 = max(0, 후-전)
+        // 전만 입력 → 보충 없이 잔량 = 전
+        // 모두 비움 → qty=0
+        const finalQty = afterN ?? beforeN ?? 0
+        const restocked = (beforeN !== null && afterN !== null && afterN > beforeN) ? afterN - beforeN : undefined
+        return { storageLocationId: l.id, qty: finalQty, restockedQty: restocked }
+      })
+    }
+    // 단순 모드 — 첫 점검
+    return item.locations.map(l => ({
+      storageLocationId: l.id,
+      qty: Number(locationQtys[l.id]) || 0,
+    }))
+  }
+
+  const computed = restockMode
+    ? buildLocationData().reduce((s, lq) => s + lq.qty, 0)
+    : (hasLocations
+        ? item.locations.reduce((s, l) => s + (Number(locationQtys[l.id]) || 0), 0)
+        : 0)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    let remainingQty: number
-    let locationData: { storageLocationId: string; qty: number }[] | undefined
 
-    if (hasLocations) {
-      remainingQty = locationTotal ?? 0
-      if (remainingQty < 0) { setError('잔량은 0 이상이어야 합니다.'); return }
-      locationData = item.locations
-        .map(l => ({ storageLocationId: l.id, qty: Number(locationQtys[l.id]) || 0 }))
-        .filter(lq => lq.qty > 0)
-    } else {
+    if (!hasLocations) {
       const n = Number(qty)
       if (isNaN(n) || n < 0) { setError('잔량은 0 이상이어야 합니다.'); return }
-      remainingQty = n
+      startTransition(async () => {
+        const res = await createStockCheck({
+          trackedItemId: item.id, date, remainingQty: n, memo: memo || undefined,
+        })
+        if (!res.ok) { setError(res.error); return }
+        onDone()
+      })
+      return
     }
+
+    const locationData = buildLocationData().filter(lq => lq.qty > 0 || lq.restockedQty != null)
+    const total = locationData.reduce((s, lq) => s + lq.qty, 0)
+    if (total < 0) { setError('잔량은 0 이상이어야 합니다.'); return }
 
     startTransition(async () => {
       const res = await createStockCheck({
-        trackedItemId: item.id, date, remainingQty, memo: memo || undefined,
+        trackedItemId: item.id, date, remainingQty: total, memo: memo || undefined,
         locationQtys: locationData,
       })
       if (!res.ok) { setError(res.error); return }
@@ -1333,16 +1456,87 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
     })
   }
 
+  const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+
   return (
     <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
-      <p className="text-xs text-[var(--warm-muted)]">점검한 시점에 남아있는 양을 {stockUnit ?? '단위'} 기준으로 기록합니다. 직전 점검과의 차이로 그 기간의 소모량이 계산됩니다.</p>
+      <p className="text-xs text-[var(--warm-muted)]">
+        {restockMode
+          ? '각 위치에서 보충 직전 실측한 수량(채우기 전)과 보충 후 수량(채운 후)을 입력하면, 그 차이만큼 허브에서 자동 차감됩니다.'
+          : `점검한 시점에 남아있는 양을 ${stockUnit ?? '단위'} 기준으로 기록합니다. 직전 점검과의 차이로 소모량이 계산됩니다.`}
+      </p>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">점검일 *</label>
         <DatePicker value={date} onChange={setDate}
           className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
       </div>
 
-      {hasLocations ? (
+      {hasLocations && restockMode ? (
+        <div className="space-y-2.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''}</label>
+          {item.locations.map(loc => {
+            const prevQty = prevMap[loc.id]
+            if (loc.isHub) {
+              // 허브 행 — 후 자동 prefill
+              const userVal = afterQtys[loc.id]
+              const displayAfter = hubTouched && userVal !== undefined ? userVal : String(hubAutoAfter)
+              return (
+                <div key={loc.id} className="space-y-1 bg-[var(--honey)]/5 border border-[var(--honey)]/30 rounded-xl px-3 py-2">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs font-medium text-[var(--warm-dark)] truncate">{loc.name} <span className="text-[var(--warm-muted)]">(허브)</span></span>
+                    {prevQty !== undefined && <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">이전 {prevQty}{stockUnit ?? ''}</span>}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-[var(--warm-muted)] shrink-0">자동 차감 후</span>
+                    <input type="text" inputMode="decimal"
+                      value={displayAfter}
+                      onChange={e => { setAfterQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') })); setHubTouched(true) }}
+                      className={`w-20 ${inputCls}`} />
+                    <span className="text-[var(--warm-muted)] shrink-0">{stockUnit ?? ''}</span>
+                    {restockSum > 0 && (
+                      <span className="ml-auto text-[0.625rem] text-[var(--persimmon-d)] shrink-0">-{Math.round(restockSum * 100) / 100} 차감</span>
+                    )}
+                  </div>
+                </div>
+              )
+            }
+            // 비허브 위치 행 — 전 → 후
+            const beforeStr = beforeQtys[loc.id] ?? ''
+            const afterStr  = afterQtys[loc.id] ?? ''
+            const beforeN = beforeStr === '' ? null : Number(beforeStr)
+            const afterN  = afterStr === '' ? null : Number(afterStr)
+            const restocked = (beforeN !== null && afterN !== null && afterN > beforeN) ? afterN - beforeN : 0
+            return (
+              <div key={loc.id} className="space-y-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{loc.name}</span>
+                  {prevQty !== undefined && <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">이전 {prevQty}{stockUnit ?? ''}</span>}
+                </div>
+                <div className="flex items-center gap-1.5 text-xs">
+                  <input type="text" inputMode="decimal"
+                    value={beforeStr} placeholder="채우기 전"
+                    onChange={e => setBeforeQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                    className={`flex-1 ${inputCls}`} />
+                  <span className="text-[var(--warm-muted)] shrink-0">→</span>
+                  <input type="text" inputMode="decimal"
+                    value={afterStr} placeholder="채운 후"
+                    onChange={e => setAfterQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                    className={`flex-1 ${inputCls}`} />
+                  {restocked > 0 && (
+                    <span className="text-[0.625rem] text-[var(--coral)] shrink-0 w-10 text-right">+{Math.round(restocked * 100) / 100}</span>
+                  )}
+                  {restocked === 0 && <span className="w-10 shrink-0" />}
+                </div>
+              </div>
+            )
+          })}
+          <div className="flex justify-between text-[0.625rem] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
+            <span className="text-[var(--warm-mid)]">보충 합계 <strong className="text-[var(--coral)]">+{Math.round(restockSum * 100) / 100}{stockUnit ?? ''}</strong></span>
+            <span className="text-[var(--warm-mid)]">점검 후 잔량 <strong className="text-[var(--coral)]">{Math.round(computed * 100) / 100}{stockUnit ?? ''}</strong></span>
+          </div>
+        </div>
+      ) : hasLocations ? (
+        // 단순 모드 — 첫 점검 (이전 데이터 없음)
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs font-medium text-[var(--warm-mid)]">위치별 잔량{stockUnit ? ` (${stockUnit})` : ''}</label>
@@ -1377,11 +1571,9 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
               </div>
             )
           })}
-          {locationTotal !== null && (
-            <p className="text-[0.625rem] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
-              → 합계 <strong>{Math.round(locationTotal * 100) / 100}{stockUnit ?? ''}</strong>
-            </p>
-          )}
+          <p className="text-[0.625rem] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
+            → 합계 <strong>{Math.round(computed * 100) / 100}{stockUnit ?? ''}</strong>
+          </p>
         </div>
       ) : (
         <div className="space-y-1.5">

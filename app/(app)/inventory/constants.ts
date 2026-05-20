@@ -64,9 +64,10 @@ export type StorageLocationItem = {
 export type LocationQtyEntry = {
   locationId: string
   locationName: string
-  qty: number
-  fromHubQty?: number  // 이 점검 시 허브(창고)에서 이 위치로 이동한 수량
-  fromLocationId?: string  // 이동 유입 출처 위치 id (타임라인 "출처 → 도착" 표시용)
+  qty: number               // "채운 후" 잔량
+  restockedQty?: number     // 이 점검에서 이 위치에 보충한 양 ("전" = qty - restockedQty)
+  fromHubQty?: number       // (레거시) 명시적 이동 유입 수량
+  fromLocationId?: string   // (레거시) 이동 유입 출처
 }
 
 export type TimelineEntry =
