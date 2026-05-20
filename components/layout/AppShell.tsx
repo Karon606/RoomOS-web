@@ -11,7 +11,7 @@ import { BrandLoader } from '@/components/brand/BrandLoader'
 function PageLoadingOverlay() {
   return (
     <div className="absolute inset-0 flex items-center justify-center z-[60]" style={{ background: 'var(--canvas)' }}>
-      <BrandLoader size="sm" />
+      <BrandLoader size="md" />
     </div>
   )
 }

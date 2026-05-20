@@ -8,7 +8,7 @@ import { BrandLoader } from '@/components/brand/BrandLoader'
 export default function AppLoading() {
   return (
     <div className="flex items-center justify-center min-h-[60vh]" aria-busy="true" aria-label="불러오는 중">
-      <BrandLoader size="sm" />
+      <BrandLoader size="md" />
     </div>
   )
 }
