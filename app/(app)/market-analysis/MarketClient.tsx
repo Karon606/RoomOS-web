@@ -535,7 +535,7 @@ function NaverSearchPanel({
 
   return (
     <div
-      className="rounded-2xl"
+      className="rounded-xl"
       style={{
         border: '1px solid var(--warm-border)',
         background: 'var(--canvas)',

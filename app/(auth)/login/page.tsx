@@ -28,7 +28,7 @@ export default async function LoginPage({
           <p className="text-sm" style={{ color: 'var(--warm-muted)' }}>고시원·원룸텔 스마트 관리 시스템</p>
         </div>
 
-        <div className="rounded-2xl p-8 space-y-5"
+        <div className="rounded-xl p-8 space-y-5"
              style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           <div>
             <h2 className="text-lg font-semibold" style={{ color: 'var(--warm-dark)' }}>로그인 / 회원가입</h2>

@@ -1251,7 +1251,7 @@ export default function TenantClient({
 
       {/* 모바일 카드 뷰 */}
       {sorted.length === 0 ? (
-        <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-12 text-center">
+        <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-12 text-center">
           <svg className="mx-auto mb-3" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="12" cy="9" r="4" />
             <path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" />
@@ -1356,7 +1356,7 @@ export default function TenantClient({
 
       {/* 데스크탑 테이블 */}
       {sorted.length === 0 ? (
-        <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-12 text-center">
+        <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-12 text-center">
           <svg className="mx-auto mb-3" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="12" cy="9" r="4" />
             <path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" />
@@ -1366,10 +1366,10 @@ export default function TenantClient({
           </p>
         </div>
       ) : (
-        <div className="hidden sm:block relative bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100dvh-310px)]">
+        <div className="hidden sm:block relative bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-auto max-h-[calc(100dvh-310px)]">
           {/* 저장 후 서버 재요청 완료 전 클릭 차단 오버레이 */}
           {(isPending || isRefreshing) && (
-            <div className="absolute inset-0 z-40 rounded-2xl bg-[var(--cream)]/60 backdrop-blur-[1px] flex items-center justify-center">
+            <div className="absolute inset-0 z-40 rounded-xl bg-[var(--cream)]/60 backdrop-blur-[1px] flex items-center justify-center">
               <div className="flex items-center gap-2 text-xs text-[var(--warm-muted)]">
                 <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -2091,7 +2091,7 @@ export default function TenantClient({
       {/* 배치 액션 바 */}
       {selectMode && selectedIds.size > 0 && (
         <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
-          <div className="flex items-center gap-3 bg-[var(--ink)] text-[var(--canvas)] rounded-2xl px-4 py-3 shadow-lift pointer-events-auto mx-4">
+          <div className="flex items-center gap-3 bg-[var(--ink)] text-[var(--canvas)] rounded-xl px-4 py-3 shadow-lift pointer-events-auto mx-4">
             <span className="text-sm font-medium">{selectedIds.size}명 선택됨</span>
             <div className="w-px h-4 bg-[var(--canvas)]/20" />
             <button type="button" onClick={() => setShowBatchEdit(true)}

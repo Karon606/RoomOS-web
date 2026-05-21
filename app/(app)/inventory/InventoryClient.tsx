@@ -215,7 +215,7 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
       {/* 배치 액션 바 */}
       {selectMode && selected.size > 0 && (
         <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
-          <div className="flex items-center gap-3 bg-[var(--ink)] text-[var(--canvas)] rounded-2xl px-4 py-3 shadow-lift pointer-events-auto mx-4">
+          <div className="flex items-center gap-3 bg-[var(--ink)] text-[var(--canvas)] rounded-xl px-4 py-3 shadow-lift pointer-events-auto mx-4">
             <span className="text-sm font-medium">{selected.size}개 선택됨</span>
             <div className="w-px h-4 bg-[var(--canvas)]/20" />
             <button type="button" onClick={() => setShowBatchLoc(true)}
@@ -247,7 +247,7 @@ function InventoryCard({ row, onOpen, selectMode, isSelected }: { row: Inventory
     <button
       type="button"
       onClick={onOpen}
-      className={`w-full bg-[var(--cream)] rounded-2xl p-4 space-y-3 text-left transition-colors ${isSelected ? 'border-2 border-[var(--coral)] ring-2 ring-[var(--coral)]/20' : 'border border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
+      className={`w-full bg-[var(--cream)] rounded-xl p-4 space-y-3 text-left transition-colors ${isSelected ? 'border-2 border-[var(--coral)] ring-2 ring-[var(--coral)]/20' : 'border border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-bold text-[var(--warm-dark)] truncate">{row.label}</p>
@@ -1790,7 +1790,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false }: {
     >
       <div
         className={inline
-          ? 'bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full flex flex-col'
+          ? 'bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl w-full flex flex-col'
           : 'bg-[var(--cream)] border border-[var(--warm-border)] rounded-t-2xl sm:rounded-2xl w-full max-w-md flex flex-col max-h-[85vh]'}
         onClick={inline ? undefined : (e => e.stopPropagation())}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)] shrink-0">

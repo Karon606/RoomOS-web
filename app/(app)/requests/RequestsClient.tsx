@@ -174,7 +174,7 @@ export default function RequestsClient({
 
       {/* 등록 폼 */}
       {showAddForm && (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 space-y-3">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
           <p className="text-xs font-semibold text-[var(--warm-dark)]">새 요청 등록</p>
 
           {/* 대상 선택 */}
@@ -346,7 +346,7 @@ export default function RequestsClient({
 
       {/* 리스트 */}
       {filtered.length === 0 ? (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-10 text-center text-sm text-[var(--warm-muted)]">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-10 text-center text-sm text-[var(--warm-muted)]">
           조건에 맞는 요청이 없습니다.
         </div>
       ) : (
@@ -359,7 +359,7 @@ export default function RequestsClient({
             return (
               <li
                 key={r.id}
-                className={`rounded-2xl p-4 border border-[var(--warm-border)] ${
+                className={`rounded-xl p-4 border border-[var(--warm-border)] ${
                   resolved ? 'opacity-60 bg-[var(--canvas)]' : 'bg-[var(--cream)]'
                 }`}
               >

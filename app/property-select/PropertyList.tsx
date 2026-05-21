@@ -57,7 +57,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
   }
 
   const CreateForm = () => (
-    <div className="rounded-2xl p-6 space-y-3"
+    <div className="rounded-xl p-6 space-y-3"
          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
       <p className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>새 영업장 개설</p>
       <input
@@ -92,7 +92,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
   if (properties.length === 0) {
     return (
       <div className="space-y-3">
-        <div className="rounded-2xl p-8 text-center space-y-3"
+        <div className="rounded-xl p-8 text-center space-y-3"
              style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           <svg className="mx-auto" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M3 21 V8 L12 3 L21 8 V21 M9 21 V13 H15 V21" />
@@ -133,7 +133,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
               <button
                 onClick={() => handleSelect(p.propertyId)}
                 disabled={!p.isActive || isPending}
-                className="w-full text-left rounded-2xl p-5 transition-all touch-manipulation
+                className="w-full text-left rounded-xl p-5 transition-all touch-manipulation
                   disabled:opacity-40 disabled:cursor-not-allowed
                   hover:border-[var(--coral)] active:scale-[0.98] active:opacity-80"
                 style={{ background: 'var(--cream)', border: `1px solid ${isLoading ? 'var(--coral)' : 'var(--warm-border)'}` }}
@@ -180,7 +180,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
         <button
           onClick={() => setShowCreate(true)}
           disabled={isPending}
-          className="w-full py-3 rounded-2xl text-sm font-medium disabled:opacity-40"
+          className="w-full py-3 rounded-xl text-sm font-medium disabled:opacity-40"
           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-mid)' }}>
           + 새 영업장 개설
         </button>

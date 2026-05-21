@@ -1460,7 +1460,7 @@ export default function FinanceClient({
       <h1 className="text-xl font-bold text-[var(--warm-dark)]">지출/기타 수익</h1>
 
       {/* ── 월간 요약 위젯 ── */}
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
         {/* 상단: 지출 / 부가수익 */}
         <div className="grid grid-cols-2 divide-x divide-[var(--warm-border)]">
 
@@ -1522,7 +1522,7 @@ export default function FinanceClient({
 
       {/* ── 카테고리별 지출 분석 ── */}
       {currentTotal > 0 && (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5 space-y-4">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5 space-y-4">
           <p className="text-sm font-semibold text-[var(--warm-dark)]">카테고리별 지출 분석</p>
 
           {/* 도넛 + 범례 */}
@@ -1701,7 +1701,7 @@ export default function FinanceClient({
                 )}
                 {/* 모바일 카드 */}
                 {isEmpty ? (
-                  <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-10 text-center">
+                  <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-10 text-center">
                     <EmptyState label="지출 내역이 없습니다" />
                   </div>
                 ) : (
@@ -1769,7 +1769,7 @@ export default function FinanceClient({
                 )}
 
                 {/* 데스크탑 테이블 */}
-                <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100vh-340px)]">
+                <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-auto max-h-[calc(100vh-340px)]">
                   {isEmpty ? (
                     <EmptyState label="지출 내역이 없습니다" />
                   ) : (
@@ -1872,7 +1872,7 @@ export default function FinanceClient({
                     <p className="text-xs font-semibold text-[var(--warm-muted)] px-1">활성화 예정 — 아직 내 부담이 아닌 항목</p>
                     <div className="sm:hidden space-y-2">
                       {pendingRecs.map(rec => (
-                        <div key={rec.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 opacity-50">
+                        <div key={rec.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 opacity-50">
                           <div className="flex items-center justify-between mb-1.5">
                             <span className="text-xs text-[var(--warm-muted)]">매월 {rec.dueDay}일</span>
                             <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 ring-1 ring-blue-200 font-medium">{rec.activeSince?.slice(0, 7)} 활성화</span>
@@ -1887,7 +1887,7 @@ export default function FinanceClient({
                         </div>
                       ))}
                     </div>
-                    <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden opacity-60">
+                    <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden opacity-60">
                       <table className="w-full">
                         <tbody className="divide-y divide-[var(--warm-border)]/50">
                           {pendingRecs.map(rec => (
@@ -1941,7 +1941,7 @@ export default function FinanceClient({
 
           {/* 부가 수익 목록 — 모바일 카드 */}
           {filteredIncomes.length === 0 ? (
-            <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-10 text-center">
+            <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-10 text-center">
               <EmptyState label="부가 수익 내역이 없습니다" />
             </div>
           ) : (
@@ -1949,7 +1949,7 @@ export default function FinanceClient({
               {filteredIncomes.map(i => (
                 <div key={i.id}
                   onClick={() => { setDetailInc(i); setDetailIncEdit(false); setError('') }}
-                  className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 cursor-pointer active:opacity-70 transition-opacity">
+                  className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 cursor-pointer active:opacity-70 transition-opacity">
                   {/* 날짜 + 금액 */}
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs text-[var(--warm-muted)]">{fmtDate(i.date)}</span>
@@ -1977,7 +1977,7 @@ export default function FinanceClient({
           )}
 
           {/* 부가 수익 목록 — 데스크탑 테이블 */}
-          <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100vh-340px)]">
+          <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-auto max-h-[calc(100vh-340px)]">
             {filteredIncomes.length === 0 ? (
               <EmptyState label="부가 수익 내역이 없습니다" />
             ) : (
@@ -2031,7 +2031,7 @@ export default function FinanceClient({
       ══════════════════════════════════════════════════════════ */}
       {tab === 'settle' && (
         <div className="space-y-4">
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5">
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5">
             <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">미정산 신용카드 대금 합산</h2>
             <p className="text-xs text-[var(--warm-muted)] mb-5">신용카드로 결제된 미정산 지출을 카드별로 합산합니다.</p>
 
@@ -2040,7 +2040,7 @@ export default function FinanceClient({
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {settleGroups.map((g, idx) => (
-                  <div key={idx} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-2xl p-5 flex flex-col gap-3">
+                  <div key={idx} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-5 flex flex-col gap-3">
                     {/* 카드명 */}
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-[var(--warm-dark)] text-base">{g.accountName}</span>
@@ -2105,7 +2105,7 @@ export default function FinanceClient({
 
           {/* 정산 완료 내역 */}
           {settledGroups.length > 0 && (
-            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5 space-y-3">
+            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5 space-y-3">
               <h3 className="text-sm font-semibold text-[var(--warm-mid)]">정산 완료 내역 (최근 4개월)</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {settledGroups.map(g => (
@@ -2156,7 +2156,7 @@ export default function FinanceClient({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
           {/* 등록/수정 폼 */}
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5">
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5">
             <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-4">
               {editingAcc ? '자산 수정' : '자산 등록'}
             </h2>
@@ -2283,7 +2283,7 @@ export default function FinanceClient({
           </div>
 
           {/* 자산 목록 */}
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-[var(--warm-border)]">
               <h2 className="text-sm font-semibold text-[var(--warm-dark)]">등록된 자산 목록</h2>
             </div>
@@ -3299,7 +3299,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
   return (
     <div className="space-y-5">
       {/* 잔고 요약 */}
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5">
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <p className="text-xs text-[var(--warm-muted)] mb-1">현재 보유</p>
@@ -3336,7 +3336,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
       </div>
 
       {sub === 'tenant' && (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
           {summary.length === 0 ? (
             <EmptyState label="보증금 거래 이력이 있는 입주자가 없습니다." />
           ) : (
@@ -3384,7 +3384,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
       )}
 
       {sub === 'ledger' && (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
           {ledger.length === 0 ? (
             <EmptyState label="보증금 거래 이력이 없습니다." />
           ) : (
@@ -3522,7 +3522,7 @@ function ReserveTab({
   return (
     <div className="space-y-5">
       {/* 잔고 + 월간 요약 */}
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5">
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <p className="text-xs text-[var(--warm-muted)] mb-1">현재 잔고</p>
@@ -3572,7 +3572,7 @@ function ReserveTab({
 
       {/* 입력 폼 */}
       {mode && (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5 space-y-3">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-[var(--warm-dark)]">
               {mode === 'deposit' && '예비비 적립'}
@@ -3669,7 +3669,7 @@ function ReserveTab({
       )}
 
       {/* 거래 이력 */}
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden">
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
         <div className="px-5 py-3 border-b border-[var(--warm-border)]">
           <h3 className="text-sm font-semibold text-[var(--warm-dark)]">{targetMonth} 거래 이력 ({txns.length}건)</h3>
         </div>

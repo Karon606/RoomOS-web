@@ -917,7 +917,7 @@ export default function RoomsClient({
       </div>
 
       {/* 수납 현황 — 데스크탑 테이블 */}
-      <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-[calc(100dvh-240px)]">
+      <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-auto max-h-[calc(100dvh-240px)]">
           <table className="w-full" style={{
             tableLayout: 'fixed',
             minWidth: colWidths.roomNo + colWidths.tenantName +
@@ -1096,7 +1096,7 @@ export default function RoomsClient({
           {/* 공실 — 모바일 카드 */}
           <div className="sm:hidden grid grid-cols-2 gap-2">
             {sortedVacants.map(room => (
-              <div key={room.roomId} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl px-4 py-3 space-y-1">
+              <div key={room.roomId} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-4 py-3 space-y-1">
                 <span className="text-sm font-bold text-[var(--warm-mid)]">{fmtRoomNo(room.roomNo)}</span>
                 {room.type && <p className="text-xs text-[var(--warm-muted)]">{room.type}</p>}
                 <p className="text-sm font-semibold text-[var(--warm-dark)]">
@@ -1107,7 +1107,7 @@ export default function RoomsClient({
           </div>
 
           {/* 공실 — 데스크탑 테이블 */}
-          <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-auto max-h-64">
+          <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-auto max-h-64">
             <table className="w-full min-w-[400px]">
               <thead className="sticky top-0 z-10 bg-[var(--cream)]">
                 <tr className="border-b border-[var(--warm-border)]">

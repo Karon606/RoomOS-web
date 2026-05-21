@@ -543,7 +543,7 @@ export default function RoomManageClient({
 
       {/* 필터 패널 */}
       {showFilters && (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 space-y-3">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-medium text-[var(--warm-mid)]">호실 번호</label>
@@ -681,7 +681,7 @@ export default function RoomManageClient({
 
       {/* 호실 그리드 */}
       {filteredRooms.length === 0 ? (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-12 text-center">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-12 text-center">
           <svg className="mx-auto mb-3" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M3 12 L12 4 L21 12 M5 10 V20 H19 V10" />
           </svg>
@@ -945,7 +945,7 @@ export default function RoomManageClient({
       {/* 배치 액션 바 */}
       {selectMode && selectedIds.size > 0 && (
         <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
-          <div className="flex items-center gap-3 bg-[var(--ink)] text-[var(--canvas)] rounded-2xl px-4 py-3 shadow-lift pointer-events-auto mx-4">
+          <div className="flex items-center gap-3 bg-[var(--ink)] text-[var(--canvas)] rounded-xl px-4 py-3 shadow-lift pointer-events-auto mx-4">
             <span className="text-sm font-medium">{selectedIds.size}개 선택됨</span>
             <div className="w-px h-4 bg-[var(--canvas)]/20" />
             <button type="button" onClick={() => setShowBatchEdit(true)}

@@ -447,7 +447,7 @@ export default function SettingsForm({
       </div>
 
       {/* 탭 */}
-      <div className="flex gap-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-1 mb-6">
+      <div className="flex gap-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-1 mb-6">
         {TABS.map(t => (
           <button
             key={t.key}
@@ -466,7 +466,7 @@ export default function SettingsForm({
       {/* 기본정보 탭 */}
       {tab === 'basic' && (
         <>
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
           <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-4">영업장 기본 정보</h2>
 
           {/* 영업장 로고 — 계약서 헤더 외에 사이드바·대시보드 등에서도 재사용 */}
@@ -532,7 +532,7 @@ export default function SettingsForm({
         </div>
 
         {/* 데이터 점검 — 발생주의 진단 페이지 링크 */}
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6 mt-4">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
           <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">데이터 점검</h2>
           <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
             수납 기록의 입금일(payDate)과 귀속 월(targetMonth)이 회계 기준에 맞게 분류되어 있는지 확인합니다.
@@ -545,7 +545,7 @@ export default function SettingsForm({
         </div>
 
         {/* 데이터 백업 */}
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6 mt-4">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
           <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">데이터 백업</h2>
           <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
             영업장의 모든 데이터(호실·입주자·계약·수납·지출·기타수익 등)를 JSON 파일로 내려받습니다.
@@ -651,7 +651,7 @@ export default function SettingsForm({
           />
 
           {/* 고정 지출 관리 */}
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6 space-y-4">
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-[var(--warm-dark)]">고정 지출 관리</h2>
@@ -799,7 +799,7 @@ export default function SettingsForm({
       {tab === 'members' && (
         <div className="space-y-4">
           {/* 현재 멤버 목록 */}
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
             <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-4">멤버 목록</h2>
             <div className="space-y-2">
               {members.map(m => (
@@ -845,7 +845,7 @@ export default function SettingsForm({
 
           {/* 멤버 초대 (소유자만) */}
           {isOwner && (
-            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
+            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
               <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">멤버 초대</h2>
               <p className="text-xs text-[var(--warm-muted)] mb-4">초대할 멤버가 먼저 <a href="/login" className="underline">스테이음에 Google로 로그인</a>한 후 이메일을 입력해주세요.</p>
               <div className="space-y-3">
@@ -874,7 +874,7 @@ export default function SettingsForm({
           )}
 
           {/* 권한 안내 */}
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
             <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-3">권한 안내</h2>
             <div className="space-y-2">
               {([['소유자', '모든 기능 + 멤버 관리'],
@@ -995,7 +995,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
       </div>
 
       {/* 사업자 정보 */}
-      <div className="rounded-2xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <div className="rounded-xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-[var(--warm-dark)]">사업자 정보</h3>
           <Btn variant="primary" size="sm" onClick={handleSaveBusinessInfo} disabled={savingBiz}>{savingBiz ? '저장 중...' : '저장'}</Btn>
@@ -1010,7 +1010,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
       </div>
 
       {/* 도장 */}
-      <div className="rounded-2xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <div className="rounded-xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <h3 className="text-sm font-semibold text-[var(--warm-dark)]">도장 이미지</h3>
         <p className="text-xs text-[var(--warm-muted)] -mt-1">투명 배경 PNG 권장. 출력 시 사업자 서명란 옆에 자동 표시됩니다.</p>
         <div className="flex items-center gap-4">
@@ -1032,7 +1032,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
       </div>
 
       {/* 본문 템플릿 */}
-      <div className="rounded-2xl p-4 sm:p-5 space-y-4" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <div className="rounded-xl p-4 sm:p-5 space-y-4" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h3 className="text-sm font-semibold text-[var(--warm-dark)]">계약서 본문</h3>
           <Btn variant="primary" size="sm" onClick={handleSaveTemplate} disabled={savingTpl}>{savingTpl ? '저장 중...' : '저장'}</Btn>
@@ -1162,7 +1162,7 @@ function AppearanceTab() {
   return (
     <div className="space-y-4">
       {/* 테마 */}
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5 space-y-4">
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5 space-y-4">
         <div>
           <h2 className="text-sm font-semibold text-[var(--warm-dark)]">테마</h2>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">
@@ -1197,7 +1197,7 @@ function AppearanceTab() {
       </div>
 
       {/* 글씨 크기 */}
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5 space-y-4">
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5 space-y-4">
         <div>
           <h2 className="text-sm font-semibold text-[var(--warm-dark)]">글씨 크기</h2>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">앱 전체 텍스트 크기 — 이 기기에만 적용됩니다</p>
@@ -1284,7 +1284,7 @@ function OptionSection({
   }
 
   return (
-    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6">
+    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
       <div className="flex items-start justify-between gap-2 mb-1">
         <h2 className="text-sm font-semibold text-[var(--warm-dark)]">{title}</h2>
         {onReset && (

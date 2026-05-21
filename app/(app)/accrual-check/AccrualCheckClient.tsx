@@ -88,7 +88,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
 
   return (
     <div className="space-y-4 p-4 max-w-5xl mx-auto">
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-5 space-y-2">
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5 space-y-2">
         <h1 className="text-base font-bold text-[var(--warm-dark)]">발생주의 데이터 진단</h1>
         <p className="text-xs text-[var(--warm-mid)] leading-relaxed">
           각 수납 기록의 <span className="font-semibold">실제 입금일(payDate)</span>과 <span className="font-semibold">귀속 월(targetMonth)</span>을 비교합니다.
@@ -141,12 +141,12 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
 
       <div className="space-y-2">
         {filtered.length === 0 ? (
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-12 text-center text-sm text-[var(--warm-muted)]">
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-12 text-center text-sm text-[var(--warm-muted)]">
             재검토 대상 기록이 없습니다.
           </div>
         ) : (
           filtered.map(s => (
-            <div key={s.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 space-y-2">
+            <div key={s.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2 text-sm flex-wrap">
                   <span className="font-bold text-[var(--coral)]">{s.roomNo ?? '?'}호</span>

@@ -16,7 +16,7 @@ export default function FloorPlanWidget({
   if (!floorPlanData) return null
 
   return (
-    <div className="rounded-2xl border border-[var(--warm-border)] overflow-hidden"
+    <div className="rounded-xl border border-[var(--warm-border)] overflow-hidden"
       style={{ background: 'var(--cream)' }}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--warm-border)] shrink-0">
         <div className="flex items-center gap-2">

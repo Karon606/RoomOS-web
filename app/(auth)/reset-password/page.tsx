@@ -64,7 +64,7 @@ export default function ResetPasswordPage() {
           <StayeumWordmark height={36} />
         </div>
 
-        <div className="rounded-2xl p-8 space-y-5"
+        <div className="rounded-xl p-8 space-y-5"
              style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           <div>
             <h2 className="text-lg font-semibold" style={{ color: 'var(--warm-dark)' }}>새 비밀번호 설정</h2>

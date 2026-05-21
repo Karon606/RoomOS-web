@@ -158,7 +158,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
       </div>
 
       {/* 분기별 합계 */}
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4">
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4">
         <h3 className="text-sm font-semibold text-[var(--warm-dark)] mb-3">분기별 합계</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {quarters.map(q => (
@@ -176,7 +176,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
 
       {/* 카테고리별 지출 비중 */}
       {summary.expenseByCategory.length > 0 && (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4">
           <div className="flex items-baseline gap-2 mb-3">
             <h3 className="text-sm font-semibold text-[var(--warm-dark)]">카테고리별 지출 비중</h3>
             <span className="text-[0.6875rem] text-[var(--warm-muted)]">{summary.year}년 연간 합계 기준</span>
@@ -214,7 +214,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
           const prevRow = summary.prevYear?.rows.find(p => p.month.slice(5) === r.month.slice(5))
           const delta = prevRow ? r.revenue - prevRow.revenue : 0
           return (
-            <div key={r.month} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 space-y-2.5">
+            <div key={r.month} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-2.5">
               <div className="flex items-center justify-between pb-2 border-b border-[var(--warm-border)]/60">
                 <span className="text-sm font-bold text-[var(--warm-dark)]">{Number(r.month.slice(5))}월</span>
                 <span className={`text-sm font-semibold ${
@@ -261,7 +261,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
             </div>
           )
         })}
-        <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-2xl p-4 space-y-2">
+        <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-4 space-y-2">
           <div className="flex items-center justify-between pb-2 border-b border-[var(--warm-border)]/60">
             <span className="text-sm font-bold text-[var(--warm-dark)]">합계</span>
             <span className={`text-sm font-bold ${summary.totalProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -294,7 +294,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
       </div>
 
       {/* 월별 표 (sm 이상 / 인쇄) */}
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden hidden sm:block print:block">
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden hidden sm:block print:block">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-[var(--canvas)] border-b border-[var(--warm-border)]">
@@ -414,7 +414,7 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
       {/* 예상 카드 (모바일 전용) */}
       <div className="space-y-2 sm:hidden print:hidden">
         {forecast.rows.map(r => (
-          <div key={r.month} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 space-y-2.5">
+          <div key={r.month} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-2.5">
             <div className="flex items-center justify-between pb-2 border-b border-[var(--warm-border)]/60">
               <span className="text-sm font-bold text-[var(--warm-dark)]">{r.month.slice(0, 4)}년 {Number(r.month.slice(5))}월</span>
               <span className={`text-sm font-semibold ${
@@ -434,7 +434,7 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
       </div>
 
       {/* 예상 표 (sm 이상 / 인쇄) */}
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl overflow-hidden hidden sm:block print:block">
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden hidden sm:block print:block">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-[var(--canvas)] border-b border-[var(--warm-border)]">
@@ -478,7 +478,7 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
 
 function SummaryCard({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
-    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4">
+    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4">
       <p className="text-xs text-[var(--warm-muted)]">{label}</p>
       <p className={`text-base font-bold mt-1 ${accent ?? 'text-[var(--warm-dark)]'}`}>{value}</p>
     </div>
@@ -504,7 +504,7 @@ function AISection() {
   return (
     <div className="space-y-4">
       {!text && !pending && !error && (
-        <div className="bg-[var(--cream)] border border-[var(--coral)]/30 rounded-2xl p-6 text-center space-y-3">
+        <div className="bg-[var(--cream)] border border-[var(--coral)]/30 rounded-xl p-6 text-center space-y-3">
           <p className="text-xs font-mono text-[var(--persimmon)] tracking-wider uppercase">AI Diagnose</p>
           <p className="text-sm font-semibold text-[var(--warm-dark)]">Gemini AI 영업장 진단</p>
           <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
@@ -516,7 +516,7 @@ function AISection() {
       )}
 
       {pending && (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6 text-center space-y-3">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 text-center space-y-3">
           <div className="w-6 h-6 mx-auto border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
           <p className="text-xs text-[var(--coral)] animate-pulse">데이터 수집 + AI 분석 중...</p>
           <p className="text-[0.625rem] text-[var(--warm-muted)]">10~20초 소요됩니다</p>
@@ -524,7 +524,7 @@ function AISection() {
       )}
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 space-y-2">
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 space-y-2">
           <p className="text-sm font-semibold text-red-500">분석 실패</p>
           <p className="text-xs text-red-400">{error}</p>
           <Btn variant="danger" size="sm" onClick={handleAnalyze}>다시 시도</Btn>
@@ -541,7 +541,7 @@ function AISection() {
       )}
 
       {text && (
-        <div className="bg-[var(--cream)] border border-[var(--coral)]/30 rounded-2xl p-5 space-y-3">
+        <div className="bg-[var(--cream)] border border-[var(--coral)]/30 rounded-xl p-5 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-[var(--coral)]">AI 진단 결과</span>
