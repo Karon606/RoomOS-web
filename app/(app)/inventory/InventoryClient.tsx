@@ -1386,7 +1386,16 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
   const [touched, setTouched] = useState<Set<string>>(new Set())
 
   // 보충 모드 — 위치별 "채우기 전" + "채운 후"
-  const [beforeQtys, setBeforeQtys] = useState<Record<string, string>>({})
+  // "채우기 전"을 직전 점검 잔량으로 prefill — 위치별 점검(LocationBatchCheckModal)과
+  // 동일하게, "채운 후"만 입력해도 보충량(후-전)이 정확히 계산돼 허브에서 자동 차감됨.
+  // (빈칸이면 보충 0으로 처리돼 허브 미차감 → 총량 변동하던 버그 방지.)
+  const [beforeQtys, setBeforeQtys] = useState<Record<string, string>>(
+    () => Object.fromEntries(
+      item.locations
+        .filter(l => !l.isHub)
+        .map(l => [l.id, prevMap[l.id] != null ? String(prevMap[l.id]) : '']),
+    ),
+  )
   const [afterQtys, setAfterQtys]   = useState<Record<string, string>>({})
   // 허브 사용자 보정 여부 — true 면 자동 차감값을 덮어쓰지 않음
   const [hubTouched, setHubTouched] = useState(false)
@@ -1402,14 +1411,18 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
   }
   const confirmAll = () => setTouched(new Set(item.locations.map(l => l.id)))
 
-  // 비허브 위치들의 보충량 합계
+  // 비허브 위치들의 보충량 합계 — 행별 restocked 와 동일한 null-처리.
+  // (빈칸은 0이 아니라 null 로 봐서, 전·후 모두 입력됐을 때만 보충으로 계산.
+  //  이렇게 해야 사용자가 "채우기 전"을 비웠을 때 허브가 과차감되지 않음.)
   const restockSum = restockMode
     ? item.locations
         .filter(l => !l.isHub)
         .reduce((s, l) => {
-          const before = Number(beforeQtys[l.id] || '0')
-          const after  = Number(afterQtys[l.id] || '0')
-          return s + Math.max(0, after - before)
+          const beforeStr = beforeQtys[l.id] ?? ''
+          const afterStr  = afterQtys[l.id] ?? ''
+          const beforeN = beforeStr === '' ? null : Number(beforeStr)
+          const afterN  = afterStr === '' ? null : Number(afterStr)
+          return s + ((beforeN !== null && afterN !== null && afterN > beforeN) ? afterN - beforeN : 0)
         }, 0)
     : 0
 
