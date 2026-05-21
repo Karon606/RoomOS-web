@@ -10,12 +10,12 @@ import { requireEdit } from '@/lib/role'
 
 async function getPropertyId() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  const { data } = await supabase.auth.getClaims()
+  if (!data?.claims) redirect('/login')
   const cookieStore = await cookies()
   const propertyId = cookieStore.get('selected_property_id')?.value
   if (!propertyId) redirect('/property-select')
-  return { user, propertyId }
+  return { user: data.claims, propertyId }
 }
 
 // 입주자 목록 조회
@@ -473,7 +473,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
         propertyId,
         fromStatus: prevStatus,
         toStatus:   status,
-        changedById: user.id,
+        changedById: user.sub,
       },
     })
   }
@@ -627,7 +627,7 @@ export async function moveInTenant(leaseTermId: string, tenantId: string): Promi
       propertyId,
       fromStatus:  lease.status,
       toStatus:    'ACTIVE',
-      changedById: user.id,
+      changedById: user.sub,
     },
   })
 
@@ -693,7 +693,7 @@ export async function confirmReservationToActive(leaseTermId: string): Promise<{
         propertyId,
         fromStatus:  'RESERVED',
         toStatus:    'ACTIVE',
-        changedById: user.id,
+        changedById: user.sub,
       },
     })
 

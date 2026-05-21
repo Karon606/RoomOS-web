@@ -8,12 +8,12 @@ import { kstMonthStr } from '@/lib/kstDate'
 
 async function getPropertyId() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  const { data } = await supabase.auth.getClaims()
+  if (!data?.claims) redirect('/login')
   const cookieStore = await cookies()
   const propertyId = cookieStore.get('selected_property_id')?.value
   if (!propertyId) redirect('/property-select')
-  return { user, propertyId }
+  return { user: data.claims, propertyId }
 }
 
 export type MonthlyRow = {

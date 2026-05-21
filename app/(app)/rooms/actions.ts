@@ -11,8 +11,8 @@ import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 
 async function getPropertyId() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  const { data } = await supabase.auth.getClaims()
+  if (!data?.claims) redirect('/login')
   const cookieStore = await cookies()
   const propertyId = cookieStore.get('selected_property_id')?.value
   if (!propertyId) redirect('/property-select')
