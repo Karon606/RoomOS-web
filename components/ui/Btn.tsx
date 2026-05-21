@@ -14,10 +14,10 @@ const VARIANT_CLS: Record<Variant, string> = {
   subtle:    'bg-[var(--sand)]/40 hover:bg-[var(--sand-2)] text-[var(--warm-mid)] border border-[var(--camel)]/40',
 }
 
-// 모바일 터치 타겟: sm=36px, md=40px, lg=44px (HIG 권장 44px+)
+// 터치 타겟 최소 44px (Brand Guide v1.2 · HIG). 크기 차이는 패딩·글자크기로 표현.
 const SIZE_CLS: Record<Size, string> = {
-  sm: 'px-3 py-2 text-xs min-h-[36px] rounded-md',
-  md: 'px-4 py-2.5 text-sm min-h-[40px] rounded-lg',
+  sm: 'px-3 py-2 text-xs min-h-[44px] rounded-md',
+  md: 'px-4 py-2.5 text-sm min-h-[44px] rounded-lg',
   lg: 'px-5 py-3 text-base min-h-[44px] rounded-lg',
 }
 
