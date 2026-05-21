@@ -89,7 +89,15 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
   const [selectMode, setSelectMode]       = useState(false)
   const [selected, setSelected]           = useState<Set<string>>(new Set())
   const [showBatchLoc, setShowBatchLoc]     = useState(false)
-  const [showBatchCheck, setShowBatchCheck] = useState(false)
+  // 점검 진입 방식 — 'item'(품목별 목록) / 'location'(위치별 일괄). 마지막 선택 기억.
+  const [viewMode, setViewMode] = useState<'item' | 'location'>(() =>
+    typeof window !== 'undefined' && localStorage.getItem('stayeum-inventory-view') === 'location' ? 'location' : 'item'
+  )
+  const changeView = (m: 'item' | 'location') => {
+    setViewMode(m)
+    if (typeof window !== 'undefined') localStorage.setItem('stayeum-inventory-view', m)
+    if (m === 'location') exitSelectMode()
+  }
   const [showExcluded, setShowExcluded]     = useState(false)
 
   const toggleSelect = (id: string) => setSelected(prev => {
@@ -135,21 +143,37 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
           <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">부식·소모품·폐기물 사용량을 점검 기록 기반으로 추적합니다.</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <Btn variant="secondary" size="sm" onClick={() => { selectMode ? exitSelectMode() : setSelectMode(true) }}>
-            {selectMode ? `선택 취소${selected.size > 0 ? ` (${selected.size})` : ''}` : '선택'}
-          </Btn>
-          <Btn variant="secondary" size="sm" onClick={() => setShowBatchCheck(true)}>위치별 점검</Btn>
-          <Btn variant="secondary" size="sm" onClick={() => setShowLocations(true)}>위치 관리</Btn>
-          <Btn variant="secondary" size="sm" onClick={() => setShowExcluded(true)}>제외 항목 복구</Btn>
-          <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
-          <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
+        <div className="flex gap-2 flex-wrap items-center">
+          {/* 점검 진입 방식 토글 — 아이템별 목록 vs 위치별 일괄 */}
+          <div className="inline-flex rounded-lg border border-[var(--warm-border)] overflow-hidden text-xs font-medium shrink-0">
+            <button type="button" onClick={() => changeView('item')}
+              className={`px-3 py-1.5 transition-colors ${viewMode === 'item' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>
+              아이템별
+            </button>
+            <button type="button" onClick={() => changeView('location')}
+              className={`px-3 py-1.5 transition-colors ${viewMode === 'location' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>
+              위치별
+            </button>
+          </div>
+          {viewMode === 'item' && (
+            <>
+              <Btn variant="secondary" size="sm" onClick={() => { selectMode ? exitSelectMode() : setSelectMode(true) }}>
+                {selectMode ? `선택 취소${selected.size > 0 ? ` (${selected.size})` : ''}` : '선택'}
+              </Btn>
+              <Btn variant="secondary" size="sm" onClick={() => setShowLocations(true)}>위치 관리</Btn>
+              <Btn variant="secondary" size="sm" onClick={() => setShowExcluded(true)}>제외 항목 복구</Btn>
+              <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
+              <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
+            </>
+          )}
         </div>
       </div>
 
       {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
 
-      {rows.length === 0 ? (
+      {viewMode === 'location' ? (
+        <LocationBatchCheckModal inline rows={rows} onClose={() => changeView('item')} onDone={() => router.refresh()} />
+      ) : rows.length === 0 ? (
         <EmptyState
           title="추적할 품목이 아직 없습니다"
           description="'지출에서 자동 등록' 버튼을 누르면 부식·소모품·폐기물 카테고리에서 입력된 품목이 자동 등록됩니다."
@@ -179,7 +203,6 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
 
       {showExcluded  && <ExcludedItemsModal onClose={() => { setShowExcluded(false); router.refresh() }} />}
       {showLocations && <LocationSettingsModal onClose={() => { setShowLocations(false); router.refresh() }} />}
-      {showBatchCheck && <LocationBatchCheckModal rows={rows} onClose={() => setShowBatchCheck(false)} onDone={() => { setShowBatchCheck(false); router.refresh() }} />}
       {showAdd && <AddItemModal onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); router.refresh() }} />}
       {showBatchLoc && (
         <BatchLocationModal
@@ -1610,9 +1633,9 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
   )
 }
 
-// ── 위치별 일괄 점검 모달
-function LocationBatchCheckModal({ rows, onClose, onDone }: {
-  rows: InventoryRow[]; onClose: () => void; onDone: () => void
+// ── 위치별 일괄 점검 — 모달(inline=false) / 인라인 패널(inline=true) 양용
+function LocationBatchCheckModal({ rows, onClose, onDone, inline = false }: {
+  rows: InventoryRow[]; onClose: () => void; onDone: () => void; inline?: boolean
 }) {
   const [locs, setLocs] = useState<StorageLocationItem[]>([])
   const [locId, setLocId] = useState('')
@@ -1738,9 +1761,15 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
   const qtyInputCls = 'w-full min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[230] flex items-end sm:items-center justify-center" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-t-2xl sm:rounded-2xl w-full max-w-md flex flex-col max-h-[85vh]"
-        onClick={e => e.stopPropagation()}>
+    <div
+      className={inline ? undefined : 'fixed inset-0 bg-black/60 z-[230] flex items-end sm:items-center justify-center'}
+      onClick={inline ? undefined : onClose}
+    >
+      <div
+        className={inline
+          ? 'bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full flex flex-col'
+          : 'bg-[var(--cream)] border border-[var(--warm-border)] rounded-t-2xl sm:rounded-2xl w-full max-w-md flex flex-col max-h-[85vh]'}
+        onClick={inline ? undefined : (e => e.stopPropagation())}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)] shrink-0">
           <div>
             <h2 className="text-sm font-bold text-[var(--warm-dark)]">위치별 점검</h2>
@@ -1750,7 +1779,9 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
                 : '각 품목의 채우기 전·후를 입력하면 그 차이만큼 허브에서 자동 차감됩니다.'}
             </p>
           </div>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl w-8 h-8 flex items-center justify-center">✕</button>
+          {!inline && (
+            <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl w-8 h-8 flex items-center justify-center">✕</button>
+          )}
         </div>
 
         <div className="px-5 py-3 border-b border-[var(--warm-border)] shrink-0 space-y-2">
@@ -1770,7 +1801,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
+        <div className={inline ? 'px-5 py-3 space-y-3' : 'flex-1 overflow-y-auto px-5 py-3 space-y-3'}>
           {!locId ? (
             <p className="text-xs text-[var(--warm-muted)] text-center py-6">위치를 선택하면 해당 위치에 보관된 품목이 표시됩니다.</p>
           ) : locItems.length === 0 ? (
@@ -1852,7 +1883,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone }: {
           </div>
         )}
         <div className="border-t border-[var(--warm-border)] px-5 py-3 flex gap-2 shrink-0">
-          <Btn variant="secondary" fullWidth onClick={onClose}>취소</Btn>
+          {!inline && <Btn variant="secondary" fullWidth onClick={onClose}>취소</Btn>}
           <Btn variant="primary" fullWidth onClick={handleSave} disabled={pending || !locId || locItems.length === 0}>
             {pending ? '저장 중...' : `${locItems.filter(isItemDirty).length}품목 저장`}
           </Btn>
