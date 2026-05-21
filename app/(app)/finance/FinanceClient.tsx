@@ -2364,7 +2364,7 @@ export default function FinanceClient({
                 {detailExpEdit ? '지출 수정' : '지출 상세'}
               </h2>
               <button onClick={() => { setDetailExp(null); setDetailExpEdit(false) }}
-                aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+                aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
             </div>
 
             {!detailExpEdit ? (
@@ -2619,7 +2619,7 @@ export default function FinanceClient({
                 {detailIncEdit ? '수익 수정' : '수익 상세'}
               </h2>
               <button onClick={() => { setDetailInc(null); setDetailIncEdit(false) }}
-                aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+                aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
             </div>
 
             {!detailIncEdit ? (
@@ -2711,7 +2711,7 @@ export default function FinanceClient({
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
               <h2 className="text-base font-bold text-[var(--warm-dark)]">지출 등록</h2>
-              <button onClick={() => setShowAddExp(false)} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+              <button onClick={() => setShowAddExp(false)} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
             </div>
             <form onSubmit={handleAddExp} className="flex flex-col flex-1 overflow-hidden">
               <input type="hidden" name="financialAccountId" value={addExpAccId} />
@@ -2888,7 +2888,7 @@ export default function FinanceClient({
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
               <h2 className="text-base font-bold text-[var(--warm-dark)]">부가 수익 등록</h2>
-              <button onClick={() => setShowAddInc(false)} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+              <button onClick={() => setShowAddInc(false)} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
             </div>
             <form onSubmit={handleAddInc} className="flex flex-col flex-1 overflow-hidden">
               <input type="hidden" name="financialAccountId" value={addIncAccId} />

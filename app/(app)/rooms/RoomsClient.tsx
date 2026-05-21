@@ -1171,7 +1171,7 @@ export default function RoomsClient({
                 </p>
               </div>
               <button onClick={() => { setShowPayModal(false); setShowPayForm(false) }}
-                aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+                aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
             </div>
 
             {/* ── 읽기 전용 ── */}
@@ -1947,7 +1947,7 @@ function TenantInfoModal({ tenantId, onClose, onBack }: { tenantId: string; onCl
               </span>
             )}
           </div>
-          <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
           {!info ? (
@@ -2043,7 +2043,7 @@ function RoomInfoModal({ roomId, onClose, onBack }: { roomId: string; onClose: (
               </span>
             )}
           </div>
-          <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
         <div className="overflow-y-auto flex-1">
           {!info ? (

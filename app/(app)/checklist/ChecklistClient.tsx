@@ -294,7 +294,7 @@ function FormModal({
         onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-[var(--warm-border)] flex items-center justify-between">
           <p className="text-base font-bold" style={{ color: 'var(--warm-dark)' }}>{row ? '체크리스트 편집' : '체크리스트 추가'}</p>
-          <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none">✕</button>
         </div>
 
         <div className="px-5 py-4 space-y-3 max-h-[70vh] overflow-y-auto">
@@ -419,7 +419,7 @@ function CheckModal({
             <p className="text-base font-bold" style={{ color: 'var(--warm-dark)' }}>{row.title}</p>
             <p className="text-xs mt-1" style={{ color: 'var(--warm-muted)' }}>{intervalLabel(row.intervalDays)} · 마지막 {fmtRelative(row.lastCheckedAt)}</p>
           </div>
-          <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none">✕</button>
         </div>
 
         <div className="px-5 py-4 space-y-3 max-h-[70vh] overflow-y-auto">

@@ -1803,7 +1803,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false }: {
             </p>
           </div>
           {!inline && (
-            <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl w-8 h-8 flex items-center justify-center">✕</button>
+            <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl w-11 h-11 flex items-center justify-center">✕</button>
           )}
         </div>
 

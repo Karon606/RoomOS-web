@@ -287,7 +287,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               </span>
             </div>
           </div>
-          <button onClick={onClose} aria-label="닫기" className="ml-3 shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="ml-3 shrink-0 w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
 
         {/* 후보 리스트 (희망 호실/조건 매칭 그룹) */}
@@ -426,7 +426,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
         {/* 헤더 */}
         <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: DIVIDER_COLOR }}>
           <p className="text-sm font-bold" style={{ color: 'var(--warm-dark)' }}>지출 등록</p>
-          <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
 
         {done ? (
@@ -1289,7 +1289,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
               </p>
             </div>
           )}
-          <button onClick={onClose} aria-label="닫기" className="ml-4 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="ml-4 w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
 
         {/* 본문 */}

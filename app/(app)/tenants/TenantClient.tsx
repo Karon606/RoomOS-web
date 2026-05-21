@@ -1177,7 +1177,7 @@ export default function TenantClient({
             <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-bold text-[var(--warm-dark)]">가격 변동 적용</h2>
-                <button onClick={() => setRentChangeModal(null)} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+                <button onClick={() => setRentChangeModal(null)} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
               </div>
               <p className="text-sm text-[var(--warm-mid)] leading-relaxed">
                 <span className="font-semibold text-[var(--warm-dark)]">{fmtRoomNo(rentChangeModal.roomNo)}</span>가 공실로 변경됩니다. 예정된 가격 변동을 즉시 적용할까요?
@@ -1578,7 +1578,7 @@ export default function TenantClient({
                     })()}
                   </div>
                   <div className="flex items-center gap-2 ml-4 shrink-0">
-                    <button onClick={closeDetail} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+                    <button onClick={closeDetail} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
                   </div>
                 </div>
                 {!detailEditMode && ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(status) && (
@@ -2190,7 +2190,7 @@ export default function TenantClient({
                     {targetMonth} · 예정 {lease.rentAmount.toLocaleString()}원
                   </p>
                 </div>
-                <button onClick={closePayModal} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+                <button onClick={closePayModal} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
               </div>
 
               {/* ── 읽기 전용 ── */}
@@ -3510,7 +3510,7 @@ function SettlementInfoModal({
               {info ? `${fmtRoomNo(info.roomNo)} — ${info.tenantName ?? ''}` : '수납 정보'}
             </h2>
           </div>
-          <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
           {!info ? (
@@ -3593,7 +3593,7 @@ function RoomInfoSimpleModal({
               </span>
             )}
           </div>
-          <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
         <div className="overflow-y-auto flex-1">
           {!info ? (

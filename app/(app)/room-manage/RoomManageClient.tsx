@@ -783,7 +783,7 @@ export default function RoomManageClient({
                     : <span className="text-xs font-medium text-[var(--warm-mid)]">{rs.label}</span>
                   })()}
                 </div>
-                <button onClick={closeDetail} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+                <button onClick={closeDetail} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
               </div>
 
               {/* 사진 슬라이더 — 클릭하면 확대 라이트박스 */}
@@ -1642,7 +1642,7 @@ function RoomMgrTenantInfoModal({ tenantId, onClose, onBack }: { tenantId: strin
               </span>
             )}
           </div>
-          <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
           {!info ? (
@@ -1740,7 +1740,7 @@ function RoomMgrSettlementInfoModal({
               {info ? `${fmtRoomNo(info.roomNo)} — ${info.tenantName ?? ''}` : '수납 정보'}
             </h2>
           </div>
-          <button onClick={onClose} aria-label="닫기" className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+          <button onClick={onClose} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
         </div>
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
           {!info ? (

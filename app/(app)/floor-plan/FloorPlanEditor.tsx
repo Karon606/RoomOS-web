@@ -325,7 +325,7 @@ function BottomSheet({ title, onClose, children }: { title: string; onClose: () 
       <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--warm-border)] shrink-0">
         <p className="text-sm font-semibold text-[var(--warm-dark)]">{title}</p>
         <button onClick={onClose}
-          className="w-8 h-8 flex items-center justify-center rounded-full text-[var(--warm-muted)] hover:bg-[var(--warm-border)] transition-colors text-lg leading-none">
+          className="w-11 h-11 flex items-center justify-center rounded-full text-[var(--warm-muted)] hover:bg-[var(--warm-border)] transition-colors text-lg leading-none">
           ×
         </button>
       </div>
