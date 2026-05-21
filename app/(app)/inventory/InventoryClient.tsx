@@ -781,7 +781,7 @@ function MergeSection({ currentId, currentLabel, category, onDone }: {
 
       {/* 병합 방향 확인 모달 */}
       {showConfirm && target && (
-        <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4" onClick={() => setShowConfirm(false)}>
+        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={() => setShowConfirm(false)}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm p-5 space-y-4 shadow-lift" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm font-bold text-[var(--warm-dark)]">병합 방향 확인</h3>
 
@@ -1785,7 +1785,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false }: {
 
   return (
     <div
-      className={inline ? undefined : 'fixed inset-0 bg-black/60 z-[230] flex items-end sm:items-center justify-center'}
+      className={inline ? undefined : 'fixed inset-0 bg-black/70 z-[230] flex items-end sm:items-center justify-center'}
       onClick={inline ? undefined : onClose}
     >
       <div

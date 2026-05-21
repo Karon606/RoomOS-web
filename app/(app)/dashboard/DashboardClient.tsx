@@ -269,7 +269,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
         onClick={e => e.stopPropagation()}>
         {/* 헤더 */}
@@ -420,7 +420,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
         onClick={e => e.stopPropagation()}>
         {/* 헤더 */}
@@ -1143,7 +1143,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
 
   if (!lease && !loading) {
     return (
-      <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
         <div className="bg-[var(--cream)] rounded-2xl p-6 text-center" onClick={e => e.stopPropagation()}>
           <p className="text-sm text-[var(--warm-muted)]">활성 계약을 찾을 수 없습니다.</p>
           <button onClick={onClose} className="mt-3 text-sm font-medium" style={{ color: 'var(--coral)' }}>닫기</button>
@@ -1623,7 +1623,7 @@ function RoomDetailPopup({ room, onClose, onOpenPayment, onOpenTenantInfo }: {
   onOpenTenantInfo: (tenantId: string) => void
 }) {
   return (
-    <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4"
+    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
       onClick={onClose}>
       <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-xs overflow-hidden"
         onClick={e => e.stopPropagation()}>
@@ -1730,7 +1730,7 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
   const lease = info?.leaseTerms?.[0] ?? null
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
           <span className="text-base font-bold text-[var(--warm-dark)]">
