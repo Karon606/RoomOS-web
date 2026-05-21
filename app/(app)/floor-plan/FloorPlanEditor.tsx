@@ -316,7 +316,7 @@ function BottomSheet({ title, onClose, children }: { title: string; onClose: () 
   const onUp = () => { drag.current = null }
 
   return (
-    <div className="md:hidden fixed bottom-0 inset-x-0 z-40 rounded-t-2xl border-t border-[var(--warm-border)] shadow-xl"
+    <div className="md:hidden fixed bottom-0 inset-x-0 z-40 rounded-t-2xl border-t border-[var(--warm-border)] shadow-lift"
       style={{ background: 'var(--cream)', height, display: 'flex', flexDirection: 'column' }}>
       <div className="flex justify-center pt-2 pb-1 shrink-0 cursor-ns-resize touch-none select-none"
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
@@ -1182,7 +1182,7 @@ export default function FloorPlanEditor({
                 </button>
               )}
               {showPolyMenu && !drawingPolygon && (
-                <div className="absolute top-full left-0 mt-1 z-30 rounded-xl border border-[var(--warm-border)] shadow-lg overflow-hidden"
+                <div className="absolute top-full left-0 mt-1 z-30 rounded-xl border border-[var(--warm-border)] shadow-lift overflow-hidden"
                   style={{ background: 'var(--cream)', minWidth: 120 }}>
                   {PALETTE.filter(t => t !== 'label').map(type => (
                     <button key={type} onClick={() => startDrawPolygon(type)}

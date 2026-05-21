@@ -2091,7 +2091,7 @@ export default function TenantClient({
       {/* 배치 액션 바 */}
       {selectMode && selectedIds.size > 0 && (
         <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
-          <div className="flex items-center gap-3 bg-[var(--ink)] text-[var(--canvas)] rounded-2xl px-4 py-3 shadow-xl pointer-events-auto mx-4">
+          <div className="flex items-center gap-3 bg-[var(--ink)] text-[var(--canvas)] rounded-2xl px-4 py-3 shadow-lift pointer-events-auto mx-4">
             <span className="text-sm font-medium">{selectedIds.size}명 선택됨</span>
             <div className="w-px h-4 bg-[var(--canvas)]/20" />
             <button type="button" onClick={() => setShowBatchEdit(true)}
