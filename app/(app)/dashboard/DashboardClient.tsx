@@ -610,7 +610,8 @@ function AlertsStrip({ alerts, onOpenAlert }: {
                       className="w-full text-left hover:opacity-70 active:opacity-50 transition-opacity"
                       onClick={() => onOpenAlert(item)}
                     >
-                      <div className="flex items-center gap-3 px-5 py-3">
+                      <div className="flex items-center gap-3 px-5 py-3"
+                        style={{ borderLeft: `3px solid ${item.dotColor}`, background: hexToRgba(item.dotColor, 0.06) }}>
                         <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
                           style={{ background: hexToRgba(item.dotColor, 0.12), fontSize: '0.6875rem', color: item.dotColor }}>
                           {item.text.slice(0, 1)}
