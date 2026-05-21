@@ -1660,11 +1660,21 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false }: {
 
   useEffect(() => {
     if (!locId) return
-    setBeforeQtys({})
+    // "채우기 전"을 직전 점검 잔량으로 prefill — 채운 후만 입력해도 보충량(후-전)이
+    // 정확히 계산되어 허브에서 자동 차감됨. (빈칸이면 보충 0으로 처리돼 허브 차감 없이
+    // 순증가하던 버그 수정. 아이템별 점검 CheckForm 과 prefill 동작 통일.)
+    const initBefore: Record<string, string> = {}
+    rows
+      .filter(r => !r.isArchived && r.locations.some(l => l.id === locId))
+      .forEach(r => {
+        const prev = r.lastCheckLocationBreakdown.find(lb => lb.locationId === locId)
+        initBefore[r.id] = prev != null ? String(prev.qty) : ''
+      })
+    setBeforeQtys(initBefore)
     setAfterQtys({})
     setMergeChoice(null)
     setConfirmItems([])
-  }, [locId])
+  }, [locId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 점검 위치가 비허브일 때, 각 품목당 보충량은 후-전, 합계만큼 그 품목의 허브 위치 잔량 자동 차감
   const computeRow = (r: InventoryRow) => {
