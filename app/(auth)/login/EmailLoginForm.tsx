@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useState } from 'react'
 import { AsYouType } from 'libphonenumber-js'
 import { AddressSearch } from '@/components/ui/AddressSearch'
+import { Btn } from '@/components/ui/Btn'
 import { syncUserToDB } from './actions'
 
 type Mode = 'login' | 'signup' | 'forgot'
@@ -258,18 +259,20 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
         </div>
       )}
 
-      <button
+      <Btn
         type="submit"
+        variant="primary"
+        size="md"
+        fullWidth
         disabled={loading}
-        className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity disabled:opacity-60"
-        style={{ background: 'var(--persimmon)', color: '#fff' }}
+        className="font-semibold"
       >
         {loading
           ? '처리 중...'
           : mode === 'login'  ? '이메일로 로그인'
           : mode === 'signup' ? '회원가입'
           :                     '재설정 메일 보내기'}
-      </button>
+      </Btn>
 
       <div className="flex justify-between text-xs pt-0.5" style={{ color: 'var(--warm-muted)' }}>
         {mode === 'login' ? (

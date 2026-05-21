@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
+import { Btn } from '@/components/ui/Btn'
 import { Loading } from '@/components/ui/Loading'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { getTrendData, type TrendRange, type TrendPoint } from './actions'
@@ -351,20 +352,18 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
             </button>
           )}
           {isRecurring && (
-            <button
+            <Btn
               onClick={() => { onStartRecord(alert); onClose() }}
-              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
-              style={{ background: 'var(--coral)', color: 'white' }}>
+              variant="primary" size="md" fullWidth className="font-semibold">
               지출 기록하기
-            </button>
+            </Btn>
           )}
           {alert.tenantId && !isRecurring && !reservationDueLeaseId && !moveOutLeaseId && (
-            <button
+            <Btn
               onClick={() => { onOpenPayment(alert.tenantId!); onClose() }}
-              className="w-full py-2.5 rounded-xl text-sm font-medium transition-opacity hover:opacity-80"
-              style={{ background: 'var(--coral)', color: 'white' }}>
+              variant="primary" size="md" fullWidth>
               수납 관리 보기
-            </button>
+            </Btn>
           )}
           <Link href={alert.link} onClick={onClose}
             className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-opacity hover:opacity-70"
@@ -500,16 +499,13 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
 
             {/* 버튼 */}
             <div className="flex gap-2 pt-1">
-              <button onClick={onClose}
-                className="flex-1 py-2.5 rounded-xl text-sm border transition-colors"
-                style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+              <Btn onClick={onClose} variant="secondary" size="md" className="flex-1">
                 취소
-              </button>
-              <button onClick={handleSubmit} disabled={pending || !amount || !date}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
-                style={{ background: 'var(--coral)', color: 'white' }}>
+              </Btn>
+              <Btn onClick={handleSubmit} disabled={pending || !amount || !date}
+                variant="primary" size="md" className="flex-1 font-semibold">
                 {pending ? '저장 중…' : '저장'}
-              </button>
+              </Btn>
             </div>
           </div>
         )}
@@ -1519,11 +1515,9 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                   </div>
                 </form>
               ) : (
-                <button onClick={() => setShowForm(true)}
-                  className="w-full py-3 rounded-2xl text-sm font-medium transition-colors"
-                  style={{ background: 'var(--coral)', color: 'white' }}>
+                <Btn onClick={() => setShowForm(true)} variant="primary" size="md" fullWidth>
                   + 수납 입력
-                </button>
+                </Btn>
               )}
             </div>
           )}

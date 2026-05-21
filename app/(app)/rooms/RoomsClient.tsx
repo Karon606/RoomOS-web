@@ -1655,19 +1655,17 @@ export default function RoomsClient({
                             <p className="text-xs" style={{ color: 'var(--coral)' }}>유효한 날짜를 입력하세요 (1~31 또는 말일)</p>
                           )}
                           <div className="flex gap-2">
-                            <button type="button"
+                            <Btn type="button" variant="secondary" size="sm"
                               onClick={() => { setShowDueDayChange(false); setNewDueDayInput('') }}
-                              className="flex-1 py-1.5 text-xs rounded-lg transition-colors"
-                              style={{ background: 'var(--cream)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
+                              className="flex-1">
                               취소
-                            </button>
-                            <button type="button"
+                            </Btn>
+                            <Btn type="button" variant="primary" size="sm"
                               disabled={isPending || !canApply}
                               onClick={handleChangeDueDayPerm}
-                              className="flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors disabled:opacity-40"
-                              style={{ background: 'var(--coral)', color: '#fff' }}>
+                              className="flex-1 font-semibold">
                               {isPending ? '처리 중...' : '변경 적용'}
-                            </button>
+                            </Btn>
                           </div>
                         </div>
                       )

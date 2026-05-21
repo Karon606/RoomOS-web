@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
+import { Btn } from '@/components/ui/Btn'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
@@ -101,14 +102,16 @@ export default function ResetPasswordPage() {
                 className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
                 style={inputStyle}
               />
-              <button
+              <Btn
                 type="submit"
+                variant="primary"
+                size="md"
+                fullWidth
                 disabled={loading}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity disabled:opacity-60"
-                style={{ background: 'var(--persimmon)', color: '#fff' }}
+                className="font-semibold"
               >
                 {loading ? '변경 중...' : '비밀번호 변경'}
-              </button>
+              </Btn>
             </form>
           )}
 

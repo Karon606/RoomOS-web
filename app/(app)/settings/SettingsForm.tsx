@@ -658,9 +658,7 @@ export default function SettingsForm({
                 <h2 className="text-sm font-semibold text-[var(--warm-dark)]">고정 지출 관리</h2>
                 <p className="text-xs text-[var(--warm-muted)] mt-0.5">매월 반복되는 지출 항목. 납부일 전 대시보드에 알림이 표시됩니다.</p>
               </div>
-              <button onClick={openNewRec}
-                className="px-3 py-1.5 text-xs font-medium rounded-xl transition-colors"
-                style={{ background: 'var(--coral)', color: '#fff' }}>+ 추가</button>
+              <Btn onClick={openNewRec} variant="primary" size="sm">+ 추가</Btn>
             </div>
 
             {/* 등록/편집 폼 */}

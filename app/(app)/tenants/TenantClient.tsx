@@ -10,6 +10,7 @@ import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithG
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getLeaseSettlementInfo, getRoomQuickInfo } from '@/app/(app)/rooms/actions'
 import { calcProRata, PRORATE_BASE_DAYS } from '@/lib/prorate'
+import { Btn } from '@/components/ui/Btn'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { PhoneInput } from '@/components/ui/PhoneInput'
@@ -1729,19 +1730,17 @@ export default function TenantClient({
                                     )}
 
                                     <div className="flex gap-2">
-                                      <button type="button"
+                                      <Btn type="button" variant="secondary" size="sm"
                                         onClick={() => { setShowDueDayChange(false); setNewDueDayInput('') }}
-                                        className="flex-1 py-1.5 text-xs rounded-lg transition-colors"
-                                        style={{ background: 'var(--cream)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
+                                        className="flex-1">
                                         취소
-                                      </button>
-                                      <button type="button"
+                                      </Btn>
+                                      <Btn type="button" variant="primary" size="sm"
                                         disabled={isPending || !canApply}
                                         onClick={handleChangeDueDayAction}
-                                        className="flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors disabled:opacity-40"
-                                        style={{ background: 'var(--coral)', color: '#fff' }}>
+                                        className="flex-1 font-semibold">
                                         {isPending ? '처리 중...' : '변경 적용'}
-                                      </button>
+                                      </Btn>
                                     </div>
                                   </div>
                                 )
@@ -1854,11 +1853,10 @@ export default function TenantClient({
                                     className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-2 text-[0.6875rem] text-[var(--warm-dark)] min-w-0" />
                                 </div>
                               </div>
-                              <button onClick={handleCreate} disabled={reqPending || !newContent.trim()}
-                                className="w-full py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-                                style={{ background: 'var(--coral)', color: '#fff' }}>
+                              <Btn onClick={handleCreate} disabled={reqPending || !newContent.trim()}
+                                variant="primary" size="md" fullWidth>
                                 {reqPending ? '등록 중...' : '등록'}
-                              </button>
+                              </Btn>
                             </div>
 
                             {/* 미처리 요청 목록 */}
