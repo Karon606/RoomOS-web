@@ -2,9 +2,9 @@
 
 // 상태 카드 베이스 — "이 카드는 어떤 종류인가" 를 배경 톤으로 표현.
 //   resident 거주 중 — 연한 Warm Olive 톤
-//   vacant   비거주·공실 — cream-soft + opacity 0.72 (가라앉음)
+//   vacant   비거주·공실 — cream-soft + 좌측 ink-m 3px 팁 + opacity 0.6 (가라앉음, v1.2)
 //   neutral  일반 데이터 (수납·재고 등) — cream 단색
-//   overdue  연체 — 좌측 Terracotta 보더 + 옅은 틴트 (v1.1 긴급 상태 패턴)
+//   overdue  연체 — 좌측 Terracotta 3px 팁 + 옅은 틴트 (v1.2 긴급 상태 패턴)
 //
 // 정상 상태는 베이스만으로 충분 — 뱃지는 예외일 때만 badge 슬롯으로.
 
@@ -14,7 +14,7 @@ export type CardKind = 'resident' | 'vacant' | 'neutral'
 
 const KIND: Record<CardKind, { bg: string; bd: string; opacity?: number }> = {
   resident: { bg: 'var(--card-resident-bg)', bd: 'var(--card-resident-bd)' },
-  vacant:   { bg: 'var(--card-vacant-bg)',   bd: 'var(--card-vacant-bd)', opacity: 0.72 },
+  vacant:   { bg: 'var(--card-vacant-bg)',   bd: 'var(--card-vacant-bd)', opacity: 0.6 },
   neutral:  { bg: 'var(--card-neutral-bg)',  bd: 'var(--card-neutral-bd)' },
 }
 
@@ -43,7 +43,9 @@ export function RoomCard({
     ? { background: 'var(--cream)', borderColor: 'var(--coral)', borderWidth: 2, boxShadow: '0 0 0 2px rgba(160,60,46,0.20)' }
     : overdue
       ? { background: 'rgba(160,60,46,0.045)', borderColor: 'var(--card-neutral-bd)', borderLeftColor: 'var(--coral)', borderLeftWidth: 3 }
-      : { background: k.bg, borderColor: k.bd, opacity: k.opacity }
+      : kind === 'vacant'
+        ? { background: k.bg, borderColor: k.bd, borderLeftColor: 'var(--ink-mute)', borderLeftWidth: 3, opacity: k.opacity }
+        : { background: k.bg, borderColor: k.bd, opacity: k.opacity }
   return (
     <div
       onClick={onClick}
