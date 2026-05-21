@@ -143,11 +143,12 @@ function Btn({
   type?: 'button' | 'submit'
   small?: boolean
 }) {
-  const base = `inline-flex items-center justify-center rounded-xl font-medium transition-colors disabled:opacity-50 ${small ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm'}`
+  // 버튼 반경은 가이드 r-md(8)/r-lg(10), 색은 브랜드 토큰만 (비토큰 빨강·#fff 제거)
+  const base = `inline-flex items-center justify-center font-medium transition-colors disabled:opacity-50 ${small ? 'px-3 py-1.5 text-xs rounded-md' : 'px-4 py-2 text-sm rounded-lg'}`
   const styles: Record<string, React.CSSProperties> = {
-    primary: { background: 'var(--coral)', color: '#fff' },
+    primary: { background: 'var(--coral)', color: 'white' },
     secondary: { background: 'var(--canvas)', color: 'var(--warm-dark)', border: '1px solid var(--warm-border)' },
-    danger: { background: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5' },
+    danger: { background: 'var(--coral-pale)', color: 'var(--coral-dark)', border: '1px solid rgba(160,60,46,.25)' },
   }
   return (
     <button type={type} className={base} style={styles[variant]} onClick={onClick} disabled={disabled}>

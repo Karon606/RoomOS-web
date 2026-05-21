@@ -1240,7 +1240,7 @@ export default function FloorPlanEditor({
                 onChange={e => handleDashboardToggle(e.target.checked)}
               />
               <div className={`w-8 h-4 rounded-full transition-colors duration-200 ${showOnDashboard ? 'bg-[var(--coral)]' : 'bg-[var(--warm-border)]'}`} />
-              <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform duration-200 ${showOnDashboard ? 'translate-x-4' : 'translate-x-0'}`} />
+              <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-[var(--cream)] rounded-full shadow transition-transform duration-200 ${showOnDashboard ? 'translate-x-4' : 'translate-x-0'}`} />
             </div>
           </label>
 

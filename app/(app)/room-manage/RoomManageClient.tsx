@@ -1003,7 +1003,7 @@ export default function RoomManageClient({
                 <label className="relative inline-flex items-center cursor-pointer shrink-0">
                   <input type="checkbox" className="sr-only" checked={addNrEnabled} onChange={e => setAddNrEnabled(e.target.checked)} />
                   <div className={`w-9 h-5 rounded-full transition-colors ${addNrEnabled ? 'bg-[var(--coral)]' : 'bg-[var(--warm-border)]'}`} />
-                  <div className={`absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${addNrEnabled ? 'translate-x-4' : ''}`} />
+                  <div className={`absolute left-0.5 top-0.5 w-4 h-4 bg-[var(--cream)] rounded-full shadow transition-transform ${addNrEnabled ? 'translate-x-4' : ''}`} />
                 </label>
               </div>
               {addNrEnabled && (
@@ -1130,7 +1130,7 @@ export default function RoomManageClient({
                 <label className="relative inline-flex items-center cursor-pointer shrink-0">
                   <input type="checkbox" className="sr-only" checked={nrEnabled} onChange={e => setNrEnabled(e.target.checked)} />
                   <div className={`w-9 h-5 rounded-full transition-colors ${nrEnabled ? 'bg-[var(--coral)]' : 'bg-[var(--warm-border)]'}`} />
-                  <div className={`absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${nrEnabled ? 'translate-x-4' : ''}`} />
+                  <div className={`absolute left-0.5 top-0.5 w-4 h-4 bg-[var(--cream)] rounded-full shadow transition-transform ${nrEnabled ? 'translate-x-4' : ''}`} />
                 </label>
               </div>
               {nrEnabled && (

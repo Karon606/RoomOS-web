@@ -891,7 +891,7 @@ export default function TenantClient({
     <div className="space-y-4">
       {/* 토스트 */}
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-md w-[calc(100%-2rem)] bg-[var(--warm-dark)] text-white text-xs rounded-xl px-4 py-3 shadow-lift flex items-start gap-2">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-md w-[calc(100%-2rem)] bg-[var(--warm-dark)] text-white text-xs rounded-lg px-4 py-3 shadow-lift flex items-start gap-2">
           <span className="flex-1 leading-relaxed">{toast}</span>
           <button onClick={() => setToast(null)} className="shrink-0 text-white/60 hover:text-white">✕</button>
         </div>
