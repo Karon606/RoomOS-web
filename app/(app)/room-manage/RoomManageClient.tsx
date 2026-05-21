@@ -505,11 +505,9 @@ export default function RoomManageClient({
             className="px-3 py-2 text-sm font-medium text-[var(--warm-mid)] border border-[var(--warm-border)] hover:border-[var(--coral)] rounded-xl transition-colors">
             {selectMode ? `선택 취소${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}` : '선택'}
           </button>
-          <button
-            onClick={() => { setShowAddModal(true); setError('') }}
-            className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
+          <Btn variant="primary" size="md" onClick={() => { setShowAddModal(true); setError('') }}>
             + 호실 등록
-          </button>
+          </Btn>
         </div>
       </div>
 
@@ -635,20 +633,24 @@ export default function RoomManageClient({
             </div>
           </div>
           <div className="flex gap-2 pt-1">
-            <button
+            <Btn
               type="button"
+              variant="secondary"
+              size="sm"
+              className="flex-1"
               onClick={resetFilters}
-              className="flex-1 py-2 rounded-xl text-xs bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors"
             >
               초기화
-            </button>
-            <button
+            </Btn>
+            <Btn
               type="button"
+              variant="primary"
+              size="sm"
+              className="flex-1"
               onClick={() => setShowFilters(false)}
-              className="flex-1 py-2 rounded-xl text-xs bg-[var(--coral)] hover:opacity-90 text-white font-medium transition-opacity"
             >
               닫기
-            </button>
+            </Btn>
           </div>
         </div>
       )}
@@ -890,11 +892,9 @@ export default function RoomManageClient({
                   </button>
                 )}
                 <div className="flex-1" />
-                <button
-                  onClick={() => openEdit(r)}
-                  className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
+                <Btn variant="primary" size="md" onClick={() => openEdit(r)}>
                   수정
-                </button>
+                </Btn>
               </div>
             </div>
           </div>
@@ -1385,14 +1385,12 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, windowTypeOptions, direct
         </div>
 
         <div className="flex gap-2 pt-2">
-          <button type="button" onClick={onClose}
-            className="flex-1 px-4 py-2.5 text-sm font-medium text-[var(--warm-mid)] border border-[var(--warm-border)] rounded-xl hover:border-[var(--coral)] transition-colors">
+          <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={onClose}>
             취소
-          </button>
-          <button type="button" onClick={handleApply} disabled={pending}
-            className="flex-1 px-4 py-2.5 text-sm font-semibold bg-[var(--coral)] text-white rounded-xl hover:opacity-90 disabled:opacity-50 transition-opacity">
+          </Btn>
+          <Btn type="button" variant="primary" size="md" className="flex-1 font-semibold" onClick={handleApply} disabled={pending}>
             {pending ? '적용 중...' : '적용'}
-          </button>
+          </Btn>
         </div>
       </div>
     </Modal>
@@ -1690,12 +1688,13 @@ function RoomMgrTenantInfoModal({ tenantId, onClose, onBack }: { tenantId: strin
           )}
         </div>
         <div className="border-t border-[var(--warm-border)] px-6 py-3 flex justify-end shrink-0">
-          <button
+          <Btn
             type="button"
-            onClick={() => router.push(`/tenants?tenantId=${tenantId}`)}
-            className="px-4 py-2 text-xs font-medium rounded-xl bg-[var(--coral)] hover:opacity-90 text-white transition-colors">
+            variant="primary"
+            size="sm"
+            onClick={() => router.push(`/tenants?tenantId=${tenantId}`)}>
             입주자 관리로 이동
-          </button>
+          </Btn>
         </div>
       </div>
     </div>
@@ -1777,16 +1776,17 @@ function RoomMgrSettlementInfoModal({
           )}
         </div>
         <div className="border-t border-[var(--warm-border)] px-6 py-3 flex justify-end shrink-0">
-          <button
+          <Btn
             type="button"
+            variant="primary"
+            size="sm"
             onClick={() => {
               const params = new URLSearchParams({ month: targetMonth })
               if (info?.roomNo) params.set('roomNo', info.roomNo)
               router.push(`/rooms?${params.toString()}`)
-            }}
-            className="px-4 py-2 text-xs font-medium rounded-xl bg-[var(--coral)] hover:opacity-90 text-white transition-colors">
+            }}>
             수납 관리로 이동
-          </button>
+          </Btn>
         </div>
       </div>
     </div>

@@ -1505,13 +1505,10 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                     </p>
                   )}
                   <div className="flex gap-2">
-                    <button type="button" onClick={() => { setShowForm(false); setIsDepositMode(false) }}
-                      className="flex-1 py-2.5 rounded-xl border text-sm text-[var(--warm-mid)] transition-colors"
-                      style={{ borderColor: 'var(--warm-border)' }}>취소</button>
-                    <button type="submit" disabled={isPending}
-                      className="flex-1 py-2.5 rounded-xl bg-[var(--coral)] text-white text-sm font-medium transition-colors disabled:opacity-50">
+                    <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => { setShowForm(false); setIsDepositMode(false) }}>취소</Btn>
+                    <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={isPending}>
                       {isPending ? '저장 중…' : '저장'}
-                    </button>
+                    </Btn>
                   </div>
                 </form>
               ) : (

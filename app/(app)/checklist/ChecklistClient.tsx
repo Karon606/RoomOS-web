@@ -12,6 +12,7 @@ import {
 } from './actions'
 import { DEFAULT_CHECKLIST_ALERT_DAYS_BEFORE } from '@/lib/appConfig'
 import { withSave } from '@/lib/saveStatus'
+import { Btn } from '@/components/ui/Btn'
 
 type Mode = 'create' | { mode: 'edit'; row: ChecklistRow } | { mode: 'check'; row: ChecklistRow } | null
 
@@ -83,11 +84,9 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl font-bold" style={{ color: 'var(--warm-dark)' }}>체크리스트</h1>
-        <button
-          onClick={() => { setMode('create'); setError('') }}
-          className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
+        <Btn variant="primary" size="md" onClick={() => { setMode('create'); setError('') }}>
           + 항목 추가
-        </button>
+        </Btn>
       </div>
 
       <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-muted)' }}>

@@ -360,8 +360,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true }: {
               className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none">✕</button>
           </div>
           {SpecQtyInputs()}
-          <button type="button" onClick={() => confirmAdd(activeLabel)}
-            className="w-full py-1.5 bg-[var(--coral)] hover:opacity-90 text-white text-xs font-medium rounded-lg transition-colors">추가</button>
+          <Btn variant="primary" size="sm" fullWidth onClick={() => confirmAdd(activeLabel)}>추가</Btn>
         </div>
       )}
 
@@ -377,10 +376,9 @@ function ItemSelector({ category, value, onChange, allowMulti = true }: {
             <input type="text" placeholder="예: 고추장" value={customLabel} onChange={e => setCustomLabel(e.target.value)} className={textCls} />
           </div>
           {SpecQtyInputs()}
-          <button type="button" onClick={() => { if (customLabel.trim()) confirmAdd(customLabel.trim()) }}
-            className="w-full py-1.5 bg-[var(--coral)] hover:opacity-90 text-white text-xs font-medium rounded-lg transition-colors">
+          <Btn variant="primary" size="sm" fullWidth onClick={() => { if (customLabel.trim()) confirmAdd(customLabel.trim()) }}>
             추가
-          </button>
+          </Btn>
         </div>
       )}
     </div>
@@ -818,10 +816,9 @@ function ReceiptScanModal({ bitmap, onConfirm, onCancel }: {
           className="px-6 py-2.5 rounded-xl bg-white/15 text-white text-sm font-medium hover:bg-white/25 transition-colors">
           취소
         </button>
-        <button type="button" onClick={handleConfirm} disabled={processing}
-          className="px-6 py-2.5 rounded-xl bg-[var(--coral)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-60 transition-opacity">
+        <Btn variant="primary" size="md" onClick={handleConfirm} disabled={processing}>
           {processing ? '처리 중…' : '영역 확정'}
-        </button>
+        </Btn>
       </div>
     </div>
   )
@@ -1620,14 +1617,12 @@ export default function FinanceClient({
             <span className="ml-auto text-sm font-bold text-red-400 font-mono">
               합계: <MoneyDisplay amount={totalExp} />
             </span>
-            <button onClick={openRecMgmt}
-              className="px-4 py-2 bg-[var(--canvas)] border border-[var(--warm-border)] hover:border-[var(--coral)] text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors">
+            <Btn variant="secondary" size="md" onClick={openRecMgmt}>
               고정 지출 관리
-            </button>
-            <button onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setScanCropped(null); setScanOcrError(''); setError('') }}
-              className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
+            </Btn>
+            <Btn variant="primary" size="md" onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
               + 지출 등록
-            </button>
+            </Btn>
           </div>
 
           {(() => {
@@ -1939,10 +1934,9 @@ export default function FinanceClient({
             <span className="ml-auto text-sm font-bold text-green-400 font-mono">
               합계: <MoneyDisplay amount={totalInc} />
             </span>
-            <button onClick={() => { setShowAddInc(true); setAddIncMethod('계좌이체'); setAddIncAccId(''); setError('') }}
-              className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
+            <Btn variant="primary" size="md" onClick={() => { setShowAddInc(true); setAddIncMethod('계좌이체'); setAddIncAccId(''); setError('') }}>
               + 수익 등록
-            </button>
+            </Btn>
           </div>
 
           {/* 부가 수익 목록 — 모바일 카드 */}
@@ -2094,12 +2088,12 @@ export default function FinanceClient({
 
                     {/* 정산 버튼 */}
                     {g.accountId && g.accountId !== 'unknown' ? (
-                      <button
+                      <Btn
+                        variant="primary" size="md" fullWidth
                         onClick={() => handleSettle(g.items.map(i => i.id), g.accountName, g.billMonth)}
-                        disabled={isPending}
-                        className="w-full py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                        disabled={isPending}>
                         출금 확인 (정산 완료 처리)
-                      </button>
+                      </Btn>
                     ) : (
                       <p className="text-xs text-[var(--warm-muted)] text-center">자산 등록 후 정산하세요</p>
                     )}
@@ -2276,16 +2270,14 @@ export default function FinanceClient({
 
               <div className="flex gap-2 pt-1">
                 {editingAcc && (
-                  <button type="button"
-                    onClick={() => { setEditingAcc(null); setAssetType('BANK_ACCOUNT'); setAssetBrand(''); setAssetFormKey(k => k + 1) }}
-                    className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">
+                  <Btn type="button" variant="secondary" size="md" className="flex-1"
+                    onClick={() => { setEditingAcc(null); setAssetType('BANK_ACCOUNT'); setAssetBrand(''); setAssetFormKey(k => k + 1) }}>
                     취소
-                  </button>
+                  </Btn>
                 )}
-                <button type="submit" disabled={isPending}
-                  className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl border border-transparent transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={isPending}>
                   {isPending ? '저장 중...' : (editingAcc ? '수정 저장' : '등록')}
-                </button>
+                </Btn>
               </div>
             </form>
           </div>
@@ -2411,7 +2403,7 @@ export default function FinanceClient({
                     </button>
                   )}
                   <div className="flex-1" />
-                  <button onClick={() => {
+                  <Btn variant="primary" size="md" onClick={() => {
                     setDetailExpEdit(true)
                     setEditExpDate(toDateInput(detailExp.date))
                     setEditExpMethod(detailExp.payMethod ?? '계좌이체')
@@ -2429,8 +2421,7 @@ export default function FinanceClient({
                       amount:    detailExp.amount,
                     }] : [])
                     setError('')
-                  }}
-                    className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">수정</button>
+                  }}>수정</Btn>
                 </div>
               </>
             ) : (
@@ -2566,10 +2557,9 @@ export default function FinanceClient({
                     {scanCropped && scanTargetRef.current === 'edit' ? (
                       <div className="space-y-2">
                         <img src={scanCropped.dataUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증 미리보기" />
-                        <button type="button" onClick={handleScanUpload} disabled={receiptUploading}
-                          className="w-full py-2 text-xs font-medium rounded-xl bg-[var(--coral)] text-white disabled:opacity-60 transition-opacity">
+                        <Btn type="button" variant="primary" size="sm" fullWidth onClick={handleScanUpload} disabled={receiptUploading}>
                           {receiptUploading ? '업로드 중…' : '첨부'}
-                        </button>
+                        </Btn>
                       </div>
                     ) : editReceiptUrl ? (
                       <div className="relative">
@@ -2589,12 +2579,10 @@ export default function FinanceClient({
                   {error && <p className="text-red-400 text-sm">{error}</p>}
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                  <button type="button" onClick={() => { setDetailExpEdit(false); setError('') }}
-                    className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">취소</button>
-                  <button type="submit" disabled={isPending}
-                    className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl border border-transparent transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                  <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => { setDetailExpEdit(false); setError('') }}>취소</Btn>
+                  <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={isPending}>
                     {isPending ? '저장 중...' : '저장'}
-                  </button>
+                  </Btn>
                 </div>
               </form>
             )}
@@ -2649,14 +2637,13 @@ export default function FinanceClient({
                   <button onClick={() => handleDeleteInc(detailInc.id)} disabled={isPending}
                     className="px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm rounded-xl transition-colors disabled:opacity-40">삭제</button>
                   <div className="flex-1" />
-                  <button onClick={() => {
+                  <Btn variant="primary" size="md" onClick={() => {
                     setDetailIncEdit(true)
                     setEditIncDate(toDateInput(detailInc.date))
                     setEditIncMethod(detailInc.payMethod ?? '계좌이체')
                     setEditIncAccId(detailInc.financialAccountId ?? '')
                     setError('')
-                  }}
-                    className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">수정</button>
+                  }}>수정</Btn>
                 </div>
               </>
             ) : (
@@ -2703,12 +2690,10 @@ export default function FinanceClient({
                   {error && <p className="text-red-400 text-sm">{error}</p>}
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                  <button type="button" onClick={() => { setDetailIncEdit(false); setError('') }}
-                    className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">취소</button>
-                  <button type="submit" disabled={isPending}
-                    className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl border border-transparent transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                  <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => { setDetailIncEdit(false); setError('') }}>취소</Btn>
+                  <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={isPending}>
                     {isPending ? '저장 중...' : '저장'}
-                  </button>
+                  </Btn>
                 </div>
               </form>
             )}
@@ -2856,14 +2841,12 @@ export default function FinanceClient({
                     <div className="space-y-2">
                       <img src={scanCropped.dataUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증 미리보기" />
                       <div className="flex gap-2">
-                        <button type="button" onClick={handleScanAndOcr} disabled={scanOcrPending || receiptUploading}
-                          className="flex-1 py-2 text-xs font-semibold rounded-xl bg-[var(--coral)] text-white disabled:opacity-60 transition-opacity">
+                        <Btn type="button" variant="primary" size="sm" className="flex-1 font-semibold" onClick={handleScanAndOcr} disabled={scanOcrPending || receiptUploading}>
                           {scanOcrPending ? '분석 중…' : '자동 입력 + 첨부'}
-                        </button>
-                        <button type="button" onClick={handleScanUpload} disabled={scanOcrPending || receiptUploading}
-                          className="flex-1 py-2 text-xs font-medium rounded-xl border border-[var(--warm-border)] text-[var(--warm-dark)] disabled:opacity-60 transition-opacity">
+                        </Btn>
+                        <Btn type="button" variant="secondary" size="sm" className="flex-1" onClick={handleScanUpload} disabled={scanOcrPending || receiptUploading}>
                           {receiptUploading ? '업로드 중…' : '첨부만'}
-                        </button>
+                        </Btn>
                       </div>
                       {scanOcrError && <p className="text-[0.625rem] text-red-500">{scanOcrError}</p>}
                     </div>
@@ -2885,12 +2868,10 @@ export default function FinanceClient({
                 {error && <p className="text-red-400 text-sm">{error}</p>}
               </div>
               <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                <button type="button" onClick={() => setShowAddExp(false)}
-                  className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">취소</button>
-                <button type="submit" disabled={isPending}
-                  className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl border border-transparent transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => setShowAddExp(false)}>취소</Btn>
+                <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={isPending}>
                   {isPending ? '저장 중...' : '저장'}
-                </button>
+                </Btn>
               </div>
             </form>
           </div>
@@ -3242,9 +3223,8 @@ export default function FinanceClient({
             )}
             <div className="flex flex-col gap-2 pt-1">
               <div className="flex gap-2">
-                <button type="button" onClick={() => { setRecordingRec(null); setRecError('') }}
-                  className="flex-1 px-4 py-2.5 bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)] text-sm rounded-xl">취소</button>
-                <button type="button"
+                <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => { setRecordingRec(null); setRecError('') }}>취소</Btn>
+                <Btn type="button" variant="primary" size="md" className="flex-1 font-semibold"
                   disabled={isPending || !recRecDate || recRecAmount <= 0}
                   onClick={() => {
                     setRecError('')
@@ -3261,10 +3241,9 @@ export default function FinanceClient({
                       setRecordingRec(null)
                       router.refresh()
                     })
-                  }}
-                  className="flex-1 px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-semibold rounded-xl disabled:opacity-60 transition-opacity">
+                  }}>
                   {isPending ? '저장 중...' : '기록 저장'}
-                </button>
+                </Btn>
               </div>
               {/* 예약 저장 — 결제일 전에 금액만 미리 입력해 두는 모드. 지출은 생성하지 않음. */}
               <button type="button"

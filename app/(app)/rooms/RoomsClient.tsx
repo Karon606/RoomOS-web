@@ -1368,14 +1368,12 @@ export default function RoomsClient({
                                   </div>
                                 )}
                                 <div className="flex gap-2 justify-end">
-                                  <button onClick={() => setEditingPayId(null)}
-                                    className="text-xs text-[var(--warm-mid)] hover:text-[var(--warm-dark)] px-3 py-1.5 rounded-lg border border-[var(--warm-border)] transition-colors">
+                                  <Btn variant="secondary" size="sm" onClick={() => setEditingPayId(null)}>
                                     취소
-                                  </button>
-                                  <button onClick={handleSaveEdit} disabled={isPending}
-                                    className="text-xs text-white bg-[var(--coral)] hover:bg-[var(--coral-dark)] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                                  </Btn>
+                                  <Btn variant="primary" size="sm" onClick={handleSaveEdit} disabled={isPending}>
                                     저장
-                                  </button>
+                                  </Btn>
                                 </div>
                               </div>
                             )
@@ -1747,11 +1745,9 @@ export default function RoomsClient({
                     </button>
                   )}
                   {canEdit && (
-                    <button
-                      onClick={() => { setShowPayForm(true); setError('') }}
-                      className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
+                    <Btn variant="primary" size="md" onClick={() => { setShowPayForm(true); setError('') }}>
                       수납 등록
-                    </button>
+                    </Btn>
                   )}
                 </div>
               </>
@@ -1997,12 +1993,13 @@ function TenantInfoModal({ tenantId, onClose, onBack }: { tenantId: string; onCl
           )}
         </div>
         <div className="border-t border-[var(--warm-border)] px-6 py-3 flex justify-end shrink-0">
-          <button
+          <Btn
             type="button"
-            onClick={() => router.push(`/tenants?tenantId=${tenantId}`)}
-            className="px-4 py-2 text-xs font-medium rounded-xl bg-[var(--coral)] hover:opacity-90 text-white transition-colors">
+            variant="primary"
+            size="sm"
+            onClick={() => router.push(`/tenants?tenantId=${tenantId}`)}>
             입주자 관리로 이동
-          </button>
+          </Btn>
         </div>
       </div>
     </div>
@@ -2084,12 +2081,13 @@ function RoomInfoModal({ roomId, onClose, onBack }: { roomId: string; onClose: (
           )}
         </div>
         <div className="border-t border-[var(--warm-border)] px-6 py-3 flex justify-end shrink-0">
-          <button
+          <Btn
             type="button"
-            onClick={() => router.push(`/room-manage?roomId=${roomId}`)}
-            className="px-4 py-2 text-xs font-medium rounded-xl bg-[var(--coral)] hover:opacity-90 text-white transition-colors">
+            variant="primary"
+            size="sm"
+            onClick={() => router.push(`/room-manage?roomId=${roomId}`)}>
             호실 관리로 이동
-          </button>
+          </Btn>
         </div>
       </div>
     </div>

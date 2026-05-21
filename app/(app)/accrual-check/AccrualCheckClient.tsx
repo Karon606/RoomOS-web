@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { moveRecordTargetMonth, bulkApplyLatePayments, type SuspectRecord, type SuspectCategory } from './actions'
+import { Btn } from '@/components/ui/Btn'
 
 type Result = {
   total: number
@@ -184,14 +185,15 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
 
               <div className="flex gap-2 pt-1 flex-wrap">
                 {s.inferredAccrualMonth && s.inferredAccrualMonth !== s.targetMonth && (
-                  <button
+                  <Btn
                     type="button"
+                    variant="primary"
+                    size="sm"
                     onClick={() => handleMove(s, s.inferredAccrualMonth!)}
                     disabled={isPending}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-[var(--coral)] text-white font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
                   >
                     {s.inferredAccrualMonth}로 이동
-                  </button>
+                  </Btn>
                 )}
                 <ManualMonthInput record={s} onMove={handleMove} disabled={isPending} />
               </div>

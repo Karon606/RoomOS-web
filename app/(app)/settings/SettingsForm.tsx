@@ -525,10 +525,9 @@ export default function SettingsForm({
                 <MoneyInput name="defaultCleaningFee" defaultValue={property?.defaultCleaningFee ?? undefined} placeholder="0원" />
               </div>
             </div>
-            <button type="submit" disabled={isPending}
-              className="w-full py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60 mt-2">
+            <Btn type="submit" variant="primary" size="md" fullWidth className="mt-2" disabled={isPending}>
               {isPending ? '저장 중...' : '저장'}
-            </button>
+            </Btn>
           </form>
         </div>
 
@@ -866,11 +865,9 @@ export default function SettingsForm({
                     <option value="MANAGER">관리자 — 등록·수정·삭제 가능</option>
                     <option value="STAFF">스태프 — 조회만 가능</option>
                   </select>
-                  <button
-                    onClick={handleInvite}
-                    className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
+                  <Btn variant="primary" size="md" onClick={handleInvite}>
                     초대
-                  </button>
+                  </Btn>
                 </div>
               </div>
             </div>
@@ -1359,10 +1356,9 @@ function OptionSection({
             className={`flex-1 bg-[var(--canvas)] border rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none transition-colors ${
               isDuplicate ? 'border-red-400 focus:border-red-400' : 'border-[var(--warm-border)] focus:border-[var(--coral)]'
             }`} />
-          <button onClick={handleAdd} disabled={isAdding || !trimmed || isDuplicate}
-            className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50 min-w-[56px]">
+          <Btn variant="primary" size="md" className="min-w-[56px]" onClick={handleAdd} disabled={isAdding || !trimmed || isDuplicate}>
             {isAdding ? '…' : '등록'}
-          </button>
+          </Btn>
         </div>
         {isDuplicate && (
           <p className="text-[0.6875rem] text-red-400">이미 존재하는 항목입니다.</p>
@@ -1410,10 +1406,9 @@ function BackupButton() {
   }
   return (
     <div>
-      <button type="button" onClick={handleBackup} disabled={busy}
-        className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-xl bg-[var(--coral)] hover:opacity-90 text-white transition-opacity disabled:opacity-60">
+      <Btn type="button" variant="primary" size="sm" onClick={handleBackup} disabled={busy}>
         {busy ? '백업 생성 중...' : 'JSON 백업 다운로드'}
-      </button>
+      </Btn>
       {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
     </div>
   )

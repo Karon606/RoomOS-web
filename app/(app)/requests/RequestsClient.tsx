@@ -13,6 +13,7 @@ import {
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
 
 type Request = Awaited<ReturnType<typeof getAllRequestsForProperty>>[number]
@@ -263,19 +264,23 @@ export default function RequestsClient({
           </div>
 
           <div className="flex gap-2 pt-1">
-            <button
+            <Btn
+              variant="secondary"
+              size="sm"
+              className="flex-1"
               onClick={() => setShowAddForm(false)}
-              className="flex-1 py-2 text-xs font-medium rounded-xl bg-[var(--canvas)] text-[var(--warm-mid)] border border-[var(--warm-border)]"
             >
               취소
-            </button>
-            <button
+            </Btn>
+            <Btn
+              variant="primary"
+              size="sm"
+              className="flex-1 font-semibold"
               onClick={handleAdd}
               disabled={pending || !addContent.trim()}
-              className="flex-1 py-2 text-xs font-semibold rounded-xl bg-[var(--coral)] text-white hover:opacity-90 disabled:opacity-50"
             >
               {pending ? '저장 중...' : '저장'}
-            </button>
+            </Btn>
           </div>
         </div>
       )}
