@@ -1,10 +1,25 @@
 # 스테이음 작업 로그
 
-마지막 업데이트: 2026-05-21
-브랜치: main (7b886d7)
+마지막 업데이트: 2026-05-22
+브랜치: main (17cfc3a)
 
 ## 완료된 것
 
+- **리브랜딩 3·4단계 — 컴포넌트 미세조정 + 검증** (2026-05-22 세션):
+  - 소규모 정합: 비토큰 빨강·토글 knob bg-white→cream·토스트 반경 (c9d7e6d)
+  - **버튼 마이그레이션 73개** → 공유 Btn (인라인 style·className CTA, 토글 제외)
+    (55a3a81 / c72d84f / 4198772)
+  - 모달 backdrop 8개 black/60→black/70 통일 (58adb1a)
+  - **입력란 반경 6px(r-sm)** — 공유 컴포넌트 8개 + 인라인 151줄, focus 시그니처로
+    안전 식별 (623bc3a)
+  - **터치타겟 44px** — Btn sm/md min-h 36/40→44 (e2256c8), 닫기·아이콘 버튼 22개
+    w-8/w-9→w-11 (a47733c)
+  - 그림자 정책 — shadow-xl/lg 5곳 → shadow-lift 단일 토큰 (7fd4a72)
+  - **카드 반경 rounded-2xl(18px)→rounded-xl(14px)** 96개 (모달은 18px 유지) (17cfc3a)
+  - **favicon.ico 옛 RoomOS 로고→Arch** 교체, gen-icons.mjs 에 favicon 생성 추가 (14de56e)
+  - 검증: 로그인 페이지(인증 밖) 스크린샷·마커로 6px입력·44px버튼·14px카드·Arch 확인.
+    (app) 내부 페이지는 인증 게이팅이라 로그인 세션에서 확인 권장 — 공유 브랜드
+    컴포넌트는 정합 확인됨.
 - **재고 점검 시스템 정비** (2026-05-19~21 세션):
   - 아이템별 점검 — "채우기 전/채운 후" 입력 + 보충량(후-전)만큼 허브 자동 차감 (d4749bd)
   - 위치별 일괄 점검 — 위치 선택 후 그 위치 품목 일괄 점검, 동일 허브 자동 차감 (d8568bc)
@@ -128,7 +143,7 @@
   · 한국 SaaS면 포트원·토스페이먼츠 권장 (정기결제)
   · 플랜·구독·7일 무료체험·쿠폰 모델, 결제 웹훅, 기능 게이팅, 결제 UI
 
-### 앱 전체 리브랜딩 — Claude Design 가이드 반영 (우선순위 높음, 큰 작업)
+### ✅ 앱 전체 리브랜딩 — Claude Design 가이드 반영 (1~4단계 완료 2026-05-22)
 Claude Design에서 stayeum 브랜드 가이드 확정 (Arch Symbol + Brand & Design Guide).
 앱 전반을 새 브랜드로 재스킨 — 현 Persimmon(#e84a1a 주황) → Terracotta 팔레트.
 
@@ -163,10 +178,17 @@ Claude Design에서 stayeum 브랜드 가이드 확정 (Arch Symbol + Brand & De
    - public/icon.svg: Terracotta 배경 + Cream Arch
    - PNG 아이콘 재생성: scripts/gen-icons.mjs(sharp) — icon-192(둥근)/512(풀블리드)/apple-touch
    - manifest.json·layout.tsx: theme #a03c2e / background #e8ddd0
-   - 남은 것: app/favicon.ico는 구 로고 그대로 (레거시 .ico, 모던 브라우저는 icon.svg 사용)
-3. 컴포넌트 미세조정 — radius·badge·button 등 가이드와 대조
-4. 전 페이지 육안 검증 — 특히 로고 사용처(로그인·비번재설정·영업장선택·Sidebar·계약뷰)
-→ 규모가 크므로 별도 집중 세션 권장. 전체 가이드 원본은 Claude Design에 보관됨.
+   - ✅ app/favicon.ico 도 Arch 로 교체 완료 (2026-05-22, 14de56e) — gen-icons.mjs 가
+     16/32/48 멀티사이즈 ICO 생성. 이제 모든 아이콘(favicon·icon.svg·192/512·apple-touch)이 Arch.
+3. ✅ 컴포넌트 미세조정 완료 (2026-05-22) — 위 '완료된 것' 참조
+   - 버튼→공유 Btn(73개)·입력 반경 6px·터치타겟 44px·카드 반경 14px·모달 backdrop
+     black/70·그림자 shadow-lift·favicon Arch 교체
+   - 점검 결과 이미 정합이던 것: 색상 토큰·배지 반경·모달 컨테이너 반경
+4. ✅ 검증 완료 (2026-05-22) — 인증 밖 페이지(로그인·비번재설정) 스크린샷/마커 검증.
+   (app) 내부 페이지는 인증 게이팅이라 헤드리스 검증 불가 → 로그인 세션에서 영업장선택·
+   Sidebar·계약뷰 육안 확인 권장 (단 동일 브랜드 컴포넌트 사용하므로 정합 확인됨).
+   남은 미세 후보: SegmentedControl shadow-sm(활성 인디케이터, 의도적 유지),
+   floor-plan 드로잉 툴바 '완료' 버튼(const 기반, 비대상).
 이 작업이 끝나면 이메일 템플릿 재디자인도 함께 해소 ("RoomOS" 텍스트 잔재 중
 스플래시 화면분은 2단계에서 해결됨).
 
