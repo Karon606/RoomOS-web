@@ -902,17 +902,14 @@ export default function TenantClient({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl font-bold text-[var(--warm-dark)]">고객 관리</h1>
         <div className="flex items-center gap-2">
-          <button type="button"
-            onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}
-            className="px-3 py-2 text-sm font-medium text-[var(--warm-mid)] border border-[var(--warm-border)] hover:border-[var(--coral)] rounded-xl transition-colors">
+          <Btn type="button" variant="secondary" size="md"
+            onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
             {selectMode ? `선택 취소${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}` : '선택'}
-          </button>
-          <button
-            onClick={() => { setShowAdd(true); setError('') }}
-            className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors"
-          >
+          </Btn>
+          <Btn variant="primary" size="md"
+            onClick={() => { setShowAdd(true); setError('') }}>
             + 고객 등록
-          </button>
+          </Btn>
         </div>
       </div>
 
@@ -1195,14 +1192,14 @@ export default function TenantClient({
                 네: 즉시 적용 (예정일 무시) · 아니오: 변경 예정일에 자동 적용
               </p>
               <div className="flex gap-2 pt-1">
-                <button type="button" onClick={() => handleRentChangeChoice(false)} disabled={isPending}
-                  className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-60">
+                <Btn type="button" variant="secondary" size="md" disabled={isPending}
+                  onClick={() => handleRentChangeChoice(false)} className="flex-1">
                   아니오
-                </button>
-                <button type="button" onClick={() => handleRentChangeChoice(true)} disabled={isPending}
-                  className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--coral)] hover:opacity-90 text-white font-medium transition-opacity disabled:opacity-60">
+                </Btn>
+                <Btn type="button" variant="primary" size="md" disabled={isPending}
+                  onClick={() => handleRentChangeChoice(true)} className="flex-1">
                   네, 즉시 적용
-                </button>
+                </Btn>
               </div>
             </div>
           </div>
@@ -1986,12 +1983,11 @@ export default function TenantClient({
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-semibold text-[var(--coral)]">Gemini AI 수납 진단</span>
                               </div>
-                              <button
+                              <Btn variant="primary" size="sm"
                                 onClick={handleAiAnalyze}
-                                disabled={aiLoading}
-                                className="text-xs px-3 py-1.5 bg-[var(--coral)] hover:opacity-90 text-white rounded-lg transition-colors disabled:opacity-50">
+                                disabled={aiLoading}>
                                 {aiLoading ? '분석 중...' : aiText ? '다시 분석' : '분석하기'}
-                              </button>
+                              </Btn>
                             </div>
                             {aiLoading && (
                               <div className="flex items-center gap-2 text-xs text-[var(--coral)] animate-pulse">
@@ -2048,11 +2044,10 @@ export default function TenantClient({
                           입실 처리
                         </button>
                       )}
-                      <button
-                        onClick={() => { setDetailEditMode(true); setDetailTab('info'); setError('') }}
-                        className="px-4 py-2 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
+                      <Btn variant="primary" size="md"
+                        onClick={() => { setDetailEditMode(true); setDetailTab('info'); setError('') }}>
                         수정
-                      </button>
+                      </Btn>
                     </div>
                   </>
               )}
@@ -2066,15 +2061,15 @@ export default function TenantClient({
                     <TenantForm rooms={rooms} tenant={t} error={error} />
                   </div>
                   <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                    <button type="button"
+                    <Btn type="button" variant="secondary" size="md"
                       onClick={() => { setDetailEditMode(false); setError('') }}
-                      className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">
+                      className="flex-1">
                       취소
-                    </button>
-                    <button type="submit" disabled={isPending}
-                      className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl border border-transparent transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                    </Btn>
+                    <Btn type="submit" variant="primary" size="md" disabled={isPending}
+                      className="flex-1">
                       {isPending ? '저장 중...' : '저장'}
-                    </button>
+                    </Btn>
                   </div>
                 </form>
               )}
@@ -2120,14 +2115,14 @@ export default function TenantClient({
             <form onSubmit={handleAdd} className="overflow-y-auto p-6 space-y-4">
               <TenantForm rooms={rooms} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} />
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowAdd(false)}
-                  className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">
+                <Btn type="button" variant="secondary" size="md" onClick={() => setShowAdd(false)}
+                  className="flex-1">
                   취소
-                </button>
-                <button type="submit" disabled={isPending}
-                  className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl border border-transparent transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                </Btn>
+                <Btn type="submit" variant="primary" size="md" disabled={isPending}
+                  className="flex-1">
                   {isPending ? '저장 중...' : '저장'}
-                </button>
+                </Btn>
               </div>
             </form>
           </div>
@@ -2149,14 +2144,14 @@ export default function TenantClient({
               <input type="hidden" name="leaseTermId" value={editTenant.leaseTerms[0]?.id ?? ''} />
               <TenantForm rooms={rooms} tenant={editTenant} error={error} />
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setEditTenant(null)}
-                  className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">
+                <Btn type="button" variant="secondary" size="md" onClick={() => setEditTenant(null)}
+                  className="flex-1">
                   취소
-                </button>
-                <button type="submit" disabled={isPending}
-                  className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl border border-transparent transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                </Btn>
+                <Btn type="submit" variant="primary" size="md" disabled={isPending}
+                  className="flex-1">
                   {isPending ? '저장 중...' : '저장'}
-                </button>
+                </Btn>
               </div>
             </form>
           </div>
@@ -2370,10 +2365,8 @@ export default function TenantClient({
                                   </div>
                                 </div>
                                 <div className="flex gap-2 justify-end">
-                                  <button onClick={() => setEditingPayId(null)}
-                                    className="text-xs text-[var(--warm-mid)] hover:text-[var(--warm-dark)] px-3 py-1.5 rounded-lg border border-[var(--warm-border)] transition-colors">취소</button>
-                                  <button onClick={handleSaveEdit} disabled={isPending}
-                                    className="text-xs text-white bg-[var(--coral)] hover:bg-[var(--coral-dark)] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">저장</button>
+                                  <Btn variant="secondary" size="sm" onClick={() => setEditingPayId(null)}>취소</Btn>
+                                  <Btn variant="primary" size="sm" onClick={handleSaveEdit} disabled={isPending}>저장</Btn>
                                 </div>
                               </div>
                             )
@@ -2611,10 +2604,10 @@ export default function TenantClient({
 
                   <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                     <div className="flex-1" />
-                    <button onClick={() => { setShowPayForm(true); setError('') }}
-                      className="px-4 py-2.5 bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl transition-colors">
+                    <Btn variant="primary" size="md"
+                      onClick={() => { setShowPayForm(true); setError('') }}>
                       수납 등록
-                    </button>
+                    </Btn>
                   </div>
                 </>
               )}
@@ -2687,14 +2680,14 @@ export default function TenantClient({
                     {error && <p className="text-red-400 text-sm">{error}</p>}
                   </div>
                   <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                    <button type="button" onClick={() => { setShowPayForm(false); setError('') }}
-                      className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">
+                    <Btn type="button" variant="secondary" size="md" onClick={() => { setShowPayForm(false); setError('') }}
+                      className="flex-1">
                       취소
-                    </button>
-                    <button type="submit" disabled={isPending}
-                      className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--coral)] hover:opacity-90 text-white text-sm font-medium rounded-xl border border-transparent transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                    </Btn>
+                    <Btn type="submit" variant="primary" size="md" disabled={isPending}
+                      className="flex-1">
                       {isPending ? '저장 중...' : '저장'}
-                    </button>
+                    </Btn>
                   </div>
                 </form>
               )}
@@ -3553,16 +3546,16 @@ function SettlementInfoModal({
           )}
         </div>
         <div className="border-t border-[var(--warm-border)] px-6 py-3 flex justify-end shrink-0">
-          <button
+          <Btn
             type="button"
+            variant="primary" size="sm"
             onClick={() => {
               const params = new URLSearchParams({ month: targetMonth })
               if (info?.roomNo) params.set('roomNo', info.roomNo)
               router.push(`/rooms?${params.toString()}`)
-            }}
-            className="px-4 py-2 text-xs font-medium rounded-xl bg-[var(--coral)] hover:opacity-90 text-white transition-colors">
+            }}>
             수납 관리로 이동
-          </button>
+          </Btn>
         </div>
       </div>
     </div>
@@ -3632,12 +3625,12 @@ function RoomInfoSimpleModal({
           )}
         </div>
         <div className="border-t border-[var(--warm-border)] px-6 py-3 flex justify-end shrink-0">
-          <button
+          <Btn
             type="button"
-            onClick={() => router.push(`/room-manage?roomId=${roomId}`)}
-            className="px-4 py-2 text-xs font-medium rounded-xl bg-[var(--coral)] hover:opacity-90 text-white transition-colors">
+            variant="primary" size="sm"
+            onClick={() => router.push(`/room-manage?roomId=${roomId}`)}>
             호실 관리로 이동
-          </button>
+          </Btn>
         </div>
       </div>
     </div>
@@ -3828,14 +3821,13 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
           </div>
         </div>
         <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0">
-          <button type="button" onClick={onClose}
-            className="flex-1 px-4 py-2.5 text-sm font-medium text-[var(--warm-mid)] border border-[var(--warm-border)] rounded-xl hover:border-[var(--coral)] transition-colors">
+          <Btn type="button" variant="secondary" size="md" onClick={onClose} className="flex-1">
             취소
-          </button>
-          <button type="button" onClick={handleApply} disabled={pending}
-            className="flex-1 px-4 py-2.5 text-sm font-semibold bg-[var(--coral)] text-white rounded-xl hover:opacity-90 disabled:opacity-50 transition-opacity">
+          </Btn>
+          <Btn type="button" variant="primary" size="md" onClick={handleApply} disabled={pending}
+            className="flex-1 font-semibold">
             {pending ? '적용 중...' : '적용'}
-          </button>
+          </Btn>
         </div>
       </div>
     </div>
