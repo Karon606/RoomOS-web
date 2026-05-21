@@ -1105,6 +1105,10 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
   const [payDate, setPayDate] = useState(kstYmdStr())
   const [isDepositMode, setIsDepositMode] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  // 직전에 사용한 납부방법 — 연속 수납 입력 시 자동 prefill (전역 공유)
+  const [lastPayMethod, setLastPayMethod] = useState(() =>
+    typeof window !== 'undefined' ? (localStorage.getItem('stayeum-last-pay-method') ?? '') : ''
+  )
   const [editAmount, setEditAmount] = useState(0)
   const [editDate, setEditDate] = useState('')
   const [editPayMethod, setEditPayMethod] = useState('')
@@ -1222,6 +1226,10 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
             payMethod,
             memo,
           })
+        }
+        if (payMethod) {
+          localStorage.setItem('stayeum-last-pay-method', payMethod)
+          setLastPayMethod(payMethod)
         }
         setShowForm(false)
         setIsDepositMode(false)
@@ -1482,7 +1490,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <p className="text-[0.625rem] text-[var(--warm-muted)]">납부방법</p>
-                      <select name="payMethod"
+                      <select name="payMethod" defaultValue={lastPayMethod}
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                         <option value="">선택 안 함</option>
                         {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}

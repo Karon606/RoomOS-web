@@ -278,6 +278,10 @@ export default function RoomsClient({
   const [payAmount, setPayAmount] = useState(0)
   const [payDateVal, setPayDateVal] = useState(kstYmdStr())
   const [isDepositMode, setIsDepositMode] = useState(false)
+  // 직전에 사용한 납부방법 — 연속 수납 입력 시 자동 prefill (대시보드와 localStorage 공유)
+  const [lastPayMethod, setLastPayMethod] = useState(() =>
+    typeof window !== 'undefined' ? (localStorage.getItem('stayeum-last-pay-method') ?? '') : ''
+  )
   const [isCleaningFeeMode, setIsCleaningFeeMode] = useState(false)
   // 귀속월 — 'auto' = FIFO 자동, 'YYYY-MM' = 사용자가 명시한 귀속월
   const [forcedTm, setForcedTm] = useState<'auto' | string>('auto')
@@ -570,6 +574,10 @@ export default function RoomsClient({
               setToast(`자동 분배: ${summary} (미수가 가장 오래된 월부터 충당)`)
             }
           }
+        }
+        if (payMethod) {
+          localStorage.setItem('stayeum-last-pay-method', payMethod)
+          setLastPayMethod(payMethod)
         }
         setShowPayForm(false)
         setShowPayModal(false)
@@ -1863,7 +1871,7 @@ export default function RoomsClient({
                   )}
                   <div className="space-y-1">
                     <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
-                    <select name="payMethod"
+                    <select name="payMethod" defaultValue={lastPayMethod || '계좌이체'}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       <option value="계좌이체">계좌이체</option>
                       <option value="현금">현금</option>
