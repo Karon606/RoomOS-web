@@ -975,7 +975,7 @@ export default function TenantClient({
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="이름, 호실, 국적, 직업 검색..."
-          className="hidden sm:block bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-4 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors w-56"
+          className="hidden sm:block bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-4 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors w-56"
         />
 
         {/* 열 설정 — 데스크탑 */}
@@ -1017,7 +1017,7 @@ export default function TenantClient({
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="이름, 호실, 국적, 직업 검색"
-          className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl pl-9 pr-8 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
+          className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm pl-9 pr-8 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
         />
         {search && (
           <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-base leading-none">×</button>
@@ -2278,7 +2278,7 @@ export default function TenantClient({
                                     <input type="text" inputMode="numeric"
                                       value={editAmount.toLocaleString()}
                                       onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
                                     <p className="text-[0.625rem] text-purple-500">납부일</p>
@@ -2290,7 +2290,7 @@ export default function TenantClient({
                                   <p className="text-[0.625rem] text-purple-500">납부방법</p>
                                   <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
                                     placeholder="계좌이체, 현금…"
-                                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                 </div>
                                 <div className="flex gap-2 justify-end">
                                   <button onClick={() => setEditingPayId(null)}
@@ -2343,7 +2343,7 @@ export default function TenantClient({
                                     <input type="text" inputMode="numeric"
                                       value={editAmount.toLocaleString()}
                                       onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
                                     <p className={`text-[0.625rem] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>납부일</p>
@@ -2356,12 +2356,12 @@ export default function TenantClient({
                                     <p className={`text-[0.625rem] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>납부방법</p>
                                     <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
                                       placeholder="계좌이체, 현금…"
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
                                     <p className={`text-[0.625rem] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>메모</p>
                                     <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                 </div>
                                 <div className="flex gap-2 justify-end">
@@ -2665,7 +2665,7 @@ export default function TenantClient({
                     <div className="space-y-1">
                       <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
                       <select name="payMethod"
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                         <option value="계좌이체">계좌이체</option>
                         <option value="현금">현금</option>
                         <option value="신용카드">신용카드</option>
@@ -2675,7 +2675,7 @@ export default function TenantClient({
                     <div className="space-y-1">
                       <label className="text-xs text-[var(--warm-muted)]">메모</label>
                       <input type="text" name="memo" placeholder="메모 (선택)"
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)]" />
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)]" />
                     </div>
                     {error && <p className="text-red-400 text-sm">{error}</p>}
                   </div>
@@ -2849,7 +2849,7 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
   // 조건 모드는 빈 객체("{}")라도 저장 — "조건 무관, 모든 빈 방 매칭" 의도
   const wishConditionsValue = mode === 'conditions' ? JSON.stringify(condObj) : ''
 
-  const selCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-2.5 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] w-full'
+  const selCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] w-full'
 
   return (
     <div className="space-y-2">
@@ -3116,7 +3116,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">상태</label>
             <select name="status" value={statusVal} onChange={e => setStatusVal(e.target.value)}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
               <option value="ACTIVE">거주중</option>
               <option value="CHECKOUT_PENDING">퇴실 예정</option>
               <option value="CHECKED_OUT">퇴실</option>
@@ -3153,7 +3153,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           </label>
           <select name="roomId" value={selectedRoomId} onChange={handleRoomChange} required={!roomIsOptional}
             onWheel={e => e.stopPropagation()}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
             <option value="">{roomIsOptional ? '호실 선택 (선택사항)' : '호실 선택'}</option>
             {rooms.map(r => {
               const isCurrentRoom = r.id === lease?.room?.id
@@ -3278,7 +3278,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
                 value={inquiryTimeVal}
                 onChange={e => setInquiryTimeVal(e.target.value)}
                 disabled={!inquiryDateVal}
-                className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors disabled:opacity-50"
+                className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors disabled:opacity-50"
               />
             </div>
             <KeepAlertCheckbox defaultValue={lease?.keepAlertAfterInquiry ?? true} />
@@ -3326,7 +3326,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               onFocus={() => setDueDayDisp(prev => prev.replace(/일$/, ''))}
               onBlur={() => applyDueDay(dueDayDisp)}
               placeholder="15일, 말일 등"
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
             />
           </div>
           {showExitDate && (
@@ -3402,7 +3402,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
 
       <FormSection title="메모">
         <textarea name="memo" rows={2} defaultValue={tenant?.memo ?? ''} placeholder="입주자 특이사항"
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] resize-none" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] resize-none" />
       </FormSection>
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -3438,7 +3438,7 @@ function Field({ label, name, type = 'text', placeholder, defaultValue, required
       {type === 'date'
         ? <DateFieldInner name={name} defaultValue={defaultValue} placeholder={placeholder} />
         : <input type={type} name={name} defaultValue={defaultValue} placeholder={placeholder} required={required}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors" />
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors" />
       }
     </div>
   )
@@ -3451,7 +3451,7 @@ function SelectField({ label, name, children, defaultValue, required }: {
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       <select name={name} defaultValue={defaultValue} required={required}
-        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
         {children}
       </select>
     </div>
@@ -3758,7 +3758,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
     onDone()
   }
 
-  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
     <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>

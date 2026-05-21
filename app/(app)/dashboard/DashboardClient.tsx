@@ -167,7 +167,7 @@ function CheckoutRefundModal({
                 const n = Number(e.target.value.replace(/[^0-9]/g, ''))
                 setRefund(isNaN(n) ? 0 : n)
               }}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
             />
             {exceedsMax && (
               <p className="text-[0.6875rem] text-red-500">환불 금액은 최대 {maxRefund.toLocaleString()}원입니다.</p>
@@ -456,7 +456,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
                   value={amount ? amount.toLocaleString() : ''}
                   onChange={e => setAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
                   placeholder="0원"
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
               </div>
             </div>
 
@@ -474,14 +474,14 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
               <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>세부 항목</label>
               <input type="text" value={detail} onChange={e => setDetail(e.target.value)}
                 placeholder="세부 내용"
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
             </div>
 
             {/* 결제 수단 */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>결제수단</label>
               <select value={payMethod} onChange={e => setPayMethod(e.target.value)}
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                 <option value="">선택 안 함</option>
                 {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
@@ -492,7 +492,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
               <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>메모</label>
               <input type="text" value={memo} onChange={e => setMemo(e.target.value)}
                 placeholder="메모 (선택)"
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
             </div>
 
             {error && <p className="text-xs text-red-500">{error}</p>}
@@ -1476,7 +1476,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                       <input type="text" inputMode="numeric"
                         value={payAmount.toLocaleString()}
                         onChange={e => setPayAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                     </div>
                     <div className="space-y-1">
                       <p className="text-[0.625rem] text-[var(--warm-muted)]">납부일</p>
@@ -1488,7 +1488,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                     <div className="space-y-1">
                       <p className="text-[0.625rem] text-[var(--warm-muted)]">납부방법</p>
                       <select name="payMethod" defaultValue={lastPayMethod}
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                         <option value="">선택 안 함</option>
                         {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                       </select>
@@ -1496,7 +1496,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                     <div className="space-y-1">
                       <p className="text-[0.625rem] text-[var(--warm-muted)]">메모</p>
                       <input name="memo" type="text"
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                     </div>
                   </div>
                   {isDepositMode && payAmount > lease!.depositAmount && (
@@ -1586,7 +1586,7 @@ function DashEditRow({ editAmount, editDate, editPayMethod, editMemo, setEditAmo
         <div className="space-y-1">
           <p className="text-[0.625rem] text-[var(--warm-muted)]">금액</p>
           <input type="text" inputMode="numeric" value={editAmount.toLocaleString()} onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
         </div>
         <div className="space-y-1">
           <p className="text-[0.625rem] text-[var(--warm-muted)]">납부일</p>
@@ -1598,12 +1598,12 @@ function DashEditRow({ editAmount, editDate, editPayMethod, editMemo, setEditAmo
         <div className="space-y-1">
           <p className="text-[0.625rem] text-[var(--warm-muted)]">납부방법</p>
           <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)} placeholder="계좌이체, 현금…"
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
         </div>
         <div className="space-y-1">
           <p className="text-[0.625rem] text-[var(--warm-muted)]">메모</p>
           <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
         </div>
       </div>
       <div className="flex gap-2 justify-end">

@@ -219,7 +219,7 @@ function ManualMonthInput({
         type="month"
         value={val}
         onChange={e => setVal(e.target.value)}
-        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
       />
       <button
         type="button"

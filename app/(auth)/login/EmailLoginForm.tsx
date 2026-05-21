@@ -139,7 +139,7 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
     border: '1px solid var(--warm-border)',
     color: 'var(--warm-dark)',
   }
-  const inputCls = 'w-full px-3 py-2.5 rounded-xl text-sm outline-none transition-colors'
+  const inputCls = 'w-full px-3 py-2.5 rounded-sm text-sm outline-none transition-colors'
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">

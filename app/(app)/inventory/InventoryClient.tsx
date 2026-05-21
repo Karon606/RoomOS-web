@@ -367,7 +367,7 @@ function AddItemModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
           <label className="text-xs font-medium text-[var(--warm-mid)]">품목명 *</label>
           <input type="text" value={label} onChange={e => setLabel(e.target.value)}
             placeholder="예: 화장실 휴지"
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
@@ -674,7 +674,7 @@ function SettingsForm({ row, onCancel, onDone }: {
         <label className="text-xs font-medium text-[var(--warm-mid)]">품목명 *</label>
         <input type="text" value={labelEdit} onChange={e => setLabelEdit(e.target.value)}
           placeholder="예: 키친타월 (롤타입)"
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
         <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
           이 라벨을 바꾸면 같은 (카테고리·기존 라벨·{row.qtyUnit ?? '단위'}) 매칭되는 지출 내역의 품목명도 자동 갱신됩니다.
           예) '키친타월' → '키친타월 (롤타입)' / '음식물쓰레기봉투' → '음식물쓰레기봉투 5L'
@@ -685,7 +685,7 @@ function SettingsForm({ row, onCancel, onDone }: {
         <label className="text-xs font-medium text-[var(--warm-mid)]">알림 기준 (D-N)</label>
         <input type="text" inputMode="numeric" value={thresholdDays}
           onChange={e => setThresholdDays(e.target.value.replace(/[^0-9]/g, ''))}
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
         <p className="text-[0.625rem] text-[var(--warm-muted)]">예: 3 → 소진 예상이 3일 이하면 알림</p>
       </div>
       <div className="space-y-1.5">
@@ -710,7 +710,7 @@ function SettingsForm({ row, onCancel, onDone }: {
         <textarea value={memo} onChange={e => setMemo(e.target.value)}
           rows={3}
           placeholder="예: 창고에 온전히 남아있는 양만 잔량으로 카운트. 주방 쌀통은 제외"
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
         <p className="text-[0.625rem] text-[var(--warm-muted)]">잔량 점검 시 무엇을 세는지·어디 보관분만 카운트하는지 등 기준을 적어두면 일관성 유지에 도움됩니다.</p>
       </div>
       <div className="space-y-1.5">
@@ -718,7 +718,7 @@ function SettingsForm({ row, onCancel, onDone }: {
         <textarea value={reorderMemo} onChange={e => setReorderMemo(e.target.value)}
           rows={3}
           placeholder="예: 쿠팡 / 100매 박스 단위 / 영업장 카드 결제"
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
       </div>
       {/* 위치 할당 섹션 */}
       <LocationAssignSection trackedItemId={row.id} initialLocations={row.locations} />
@@ -1089,7 +1089,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
 
   const [qty, setQty] = useState(hasLocations ? '' : String(entry.remainingQty))
 
-  const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   const restockSum = locationSources.filter(l => !l.isHub).reduce((s, l) => {
     const b = Number(beforeQtys[l.id] || '0')
@@ -1213,7 +1213,7 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
   const [memo, setMemo]     = useState(entry.memo ?? '')
   const [storageLocationId, setStorageLocationId] = useState<string>(entry.storageLocationId ?? '')
 
-  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
     <li className="border border-[var(--warm-border)] rounded-xl px-3 py-3 space-y-2 bg-[var(--canvas)]">
@@ -1291,7 +1291,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   // 'clear' 문자열을 날짜로 파싱하려다 Invalid Date 표시되던 문제 해결
   const [unreceived, setUnreceived] = useState(false)
 
-  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   const buildReceivedAt = () => {
     if (unreceived) return null  // 수령 대기로 되돌리기
@@ -1337,7 +1337,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
           <div className="flex gap-2 items-center">
             <DatePicker value={receivedDate} onChange={setReceivedDate} className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
             <input type="time" value={receivedTime} onChange={e => setReceivedTime(e.target.value)}
-              className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-2 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+              className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
             {entry.receivedAt && (
               <Btn variant="danger" size="sm" onClick={() => { setUnreceived(true); setReceivedDate(''); setReceivedTime('') }}>미수령으로</Btn>
             )}
@@ -1496,7 +1496,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
     })
   }
 
-  const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
     <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
@@ -1605,7 +1605,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
                     value={locationQtys[loc.id] ?? ''}
                     onChange={e => handleLocChange(loc.id, e.target.value)}
                     placeholder="0"
-                    className={`w-full bg-[var(--canvas)] border rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--coral)] transition-colors ${
+                    className={`w-full bg-[var(--canvas)] border rounded-sm px-3 py-2 text-sm outline-none focus:border-[var(--coral)] transition-colors ${
                       isPrefilled
                         ? 'border-[var(--warm-border)]/50 text-[var(--ink-mute)]'
                         : 'border-[var(--warm-border)] text-[var(--warm-dark)]'
@@ -1626,7 +1626,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
           <label className="text-xs font-medium text-[var(--warm-mid)]">잔량 *{stockUnit ? ` (${stockUnit})` : ''}</label>
           <input type="text" inputMode="decimal" value={qty} onChange={e => setQty(e.target.value.replace(/[^0-9.]/g, ''))}
             placeholder="0"
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
         </div>
       )}
 
@@ -1780,8 +1780,8 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false }: {
     await doSave(mergeChoice === 'merge')
   }
 
-  const selectCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
-  const qtyInputCls = 'w-full min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  const selectCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  const qtyInputCls = 'w-full min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
     <div
@@ -2057,7 +2057,7 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
           <input
             type="text" value={newName} onChange={e => setNewName(e.target.value)}
             placeholder="새 위치 이름 (예: 창고)"
-            className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+            className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
           <Btn type="submit" variant="primary" size="sm" disabled={pending || !newName.trim()}>추가</Btn>
         </form>
       </div>
@@ -2263,7 +2263,7 @@ function AdditionForm({ item, onCancel, onDone }: {
                 <input type="text" inputMode="decimal" value={specQty}
                   onChange={e => setSpecQty(e.target.value.replace(/[^0-9.]/g, ''))}
                   placeholder="0"
-                  className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 <span className="text-xs text-[var(--warm-muted)] shrink-0">{item.specUnit}</span>
               </div>
             </div>
@@ -2273,7 +2273,7 @@ function AdditionForm({ item, onCancel, onDone }: {
                 <input type="text" inputMode="decimal" value={packQty}
                   onChange={e => setPackQty(e.target.value.replace(/[^0-9.]/g, ''))}
                   placeholder="1"
-                  className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 <span className="text-xs text-[var(--warm-muted)] shrink-0">{item.qtyUnit ?? '개'}</span>
               </div>
             </div>
@@ -2290,7 +2290,7 @@ function AdditionForm({ item, onCancel, onDone }: {
           <input type="text" inputMode="decimal" value={qtyOnly}
             onChange={e => setQtyOnly(e.target.value.replace(/[^0-9.]/g, ''))}
             placeholder="0"
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
         </div>
       )}
       <div className="space-y-1.5">

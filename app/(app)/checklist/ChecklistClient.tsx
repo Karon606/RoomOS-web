@@ -303,7 +303,7 @@ function FormModal({
             <input type="text" value={title} onChange={e => setTitle(e.target.value)}
               placeholder="예: 부식 잔량 확인"
               autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
           </div>
 
           <div className="space-y-1.5">
@@ -311,7 +311,7 @@ function FormModal({
             <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={2}
               placeholder="위치, 기준, 비고 등 (선택)"
               autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
           </div>
 
           <div className="space-y-1.5">
@@ -340,7 +340,7 @@ function FormModal({
                     const n = Number(v)
                     if (!isNaN(n) && n >= 1) setIntervalDays(n)
                   }}
-                  className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 <span className="text-xs" style={{ color: 'var(--warm-muted)' }}>일마다</span>
               </div>
             )}
@@ -357,7 +357,7 @@ function FormModal({
                   const n = Number(v)
                   if (!isNaN(n) && n >= 0 && n <= 30) setAlertDaysBefore(n)
                 }}
-                className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
               <span className="text-xs" style={{ color: 'var(--warm-muted)' }}>일 전부터 대시보드 알림</span>
             </div>
           </div>
@@ -428,7 +428,7 @@ function CheckModal({
             <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={2}
               placeholder="확인 결과, 보충 필요한 항목 등"
               autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
           </div>
 
           {row.recentLogs.length > 0 && (

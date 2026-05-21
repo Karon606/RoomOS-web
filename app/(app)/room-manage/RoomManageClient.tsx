@@ -460,7 +460,7 @@ export default function RoomManageClient({
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">방 타입</label>
       <select name="type" defaultValue={defaultValue ?? ''}
-        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
         <option value="">선택</option>
         {types.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
@@ -522,7 +522,7 @@ export default function RoomManageClient({
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="호실 번호, 입주자 이름, 방 타입 검색"
-            className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl pl-9 pr-8 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
+            className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm pl-9 pr-8 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
           />
           {search && (
             <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-base leading-none">×</button>
@@ -551,7 +551,7 @@ export default function RoomManageClient({
                 value={filterRoomNo}
                 onChange={e => setFilterRoomNo(e.target.value)}
                 placeholder="예: 401, 5"
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
               />
             </div>
             <div className="space-y-1">
@@ -559,7 +559,7 @@ export default function RoomManageClient({
               <select
                 value={filterType}
                 onChange={e => setFilterType(e.target.value)}
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
               >
                 <option value="">전체</option>
                 {types.map(t => <option key={t} value={t}>{t}</option>)}
@@ -570,7 +570,7 @@ export default function RoomManageClient({
               <select
                 value={filterWindowType}
                 onChange={e => setFilterWindowType(e.target.value)}
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
               >
                 <option value="">전체</option>
                 {windowTypeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -581,7 +581,7 @@ export default function RoomManageClient({
               <select
                 value={filterDirection}
                 onChange={e => setFilterDirection(e.target.value)}
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
               >
                 <option value="">전체</option>
                 {directionOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -592,7 +592,7 @@ export default function RoomManageClient({
               <select
                 value={filterAreaPyeong}
                 onChange={e => setFilterAreaPyeong(e.target.value as AreaPyeongRange)}
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
               >
                 <option value="">전체</option>
                 <option value="<1">1평 미만</option>
@@ -606,7 +606,7 @@ export default function RoomManageClient({
               <select
                 value={filterAreaM2}
                 onChange={e => setFilterAreaM2(e.target.value as AreaM2Range)}
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
               >
                 <option value="">전체</option>
                 <option value="<3.3">3.3㎡ 미만</option>
@@ -1369,7 +1369,7 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, windowTypeOptions, direct
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">창문 타입</label>
             <select value={windowType} onChange={e => setWindowType(e.target.value)}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
               <option value="">미변경</option>
               {windowTypeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
@@ -1377,7 +1377,7 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, windowTypeOptions, direct
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">방향</label>
             <select value={direction} onChange={e => setDirection(e.target.value)}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
               <option value="">미변경</option>
               {directionOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
@@ -1425,7 +1425,7 @@ function Field({ label, name, placeholder, defaultValue }: {
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       <input type="text" name={name} defaultValue={defaultValue} placeholder={placeholder}
-        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)] transition-colors" />
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)] transition-colors" />
     </div>
   )
 }
@@ -1437,7 +1437,7 @@ function SelectField({ label, name, options, defaultValue, hint }: {
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       <select name={name} defaultValue={defaultValue ?? ''}
-        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
         <option value="">선택</option>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>

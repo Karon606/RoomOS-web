@@ -668,7 +668,7 @@ export default function SettingsForm({
                   <label className="text-xs font-medium text-[var(--warm-mid)]">항목명 *</label>
                   <input type="text" value={recForm.title} onChange={e => setRecForm(p => ({ ...p, title: e.target.value }))}
                     placeholder="예: 건물 임대료, 관리비"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1.5">
@@ -696,13 +696,13 @@ export default function SettingsForm({
                       onFocus={() => setRecDueDayDisp(prev => prev.replace(/일$/, ''))}
                       onBlur={() => applyRecDueDay(recDueDayDisp)}
                       placeholder="25일, 말일 등"
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                   </div>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리</label>
                   <select value={recForm.category} onChange={e => setRecForm(p => ({ ...p, category: e.target.value }))}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                     {expenseCategs.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                   <p className="text-[0.625rem] text-[var(--warm-muted)]">카테고리 추가·수정은 위 '지출 카테고리 관리'에서 할 수 있습니다.</p>
@@ -711,7 +711,7 @@ export default function SettingsForm({
                   <label className="text-xs font-medium text-[var(--warm-mid)]">알림 (납부일 N일 전)</label>
                   <input type="number" min={0} max={30} value={recForm.alertDaysBefore}
                     onChange={e => setRecForm(p => ({ ...p, alertDaysBefore: e.target.value }))}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                   <p className="text-[0.625rem] text-[var(--warm-muted)]">자동이체 항목은 주말·공휴일이면 다음 영업일 기준으로 알림이 계산됩니다.</p>
                 </div>
                 <div className="space-y-1.5">
@@ -727,7 +727,7 @@ export default function SettingsForm({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">결제 수단 (선택)</label>
                   <select value={recForm.payMethod} onChange={e => setRecForm(p => ({ ...p, payMethod: e.target.value }))}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                     <option value="">선택 안 함</option>
                     {payMethods.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
@@ -748,7 +748,7 @@ export default function SettingsForm({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">메모 (선택)</label>
                   <input type="text" value={recForm.memo} onChange={e => setRecForm(p => ({ ...p, memo: e.target.value }))}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => setShowRecForm(false)}
@@ -854,13 +854,13 @@ export default function SettingsForm({
                   value={inviteEmail}
                   onChange={e => setInviteEmail(e.target.value)}
                   placeholder="이메일 입력..."
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]"
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]"
                 />
                 <div className="flex gap-2">
                   <select
                     value={inviteRole}
                     onChange={e => setInviteRole(e.target.value as Role)}
-                    className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+                    className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
                   >
                     <option value="MANAGER">관리자 — 등록·수정·삭제 가능</option>
                     <option value="STAFF">스태프 — 조회만 가능</option>
@@ -1088,7 +1088,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
                 value={sec.items.join('\n')}
                 onChange={e => updateSection(idx, { items: e.target.value.split('\n') })}
                 rows={Math.max(3, sec.items.length)}
-                className="w-full bg-transparent border border-[var(--warm-border)] rounded-md px-2 py-2 text-xs text-[var(--warm-dark)] leading-relaxed outline-none focus:border-[var(--coral)]"
+                className="w-full bg-transparent border border-[var(--warm-border)] rounded-sm px-2 py-2 text-xs text-[var(--warm-dark)] leading-relaxed outline-none focus:border-[var(--coral)]"
                 style={{ fontFamily: 'inherit' }}
               />
             </div>
@@ -1115,7 +1115,7 @@ function BizField({ label, value, onChange }: { label: string; value: string; on
     <div className="space-y-1">
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       <input type="text" value={value} onChange={e => onChange(e.target.value)}
-        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
     </div>
   )
 }
@@ -1375,7 +1375,7 @@ function Field({ label, name, defaultValue }: {
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       <input type="text" name={name} defaultValue={defaultValue}
-        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
     </div>
   )
 }

@@ -39,7 +39,7 @@ const inputStyle: React.CSSProperties = {
   border: '1px solid var(--warm-border)',
   color: 'var(--warm-dark)',
 }
-const inputCls = 'w-full px-3 py-2.5 rounded-xl text-sm outline-none transition-colors'
+const inputCls = 'w-full px-3 py-2.5 rounded-sm text-sm outline-none transition-colors'
 
 export function AddressSearch({
   label,
@@ -111,7 +111,7 @@ export function AddressSearch({
           type="button"
           disabled={!ready}
           onClick={() => setOpen(true)}
-          className="shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-opacity disabled:opacity-50 whitespace-nowrap"
+          className="shrink-0 px-3 py-2.5 rounded-lg text-sm font-medium transition-opacity disabled:opacity-50 whitespace-nowrap"
           style={{ background: 'var(--persimmon-l)', color: 'var(--persimmon)', border: '1px solid var(--warm-border)' }}
         >
           {ready ? '주소 검색' : '불러오는 중'}

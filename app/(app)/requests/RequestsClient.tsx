@@ -157,7 +157,7 @@ export default function RequestsClient({
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="입주자/내용 검색..."
-            className="text-sm px-3 py-2 rounded-xl bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-w-[180px]"
+            className="text-sm px-3 py-2 rounded-sm bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-w-[180px]"
           />
           <button
             onClick={() => setShowAddForm(v => !v)}
@@ -183,7 +183,7 @@ export default function RequestsClient({
             <select
               value={addSubject}
               onChange={e => setAddSubject(e.target.value)}
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
             >
               <option value="common">공용 (특정 입주자 없음)</option>
               {activeTenants.map(t => {
@@ -206,7 +206,7 @@ export default function RequestsClient({
                 value={addCommonPlace}
                 onChange={e => setAddCommonPlace(e.target.value)}
                 placeholder="예: 공용 주방, 1층 화장실, 엘리베이터 등"
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-400 outline-none focus:border-[var(--coral)]"
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-400 outline-none focus:border-[var(--coral)]"
               />
             </div>
           )}
@@ -218,7 +218,7 @@ export default function RequestsClient({
               <select
                 value={addCategory}
                 onChange={e => setAddCategory(e.target.value)}
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
               >
                 <option value="">카테고리 없음</option>
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -259,7 +259,7 @@ export default function RequestsClient({
               onChange={e => setAddContent(e.target.value)}
               rows={3}
               placeholder="요청 내용을 입력하세요"
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-400 outline-none focus:border-[var(--coral)] resize-none"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-400 outline-none focus:border-[var(--coral)] resize-none"
             />
           </div>
 

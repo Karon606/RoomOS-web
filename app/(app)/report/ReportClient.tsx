@@ -111,7 +111,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
               <select
                 value={summary.year}
                 onChange={e => handleYear(e.target.value)}
-                className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+                className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
               >
                 {years.map(y => <option key={y} value={y}>{y}년</option>)}
               </select>

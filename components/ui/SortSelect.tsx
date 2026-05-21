@@ -30,7 +30,7 @@ export function SortSelect<T extends string>({
           aria-label={ariaLabel ?? '정렬 기준'}
           value={value}
           onChange={e => onChange(e.target.value as T)}
-          className="appearance-none bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs font-medium rounded-lg pl-3 pr-7 py-1.5 outline-none focus:border-[var(--coral)] transition-colors"
+          className="appearance-none bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs font-medium rounded-sm pl-3 pr-7 py-1.5 outline-none focus:border-[var(--coral)] transition-colors"
         >
           {options.map(o => (
             <option key={o.value} value={o.value}>{o.label}</option>

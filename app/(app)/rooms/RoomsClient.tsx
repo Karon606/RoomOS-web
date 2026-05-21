@@ -714,7 +714,7 @@ export default function RoomsClient({
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="호실 번호 또는 입주자 이름 검색"
-          className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl pl-9 pr-4 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
+          className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm pl-9 pr-4 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
         />
         {search && (
           <button onClick={() => setSearch('')}
@@ -1311,7 +1311,7 @@ export default function RoomsClient({
                                     <input type="text" inputMode="numeric"
                                       value={editAmount.toLocaleString()}
                                       onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
                                     <p className="text-[0.625rem] text-[var(--warm-muted)]">납부일</p>
@@ -1323,7 +1323,7 @@ export default function RoomsClient({
                                   <div className="space-y-1">
                                     <p className="text-[0.625rem] text-[var(--warm-muted)]">납부방법</p>
                                     <select value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                                       {!['계좌이체', '현금', '신용카드', '기타'].includes(editPayMethod) && editPayMethod && (
                                         <option value={editPayMethod}>{editPayMethod}</option>
                                       )}
@@ -1336,14 +1336,14 @@ export default function RoomsClient({
                                   <div className="space-y-1">
                                     <p className="text-[0.625rem] text-[var(--warm-muted)]">메모</p>
                                     <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                 </div>
                                 {!p.isDeposit && (
                                   <div className="space-y-1">
                                     <p className="text-[0.625rem] text-[var(--warm-muted)]">귀속월 (이 record가 인식되는 월)</p>
                                     <select value={editTargetMonth} onChange={e => setEditTargetMonth(e.target.value)}
-                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
+                                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                                       {/* 현재 record의 targetMonth가 옵션 목록에 없을 수 있어 항상 포함 */}
                                       {!tmOptions.some(o => o.month === p.targetMonth) && (
                                         <option value={p.targetMonth}>
@@ -1767,7 +1767,7 @@ export default function RoomsClient({
                         <select
                           value={forcedTm}
                           onChange={e => setForcedTm(e.target.value as 'auto' | string)}
-                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
+                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
                         >
                           <option value="auto">자동 (FIFO · 가장 오래된 미수월부터)</option>
                           {tmOptions.map(o => {
@@ -1866,7 +1866,7 @@ export default function RoomsClient({
                   <div className="space-y-1">
                     <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
                     <select name="payMethod" defaultValue={lastPayMethod || '계좌이체'}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       <option value="계좌이체">계좌이체</option>
                       <option value="현금">현금</option>
                       <option value="신용카드">신용카드</option>
@@ -1876,7 +1876,7 @@ export default function RoomsClient({
                   <div className="space-y-1">
                     <label className="text-xs text-[var(--warm-muted)]">메모</label>
                     <input type="text" name="memo" placeholder="메모 (선택)"
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   </div>
                   {error && <p className="text-red-400 text-sm">{error}</p>}
                 </div>

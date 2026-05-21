@@ -193,7 +193,7 @@ function PropertiesPanel({
   onToggleVertexEdit: () => void
   isVertexEditing: boolean
 }) {
-  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
   const isPolygon = !!el.points
 
   const convertToPolygon = () => {
