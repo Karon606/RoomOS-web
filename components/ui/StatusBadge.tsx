@@ -10,6 +10,25 @@ import type { ReactNode } from 'react'
 // overdue(Terracotta solid) / exit·movein(Camel) / info(중립)
 export type BadgeTone = 'paid' | 'await' | 'unpaid' | 'overdue' | 'exit' | 'movein' | 'info'
 
+// Status Row 패턴 (Brand Guide v1.2) — 카드/행 좌측 3px 팁 + 옅은 상태 틴트.
+// 팁 색: 상태 액센트. 연체는 배지 fg(크림)가 아닌 테라코타.
+export function statusTipColor(tone: BadgeTone): string {
+  return tone === 'overdue' ? 'var(--coral)' : `var(--badge-${tone}-fg)`
+}
+// 행 배경 틴트 — §상태 5단계 bg 기준의 옅은 rgba (라이트·다크 공용).
+const ROW_TINT: Record<BadgeTone, string> = {
+  paid:    'rgba(85,108,58,0.10)',
+  await:   'rgba(59,130,246,0.08)',
+  unpaid:  'rgba(180,120,10,0.10)',
+  overdue: 'rgba(160,60,46,0.09)',
+  exit:    'rgba(200,160,125,0.16)',
+  movein:  'rgba(200,160,125,0.16)',
+  info:    'rgba(160,120,80,0.08)',
+}
+export function statusRowTint(tone: BadgeTone): string {
+  return ROW_TINT[tone]
+}
+
 const BADGE: Record<BadgeTone, { bg: string; fg: string }> = {
   paid:    { bg: 'var(--badge-paid-bg)',    fg: 'var(--badge-paid-fg)'    }, // 완납·정상 — Warm Olive
   await:   { bg: 'var(--badge-await-bg)',   fg: 'var(--badge-await-fg)'   }, // 납부·입실 예정 — Blue

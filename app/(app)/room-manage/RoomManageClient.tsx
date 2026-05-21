@@ -17,7 +17,7 @@ import { kstMonthStr } from '@/lib/kstDate'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SortSelect } from '@/components/ui/SortSelect'
 import { RoomCard, type CardKind } from '@/components/ui/RoomCard'
-import { StatusBadge, type BadgeTone } from '@/components/ui/StatusBadge'
+import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 
 const fmtRoomNo = (no: string | null | undefined) =>
@@ -694,11 +694,16 @@ export default function RoomManageClient({
             const tenant = currentTenant(room)
             const thumb  = room.photos[0]
             const rs     = getRoomStatus(room)
+            // Status Row 팁/틴트 톤 — 예약·퇴실은 배지 톤, 거주중은 olive(paid),
+            // 공실은 RoomCard vacant 기본(ink-mute 팁) 유지.
+            const tipTone: BadgeTone | null = rs.badge ? rs.badge.tone : rs.kind === 'resident' ? 'paid' : null
             const selected = selectMode && selectedIds.has(room.id)
             return (
               <RoomCard key={room.id}
                 kind={rs.kind}
                 selected={selected}
+                tipColor={tipTone ? statusTipColor(tipTone) : undefined}
+                tipBg={tipTone ? statusRowTint(tipTone) : undefined}
                 onClick={() => selectMode ? toggleSelectRoom(room.id) : (setDetailRoom(room), setError(''))}
                 className="overflow-hidden flex items-stretch">
                 {/* 정보 */}

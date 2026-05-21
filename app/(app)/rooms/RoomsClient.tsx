@@ -18,7 +18,7 @@ import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SortSelect } from '@/components/ui/SortSelect'
 import { RoomCard } from '@/components/ui/RoomCard'
-import { StatusBadge } from '@/components/ui/StatusBadge'
+import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
@@ -163,6 +163,20 @@ function getEffectiveDueInfo(room: RoomStatus, targetMonth: string): ReturnType<
   const isOverrideActive = room.overrideDueDayMonth === dueMonth && !!room.overrideDueDay
   const effectiveDay = isOverrideActive ? room.overrideDueDay : room.dueDay
   return getDueInfo(effectiveDay, dueMonth)
+}
+
+// 호실 수납 상태 → 배지/팁 톤 (배지 렌더 분기와 동일 기준)
+function roomStatusTone(room: RoomStatus, targetMonth: string): BadgeTone {
+  if (room.status === 'NON_RESIDENT') return 'info'
+  if (room.status === 'RESERVED') return 'movein'
+  if (!room.isPaid) {
+    const info = getEffectiveDueInfo(room, targetMonth)
+    return info && info.days > 7 ? 'overdue' : 'unpaid'
+  }
+  const checkoutMonth = room.expectedMoveOut?.slice(0, 7) ?? null
+  if (room.status === 'CHECKOUT_PENDING' && !!checkoutMonth && checkoutMonth <= targetMonth) return 'exit'
+  if (room.nextDueDate && room.nextDueAmount > 0) return 'await'
+  return 'paid'
 }
 
 // ── 정렬 ─────────────────────────────────────────────────────────
@@ -811,10 +825,12 @@ export default function RoomsClient({
       <div className="sm:hidden space-y-2">
         {displayed.map(room => {
           const dueInfo = !room.isPaid ? getEffectiveDueInfo(room, targetMonth) : null
+          const tone = roomStatusTone(room, targetMonth)
           return (
             <RoomCard key={room.roomId}
               kind="neutral"
-              overdue={!!(dueInfo && dueInfo.days > 7)}
+              tipColor={statusTipColor(tone)}
+              tipBg={statusRowTint(tone)}
               onClick={room.isFutureMonth ? undefined : () => openPayModal(room)}
               className={`px-4 py-3.5 ${room.isFutureMonth ? 'opacity-50' : ''}`}>
               {/* 첫 줄: 호실 + 수납상태 */}
@@ -939,7 +955,9 @@ export default function RoomsClient({
               </tr>
             </thead>
             <tbody>
-              {displayed.map(room => (
+              {displayed.map(room => {
+                const tone = roomStatusTone(room, targetMonth)
+                return (
                 <tr key={room.roomId}
                   onClick={() => !room.isFutureMonth && openPayModal(room)}
                   className={`border-b border-[var(--warm-border)]/50 transition-colors
@@ -947,7 +965,7 @@ export default function RoomsClient({
 
                   {/* sticky — 호실 */}
                   <td className="px-4 py-4 text-sm font-bold text-[var(--coral)] overflow-hidden sticky left-0 z-20 bg-[var(--cream)]"
-                    style={{ width: colWidths.roomNo, minWidth: colWidths.roomNo, maxWidth: colWidths.roomNo }}>
+                    style={{ width: colWidths.roomNo, minWidth: colWidths.roomNo, maxWidth: colWidths.roomNo, borderLeft: `3px solid ${statusTipColor(tone)}` }}>
                     <span className="truncate block">{fmtRoomNo(room.roomNo)}</span>
                   </td>
                   {/* sticky — 입주자 */}
@@ -1059,7 +1077,8 @@ export default function RoomsClient({
                     </td>
                   )}
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
       </div>

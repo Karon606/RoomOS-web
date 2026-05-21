@@ -23,6 +23,8 @@ export function RoomCard({
   badge,
   selected = false,
   overdue = false,
+  tipColor,
+  tipBg,
   onClick,
   className,
   children,
@@ -34,6 +36,10 @@ export function RoomCard({
   selected?: boolean
   /** 연체 — 좌측 Terracotta 보더 + 옅은 틴트 (v1.1 긴급 상태 패턴) */
   overdue?: boolean
+  /** 상태별 좌측 3px 팁 색 — 지정 시 그 색으로 좌측 보더 (Status Row 패턴). */
+  tipColor?: string
+  /** 상태별 옅은 배경 틴트 — tipColor 와 함께 쓰면 Status Row 행 틴트 (rgba 권장). */
+  tipBg?: string
   onClick?: () => void
   className?: string
   children: ReactNode
@@ -43,9 +49,11 @@ export function RoomCard({
     ? { background: 'var(--cream)', borderColor: 'var(--coral)', borderWidth: 2, boxShadow: '0 0 0 2px rgba(160,60,46,0.20)' }
     : overdue
       ? { background: 'rgba(160,60,46,0.045)', borderColor: 'var(--card-neutral-bd)', borderLeftColor: 'var(--coral)', borderLeftWidth: 3 }
-      : kind === 'vacant'
-        ? { background: k.bg, borderColor: k.bd, borderLeftColor: 'var(--ink-mute)', borderLeftWidth: 3, opacity: k.opacity }
-        : { background: k.bg, borderColor: k.bd, opacity: k.opacity }
+      : tipColor
+        ? { background: tipBg ?? k.bg, borderColor: k.bd, borderLeftColor: tipColor, borderLeftWidth: 3, opacity: k.opacity }
+        : kind === 'vacant'
+          ? { background: k.bg, borderColor: k.bd, borderLeftColor: 'var(--ink-mute)', borderLeftWidth: 3, opacity: k.opacity }
+          : { background: k.bg, borderColor: k.bd, opacity: k.opacity }
   return (
     <div
       onClick={onClick}
