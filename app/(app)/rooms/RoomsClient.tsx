@@ -165,14 +165,15 @@ function getEffectiveDueInfo(room: RoomStatus, targetMonth: string): ReturnType<
   return getDueInfo(effectiveDay, dueMonth)
 }
 
-// 호실 수납 상태 → 배지/팁 톤 (배지 렌더 분기와 동일 기준)
+// 호실 수납 상태 → 배지/팁 톤. 수납(미납·연체)이 비거주보다 우선 —
+// 비거주여도 미납이면 미납/연체 색으로 표시(회색으로 묻히지 않도록).
 function roomStatusTone(room: RoomStatus, targetMonth: string): BadgeTone {
-  if (room.status === 'NON_RESIDENT') return 'info'
   if (room.status === 'RESERVED') return 'movein'
   if (!room.isPaid) {
     const info = getEffectiveDueInfo(room, targetMonth)
     return info && info.days > 7 ? 'overdue' : 'unpaid'
   }
+  if (room.status === 'NON_RESIDENT') return 'info'
   const checkoutMonth = room.expectedMoveOut?.slice(0, 7) ?? null
   if (room.status === 'CHECKOUT_PENDING' && !!checkoutMonth && checkoutMonth <= targetMonth) return 'exit'
   if (room.nextDueDate && room.nextDueAmount > 0) return 'await'

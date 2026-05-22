@@ -46,3 +46,12 @@ export function statusException(
     default:                 return null
   }
 }
+
+/** 입주자/계약 상태 → Status Row 좌측 팁 톤.
+ *  예외 상태는 그 톤, 거주중(resident)은 olive(paid),
+ *  퇴실·입실취소(vacant)는 null — RoomCard vacant 기본(ink-mute 팁) 유지. */
+export function leaseTipTone(status: string | null | undefined): BadgeTone | null {
+  const ex = statusException(status)
+  if (ex) return ex.tone
+  return leaseCardKind(status) === 'resident' ? 'paid' : null
+}

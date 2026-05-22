@@ -24,9 +24,9 @@ import { useUrlState } from '@/lib/useUrlState'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SortSelect } from '@/components/ui/SortSelect'
-import { STATUS_LABEL, leaseCardKind, statusException } from '@/lib/statusColors'
+import { STATUS_LABEL, leaseCardKind, statusException, leaseTipTone } from '@/lib/statusColors'
 import { RoomCard } from '@/components/ui/RoomCard'
-import { StatusBadge } from '@/components/ui/StatusBadge'
+import { StatusBadge, statusTipColor, statusRowTint } from '@/components/ui/StatusBadge'
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 
 const fmtRoomNo = (no: string | null | undefined) =>
@@ -1267,9 +1267,12 @@ export default function TenantClient({
             const primary = tenant.contacts.find(c => c.isPrimary) ?? tenant.contacts[0]
             const status  = lease?.status ?? ''
             const stayPeriod = calcStayPeriod(lease?.moveInDate, lease?.moveOutDate ?? undefined)
+            const tipTone = leaseTipTone(status)
             return (
               <RoomCard key={tenant.id}
                 kind={leaseCardKind(status)}
+                tipColor={tipTone ? statusTipColor(tipTone) : undefined}
+                tipBg={tipTone ? statusRowTint(tipTone) : undefined}
                 selected={selectMode && selectedIds.has(tenant.id)}
                 onClick={() => selectMode ? toggleSelectTenant(tenant.id) : (setDetailTenant(tenant), setDetailTab('info'))}
                 className="p-4"
@@ -1426,6 +1429,7 @@ export default function TenantClient({
                 const primary = tenant.contacts.find(c => c.isPrimary)
                 const status  = lease?.status ?? ''
                 const sched   = getScheduledDate(lease)
+                const tipTone = leaseTipTone(status)
 
                 return (
                   <tr key={tenant.id}
@@ -1434,7 +1438,7 @@ export default function TenantClient({
                   >
                     {/* sticky — 호실 (클릭 시 호실 관리 페이지로) */}
                     <td className="sticky left-0 z-20 bg-[var(--cream)] px-4 py-3 text-sm font-semibold overflow-hidden"
-                      style={{ maxWidth: colWidths.roomNo }}
+                      style={{ maxWidth: colWidths.roomNo, borderLeft: tipTone ? `3px solid ${statusTipColor(tipTone)}` : undefined }}
                       onClick={e => { e.stopPropagation(); if (lease?.room?.id) setRoomDetailId(lease.room.id) }}>
                       <span className="block truncate text-[var(--coral)] cursor-pointer underline-offset-2 hover:underline">
                         {fmtRoomNo(lease?.room?.roomNo)}
