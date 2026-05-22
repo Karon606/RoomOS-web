@@ -86,8 +86,11 @@
     (useEntityModal 컨텍스트 + 자가조회 요약 3뷰 + 제자리 [호실][고객][수납] 전환 + 딥링크).
     (app)/layout에 Provider. rooms/actions getEntityLinks. tenants/room-manage 교차버튼 재배선.
     Modal z 오버라이드(280) 추가. → 배경 페이지 전환 없이 요약 넘나들기 완성.
-  · ⏳ 2단계: 전체 수납 등록·납부일조정·편집을 제자리 확장(RoomsClient 수납 모달 ~750줄 추출/공유화),
-    rooms 페이지 수납 모달에도 교차 네비 추가. 가장 복잡한 모달 추출이라 신중히.
+  · ✅ 2단계 (2026-05-23, main 917414f): EntityModal 수납 뷰에 이번 달 납부 내역(읽기) 추가,
+    rooms(수납 관리) 수납 모달의 입주자/호실 버튼도 공유 EntityModal로 전환 → 3방향 제자리 넘나듦 완성.
+  · ⏳ 2b (남음): 수납 등록·납부일 임시/영구조정(쓰기)을 제자리 전체기능으로. RoomsClient 수납 모달
+    (~750줄, deposit/cleaning/prev-owner/prorate/override 얽힘)을 공유 컴포넌트로 추출 필요.
+    결제 정확성 리스크 커서 런타임 검증 가능한 신중한 별도 세션 권장. 현재는 '수납 관리에서 열기' 딥링크로 처리.
 
 ### #5 계약서 통합 페이지 (/contracts) — 미착수
 - 경로: app/(app)/contracts/page.tsx, ContractsClient.tsx
