@@ -11,6 +11,7 @@ import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getLeaseSettlementInfo, getRoomQuickInfo } from '@/app/(app)/rooms/actions'
 import { calcProRata, PRORATE_BASE_DAYS } from '@/lib/prorate'
 import { Btn } from '@/components/ui/Btn'
+import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { PhoneInput } from '@/components/ui/PhoneInput'
@@ -345,6 +346,7 @@ export default function TenantClient({
   const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
   const router = useRouter()
   const searchParams = useSearchParams()
+  const entityModal = useEntityModal()
 
   const initColVis = Object.fromEntries(
     COL_DEFS.map(c => [c.key, c.defaultOn])
@@ -2176,7 +2178,7 @@ export default function TenantClient({
                       {lease?.id && (
                         <button
                           type="button"
-                          onClick={() => { setReturnToTenantId(t.id); setDetailSettlementLeaseId(lease.id); setDetailTenant(null) }}
+                          onClick={() => entityModal.open({ kind: 'payment', leaseTermId: lease.id })}
                           className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
                           수납 정보
                         </button>
@@ -2184,7 +2186,7 @@ export default function TenantClient({
                       {lease?.room?.id && (
                         <button
                           type="button"
-                          onClick={() => { setReturnToTenantId(t.id); setDetailRoomInfoId(lease.room!.id); setDetailTenant(null) }}
+                          onClick={() => entityModal.open({ kind: 'room', roomId: lease.room!.id })}
                           className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
                           호실 정보
                         </button>

@@ -22,6 +22,7 @@ export function Modal({
   footer,
   children,
   bodyClassName = '',
+  z = 200,
 }: {
   open: boolean
   onClose: () => void
@@ -33,11 +34,13 @@ export function Modal({
   footer?: React.ReactNode
   children: React.ReactNode
   bodyClassName?: string
+  z?: 200 | 260 | 280                // 다른 모달 위에 겹쳐 띄울 때 (통합 상세 모달 등)
 }) {
   if (!open) return null
+  const zClass = z === 280 ? 'z-[280]' : z === 260 ? 'z-[260]' : 'z-[200]'
   return (
     <div
-      className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center"
+      className={`fixed inset-0 bg-black/70 ${zClass} flex items-center justify-center`}
       // 안전 영역(상태바·다이내믹 아일랜드·홈 인디케이터)을 피해 패딩 —
       // 모달 헤더의 닫기 버튼이 상태바에 가려지지 않도록.
       style={{

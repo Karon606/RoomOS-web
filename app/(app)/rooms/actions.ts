@@ -1136,6 +1136,43 @@ export async function getRoomQuickInfo(roomId: string) {
   })
 }
 
+// 호실↔고객(lease)↔수납을 잇는 식별자 — 통합 상세 모달의 교차 네비용.
+// 어느 한 id를 주면 연결된 나머지 id들을 해소해 돌려준다.
+export async function getEntityLinks(input: { roomId?: string; tenantId?: string; leaseTermId?: string }): Promise<
+  { roomId: string | null; roomNo: string | null; tenantId: string | null; tenantName: string | null; leaseTermId: string | null } | null
+> {
+  const supabase = await createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return null
+  const leaseSelect = { id: true, tenantId: true, roomId: true, room: { select: { roomNo: true } }, tenant: { select: { name: true } } }
+  type LeaseLink = { id: string; tenantId: string; roomId: string | null; room: { roomNo: string } | null; tenant: { name: string } | null }
+  const pack = (lease: LeaseLink | null, roomFallback?: { id: string; roomNo: string } | null) => ({
+    roomId: lease?.roomId ?? roomFallback?.id ?? null,
+    roomNo: lease?.room?.roomNo ?? roomFallback?.roomNo ?? null,
+    tenantId: lease?.tenantId ?? null,
+    tenantName: lease?.tenant?.name ?? null,
+    leaseTermId: lease?.id ?? null,
+  })
+  if (input.leaseTermId) {
+    return pack(await prisma.leaseTerm.findUnique({ where: { id: input.leaseTermId }, select: leaseSelect }))
+  }
+  if (input.tenantId) {
+    const lease = await prisma.leaseTerm.findFirst({ where: { tenantId: input.tenantId }, orderBy: { createdAt: 'desc' }, select: leaseSelect })
+    if (lease) return pack(lease)
+    const t = await prisma.tenant.findUnique({ where: { id: input.tenantId }, select: { id: true, name: true } })
+    return { roomId: null, roomNo: null, tenantId: t?.id ?? null, tenantName: t?.name ?? null, leaseTermId: null }
+  }
+  if (input.roomId) {
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { roomId: input.roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+      orderBy: { createdAt: 'desc' }, select: leaseSelect,
+    })
+    const room = await prisma.room.findUnique({ where: { id: input.roomId }, select: { id: true, roomNo: true } })
+    return pack(lease, room)
+  }
+  return null
+}
+
 export async function getPaymentsByLease(leaseTermId: string, targetMonth: string) {
   const propertyId = await getPropertyId()
   // 납부 내역은 payDate 기준 — viewMonth 안에 입금된 모든 record (targetMonth 무관)

@@ -9,6 +9,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { Loading } from '@/components/ui/Loading'
 import { Modal as SharedModal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
@@ -230,6 +231,7 @@ export default function RoomManageClient({
   const [error, setError]   = useState('')
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
+  const entityModal = useEntityModal()
   const photoInputRef    = useRef<HTMLInputElement>(null)
   const addPhotoInputRef = useRef<HTMLInputElement>(null)
 
@@ -875,11 +877,7 @@ export default function RoomManageClient({
                 {r.leaseTerms[0]?.tenant?.id && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setReturnToRoomId(r.id)
-                      setDetailTenantInfoId(r.leaseTerms[0].tenant!.id)
-                      setDetailRoom(null)
-                    }}
+                    onClick={() => entityModal.open({ kind: 'tenant', tenantId: r.leaseTerms[0].tenant!.id })}
                     className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
                     입주자 정보
                   </button>
@@ -887,11 +885,7 @@ export default function RoomManageClient({
                 {r.leaseTerms[0]?.id && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setReturnToRoomId(r.id)
-                      setDetailSettlementLeaseId(r.leaseTerms[0].id)
-                      setDetailRoom(null)
-                    }}
+                    onClick={() => entityModal.open({ kind: 'payment', leaseTermId: r.leaseTerms[0].id })}
                     className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
                     수납 정보
                   </button>
