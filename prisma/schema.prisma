@@ -739,6 +739,26 @@ model StockCheckDraft {
   @@map("stock_check_drafts")
 }
 
+// 병합 규칙 — 영수증→재고 자동등록 시 라벨↔카드 추천·거절 기억.
+// kind="LINK": 이 라벨은 이 카드로 추천(과거 병합 이력/사용자 승인). 자동 병합이 아니라 후보 제시용.
+// kind="MUTE": 이 (라벨, 카드) 쌍은 추천 안 함(사용자가 '새 품목으로' 거절). 관리 UI에서 되돌리기 가능.
+// FK·관계는 SQL 마이그레이션에서 ON DELETE CASCADE 로 부여(스키마는 스칼라만 — 모델 churn 최소화).
+model TrackedItemMergeRule {
+  id           String   @id @default(uuid()) @db.Uuid
+  propertyId   String   @db.Uuid
+  category     String
+  sourceLabel  String   // 원본 라벨(표시용)
+  normLabel    String   // 정규화 라벨(매칭용 — 공백·괄호·규격표기 제거)
+  targetItemId String   @db.Uuid
+  kind         String   // "LINK" | "MUTE"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([propertyId, category, normLabel, targetItemId])
+  @@index([propertyId, category])
+  @@map("tracked_item_merge_rules")
+}
+
 // 보관 위치 — 창고 / 4층 주방 / 손님실 선반 등 property-level 마스터
 model StorageLocation {
   id         String   @id @default(uuid()) @db.Uuid

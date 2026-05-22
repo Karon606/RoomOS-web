@@ -6,7 +6,7 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
-import { TRACKED_CATEGORIES, type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry } from './constants'
+import { TRACKED_CATEGORIES, type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow } from './constants'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -616,6 +616,27 @@ export async function mergeTrackedItems(
       })
     }
 
+    // 3.5) 병합 규칙 기록 — source 라벨이 다시 들어오면 target 을 추천(LINK).
+    //      source 를 가리키던 기존 규칙은 target 으로 이전(삭제 cascade 전에 보존).
+    const cat = source.category
+    const targetItemId = targetId
+    const sourceRules = await prisma.trackedItemMergeRule.findMany({
+      where: { propertyId, targetItemId: sourceId },
+    })
+    for (const r of sourceRules) {
+      await prisma.trackedItemMergeRule.upsert({
+        where: { propertyId_category_normLabel_targetItemId: { propertyId, category: r.category, normLabel: r.normLabel, targetItemId } },
+        update: { kind: r.kind, sourceLabel: r.sourceLabel },
+        create: { propertyId, category: r.category, sourceLabel: r.sourceLabel, normLabel: r.normLabel, targetItemId, kind: r.kind },
+      })
+      await prisma.trackedItemMergeRule.delete({ where: { id: r.id } }).catch(() => {})
+    }
+    await prisma.trackedItemMergeRule.upsert({
+      where: { propertyId_category_normLabel_targetItemId: { propertyId, category: cat, normLabel: normalizeLabel(source.label), targetItemId } },
+      update: { kind: 'LINK', sourceLabel: source.label },
+      create: { propertyId, category: cat, sourceLabel: source.label, normLabel: normalizeLabel(source.label), targetItemId, kind: 'LINK' },
+    })
+
     // 4) source 삭제
     await prisma.trackedItem.delete({ where: { id: sourceId } })
 
@@ -1016,6 +1037,17 @@ export async function excludeExpenseFromInventory(id: string): Promise<{ ok: tru
 // ── 기존 지출 내역에서 (category, itemLabel, qtyUnit) 자동 시드
 // 같은 (category, label) 안에서 spec/qtyUnit 변형이 여럿이면 sub-label을 붙여 별도 카드로 추적.
 // 예) 음식물쓰레기봉투 5L vs 10L → 별도 카드 / 키친타월 (롤) vs (팩) → 별도 카드
+// 라벨 정규화 — 병합 후보 매칭용. 소문자화 + 괄호내용·규격/수량 표기·공백·구분자 제거.
+// "종량제쓰레기봉투 (20L)" / "종량제쓰레기봉투 50L" → 둘 다 "종량제쓰레기봉투"
+function normalizeLabel(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')                                                // 괄호와 내용
+    .replace(/\d+(\.\d+)?\s*(l|ml|g|kg|m|매|개|롤|포|포대|팩|박스|개입|구|호)?/g, ' ') // 숫자(+단위)
+    .replace(/[\s\-_.,/]+/g, '')                                               // 공백·구분자
+    .trim()
+}
+
 function deriveSubLabel(base: string, specValue: number | null, specUnit: string | null, qtyUnit: string | null): string {
   // 이미 라벨에 사이즈/타입이 있으면 그대로
   if (/\d+\s*(L|ml|g|kg|매|개|m)\b/.test(base) || /\([^)]+\)/.test(base)) return base
@@ -1029,7 +1061,7 @@ function deriveSubLabel(base: string, specValue: number | null, specUnit: string
   return parts.length > 0 ? `${base} ${parts.join(' ')}` : base
 }
 
-export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; created: number; migrated: number; skippedArchived: number } | { ok: false; error: string }> {
+export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; created: number; migrated: number; skippedArchived: number; decisions: MergeDecision[] } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -1112,6 +1144,29 @@ export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; create
     let created = 0
     let migrated = 0
     let skippedArchived = 0
+    const pendingDecisions: MergeDecision[] = []
+
+    // 병합 후보 매칭 준비 — 활성 카드(정규화 라벨별) + 병합 규칙(LINK 추천 / MUTE 거절)
+    const activeItems = await prisma.trackedItem.findMany({
+      where: { propertyId, isArchived: false, category: { in: TRACKED_CATEGORIES as unknown as string[] } },
+      select: { id: true, label: true, category: true },
+    })
+    const itemById = new Map(activeItems.map(it => [it.id, it]))
+    const norm2items = new Map<string, { id: string; label: string }[]>()   // key: `${cat}|${norm}`
+    for (const it of activeItems) {
+      const key = `${it.category}|${normalizeLabel(it.label)}`
+      if (!norm2items.has(key)) norm2items.set(key, [])
+      norm2items.get(key)!.push({ id: it.id, label: it.label })
+    }
+    const rules = await prisma.trackedItemMergeRule.findMany({ where: { propertyId } })
+    const linkMap = new Map<string, string[]>()   // `${cat}|${norm}` -> targetItemIds
+    const muteSet = new Set<string>()             // `${cat}|${norm}|${targetItemId}`
+    for (const r of rules) {
+      const key = `${r.category}|${r.normLabel}`
+      if (r.kind === 'LINK') { if (!linkMap.has(key)) linkMap.set(key, []); linkMap.get(key)!.push(r.targetItemId) }
+      else if (r.kind === 'MUTE') muteSet.add(`${key}|${r.targetItemId}`)
+    }
+
     for (const g of groups.values()) {
       const label = finalLabel.get(g) ?? g.baseLabel
       const baseKey = `${g.category}|${g.baseLabel}`
@@ -1130,6 +1185,29 @@ export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; create
         continue
       }
       if (!existing) {
+        // 새 카드를 만들기 전, 병합 후보(별칭 LINK + 유사 라벨) 탐색.
+        // 후보가 있으면 자동 생성하지 않고 사용자 확인 대기로 보류(이 그룹은 라벨 마이그레이션도 보류).
+        const nrm = normalizeLabel(label)
+        const key = `${g.category}|${nrm}`
+        const cand = new Map<string, { itemId: string; label: string }>()
+        for (const it of (norm2items.get(key) ?? [])) {
+          if (it.label === label) continue
+          if (muteSet.has(`${key}|${it.id}`)) continue
+          cand.set(it.id, { itemId: it.id, label: it.label })
+        }
+        for (const tid of (linkMap.get(key) ?? [])) {
+          if (muteSet.has(`${key}|${tid}`)) continue
+          const it = itemById.get(tid)
+          if (it) cand.set(tid, { itemId: tid, label: it.label })
+        }
+        if (cand.size > 0) {
+          pendingDecisions.push({
+            newLabel: label, category: g.category, expenseIds: g.expenseIds,
+            specUnit: g.specUnit, qtyUnit: g.qtyUnit,
+            candidates: Array.from(cand.values()),
+          })
+          continue   // 사용자 결정 전까지 생성·마이그레이션 보류
+        }
         await prisma.trackedItem.create({
           data: {
             propertyId,
@@ -1153,7 +1231,107 @@ export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; create
     }
     revalidatePath('/inventory')
     revalidatePath('/finance')
-    return { ok: true, created, migrated, skippedArchived }
+    return { ok: true, created, migrated, skippedArchived, decisions: pendingDecisions }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// ── 병합 결정·규칙 ──────────────────────────────────────────
+// 자동등록 후 사용자가 선택한 병합 결정을 반영.
+// choice.merge: 지출을 대상 카드로 귀속 + LINK 규칙 기록(다음에 추천).
+// choice.new: 새 카드 생성 + 거절한 후보는 MUTE 규칙 기록(다시 추천 안 함).
+export async function applyMergeDecision(input: {
+  category: string
+  newLabel: string
+  expenseIds: string[]
+  specUnit?: string | null
+  qtyUnit?: string | null
+  choice:
+    | { kind: 'merge'; targetItemId: string }
+    | { kind: 'new'; declinedItemIds?: string[] }
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const { category, newLabel, expenseIds } = input
+    const nrm = normalizeLabel(newLabel)
+
+    if (input.choice.kind === 'merge') {
+      const target = await prisma.trackedItem.findFirst({ where: { id: input.choice.targetItemId, propertyId } })
+      if (!target) return { ok: false, error: '대상 품목을 찾을 수 없습니다.' }
+      if (expenseIds.length > 0) {
+        await prisma.expense.updateMany({ where: { id: { in: expenseIds }, propertyId }, data: { itemLabel: target.label } })
+      }
+      await prisma.trackedItemMergeRule.upsert({
+        where: { propertyId_category_normLabel_targetItemId: { propertyId, category, normLabel: nrm, targetItemId: target.id } },
+        update: { kind: 'LINK', sourceLabel: newLabel },
+        create: { propertyId, category, sourceLabel: newLabel, normLabel: nrm, targetItemId: target.id, kind: 'LINK' },
+      })
+    } else {
+      const existing = await prisma.trackedItem.findUnique({
+        where: { propertyId_category_label: { propertyId, category, label: newLabel } },
+        select: { id: true, isArchived: true },
+      })
+      if (existing?.isArchived) {
+        await prisma.trackedItem.update({ where: { id: existing.id }, data: { isArchived: false } })
+      } else if (!existing) {
+        await prisma.trackedItem.create({
+          data: {
+            propertyId, category, label: newLabel,
+            specUnit: input.specUnit ?? null, qtyUnit: input.qtyUnit ?? null,
+            trackUnit: category === '폐기물 처리비' ? 'qty' : 'spec',
+          },
+        })
+      }
+      if (expenseIds.length > 0) {
+        await prisma.expense.updateMany({ where: { id: { in: expenseIds }, propertyId, itemLabel: { not: newLabel } }, data: { itemLabel: newLabel } })
+      }
+      for (const tid of (input.choice.declinedItemIds ?? [])) {
+        await prisma.trackedItemMergeRule.upsert({
+          where: { propertyId_category_normLabel_targetItemId: { propertyId, category, normLabel: nrm, targetItemId: tid } },
+          update: { kind: 'MUTE', sourceLabel: newLabel },
+          create: { propertyId, category, sourceLabel: newLabel, normLabel: nrm, targetItemId: tid, kind: 'MUTE' },
+        })
+      }
+    }
+    revalidatePath('/inventory')
+    revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 병합 규칙 목록 — 관리 UI용 (LINK 연결 / MUTE 거절)
+export async function getMergeRules(): Promise<MergeRuleRow[]> {
+  const propertyId = await getPropertyId()
+  const rules = await prisma.trackedItemMergeRule.findMany({
+    where: { propertyId },
+    orderBy: [{ category: 'asc' }, { sourceLabel: 'asc' }],
+  })
+  const targetIds = Array.from(new Set(rules.map(r => r.targetItemId)))
+  const targets = targetIds.length > 0
+    ? await prisma.trackedItem.findMany({ where: { id: { in: targetIds } }, select: { id: true, label: true } })
+    : []
+  const labelById = new Map(targets.map(t => [t.id, t.label]))
+  return rules.map(r => ({
+    id: r.id, category: r.category, sourceLabel: r.sourceLabel,
+    kind: r.kind as 'LINK' | 'MUTE', targetItemId: r.targetItemId,
+    targetLabel: labelById.get(r.targetItemId) ?? null,
+  }))
+}
+
+// 병합 규칙 삭제 — 거절 되돌리기(MUTE 삭제 → 다시 추천) 또는 잘못된 연결(LINK) 제거
+export async function deleteMergeRule(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    await prisma.trackedItemMergeRule.deleteMany({ where: { id, propertyId } })
+    revalidatePath('/inventory')
+    return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

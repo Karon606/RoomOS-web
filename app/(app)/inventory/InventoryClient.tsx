@@ -46,8 +46,11 @@ import {
   getItemDrafts,
   getLocationDrafts,
   getDraftItemIds,
+  applyMergeDecision,
+  getMergeRules,
+  deleteMergeRule,
 } from './actions'
-import { type StorageLocationItem, type LocationQtyEntry } from './constants'
+import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow } from './constants'
 
 const CATEGORY_TINT: Record<string, { bg: string; fg: string }> = {
   '부식비':       { bg: 'rgba(232,137,58,0.10)',  fg: '#e8893a' },
@@ -110,6 +113,10 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
   const refreshDrafts = () => getDraftItemIds().then(ids => setDraftIds(new Set(ids)))
   useEffect(() => { refreshDrafts() }, [])
 
+  // 병합 확인 — 자동등록 후 후보가 있는 항목들 / 병합 규칙 관리 모달
+  const [mergeDecisions, setMergeDecisions] = useState<MergeDecision[]>([])
+  const [showMergeRules, setShowMergeRules] = useState(false)
+
   const toggleSelect = (id: string) => setSelected(prev => {
     const next = new Set(prev)
     next.has(id) ? next.delete(id) : next.add(id)
@@ -123,17 +130,17 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
     const release = trackSave()
     try {
       const res = await seedTrackedItemsFromExpenses()
-      if (!res.ok) { pushToast('error', res.error); alert(res.error); return }
-      // refresh 먼저 트리거 (alert가 동기 블로킹이라 그 뒤에 두면 모달 닫을 때까지 페이지가 안 갱신됨)
+      if (!res.ok) { pushToast('error', res.error); return }
       router.refresh()
       const parts: string[] = []
       if (res.created > 0) parts.push(`${res.created}개 품목 추가`)
       if (res.migrated > 0) parts.push(`${res.migrated}개 지출 라벨 정리 (사이즈/포장 변형 분리)`)
       if (res.skippedArchived > 0) parts.push(`삭제된 품목과 매칭되는 지출 ${res.skippedArchived}건은 건너뜀`)
+      if (res.decisions.length > 0) parts.push(`${res.decisions.length}건 병합 확인 필요`)
       const summary = parts.length > 0 ? parts.join(' · ') : '추가할 품목이 없습니다 (이미 등록됨).'
       pushToast('success', summary)
-      // alert는 다음 tick에 — refresh가 먼저 적용되도록
-      setTimeout(() => { alert(summary) }, 0)
+      // 후보가 있으면 병합 확인 모달 — 사용자가 어느 카드로 넣을지/새로 만들지 선택
+      if (res.decisions.length > 0) setMergeDecisions(res.decisions)
     } finally {
       setSeedPending(false)
       release()
@@ -173,6 +180,7 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
             </Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowLocations(true)}>위치 관리</Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowExcluded(true)}>제외 항목 복구</Btn>
+            <Btn variant="secondary" size="sm" onClick={() => setShowMergeRules(true)}>병합 규칙</Btn>
             <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
             <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
           </div>
@@ -214,6 +222,14 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
 
       {showExcluded  && <ExcludedItemsModal onClose={() => { setShowExcluded(false); router.refresh() }} />}
       {showLocations && <LocationSettingsModal onClose={() => { setShowLocations(false); router.refresh() }} />}
+      {mergeDecisions.length > 0 && (
+        <MergeDecisionModal
+          decisions={mergeDecisions}
+          onClose={() => setMergeDecisions([])}
+          onDone={() => { setMergeDecisions([]); router.refresh() }}
+        />
+      )}
+      {showMergeRules && <MergeRulesModal onClose={() => { setShowMergeRules(false); router.refresh() }} />}
       {showAdd && <AddItemModal onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); router.refresh() }} />}
       {showBatchLoc && (
         <BatchLocationModal
@@ -2040,6 +2056,152 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
         </div>
       </div>
     </div>
+  )
+}
+
+// ── 병합 확인 모달 ──────────────────────────────────────────
+// 자동등록에서 후보가 있는 새 라벨들 — 기존 카드에 합칠지 / 새로 등록할지 선택.
+function MergeDecisionModal({ decisions, onClose, onDone }: {
+  decisions: MergeDecision[]; onClose: () => void; onDone: () => void
+}) {
+  // 결정별 선택값: 대상 itemId 또는 '__new__'. 기본은 첫 후보(합치기)에 둠 — 사용자가 확인.
+  const [choices, setChoices] = useState<Record<number, string>>(
+    () => Object.fromEntries(decisions.map((d, i) => [i, d.candidates[0]?.itemId ?? '__new__'])),
+  )
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+
+  const apply = async () => {
+    setPending(true); setError('')
+    const release = trackSave()
+    try {
+      for (let i = 0; i < decisions.length; i++) {
+        const d = decisions[i]
+        const choice = choices[i] ?? '__new__'
+        const res = choice === '__new__'
+          ? await applyMergeDecision({
+              category: d.category, newLabel: d.newLabel, expenseIds: d.expenseIds,
+              specUnit: d.specUnit, qtyUnit: d.qtyUnit,
+              choice: { kind: 'new', declinedItemIds: d.candidates.map(c => c.itemId) },
+            })
+          : await applyMergeDecision({
+              category: d.category, newLabel: d.newLabel, expenseIds: d.expenseIds,
+              choice: { kind: 'merge', targetItemId: choice },
+            })
+        if (!res.ok) { setError(res.error); pushToast('error', res.error); setPending(false); release(); return }
+      }
+      pushToast('success', '병합 처리 완료')
+      onDone()
+    } catch {
+      setError('처리 중 오류가 발생했습니다.'); setPending(false)
+    } finally {
+      release()
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} width="md" title="병합 확인"
+      subtitle="새로 들어온 품목을 기존 카드에 합칠지 선택하세요"
+      footer={
+        <div className="flex gap-2">
+          <Btn variant="secondary" onClick={onClose} disabled={pending} fullWidth>취소</Btn>
+          <Btn variant="primary" onClick={apply} disabled={pending} fullWidth>{pending ? '처리 중…' : '적용'}</Btn>
+        </div>
+      }>
+      <div className="px-5 sm:px-6 py-4 space-y-4">
+        {error && <p className="text-xs text-red-500">{error}</p>}
+        {decisions.map((d, i) => (
+          <div key={i} className="space-y-2 border-b border-[var(--warm-border)]/50 pb-3 last:border-0">
+            <p className="text-sm font-medium text-[var(--warm-dark)]">
+              <span className="text-[var(--coral)]">{d.newLabel}</span>
+              <span className="text-[0.625rem] text-[var(--warm-muted)] ml-1.5">{d.category} · 지출 {d.expenseIds.length}건</span>
+            </p>
+            <div className="space-y-1.5">
+              {d.candidates.map(c => (
+                <label key={c.itemId} className="flex items-center gap-2 text-sm text-[var(--warm-dark)] cursor-pointer">
+                  <input type="radio" name={`merge-${i}`} checked={choices[i] === c.itemId}
+                    onChange={() => setChoices(p => ({ ...p, [i]: c.itemId }))} />
+                  <span>기존 <strong>{c.label}</strong>에 합치기</span>
+                </label>
+              ))}
+              <label className="flex items-center gap-2 text-sm text-[var(--warm-mid)] cursor-pointer">
+                <input type="radio" name={`merge-${i}`} checked={choices[i] === '__new__'}
+                  onChange={() => setChoices(p => ({ ...p, [i]: '__new__' }))} />
+                <span>새 품목으로 등록 <span className="text-[0.625rem] text-[var(--warm-muted)]">(다음부턴 안 물어봄)</span></span>
+              </label>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Modal>
+  )
+}
+
+// ── 병합 규칙 관리 모달 ─────────────────────────────────────
+// 자동등록 추천(LINK) / 거절(MUTE) 기록 관리. 거절은 '다시 추천 받기'로 되돌릴 수 있음.
+function MergeRulesModal({ onClose }: { onClose: () => void }) {
+  const [rules, setRules] = useState<MergeRuleRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [pendingId, setPendingId] = useState<string | null>(null)
+  const load = () => getMergeRules().then(r => { setRules(r); setLoading(false) })
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const remove = (id: string) => {
+    setPendingId(id)
+    deleteMergeRule(id).then(res => {
+      setPendingId(null)
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', '규칙 삭제됨')
+      load()
+    })
+  }
+
+  const links = rules.filter(r => r.kind === 'LINK')
+  const mutes = rules.filter(r => r.kind === 'MUTE')
+
+  return (
+    <Modal open onClose={onClose} width="md" title="병합 규칙"
+      subtitle="자동등록 시 추천(연결)·거절(다시 안 물어봄) 기록">
+      <div className="px-5 sm:px-6 py-4 space-y-4">
+        {loading ? <Loading /> : rules.length === 0 ? (
+          <EmptyState title="병합 규칙이 없습니다"
+            description="품목을 병합하거나, 자동등록 확인에서 '새 품목으로'를 고르면 여기에 규칙이 쌓입니다." />
+        ) : (
+          <>
+            {links.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-[var(--warm-mid)]">연결 — 이 라벨은 해당 카드로 추천</p>
+                {links.map(r => (
+                  <div key={r.id} className="flex items-center gap-2 text-sm bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">
+                    <span className="min-w-0 flex-1 truncate text-[var(--warm-dark)]">
+                      <strong>{r.sourceLabel}</strong> → {r.targetLabel ?? <span className="text-[var(--warm-muted)]">(삭제된 카드)</span>}
+                    </span>
+                    <span className="text-[0.5625rem] text-[var(--warm-muted)] shrink-0">{r.category}</span>
+                    <button type="button" onClick={() => remove(r.id)} disabled={pendingId === r.id}
+                      className="text-[0.6875rem] text-red-400 hover:text-red-600 disabled:opacity-40 shrink-0 px-2 py-1 rounded-lg hover:bg-red-50">연결 해제</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {mutes.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-[var(--warm-mid)]">거절 — 다시 추천 안 함</p>
+                {mutes.map(r => (
+                  <div key={r.id} className="flex items-center gap-2 text-sm bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">
+                    <span className="min-w-0 flex-1 truncate text-[var(--warm-dark)]">
+                      <strong>{r.sourceLabel}</strong> ✕ {r.targetLabel ?? <span className="text-[var(--warm-muted)]">(삭제된 카드)</span>}
+                    </span>
+                    <span className="text-[0.5625rem] text-[var(--warm-muted)] shrink-0">{r.category}</span>
+                    <button type="button" onClick={() => remove(r.id)} disabled={pendingId === r.id}
+                      className="text-[0.6875rem] text-[var(--coral)] hover:underline disabled:opacity-40 shrink-0 px-2 py-1 rounded-lg">다시 추천 받기</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </Modal>
   )
 }
 

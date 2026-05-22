@@ -70,6 +70,27 @@ export type LocationQtyEntry = {
   fromLocationId?: string   // (레거시) 이동 유입 출처
 }
 
+// 영수증→재고 자동등록 시, 새 라벨에 대한 병합 후보(기존 카드)
+export type MergeCandidate = { itemId: string; label: string }
+// 사용자 확인이 필요한 병합 결정 — 새 라벨 + 후보 카드들
+export type MergeDecision = {
+  newLabel: string          // 새로 만들려던 라벨
+  category: string
+  expenseIds: string[]      // 이 결정에 묶인 지출들
+  specUnit: string | null
+  qtyUnit: string | null
+  candidates: MergeCandidate[]
+}
+// 병합 규칙 (관리 UI용) — LINK: 추천 연결 / MUTE: 추천 안 함(거절 기억)
+export type MergeRuleRow = {
+  id: string
+  category: string
+  sourceLabel: string
+  kind: 'LINK' | 'MUTE'
+  targetItemId: string
+  targetLabel: string | null   // 대상 카드가 삭제됐으면 null
+}
+
 export type TimelineEntry =
   | { type: 'check';    id: string; date: Date; createdAt: Date; remainingQty: number; memo: string | null; locationBreakdown: LocationQtyEntry[]; isHub?: boolean }
   | { type: 'purchase'; id: string; date: Date; createdAt: Date; qtyValue: number; qtyUnit: string | null; specValue: number | null; specUnit: string | null; amount: number; vendor: string | null; memo: string | null; receivedAt: Date | null; receivedLocationName: string | null }
