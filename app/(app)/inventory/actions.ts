@@ -684,9 +684,9 @@ export async function unarchiveTrackedItem(id: string): Promise<{ ok: true } | {
 
 // ── StockCheck CRUD
 // 위치별 잔량 입력 1건
-// qty: "채운 후" 잔량 (보충했다면 보충 후, 안 했으면 실측 그대로)
+// qty: "보충 후" 잔량 (보충했다면 보충 후, 안 했으면 실측 그대로)
 // restockedQty: 이번 점검에서 이 위치에 보충한 양 (NULL 또는 0 = 보충 없음).
-//               "채우기 전" 잔량 = qty - restockedQty.
+//               "보충 전" 잔량 = qty - restockedQty.
 //               허브 자동 차감은 UI 단계에서 합계 restockedQty 만큼 허브 위치의 qty에서
 //               빼서 보낸다(서버는 받은 값을 그대로 저장만 함 — 동시성 안전 + 운영자 보정 가능).
 // fromHubQty/fromLocationId: 레거시 명시적 이동 — 신규 UI 미사용, 기존 점검 호환용.

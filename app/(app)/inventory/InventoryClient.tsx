@@ -41,6 +41,11 @@ import {
   toggleStorageLocationHub,
   setItemLocations,
   batchSetItemLocations,
+  saveStockCheckDraft,
+  deleteStockCheckDraft,
+  getItemDrafts,
+  getLocationDrafts,
+  getDraftItemIds,
 } from './actions'
 import { type StorageLocationItem, type LocationQtyEntry } from './constants'
 
@@ -99,6 +104,11 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
     if (m === 'location') exitSelectMode()
   }
   const [showExcluded, setShowExcluded]     = useState(false)
+
+  // 점검 임시저장(드래프트)이 걸린 품목 id — 카드 '점검 중' 배지용
+  const [draftIds, setDraftIds] = useState<Set<string>>(new Set())
+  const refreshDrafts = () => getDraftItemIds().then(ids => setDraftIds(new Set(ids)))
+  useEffect(() => { refreshDrafts() }, [])
 
   const toggleSelect = (id: string) => setSelected(prev => {
     const next = new Set(prev)
@@ -172,7 +182,7 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
       {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
 
       {viewMode === 'location' ? (
-        <LocationBatchCheckModal inline rows={rows} onClose={() => changeView('item')} onDone={() => router.refresh()} />
+        <LocationBatchCheckModal inline rows={rows} onClose={() => changeView('item')} onDone={() => { router.refresh(); refreshDrafts() }} onDraftChange={refreshDrafts} />
       ) : rows.length === 0 ? (
         <EmptyState
           title="추적할 품목이 아직 없습니다"
@@ -193,6 +203,7 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
                   row={r}
                   selectMode={selectMode}
                   isSelected={selected.has(r.id)}
+                  hasDraft={draftIds.has(r.id)}
                   onOpen={() => selectMode ? toggleSelect(r.id) : setDetailId(r.id)}
                 />
               ))}
@@ -230,14 +241,15 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
         <DetailModal
           row={rows.find(r => r.id === detailId) ?? null}
           onClose={() => setDetailId(null)}
-          onChange={() => router.refresh()}
+          onChange={() => { router.refresh(); refreshDrafts() }}
+          onDraftChange={refreshDrafts}
         />
       )}
     </div>
   )
 }
 
-function InventoryCard({ row, onOpen, selectMode, isSelected }: { row: InventoryRow; onOpen: () => void; selectMode?: boolean; isSelected?: boolean }) {
+function InventoryCard({ row, onOpen, selectMode, isSelected, hasDraft }: { row: InventoryRow; onOpen: () => void; selectMode?: boolean; isSelected?: boolean; hasDraft?: boolean }) {
   const tint = CATEGORY_TINT[row.category]
   const lowStock = row.daysUntilEmpty != null && row.daysUntilEmpty <= row.alertThresholdDays
   // trackUnit='qty' (폐기물 봉투 등): 매 단위 그대로. 'spec': specUnit 우선
@@ -254,6 +266,9 @@ function InventoryCard({ row, onOpen, selectMode, isSelected }: { row: Inventory
           <p className="text-[0.625rem] mt-0.5" style={{ color: tint?.fg }}>{row.category}</p>
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
+          {hasDraft && (
+            <span className="text-[0.5625rem] font-medium text-[var(--coral)] bg-[var(--coral)]/10 rounded-full px-2 py-0.5 whitespace-nowrap">점검 중</span>
+          )}
           {lowStock && <Badge tone="danger" mono>소진 임박</Badge>}
           {row.pendingPurchases.length > 0 && (
             <Badge tone="warn" mono>{row.pendingPurchases.length}건 수령대기</Badge>
@@ -399,8 +414,8 @@ function AddItemModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
   )
 }
 
-function DetailModal({ row, onClose, onChange }: {
-  row: InventoryRow | null; onClose: () => void; onChange: () => void
+function DetailModal({ row, onClose, onChange, onDraftChange }: {
+  row: InventoryRow | null; onClose: () => void; onChange: () => void; onDraftChange?: () => void
 }) {
   if (!row) return null
   const trackedItemId = row.id
@@ -484,7 +499,7 @@ function DetailModal({ row, onClose, onChange }: {
       {!data ? (
         <Loading />
       ) : mode === 'check' ? (
-        <CheckForm item={data.item} lastCheckBreakdown={row.lastCheckLocationBreakdown} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
+        <CheckForm item={data.item} lastCheckBreakdown={row.lastCheckLocationBreakdown} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} onDraftChange={onDraftChange} />
       ) : mode === 'addition' ? (
         <AdditionForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : mode === 'settings' ? (
@@ -1359,10 +1374,10 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   )
 }
 
-function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
+function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }: {
   item: { id: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
   lastCheckBreakdown: LocationQtyEntry[]
-  onCancel: () => void; onDone: () => void
+  onCancel: () => void; onDone: () => void; onDraftChange?: () => void
 }) {
   const stockUnit = item.trackUnit === 'qty' ? item.qtyUnit : (item.specUnit ?? item.qtyUnit)
   const hasLocations = item.locations.length > 0
@@ -1404,6 +1419,57 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
   const [memo, setMemo] = useState('')
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
+
+  // 임시저장(드래프트) — 아이템별 점검은 locationId null. 폼을 열면 직전 임시저장값을 복원.
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
+  const [draftPending, setDraftPending] = useState(false)
+  useEffect(() => {
+    let active = true
+    getItemDrafts(item.id).then(drafts => {
+      if (!active) return
+      const d = drafts.find(x => x.locationId == null)
+      const data = d?.data as {
+        date?: string; qty?: string; memo?: string
+        locationQtys?: Record<string, string>
+        beforeQtys?: Record<string, string>
+        afterQtys?: Record<string, string>
+        hubTouched?: boolean; savedAt?: number
+      } | undefined
+      if (!data) return
+      if (typeof data.date === 'string') setDate(data.date)
+      if (typeof data.qty === 'string') setQty(data.qty)
+      if (typeof data.memo === 'string') setMemo(data.memo)
+      if (data.locationQtys) setLocationQtys(data.locationQtys)
+      if (data.beforeQtys) setBeforeQtys(data.beforeQtys)
+      if (data.afterQtys) { setAfterQtys(data.afterQtys); setHubTouched(!!data.hubTouched) }
+      if (typeof data.savedAt === 'number') setDraftSavedAt(data.savedAt)
+    })
+    return () => { active = false }
+  }, [item.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSaveDraft = () => {
+    setError('')
+    const savedAt = Date.now()
+    setDraftPending(true)
+    saveStockCheckDraft({
+      trackedItemId: item.id, locationId: null,
+      data: { date, qty, memo, locationQtys, beforeQtys, afterQtys, hubTouched, savedAt },
+    }).then(res => {
+      setDraftPending(false)
+      if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+      setDraftSavedAt(savedAt)
+      pushToast('success', '임시저장됨')
+      onDraftChange?.()
+    })
+  }
+
+  const handleClearDraft = () => {
+    deleteStockCheckDraft(item.id, null).then(() => {
+      setDraftSavedAt(null)
+      pushToast('success', '임시저장 비움')
+      onDraftChange?.()
+    })
+  }
 
   const handleLocChange = (id: string, val: string) => {
     setLocationQtys(prev => ({ ...prev, [id]: val.replace(/[^0-9.]/g, '') }))
@@ -1477,6 +1543,8 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
           trackedItemId: item.id, date, remainingQty: n, memo: memo || undefined,
         })
         if (!res.ok) { setError(res.error); return }
+        await deleteStockCheckDraft(item.id, null)
+        onDraftChange?.()
         onDone()
       })
       return
@@ -1492,6 +1560,8 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
         locationQtys: locationData,
       })
       if (!res.ok) { setError(res.error); return }
+      await deleteStockCheckDraft(item.id, null)
+      onDraftChange?.()
       onDone()
     })
   }
@@ -1635,9 +1705,19 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
       </div>
+      {draftSavedAt && (
+        <div className="flex items-center justify-between gap-2 text-[0.625rem] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
+          <span>이어서 점검 중 · 임시저장 {fmtTime(new Date(draftSavedAt))}</span>
+          <button type="button" onClick={handleClearDraft}
+            className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] underline shrink-0">비우기</button>
+        </div>
+      )}
       {error && <p className="text-xs text-red-500">{error}</p>}
       <div className="pt-2 flex gap-2">
-        <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>
+        <Btn type="button" variant="secondary" onClick={onCancel}>취소</Btn>
+        <Btn type="button" variant="secondary" onClick={handleSaveDraft} disabled={draftPending || pending} fullWidth>
+          {draftPending ? '저장 중…' : '임시저장'}
+        </Btn>
         <Btn type="submit" variant="primary" disabled={pending} fullWidth>
           {pending ? '저장 중...' : '저장'}
         </Btn>
@@ -1647,13 +1727,14 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
 }
 
 // ── 위치별 일괄 점검 — 모달(inline=false) / 인라인 패널(inline=true) 양용
-function LocationBatchCheckModal({ rows, onClose, onDone, inline = false }: {
-  rows: InventoryRow[]; onClose: () => void; onDone: () => void; inline?: boolean
+function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraftChange }: {
+  rows: InventoryRow[]; onClose: () => void; onDone: () => void; inline?: boolean; onDraftChange?: () => void
 }) {
   const [locs, setLocs] = useState<StorageLocationItem[]>([])
   const [locId, setLocId] = useState('')
   const [date, setDate] = useState(kstYmdStr())
   const [pending, setPending] = useState(false)
+  const [draftPending, setDraftPending] = useState(false)
   const [error, setError] = useState('')
   const [mergeChoice, setMergeChoice] = useState<'merge' | 'new' | null>(null)
   const [confirmItems, setConfirmItems] = useState<InventoryRow[]>([])
@@ -1687,6 +1768,20 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false }: {
     setAfterQtys({})
     setMergeChoice(null)
     setConfirmItems([])
+    // 임시저장(드래프트) 복원 — 이 위치에 저장된 품목별 보충 전/후가 있으면 덮어씀
+    getLocationDrafts(locId).then(drafts => {
+      if (drafts.length === 0) return
+      setBeforeQtys(prev => {
+        const next = { ...prev }
+        drafts.forEach(d => { if (d.data?.before != null) next[d.trackedItemId] = String(d.data.before) })
+        return next
+      })
+      setAfterQtys(prev => {
+        const next = { ...prev }
+        drafts.forEach(d => { if (d.data?.after != null) next[d.trackedItemId] = String(d.data.after) })
+        return next
+      })
+    })
   }, [locId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 점검 위치가 비허브일 때, 각 품목당 보충량은 후-전, 합계만큼 그 품목의 허브 위치 잔량 자동 차감
@@ -1754,6 +1849,9 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false }: {
           memo: `위치별 점검 (${locName})`,
         })
       }))
+      // 점검 확정된 품목의 이 위치 드래프트 정리
+      await Promise.all(toSave.map(r => deleteStockCheckDraft(r.id, locId)))
+      onDraftChange?.()
       onDone()
     } catch {
       setError('저장 중 오류가 발생했습니다.')
@@ -1778,6 +1876,32 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false }: {
       return
     }
     await doSave(mergeChoice === 'merge')
+  }
+
+  // 위치별 임시저장 — 입력값이 있는 품목별로 (품목, 이 위치) 드래프트 저장
+  const handleSaveDraft = async () => {
+    if (!locId) return
+    const dirty = locItems.filter(r => {
+      const { beforeStr, afterStr } = computeRow(r)
+      return beforeStr !== '' || afterStr !== ''
+    })
+    if (dirty.length === 0) { setError('임시저장할 수량이 없습니다.'); return }
+    setDraftPending(true); setError('')
+    try {
+      await Promise.all(dirty.map(r => {
+        const { beforeStr, afterStr } = computeRow(r)
+        return saveStockCheckDraft({
+          trackedItemId: r.id, locationId: locId,
+          data: { before: beforeStr, after: afterStr, date, savedAt: Date.now() },
+        })
+      }))
+      pushToast('success', `${dirty.length}품목 임시저장됨`)
+      onDraftChange?.()
+    } catch {
+      setError('임시저장 중 오류가 발생했습니다.')
+    } finally {
+      setDraftPending(false)
+    }
   }
 
   const selectCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
@@ -1907,6 +2031,9 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false }: {
         )}
         <div className="border-t border-[var(--warm-border)] px-5 py-3 flex gap-2 shrink-0">
           {!inline && <Btn variant="secondary" fullWidth onClick={onClose}>취소</Btn>}
+          <Btn variant="secondary" fullWidth onClick={handleSaveDraft} disabled={draftPending || pending || !locId || locItems.length === 0}>
+            {draftPending ? '저장 중…' : '임시저장'}
+          </Btn>
           <Btn variant="primary" fullWidth onClick={handleSave} disabled={pending || !locId || locItems.length === 0}>
             {pending ? '저장 중...' : `${locItems.filter(isItemDirty).length}품목 저장`}
           </Btn>

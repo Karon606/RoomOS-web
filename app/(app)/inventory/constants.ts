@@ -64,7 +64,7 @@ export type StorageLocationItem = {
 export type LocationQtyEntry = {
   locationId: string
   locationName: string
-  qty: number               // "채운 후" 잔량
+  qty: number               // "보충 후" 잔량
   restockedQty?: number     // 이 점검에서 이 위치에 보충한 양 ("전" = qty - restockedQty)
   fromHubQty?: number       // (레거시) 명시적 이동 유입 수량
   fromLocationId?: string   // (레거시) 이동 유입 출처
