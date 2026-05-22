@@ -1138,7 +1138,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
       </div>
       {hasLocations && (
         <div className="space-y-2">
-          <p className="text-[0.625rem] text-[var(--warm-muted)]">위치별 채우기 전 → 채운 후{stockUnit ? ` (${stockUnit})` : ''}</p>
+          <p className="text-[0.625rem] text-[var(--warm-muted)]">위치별 보충 전 → 보충 후{stockUnit ? ` (${stockUnit})` : ''}</p>
           {locationSources.map(l => {
             const beforeStr = beforeQtys[l.id] ?? ''
             const afterStr  = afterQtys[l.id] ?? ''
@@ -1155,14 +1155,14 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   <div>
-                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">채우기 전</p>
+                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">보충 전</p>
                     <input type="text" inputMode="decimal" placeholder="0"
                       value={beforeStr}
                       onChange={e => setBeforeQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                       className={`w-full min-w-0 ${inputCls}`} />
                   </div>
                   <div>
-                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">채운 후</p>
+                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">보충 후</p>
                     <input type="text" inputMode="decimal" placeholder="0"
                       value={afterStr}
                       onChange={e => setAfterQtys(prev => ({ ...prev, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
@@ -1385,9 +1385,9 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
   )
   const [touched, setTouched] = useState<Set<string>>(new Set())
 
-  // 보충 모드 — 위치별 "채우기 전" + "채운 후"
-  // "채우기 전"을 직전 점검 잔량으로 prefill — 위치별 점검(LocationBatchCheckModal)과
-  // 동일하게, "채운 후"만 입력해도 보충량(후-전)이 정확히 계산돼 허브에서 자동 차감됨.
+  // 보충 모드 — 위치별 "보충 전" + "보충 후"
+  // "보충 전"을 직전 점검 잔량으로 prefill — 위치별 점검(LocationBatchCheckModal)과
+  // 동일하게, "보충 후"만 입력해도 보충량(후-전)이 정확히 계산돼 허브에서 자동 차감됨.
   // (빈칸이면 보충 0으로 처리돼 허브 미차감 → 총량 변동하던 버그 방지.)
   const [beforeQtys, setBeforeQtys] = useState<Record<string, string>>(
     () => Object.fromEntries(
@@ -1413,7 +1413,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
 
   // 비허브 위치들의 보충량 합계 — 행별 restocked 와 동일한 null-처리.
   // (빈칸은 0이 아니라 null 로 봐서, 전·후 모두 입력됐을 때만 보충으로 계산.
-  //  이렇게 해야 사용자가 "채우기 전"을 비웠을 때 허브가 과차감되지 않음.)
+  //  이렇게 해야 사용자가 "보충 전"을 비웠을 때 허브가 과차감되지 않음.)
   const restockSum = restockMode
     ? item.locations
         .filter(l => !l.isHub)
@@ -1426,7 +1426,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
         }, 0)
     : 0
 
-  // 허브의 "채운 후" 자동 계산값 — 사용자가 직접 보정 안 했으면 사용
+  // 허브의 "보충 후" 자동 계산값 — 사용자가 직접 보정 안 했으면 사용
   const hubAutoAfter = Math.max(0, hubPrev - restockSum)
 
   // 저장용 위치별 데이터 계산
@@ -1502,7 +1502,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
     <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
       <p className="text-xs text-[var(--warm-muted)]">
         {restockMode
-          ? '각 위치에서 보충 직전 실측한 수량(채우기 전)과 보충 후 수량(채운 후)을 입력하면, 그 차이만큼 허브에서 자동 차감됩니다.'
+          ? '각 위치에서 보충 직전 실측한 수량(보충 전)과 보충 후 수량(보충 후)을 입력하면, 그 차이만큼 허브에서 자동 차감됩니다.'
           : `점검한 시점에 남아있는 양을 ${stockUnit ?? '단위'} 기준으로 기록합니다. 직전 점검과의 차이로 소모량이 계산됩니다.`}
       </p>
       <div className="space-y-1.5">
@@ -1559,14 +1559,14 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone }: {
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   <div>
-                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">채우기 전</p>
+                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">보충 전</p>
                     <input type="text" inputMode="decimal" placeholder="0"
                       value={beforeStr}
                       onChange={e => setBeforeQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                       className={`w-full min-w-0 ${inputCls}`} />
                   </div>
                   <div>
-                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">채운 후</p>
+                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">보충 후</p>
                     <input type="text" inputMode="decimal" placeholder="0"
                       value={afterStr}
                       onChange={e => setAfterQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
@@ -1667,13 +1667,13 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false }: {
     ? rows.filter(r => !r.isArchived && r.locations.some(l => l.id === locId))
     : []
 
-  // 위치별 "채우기 전" + "채운 후" — 비허브 위치는 두 칸, 허브 위치는 후만 의미 있음
+  // 위치별 "보충 전" + "보충 후" — 비허브 위치는 두 칸, 허브 위치는 후만 의미 있음
   const [beforeQtys, setBeforeQtys] = useState<Record<string, string>>({})
   const [afterQtys, setAfterQtys]   = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!locId) return
-    // "채우기 전"을 직전 점검 잔량으로 prefill — 채운 후만 입력해도 보충량(후-전)이
+    // "보충 전"을 직전 점검 잔량으로 prefill — 보충 후만 입력해도 보충량(후-전)이
     // 정확히 계산되어 허브에서 자동 차감됨. (빈칸이면 보충 0으로 처리돼 허브 차감 없이
     // 순증가하던 버그 수정. 아이템별 점검 CheckForm 과 prefill 동작 통일.)
     const initBefore: Record<string, string> = {}
@@ -1798,8 +1798,8 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false }: {
             <h2 className="text-sm font-bold text-[var(--warm-dark)]">위치별 점검</h2>
             <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">
               {isHubLocation
-                ? '허브 위치 점검 — 잔량(채운 후)만 입력합니다.'
-                : '각 품목의 채우기 전·후를 입력하면 그 차이만큼 허브에서 자동 차감됩니다.'}
+                ? '허브 위치 점검 — 잔량(보충 후)만 입력합니다.'
+                : '각 품목의 보충 전·후를 입력하면 그 차이만큼 허브에서 자동 차감됩니다.'}
             </p>
           </div>
           {!inline && (
@@ -1861,17 +1861,17 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false }: {
                       <span className="text-[0.625rem] text-[var(--warm-muted)] w-6 shrink-0 text-right">{stockUnit ?? ''}</span>
                     </div>
                   ) : (
-                    // 비허브 위치 점검 — 채우기 전 / 채운 후
+                    // 비허브 위치 점검 — 보충 전 / 보충 후
                     <div className="grid grid-cols-2 gap-1.5">
                       <div>
-                        <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">채우기 전</p>
+                        <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">보충 전</p>
                         <input type="text" inputMode="decimal" placeholder="0"
                           value={beforeStr}
                           onChange={e => setBeforeQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                           className={qtyInputCls} />
                       </div>
                       <div>
-                        <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">채운 후</p>
+                        <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">보충 후</p>
                         <input type="text" inputMode="decimal" placeholder="0"
                           value={afterStr}
                           onChange={e => setAfterQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
