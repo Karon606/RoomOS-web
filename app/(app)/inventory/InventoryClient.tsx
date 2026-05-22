@@ -437,7 +437,7 @@ function DetailModal({ row, onClose, onChange }: {
     setLoadingId(id)
     const release = trackSave()
     deleteStockCheck(id).then(res => {
-      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '점검 기록 삭제됨') }) }
+      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '점검 기록 삭제됨') }).finally(release) }
       else { setLoadingId(null); setError(res.error); pushToast('error', res.error); release() }
     }).catch(() => { setLoadingId(null); release() })
   }
@@ -447,7 +447,7 @@ function DetailModal({ row, onClose, onChange }: {
     setLoadingId(id)
     const release = trackSave()
     deleteStockAddition(id).then(res => {
-      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '입수 기록 삭제됨') }) }
+      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '입수 기록 삭제됨') }).finally(release) }
       else { setLoadingId(null); setError(res.error); pushToast('error', res.error); release() }
     }).catch(() => { setLoadingId(null); release() })
   }
@@ -456,7 +456,7 @@ function DetailModal({ row, onClose, onChange }: {
     setLoadingId(expenseId)
     const release = trackSave()
     confirmReceipt(expenseId, locationId).then(res => {
-      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '수령 확인 완료') }) }
+      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '수령 확인 완료') }).finally(release) }
       else { setLoadingId(null); setError(res.error); pushToast('error', res.error); release() }
     }).catch(() => { setLoadingId(null); release() })
   }
