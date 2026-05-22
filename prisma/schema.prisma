@@ -700,6 +700,7 @@ model TrackedItem {
   stockChecks  StockCheck[]
   additions    StockAddition[]
   locations    TrackedItemLocation[]
+  checkDrafts  StockCheckDraft[]
 
   @@unique([propertyId, category, label])
   @@index([propertyId, isArchived])
@@ -720,6 +721,22 @@ model StockCheck {
 
   @@index([trackedItemId, date])
   @@map("stock_checks")
+}
+
+// 점검 임시저장(드래프트) — '보충 전'만 입력하고 나중에 이어서 마무리하기 위한 폼 상태 보관.
+// StockCheck 와 별도 테이블이라 실제 잔량/이력 계산엔 전혀 영향 없음. 항목+위치당 1개.
+model StockCheckDraft {
+  id            String      @id @default(uuid()) @db.Uuid
+  trackedItemId String      @db.Uuid
+  trackedItem   TrackedItem @relation(fields: [trackedItemId], references: [id], onDelete: Cascade)
+  locationId    String?     @db.Uuid   // 위치별 점검 드래프트면 그 위치, 아이템별 점검이면 null
+  data          Json        // 폼 상태 스냅샷 { mode, beforeQtys, afterQtys, date, ... }
+  updatedAt     DateTime    @updatedAt
+  createdAt     DateTime    @default(now())
+
+  @@unique([trackedItemId, locationId])
+  @@index([trackedItemId])
+  @@map("stock_check_drafts")
 }
 
 // 보관 위치 — 창고 / 4층 주방 / 손님실 선반 등 property-level 마스터

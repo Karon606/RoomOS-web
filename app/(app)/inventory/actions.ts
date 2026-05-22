@@ -813,6 +813,83 @@ export async function deleteStockCheck(id: string): Promise<{ ok: true } | { ok:
   }
 }
 
+// ── 점검 임시저장(드래프트) ──────────────────────────────────────
+// '보충 전'만 입력하고 나중에 이어서 마무리. StockCheck 와 별도 테이블이라 잔량 계산엔 영향 없음.
+// 항목+위치당 1개 (아이템별 점검 = locationId null, 위치별 점검 = 그 위치).
+
+export async function saveStockCheckDraft(input: {
+  trackedItemId: string
+  locationId?: string | null
+  data: Record<string, unknown>
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id: input.trackedItemId, propertyId } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    const locationId = input.locationId ?? null
+    await prisma.stockCheckDraft.deleteMany({ where: { trackedItemId: input.trackedItemId, locationId } })
+    await prisma.stockCheckDraft.create({
+      data: { trackedItemId: input.trackedItemId, locationId, data: input.data as any },
+    })
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function deleteStockCheckDraft(
+  trackedItemId: string, locationId?: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    await prisma.stockCheckDraft.deleteMany({ where: { trackedItemId, locationId: locationId ?? null } })
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 한 항목의 드래프트들 (아이템별 = locationId null, 위치별 = 해당 위치) — 재개·표시용
+export async function getItemDrafts(
+  trackedItemId: string,
+): Promise<{ locationId: string | null; data: any }[]> {
+  const propertyId = await getPropertyId()
+  const it = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
+  if (!it) return []
+  const rows = await prisma.stockCheckDraft.findMany({ where: { trackedItemId } })
+  return rows.map(r => ({ locationId: r.locationId, data: r.data as any }))
+}
+
+// 특정 위치의 모든 드래프트 — 위치별 일괄 점검 재개용 (품목 id → 폼 상태)
+export async function getLocationDrafts(
+  locationId: string,
+): Promise<{ trackedItemId: string; data: any }[]> {
+  const propertyId = await getPropertyId()
+  const rows = await prisma.stockCheckDraft.findMany({
+    where: { locationId, trackedItem: { propertyId } },
+  })
+  return rows.map(r => ({ trackedItemId: r.trackedItemId, data: r.data as any }))
+}
+
+// 드래프트가 하나라도 있는 품목 ID 목록 — 목록 '점검 진행 중' 배지용
+export async function getDraftItemIds(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const rows = await prisma.stockCheckDraft.findMany({
+    where: { trackedItem: { propertyId } },
+    select: { trackedItemId: true },
+    distinct: ['trackedItemId'],
+  })
+  return rows.map(r => r.trackedItemId)
+}
+
 // ── StockAddition CRUD
 export async function createStockAddition(data: {
   trackedItemId: string; date: string; addedQty: number; source?: string; memo?: string
