@@ -10,6 +10,7 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { Loading } from '@/components/ui/Loading'
 import { formatPhone } from '@/lib/formatPhone'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -231,6 +232,7 @@ export default function RoomsClient({
   const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
   const router = useRouter()
   const searchParams = useSearchParams()
+  const entityModal = useEntityModal()
   const [selectedRoom, setSelectedRoom] = useState<RoomStatus | null>(null)
   // 입주자/호실 정보 인라인 모달 (수납 모달은 그대로 유지된 채 위에 겹침)
   const [tenantInfoId, setTenantInfoId] = useState<string | null>(null)
@@ -1721,24 +1723,14 @@ export default function RoomsClient({
                   {selectedRoom.tenantId && (
                     <button
                       type="button"
-                      onClick={() => {
-                        const id = selectedRoom.tenantId!
-                        setShowPayModal(false)
-                        setShowPayForm(false)
-                        setTenantInfoId(id)
-                      }}
+                      onClick={() => entityModal.open({ kind: 'tenant', tenantId: selectedRoom.tenantId! })}
                       className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
                       입주자 정보
                     </button>
                   )}
                   <button
                     type="button"
-                    onClick={() => {
-                      const id = selectedRoom.roomId
-                      setShowPayModal(false)
-                      setShowPayForm(false)
-                      setRoomInfoId(id)
-                    }}
+                    onClick={() => entityModal.open({ kind: 'room', roomId: selectedRoom.roomId })}
                     className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
                     호실 정보
                   </button>

@@ -11,7 +11,7 @@ import { Btn } from '@/components/ui/Btn'
 import { Modal } from '@/components/ui/Modal'
 import { kstMonthStr } from '@/lib/kstDate'
 import {
-  getEntityLinks, getRoomQuickInfo, getTenantQuickInfo, getLeaseSettlementInfo,
+  getEntityLinks, getRoomQuickInfo, getTenantQuickInfo, getLeaseSettlementInfo, getPaymentsByLease,
 } from '@/app/(app)/rooms/actions'
 import { STATUS_LABEL } from '@/lib/statusColors'
 
@@ -169,8 +169,15 @@ function TenantView({ tenantId }: { tenantId: string }) {
 
 function PaymentView({ leaseTermId, month }: { leaseTermId: string; month: string }) {
   const [info, setInfo] = useState<Awaited<ReturnType<typeof getLeaseSettlementInfo>> | null>(null)
-  useEffect(() => { let a = true; getLeaseSettlementInfo(leaseTermId, month).then(d => { if (a) setInfo(d) }); return () => { a = false } }, [leaseTermId, month])
+  const [records, setRecords] = useState<Awaited<ReturnType<typeof getPaymentsByLease>>['records'] | null>(null)
+  useEffect(() => {
+    let a = true
+    getLeaseSettlementInfo(leaseTermId, month).then(d => { if (a) setInfo(d) })
+    getPaymentsByLease(leaseTermId, month).then(d => { if (a) setRecords(d.records) }).catch(() => { if (a) setRecords([]) })
+    return () => { a = false }
+  }, [leaseTermId, month])
   if (!info) return <Loading />
+  const payDateStr = (d: Date | string) => { const t = new Date(d); return `${t.getMonth() + 1}.${t.getDate()}` }
   return (
     <div className="space-y-3">
       <p className="text-[0.625rem] text-[var(--warm-muted)]">총 수납·잔액·이월액은 입금일 기준입니다. ({month.slice(0, 4)}년 {Number(month.slice(5))}월)</p>
@@ -195,6 +202,28 @@ function PaymentView({ leaseTermId, month }: { leaseTermId: string; month: strin
       <div>
         <Row k="월 이용료" v={fmtWon(info.expected)} />
         {info.dueDay && <Row k="납부일" v={info.dueDay.includes('말') ? '매월 말일' : `매월 ${info.dueDay}일`} />}
+      </div>
+      {/* 이번 달 납부 내역 (읽기) — 등록·수정은 '수납 관리에서 열기' */}
+      <div className="space-y-1">
+        <p className="text-xs font-semibold text-[var(--warm-mid)]">이번 달 납부 내역</p>
+        {records === null ? (
+          <p className="text-xs text-[var(--warm-muted)] py-2">불러오는 중…</p>
+        ) : records.length === 0 ? (
+          <p className="text-xs text-[var(--warm-muted)] py-2">이 달 납부 기록이 없습니다.</p>
+        ) : (
+          <ul className="space-y-1">
+            {records.map(r => (
+              <li key={r.id} className="flex items-center justify-between bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
+                <span className="text-[var(--warm-mid)]">
+                  {payDateStr(r.payDate)}
+                  {r.isDeposit && <span className="ml-1.5 text-[0.5625rem] text-[var(--coral)]">보증금</span>}
+                  {r.payMethod && <span className="ml-1.5 text-[var(--warm-muted)]">· {r.payMethod}</span>}
+                </span>
+                <span className="font-semibold text-[var(--warm-dark)]">{fmtWon(r.actualAmount)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   )
