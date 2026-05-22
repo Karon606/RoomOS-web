@@ -1,14 +1,14 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { Loading } from '@/components/ui/Loading'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { kstYmdStr } from '@/lib/kstDate'
+import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, TRACKED_CATEGORIES } from './constants'
@@ -87,9 +87,20 @@ const isSameKstDay = (a: Date, b: Date) => {
   return toKst(a) === toKst(b)
 }
 
-export default function InventoryClient({ initialRows }: { initialRows: InventoryRow[] }) {
+export default function InventoryClient({ initialRows, targetMonth }: { initialRows: InventoryRow[]; targetMonth: string }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const rows = initialRows
+  // 전역 월(?month=) 이동 — Header 와 동일하게 URL + localStorage 동기화
+  const changeMonth = (delta: number) => {
+    const [y, m] = targetMonth.split('-').map(Number)
+    const d = new Date(y, m - 1 + delta, 1)
+    const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    if (typeof window !== 'undefined') localStorage.setItem('stayeum_selected_month', next)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('month', next)
+    router.replace(`?${params.toString()}`, { scroll: false })
+  }
   const [isPending, startTransition] = useTransition()
   const [showAdd, setShowAdd]             = useState(false)
   const [showLocations, setShowLocations] = useState(false)
@@ -260,6 +271,8 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
           onClose={() => setDetailId(null)}
           onChange={() => { router.refresh(); refreshDrafts() }}
           onDraftChange={refreshDrafts}
+          targetMonth={targetMonth}
+          onChangeMonth={changeMonth}
         />
       )}
     </div>
@@ -431,8 +444,9 @@ function AddItemModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
   )
 }
 
-function DetailModal({ row, onClose, onChange, onDraftChange }: {
+function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onChangeMonth }: {
   row: InventoryRow | null; onClose: () => void; onChange: () => void; onDraftChange?: () => void
+  targetMonth: string; onChangeMonth: (delta: number) => void
 }) {
   if (!row) return null
   const trackedItemId = row.id
@@ -538,15 +552,49 @@ function DetailModal({ row, onClose, onChange, onDraftChange }: {
           </div>
           <div className="px-5 sm:px-6 py-3 space-y-3">
             {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
-            {tab === 'timeline' && (
-              data.timeline.length === 0 ? (
-                <p className="text-sm text-[var(--warm-muted)] text-center py-6">기록이 없습니다.</p>
-              ) : (
-                <ul className="space-y-1.5">
-                  {data.timeline.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
-                </ul>
+            {tab === 'timeline' && (() => {
+              const nowMonth = kstMonthStr()
+              // 엔트리 월 — 점검·무상입수는 날짜, 구매는 수령확정(receivedAt) 기준. 미수령 구매는 현재 월로 이월.
+              const entryMonth = (e: TimelineEntry): string =>
+                e.type === 'purchase'
+                  ? (e.receivedAt ? kstMonthStr(new Date(e.receivedAt)) : nowMonth)
+                  : kstMonthStr(new Date(e.date))
+              const monthEntries = data.timeline.filter(e => entryMonth(e) === targetMonth)
+              // 이월분 — targetMonth 시작 이전 마지막 점검의 잔량(전월말 최종 내역)
+              const priorChecks = data.timeline.filter(
+                (e): e is Extract<TimelineEntry, { type: 'check' }> =>
+                  e.type === 'check' && kstMonthStr(new Date(e.date)) < targetMonth,
               )
-            )}
+              const carry = priorChecks.length > 0
+                ? priorChecks.reduce((a, b) => (new Date(b.date) > new Date(a.date) ? b : a))
+                : null
+              const [yy, mm] = targetMonth.split('-')
+              return (
+                <div className="space-y-2">
+                  {/* 월 네비 — 전역 월(?month=)과 연동 */}
+                  <div className="flex items-center justify-between">
+                    <button type="button" onClick={() => onChangeMonth(-1)}
+                      className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] transition-colors">‹</button>
+                    <span className="text-sm font-bold text-[var(--warm-dark)]">{yy}년 {Number(mm)}월</span>
+                    <button type="button" onClick={() => onChangeMonth(1)} disabled={targetMonth >= nowMonth}
+                      className="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] transition-colors disabled:opacity-30 disabled:hover:bg-transparent">›</button>
+                  </div>
+                  {monthEntries.length === 0 && !carry ? (
+                    <p className="text-sm text-[var(--warm-muted)] text-center py-6">이 달 기록이 없습니다.</p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {monthEntries.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
+                      {carry && (
+                        <li className="flex items-center justify-between bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2">
+                          <span className="text-[0.6875rem] font-medium text-[var(--warm-muted)]">이월분 · {yy}.{mm}.01</span>
+                          <span className="text-xs font-semibold text-[var(--warm-mid)]">잔량 {fmtQty(carry.remainingQty, detailStockUnit)}</span>
+                        </li>
+                      )}
+                    </ul>
+                  )}
+                </div>
+              )
+            })()}
             {tab === 'monthly' && (
               <MonthlyInflowList rows={monthlyInflow} stockUnit={detailStockUnit} />
             )}
