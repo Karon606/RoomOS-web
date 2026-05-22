@@ -861,6 +861,16 @@ export async function saveStockCheckDraft(input: {
   }
 }
 
+// 드래프트에 실제 입력값이 남아있는지 (cross-clear 후 빈 껍데기면 삭제 판단용)
+function draftHasContent(d: any): boolean {
+  for (const m of [d?.beforeQtys, d?.afterQtys, d?.locationQtys]) {
+    if (m && typeof m === 'object') {
+      for (const k of Object.keys(m)) if (m[k] != null && m[k] !== '') return true
+    }
+  }
+  return d?.qty != null && d.qty !== ''
+}
+
 export async function deleteStockCheckDraft(
   trackedItemId: string, locationId?: string | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -869,7 +879,40 @@ export async function deleteStockCheckDraft(
     const propertyId = await getPropertyId()
     const it = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
-    await prisma.stockCheckDraft.deleteMany({ where: { trackedItemId, locationId: locationId ?? null } })
+    const loc = locationId ?? null
+    await prisma.stockCheckDraft.deleteMany({ where: { trackedItemId, locationId: loc } })
+    // 위치별 드래프트를 지울 땐, 아이템별(null) 드래프트에 남은 그 위치 값도 정리
+    // (cross-mode 공유 — 한쪽에서 점검 완료 시 다른 쪽 잔재가 다시 뜨지 않도록).
+    if (loc) {
+      const nullDraft = await prisma.stockCheckDraft.findFirst({ where: { trackedItemId, locationId: null } })
+      if (nullDraft) {
+        const d = (nullDraft.data ?? {}) as any
+        const before = { ...(d.beforeQtys ?? {}) }; delete before[loc]
+        const after  = { ...(d.afterQtys ?? {}) };  delete after[loc]
+        const next = { ...d, beforeQtys: before, afterQtys: after }
+        if (draftHasContent(next)) {
+          await prisma.stockCheckDraft.update({ where: { id: nullDraft.id }, data: { data: next } })
+        } else {
+          await prisma.stockCheckDraft.delete({ where: { id: nullDraft.id } }).catch(() => {})
+        }
+      }
+    }
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 한 품목의 모든 드래프트 삭제 (아이템별 + 모든 위치별) — 아이템별 점검 완료 시 전체 정리용
+export async function deleteItemDrafts(trackedItemId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    await prisma.stockCheckDraft.deleteMany({ where: { trackedItemId } })
     revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
@@ -889,15 +932,35 @@ export async function getItemDrafts(
   return rows.map(r => ({ locationId: r.locationId, data: r.data as any }))
 }
 
-// 특정 위치의 모든 드래프트 — 위치별 일괄 점검 재개용 (품목 id → 폼 상태)
+// 특정 위치의 드래프트 — 위치별 일괄 점검 재개용 (품목 id → { before, after }).
+// 위치별 드래프트(이 위치 행) + 아이템별 드래프트(locationId null)의 이 위치 값을 savedAt 기준
+// 병합 → 두 모드(아이템별/위치별)에서 임시저장한 값이 서로 보이도록 cross-mode 공유.
 export async function getLocationDrafts(
   locationId: string,
 ): Promise<{ trackedItemId: string; data: any }[]> {
   const propertyId = await getPropertyId()
-  const rows = await prisma.stockCheckDraft.findMany({
-    where: { locationId, trackedItem: { propertyId } },
-  })
-  return rows.map(r => ({ trackedItemId: r.trackedItemId, data: r.data as any }))
+  const [locRows, nullRows] = await Promise.all([
+    prisma.stockCheckDraft.findMany({ where: { locationId, trackedItem: { propertyId } } }),
+    prisma.stockCheckDraft.findMany({ where: { locationId: null, trackedItem: { propertyId } } }),
+  ])
+  const savedAtOf = (d: any) => (typeof d?.savedAt === 'number' ? d.savedAt : 0)
+  const merged = new Map<string, { before?: string; after?: string; savedAt: number }>()
+  for (const r of locRows) {
+    const d = r.data as any
+    merged.set(r.trackedItemId, { before: d?.before, after: d?.after, savedAt: savedAtOf(d) })
+  }
+  for (const r of nullRows) {
+    const d = r.data as any
+    const before = d?.beforeQtys?.[locationId]
+    const after  = d?.afterQtys?.[locationId]
+    if (before == null && after == null) continue
+    const savedAt = savedAtOf(d)
+    const cur = merged.get(r.trackedItemId)
+    if (!cur || savedAt > cur.savedAt) merged.set(r.trackedItemId, { before, after, savedAt })
+  }
+  return Array.from(merged.entries()).map(([trackedItemId, v]) => ({
+    trackedItemId, data: { before: v.before, after: v.after },
+  }))
 }
 
 // 드래프트가 하나라도 있는 품목 ID 목록 — 목록 '점검 진행 중' 배지용

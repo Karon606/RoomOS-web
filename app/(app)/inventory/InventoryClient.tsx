@@ -43,6 +43,7 @@ import {
   batchSetItemLocations,
   saveStockCheckDraft,
   deleteStockCheckDraft,
+  deleteItemDrafts,
   getItemDrafts,
   getLocationDrafts,
   getDraftItemIds,
@@ -1443,22 +1444,46 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
     let active = true
     getItemDrafts(item.id).then(drafts => {
       if (!active) return
-      const d = drafts.find(x => x.locationId == null)
-      const data = d?.data as {
+      // 아이템별(null) 드래프트 = 폼 기본 상태(스칼라 + 위치별 보충 전/후 맵)
+      const main = drafts.find(x => x.locationId == null)?.data as {
         date?: string; qty?: string; memo?: string
         locationQtys?: Record<string, string>
         beforeQtys?: Record<string, string>
         afterQtys?: Record<string, string>
         hubTouched?: boolean; savedAt?: number
       } | undefined
-      if (!data) return
-      if (typeof data.date === 'string') setDate(data.date)
-      if (typeof data.qty === 'string') setQty(data.qty)
-      if (typeof data.memo === 'string') setMemo(data.memo)
-      if (data.locationQtys) setLocationQtys(data.locationQtys)
-      if (data.beforeQtys) setBeforeQtys(data.beforeQtys)
-      if (data.afterQtys) { setAfterQtys(data.afterQtys); setHubTouched(!!data.hubTouched) }
-      if (typeof data.savedAt === 'number') setDraftSavedAt(data.savedAt)
+      const mainSavedAt = typeof main?.savedAt === 'number' ? main.savedAt : 0
+      if (main) {
+        if (typeof main.date === 'string') setDate(main.date)
+        if (typeof main.qty === 'string') setQty(main.qty)
+        if (typeof main.memo === 'string') setMemo(main.memo)
+        if (main.locationQtys) setLocationQtys(prev => ({ ...prev, ...main.locationQtys }))
+      }
+      // 보충 전/후 — main 값 + 위치별 드래프트 cross-merge (위치별 savedAt 더 최신이면 우선).
+      // 두 모드(아이템별/위치별)에서 임시저장한 값이 폼에 함께 반영되도록.
+      const beforeOv: Record<string, string> = { ...(main?.beforeQtys ?? {}) }
+      const afterOv:  Record<string, string> = { ...(main?.afterQtys ?? {}) }
+      const hubIds = new Set(item.locations.filter(l => l.isHub).map(l => l.id))
+      let hubTouched = !!main?.hubTouched
+      let latestSavedAt = mainSavedAt
+      for (const dr of drafts) {
+        if (dr.locationId == null) continue
+        const dd = dr.data as { before?: string; after?: string; savedAt?: number } | undefined
+        if (!dd) continue
+        const sv = typeof dd.savedAt === 'number' ? dd.savedAt : 0
+        const newer = sv >= mainSavedAt
+        if (dd.before != null && (newer || beforeOv[dr.locationId] == null)) beforeOv[dr.locationId] = String(dd.before)
+        if (dd.after != null && (newer || afterOv[dr.locationId] == null)) {
+          afterOv[dr.locationId] = String(dd.after)
+          if (hubIds.has(dr.locationId)) hubTouched = true
+        }
+        if (sv > latestSavedAt) latestSavedAt = sv
+      }
+      // 초기 prefill 위에 병합 (드래프트 없는 위치는 prefill 유지)
+      if (Object.keys(beforeOv).length) setBeforeQtys(prev => ({ ...prev, ...beforeOv }))
+      if (Object.keys(afterOv).length)  setAfterQtys(prev => ({ ...prev, ...afterOv }))
+      setHubTouched(hubTouched)
+      if (latestSavedAt > 0) setDraftSavedAt(latestSavedAt)
     })
     return () => { active = false }
   }, [item.id]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1480,7 +1505,8 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
   }
 
   const handleClearDraft = () => {
-    deleteStockCheckDraft(item.id, null).then(() => {
+    // cross-mode 공유 — 이 품목의 모든 드래프트(아이템별+위치별) 정리
+    deleteItemDrafts(item.id).then(() => {
       setDraftSavedAt(null)
       pushToast('success', '임시저장 비움')
       onDraftChange?.()
@@ -1559,7 +1585,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
           trackedItemId: item.id, date, remainingQty: n, memo: memo || undefined,
         })
         if (!res.ok) { setError(res.error); return }
-        await deleteStockCheckDraft(item.id, null)
+        await deleteItemDrafts(item.id)
         onDraftChange?.()
         onDone()
       })
@@ -1576,7 +1602,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
         locationQtys: locationData,
       })
       if (!res.ok) { setError(res.error); return }
-      await deleteStockCheckDraft(item.id, null)
+      await deleteItemDrafts(item.id)
       onDraftChange?.()
       onDone()
     })
