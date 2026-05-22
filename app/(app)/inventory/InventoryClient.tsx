@@ -148,13 +148,13 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
 
   return (
     <div className="space-y-4 px-4 sm:px-6 py-5">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리</h1>
-          <p className="text-xs text-[var(--warm-muted)] mt-0.5">부식·소모품·폐기물 사용량을 점검 기록 기반으로 추적합니다.</p>
-        </div>
-        <div className="flex gap-2 flex-wrap items-center">
-          {/* 점검 진입 방식 토글 — 아이템별 목록 vs 위치별 일괄 */}
+      <div className="space-y-2">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리</h1>
+            <p className="text-xs text-[var(--warm-muted)] mt-0.5">부식·소모품·폐기물 사용량을 점검 기록 기반으로 추적합니다.</p>
+          </div>
+          {/* 점검 진입 방식 토글 — 모드 전환과 무관하게 항상 우측 상단 고정 (위치 점프 방지) */}
           <div className="inline-flex rounded-lg border border-[var(--warm-border)] overflow-hidden text-xs font-medium shrink-0">
             <button type="button" onClick={() => changeView('item')}
               className={`px-3 py-1.5 transition-colors ${viewMode === 'item' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>
@@ -165,18 +165,18 @@ export default function InventoryClient({ initialRows }: { initialRows: Inventor
               위치별
             </button>
           </div>
-          {viewMode === 'item' && (
-            <>
-              <Btn variant="secondary" size="sm" onClick={() => { selectMode ? exitSelectMode() : setSelectMode(true) }}>
-                {selectMode ? `선택 취소${selected.size > 0 ? ` (${selected.size})` : ''}` : '선택'}
-              </Btn>
-              <Btn variant="secondary" size="sm" onClick={() => setShowLocations(true)}>위치 관리</Btn>
-              <Btn variant="secondary" size="sm" onClick={() => setShowExcluded(true)}>제외 항목 복구</Btn>
-              <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
-              <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
-            </>
-          )}
         </div>
+        {viewMode === 'item' && (
+          <div className="flex gap-2 flex-wrap items-center">
+            <Btn variant="secondary" size="sm" onClick={() => { selectMode ? exitSelectMode() : setSelectMode(true) }}>
+              {selectMode ? `선택 취소${selected.size > 0 ? ` (${selected.size})` : ''}` : '선택'}
+            </Btn>
+            <Btn variant="secondary" size="sm" onClick={() => setShowLocations(true)}>위치 관리</Btn>
+            <Btn variant="secondary" size="sm" onClick={() => setShowExcluded(true)}>제외 항목 복구</Btn>
+            <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
+            <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
+          </div>
+        )}
       </div>
 
       {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
