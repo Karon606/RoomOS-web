@@ -2,9 +2,9 @@
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addTenant, updateTenant, moveInTenant, deleteTenant, analyzeTenantWithGemini, createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests, changeDueDay, recordDepositReturn,
+import { addTenant, updateTenant, deleteTenant, analyzeTenantWithGemini, createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests, changeDueDay, recordDepositReturn,
   getContractFiles, deleteContractFile, createContractScanUploadSession, finalizeContractScan,
-  batchUpdateTenants,
+  batchUpdateTenants, applyStatusTransition,
   type ContractFileRow,
 } from './actions'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
@@ -163,6 +163,48 @@ const PAST_FILTERS = [
   { key: 'CHECKED_OUT', label: '퇴실' },
 ] as const
 type PastFilter = (typeof PAST_FILTERS)[number]['key']
+
+// 상태별 명시적 전환 액션 — "이 사람을 다음 단계로" 버튼.
+// field 있으면 그 값만 묻는 미니폼, 없으면 확인 후 바로 적용.
+type TransitionDef = {
+  key: string
+  label: string
+  toStatus: string
+  field?: 'moveInDate' | 'expectedMoveOut' | 'moveOutDate' | 'rentAmount'
+  fieldLabel?: string
+  withDeposit?: boolean             // 퇴실 처리 — 보증금 환불도 함께
+  tone?: 'primary' | 'secondary' | 'danger'
+  confirm?: string                  // field 없는 전환의 확인 문구
+}
+function transitionsFor(status: string): TransitionDef[] {
+  switch (status) {
+    case 'WAITING_TOUR': return [
+      { key: 'tourDone', label: '투어 완료', toStatus: 'TOUR_DONE', tone: 'secondary', confirm: '투어 완료로 변경할까요?' },
+      { key: 'reserve',  label: '예약 전환', toStatus: 'RESERVED', field: 'moveInDate', fieldLabel: '입주 희망일', tone: 'primary' },
+      { key: 'cancel',   label: '입실 취소', toStatus: 'CANCELLED', tone: 'danger', confirm: '입실 취소로 변경할까요?' },
+    ]
+    case 'TOUR_DONE': return [
+      { key: 'reserve',  label: '예약 전환', toStatus: 'RESERVED', field: 'moveInDate', fieldLabel: '입주 희망일', tone: 'primary' },
+      { key: 'cancel',   label: '입실 취소', toStatus: 'CANCELLED', tone: 'danger', confirm: '입실 취소로 변경할까요?' },
+    ]
+    case 'RESERVED': return [
+      { key: 'moveIn',   label: '입실 처리', toStatus: 'ACTIVE', field: 'moveInDate', fieldLabel: '입주일', tone: 'primary' },
+      { key: 'cancel',   label: '입실 취소', toStatus: 'CANCELLED', tone: 'danger', confirm: '입실 취소로 변경할까요?' },
+    ]
+    case 'ACTIVE': return [
+      { key: 'checkoutPending', label: '퇴실 예정 처리', toStatus: 'CHECKOUT_PENDING', field: 'expectedMoveOut', fieldLabel: '퇴실 예정일', tone: 'primary' },
+      { key: 'nonResident',     label: '비거주 전환',    toStatus: 'NON_RESIDENT', field: 'rentAmount', fieldLabel: '비거주 월 이용료', tone: 'secondary' },
+    ]
+    case 'CHECKOUT_PENDING': return [
+      { key: 'checkout',       label: '퇴실 처리',    toStatus: 'CHECKED_OUT', field: 'moveOutDate', fieldLabel: '퇴실일', withDeposit: true, tone: 'primary' },
+      { key: 'cancelCheckout', label: '퇴실예정 취소', toStatus: 'ACTIVE', tone: 'secondary', confirm: '거주중으로 되돌릴까요?' },
+    ]
+    case 'NON_RESIDENT': return [
+      { key: 'reside', label: '거주 전환', toStatus: 'ACTIVE', field: 'moveInDate', fieldLabel: '입주일', tone: 'primary' },
+    ]
+    default: return []  // CHECKED_OUT, CANCELLED — 전환 버튼 없음
+  }
+}
 
 // ── 헬퍼 ─────────────────────────────────────────────────────────
 
@@ -342,6 +384,11 @@ export default function TenantClient({
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
   const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
+  // 명시적 상태 전환 미니폼
+  const [transition, setTransition] = useState<{ def: TransitionDef; leaseTermId: string; tenantId: string; tenantName: string; depositAmount: number } | null>(null)
+  const [transDate, setTransDate]   = useState('')
+  const [transRent, setTransRent]   = useState<number | undefined>(undefined)
+  const [transRefund, setTransRefund] = useState<number | undefined>(undefined)
   const [toast, setToast] = useState<string | null>(null)
   const [filter, setFilter]             = useState<'residents' | 'inquiry' | 'past' | 'dropped'>('residents')
   const [residentFilter, setResidentFilter] = useState<ResidentFilter>('all')
@@ -641,13 +688,61 @@ export default function TenantClient({
     proceedAfterRentDecision(fd, fromDetail)
   }
 
-  const handleMoveIn = async (leaseTermId: string, tenantId: string, name: string) => {
-    if (!confirm(`${name}님 입실 처리하시겠습니까?`)) return
+
+  // 명시적 상태 전환 — field 없으면 확인 후 바로 적용, 있으면 미니폼 오픈
+  const startTransitionAction = (def: TransitionDef, lease: LeaseTerm, tenantId: string, tenantName: string) => {
+    if (!def.field) {
+      if (def.confirm && !confirm(`${tenantName}님 — ${def.confirm}`)) return
+      runTransition(def, { leaseTermId: lease.id, tenantId, tenantName, depositAmount: lease.depositAmount })
+      return
+    }
+    setTransDate(
+      def.field === 'expectedMoveOut' ? toDateInput(lease.expectedMoveOut)
+      : def.field === 'moveOutDate'   ? kstYmdStr()
+      : def.field === 'moveInDate'    ? (toDateInput(lease.moveInDate) || kstYmdStr())
+      : '',
+    )
+    setTransRent(def.field === 'rentAmount' ? (lease.rentAmount || undefined) : undefined)
+    setTransRefund(def.withDeposit ? (lease.depositAmount || 0) : undefined)
+    setTransition({ def, leaseTermId: lease.id, tenantId, tenantName, depositAmount: lease.depositAmount })
+  }
+
+  const runTransition = (
+    def: TransitionDef,
+    ctx: { leaseTermId: string; tenantId: string; tenantName: string; depositAmount: number },
+    fields?: { moveInDate?: string; expectedMoveOut?: string; moveOutDate?: string; rentAmount?: number },
+  ) => {
     startTransition(async () => {
-      const res = await withSave(() => moveInTenant(leaseTermId, tenantId), { success: `${name}님 입실 처리됨` })
-      if (!res.ok) { setError(res.error); return }
-      setDetailTenant(null); refresh()
+      const release = trackSave()
+      try {
+        // 퇴실 처리 + 보증금 환불 동시
+        if (def.withDeposit && transRefund != null && transRefund > 0) {
+          const r = await recordDepositReturn({
+            leaseTermId: ctx.leaseTermId, tenantId: ctx.tenantId,
+            depositAmount: ctx.depositAmount, returnedAmount: transRefund,
+            date: fields?.moveOutDate || kstYmdStr(), tenantName: ctx.tenantName,
+          })
+          if (!r.ok) { setError(r.error); pushToast('error', r.error); return }
+        }
+        const res = await applyStatusTransition({
+          leaseTermId: ctx.leaseTermId, tenantId: ctx.tenantId, toStatus: def.toStatus, ...(fields ?? {}),
+        })
+        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        pushToast('success', `${ctx.tenantName}님 — ${def.label} 완료`)
+        setTransition(null); setDetailTenant(null); refresh()
+      } finally { release() }
     })
+  }
+
+  const submitTransition = () => {
+    if (!transition) return
+    const { def, leaseTermId, tenantId, tenantName, depositAmount } = transition
+    const fields: { moveInDate?: string; expectedMoveOut?: string; moveOutDate?: string; rentAmount?: number } = {}
+    if (def.field === 'moveInDate')      fields.moveInDate = transDate
+    if (def.field === 'expectedMoveOut') fields.expectedMoveOut = transDate
+    if (def.field === 'moveOutDate')     fields.moveOutDate = transDate
+    if (def.field === 'rentAmount')      fields.rentAmount = transRent ?? 0
+    runTransition(def, { leaseTermId, tenantId, tenantName, depositAmount }, fields)
   }
 
 
@@ -1082,6 +1177,47 @@ export default function TenantClient({
                 className="flex-1 py-2.5 rounded-xl text-sm bg-red-500 hover:bg-red-600 text-white font-medium transition-colors disabled:opacity-50">
                 {isPending ? '삭제 중...' : '영구 삭제'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 상태 전환 미니폼 — 전환에 필요한 값만 입력 */}
+      {transition && (
+        <div className="fixed inset-0 bg-black/70 z-[250] flex items-center justify-center p-4"
+          onClick={() => { if (!isPending) setTransition(null) }}>
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col shadow-lift"
+            onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-[var(--warm-border)]">
+              <h2 className="text-sm font-bold text-[var(--warm-dark)]">{transition.tenantName}님 — {transition.def.label}</h2>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              {['moveInDate', 'expectedMoveOut', 'moveOutDate'].includes(transition.def.field ?? '') && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">{transition.def.fieldLabel}</label>
+                  <DatePicker value={transDate} onChange={setTransDate}
+                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                </div>
+              )}
+              {transition.def.field === 'rentAmount' && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">{transition.def.fieldLabel}</label>
+                  <MoneyInput value={transRent} onChange={setTransRent} placeholder="0원" />
+                </div>
+              )}
+              {transition.def.withDeposit && transition.depositAmount > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">
+                    보증금 환불액 <span className="text-[var(--warm-muted)] font-normal">(보증금 {transition.depositAmount.toLocaleString()}원)</span>
+                  </label>
+                  <MoneyInput value={transRefund} onChange={setTransRefund} placeholder="0원" />
+                  <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">환불하지 않은 금액은 보증금 수익으로 기록됩니다.</p>
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-[var(--warm-border)] flex gap-2">
+              <Btn variant="secondary" size="md" onClick={() => setTransition(null)} disabled={isPending} className="flex-1">취소</Btn>
+              <Btn variant="primary" size="md" onClick={submitTransition} disabled={isPending} className="flex-1">{isPending ? '처리 중…' : '확인'}</Btn>
             </div>
           </div>
         </div>
@@ -1587,7 +1723,7 @@ export default function TenantClient({
                 </div>
                 {!detailEditMode && ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(status) && (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-[0.6875rem] text-amber-700 leading-relaxed">
-                    아직 입주가 확정되지 않은 <span className="font-semibold">{STATUS_LABEL[status] ?? status} 단계</span>입니다. 입주를 확정하려면 하단의 <span className="font-semibold">입실 처리</span> 버튼을 눌러주세요.
+                    아직 입주가 확정되지 않은 <span className="font-semibold">{STATUS_LABEL[status] ?? status} 단계</span>입니다. 아래 <span className="font-semibold">상태 전환 버튼</span>으로 다음 단계로 진행하세요.
                   </div>
                 )}
               </div>
@@ -1595,6 +1731,25 @@ export default function TenantClient({
               {/* ── 읽기 전용 모드 ── */}
               {!detailEditMode && (
                 <>
+                    {/* 상태 전환 액션 바 — 현재 상태 기준 "다음 단계로" 버튼 */}
+                    {lease && transitionsFor(status).length > 0 && (
+                      <div className="flex flex-wrap gap-2 px-6 py-3 border-b border-[var(--warm-border)] shrink-0">
+                        {transitionsFor(status).map(def => {
+                          const cls = def.tone === 'primary'
+                            ? 'bg-[var(--coral)] text-white hover:opacity-90'
+                            : def.tone === 'danger'
+                            ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
+                            : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'
+                          return (
+                            <button key={def.key} type="button" disabled={isPending}
+                              onClick={() => startTransitionAction(def, lease, t.id, t.name)}
+                              className={`px-3 py-2 text-xs font-semibold rounded-lg transition-colors disabled:opacity-40 ${cls}`}>
+                              {def.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
                     {/* 탭 헤더 */}
                     <div className="flex border-b border-[var(--warm-border)] px-6 shrink-0">
                       {([
@@ -2042,12 +2197,6 @@ export default function TenantClient({
                         계약서 출력
                       </a>
                       <div className="flex-1" />
-                      {status === 'RESERVED' && (
-                        <button onClick={() => handleMoveIn(lease!.id, t.id, t.name)} disabled={isPending}
-                          className="px-3 py-2 bg-[var(--coral)]/10 hover:bg-[var(--coral)]/15 text-[var(--coral)] text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
-                          입실 처리
-                        </button>
-                      )}
                       <Btn variant="primary" size="md"
                         onClick={() => { setDetailEditMode(true); setDetailTab('info'); setError('') }}>
                         수정
@@ -3114,6 +3263,39 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
         </div>
       </FormSection>
 
+      <FormSection title="연락처">
+        <div className="grid grid-cols-3 gap-2">
+          <SelectField label="연락 수단" name="contactType" defaultValue={primary?.contactType ?? 'PHONE'}>
+            <option value="PHONE">전화</option>
+            <option value="KAKAO">카카오</option>
+            <option value="WECHAT">위챗</option>
+            <option value="LINE">라인</option>
+            <option value="TELEGRAM">텔레그램</option>
+          </SelectField>
+          <div className="col-span-2 space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">연락처</label>
+            <PhoneInput name="contactValue" defaultValue={primary?.contactValue ?? ''} />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <Field label="비상연락 관계" name="emergencyRelation" defaultValue={emergency?.emergencyRelation ?? ''} placeholder="부모님" />
+          <div className="col-span-2 space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">비상 연락처</label>
+            <PhoneInput name="emergencyContact" defaultValue={emergency?.contactValue ?? ''} />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">본국 연락처 <span className="text-[0.625rem] text-[var(--warm-muted)] font-normal">(외국인 고객 — 국가 선택 시 자동 포맷)</span></label>
+          <IntlPhoneInput
+            name="homeCountryContact"
+            countryName="homeCountryCode"
+            defaultValue={homeCountry?.contactValue ?? ''}
+            defaultCountry={homeCountry?.countryCode ?? 'KR'}
+            placeholder="국가 선택 후 번호 입력"
+          />
+        </div>
+      </FormSection>
+
       <FormSection title="계약 정보">
         <div className="grid grid-cols-2 gap-3">
           {/* 상태 — controlled: 호실 선택 가능 여부 및 퇴실일 표시 결정 */}
@@ -3136,6 +3318,77 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             <option value="POSTPAID">후납</option>
           </SelectField>
         </div>
+
+        {/* 상태별 단계 정보 — 상태에 따라 관련 입력이 상태 바로 아래에 표시됨 */}
+        {/* 입실 문의 일시 (예약/투어 단계 전용 — 예약자 순번 기준) */}
+        {(statusVal === 'RESERVED' || statusVal === 'WAITING_TOUR' || statusVal === 'TOUR_DONE') && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">
+              입실 문의 일시 <span className="font-normal opacity-60">(예약자 순번 기준)</span>
+            </label>
+            <input type="hidden" name="inquiryAt" value={inquiryAtCombined} />
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <DatePicker
+                  value={inquiryDateVal}
+                  onChange={(date) => {
+                    setInquiryDateVal(date)
+                    // 날짜 선택 시 시간이 비어있으면 현재 시각을 디폴트로 자동 입력
+                    // (브라우저 native time input의 placeholder는 실제 값이 아니라 사용자 혼동 방지용)
+                    if (date && !inquiryTimeVal) {
+                      const now = new Date()
+                      setInquiryTimeVal(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)
+                    }
+                  }}
+                  placeholder="문의 날짜 선택"
+                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
+                />
+              </div>
+              <input
+                type="time"
+                value={inquiryTimeVal}
+                onChange={e => setInquiryTimeVal(e.target.value)}
+                disabled={!inquiryDateVal}
+                className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors disabled:opacity-50"
+              />
+            </div>
+            <KeepAlertCheckbox defaultValue={lease?.keepAlertAfterInquiry ?? true} />
+          </div>
+        )}
+        {/* 투어 예정일 (WAITING_TOUR 전용) */}
+        {statusVal === 'WAITING_TOUR' && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">투어 예정일</label>
+            <DatePicker
+              name="tourDate"
+              value={tourDateVal}
+              onChange={setTourDateVal}
+              placeholder="투어 예정일 선택"
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
+            />
+          </div>
+        )}
+        {/* 예약 확정 토글 (RESERVED 전용) — 호실/이용료/입주희망일 필수 + 매칭 알림 제외 */}
+        {statusVal === 'RESERVED' && (
+          <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)]/50 px-3 py-2.5 space-y-1.5">
+            <input type="hidden" name="reservationConfirmed" value={reservationConfirmed ? 'true' : 'false'} />
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={reservationConfirmed}
+                onChange={e => setReservationConfirmed(e.target.checked)}
+                className="w-4 h-4 accent-[var(--coral)]"
+              />
+              <span className="text-xs font-medium text-[var(--warm-dark)]">예약 확정</span>
+              {reservationConfirmed && lease?.reservationConfirmedAt && (
+                <span className="text-[0.625rem] text-[var(--warm-muted)]">· {fmtDate(lease.reservationConfirmedAt)}</span>
+              )}
+            </label>
+            <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed pl-6">
+              체크 시 호실/월 이용료/입주 희망일이 필수가 되고, 공실·퇴실 예정 방만 선택할 수 있습니다. 입주 희망일이 도래하면 대시보드 알림에서 거주중 전환을 진행하세요.
+            </p>
+          </div>
+        )}
 
         {/* 단기 희망 토글 — 체크 시 월 이용료/보증금/청소비 자동 입력 건너뛰고 수동 입력 강제 */}
         <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)]/50 px-3 py-2.5 space-y-1">
@@ -3240,75 +3493,6 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             />
           </div>
         </div>
-        {/* 투어 예정일 (WAITING_TOUR 전용) */}
-        {statusVal === 'WAITING_TOUR' && (
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">투어 예정일</label>
-            <DatePicker
-              name="tourDate"
-              value={tourDateVal}
-              onChange={setTourDateVal}
-              placeholder="투어 예정일 선택"
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
-            />
-          </div>
-        )}
-        {/* 입실 문의 일시 (예약/투어 단계 전용 — 예약자 순번 기준) */}
-        {(statusVal === 'RESERVED' || statusVal === 'WAITING_TOUR' || statusVal === 'TOUR_DONE') && (
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">
-              입실 문의 일시 <span className="font-normal opacity-60">(예약자 순번 기준)</span>
-            </label>
-            <input type="hidden" name="inquiryAt" value={inquiryAtCombined} />
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <DatePicker
-                  value={inquiryDateVal}
-                  onChange={(date) => {
-                    setInquiryDateVal(date)
-                    // 날짜 선택 시 시간이 비어있으면 현재 시각을 디폴트로 자동 입력
-                    // (브라우저 native time input의 placeholder는 실제 값이 아니라 사용자 혼동 방지용)
-                    if (date && !inquiryTimeVal) {
-                      const now = new Date()
-                      setInquiryTimeVal(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)
-                    }
-                  }}
-                  placeholder="문의 날짜 선택"
-                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
-                />
-              </div>
-              <input
-                type="time"
-                value={inquiryTimeVal}
-                onChange={e => setInquiryTimeVal(e.target.value)}
-                disabled={!inquiryDateVal}
-                className="w-28 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors disabled:opacity-50"
-              />
-            </div>
-            <KeepAlertCheckbox defaultValue={lease?.keepAlertAfterInquiry ?? true} />
-          </div>
-        )}
-        {/* 예약 확정 토글 (RESERVED 전용) — 호실/이용료/입주희망일 필수 + 매칭 알림 제외 */}
-        {statusVal === 'RESERVED' && (
-          <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)]/50 px-3 py-2.5 space-y-1.5">
-            <input type="hidden" name="reservationConfirmed" value={reservationConfirmed ? 'true' : 'false'} />
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={reservationConfirmed}
-                onChange={e => setReservationConfirmed(e.target.checked)}
-                className="w-4 h-4 accent-[var(--coral)]"
-              />
-              <span className="text-xs font-medium text-[var(--warm-dark)]">예약 확정</span>
-              {reservationConfirmed && lease?.reservationConfirmedAt && (
-                <span className="text-[0.625rem] text-[var(--warm-muted)]">· {fmtDate(lease.reservationConfirmedAt)}</span>
-              )}
-            </label>
-            <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed pl-6">
-              체크 시 호실/월 이용료/입주 희망일이 필수가 되고, 공실·퇴실 예정 방만 선택할 수 있습니다. 입주 희망일이 도래하면 대시보드 알림에서 거주중 전환을 진행하세요.
-            </p>
-          </div>
-        )}
         {/* 납부일 | 퇴실일(조건부) (아이템 5, 7, 8) */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
@@ -3336,39 +3520,6 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           {showExitDate && (
             <Field label="퇴실일" name="expectedMoveOut" type="date" defaultValue={toDateInput(lease?.expectedMoveOut)} />
           )}
-        </div>
-      </FormSection>
-
-      <FormSection title="연락처">
-        <div className="grid grid-cols-3 gap-2">
-          <SelectField label="연락 수단" name="contactType" defaultValue={primary?.contactType ?? 'PHONE'}>
-            <option value="PHONE">전화</option>
-            <option value="KAKAO">카카오</option>
-            <option value="WECHAT">위챗</option>
-            <option value="LINE">라인</option>
-            <option value="TELEGRAM">텔레그램</option>
-          </SelectField>
-          <div className="col-span-2 space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">연락처</label>
-            <PhoneInput name="contactValue" defaultValue={primary?.contactValue ?? ''} />
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          <Field label="비상연락 관계" name="emergencyRelation" defaultValue={emergency?.emergencyRelation ?? ''} placeholder="부모님" />
-          <div className="col-span-2 space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">비상 연락처</label>
-            <PhoneInput name="emergencyContact" defaultValue={emergency?.contactValue ?? ''} />
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-[var(--warm-mid)]">본국 연락처 <span className="text-[0.625rem] text-[var(--warm-muted)] font-normal">(외국인 고객 — 국가 선택 시 자동 포맷)</span></label>
-          <IntlPhoneInput
-            name="homeCountryContact"
-            countryName="homeCountryCode"
-            defaultValue={homeCountry?.contactValue ?? ''}
-            defaultCountry={homeCountry?.countryCode ?? 'KR'}
-            placeholder="국가 선택 후 번호 입력"
-          />
         </div>
       </FormSection>
 

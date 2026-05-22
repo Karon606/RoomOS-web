@@ -762,6 +762,83 @@ export async function checkoutTenant(leaseTermId: string, tenantId: string): Pro
   }
 }
 
+// 상태값 → 호실 공실 여부 (null = 호실 상태 변경 안 함)
+function roomVacantForStatus(status: string): boolean | null {
+  if (['ACTIVE', 'CHECKOUT_PENDING', 'RESERVED'].includes(status)) return false
+  if (['CHECKED_OUT', 'CANCELLED', 'NON_RESIDENT'].includes(status)) return true
+  return null  // WAITING_TOUR, TOUR_DONE — 호실 점유 변경 없음
+}
+
+// 명시적 상태 전환 — 상태 + 그 전환에 필요한 필드만 변경하고 호실 공실·이력 자동 처리.
+// 상세 모달의 전환 버튼(투어 완료/예약 전환/입실 처리/퇴실 예정/퇴실/비거주 전환 등)이 사용.
+export async function applyStatusTransition(input: {
+  leaseTermId: string
+  tenantId: string
+  toStatus: string
+  moveInDate?: string | null
+  expectedMoveOut?: string | null
+  moveOutDate?: string | null
+  reservationConfirmedAt?: string | null
+  rentAmount?: number | null
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId, user } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findUnique({
+      where: { id: input.leaseTermId },
+      select: { roomId: true, status: true },
+    })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+
+    const data: Record<string, unknown> = { status: input.toStatus as LeaseStatus }
+    if (input.moveInDate !== undefined)             data.moveInDate = input.moveInDate ? new Date(input.moveInDate) : null
+    if (input.expectedMoveOut !== undefined)        data.expectedMoveOut = input.expectedMoveOut ? new Date(input.expectedMoveOut) : null
+    if (input.moveOutDate !== undefined)            data.moveOutDate = input.moveOutDate ? new Date(input.moveOutDate) : null
+    if (input.reservationConfirmedAt !== undefined) data.reservationConfirmedAt = input.reservationConfirmedAt ? new Date(input.reservationConfirmedAt) : null
+    if (input.rentAmount != null)                   data.rentAmount = input.rentAmount
+    // 퇴실예정 취소 등으로 거주중 복귀 시 퇴실예정일 정리
+    if (input.toStatus === 'ACTIVE' && input.expectedMoveOut === undefined) data.expectedMoveOut = null
+
+    await prisma.leaseTerm.update({ where: { id: input.leaseTermId }, data })
+
+    // 호실 공실 처리
+    const vac = roomVacantForStatus(input.toStatus)
+    if (lease.roomId && vac !== null) {
+      if (input.toStatus === 'CHECKED_OUT') {
+        // 퇴실 완료 — 예약 가격 있으면 baseRent 적용 (checkoutTenant 와 동일)
+        const room = await prisma.room.findUnique({ where: { id: lease.roomId }, select: { scheduledRent: true } })
+        await prisma.room.update({
+          where: { id: lease.roomId },
+          data: { isVacant: true, ...(room?.scheduledRent != null && { baseRent: room.scheduledRent, scheduledRent: null, rentUpdateDate: null }) },
+        })
+      } else {
+        await prisma.room.update({ where: { id: lease.roomId }, data: { isVacant: vac } })
+      }
+    }
+
+    await prisma.tenantStatusLog.create({
+      data: {
+        tenantId: input.tenantId,
+        leaseTermId: input.leaseTermId,
+        propertyId,
+        fromStatus: lease.status,
+        toStatus: input.toStatus as LeaseStatus,
+        changedById: user.sub,
+      },
+    })
+
+    revalidatePath('/tenants')
+    revalidatePath('/dashboard')
+    revalidatePath('/rooms')
+    revalidatePath('/room-manage')
+    revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // Gemini 수납 분석
 export async function analyzeTenantWithGemini(tenantId: string): Promise<string> {
   await getPropertyId()
