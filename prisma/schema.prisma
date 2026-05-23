@@ -759,6 +759,22 @@ model TrackedItemMergeRule {
   @@map("tracked_item_merge_rules")
 }
 
+// 웹 푸시(PWA) 구독 — 기기별 1행. 대시보드 알림을 폰으로 푸시.
+// FK(userId→users)는 SQL 마이그레이션에서 ON DELETE CASCADE 로 부여(스키마는 스칼라만).
+model PushSubscription {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  endpoint  String   @unique
+  p256dh    String   // 구독 공개키
+  auth      String   // 구독 auth secret
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
 // 보관 위치 — 창고 / 4층 주방 / 손님실 선반 등 property-level 마스터
 model StorageLocation {
   id         String   @id @default(uuid()) @db.Uuid

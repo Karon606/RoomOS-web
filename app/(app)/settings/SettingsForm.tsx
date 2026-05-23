@@ -22,6 +22,7 @@ import {
 import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { Btn } from '@/components/ui/Btn'
+import { PushToggle } from './PushToggle'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { useTheme, type ThemeMode } from '@/components/theme/ThemeProvider'
 import { useFontSize, type FontSizeLevel } from '@/components/theme/FontSizeProvider'
@@ -529,6 +530,12 @@ export default function SettingsForm({
               {isPending ? '저장 중...' : '저장'}
             </Btn>
           </form>
+        </div>
+
+        {/* 알림 — PWA 푸시 (홈 화면 설치 시 폰으로 알림 + 아이콘 뱃지) */}
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
+          <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-3">알림 (푸시)</h2>
+          <PushToggle />
         </div>
 
         {/* 데이터 점검 — 발생주의 진단 페이지 링크 */}
