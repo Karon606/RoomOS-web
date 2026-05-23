@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import AppShell from '@/components/layout/AppShell'
 import { EntityModalProvider } from '@/components/entity-modal/EntityModal'
+import ClearAppBadge from '@/components/ClearAppBadge'
 
 export default async function AppLayout({
   children,
@@ -18,6 +19,7 @@ export default async function AppLayout({
 
   return (
     <AppShell user={{ email: claims.email, user_metadata: claims.user_metadata }}>
+      <ClearAppBadge />
       <EntityModalProvider>
         {children}
       </EntityModalProvider>
