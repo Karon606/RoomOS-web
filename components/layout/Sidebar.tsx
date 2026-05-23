@@ -36,6 +36,10 @@ function IcoInventory() {
 function IcoReport() {
   return <svg {...ico}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 14l2 2 4-4"/></svg>
 }
+// 계약서 — FileSignature (문서 + 서명선)
+function IcoContract() {
+  return <svg {...ico}><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 17c1-1.3 2-1.3 3 0s2 1.3 3 0"/></svg>
+}
 // 체크리스트 — CalendarCheck
 function IcoChecklist() {
   return <svg {...ico}><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4M8 15l2 2 4-4"/></svg>
@@ -85,6 +89,7 @@ const NAV_GROUPS = [
     items: [
       { href: '/requests',  label: '요청·컴플레인', Icon: IcoRequests  },
       { href: '/checklist', label: '체크리스트',    Icon: IcoChecklist },
+      { href: '/contracts', label: '계약서',        Icon: IcoContract  },
     ],
   },
   {
