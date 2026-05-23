@@ -10,10 +10,11 @@
   구독 사용자별로 영업장 알림을 web-push 발송 + 뱃지 갱신.
   · app/api/cron/push-alerts/route.ts — CRON_SECRET 인증(Authorization: Bearer, ?secret= 도 허용),
     구독자→영업장(owned+roles) 해소 → countAlerts(영업장,윈도우) 합산 → total>0이면 1건 push("오늘 챙길 일 N건").
-  · v1 알림 = 정확히 계산되는 일정 기반만: 퇴실예정(CHECKOUT_PENDING·expectedMoveOut)·투어예정(WAITING_TOUR·tourDate)·
-    입주예정(RESERVED·moveInDate)·수령대기(미수령 tracked 지출). 윈도우 = appConfig 7일전~30일후.
+  · 알림: 퇴실예정(CHECKOUT_PENDING·expectedMoveOut)·투어예정(WAITING_TOUR·tourDate)·입주예정(RESERVED·moveInDate)·
+    수령대기(미수령 tracked 지출) + 재고 소진 임박(computeInventoryOverview 재사용). 윈도우 = appConfig 7일전~30일후.
   · vercel.json crons + CRON_SECRET env(prod/dev) 등록. 만료 구독(410/404) 자동 정리.
-  · ⏳ v2b: 납부예정(발생주의)·재고소진(소비율)은 엔진이 쿠키바인딩/복잡 → 파라미터화 후 추가(잘못된 금융 알림 방지 위해 보류).
+  · 재고소진은 inventory/overview.ts(비-server 모듈)로 compute 안전 추출해 cron이 재사용.
+  · ⏳ v2b 남은 것: 납부예정(발생주의 getRoomPaymentStatus) — 동일 추출 후 연결, 금융 정확성 런타임 검증 필요.
   · 테스트: 배포 후 `GET /api/cron/push-alerts?secret=<CRON_SECRET>` 로 수동 실행 가능(구독·알림 없으면 sent:0).
 - **푸시 알림 1차 (PWA Web Push + 홈화면 뱃지)** (2c32170): 설정→'알림(푸시)'에서 알림 받기/끄기/테스트.
   · public/sw.js(push→showNotification+setAppBadge, notificationclick→딥링크), PushSubscription 모델 +
@@ -124,9 +125,13 @@
   · iOS는 홈화면 설치 PWA에서만(16.4+). 권한 1회 허용 필요.
 - ✅ **2차 완료 (2026-05-23, feat/push-cron)**: Vercel Cron 매일 09:00 KST → /api/cron/push-alerts
   (CRON_SECRET 인증) → 구독자→영업장 해소 → 일정기반 알림 카운트 발송 + 뱃지. vercel.json crons + CRON_SECRET env.
-  · v1 알림: 퇴실예정·투어예정·입주예정·수령대기 (윈도우 7일전~30일후). 만료 구독 자동정리.
-- ⏳ **2b (남음)**: 납부예정(발생주의)·재고소진(소비율) 알림 추가. 해당 엔진이 쿠키바인딩/복잡 → propertyId 파라미터화
-  후 cron에 연결 필요. 잘못된 금융 알림 방지 위해 신중히. (대시보드 page.tsx 인라인 로직 추출/공유)
+  · 알림: 퇴실예정·투어예정·입주예정·수령대기 (윈도우 7일전~30일후) + **재고 소진 임박**. 만료 구독 자동정리.
+- ✅ **2b 재고 소진 추가 (2026-05-23, feat/push-v2b-inventory)**: getInventoryOverview 의 compute 로직을
+  app/(app)/inventory/overview.ts (비-'use server' 모듈)로 안전 추출 → computeInventoryOverview(propertyId).
+  actions.ts는 얇은 래퍼. cron이 이를 재사용해 lowStock(daysUntilEmpty ≤ alertThresholdDays) 카운트 추가.
+  (보안: 'use server'에 propertyId 인자 추가 시 타 영업장 조회 우려 → 모듈 분리로 회피.)
+- ⏳ **2b 남은 것 — 납부예정**: getRoomPaymentStatus(발생주의) 동일 방식 추출 후 cron 연결 필요.
+  금융 정확성 리스크 커서 런타임 검증 가능한 세션에서. (대시보드 미납 로직과 일치 보장 위해 엔진 재사용)
 
 ### L. 대시보드 동적 알림 센터 (Dynamic Notification Center) — 나중에, 논의 필요 (2026-05-23 제안)
 - **문제**: 대시보드 알림이 많다 보니(납부 예정·퇴실 예정·투어 예정·희망호실 조건 매칭 등) 정해진 고정 순서라
