@@ -1,11 +1,27 @@
 # 스테이음 작업 로그
 
 마지막 업데이트: 2026-05-23
-브랜치: main (12af926)
+브랜치: main
 
 ## 완료된 것
 
-### 2026-05-23 세션 (9건, 전부 배포·정상)
+### 2026-05-23 세션 (2부 — 푸시 알림·정리)
+- **푸시 알림 1차 (PWA Web Push + 홈화면 뱃지)** (2c32170): 설정→'알림(푸시)'에서 알림 받기/끄기/테스트.
+  · public/sw.js(push→showNotification+setAppBadge, notificationclick→딥링크), PushSubscription 모델 +
+    migrate_push_subscriptions.sql(프로덕션 적용 완료), settings/pushActions(save/delete/sendTestPush, web-push),
+    settings/PushToggle(권한·구독·테스트), next.config serverExternalPackages에 web-push.
+  · VAPID 키: .env.local + Vercel env(prod/dev) 등록(NEXT_PUBLIC_VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY/VAPID_SUBJECT).
+  · iOS는 홈화면 설치 PWA에서만(16.4+), 권한 1회 허용 필요. 사용자 폰 테스트 미완(차차).
+  · 2차(Cron 실제 알림)는 할 일 K 참조.
+- **고객 폼 입주희망일 위치 개선 + 통합모달 죽은코드 정리** (feat/quick-polish, 배포 예정):
+  · TenantForm: 입주 희망일을 청소비 행 → 상태 클러스터(상태 바로 아래)로. roomIsOptional(투어/예약/취소)이면
+    클러스터에 '입주 희망일', 거주단계면 청소비 행에 '입주일'(상호배타 렌더, name=moveInDate 중복 없음).
+  · 통합 EntityModal 도입 후 안 쓰이게 된 죽은 서브모달 제거: RoomsClient(TenantInfoModal/RoomInfoModal/
+    InfoCol/STATUS_LABEL_RC 꼬리 truncate), RoomManageClient(RoomMgr*Modal/RmInfoCol/STATUS_LABEL_RM 꼬리 truncate),
+    TenantClient(SettlementInfoModal/RoomInfoSimpleModal 중간블록 삭제) + 죽은 state·렌더·import 정리.
+  · 동작 변화 없음(죽은 코드만 제거). 빌드·정적생성 통과.
+
+### 2026-05-23 세션 1부 (9건, 전부 배포·정상)
 - **점검 임시저장(드래프트) UI** (4f72b91): 백엔드(#2 StockCheckDraft)에 UI 연결 — 아이템별/위치별
   점검에 임시저장 버튼·복원·'점검 중' 배지·완료 시 자동 삭제.
 - **임시저장 cross-mode 공유** (835c2b7): 아이템별↔위치별 드래프트 상호 반영(savedAt 우선 병합),
@@ -81,7 +97,8 @@
 - DocumentTemplate 모델 신규. 카테고리·태그 + 다운로드 링크/파일 업로드 + 안내 링크.
 
 ### I. 작은 개선 (자투리)
-- 고객 폼: 입주희망일을 청소비 행 → 상태 클러스터로 이동 검토.
+- ✅ 고객 폼: 입주희망일을 상태 클러스터로 이동 (2026-05-23 완료, feat/quick-polish).
+- ✅ 통합모달 도입 후 죽은 서브모달 코드 정리 (2026-05-23 완료).
 - 재고 이월분: 현재 '마지막 점검 잔량' 기준(점검 후 입수분 미반영) — 정확도 개선 여지.
 
 ### J. 나중에 (낮은 우선순위)

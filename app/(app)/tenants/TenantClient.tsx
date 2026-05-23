@@ -8,7 +8,7 @@ import { addTenant, updateTenant, deleteTenant, analyzeTenantWithGemini, createT
   type ContractFileRow,
 } from './actions'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
-import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getLeaseSettlementInfo, getRoomQuickInfo } from '@/app/(app)/rooms/actions'
+import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { calcProRata, PRORATE_BASE_DAYS } from '@/lib/prorate'
 import { Btn } from '@/components/ui/Btn'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -361,10 +361,6 @@ export default function TenantClient({
   })
   const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
   const [editTenant, setEditTenant]       = useState<Tenant | null>(null)
-  // 입주자 상세에서 참고용으로 띄우는 인라인 모달 (수납 정보 / 호실 정보)
-  const [detailSettlementLeaseId, setDetailSettlementLeaseId] = useState<string | null>(null)
-  const [detailRoomInfoId, setDetailRoomInfoId]               = useState<string | null>(null)
-  const [returnToTenantId, setReturnToTenantId]               = useState<string | null>(null)
   const [detailTenant, setDetailTenant]   = useState<Tenant | null>(null)
   const [detailEditMode, setDetailEditMode] = useState(false)
   const [detailTab, setDetailTab]         = useState<'info' | 'requests' | 'analysis'>('info')
@@ -1344,48 +1340,6 @@ export default function TenantClient({
         )
       })()}
 
-      {/* 입주자 상세에서 띄우는 인라인 모달 — 수납 정보 */}
-      {detailSettlementLeaseId && (() => {
-        const goBack = () => {
-          const id = returnToTenantId
-          setDetailSettlementLeaseId(null)
-          if (id) {
-            const t = initialTenants.find(tn => tn.id === id)
-            if (t) setDetailTenant(t)
-          }
-          setReturnToTenantId(null)
-        }
-        const close = () => { setDetailSettlementLeaseId(null); setReturnToTenantId(null) }
-        return (
-          <SettlementInfoModal
-            leaseTermId={detailSettlementLeaseId}
-            targetMonth={targetMonth}
-            onClose={close}
-            onBack={returnToTenantId ? goBack : undefined}
-          />
-        )
-      })()}
-
-      {/* 입주자 상세에서 띄우는 인라인 모달 — 호실 정보 */}
-      {detailRoomInfoId && (() => {
-        const goBack = () => {
-          const id = returnToTenantId
-          setDetailRoomInfoId(null)
-          if (id) {
-            const t = initialTenants.find(tn => tn.id === id)
-            if (t) setDetailTenant(t)
-          }
-          setReturnToTenantId(null)
-        }
-        const close = () => { setDetailRoomInfoId(null); setReturnToTenantId(null) }
-        return (
-          <RoomInfoSimpleModal
-            roomId={detailRoomInfoId}
-            onClose={close}
-            onBack={returnToTenantId ? goBack : undefined}
-          />
-        )
-      })()}
 
       {/* 모바일 카드 뷰 */}
       {sorted.length === 0 ? (
@@ -3391,6 +3345,19 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             </p>
           </div>
         )}
+        {/* 입주 희망일 — 예약/투어 단계는 상태 클러스터 안(상태 바로 아래)에 표시 */}
+        {roomIsOptional && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">입주 희망일</label>
+            <DatePicker
+              name="moveInDate"
+              value={moveInDateVal}
+              onChange={setMoveInDateVal}
+              placeholder="입주 희망일 선택"
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
+            />
+          </div>
+        )}
 
         {/* 단기 희망 토글 — 체크 시 월 이용료/보증금/청소비 자동 입력 건너뛰고 수동 입력 강제 */}
         <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)]/50 px-3 py-2.5 space-y-1">
@@ -3465,7 +3432,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             placeholder="0원"
           />
         </div>
-        {/* 청소비 | 입주일 or 입주희망일 */}
+        {/* 청소비 | 입주일 — 입주일은 거주 단계(roomIsOptional=false)만. 예약/투어는 위 상태 클러스터의 입주 희망일 사용 */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">청소비</label>
@@ -3476,24 +3443,26 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               placeholder="0원"
             />
           </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">{moveInLabel}</label>
-            <DatePicker
-              name="moveInDate"
-              value={moveInDateVal}
-              onChange={(v) => {
-                setMoveInDateVal(v)
-                if (v && !roomIsOptional) {
-                  const d = new Date(v)
-                  const day = d.getDate()
-                  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
-                  applyDueDay(day >= lastDay ? '말일' : String(day))
-                }
-              }}
-              placeholder={`${moveInLabel} 선택`}
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
-            />
-          </div>
+          {!roomIsOptional && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">{moveInLabel}</label>
+              <DatePicker
+                name="moveInDate"
+                value={moveInDateVal}
+                onChange={(v) => {
+                  setMoveInDateVal(v)
+                  if (v && !roomIsOptional) {
+                    const d = new Date(v)
+                    const day = d.getDate()
+                    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+                    applyDueDay(day >= lastDay ? '말일' : String(day))
+                  }
+                }}
+                placeholder={`${moveInLabel} 선택`}
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
+              />
+            </div>
+          )}
         </div>
         {/* 납부일 | 퇴실일(조건부) (아이템 5, 7, 8) */}
         <div className="grid grid-cols-2 gap-3">
@@ -3633,163 +3602,6 @@ function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
     <div>
       <p className="text-xs text-[var(--warm-muted)]">{label}</p>
       <p className="text-sm text-[var(--warm-dark)] mt-0.5">{value}</p>
-    </div>
-  )
-}
-
-// ── 수납 정보 인라인 모달 (입주자 상세에서 띄움) ──────────────────
-function SettlementInfoModal({
-  leaseTermId, targetMonth, onClose, onBack,
-}: {
-  leaseTermId: string
-  targetMonth: string
-  onClose: () => void
-  onBack?: () => void
-}) {
-  const router = useRouter()
-  const [info, setInfo] = useState<Awaited<ReturnType<typeof getLeaseSettlementInfo>> | null>(null)
-  useEffect(() => {
-    getLeaseSettlementInfo(leaseTermId, targetMonth).then(setInfo)
-  }, [leaseTermId, targetMonth])
-
-  return (
-    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[88vh]"
-        onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-          <div className="flex items-center gap-2.5">
-            {onBack && (
-              <button onClick={onBack}
-                className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors"
-                title="고객 정보로 돌아가기">‹</button>
-            )}
-            <h2 className="text-base font-bold text-[var(--warm-dark)]">
-              {info ? `${fmtRoomNo(info.roomNo)} — ${info.tenantName ?? ''}` : '수납 정보'}
-            </h2>
-          </div>
-          <button onClick={onClose} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
-        </div>
-        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
-          {!info ? (
-            <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
-          ) : (
-            <>
-              <p className="text-[0.625rem] text-[var(--warm-muted)]">총 수납·잔액·이월액은 입금일 기준입니다. 매출은 귀속 월로 별도 인식됩니다.</p>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-                  <p className="text-xs text-[var(--warm-muted)]">총 수납</p>
-                  <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]">{info.totalPaid.toLocaleString()}원</p>
-                </div>
-                <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-                  <p className="text-xs text-[var(--warm-muted)]">잔액</p>
-                  <p className={`text-sm font-bold mt-0.5 ${info.balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {info.balance > 0 ? `+${info.balance.toLocaleString()}원` : info.balance < 0 ? `-${Math.abs(info.balance).toLocaleString()}원` : '0원'}
-                  </p>
-                </div>
-                <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-                  <p className="text-xs text-[var(--warm-muted)]">이월액</p>
-                  <p className="text-sm font-bold mt-0.5 text-[var(--coral)]">
-                    {info.carryOver !== 0
-                      ? `${info.carryOver > 0 ? '+' : '-'}${Math.abs(info.carryOver).toLocaleString()}원`
-                      : '0원'}
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between"><span className="text-[var(--warm-muted)]">월 이용료</span><span className="text-[var(--warm-dark)]">{info.expected.toLocaleString()}원</span></div>
-                {info.dueDay && <div className="flex justify-between"><span className="text-[var(--warm-muted)]">납부일</span><span className="text-[var(--warm-dark)]">{info.dueDay.includes('말') ? '매월 말일' : `매월 ${info.dueDay}일`}</span></div>}
-              </div>
-            </>
-          )}
-        </div>
-        <div className="border-t border-[var(--warm-border)] px-6 py-3 flex justify-end shrink-0">
-          <Btn
-            type="button"
-            variant="primary" size="sm"
-            onClick={() => {
-              const params = new URLSearchParams({ month: targetMonth })
-              if (info?.roomNo) params.set('roomNo', info.roomNo)
-              router.push(`/rooms?${params.toString()}`)
-            }}>
-            수납 관리로 이동
-          </Btn>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── 호실 정보 인라인 모달 (입주자 상세에서 띄움) ──────────────────
-function RoomInfoSimpleModal({
-  roomId, onClose, onBack,
-}: {
-  roomId: string
-  onClose: () => void
-  onBack?: () => void
-}) {
-  const router = useRouter()
-  const [info, setInfo] = useState<Awaited<ReturnType<typeof getRoomQuickInfo>> | null>(null)
-  useEffect(() => { getRoomQuickInfo(roomId).then(setInfo) }, [roomId])
-
-  return (
-    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
-        onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-          <div className="flex items-center gap-2.5">
-            {onBack && (
-              <button onClick={onBack}
-                className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors"
-                title="고객 정보로 돌아가기">‹</button>
-            )}
-            <h2 className="text-base font-bold text-[var(--warm-dark)]">{fmtRoomNo(info?.roomNo)}</h2>
-            {info && (
-              <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium
-                ${info.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'}`}>
-                {info.isVacant ? '공실' : '거주중'}
-              </span>
-            )}
-          </div>
-          <button onClick={onClose} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
-        </div>
-        <div className="overflow-y-auto flex-1">
-          {!info ? (
-            <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
-          ) : (
-            <>
-              {info.photos.length > 0 && (
-                <div className="border-b border-[var(--warm-border)] flex gap-2 overflow-x-auto px-4 py-3" style={{ scrollbarWidth: 'none' }}>
-                  {info.photos.map(p => (
-                    <img key={p.id} src={p.storageUrl} alt="" className="h-32 w-32 object-cover rounded-xl shrink-0" />
-                  ))}
-                </div>
-              )}
-              <div className="px-6 py-5 space-y-1.5 text-sm">
-                <div className="flex justify-between py-1.5 border-b border-[var(--warm-border)]/50"><span className="text-xs text-[var(--warm-muted)]">입주자</span><span className="text-[var(--warm-dark)]">{info.leaseTerms[0]?.tenant?.name ?? '공실'}</span></div>
-                {info.type && <div className="flex justify-between py-1.5 border-b border-[var(--warm-border)]/50"><span className="text-xs text-[var(--warm-muted)]">방 타입</span><span className="text-[var(--warm-dark)]">{info.type}</span></div>}
-                <div className="flex justify-between py-1.5 border-b border-[var(--warm-border)]/50"><span className="text-xs text-[var(--warm-muted)]">기본 이용료</span><span className="text-[var(--warm-dark)]">{info.baseRent.toLocaleString()}원</span></div>
-                {info.scheduledRent != null && (
-                  <div className="flex justify-between py-1.5 border-b border-[var(--warm-border)]/50">
-                    <span className="text-xs text-[var(--warm-muted)]">예약 이용료</span>
-                    <span className="text-amber-600">{info.scheduledRent.toLocaleString()}원{info.rentUpdateDate ? ` (${new Date(info.rentUpdateDate).toISOString().slice(0, 10)} 적용)` : ''}</span>
-                  </div>
-                )}
-                {info.windowType && <div className="flex justify-between py-1.5 border-b border-[var(--warm-border)]/50"><span className="text-xs text-[var(--warm-muted)]">창문</span><span className="text-[var(--warm-dark)]">{info.windowType === 'OUTER' ? '외창' : info.windowType === 'INNER' ? '내창' : info.windowType}</span></div>}
-                {info.direction && <div className="flex justify-between py-1.5 border-b border-[var(--warm-border)]/50"><span className="text-xs text-[var(--warm-muted)]">방향</span><span className="text-[var(--warm-dark)]">{info.direction}</span></div>}
-                {info.memo && <div className="flex justify-between py-1.5"><span className="text-xs text-[var(--warm-muted)]">메모</span><span className="text-[var(--warm-dark)]">{info.memo}</span></div>}
-              </div>
-            </>
-          )}
-        </div>
-        <div className="border-t border-[var(--warm-border)] px-6 py-3 flex justify-end shrink-0">
-          <Btn
-            type="button"
-            variant="primary" size="sm"
-            onClick={() => router.push(`/room-manage?roomId=${roomId}`)}>
-            호실 관리로 이동
-          </Btn>
-        </div>
-      </div>
     </div>
   )
 }
