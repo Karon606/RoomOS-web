@@ -90,21 +90,15 @@
 - **이메일 템플릿 디자인 재작업**: 현재 임시(퍼시몬). 로고·브랜드 확정 후 docs/email-templates/ 수정 →
   Supabase 재반영. 같은 트리거로 앱 내 "RoomOS" 텍스트 잔재 정리.
 
-### K. 푸시 알림 (PWA Web Push + 홈화면 뱃지) — 사용자 관심 (2026-05-23 요청)
-- 목표: 대시보드 알림(납부 예정·퇴실 예정·재고 소진·수령 대기 등)을 iPhone·Android에 **실제 푸시**로,
-  홈화면 아이콘에 **뱃지 숫자** 표시.
-- **가능 여부 확인됨**: PWA Web Push로 둘 다 가능.
-  · Android(크롬 등): 완전 지원(브라우저·설치형 모두). 뱃지 setAppBadge(설치형).
-  · **iOS/iPadOS: "홈 화면에 추가(설치)"한 PWA에서만** 동작 (Safari 탭 X), **iOS 16.4+**. 뱃지도 설치형에서 가능.
-  · 유의: 권한 1회 허용 필요. iOS는 백그라운드 도착 타이밍 들쭉(배달 자체는 됨).
-- **현재 상태**: manifest.json 있음(설치 가능). 하지만 서비스워커·web-push 패키지·구독 저장소·Cron **전부 없음**.
-- **필요 작업**:
-  1. 서비스워커 `public/sw.js` — push 수신 → 알림 표시 + `setAppBadge(n)`, notificationclick → 해당 페이지 딥링크.
-  2. VAPID 키(env) + 구독 저장 테이블(기기별 구독 1행) + 마이그레이션. web-push 패키지.
-  3. 구독/권한 UI — 설정 등에 "알림 받기" 버튼(사용자 제스처로 권한 요청).
-  4. 발송 트리거 — 대시보드 알림은 '페이지 로드 시 계산'이라, **Vercel Cron**(예: 매일 09:00 KST)이
-     영업장별 조건 평가 → 구독 기기로 web-push + 뱃지 갱신. (특정 이벤트 즉시 푸시도 추가 가능)
-- **권장 순서**: 1차 = 권한 받기 + 테스트 푸시 1발(폰에 실제로 뜨는지 확인) → 2차 = Cron으로 실제 알림 연결.
+### K. 푸시 알림 (PWA Web Push + 홈화면 뱃지)
+- ✅ **1차 완료 (2026-05-23, main 2c32170)**: 서비스워커(public/sw.js, push→알림+setAppBadge, 클릭→딥링크),
+  PushSubscription 모델+마이그레이션(적용됨), settings/pushActions(구독 저장/삭제/테스트 발송, web-push),
+  설정 '알림(푸시)' 섹션 PushToggle(권한·구독·테스트 푸시). VAPID 키 Vercel env(prod/dev) + .env.local 등록.
+  next.config web-push 외부패키지.
+  · iOS는 홈화면 설치 PWA에서만(16.4+). 권한 1회 허용 필요.
+- ⏳ **2차 (남음)**: 실제 대시보드 알림을 자동 발송. **Vercel Cron**(예: 매일 09:00 KST) → /api/cron/push-alerts
+  (CRON_SECRET 보호) → 영업장별 조건(납부 예정 D-N·퇴실 예정·재고 소진·수령 대기) 평가 → 구독 기기로
+  web-push + 뱃지 숫자 갱신. (대시보드 알림 계산 로직 재사용)
 
 ---
 
