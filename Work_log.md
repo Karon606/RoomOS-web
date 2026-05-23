@@ -6,6 +6,15 @@
 ## 완료된 것
 
 ### 2026-05-23 세션 (2부 — 푸시 알림·정리)
+- **푸시 알림 2차 (Vercel Cron 실제 알림)** (feat/push-cron, 배포 예정): 매일 09:00 KST(00:00 UTC) Cron이
+  구독 사용자별로 영업장 알림을 web-push 발송 + 뱃지 갱신.
+  · app/api/cron/push-alerts/route.ts — CRON_SECRET 인증(Authorization: Bearer, ?secret= 도 허용),
+    구독자→영업장(owned+roles) 해소 → countAlerts(영업장,윈도우) 합산 → total>0이면 1건 push("오늘 챙길 일 N건").
+  · v1 알림 = 정확히 계산되는 일정 기반만: 퇴실예정(CHECKOUT_PENDING·expectedMoveOut)·투어예정(WAITING_TOUR·tourDate)·
+    입주예정(RESERVED·moveInDate)·수령대기(미수령 tracked 지출). 윈도우 = appConfig 7일전~30일후.
+  · vercel.json crons + CRON_SECRET env(prod/dev) 등록. 만료 구독(410/404) 자동 정리.
+  · ⏳ v2b: 납부예정(발생주의)·재고소진(소비율)은 엔진이 쿠키바인딩/복잡 → 파라미터화 후 추가(잘못된 금융 알림 방지 위해 보류).
+  · 테스트: 배포 후 `GET /api/cron/push-alerts?secret=<CRON_SECRET>` 로 수동 실행 가능(구독·알림 없으면 sent:0).
 - **푸시 알림 1차 (PWA Web Push + 홈화면 뱃지)** (2c32170): 설정→'알림(푸시)'에서 알림 받기/끄기/테스트.
   · public/sw.js(push→showNotification+setAppBadge, notificationclick→딥링크), PushSubscription 모델 +
     migrate_push_subscriptions.sql(프로덕션 적용 완료), settings/pushActions(save/delete/sendTestPush, web-push),
@@ -113,9 +122,11 @@
   설정 '알림(푸시)' 섹션 PushToggle(권한·구독·테스트 푸시). VAPID 키 Vercel env(prod/dev) + .env.local 등록.
   next.config web-push 외부패키지.
   · iOS는 홈화면 설치 PWA에서만(16.4+). 권한 1회 허용 필요.
-- ⏳ **2차 (남음)**: 실제 대시보드 알림을 자동 발송. **Vercel Cron**(예: 매일 09:00 KST) → /api/cron/push-alerts
-  (CRON_SECRET 보호) → 영업장별 조건(납부 예정 D-N·퇴실 예정·재고 소진·수령 대기) 평가 → 구독 기기로
-  web-push + 뱃지 숫자 갱신. (대시보드 알림 계산 로직 재사용)
+- ✅ **2차 완료 (2026-05-23, feat/push-cron)**: Vercel Cron 매일 09:00 KST → /api/cron/push-alerts
+  (CRON_SECRET 인증) → 구독자→영업장 해소 → 일정기반 알림 카운트 발송 + 뱃지. vercel.json crons + CRON_SECRET env.
+  · v1 알림: 퇴실예정·투어예정·입주예정·수령대기 (윈도우 7일전~30일후). 만료 구독 자동정리.
+- ⏳ **2b (남음)**: 납부예정(발생주의)·재고소진(소비율) 알림 추가. 해당 엔진이 쿠키바인딩/복잡 → propertyId 파라미터화
+  후 cron에 연결 필요. 잘못된 금융 알림 방지 위해 신중히. (대시보드 page.tsx 인라인 로직 추출/공유)
 
 ### L. 대시보드 동적 알림 센터 (Dynamic Notification Center) — 나중에, 논의 필요 (2026-05-23 제안)
 - **문제**: 대시보드 알림이 많다 보니(납부 예정·퇴실 예정·투어 예정·희망호실 조건 매칭 등) 정해진 고정 순서라
