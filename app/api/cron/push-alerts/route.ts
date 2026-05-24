@@ -1,30 +1,35 @@
 // 매일 스케줄(Vercel Cron) — 구독한 기기로 그날 챙길 알림을 web-push 발송 + 뱃지 갱신.
-// 알림: 퇴실예정·투어예정·입주예정·수령대기(일정 기반) + 재고 소진 임박(소비율 — computeInventoryOverview 재사용).
-// 납부예정(발생주의)은 엔진 파라미터화 필요 → v2b 남음.
+// 알림 정책 (2026-05-24 변경):
+//   · 일정 기반(퇴실예정·투어예정·입주예정) → "당일에 있을 일"만. 경과(지난 날짜)는 알리지 않음.
+//   · 진행 중 상태(미납·재고 소진 임박·수령 대기) → 해소될 때까지 매일.
+//     - 미납: 도래·미회수(완납 시까지) — computeUnpaidStatus 재사용 (대시보드 '이달 미수납'과 동일 건수).
+//     - 재고 소진 임박: computeInventoryOverview 의 lowStock 기준.
 // 인증: Vercel Cron 은 Authorization: Bearer <CRON_SECRET> 헤더 전송. 수동 테스트는 ?secret= 도 허용.
 
 import { NextResponse } from 'next/server'
 import webpush from 'web-push'
 import prisma from '@/lib/prisma'
 import { kstYmd } from '@/lib/kstDate'
-import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS } from '@/lib/appConfig'
 import { TRACKED_CATEGORIES } from '@/app/(app)/inventory/constants'
 import { computeInventoryOverview } from '@/app/(app)/inventory/overview'
+import { computeUnpaidStatus } from '@/app/(app)/dashboard/unpaid'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-async function countAlerts(propertyId: string, alertFrom: Date, alertTo: Date) {
-  const [checkout, tour, moveIn, receipts, inventory] = await Promise.all([
-    prisma.leaseTerm.count({ where: { propertyId, status: 'CHECKOUT_PENDING', expectedMoveOut: { gte: alertFrom, lte: alertTo } } }),
-    prisma.leaseTerm.count({ where: { propertyId, status: 'WAITING_TOUR', tourDate: { gte: alertFrom, lte: alertTo } } }),
-    prisma.leaseTerm.count({ where: { propertyId, status: 'RESERVED', moveInDate: { gte: alertFrom, lte: alertTo } } }),
+// today/tomorrow: KST 오늘 [00:00, 다음날 00:00) — 일정 기반 알림을 '당일'만으로 한정
+async function countAlerts(propertyId: string, today: Date, tomorrow: Date) {
+  const [checkout, tour, moveIn, receipts, inventory, unpaid] = await Promise.all([
+    prisma.leaseTerm.count({ where: { propertyId, status: 'CHECKOUT_PENDING', expectedMoveOut: { gte: today, lt: tomorrow } } }),
+    prisma.leaseTerm.count({ where: { propertyId, status: 'WAITING_TOUR', tourDate: { gte: today, lt: tomorrow } } }),
+    prisma.leaseTerm.count({ where: { propertyId, status: 'RESERVED', moveInDate: { gte: today, lt: tomorrow } } }),
     prisma.expense.count({ where: { propertyId, category: { in: TRACKED_CATEGORIES as unknown as string[] }, itemLabel: { not: null }, receivedAt: null, excludeFromInventory: false } }),
     computeInventoryOverview(propertyId),
+    computeUnpaidStatus(propertyId),
   ])
   // 재고 소진 임박 — 인벤토리 카드의 lowStock 과 동일 기준
   const lowStock = inventory.filter(r => r.daysUntilEmpty != null && r.daysUntilEmpty <= r.alertThresholdDays).length
-  return { checkout, tour, moveIn, receipts, lowStock }
+  return { checkout, tour, moveIn, receipts, lowStock, unpaid: unpaid.unpaidCount }
 }
 
 export async function GET(req: Request) {
@@ -43,11 +48,10 @@ export async function GET(req: Request) {
     process.env.VAPID_PRIVATE_KEY,
   )
 
-  // KST 오늘 기준 알림 윈도우 (대시보드와 동일한 상수)
+  // KST 오늘 [00:00, 다음날 00:00) — 일정 기반 알림은 '당일'만
   const k = kstYmd()
   const today = new Date(k.year, k.month - 1, k.day)
-  const alertFrom = new Date(today.getTime() - ALERT_WINDOW_BEFORE_DAYS * 86400000)
-  const alertTo = new Date(today.getTime() + ALERT_WINDOW_AFTER_DAYS * 86400000)
+  const tomorrow = new Date(today.getTime() + 86400000)
 
   const subs = await prisma.pushSubscription.findMany()
   const byUser = new Map<string, typeof subs>()
@@ -67,18 +71,19 @@ export async function GET(req: Request) {
     const propIds = Array.from(new Set([...owned.map(o => o.id), ...roles.map(r => r.propertyId)]))
     if (propIds.length === 0) continue
 
-    let checkout = 0, tour = 0, moveIn = 0, receipts = 0, lowStock = 0
+    let checkout = 0, tour = 0, moveIn = 0, receipts = 0, lowStock = 0, unpaid = 0
     for (const pid of propIds) {
-      const a = await countAlerts(pid, alertFrom, alertTo)
-      checkout += a.checkout; tour += a.tour; moveIn += a.moveIn; receipts += a.receipts; lowStock += a.lowStock
+      const a = await countAlerts(pid, today, tomorrow)
+      checkout += a.checkout; tour += a.tour; moveIn += a.moveIn; receipts += a.receipts; lowStock += a.lowStock; unpaid += a.unpaid
     }
-    const total = checkout + tour + moveIn + receipts + lowStock
+    const total = checkout + tour + moveIn + receipts + lowStock + unpaid
     if (total === 0) continue
 
     const parts: string[] = []
-    if (checkout) parts.push(`퇴실 예정 ${checkout}`)
-    if (tour)     parts.push(`투어 예정 ${tour}`)
-    if (moveIn)   parts.push(`입주 예정 ${moveIn}`)
+    if (unpaid)   parts.push(`미납 ${unpaid}`)
+    if (checkout) parts.push(`오늘 퇴실 ${checkout}`)
+    if (tour)     parts.push(`오늘 투어 ${tour}`)
+    if (moveIn)   parts.push(`오늘 입주 ${moveIn}`)
     if (lowStock) parts.push(`재고 소진 임박 ${lowStock}`)
     if (receipts) parts.push(`수령 대기 ${receipts}`)
     const payload = JSON.stringify({
