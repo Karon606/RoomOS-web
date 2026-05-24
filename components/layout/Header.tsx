@@ -1,10 +1,14 @@
 'use client'
 
-import { signOut } from '@/app/property-select/actions'
+import { signOut, selectProperty } from '@/app/property-select/actions'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
+import { pushToast } from '@/lib/saveStatus'
 
 const MONTH_KEY = 'stayeum_selected_month'
+// '월'이 의미 있는 페이지에서만 월 네비 노출 (맥락형) — 나머지는 영업장명만
+const MONTH_PAGES = new Set(['/dashboard', '/rooms', '/finance', '/report', '/stats'])
 
 function todayMonthStr() {
   const now = new Date()
@@ -16,25 +20,36 @@ export type AppUser = {
   email?: string
   user_metadata?: { avatar_url?: string; full_name?: string }
 }
+// 영업장 스위처용 — id·name만
+export type SwitchProperty = { id: string; name: string }
 
 export default function Header({
   user,
-  onMenuClick,
+  properties,
+  currentPropertyId,
   startNavigation,
 }: {
   user: AppUser
-  onMenuClick?: () => void
+  properties: SwitchProperty[]
+  currentPropertyId: string | null
   startNavigation?: (fn: () => void) => void
 }) {
-  const [open, setOpen]             = useState(false)
-  const [showPicker, setShowPicker] = useState(false)
+  const [open, setOpen]             = useState(false)  // 프로필
+  const [propOpen, setPropOpen]     = useState(false)  // 영업장 스위처
+  const [bellOpen, setBellOpen]     = useState(false)  // 알림(종)
+  const [showPicker, setShowPicker] = useState(false)  // 월 선택
   const router       = useRouter()
   const todayMonth   = todayMonthStr()
   const pathname     = usePathname()
   const searchParams = useSearchParams()
   const pickerRef    = useRef<HTMLDivElement>(null)
+  const propRef      = useRef<HTMLDivElement>(null)
+  const bellRef      = useRef<HTMLDivElement>(null)
+  const profileRef   = useRef<HTMLDivElement>(null)
   const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const showMonth = MONTH_PAGES.has(pathname)
+  const currentProperty = properties.find(p => p.id === currentPropertyId) ?? properties[0]
 
   const searchParamsMonth = searchParams.get('month') ?? todayMonth
 
@@ -48,7 +63,6 @@ export default function Header({
 
   // 날짜 롤오버 감지: URL에 month 쿼리가 없을 때 자정이 지나 달이 바뀌면
   // 서버 컴포넌트가 stale한 상태로 남으므로 router.refresh()로 재요청한다.
-  // 1) 리렌더 시 비교하는 즉시 처리 + 2) 자정 타이머로 자동 처리
   const prevTodayMonthRef = useRef(todayMonth)
   useEffect(() => {
     if (prevTodayMonthRef.current === todayMonth) return
@@ -82,16 +96,19 @@ export default function Header({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // 드롭다운 바깥 클릭 시 닫기 (각각)
   useEffect(() => {
-    if (!showPicker) return
+    if (!showPicker && !propOpen && !bellOpen && !open) return
     const handle = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setShowPicker(false)
-      }
+      const t = e.target as Node
+      if (showPicker && pickerRef.current && !pickerRef.current.contains(t)) setShowPicker(false)
+      if (propOpen   && propRef.current   && !propRef.current.contains(t))   setPropOpen(false)
+      if (bellOpen   && bellRef.current   && !bellRef.current.contains(t))   setBellOpen(false)
+      if (open       && profileRef.current && !profileRef.current.contains(t)) setOpen(false)
     }
     document.addEventListener('mousedown', handle)
     return () => document.removeEventListener('mousedown', handle)
-  }, [showPicker])
+  }, [showPicker, propOpen, bellOpen, open])
 
   const applyMonth = (m: string) => {
     localStorage.setItem(MONTH_KEY, m)
@@ -112,121 +129,208 @@ export default function Header({
     debounceRef.current = setTimeout(() => applyMonth(localMonthRef.current), 350)
   }
 
+  // 영업장 전환 — 권한은 selectProperty가 재확인. 전환 후 대시보드로(타 영업장 딥링크 깨짐 방지).
+  const onSelectProperty = (id: string) => {
+    setPropOpen(false)
+    if (id === currentPropertyId) return
+    const run = async () => {
+      const res = await selectProperty(id)
+      if (res.ok) { router.push('/dashboard'); router.refresh() }
+      else pushToast('error', res.error)
+    }
+    if (startNavigation) startNavigation(run)
+    else run()
+  }
+
   const [cy, cm] = localMonth.split('-')
   const displayMonth = `${cy}년 ${parseInt(cm)}월`
 
   return (
-    /* relative z-[100]: 헤더가 사이드바(z-50)보다 항상 위 → MonthPicker 겹침 방지 */
+    /* relative z-[100]: 헤더가 사이드바(z-50)보다 항상 위 → 드롭다운 겹침 방지 */
     <header
-      className="h-14 md:h-16 flex items-center justify-between px-4 md:px-6 shrink-0 relative z-[100]"
+      className="h-14 md:h-16 flex items-center justify-between gap-2 px-3 md:px-6 shrink-0 relative z-[100]"
       style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }}
     >
-      <div className="flex items-center gap-1">
-        {/* ── 햄버거 (모바일) ── HIG: 44×44pt 최소 터치 타겟 */}
-        <button
-          onClick={() => { setShowPicker(false); onMenuClick?.() }}
-          className="md:hidden w-11 h-11 flex items-center justify-center rounded-xl transition-colors"
-          style={{ color: 'var(--warm-mid)' }}
-          aria-label="메뉴 열기"
-        >
-          <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-            <line x1="0" y1="1" x2="18" y2="1"/>
-            <line x1="0" y1="7" x2="18" y2="7"/>
-            <line x1="0" y1="13" x2="18" y2="13"/>
-          </svg>
-        </button>
-
-        {/* ── 이전 달 ── HIG: 모바일 44pt, 데스크탑 32pt */}
-        <button
-          onClick={() => changeMonth(-1)}
-          className="w-11 h-11 md:w-8 md:h-8 flex items-center justify-center rounded-xl md:rounded-lg text-sm transition-colors"
-          style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}
-          aria-label="이전 달"
-        >
-          ◀
-        </button>
-
-        {/* ── 월 표시 + MonthPicker ── */}
-        <div ref={pickerRef} className="relative">
-          <div
-            onClick={() => setShowPicker(v => !v)}
-            className="text-sm font-semibold text-center cursor-pointer px-2 py-2 rounded-xl select-none"
-            style={{ color: 'var(--warm-dark)' }}
-            role="button"
-            aria-label="월 선택"
+      {/* ── 좌: 영업장 스위처 + (맥락형) 월 네비 ── */}
+      <div className="flex items-center gap-1 min-w-0">
+        <div ref={propRef} className="relative min-w-0">
+          <button
+            onClick={() => { setPropOpen(v => !v); setBellOpen(false); setOpen(false); setShowPicker(false) }}
+            className="flex items-center gap-1 max-w-[42vw] md:max-w-none px-2 py-2 rounded-xl transition-colors hover:bg-[var(--canvas)]"
+            aria-label="영업장 선택"
+            aria-expanded={propOpen}
           >
-            {displayMonth}
-          </div>
-          {showPicker && (
-            <MonthPicker
-              current={localMonth}
-              todayMonth={todayMonth}
-              onSelect={(m) => { setShowPicker(false); setLocalMonth(m); localMonthRef.current = m; applyMonth(m) }}
-              onClose={() => setShowPicker(false)}
-            />
+            <span className="text-sm font-bold truncate" style={{ color: 'var(--warm-dark)' }}>
+              {currentProperty?.name ?? '영업장 선택'}
+            </span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--warm-muted)', flexShrink: 0 }}>
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
+          </button>
+
+          {propOpen && (
+            <div className="absolute left-0 top-12 w-60 rounded-xl shadow-lift z-50 overflow-hidden"
+                 style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+              <div className="px-3 pt-2.5 pb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide"
+                   style={{ color: 'var(--warm-muted)' }}>
+                영업장
+              </div>
+              <div className="max-h-[50vh] overflow-y-auto p-1">
+                {properties.map(p => {
+                  const active = p.id === (currentProperty?.id ?? '')
+                  return (
+                    <button key={p.id} type="button" onClick={() => onSelectProperty(p.id)}
+                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-left transition-colors min-h-[44px] hover:bg-[var(--canvas)]"
+                      style={{ color: 'var(--warm-dark)', background: active ? 'rgba(244,98,58,0.06)' : undefined }}>
+                      <span className="flex-1 truncate" style={{ fontWeight: active ? 600 : 400, color: active ? 'var(--coral)' : 'var(--warm-dark)' }}>
+                        {p.name}
+                      </span>
+                      {active && (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7"/></svg>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+              <Link href="/property-select" onClick={() => setPropOpen(false)}
+                className="flex items-center gap-2 px-3 py-2.5 text-sm transition-colors min-h-[44px] hover:bg-[var(--canvas)]"
+                style={{ color: 'var(--warm-mid)', borderTop: '1px solid var(--warm-border)' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                영업장 관리·추가
+              </Link>
+            </div>
           )}
         </div>
 
-        {/* ── 다음 달 (현재 월 이전일 때만) ── */}
-        {localMonth < todayMonth && (
-          <button
-            onClick={() => changeMonth(1)}
-            className="w-11 h-11 md:w-8 md:h-8 flex items-center justify-center rounded-xl md:rounded-lg text-sm transition-colors"
-            style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}
-            aria-label="다음 달"
-          >
-            ▶
-          </button>
+        {/* 월 네비 — 맥락형 (월이 의미 있는 페이지에서만) */}
+        {showMonth && (
+          <div className="flex items-center gap-0.5 shrink-0">
+            <button
+              onClick={() => changeMonth(-1)}
+              className="w-9 h-9 md:w-8 md:h-8 flex items-center justify-center rounded-lg text-sm transition-colors"
+              style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}
+              aria-label="이전 달"
+            >
+              ◀
+            </button>
+            <div ref={pickerRef} className="relative">
+              <div
+                onClick={() => { setShowPicker(v => !v); setPropOpen(false); setBellOpen(false); setOpen(false) }}
+                className="text-sm font-semibold text-center cursor-pointer px-1.5 py-2 rounded-lg select-none whitespace-nowrap"
+                style={{ color: 'var(--warm-dark)' }}
+                role="button"
+                aria-label="월 선택"
+              >
+                {displayMonth}
+              </div>
+              {showPicker && (
+                <MonthPicker
+                  current={localMonth}
+                  todayMonth={todayMonth}
+                  onSelect={(m) => { setShowPicker(false); setLocalMonth(m); localMonthRef.current = m; applyMonth(m) }}
+                  onClose={() => setShowPicker(false)}
+                />
+              )}
+            </div>
+            {localMonth < todayMonth && (
+              <button
+                onClick={() => changeMonth(1)}
+                className="w-9 h-9 md:w-8 md:h-8 flex items-center justify-center rounded-lg text-sm transition-colors"
+                style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}
+                aria-label="다음 달"
+              >
+                ▶
+              </button>
+            )}
+          </div>
         )}
       </div>
 
-      {/* ── 유저 메뉴 ── */}
-      <div className="relative">
-        <button
-          onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 hover:opacity-80 transition-opacity p-1 rounded-xl"
-          aria-label="사용자 메뉴"
-        >
-          {user.user_metadata?.avatar_url ? (
-            <img src={user.user_metadata.avatar_url} alt="avatar"
-              className="w-8 h-8 rounded-full" />
-          ) : (
-            <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold text-white"
-                 style={{ background: 'var(--coral)' }}>
-              {user.email?.[0].toUpperCase()}
+      {/* ── 우: 알림(종) + 프로필 ── */}
+      <div className="flex items-center gap-0.5 shrink-0">
+        {/* 알림 — Phase 1: 진입점 셸. 내용(살아있는 알림 목록)은 L-2에서 채움 */}
+        <div ref={bellRef} className="relative">
+          <button
+            onClick={() => { setBellOpen(v => !v); setPropOpen(false); setOpen(false); setShowPicker(false) }}
+            className="w-11 h-11 flex items-center justify-center rounded-xl transition-colors hover:bg-[var(--canvas)]"
+            style={{ color: 'var(--warm-mid)' }}
+            aria-label="알림"
+            aria-expanded={bellOpen}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+          </button>
+          {bellOpen && (
+            <div className="absolute right-0 top-12 w-72 rounded-xl shadow-lift z-50 overflow-hidden"
+                 style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+              <div className="px-3.5 py-2.5 text-sm font-semibold" style={{ color: 'var(--warm-dark)', borderBottom: '1px solid var(--warm-border)' }}>
+                알림
+              </div>
+              <div className="px-3.5 py-5 text-center">
+                <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-muted)' }}>
+                  오늘 챙길 일(미납·퇴실·투어·재고 등)을<br />여기 모아 보여드릴 예정이에요.
+                </p>
+              </div>
+              <Link href="/dashboard" onClick={() => setBellOpen(false)}
+                className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-sm font-medium transition-colors min-h-[44px] hover:bg-[var(--canvas)]"
+                style={{ color: 'var(--coral)', borderTop: '1px solid var(--warm-border)' }}>
+                대시보드에서 보기
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </Link>
             </div>
           )}
-          <span className="text-sm max-w-32 truncate hidden sm:block" style={{ color: 'var(--warm-mid)' }}>
-            {user.user_metadata?.full_name ?? user.email}
-          </span>
-        </button>
+        </div>
 
-        {open && (
-          <div className="absolute right-0 top-12 w-48 rounded-xl shadow-lift z-50"
-               style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-            <div className="p-3" style={{ borderBottom: '1px solid var(--warm-border)' }}>
-              <p className="text-xs truncate" style={{ color: 'var(--warm-muted)' }}>{user.email}</p>
-            </div>
-            <div className="p-1.5 space-y-0.5">
-              <a href="/property-select"
-                className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition-colors min-h-[44px]"
-                style={{ color: 'var(--warm-dark)' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--canvas)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}>
-                영업장 변경
-              </a>
-              <form action={signOut}>
-                <button type="submit"
-                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition-colors min-h-[44px]"
-                  style={{ color: '#ef4444' }}
+        {/* 프로필 */}
+        <div ref={profileRef} className="relative">
+          <button
+            onClick={() => { setOpen(v => !v); setPropOpen(false); setBellOpen(false); setShowPicker(false) }}
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity p-1 rounded-xl"
+            aria-label="사용자 메뉴"
+          >
+            {user.user_metadata?.avatar_url ? (
+              <img src={user.user_metadata.avatar_url} alt="avatar"
+                className="w-8 h-8 rounded-full" />
+            ) : (
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold text-white"
+                   style={{ background: 'var(--coral)' }}>
+                {user.email?.[0].toUpperCase()}
+              </div>
+            )}
+            <span className="text-sm max-w-32 truncate hidden lg:block" style={{ color: 'var(--warm-mid)' }}>
+              {user.user_metadata?.full_name ?? user.email}
+            </span>
+          </button>
+
+          {open && (
+            <div className="absolute right-0 top-12 w-48 rounded-xl shadow-lift z-50"
+                 style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+              <div className="p-3" style={{ borderBottom: '1px solid var(--warm-border)' }}>
+                <p className="text-xs truncate" style={{ color: 'var(--warm-muted)' }}>{user.email}</p>
+              </div>
+              <div className="p-1.5 space-y-0.5">
+                <a href="/property-select"
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition-colors min-h-[44px]"
+                  style={{ color: 'var(--warm-dark)' }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--canvas)'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}>
-                  로그아웃
-                </button>
-              </form>
+                  영업장 관리
+                </a>
+                <form action={signOut}>
+                  <button type="submit"
+                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition-colors min-h-[44px]"
+                    style={{ color: '#ef4444' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--canvas)'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}>
+                    로그아웃
+                  </button>
+                </form>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </header>
   )
@@ -248,7 +352,7 @@ function MonthPicker({
 
   return (
     <div
-      className="absolute top-9 left-0 rounded-2xl shadow-lift p-4 w-72"
+      className="absolute top-9 left-0 rounded-2xl shadow-lift p-4 w-72 max-w-[88vw]"
       style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
       onClick={e => e.stopPropagation()}
     >

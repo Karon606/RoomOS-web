@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
+import prisma from '@/lib/prisma'
 import AppShell from '@/components/layout/AppShell'
 import { EntityModalProvider } from '@/components/entity-modal/EntityModal'
 import ClearAppBadge from '@/components/ClearAppBadge'
@@ -17,8 +19,23 @@ export default async function AppLayout({
   const claims = data?.claims
   if (!claims) redirect('/login')
 
+  // 헤더 영업장 스위처용 — getUser() 네트워크 왕복을 피하려 claims.sub로 직접 조회.
+  // 헤더엔 id·name만 필요(실제 전환은 selectProperty가 권한 재확인).
+  const cookieStore = await cookies()
+  const currentPropertyId = cookieStore.get('selected_property_id')?.value ?? null
+  const roles = await prisma.userPropertyRole.findMany({
+    where: { userId: claims.sub as string },
+    select: { property: { select: { id: true, name: true } } },
+    orderBy: { createdAt: 'asc' },
+  })
+  const properties = roles.map(r => ({ id: r.property.id, name: r.property.name }))
+
   return (
-    <AppShell user={{ email: claims.email, user_metadata: claims.user_metadata }}>
+    <AppShell
+      user={{ email: claims.email, user_metadata: claims.user_metadata }}
+      properties={properties}
+      currentPropertyId={currentPropertyId}
+    >
       <ClearAppBadge />
       <EntityModalProvider>
         {children}

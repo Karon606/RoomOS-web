@@ -14,15 +14,16 @@ const ico = {
   height: 20,
 }
 
+// 하단 1차 내비 — 핵심 4개. 나머지(지출·재고·결산·체크리스트·계약서·시세·설정 등)는 '전체' → Sidebar 드로어.
 const NAV_ITEMS = [
   {
     href: '/dashboard',
-    label: '대시보드',
+    label: '홈',
     Icon: () => <svg {...ico}><rect x="2" y="2" width="8" height="8" rx="1.5"/><rect x="12" y="2" width="8" height="8" rx="1.5"/><rect x="2" y="12" width="8" height="8" rx="1.5"/><rect x="12" y="12" width="8" height="8" rx="1.5"/></svg>,
   },
   {
     href: '/room-manage',
-    label: '방 관리',
+    label: '방',
     Icon: () => <svg {...ico}><rect x="2" y="2" width="18" height="18" rx="2.5"/><line x1="2" y1="9" x2="20" y2="9"/><line x1="9" y1="9" x2="9" y2="20"/></svg>,
   },
   {
@@ -35,22 +36,17 @@ const NAV_ITEMS = [
     label: '수납',
     Icon: () => <svg {...ico}><rect x="3" y="6" width="16" height="12" rx="2"/><path d="M7 6V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1"/><circle cx="12" cy="12" r="2"/></svg>,
   },
-  {
-    href: '/checklist',
-    label: '체크리스트',
-    Icon: () => <svg {...ico}><rect x="3" y="3" width="16" height="16" rx="2.5"/><path d="M7 10l2.5 2.5L15 7"/></svg>,
-  },
-  {
-    href: '/settings',
-    label: '설정',
-    Icon: () => <svg {...ico}><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 19v2M2 12h2M19 12h2M5.6 5.6l1.4 1.4M16.3 16.3l1.4 1.4M5.6 18.4l1.4-1.4M16.3 6.3l1.4-1.4"/></svg>,
-  },
 ]
 
-export default function BottomNav() {
+// '전체' 탭에서 활성으로 보일 경로 — 핵심 4개에 없는 메뉴들
+const PRIMARY_HREFS = new Set(NAV_ITEMS.map(i => i.href))
+
+export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const month = searchParams.get('month')
+  // 현재 경로가 핵심 4개가 아니면 '전체'를 활성 표시 (해당 메뉴가 전체 안에 있으므로)
+  const menuActive = !PRIMARY_HREFS.has(pathname)
 
   return (
     /* HIG: 탭 바는 화면 하단 고정, safe area 위에 콘텐츠 배치 */
@@ -75,6 +71,18 @@ export default function BottomNav() {
           </Link>
         )
       })}
+
+      {/* ── 전체 (전체 메뉴 드로어 열기) ── */}
+      <button
+        type="button"
+        onClick={onMenuOpen}
+        aria-label="전체 메뉴"
+        className="flex-1 flex flex-col items-center justify-center gap-1 py-3 transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+        style={{ color: menuActive ? 'var(--coral)' : 'var(--warm-muted)', minHeight: 49 }}
+      >
+        <svg {...ico}><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        <span className="text-[0.6875rem] font-medium leading-none">전체</span>
+      </button>
     </nav>
   )
 }

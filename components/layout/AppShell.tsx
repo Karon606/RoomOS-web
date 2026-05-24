@@ -2,7 +2,7 @@
 
 import { useState, useTransition, Suspense } from 'react'
 import Sidebar from '@/components/layout/Sidebar'
-import Header, { type AppUser } from '@/components/layout/Header'
+import Header, { type AppUser, type SwitchProperty } from '@/components/layout/Header'
 import BottomNav from '@/components/layout/BottomNav'
 import SaveFeedback from '@/components/feedback/SaveFeedback'
 import { BrandLoader } from '@/components/brand/BrandLoader'
@@ -18,9 +18,13 @@ function PageLoadingOverlay() {
 
 export default function AppShell({
   user,
+  properties,
+  currentPropertyId,
   children,
 }: {
   user: AppUser
+  properties: SwitchProperty[]
+  currentPropertyId: string | null
   children: React.ReactNode
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -37,7 +41,12 @@ export default function AppShell({
           <div className="h-14 md:h-16 shrink-0"
                style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }} />
         }>
-          <Header user={user} onMenuClick={() => setSidebarOpen(true)} startNavigation={startNavigation} />
+          <Header
+            user={user}
+            properties={properties}
+            currentPropertyId={currentPropertyId}
+            startNavigation={startNavigation}
+          />
         </Suspense>
 
         {/* app-main: relative로 로딩 오버레이 containment */}
@@ -47,8 +56,8 @@ export default function AppShell({
         </main>
       </div>
 
-      {/* HIG: iPhone에서 1차 내비게이션은 하단 탭바 */}
-      <BottomNav />
+      {/* HIG: iPhone에서 1차 내비게이션은 하단 탭바. '전체' 탭이 Sidebar 드로어(전체 메뉴)를 연다. */}
+      <BottomNav onMenuOpen={() => setSidebarOpen(true)} />
 
       {/* 글로벌 저장 진행 표시 + 토스트 */}
       <SaveFeedback />
