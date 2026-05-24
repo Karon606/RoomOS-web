@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
+import { signOut } from '@/app/property-select/actions'
+import { type AppUser } from '@/components/layout/Header'
 
 // ── SVG Icons — Stayeum Design Guide v2 (Lucide style)
 //   24×24 viewBox · stroke-width 1.6 · round caps/joins · currentColor
@@ -128,14 +130,21 @@ function NavContent({
   variant,
   pathname,
   month,
+  user,
   onClose,
 }: {
   variant: 'sidebar' | 'drawer'
   pathname: string
   month: string | null
+  user: AppUser
   onClose?: () => void
 }) {
   const drawer = variant === 'drawer'
+  // 계정 행(영업장 관리·로그아웃)도 nav 링크와 동일한 반응형 패턴
+  const acctRow = drawer
+    ? 'flex items-center gap-2.5 px-5 py-3 min-h-[44px] w-full text-left transition-colors'
+    : 'flex items-center gap-0 py-3 justify-center min-h-[44px] w-full text-left transition-colors lg:gap-2.5 lg:px-5 lg:justify-start'
+  const acctLabel = `text-[0.8125rem] ${drawer ? 'block' : 'hidden lg:block'}`
 
   return (
     <>
@@ -212,15 +221,49 @@ function NavContent({
           </div>
         ))}
       </nav>
+
+      {/* ── 계정 (하단 고정) — 헤더에서 이동: 프로필·영업장 관리·로그아웃 ── */}
+      <div className="shrink-0" style={{ borderTop: '1px solid var(--warm-border)' }}>
+        {/* 프로필 표시 */}
+        <div className={drawer ? 'flex items-center gap-2.5 px-5 py-3' : 'flex items-center gap-0 py-3 justify-center lg:gap-2.5 lg:px-5 lg:justify-start'}>
+          {user.user_metadata?.avatar_url ? (
+            <img src={user.user_metadata.avatar_url} alt="" className="w-7 h-7 rounded-full shrink-0" />
+          ) : (
+            <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold text-white shrink-0"
+                 style={{ background: 'var(--coral)' }}>
+              {user.email?.[0]?.toUpperCase()}
+            </div>
+          )}
+          <span className={`${acctLabel} truncate`} style={{ color: 'var(--warm-mid)' }}>
+            {user.user_metadata?.full_name ?? user.email}
+          </span>
+        </div>
+
+        {/* 영업장 관리 */}
+        <Link href="/property-select" onClick={onClose} className={acctRow} style={{ color: 'var(--warm-muted)' }}>
+          <svg {...ico}><path d="M3 21h18M6 21V7l6-4 6 4v14M10 9h.01M10 13h.01M10 17h.01M14 9h.01M14 13h.01M14 17h.01"/></svg>
+          <span className={acctLabel}>영업장 관리</span>
+        </Link>
+
+        {/* 로그아웃 */}
+        <form action={signOut}>
+          <button type="submit" className={acctRow} style={{ color: '#ef4444' }}>
+            <svg {...ico}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+            <span className={acctLabel}>로그아웃</span>
+          </button>
+        </form>
+      </div>
     </>
   )
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────
 export default function Sidebar({
+  user,
   isOpen = false,
   onClose,
 }: {
+  user: AppUser
   isOpen?: boolean
   onClose?: () => void
 }) {
@@ -240,7 +283,7 @@ export default function Sidebar({
         className="hidden md:flex md:w-16 lg:w-[220px] flex-col shrink-0"
         style={style}
       >
-        <NavContent variant="sidebar" pathname={pathname} month={month} />
+        <NavContent variant="sidebar" pathname={pathname} month={month} user={user} />
       </aside>
 
       {/* ── 모바일: 슬라이드 드로어 ── */}
@@ -251,7 +294,7 @@ export default function Sidebar({
             className="fixed inset-y-0 left-0 z-50 w-[240px] flex flex-col md:hidden"
             style={style}
           >
-            <NavContent variant="drawer" pathname={pathname} month={month} onClose={onClose} />
+            <NavContent variant="drawer" pathname={pathname} month={month} user={user} onClose={onClose} />
           </aside>
         </>
       )}

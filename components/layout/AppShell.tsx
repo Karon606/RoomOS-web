@@ -32,7 +32,7 @@ export default function AppShell({
 
   return (
     <div className="flex h-dvh overflow-hidden" style={{ background: 'var(--canvas)' }}>
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar user={user} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* fallback은 실제 헤더와 동일한 외형 — 내용물만 없앤 투명 껍데기.
@@ -42,7 +42,6 @@ export default function AppShell({
                style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }} />
         }>
           <Header
-            user={user}
             properties={properties}
             currentPropertyId={currentPropertyId}
             startNavigation={startNavigation}

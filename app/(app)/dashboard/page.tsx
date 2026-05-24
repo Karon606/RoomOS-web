@@ -1,8 +1,6 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
-import { Suspense } from 'react'
-import DataButtons from '@/components/DataButtons'
 import DashboardClient, { type DashboardData } from './DashboardClient'
 import { getPaymentMethods } from '@/app/(app)/settings/actions'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
@@ -1354,8 +1352,7 @@ export default async function DashboardPage({
   const { month } = await searchParams
   const targetMonth = month ?? kstMonthStr()
 
-  const [property, dashboardData, paymentMethods, floorPlanData] = await Promise.all([
-    prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } }),
+  const [dashboardData, paymentMethods, floorPlanData] = await Promise.all([
     getDashboardData(propertyId, targetMonth),
     getPaymentMethods(),
     getFloorPlan(),
@@ -1363,14 +1360,6 @@ export default async function DashboardPage({
 
   return (
     <div className="space-y-3.5">
-
-      {/* ── 헤더 ──────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-bold" style={{ color: 'var(--warm-dark)' }}>{property?.name}</h1>
-        <Suspense fallback={null}>
-          <DataButtons />
-        </Suspense>
-      </div>
 
       {/* ── 평면 배치도 (도면 페이지에서 켠 경우에만 표시) ─── */}
       {floorPlanData?.showOnDashboard && (() => {

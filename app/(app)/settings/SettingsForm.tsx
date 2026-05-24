@@ -23,6 +23,7 @@ import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/cont
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { Btn } from '@/components/ui/Btn'
 import { PushToggle } from './PushToggle'
+import DataButtons from '@/components/DataButtons'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { useTheme, type ThemeMode } from '@/components/theme/ThemeProvider'
 import { useFontSize, type FontSizeLevel } from '@/components/theme/FontSizeProvider'
@@ -549,6 +550,16 @@ export default function SettingsForm({
             className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
             발생주의 데이터 진단 →
           </a>
+        </div>
+
+        {/* 엑셀 가져오기·내보내기 */}
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
+          <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">엑셀 가져오기·내보내기</h2>
+          <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
+            호실·입주자·지출·기타수익·설정을 엑셀(.xlsx)로 내보내거나, 작성한 엑셀을 가져와 일괄 등록합니다.
+            가져오기 시 중복 항목은 처리 방법을 직접 선택할 수 있습니다.
+          </p>
+          <DataButtons />
         </div>
 
         {/* 데이터 백업 */}
