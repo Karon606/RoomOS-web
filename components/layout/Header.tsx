@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { pushToast } from '@/lib/saveStatus'
+import NotificationBell from '@/components/layout/NotificationBell'
 
 // 레이아웃이 getClaims()로 넘기는 최소 사용자 정보 (Header에서 쓰는 필드만)
 export type AppUser = {
@@ -24,25 +25,22 @@ export default function Header({
   startNavigation?: (fn: () => void) => void
 }) {
   const [propOpen, setPropOpen] = useState(false)  // 영업장 스위처
-  const [bellOpen, setBellOpen] = useState(false)  // 알림(종)
   const router   = useRouter()
   const propRef  = useRef<HTMLDivElement>(null)
-  const bellRef  = useRef<HTMLDivElement>(null)
 
   const currentProperty = properties.find(p => p.id === currentPropertyId) ?? properties[0]
 
-  // 드롭다운 바깥 클릭 시 닫기 (각각)
+  // 영업장 스위처 바깥 클릭 시 닫기 (종은 NotificationBell 가 자체 처리)
   // (월 네비는 MonthSelector(페이지 콘텐츠 상단)로 분리됨 — 헤더는 스위처·종만)
   useEffect(() => {
-    if (!propOpen && !bellOpen) return
+    if (!propOpen) return
     const handle = (e: MouseEvent) => {
       const t = e.target as Node
-      if (propOpen && propRef.current && !propRef.current.contains(t)) setPropOpen(false)
-      if (bellOpen && bellRef.current && !bellRef.current.contains(t)) setBellOpen(false)
+      if (propRef.current && !propRef.current.contains(t)) setPropOpen(false)
     }
     document.addEventListener('mousedown', handle)
     return () => document.removeEventListener('mousedown', handle)
-  }, [propOpen, bellOpen])
+  }, [propOpen])
 
   // 영업장 전환 — 권한은 selectProperty가 재확인. 전환 후 대시보드로(타 영업장 딥링크 깨짐 방지).
   const onSelectProperty = (id: string) => {
@@ -67,7 +65,7 @@ export default function Header({
       <div className="flex items-center gap-1 min-w-0">
         <div ref={propRef} className="relative min-w-0">
           <button
-            onClick={() => { setPropOpen(v => !v); setBellOpen(false) }}
+            onClick={() => setPropOpen(v => !v)}
             className="flex items-center gap-1 max-w-[60vw] md:max-w-none px-2 py-2 rounded-xl transition-colors hover:bg-[var(--canvas)]"
             aria-label="영업장 선택"
             aria-expanded={propOpen}
@@ -115,42 +113,9 @@ export default function Header({
         </div>
       </div>
 
-      {/* ── 우: 알림(종) ── (프로필/계정은 전체 메뉴로 이동) */}
+      {/* ── 우: 알림(🔔) ── (프로필/계정은 전체 메뉴로 이동) */}
       <div className="flex items-center gap-0.5 shrink-0">
-        {/* 알림 — Phase 1: 진입점 셸. 내용(살아있는 알림 목록)은 L-2에서 채움 */}
-        <div ref={bellRef} className="relative">
-          <button
-            onClick={() => { setBellOpen(v => !v); setPropOpen(false) }}
-            className="w-11 h-11 flex items-center justify-center rounded-xl transition-colors hover:bg-[var(--canvas)]"
-            style={{ color: 'var(--warm-mid)' }}
-            aria-label="알림"
-            aria-expanded={bellOpen}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>
-              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-            </svg>
-          </button>
-          {bellOpen && (
-            <div className="absolute right-0 top-12 w-72 rounded-xl shadow-lift z-50 overflow-hidden"
-                 style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-              <div className="px-3.5 py-2.5 text-sm font-semibold" style={{ color: 'var(--warm-dark)', borderBottom: '1px solid var(--warm-border)' }}>
-                알림
-              </div>
-              <div className="px-3.5 py-5 text-center">
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-muted)' }}>
-                  오늘 챙길 일(미납·퇴실·투어·재고 등)을<br />여기 모아 보여드릴 예정이에요.
-                </p>
-              </div>
-              <Link href="/dashboard" onClick={() => setBellOpen(false)}
-                className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-sm font-medium transition-colors min-h-[44px] hover:bg-[var(--canvas)]"
-                style={{ color: 'var(--coral)', borderTop: '1px solid var(--warm-border)' }}>
-                대시보드에서 보기
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-              </Link>
-            </div>
-          )}
-        </div>
+        <NotificationBell currentPropertyId={currentPropertyId} />
       </div>
     </header>
   )
