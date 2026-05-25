@@ -20,6 +20,7 @@ import { recordRecurringExpense } from '@/app/(app)/finance/actions'
 import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
+import { ALERT_URGENT_WITHIN_DAYS } from '@/lib/appConfig'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
@@ -531,34 +532,74 @@ const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
   inventory: { label: '재고 부족',    color: '#d4a847' },
   other:     { label: '기타',         color: '#94a3b8' },
 }
-const COLLAPSE_THRESHOLD = 3   // 이 개수 초과면 기본 접힘
+const COLLAPSE_THRESHOLD = 3   // (예정 그룹) 이 개수 이하만 기본 펼침
+
+// timeLabel 에서 긴급도(D-N)를 도출 — 경과=음수, 오늘/임박/필요=0, N일 남음=양수, 날짜없음=큰값(긴급 아님).
+// 라벨은 page.tsx dayLabel 등이 만드는 안정적 한국어. 형식이 바뀌어도 9999(긴급 아님)로 graceful 폴백.
+function urgencyDaysOf(timeLabel: string): number {
+  if (!timeLabel) return 9999
+  if (timeLabel.includes('경과')) { const n = parseInt(timeLabel, 10); return isNaN(n) ? -1 : -n }
+  if (timeLabel.includes('오늘') || timeLabel.includes('임박') || timeLabel.includes('필요')) return 0
+  if (timeLabel.includes('남음')) { const n = parseInt(timeLabel, 10); return isNaN(n) ? 9999 : n }
+  return 9999
+}
+
+// 알림 한 줄 — '지금 급함' 존과 '예정' 그룹에서 공유
+function AlertRow({ item, onOpen }: { item: AlertItem; onOpen: (a: AlertItem) => void }) {
+  return (
+    <button
+      className="w-full text-left hover:opacity-70 active:opacity-50 transition-opacity"
+      onClick={() => onOpen(item)}
+    >
+      <div className="flex items-center gap-3 px-5 py-3"
+        style={{ borderLeft: `3px solid ${item.dotColor}`, background: hexToRgba(item.dotColor, 0.06) }}>
+        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
+          style={{ background: hexToRgba(item.dotColor, 0.12), fontSize: '0.6875rem', color: item.dotColor }}>
+          {item.text.slice(0, 1)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink-2)' }}>{item.text}</p>
+          <p className="text-[0.625rem] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+            {item.timeLabel}{item.exactDate ? ` · ${item.exactDate}` : ''}
+          </p>
+        </div>
+        <span style={{ color: 'var(--warm-muted)', fontSize: '0.875rem' }}>›</span>
+      </div>
+    </button>
+  )
+}
 
 function AlertsStrip({ alerts, onOpenAlert }: {
   alerts: DashboardData['alerts']
   onOpenAlert: (alert: AlertItem) => void
 }) {
-  // 카테고리별 그룹 — sortKey 있으면 그 순으로 (납부예정: 가까운 순, 누적미수: 오래된 순)
+  // 긴급도(D-N) 부여 후 '지금 급함'(경과 or D-N 이내)과 '예정'으로 분리
+  const withU = alerts.map(a => ({ a, u: urgencyDaysOf(a.timeLabel) }))
+  const urgent = withU
+    .filter(x => x.u <= ALERT_URGENT_WITHIN_DAYS)
+    .sort((x, y) => x.u - y.u)   // 가장 급한(많이 경과한) 순 — 카테고리 무관
+    .map(x => x.a)
+  const restItems = withU.filter(x => x.u > ALERT_URGENT_WITHIN_DAYS)
+
+  // 예정: 긴급 존에 안 든 항목만 카테고리 그룹 (그룹 내 가까운 순)
   const groups = (() => {
-    const map = new Map<AlertCat, typeof alerts>()
-    for (const a of alerts) {
-      const cat = (a.category ?? 'other') as AlertCat
+    const map = new Map<AlertCat, { a: AlertItem; u: number }[]>()
+    for (const x of restItems) {
+      const cat = (x.a.category ?? 'other') as AlertCat
       const arr = map.get(cat) ?? []
-      arr.push(a)
+      arr.push(x)
       map.set(cat, arr)
     }
-    for (const arr of map.values()) {
-      const hasSortKey = arr.some(a => typeof a.sortKey === 'number')
-      if (hasSortKey) arr.sort((a, b) => (a.sortKey ?? 0) - (b.sortKey ?? 0))
-    }
+    for (const arr of map.values()) arr.sort((p, q) => p.u - q.u)
     return CATEGORY_ORDER
-      .map(cat => ({ cat, items: map.get(cat) ?? [] }))
+      .map(cat => ({ cat, items: (map.get(cat) ?? []).map(x => x.a) }))
       .filter(g => g.items.length > 0)
   })()
 
-  // 각 카테고리 펼침 상태 — 항목 N개 이하는 기본 펼침, 초과면 접힘
+  // 예정 그룹 펼침 — 기본 접힘(급한 건 위 존에 이미 노출). 단 긴급이 하나도 없으면 옛 동작(≤3개 펼침)으로 폴백.
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {}
-    for (const g of groups) init[g.cat] = g.items.length <= COLLAPSE_THRESHOLD
+    for (const g of groups) init[g.cat] = urgent.length === 0 && g.items.length <= COLLAPSE_THRESHOLD
     return init
   })
 
@@ -576,12 +617,30 @@ function AlertsStrip({ alerts, onOpenAlert }: {
         </span>
       </div>
 
+      {/* ── 지금 급함 — 카테고리 무관, 항상 펼침 ── */}
+      {urgent.length > 0 && (
+        <div style={{ borderBottom: groups.length > 0 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
+          <div className="flex items-center gap-2 px-5 py-2.5" style={{ background: 'rgba(220,38,38,0.06)' }}>
+            <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#dc2626' }} />
+            <span className="text-[0.6875rem] font-bold flex-1 text-left" style={{ color: '#dc2626' }}>지금 급함</span>
+            <span className="text-[0.625rem] font-medium" style={{ color: 'var(--warm-muted)' }}>{urgent.length}건</span>
+          </div>
+          <div>
+            {urgent.map((item, i) => (
+              <div key={`u-${i}`} style={{ borderTop: `1px solid ${DIVIDER_COLOR}` }}>
+                <AlertRow item={item} onOpen={onOpenAlert} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 예정 — 카테고리 그룹, 기본 접힘 (수동 토글) ── */}
       {groups.map((g, gi) => {
         const meta = CATEGORY_META[g.cat]
         const isOpen = expanded[g.cat] ?? false
         return (
           <div key={g.cat} style={{ borderBottom: gi < groups.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
-            {/* 카테고리 헤더 */}
             <button
               type="button"
               onClick={() => setExpanded(prev => ({ ...prev, [g.cat]: !isOpen }))}
@@ -598,30 +657,11 @@ function AlertsStrip({ alerts, onOpenAlert }: {
               <span className="text-[var(--warm-muted)] text-xs ml-1" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 150ms' }}>›</span>
             </button>
 
-            {/* 항목 리스트 */}
             {isOpen && (
               <div>
                 {g.items.map((item, i) => (
                   <div key={i} style={{ borderTop: i === 0 ? `1px solid ${DIVIDER_COLOR}` : 'none', borderBottom: i < g.items.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
-                    <button
-                      className="w-full text-left hover:opacity-70 active:opacity-50 transition-opacity"
-                      onClick={() => onOpenAlert(item)}
-                    >
-                      <div className="flex items-center gap-3 px-5 py-3"
-                        style={{ borderLeft: `3px solid ${item.dotColor}`, background: hexToRgba(item.dotColor, 0.06) }}>
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
-                          style={{ background: hexToRgba(item.dotColor, 0.12), fontSize: '0.6875rem', color: item.dotColor }}>
-                          {item.text.slice(0, 1)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink-2)' }}>{item.text}</p>
-                          <p className="text-[0.625rem] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>
-                            {item.timeLabel}{item.exactDate ? ` · ${item.exactDate}` : ''}
-                          </p>
-                        </div>
-                        <span style={{ color: 'var(--warm-muted)', fontSize: '0.875rem' }}>›</span>
-                      </div>
-                    </button>
+                    <AlertRow item={item} onOpen={onOpenAlert} />
                   </div>
                 ))}
               </div>

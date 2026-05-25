@@ -9,6 +9,10 @@ export const ALERT_WINDOW_AFTER_DAYS  = 30   // 오늘로부터 N일 이후까�
 // 미수/도래 임박 알림 — daysOverdue가 -N ~ 0일 때 '납부 예정' 알림 노출
 export const UNPAID_UPCOMING_ALERT_DAYS = 7
 
+// 대시보드 알림 '지금 급함' 존 기준 — 경과(음수)이거나 D-N 이내면 긴급으로 최상단 노출
+// (urgencyDays <= 이 값 → 긴급. 0=오늘, 1=내일, 2=모레)
+export const ALERT_URGENT_WITHIN_DAYS = 2
+
 // ── 고정 지출(RecurringExpense) 신규 추가 폼 디폴트 ─────────
 export const DEFAULT_RECURRING_DUE_DAY         = '25'
 export const DEFAULT_RECURRING_CATEGORY        = '관리비'
