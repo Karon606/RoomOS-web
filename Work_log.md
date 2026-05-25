@@ -1,6 +1,6 @@
 # 스테이음 작업 로그
 
-마지막 업데이트: 2026-05-23
+마지막 업데이트: 2026-05-25
 브랜치: main
 
 ## 완료된 것
@@ -203,21 +203,30 @@
     헤더 우측은 🔔만 남김. Sidebar에 user prop 추가(AppShell→Sidebar), 데스크탑/모바일 드로어 공통 하단 계정 섹션.
   · 대시보드 상단 **영업장명 배너(h1) 제거**(스위처와 중복) + DataButtons 제거. property findUnique·Suspense·import 정리.
   · **엑셀 가져오기/내보내기(DataButtons) → 환경설정 기본정보 탭** '엑셀 가져오기·내보내기' 카드로 이동(데이터 백업 위).
-- ⏳ **Phase 1-3: 월 셀렉터 위치 재배치 (2026-05-24 요청 — 사용자 결정 대기, 밤에 선택)**:
-  · **문제**: 헤더에서 영업장 스위처 바로 오른쪽에 월 네비(◀ 5월 ▶)가 붙어 "복잡해 보임". 적당한 다른 위치로.
-  · **기술 메모(중요)**: 현재 Header에 ① 보이는 컨트롤(◀ label ▶ + MonthPicker + ?month URL 동기화/applyMonth/changeMonth)
-    과 ② 안 보이는 자동 새로고침 useEffect 3개(자정 롤오버·새 달 재진입 시 router.refresh)가 함께 있음.
-    위치 이동 시 **①만 옮기고 ②는 항상 마운트되는 곳(Header 또는 셸의 보이지 않는 <MonthSync/>)에 남길 것.**
-    노출 조건: MONTH_PAGES = dashboard·rooms·finance·report·stats (맥락형, 그대로 유지).
-  · **후보**:
-    - **(A) 페이지 콘텐츠 상단으로 — 추천.** ◀ label ▶ + 달력을 각 월-페이지 콘텐츠 최상단(우측 정렬 '기간' 컨트롤)으로.
-      헤더는 `[좌] 스위처 … [우] 🔔`로 완전히 깔끔. '기간 선택은 데이터 옆에' 관례. 구현: <MonthSelector/> 클라 컴포넌트로
-      추출 → 5개 페이지 상단에 배치, ②는 <MonthSync/>로 셸에 잔류.
-    - **(B) 헤더 우측 종 왼쪽**: `[스위처] … [◀5월▶][🔔]`. 변경 최소(헤더 내 이동), 전역 1곳 유지.
-      단 MonthPicker 팝오버 우측 정렬 필요, 우측이 다소 붐빔.
-    - **(C) 헤더 중앙**: 월-페이지에서만 중앙 표시(스위처 좌/종 우/월 중앙). flex 중앙정렬 까다롭고 모바일 폭 빠듯.
-  · **추천**: (A). 월은 전역 크롬이 아니라 페이지 맥락 → 페이지로 내리면 헤더가 단순해지고 관례에도 부합.
-    밤에 A/B/C 중 택1 → 그때 구현.
+- ✅ **Phase 1-3: 월 셀렉터 위치 재배치 — (A) 페이지 콘텐츠 상단으로 완료 (2026-05-25, 사용자 (A) 선택)**:
+  · **결정**: 헤더의 월 네비(◀ 5월 ▶)가 영업장 스위처 옆에 붙어 "복잡해 보임" → **각 월-페이지 콘텐츠 상단 우측**으로 이동.
+    헤더는 이제 `[좌] 스위처 … [우] 🔔`로 깔끔. '기간 선택은 데이터 옆에' 관례 부합.
+  · **구현(①/② 분리)**:
+    - **components/layout/MonthSelector.tsx (신규)** — 보이는 컨트롤 ◀ label ▶ + MonthPicker 팝오버(우측 정렬 right-0,
+      화면밖 방지) + ?month URL push(디바운스 350ms) + 낙관적 localMonth. cream pill+border, 이번달이면 ▶ disabled.
+      URL↔로컬 동기화는 **렌더 중 상태조정 패턴**(useEffect 아님; react-hooks/set-state-in-effect 회피),
+      ref 동기화만 작은 effect.
+    - **components/layout/MonthSync.tsx (신규)** — 안 보이는 자동 새로고침 effect 3개(자정 롤오버·자정 타이머·재진입)만.
+      셸(AppShell)에 **항상 마운트**(Suspense fallback=null). useSearchParams 사용.
+    - **components/layout/NavigationContext.tsx (신규)** — AppShell useTransition(startNavigation)을 페이지 트리로 공급.
+      MonthSelector가 페이지로 내려가며 prop이 끊겨서, 컨텍스트로 전환 로딩 오버레이(BrandLoader) 공유. Provider 밖이면 직접 navigate 폴백.
+    - **Header.tsx** — 월 UI·월 effect·MonthPicker·MONTH_PAGES·usePathname/useSearchParams **전부 제거**(244→약 160줄).
+      스위처·🔔만 유지. 영업장 스위처 max-w 42vw→60vw(공간 여유).
+    - **AppShell.tsx** — <MonthSync/>(Suspense) 마운트 + <main> children을 <NavigationProvider>로 감쌈.
+  · **배치 페이지(3곳, ?month 실제 사용처만)**: dashboard(상단 우측정렬 행), rooms(기존 제목옆 정적 {targetMonth} 텍스트를 교체),
+    finance(제목과 한 행 justify-between). **report·stats는 제외** — report는 자체 `?year=` 셀렉터(ReportClient) 보유,
+    stats는 /dashboard로 redirect만. (기존 헤더 월 네비는 이 둘에선 무동작 노이즈였음 → 제거가 개선).
+  · **검증**: `npm run build` 통과(TypeScript·정적생성, 5개 월-페이지 ƒ 동적). ESLint 신규/변경 5파일 클린.
+    MonthSelector 모바일 390px 렌더·우측정렬·pill·▶disabled 스크린샷 확인.
+  · ⚠️ **GUI 인터랙티브 검증은 불가**(iCloud 환경): 프로젝트가 iCloud Drive라 dev 서버가 거의 상시 Fast Refresh 재빌드 상태
+    (클릭 없이도 버튼수 4→0 유지). 팝오버 열림 등 일시상태가 매번 리셋돼 dev 자동검증 불가 — **코드 버그 아님, 프로덕션엔 Fast Refresh 없음**.
+    실기기/프로덕션에서 ◀▶·달력 팝오버 동작·모바일 폭 최종 확인 권장. (메모리 reference_gui_verify 의 iCloud 빌드 이슈와 동일 계열)
+  · 미배포: 아직 commit/push 안 함 — 사용자 확인 후 배포.
 - 참고: Brand Guide v1.1/v1.2 리스킨([[project_status_colors_pending]])과 색·radius는 별개로 진행 가능(IA 우선).
 
 ---

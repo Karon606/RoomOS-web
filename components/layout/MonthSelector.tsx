@@ -1,0 +1,212 @@
+'use client'
+
+import { useState, useEffect, useRef } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+import { useStartNavigation } from './NavigationContext'
+
+const MONTH_KEY = 'stayeum_selected_month'
+
+function todayMonthStr() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+/**
+ * 보이는 월 컨트롤 ◀ 5월 ▶ + 월 선택 팝오버.
+ * 헤더가 아니라 각 월-페이지(대시보드·수납·지출) 콘텐츠 상단에 둔다 ('기간은 데이터 옆에').
+ * 자정 롤오버 등 보이지 않는 자동 새로고침은 MonthSync(셸 상주)가 담당한다.
+ */
+export default function MonthSelector() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const startNavigation = useStartNavigation()
+  const todayMonth = todayMonthStr()
+
+  const [showPicker, setShowPicker] = useState(false)
+  const pickerRef   = useRef<HTMLDivElement>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const searchParamsMonth = searchParams.get('month') ?? todayMonth
+  // localMonth: ◀/▶ 클릭 시 URL 반영(디바운스 350ms) 전까지 즉시 보여주는 낙관적 표시값.
+  const [localMonth, setLocalMonth] = useState(searchParamsMonth)
+  const localMonthRef = useRef(localMonth)
+
+  // URL의 month가 외부 요인(전환 완료·딥링크)으로 바뀌면 로컬 표시를 거기에 맞춘다.
+  // useEffect 대신 렌더 중 조정(React 권장 패턴) — 추가 리렌더·cascading 없음.
+  const [syncedMonth, setSyncedMonth] = useState(searchParamsMonth)
+  if (searchParamsMonth !== syncedMonth) {
+    setSyncedMonth(searchParamsMonth)
+    setLocalMonth(searchParamsMonth)
+  }
+
+  // ref(낙관적 시퀀스 계산용)를 커밋된 localMonth와 동기화 — 렌더 중 ref 쓰기 금지라 effect에서.
+  useEffect(() => { localMonthRef.current = localMonth }, [localMonth])
+
+  // 팝오버 바깥 클릭 시 닫기
+  useEffect(() => {
+    if (!showPicker) return
+    const handle = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (pickerRef.current && !pickerRef.current.contains(t)) setShowPicker(false)
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [showPicker])
+
+  const applyMonth = (m: string) => {
+    localStorage.setItem(MONTH_KEY, m)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('month', m)
+    const navigate = () => router.push(`${pathname}?${params.toString()}`)
+    if (startNavigation) startNavigation(navigate)
+    else navigate()
+  }
+
+  const changeMonth = (delta: number) => {
+    const [yyyy, mm] = localMonthRef.current.split('-').map(Number)
+    const d = new Date(yyyy, mm - 1 + delta, 1)
+    const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    localMonthRef.current = next
+    setLocalMonth(next)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => applyMonth(localMonthRef.current), 350)
+  }
+
+  const [cy, cm] = localMonth.split('-')
+  const displayMonth = `${cy}년 ${parseInt(cm)}월`
+  const atCurrentMonth = localMonth >= todayMonth
+
+  return (
+    <div
+      className="flex items-center rounded-xl shrink-0 self-start"
+      style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
+    >
+      <button
+        onClick={() => changeMonth(-1)}
+        className="w-9 h-9 flex items-center justify-center rounded-l-xl text-xs transition-colors hover:bg-[var(--canvas)]"
+        style={{ color: 'var(--warm-mid)' }}
+        aria-label="이전 달"
+      >
+        ◀
+      </button>
+      <div ref={pickerRef} className="relative">
+        <div
+          onClick={() => setShowPicker(v => !v)}
+          className="text-sm font-semibold text-center cursor-pointer px-2.5 py-2 select-none whitespace-nowrap"
+          style={{ color: 'var(--warm-dark)' }}
+          role="button"
+          aria-label="월 선택"
+        >
+          {displayMonth}
+        </div>
+        {showPicker && (
+          <MonthPicker
+            current={localMonth}
+            todayMonth={todayMonth}
+            onSelect={(m) => { setShowPicker(false); setLocalMonth(m); localMonthRef.current = m; applyMonth(m) }}
+            onClose={() => setShowPicker(false)}
+          />
+        )}
+      </div>
+      <button
+        onClick={() => changeMonth(1)}
+        disabled={atCurrentMonth}
+        className="w-9 h-9 flex items-center justify-center rounded-r-xl text-xs transition-colors enabled:hover:bg-[var(--canvas)]"
+        style={{ color: atCurrentMonth ? 'var(--warm-border)' : 'var(--warm-mid)', cursor: atCurrentMonth ? 'default' : 'pointer' }}
+        aria-label="다음 달"
+      >
+        ▶
+      </button>
+    </div>
+  )
+}
+
+function MonthPicker({
+  current, todayMonth, onSelect, onClose
+}: {
+  current: string
+  todayMonth: string
+  onSelect: (month: string) => void
+  onClose: () => void
+}) {
+  const [year, setYear] = useState(Number(current.split('-')[0]))
+  const months = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월']
+  const now = new Date()
+  const maxYear = now.getFullYear()
+  const maxMonth = now.getMonth() + 1
+
+  return (
+    /* right-0: 페이지 상단 우측 정렬 컨트롤이므로 우측 모서리에 맞춰 화면 밖으로 넘치지 않게 */
+    <div
+      className="absolute top-11 right-0 rounded-2xl shadow-lift p-4 w-72 max-w-[88vw] z-50"
+      style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
+      onClick={e => e.stopPropagation()}
+    >
+      {/* 연도 네비 — HIG: 44pt 터치 타겟 */}
+      <div className="flex items-center justify-between mb-3">
+        <button
+          onClick={() => setYear(y => y - 1)}
+          className="w-11 h-11 flex items-center justify-center rounded-xl transition-colors"
+          style={{ color: 'var(--warm-mid)' }}
+          aria-label="이전 연도"
+        >
+          ◀
+        </button>
+        <span className="font-semibold text-sm" style={{ color: 'var(--warm-dark)' }}>{year}년</span>
+        <button
+          onClick={() => setYear(y => y + 1)}
+          className="w-11 h-11 flex items-center justify-center rounded-xl transition-colors"
+          style={{ color: 'var(--warm-mid)' }}
+          aria-label="다음 연도"
+        >
+          ▶
+        </button>
+      </div>
+
+      {/* 월 그리드 — HIG: 최소 44pt 높이 */}
+      <div className="grid grid-cols-4 gap-1.5">
+        {months.map((label, i) => {
+          const monthStr = `${year}-${String(i + 1).padStart(2, '0')}`
+          const isActive = monthStr === current
+          const disabled = year > maxYear || (year === maxYear && i + 1 > maxMonth)
+          return (
+            <button
+              key={i}
+              disabled={disabled}
+              onClick={() => onSelect(monthStr)}
+              className="py-3 text-sm rounded-xl transition-colors font-medium"
+              style={isActive
+                ? { background: 'var(--coral)', color: '#fff' }
+                : disabled
+                  ? { color: 'var(--warm-border)', cursor: 'not-allowed' }
+                  : { color: 'var(--warm-mid)' }}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* 하단 버튼 — HIG: 44pt 높이 */}
+      <div className="flex gap-2 mt-3">
+        <button
+          onClick={() => onSelect(todayMonth)}
+          className="flex-1 py-3 text-sm rounded-xl transition-colors font-medium"
+          style={current === todayMonth
+            ? { background: 'var(--persimmon)', color: '#fff', cursor: 'default' }
+            : { background: 'var(--canvas)', color: 'var(--warm-mid)' }}
+        >
+          이번달
+        </button>
+        <button
+          onClick={onClose}
+          className="flex-1 py-3 text-sm rounded-xl transition-colors"
+          style={{ color: 'var(--warm-muted)' }}
+        >
+          닫기
+        </button>
+      </div>
+    </div>
+  )
+}

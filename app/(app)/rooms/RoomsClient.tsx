@@ -12,6 +12,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { Loading } from '@/components/ui/Loading'
+import MonthSelector from '@/components/layout/MonthSelector'
 import { formatPhone } from '@/lib/formatPhone'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
@@ -714,10 +715,10 @@ export default function RoomsClient({
         </div>
       )}
 
-      {/* 헤더 */}
-      <div className="flex items-center justify-between">
+      {/* 헤더 — 우측 월 셀렉터(기간) */}
+      <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-bold text-[var(--warm-dark)]">수납 관리</h1>
-        <span className="text-sm text-[var(--warm-muted)]">{targetMonth}</span>
+        <MonthSelector />
       </div>
 
       {/* 검색창 */}

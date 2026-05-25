@@ -6,6 +6,8 @@ import Header, { type AppUser, type SwitchProperty } from '@/components/layout/H
 import BottomNav from '@/components/layout/BottomNav'
 import SaveFeedback from '@/components/feedback/SaveFeedback'
 import { BrandLoader } from '@/components/brand/BrandLoader'
+import MonthSync from '@/components/layout/MonthSync'
+import { NavigationProvider } from '@/components/layout/NavigationContext'
 
 // 페이지 전환용 경량 로더 — Brand Guide v1.2 의 Arch line-draw 모션 (워드마크 없음)
 function PageLoadingOverlay() {
@@ -48,9 +50,18 @@ export default function AppShell({
           />
         </Suspense>
 
-        {/* app-main: relative로 로딩 오버레이 containment */}
+        {/* 보이지 않는 월 동기화기 — 자정 롤오버·재진입 시 router.refresh().
+            useSearchParams를 쓰므로 Suspense 경계 필요. 보이는 월 컨트롤은 MonthSelector(페이지 상단). */}
+        <Suspense fallback={null}>
+          <MonthSync />
+        </Suspense>
+
+        {/* app-main: relative로 로딩 오버레이 containment.
+            NavigationProvider: 페이지 안 MonthSelector가 전환 로딩 오버레이를 공유. */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 app-main relative">
-          {children}
+          <NavigationProvider startNavigation={startNavigation}>
+            {children}
+          </NavigationProvider>
           {isPending && <PageLoadingOverlay />}
         </main>
       </div>

@@ -20,6 +20,7 @@ import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { Btn } from '@/components/ui/Btn'
 import { Loading } from '@/components/ui/Loading'
+import MonthSelector from '@/components/layout/MonthSelector'
 import { chartColor } from '@/lib/chartColors'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -1456,8 +1457,11 @@ export default function FinanceClient({
     <>
     <div className="space-y-5">
 
-      {/* 헤더 */}
-      <h1 className="text-xl font-bold text-[var(--warm-dark)]">지출/기타 수익</h1>
+      {/* 헤더 — 우측 월 셀렉터(기간) */}
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-xl font-bold text-[var(--warm-dark)]">지출/기타 수익</h1>
+        <MonthSelector />
+      </div>
 
       {/* ── 월간 요약 위젯 ── */}
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">

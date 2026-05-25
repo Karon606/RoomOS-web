@@ -7,6 +7,7 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { Btn } from '@/components/ui/Btn'
 import { Loading } from '@/components/ui/Loading'
 import { DatePicker } from '@/components/ui/DatePicker'
+import MonthSelector from '@/components/layout/MonthSelector'
 import { getTrendData, type TrendRange, type TrendPoint } from './actions'
 import {
   AreaChart, Area, BarChart, Bar,
@@ -1891,6 +1892,11 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
 
   return (
     <div className="space-y-3.5">
+
+      {/* ── 기간(월) 셀렉터 — 우측 정렬 ────────────────────────────── */}
+      <div className="flex justify-end">
+        <MonthSelector />
+      </div>
 
       {/* ── Row 1: 알림 ─────────────────────────────────────────── */}
       <AlertsStrip alerts={data.alerts} onOpenAlert={setSelectedAlert} />
