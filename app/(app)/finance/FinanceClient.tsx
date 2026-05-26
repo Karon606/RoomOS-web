@@ -46,6 +46,7 @@ type Expense = {
   roomId: string | null; room: { id: string; roomNo: string } | null
   recurringExpenseId: string | null; recurringExpense: { isVariable: boolean } | null
   receiptUrl: string | null
+  breakdownJson: string | null   // #1 관리비 묶음 세부 내역
   itemLabel: string | null
   specValue: number | null; specUnit: string | null
   qtyValue: number | null; qtyUnit: string | null
@@ -1085,6 +1086,8 @@ export default function FinanceClient({
   // ── 고정 지출 탭 상태 ────────────────────────────────────────
   const [recordingRec, setRecordingRec] = useState<RecurringExpenseWithStatus | null>(null)
   const [recRecAmount, setRecRecAmount] = useState(0)
+  // #1 관리비 묶음: 기록 시 세부항목별 금액(변동은 편집). 비어있으면 단일 금액 모드.
+  const [recRecItems, setRecRecItems]   = useState<{ name: string; amount: number; isVariable: boolean }[]>([])
   const [recRecDate, setRecRecDate]     = useState('')
   const [recRecMemo, setRecRecMemo]     = useState('')
   const [recRecPayMethod, setRecRecPayMethod] = useState('')
@@ -1752,7 +1755,7 @@ export default function FinanceClient({
                       const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
                       return (
                         <div key={`rec-${r.id}`}
-                          onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
+                          onClick={() => { setRecordingRec(r); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
                           className="border border-amber-200 rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity bg-amber-50/30">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
@@ -1838,7 +1841,7 @@ export default function FinanceClient({
                       const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
                           return (
                             <tr key={`rec-${r.id}`}
-                              onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
+                              onClick={() => { setRecordingRec(r); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
                               className="border-b border-[var(--warm-border)] bg-[var(--canvas)]/40 hover:bg-[var(--canvas)] transition-colors cursor-pointer"
                               style={{ boxShadow: 'inset 3px 0 0 #fbbf24' }}>
                               <td className="px-4 py-3 text-xs text-[var(--warm-muted)] overflow-hidden">
@@ -2385,6 +2388,26 @@ export default function FinanceClient({
                   {detailExp.vendor && <DetailRow label="구매처"   value={detailExp.vendor} />}
                   <DetailRow label="세부 항목"   value={detailExp.detail ?? '—'} />
                   <DetailRow label="금액"        value={<span className="text-red-400 font-semibold"><MoneyDisplay amount={detailExp.amount} prefix="-" /></span>} />
+                  {/* #1 관리비 묶음: 세부 내역(breakdownJson)이 있으면 펼쳐 표시 */}
+                  {detailExp.breakdownJson && (() => {
+                    let bd: { name: string; amount: number; isVariable: boolean }[] = []
+                    try { bd = JSON.parse(detailExp.breakdownJson) } catch { /* ignore */ }
+                    if (bd.length === 0) return null
+                    return (
+                      <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-3 space-y-1.5">
+                        <p className="text-[0.6875rem] font-medium text-[var(--warm-muted)]">세부 내역</p>
+                        {bd.map((it, i) => (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                            <span className="text-[var(--warm-dark)]">
+                              {it.name}
+                              {it.isVariable && <span className="ml-1 text-[0.5625rem] text-amber-600">(변동)</span>}
+                            </span>
+                            <span className="font-mono text-[var(--warm-dark)]">{it.amount.toLocaleString()}원</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                   {detailExp.room && <DetailRow label="대상 호실" value={`${detailExp.room.roomNo}호`} />}
                   <DetailRow label="결제수단"    value={detailExp.payMethod ?? '—'} />
                   {detailExp.financeName && <DetailRow label="금융사" value={detailExp.financeName} />}
@@ -3157,6 +3180,46 @@ export default function FinanceClient({
           </div>
           {/* 폼 */}
           <div className="p-5 space-y-3">
+            {recRecItems.length > 0 ? (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs text-[var(--warm-muted)]">날짜</label>
+                  <DatePicker value={recRecDate} onChange={setRecRecDate}
+                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                </div>
+                {/* #1 관리비 세부항목 — 변동 항목만 편집, 고정은 표시. 합계 자동. */}
+                <div className="space-y-1.5 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-3">
+                  <p className="text-[0.6875rem] font-medium text-[var(--warm-muted)]">세부항목 ({recRecItems.length})</p>
+                  {recRecItems.map((it, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="text-xs text-[var(--warm-dark)] flex-1 truncate">
+                        {it.name}
+                        {it.isVariable
+                          ? <span className="ml-1 text-[0.5625rem] text-amber-600 bg-amber-400/15 px-1 py-0.5 rounded-full">변동</span>
+                          : <span className="ml-1 text-[0.5625rem] text-[var(--warm-muted)]">고정</span>}
+                      </span>
+                      {it.isVariable ? (
+                        <div className="w-28">
+                          <MoneyInput value={it.amount} onChange={v => {
+                            setRecRecItems(prev => {
+                              const next = prev.map((p, j) => j === i ? { ...p, amount: v } : p)
+                              setRecRecAmount(next.reduce((s, p) => s + p.amount, 0))
+                              return next
+                            })
+                          }} placeholder="0원" />
+                        </div>
+                      ) : (
+                        <span className="text-xs font-mono text-[var(--warm-dark)] w-28 text-right pr-1">{it.amount.toLocaleString()}원</span>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between border-t border-[var(--warm-border)] pt-1.5 mt-1">
+                    <span className="text-xs font-semibold text-[var(--warm-dark)]">합계</span>
+                    <span className="text-sm font-bold font-mono text-[var(--coral)]">{recRecAmount.toLocaleString()}원</span>
+                  </div>
+                </div>
+              </>
+            ) : (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs text-[var(--warm-muted)]">날짜</label>
@@ -3173,6 +3236,7 @@ export default function FinanceClient({
                 <MoneyInput value={recRecAmount} onChange={v => setRecRecAmount(v)} placeholder="0원" />
               </div>
             </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs text-[var(--warm-muted)]">결제수단</label>
@@ -3248,6 +3312,7 @@ export default function FinanceClient({
                         payMethod: recRecPayMethod || undefined,
                         financialAccountId: recRecAccId || undefined,
                         memo: recRecMemo || undefined,
+                        breakdown: recRecItems.length > 0 ? recRecItems : undefined,
                       })
                       if (!res.ok) { setRecError(res.error); return }
                       setRecordingRec(null)
