@@ -90,7 +90,6 @@ const NAV_GROUPS = [
     label: '운영',
     items: [
       { href: '/requests',  label: '요청·컴플레인', Icon: IcoRequests  },
-      { href: '/checklist', label: '체크리스트',    Icon: IcoChecklist },
       { href: '/contracts', label: '계약서',        Icon: IcoContract  },
     ],
   },
@@ -104,6 +103,7 @@ const NAV_GROUPS = [
     label: '스테이음 Lab',
     items: [
       { href: '/floor-plan', label: '도면', Icon: IcoFloorPlan },
+      { href: '/checklist', label: '체크리스트', Icon: IcoChecklist },
     ],
   },
   {

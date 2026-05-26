@@ -1196,29 +1196,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }
   } catch { /* inventory 모듈 로드 실패 시 무시 */ }
 
-  // ── 체크리스트 알림 (도래일 N일 이내 또는 경과) ────────────
-  try {
-    const { getDueChecklists } = await import('@/app/(app)/checklist/actions')
-    const dueList = await getDueChecklists()
-    for (const c of dueList) {
-      const timeLabel = c.daysUntilDue == null ? '점검 필요' : dayLabel(c.daysUntilDue)
-      const intervalText = c.intervalDays === 1 ? '매일'
-        : c.intervalDays === 7 ? '매주'
-        : c.intervalDays === 14 ? '격주'
-        : c.intervalDays === 30 ? '매월'
-        : c.intervalDays === 90 ? '분기'
-        : `${c.intervalDays}일마다`
-      alertItems.push({
-        category:  'inventory',
-        text:      `체크리스트: ${c.title}`,
-        link:      '/checklist',
-        dotColor:  '#d4a847',
-        timeLabel,
-        detail:    `주기: ${intervalText}${c.memo ? `\n${c.memo}` : ''}\n마지막 점검: ${c.lastCheckedAt ? new Date(c.lastCheckedAt).toLocaleDateString('ko-KR') : '없음'}${c.nextDueAt ? `\n다음 도래: ${new Date(c.nextDueAt).toLocaleDateString('ko-KR')}` : ''}`,
-        exactDate: fmtShortDate(c.nextDueAt),
-      })
-    }
-  } catch { /* checklist 모듈 로드 실패 시 무시 */ }
+  // (체크리스트 알림은 제거됨 — 체크리스트를 스테이음 Lab으로 이동, 대시보드 알림 비노출. 2026-05-26)
 
   // ── 고정 지출 알림 ───────────────────────────────────────────
 

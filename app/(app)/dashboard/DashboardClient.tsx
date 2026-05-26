@@ -622,7 +622,7 @@ function AlertsStrip({ alerts, onOpenAlert }: {
         <div style={{ borderBottom: groups.length > 0 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
           <div className="flex items-center gap-2 px-5 py-2.5" style={{ background: 'rgba(220,38,38,0.06)' }}>
             <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#dc2626' }} />
-            <span className="text-[0.6875rem] font-bold flex-1 text-left" style={{ color: '#dc2626' }}>지금 급함</span>
+            <span className="text-[0.6875rem] font-bold flex-1 text-left" style={{ color: '#dc2626' }}>긴급</span>
             <span className="text-[0.625rem] font-medium" style={{ color: 'var(--warm-muted)' }}>{urgent.length}건</span>
           </div>
           <div>
