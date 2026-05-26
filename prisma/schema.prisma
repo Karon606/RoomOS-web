@@ -328,9 +328,30 @@ model LeaseTerm {
   statusLogs     TenantStatusLog[]
   depositRefunds DepositRefund[]
   contractFiles  ContractFile[]
+  discounts      RentDiscount[]   // #14 월세 할인(입주자별, 여러 개 가능)
 
   @@index([propertyId, status]) // 영업장별 현재 거주자 조회 최적화
   @@map("lease_terms")
+}
+
+// #14 월세 할인 — 입주자(계약)별, 여러 개 중첩 가능.
+//   discountType: 'amount'(원) | 'percent'(%) — percent는 그 달 기본 임대료 기준.
+//   scope: 'permanent'(매월) | 'temporary'(startMonth~endMonth, YYYY-MM 포함).
+//   여러 할인 합산은 그 달 임대료를 초과하지 않게 캡(계산은 lib/rentDiscount.ts 순수함수).
+model RentDiscount {
+  id           String    @id @default(uuid()) @db.Uuid
+  leaseTermId  String    @db.Uuid
+  leaseTerm    LeaseTerm @relation(fields: [leaseTermId], references: [id], onDelete: Cascade)
+  discountType String    // 'amount' | 'percent'
+  value        Int       // 원(amount) 또는 % (percent)
+  scope        String    // 'permanent' | 'temporary'
+  startMonth   String?   // 'YYYY-MM' (temporary)
+  endMonth     String?   // 'YYYY-MM' (temporary)
+  memo         String?
+  createdAt    DateTime  @default(now())
+
+  @@index([leaseTermId])
+  @@map("rent_discounts")
 }
 
 // ============================================================

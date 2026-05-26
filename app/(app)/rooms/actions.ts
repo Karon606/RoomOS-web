@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache'
 import { requireEdit } from '@/lib/role'
 import { kstYmd } from '@/lib/kstDate'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
+import { discountedRent } from '@/lib/rentDiscount'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -79,6 +80,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
           contacts: { where: { isPrimary: true }, take: 1 },
         },
       },
+      discounts: true,   // #14 월세 할인
     },
   })
 
@@ -121,7 +123,9 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
 
   const buildLeaseRow = (room: typeof rooms[number], lease: LeaseWithOverride, prevTenantName: string | null, prevContact: string | null): RoomRow => {
     const l = lease as LeaseWithOverride
-    const expected = lease.rentAmount
+    // #14 월세 할인 — 그 달 청구액 = rentAmount - 할인(월별). 단위테스트된 lib/rentDiscount 헬퍼 사용.
+    const leaseDiscounts = (lease as { discounts?: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[] }).discounts ?? []
+    const expected = discountedRent(leaseDiscounts, targetMonth, lease.rentAmount)
     const effectiveDueDay = (l.overrideDueDayMonth === targetMonth && l.overrideDueDay)
       ? l.overrideDueDay
       : lease.dueDay
@@ -276,10 +280,11 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const loopStartMm   = useLeaseStart ? lsMm     : acqMm
 
     let pastBillable = 0
+    let billedBeforeSum = 0   // #14 과거월 청구 합 — 월별 할인 반영(곱셈 대신 합산)
     for (let cy = loopStartYyyy, cmn = loopStartMm; cy < yyyy || (cy === yyyy && cmn < mm); ) {
       const ms = `${cy}-${String(cmn).padStart(2, '0')}`
       const skip = (ms === acqMonthStr && acqMonthPrePaid) || prevOwnerMonths.has(ms)
-      if (!skip) pastBillable++
+      if (!skip) { pastBillable++; billedBeforeSum += discountedRent(leaseDiscounts, ms, lease.rentAmount) }
       cmn++; if (cmn > 12) { cmn = 1; cy++ }
     }
 
@@ -308,8 +313,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const viewBilled = skipViewMonthBilled ? 0 : expected
     const viewBalance = receivedThisMonth - viewBilled                 // viewMonth 정산 (음수=미수, 양수=선납)
 
-    // 이월액 — 이전 달 누적 (양수=과거 선납, 음수=과거 미수)
-    const billedBefore = pastBillable * expected
+    // 이월액 — 이전 달 누적 (양수=과거 선납, 음수=과거 미수). #14: 월별 할인 반영 합산.
+    const billedBefore = billedBeforeSum
     const pastBalance = receivedBeforeMonth - billedBefore
 
     // viewMonth 청구권 도래 여부 (과거 viewMonth는 자동 도래, 현재월은 effDueDay 검사)
@@ -354,7 +359,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
           const isMsPast = ms < targetMonth
           const billedThisStep = isMsPast || (dueDate && dueDate <= todayKstEnd)
           if (billedThisStep) {
-            cumExpected += expected
+            cumExpected += discountedRent(leaseDiscounts, ms, lease.rentAmount)   // #14 월별 할인 반영
             if (totalReceivedAll < cumExpected) { firstUnpaidMonth = ms; break }
           }
         }
@@ -1197,4 +1202,75 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
   ])
   const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
   return { records, acquisitionDate: cutoff, lastPayMethod: lastWithMethod?.payMethod ?? null }
+}
+
+// ── #14 월세 할인 (입주자별) ────────────────────────────────────────
+export type RentDiscountRow = {
+  id: string; discountType: string; value: number; scope: string
+  startMonth: string | null; endMonth: string | null; memo: string | null
+}
+
+export async function getRentDiscounts(leaseTermId: string): Promise<RentDiscountRow[]> {
+  await getPropertyId()
+  const rows = await prisma.rentDiscount.findMany({
+    where: { leaseTermId },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, discountType: true, value: true, scope: true, startMonth: true, endMonth: true, memo: true },
+  })
+  return rows
+}
+
+export async function addRentDiscount(data: {
+  leaseTermId: string
+  discountType: 'amount' | 'percent'
+  value: number
+  scope: 'permanent' | 'temporary'
+  startMonth?: string | null   // 'YYYY-MM'
+  endMonth?: string | null
+  memo?: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    // 본인 영업장 lease 확인
+    const lease = await prisma.leaseTerm.findFirst({ where: { id: data.leaseTermId, propertyId }, select: { id: true } })
+    if (!lease) return { ok: false, error: '대상 계약을 찾을 수 없습니다.' }
+    if (!(data.value > 0)) return { ok: false, error: '할인 값은 0보다 커야 합니다.' }
+    if (data.discountType === 'percent' && data.value > 100) return { ok: false, error: '퍼센트 할인은 100%를 넘을 수 없습니다.' }
+    if (data.scope === 'temporary' && !data.startMonth) return { ok: false, error: '일시 할인은 시작 월이 필요합니다.' }
+    await prisma.rentDiscount.create({
+      data: {
+        leaseTermId:  data.leaseTermId,
+        discountType: data.discountType,
+        value:        data.value,
+        scope:        data.scope,
+        startMonth:   data.scope === 'temporary' ? (data.startMonth ?? null) : null,
+        endMonth:     data.scope === 'temporary' ? (data.endMonth ?? null) : null,
+        memo:         data.memo ?? null,
+      },
+    })
+    revalidatePath('/rooms')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function deleteRentDiscount(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    // 본인 영업장 할인만 삭제 (lease→property 확인)
+    const d = await prisma.rentDiscount.findUnique({ where: { id }, select: { leaseTerm: { select: { propertyId: true } } } })
+    if (!d || d.leaseTerm.propertyId !== propertyId) return { ok: false, error: '할인을 찾을 수 없습니다.' }
+    await prisma.rentDiscount.delete({ where: { id } })
+    revalidatePath('/rooms')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }

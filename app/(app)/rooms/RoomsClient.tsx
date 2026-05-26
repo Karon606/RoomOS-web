@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
-import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getTargetMonthOptions, savePrevOwnerSettle, getPrevOwnerSettleState, setPrevOwnerSettleMenu, type TargetMonthOption } from './actions'
+import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getTargetMonthOptions, savePrevOwnerSettle, getPrevOwnerSettleState, setPrevOwnerSettleMenu, getRentDiscounts, addRentDiscount, deleteRentDiscount, type TargetMonthOption, type RentDiscountRow } from './actions'
+import { discountLabel } from '@/lib/rentDiscount'
 import { changeDueDay } from '@/app/(app)/tenants/actions'
 import { calcProRata, PRORATE_BASE_DAYS } from '@/lib/prorate'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -240,6 +241,14 @@ export default function RoomsClient({
   const [selectedRoom, setSelectedRoom] = useState<RoomStatus | null>(null)
   const [paymentHistory, setPaymentHistory] = useState<PaymentRecord[]>([])
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
+  // #14 월세 할인 — 현재 lease의 할인 목록 + 추가 폼
+  const [payDiscounts, setPayDiscounts] = useState<RentDiscountRow[]>([])
+  const [showDiscForm, setShowDiscForm] = useState(false)
+  const [discType, setDiscType]   = useState<'amount' | 'percent'>('amount')
+  const [discValue, setDiscValue] = useState(0)
+  const [discScope, setDiscScope] = useState<'permanent' | 'temporary'>('permanent')
+  const [discStart, setDiscStart] = useState('')   // 'YYYY-MM'
+  const [discEnd, setDiscEnd]     = useState('')
   const [prevOwnerCanSettle, setPrevOwnerCanSettle] = useState(false)  // 양도인 정산 메뉴 노출
   const [prevOwnerMenuMode, setPrevOwnerMenuMode] = useState<string>('auto')  // auto|show|hide
   const [showPayModal, setShowPayModal] = useState(false)
@@ -477,6 +486,9 @@ export default function RoomsClient({
       // #5: 이 입주자(lease)의 최근 납부방법을 기본값으로 (전역 localStorage 대신 입주자별)
       setLastPayMethod(leaseLast ?? '')
       setLoadingHistory(false)
+      // #14 할인 목록 로드
+      setShowDiscForm(false)
+      getRentDiscounts(room.leaseTermId).then(setPayDiscounts).catch(() => setPayDiscounts([]))
       getPrevOwnerSettleState(room.leaseTermId, targetMonth)
         .then(s => { setPrevOwnerCanSettle(s.canSettle); setPrevOwnerMenuMode(s.menuMode) })
         .catch(() => setPrevOwnerCanSettle(false))
@@ -607,6 +619,37 @@ export default function RoomsClient({
         const msg = (err as Error).message
         setError(msg); pushToast('error', msg)
       } finally { release() }
+    })
+  }
+
+  // #14 할인 추가/삭제
+  const handleAddDiscount = () => {
+    if (!selectedRoom?.leaseTermId) return
+    if (!(discValue > 0)) { setError('할인 값을 입력하세요.'); return }
+    if (discScope === 'temporary' && !discStart) { setError('일시 할인은 시작 월을 선택하세요.'); return }
+    const leaseTermId = selectedRoom.leaseTermId
+    startTransition(async () => {
+      const res = await addRentDiscount({
+        leaseTermId, discountType: discType, value: discValue, scope: discScope,
+        startMonth: discScope === 'temporary' ? discStart : null,
+        endMonth: discScope === 'temporary' ? (discEnd || null) : null,
+      })
+      if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+      setPayDiscounts(await getRentDiscounts(leaseTermId))
+      setShowDiscForm(false); setDiscValue(0); setDiscStart(''); setDiscEnd('')
+      router.refresh()
+      pushToast('success', '할인 적용됨')
+    })
+  }
+  const handleDeleteDiscount = (id: string) => {
+    if (!selectedRoom?.leaseTermId) return
+    const leaseTermId = selectedRoom.leaseTermId
+    startTransition(async () => {
+      const res = await deleteRentDiscount(id)
+      if (!res.ok) { pushToast('error', res.error); return }
+      setPayDiscounts(await getRentDiscounts(leaseTermId))
+      router.refresh()
+      pushToast('success', '할인 삭제됨')
     })
   }
 
@@ -1481,6 +1524,66 @@ export default function RoomsClient({
                     )
                   })()}
                 </div>
+
+                {/* #14 월세 할인 (입주자별, 여러 개) */}
+                {selectedRoom.leaseTermId && (
+                  <div className="border-t border-[var(--warm-border)] pt-3 mt-1 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium text-emerald-600">월세 할인</p>
+                      {!showDiscForm && (
+                        <button onClick={() => { setShowDiscForm(true); setError('') }}
+                          className="text-xs px-2.5 py-1 rounded-lg border border-emerald-300 text-emerald-600 hover:bg-emerald-50 transition-colors">+ 할인 추가</button>
+                      )}
+                    </div>
+                    {payDiscounts.length === 0 && !showDiscForm && (
+                      <p className="text-[0.6875rem] text-[var(--warm-muted)]">적용된 할인이 없습니다.</p>
+                    )}
+                    {payDiscounts.map(d => (
+                      <div key={d.id} className="flex items-center gap-2 text-xs">
+                        <span className="flex-1 text-[var(--warm-dark)]">{discountLabel(d)}</span>
+                        <button onClick={() => handleDeleteDiscount(d.id)} disabled={isPending}
+                          className="text-[0.6875rem] px-2 py-1 rounded-lg border border-red-200 text-red-400 hover:text-red-600 transition-colors disabled:opacity-40">삭제</button>
+                      </div>
+                    ))}
+                    {showDiscForm && (
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 space-y-2">
+                        <div className="flex gap-2">
+                          <select value={discType} onChange={e => setDiscType(e.target.value as 'amount' | 'percent')}
+                            className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none">
+                            <option value="amount">금액(원)</option>
+                            <option value="percent">퍼센트(%)</option>
+                          </select>
+                          <div className="flex-1">
+                            <MoneyInput value={discValue} onChange={setDiscValue} placeholder={discType === 'percent' ? '예: 10' : '예: 50000'} />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <select value={discScope} onChange={e => setDiscScope(e.target.value as 'permanent' | 'temporary')}
+                            className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none">
+                            <option value="permanent">영구(매월)</option>
+                            <option value="temporary">일시(기간)</option>
+                          </select>
+                          {discScope === 'temporary' && (
+                            <div className="flex-1 flex items-center gap-1">
+                              <input type="month" value={discStart} onChange={e => setDiscStart(e.target.value)}
+                                className="flex-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none" />
+                              <span className="text-xs text-[var(--warm-muted)]">~</span>
+                              <input type="month" value={discEnd} onChange={e => setDiscEnd(e.target.value)} placeholder="(무기한)"
+                                className="flex-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => { setShowDiscForm(false); setError('') }}
+                            className="flex-1 py-1.5 text-sm rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>
+                          <button onClick={handleAddDiscount} disabled={isPending || !(discValue > 0)}
+                            className="flex-1 py-1.5 text-sm font-medium rounded-lg text-white disabled:opacity-50" style={{ background: '#16a34a' }}>적용</button>
+                        </div>
+                        <p className="text-[0.625rem] text-[var(--warm-muted)]">할인은 해당 월 청구액(이용료)에서 차감돼 미수 계산에 반영됩니다.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* 납부일 임시 조정 */}
                 {selectedRoom.leaseTermId && (() => {
