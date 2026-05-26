@@ -1827,7 +1827,9 @@ export default function RoomsClient({
                             setIsDepositMode(checked)
                             if (checked) {
                               setIsCleaningFeeMode(false)
-                              setPayAmount(selectedRoom.depositAmount)
+                              // #11: 보증금 + 이번 달 이용료 전체로 프리필 (청소비 모드와 동일).
+                              //      이전엔 보증금만 채워서, 사용자가 입력한 합산금액이 보증금으로 덮어써져 월세가 누락됐음.
+                              setPayAmount(selectedRoom.depositAmount + selectedRoom.expected)
                               setPayDateVal(selectedRoom.moveInDate ?? kstYmdStr())
                             } else {
                               setPayDateVal(kstYmdStr())
@@ -1839,10 +1841,16 @@ export default function RoomsClient({
                           보증금 수납 ({fmtKorMoney(selectedRoom.depositAmount)})
                         </span>
                       </label>
-                      {isDepositMode && payAmount > selectedRoom.depositAmount && (
-                        <p className="text-xs text-emerald-600">
-                          초과금 {fmtKorMoney(payAmount - selectedRoom.depositAmount)} → {targetMonth} 이용료 처리
-                        </p>
+                      {isDepositMode && (
+                        payAmount > selectedRoom.depositAmount ? (
+                          <p className="text-xs text-emerald-600">
+                            보증금 {fmtKorMoney(selectedRoom.depositAmount)} + 이용료 {fmtKorMoney(payAmount - selectedRoom.depositAmount)} = {fmtKorMoney(payAmount)}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-[var(--warm-muted)]">
+                            보증금만 수납 (이용료 포함하려면 금액을 늘리세요 — 초과분은 {targetMonth} 이용료로 처리)
+                          </p>
+                        )
                       )}
                     </div>
                   )}
