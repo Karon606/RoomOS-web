@@ -21,7 +21,7 @@ async function getPropertyId() {
 
 // ============================================================
 type RoomRow = {
-  roomId: string; roomNo: string; type: string | null; floor: string | null; windowType: string | null
+  roomId: string; roomNo: string; type: string | null; floor: string | null; windowType: string | null; direction: string | null
   isVacant: boolean; tenantId: string | null; tenantName: string | null; contact: string | null
   status: string | null; expected: number; dueDay: string | null; currentPaid: number
   carryOver: number; totalPaid: number; balance: number; isPaid: boolean
@@ -147,7 +147,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     if (lease.status === 'RESERVED') {
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
-        floor: room.floor ?? null, windowType: room.windowType ?? null,
+        floor: room.floor ?? null, windowType: room.windowType ?? null, direction: room.direction ?? null,
         isVacant: false, tenantId: lease.tenant.id,
         tenantName: lease.tenant.name,
         contact: lease.tenant.contacts[0]?.contactValue ?? null,
@@ -173,7 +173,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     if (targetMonth < acqMonthStr) {
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
-        floor: room.floor ?? null, windowType: room.windowType ?? null,
+        floor: room.floor ?? null, windowType: room.windowType ?? null, direction: room.direction ?? null,
         isVacant: false, tenantId: lease.tenant.id,
         tenantName: lease.tenant.name,
         contact: lease.tenant.contacts[0]?.contactValue ?? null,
@@ -392,7 +392,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     if (isFutureMonth) {
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
-        floor: room.floor ?? null, windowType: room.windowType ?? null,
+        floor: room.floor ?? null, windowType: room.windowType ?? null, direction: room.direction ?? null,
         isVacant: false, tenantId: lease.tenant.id,
         tenantName: lease.tenant.name,
         contact: lease.tenant.contacts[0]?.contactValue ?? null,
@@ -418,7 +418,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
 
     return {
       roomId: room.id, roomNo: room.roomNo, type: room.type,
-      floor: room.floor ?? null, windowType: room.windowType ?? null,
+      floor: room.floor ?? null, windowType: room.windowType ?? null, direction: room.direction ?? null,
       isVacant: false, tenantId: lease.tenant.id,
       tenantName: lease.tenant.name,
       contact: lease.tenant.contacts[0]?.contactValue ?? null,
@@ -450,7 +450,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       const prev = prevLeases.find(l => l.roomId === room.id)
       return [{
         roomId: room.id, roomNo: room.roomNo, type: room.type,
-        floor: room.floor ?? null, windowType: room.windowType ?? null,
+        floor: room.floor ?? null, windowType: room.windowType ?? null, direction: room.direction ?? null,
         isVacant: true, tenantId: null, tenantName: null,
         contact: null, status: null, expected: 0, dueDay: null,
         currentPaid: 0, carryOver: 0, totalPaid: 0,

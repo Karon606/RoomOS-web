@@ -31,6 +31,7 @@ type RoomStatus = {
   type: string | null
   floor: string | null
   windowType: string | null
+  direction: string | null
   isVacant: boolean
   tenantId: string | null
   tenantName: string | null
@@ -99,12 +100,14 @@ const DEFAULT_VIS = Object.fromEntries(
 
 // ── 공실 열 설정 ──────────────────────────────────────────────────
 
-type VacantColKey = 'type' | 'windowType' | 'baseRent' | 'prevTenantName' | 'prevContact'
+type VacantColKey = 'type' | 'windowType' | 'direction' | 'floor' | 'baseRent' | 'prevTenantName' | 'prevContact'
 type VacantSortKey = 'roomNo' | 'type' | 'windowType' | 'baseRent' | 'prevTenantName'
 
 const VACANT_COL_DEFS: { key: VacantColKey; label: string; defaultOn: boolean }[] = [
   { key: 'type',          label: '타입',       defaultOn: true  },
   { key: 'windowType',    label: '창문',       defaultOn: true  },
+  { key: 'direction',     label: '방향',       defaultOn: true  },
+  { key: 'floor',         label: '층',         defaultOn: false },
   { key: 'baseRent',      label: '기본 월이용료', defaultOn: true  },
   { key: 'prevTenantName', label: '직전 입주자', defaultOn: false },
   { key: 'prevContact',   label: '직전 연락처', defaultOn: false },
@@ -1091,8 +1094,8 @@ export default function RoomsClient({
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-[var(--warm-muted)]">공실 {vacants.length}실</h2>
-            {/* 공실 열 설정 — 데스크탑만 */}
-            <div className="hidden sm:block relative" ref={vacantColMenuRef}>
+            {/* 공실 표시 정보 설정 — 데스크탑(열)·모바일(카드 칩) 공통 */}
+            <div className="relative" ref={vacantColMenuRef}>
               <button
                 onClick={() => setShowVacantColMenu(v => !v)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors
@@ -1115,17 +1118,37 @@ export default function RoomsClient({
             </div>
           </div>
 
-          {/* 공실 — 모바일 카드 */}
+          {/* 공실 — 모바일 카드 (열 설정으로 고른 정보를 칩으로, 최대 4개) */}
           <div className="sm:hidden grid grid-cols-2 gap-2">
-            {sortedVacants.map(room => (
-              <div key={room.roomId} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-4 py-3 space-y-1">
-                <span className="text-sm font-bold text-[var(--warm-mid)]">{fmtRoomNo(room.roomNo)}</span>
-                {room.type && <p className="text-xs text-[var(--warm-muted)]">{room.type}</p>}
-                <p className="text-sm font-semibold text-[var(--warm-dark)]">
-                  {room.baseRent > 0 ? <MoneyDisplay amount={room.baseRent} /> : '—'}
-                </p>
-              </div>
-            ))}
+            {sortedVacants.map(room => {
+              // 선택된 표시 정보 — 가격이 다른 이유(창문·방향 등)를 카드만 봐도 알 수 있게
+              const chips: string[] = []
+              if (vacantColVis.type && room.type) chips.push(room.type)
+              if (vacantColVis.windowType && room.windowType) chips.push(WINDOW_LABEL[room.windowType] ?? room.windowType)
+              if (vacantColVis.direction && room.direction) chips.push(room.direction)
+              if (vacantColVis.floor && room.floor) chips.push(/^\d+$/.test(room.floor) ? `${room.floor}층` : room.floor)
+              const shown = chips.slice(0, 4)   // 공간 한도 — 최대 4개
+              return (
+                <div key={room.roomId} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-4 py-3 space-y-1.5">
+                  <span className="text-sm font-bold text-[var(--warm-mid)]">{fmtRoomNo(room.roomNo)}</span>
+                  {shown.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {shown.map((c, i) => (
+                        <span key={i} className="text-[0.625rem] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>{c}</span>
+                      ))}
+                    </div>
+                  )}
+                  {vacantColVis.baseRent && (
+                    <p className="text-sm font-semibold text-[var(--warm-dark)]">
+                      {room.baseRent > 0 ? <MoneyDisplay amount={room.baseRent} /> : '—'}
+                    </p>
+                  )}
+                  {vacantColVis.prevTenantName && room.prevTenantName && (
+                    <p className="text-[0.625rem] text-[var(--warm-muted)] truncate">직전 {room.prevTenantName}</p>
+                  )}
+                </div>
+              )
+            })}
           </div>
 
           {/* 공실 — 데스크탑 테이블 */}
@@ -1136,6 +1159,8 @@ export default function RoomsClient({
                   <VSortTh label="호실" sk="roomNo" />
                   {vacantColVis.type           && <VSortTh label="타입"          sk="type" />}
                   {vacantColVis.windowType     && <VSortTh label="창문"          sk="windowType" />}
+                  {vacantColVis.direction      && <th className={thCls}>방향</th>}
+                  {vacantColVis.floor          && <th className={thCls}>층</th>}
                   {vacantColVis.baseRent       && <VSortTh label="기본 월이용료" sk="baseRent" />}
                   {vacantColVis.prevTenantName && <VSortTh label="직전 입주자"   sk="prevTenantName" />}
                   {vacantColVis.prevContact    && <th className={thCls}>직전 연락처</th>}
@@ -1152,6 +1177,12 @@ export default function RoomsClient({
                       <td className="px-4 py-3 text-sm text-[var(--warm-muted)]">
                         {room.windowType ? (WINDOW_LABEL[room.windowType] ?? room.windowType) : '—'}
                       </td>
+                    )}
+                    {vacantColVis.direction && (
+                      <td className="px-4 py-3 text-sm text-[var(--warm-muted)]">{room.direction ?? '—'}</td>
+                    )}
+                    {vacantColVis.floor && (
+                      <td className="px-4 py-3 text-sm text-[var(--warm-muted)]">{room.floor ? (/^\d+$/.test(room.floor) ? `${room.floor}층` : room.floor) : '—'}</td>
                     )}
                     {vacantColVis.baseRent && (
                       <td className="px-4 py-3 text-sm text-[var(--warm-dark)]">
