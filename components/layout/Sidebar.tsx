@@ -286,18 +286,83 @@ export default function Sidebar({
         <NavContent variant="sidebar" pathname={pathname} month={month} user={user} />
       </aside>
 
-      {/* ── 모바일: 슬라이드 드로어 ── */}
+      {/* ── 모바일: 전체화면 메뉴 (배경 페이지가 의미 없으므로 풀스크린 + 그리드로 한 화면에) ── */}
       {isOpen && (
-        <>
-          <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={onClose} />
-          <aside
-            className="fixed inset-y-0 left-0 z-50 w-[240px] flex flex-col md:hidden"
-            style={style}
-          >
-            <NavContent variant="drawer" pathname={pathname} month={month} user={user} onClose={onClose} />
-          </aside>
-        </>
+        <MobileMenu pathname={pathname} month={month} user={user} onClose={onClose} />
       )}
     </>
+  )
+}
+
+// ── 모바일 전체화면 메뉴 — 모든 메뉴를 스크롤 없이 한 화면에 (그리드 타일) ──
+function MobileMenu({
+  pathname, month, user, onClose,
+}: {
+  pathname: string; month: string | null; user: AppUser; onClose?: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col md:hidden safe-b" style={{ background: 'var(--cream)' }}>
+      {/* 헤더: 로고 + 닫기 */}
+      <div className="flex items-center justify-between shrink-0 px-5" style={{ minHeight: 56, borderBottom: '1px solid var(--warm-border)' }}>
+        <LogoFull />
+        <button onClick={onClose} aria-label="닫기"
+          className="w-11 h-11 -mr-2 flex items-center justify-center rounded-xl transition-colors hover:bg-[var(--canvas)]"
+          style={{ color: 'var(--warm-mid)' }}>
+          <svg {...ico} width={22} height={22}><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      {/* 메뉴 그리드 — 그룹별 라벨 + 3열 타일. 한 화면에 다 들어오게 컴팩트하게. */}
+      <div className="flex-1 overflow-y-auto px-3 py-2">
+        {NAV_GROUPS.map(group => (
+          <div key={group.label} className="mb-1.5">
+            <div className="px-1.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wide" style={{ color: 'rgba(120,90,60,0.45)' }}>
+              {group.label}
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {group.items.map(({ href, label, Icon }) => {
+                const isActive = pathname === href
+                const linkHref = month ? `${href}?month=${month}` : href
+                return (
+                  <Link key={href} href={linkHref} onClick={onClose}
+                    className="flex flex-col items-center justify-center gap-1.5 rounded-xl py-3 px-1 text-center transition-colors min-h-[64px]"
+                    style={isActive
+                      ? { background: 'rgba(244,98,58,0.08)', color: 'var(--coral)', border: '1px solid rgba(244,98,58,0.3)' }
+                      : { background: 'var(--canvas)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
+                    <Icon />
+                    <span className="text-[0.6875rem] font-medium leading-tight">{label}</span>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* 계정 (하단 고정) */}
+      <div className="shrink-0 flex items-center gap-2 px-3 py-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {user.user_metadata?.avatar_url ? (
+            <img src={user.user_metadata.avatar_url} alt="" className="w-7 h-7 rounded-full shrink-0" />
+          ) : (
+            <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold text-white shrink-0" style={{ background: 'var(--coral)' }}>
+              {user.email?.[0]?.toUpperCase()}
+            </div>
+          )}
+          <span className="text-xs truncate" style={{ color: 'var(--warm-mid)' }}>{user.user_metadata?.full_name ?? user.email}</span>
+        </div>
+        <Link href="/property-select" onClick={onClose}
+          className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs transition-colors hover:bg-[var(--canvas)]" style={{ color: 'var(--warm-muted)' }}>
+          <svg {...ico} width={16} height={16}><path d="M3 21h18M6 21V7l6-4 6 4v14"/></svg>
+          영업장
+        </Link>
+        <form action={signOut}>
+          <button type="submit" className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs transition-colors hover:bg-[var(--canvas)]" style={{ color: '#ef4444' }}>
+            <svg {...ico} width={16} height={16}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+            로그아웃
+          </button>
+        </form>
+      </div>
+    </div>
   )
 }

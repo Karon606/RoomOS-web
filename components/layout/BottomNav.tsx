@@ -10,11 +10,11 @@ const ico = {
   strokeWidth: '1.6',
   strokeLinecap: 'round' as const,
   strokeLinejoin: 'round' as const,
-  width: 20,
-  height: 20,
+  width: 19,
+  height: 19,
 }
 
-// 하단 1차 내비 — 핵심 4개. 나머지(지출·재고·결산·체크리스트·계약서·시세·설정 등)는 '전체' → Sidebar 드로어.
+// 하단 1차 내비 — 핵심 6개(홈/방/입주자/수납/지출/재고). 나머지(결산·체크리스트·계약서·시세·설정 등)는 '전체'.
 const NAV_ITEMS = [
   {
     href: '/dashboard',
@@ -35,6 +35,16 @@ const NAV_ITEMS = [
     href: '/rooms',
     label: '수납',
     Icon: () => <svg {...ico}><rect x="3" y="6" width="16" height="12" rx="2"/><path d="M7 6V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1"/><circle cx="12" cy="12" r="2"/></svg>,
+  },
+  {
+    href: '/finance',
+    label: '지출',
+    Icon: () => <svg {...ico}><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>,
+  },
+  {
+    href: '/inventory',
+    label: '재고',
+    Icon: () => <svg {...ico}><path d="M21 8L12 3 3 8v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>,
   },
 ]
 
@@ -62,12 +72,11 @@ export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
             key={href}
             href={linkHref}
             /* HIG: 탭 아이템 최소 높이 49pt, 아이콘+레이블 수직 중앙 */
-            className="flex-1 flex flex-col items-center justify-center gap-1 py-3 transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
             style={{ color: isActive ? 'var(--coral)' : 'var(--warm-muted)', minHeight: 49 }}
           >
             <Icon />
-            {/* HIG: 탭 레이블 최소 11pt */}
-            <span className="text-[0.6875rem] font-medium leading-none">{label}</span>
+            <span className="text-[0.625rem] font-medium leading-none">{label}</span>
           </Link>
         )
       })}
@@ -77,11 +86,11 @@ export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
         type="button"
         onClick={onMenuOpen}
         aria-label="전체 메뉴"
-        className="flex-1 flex flex-col items-center justify-center gap-1 py-3 transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
+        className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
         style={{ color: menuActive ? 'var(--coral)' : 'var(--warm-muted)', minHeight: 49 }}
       >
         <svg {...ico}><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-        <span className="text-[0.6875rem] font-medium leading-none">전체</span>
+        <span className="text-[0.625rem] font-medium leading-none">전체</span>
       </button>
     </nav>
   )
