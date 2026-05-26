@@ -107,7 +107,8 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
       await syncUserToDB()
-      window.location.href = returnTo ?? '/property-select'
+      // #18 replace 사용 — /login이 히스토리에 남지 않아 뒤로가기로 로그인 화면 재진입(→로그아웃 체감) 방지
+      window.location.replace(returnTo ?? '/property-select')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       setNeedsConfirm(msg.includes('Email not confirmed'))
