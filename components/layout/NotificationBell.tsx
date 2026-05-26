@@ -1,12 +1,12 @@
 'use client'
 
 // 🔔 인앱 알림센터 — 헤더 우측. "오늘 챙길 일"(미납·당일 일정·재고·수령)을 모아 보여준다.
-// 목록 소스는 getMyAlerts() → computeAlerts() 로, 푸시 cron 과 동일 → 뱃지 숫자가 홈화면 앱 뱃지와 일치.
-// 항목 클릭: 입주자 관련은 전역 EntityModal(고객 뷰) 제자리, 재고·수령은 해당 페이지로 이동.
+// 목록 소스는 getMyAlerts() → computeAlerts(). 항목 클릭 시 해당 상세로 딥링크 이동 + '읽음' 처리.
+// 읽음 처리는 localStorage 에 날짜별로 저장(오늘 확인한 알림은 숨김, 다음 날 여전히 살아있으면 다시 노출).
+//   ※ 종은 Header(EntityModalProvider 밖)에 있어 전역 모달을 못 쓰므로 URL 딥링크로 이동한다.
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { getMyAlerts } from '@/app/(app)/dashboard/alertActions'
 import type { AlertItem, AlertCategory } from '@/app/(app)/dashboard/alerts'
 
@@ -20,14 +20,35 @@ const DOT: Record<AlertCategory, string> = {
   receipt:  '#9ca3af',
 }
 
+const READ_KEY = 'stayeum_alert_read'
+const todayStr = () => {
+  const n = new Date()
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+}
+function loadReadMap(): Record<string, string> {
+  if (typeof window === 'undefined') return {}
+  try { return JSON.parse(localStorage.getItem(READ_KEY) || '{}') } catch { return {} }
+}
+function saveReadMap(m: Record<string, string>) {
+  try { localStorage.setItem(READ_KEY, JSON.stringify(m)) } catch { /* ignore */ }
+}
+
+// 알림 항목 → 상세 딥링크 URL
+function hrefOf(a: AlertItem): string | null {
+  if (a.tenantId) return `/tenants?tenantId=${a.tenantId}&tab=info`
+  return a.href ?? null
+}
+
 export default function NotificationBell({ currentPropertyId }: { currentPropertyId: string | null }) {
   const [open, setOpen]       = useState(false)
   const [items, setItems]     = useState<AlertItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [readMap, setReadMap] = useState<Record<string, string>>({})
   const ref     = useRef<HTMLDivElement>(null)
   const router  = useRouter()
   const pathname = usePathname()
-  const entityModal = useEntityModal()
+
+  useEffect(() => { setReadMap(loadReadMap()) }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -49,12 +70,25 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
     return () => document.removeEventListener('mousedown', handle)
   }, [open])
 
-  const count = items.length
+  const today = todayStr()
+  // 오늘 읽음 처리한 항목은 숨김 (다음 날 여전히 살아있으면 다시 노출)
+  const visible = items.filter(a => readMap[a.id] !== today)
+  const count = visible.length
+
+  const markRead = (ids: string[]) => {
+    setReadMap(prev => {
+      const next = { ...prev }
+      for (const id of ids) next[id] = today
+      saveReadMap(next)
+      return next
+    })
+  }
 
   const onItem = (a: AlertItem) => {
     setOpen(false)
-    if (a.tenantId) entityModal.open({ kind: 'tenant', tenantId: a.tenantId })
-    else if (a.href) router.push(a.href)
+    markRead([a.id])           // 클릭 = 확인 → 오늘 목록에서 제거
+    const href = hrefOf(a)
+    if (href) router.push(href)
   }
 
   return (
@@ -85,7 +119,12 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
              style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           <div className="px-3.5 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--warm-border)' }}>
             <span className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>오늘 챙길 일</span>
-            {count > 0 && <span className="text-xs font-medium" style={{ color: 'var(--coral)' }}>{count}건</span>}
+            {count > 0 && (
+              <button onClick={() => markRead(visible.map(a => a.id))}
+                className="text-[0.6875rem] font-medium hover:underline" style={{ color: 'var(--warm-muted)' }}>
+                모두 확인 ({count})
+              </button>
+            )}
           </div>
 
           <div className="max-h-[60vh] overflow-y-auto">
@@ -98,7 +137,7 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
                 </p>
               </div>
             ) : (
-              items.map(a => (
+              visible.map(a => (
                 <button
                   key={a.id}
                   type="button"
