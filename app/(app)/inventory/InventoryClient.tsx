@@ -1900,27 +1900,15 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
     try {
       await Promise.all(toSave.map(r => {
         const { afterN, restocked } = computeRow(r)
-        const thisLocQty = afterN ?? 0
-        // 점검 위치 외 다른 위치들 — 이전 점검 값 그대로 유지하되,
-        // 점검 위치가 비허브이고 보충이 있으면 해당 품목의 허브 위치 잔량에서 자동 차감.
+        // #3 서버가 DB의 현재(머지대상)·직전(신규) 위치별 잔량을 base로 허브 차감·이월을 계산한다.
+        //    (클라가 props의 stale한 직전값으로 계산하던 과다 차감·덮어쓰기 버그 제거)
         const hubLoc = r.locations.find(l => l.isHub)
-        const otherLocs = r.lastCheckLocationBreakdown
-          .filter(lb => lb.locationId !== locId)
-          .map(lb => {
-            if (!isHubLocation && restocked > 0 && hubLoc && lb.locationId === hubLoc.id) {
-              return { storageLocationId: lb.locationId, qty: Math.max(0, lb.qty - restocked) }
-            }
-            return { storageLocationId: lb.locationId, qty: lb.qty }
-          })
-
-        const locationQtys = [
-          {
-            storageLocationId: locId, qty: thisLocQty,
-            ...(restocked > 0 ? { restockedQty: restocked } : {}),
-          },
-          ...otherLocs,
-        ]
-        const remainingQty = locationQtys.reduce((s, l) => s + l.qty, 0)
+        const locationPatch = {
+          checkedLocationId: locId!,
+          afterQty: afterN ?? 0,
+          restockedQty: restocked,
+          hubLocationId: hubLoc?.id ?? null,
+        }
 
         // 6h 이내 같은 날 기존 점검 존재 → 자동 머지
         const sameDay = r.lastCheckId && r.lastCheckCreatedAt && isSameKstDay(new Date(r.lastCheckCreatedAt), new Date())
@@ -1928,14 +1916,10 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
         const shouldMerge = forceMerge || (sameDay && within6h)
 
         if (shouldMerge && r.lastCheckId) {
-          return updateStockCheck(r.lastCheckId, {
-            remainingQty,
-            locationQtys: locationQtys.filter(l => l.qty > 0 || (l as { restockedQty?: number }).restockedQty != null),
-          })
+          return updateStockCheck(r.lastCheckId, { locationPatch })
         }
         return createStockCheck({
-          trackedItemId: r.id, date, remainingQty,
-          locationQtys: locationQtys.filter(l => l.qty > 0 || (l as { restockedQty?: number }).restockedQty != null),
+          trackedItemId: r.id, date, remainingQty: 0, locationPatch,
           memo: `위치별 점검 (${locName})`,
         })
       }))

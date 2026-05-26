@@ -8,6 +8,7 @@ import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
 import { TRACKED_CATEGORIES, type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow } from './constants'
 import { computeInventoryOverview } from './overview'
+import { applyLocationCheck, type LocCheckPatch } from '@/lib/stockCheckMerge'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -476,13 +477,27 @@ function applyTransfers(lqs: LocQty[]): LocQty[] {
 export async function createStockCheck(data: {
   trackedItemId: string; date: string; remainingQty: number; memo?: string
   locationQtys?: LocQty[]
+  // #3 위치별 점검 — 서버가 직전 점검(carry-over) 기준으로 허브 차감·이월을 계산(stale 방지).
+  locationPatch?: LocCheckPatch
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const it = await prisma.trackedItem.findFirst({ where: { id: data.trackedItemId, propertyId } })
     if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
-    const adjusted = data.locationQtys && data.locationQtys.length > 0 ? applyTransfers(data.locationQtys) : null
+    // #3: locationPatch가 오면 직전 점검의 위치별 잔량을 base로 서버에서 적용
+    let patchedQtys: LocQty[] | null = null
+    if (data.locationPatch) {
+      const lastCheck = await prisma.stockCheck.findFirst({
+        where: { trackedItemId: data.trackedItemId },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        include: { locationBreakdown: true },
+      })
+      const base = (lastCheck?.locationBreakdown ?? []).map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty }))
+      patchedQtys = applyLocationCheck(base, data.locationPatch)
+    }
+    const effectiveLocationQtys = patchedQtys ?? data.locationQtys
+    const adjusted = effectiveLocationQtys && effectiveLocationQtys.length > 0 ? applyTransfers(effectiveLocationQtys) : null
     const total = adjusted ? adjusted.reduce((s, l) => s + l.qty, 0) : data.remainingQty
     if (total < 0) return { ok: false, error: '잔량은 0 이상이어야 합니다.' }
     const r = await prisma.stockCheck.create({
@@ -517,23 +532,35 @@ export async function updateStockCheck(id: string, data: {
   memo?: string | null
   remainingQty?: number
   locationQtys?: LocQty[]
+  // #3 위치별 점검 머지 — 서버가 이 점검의 현재 위치별 잔량을 base로 적용(stale 방지) + 시각 갱신.
+  locationPatch?: LocCheckPatch
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const c = await prisma.stockCheck.findUnique({ where: { id }, include: { trackedItem: true } })
+    const c = await prisma.stockCheck.findUnique({ where: { id }, include: { trackedItem: true, locationBreakdown: true } })
     if (!c || c.trackedItem.propertyId !== propertyId) return { ok: false, error: '점검 기록을 찾을 수 없습니다.' }
 
-    const adjusted = data.locationQtys && data.locationQtys.length > 0 ? applyTransfers(data.locationQtys) : null
+    // #3: locationPatch가 오면 이 점검의 현재 위치별 잔량을 base로 서버에서 적용(연속 위치점검 머지 정확)
+    let patchedQtys: LocQty[] | null = null
+    if (data.locationPatch) {
+      const base = c.locationBreakdown.map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty }))
+      patchedQtys = applyLocationCheck(base, data.locationPatch)
+    }
+    const effectiveLocationQtys = patchedQtys ?? data.locationQtys
+    const adjusted = effectiveLocationQtys && effectiveLocationQtys.length > 0 ? applyTransfers(effectiveLocationQtys) : null
     const finalQty = adjusted ? adjusted.reduce((s, lq) => s + lq.qty, 0) : data.remainingQty
 
     if (finalQty !== undefined && finalQty < 0) return { ok: false, error: '잔량은 0 이상이어야 합니다.' }
+    // #3 머지 시 점검 시각을 마지막 점검 시각(지금)으로 갱신 (locationPatch 사용 시)
+    const bumpTime = !!data.locationPatch
 
     await prisma.$transaction(async (tx) => {
       await tx.stockCheck.update({
         where: { id },
         data: {
           ...(data.date ? { date: new Date(data.date) } : {}),
+          ...(bumpTime ? { createdAt: new Date() } : {}),
           ...(data.memo !== undefined ? { memo: data.memo || null } : {}),
           ...(finalQty !== undefined ? { remainingQty: finalQty } : {}),
         },
