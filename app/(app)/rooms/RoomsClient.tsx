@@ -1557,22 +1557,28 @@ export default function RoomsClient({
                             <MoneyInput value={discValue} onChange={setDiscValue} placeholder={discType === 'percent' ? '예: 10' : '예: 50000'} />
                           </div>
                         </div>
-                        <div className="flex gap-2">
-                          <select value={discScope} onChange={e => setDiscScope(e.target.value as 'permanent' | 'temporary')}
-                            className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none">
-                            <option value="permanent">영구(매월)</option>
-                            <option value="temporary">일시(기간)</option>
-                          </select>
-                          {discScope === 'temporary' && (
-                            <div className="flex-1 flex items-center gap-1">
-                              <input type="month" value={discStart} onChange={e => setDiscStart(e.target.value)}
-                                className="flex-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none" />
-                              <span className="text-xs text-[var(--warm-muted)]">~</span>
-                              <input type="month" value={discEnd} onChange={e => setDiscEnd(e.target.value)} placeholder="(무기한)"
-                                className="flex-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none" />
+                        <select value={discScope} onChange={e => setDiscScope(e.target.value as 'permanent' | 'temporary')}
+                          className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none">
+                          <option value="permanent">영구(매월)</option>
+                          <option value="temporary">일시(기간)</option>
+                        </select>
+                        {discScope === 'temporary' && (
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex-1">
+                              <DatePicker monthOnly placeholder="시작 월"
+                                value={discStart ? discStart + '-01' : ''}
+                                onChange={v => setDiscStart(v ? v.slice(0, 7) : '')}
+                                className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)]" />
                             </div>
-                          )}
-                        </div>
+                            <span className="text-xs text-[var(--warm-muted)]">~</span>
+                            <div className="flex-1">
+                              <DatePicker monthOnly placeholder="끝(무기한)"
+                                value={discEnd ? discEnd + '-01' : ''}
+                                onChange={v => setDiscEnd(v ? v.slice(0, 7) : '')}
+                                className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)]" />
+                            </div>
+                          </div>
+                        )}
                         <div className="flex gap-2">
                           <button onClick={() => { setShowDiscForm(false); setError('') }}
                             className="flex-1 py-1.5 text-sm rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>

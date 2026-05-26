@@ -15,13 +15,14 @@ interface DatePickerProps {
   placeholder?: string
   maxDate?: string
   minDate?: string
+  monthOnly?: boolean             // 월 단위 선택 — 월 뷰에서 시작, 월 클릭 시 'YYYY-MM-01' 반환·닫힘
   className?: string
   style?: React.CSSProperties
 }
 
 export function DatePicker({
   value, onChange, name, placeholder = '날짜 선택',
-  maxDate, minDate, className, style,
+  maxDate, minDate, monthOnly, className, style,
 }: DatePickerProps) {
   const [open, setOpen]         = useState(false)
   const [view, setView]         = useState<ViewMode>('day')
@@ -55,14 +56,15 @@ export function DatePicker({
       const topAbove   = Math.max(8, r.top - estimatedH - 4)
       setPos({ top: spaceBelow >= estimatedH ? topBelow : topAbove, left, width: popW })
     }
-    setView('day')
+    setView(monthOnly ? 'month' : 'day')
     setOpen(true)
   }
 
   const displayValue = value
-    ? new Date(value + 'T00:00:00').toLocaleDateString('ko-KR', {
-        year: 'numeric', month: 'long', day: 'numeric',
-      })
+    ? new Date(value + 'T00:00:00').toLocaleDateString('ko-KR',
+        monthOnly
+          ? { year: 'numeric', month: 'long' }
+          : { year: 'numeric', month: 'long', day: 'numeric' })
     : ''
 
   // ── Day view 계산 ────────────────────────────────────────────
@@ -225,7 +227,15 @@ export function DatePicker({
                 const isCurrent = viewMonth === i
                 return (
                   <button key={i}
-                    onClick={() => { setViewMonth(i); setView('day') }}
+                    onClick={() => {
+                      setViewMonth(i)
+                      if (monthOnly) {
+                        onChange(`${viewYear}-${String(i + 1).padStart(2, '0')}-01`)
+                        setOpen(false)
+                      } else {
+                        setView('day')
+                      }
+                    }}
                     className="py-2 text-xs rounded-xl transition-colors font-medium"
                     style={isSelected
                       ? { background: 'var(--coral)', color: '#fff' }
@@ -237,15 +247,25 @@ export function DatePicker({
                 )
               })}
             </div>
-            {/* 올해로 이동 */}
-            {viewYear !== new Date().getFullYear() && (
-              <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
-                <button
-                  onClick={() => setViewYear(new Date().getFullYear())}
-                  className="w-full py-1.5 text-xs rounded-lg font-medium transition-colors"
-                  style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
-                  올해로
-                </button>
+            {/* 올해로 이동 / (월 단위) 초기화 */}
+            {(viewYear !== new Date().getFullYear() || (monthOnly && value)) && (
+              <div className="mt-2 pt-2 flex gap-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
+                {viewYear !== new Date().getFullYear() && (
+                  <button
+                    onClick={() => setViewYear(new Date().getFullYear())}
+                    className="flex-1 py-1.5 text-xs rounded-lg font-medium transition-colors"
+                    style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
+                    올해로
+                  </button>
+                )}
+                {monthOnly && value && (
+                  <button
+                    onClick={() => { onChange(''); setOpen(false) }}
+                    className="flex-1 py-1.5 text-xs rounded-lg transition-colors"
+                    style={{ color: 'var(--warm-muted)' }}>
+                    초기화
+                  </button>
+                )}
               </div>
             )}
           </>
