@@ -37,6 +37,7 @@ export type ContractData = {
     cleaningFee: number
     roomNo: string | null
     registrationStatus: '신고' | '미신고' | '면제'
+    signatureImageUrl: string | null   // #8 이전에 받은 앱서명(dataURL) — 출력 시 재표시
   } | null
 }
 
@@ -127,6 +128,7 @@ export async function getContractData(tenantId: string): Promise<ContractData | 
       cleaningFee: lease.cleaningFee,
       roomNo: lease.room?.roomNo ?? null,
       registrationStatus: REGISTRATION_LABEL[lease.registrationStatus] ?? '미신고',
+      signatureImageUrl: (lease as { signatureImageUrl?: string | null }).signatureImageUrl ?? null,
     } : null,
   }
 }
