@@ -560,7 +560,9 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                   ? (e.receivedAt ? kstMonthStr(new Date(e.receivedAt)) : nowMonth)
                   : kstMonthStr(new Date(e.date))
               const monthEntries = data.timeline.filter(e => entryMonth(e) === targetMonth)
-              // 이월분 — targetMonth 시작 이전 마지막 점검의 잔량(전월말 최종 내역)
+              // 이월분 — targetMonth 시작 이전 마지막 점검 잔량 + 그 점검 이후~월초 사이 입수(구매수령·무상).
+              // 점검은 실측 카운트라 그 시점까지의 입수·소모가 이미 반영됨 → 점검 이후 입수만 더함.
+              // (점검↔월초 사이 소모는 데이터로 알 수 없어 미반영 — 본질적 추정치.)
               const priorChecks = data.timeline.filter(
                 (e): e is Extract<TimelineEntry, { type: 'check' }> =>
                   e.type === 'check' && kstMonthStr(new Date(e.date)) < targetMonth,
@@ -568,6 +570,21 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
               const carry = priorChecks.length > 0
                 ? priorChecks.reduce((a, b) => (new Date(b.date) > new Date(a.date) ? b : a))
                 : null
+              // 점검 이후~월초 사이 입수 합(재고단위) — actions.ts 월별입수와 동일 변환(구매=qtyValue×spec, 무상=addedQty)
+              const carryUseSpec = data.item.trackUnit !== 'qty' && !!(data.item.specUnit && data.item.specUnit.trim())
+              const carryInflow = carry
+                ? data.timeline.reduce((s, e) => {
+                    if (entryMonth(e) >= targetMonth) return s
+                    if (e.type === 'addition')
+                      return new Date(e.date) > new Date(carry.date) ? s + e.addedQty : s
+                    if (e.type === 'purchase' && e.receivedAt && new Date(e.receivedAt) > new Date(carry.date))
+                      return s + ((carryUseSpec && e.specValue && e.specValue > 0) ? e.qtyValue * e.specValue : e.qtyValue)
+                    return s
+                  }, 0)
+                : 0
+              const carryBase  = carry ? carry.remainingQty : 0
+              const carryTotal = carryBase + carryInflow
+              const r2 = (n: number) => Math.round(n * 100) / 100
               const [yy, mm] = targetMonth.split('-')
               return (
                 <div className="space-y-2">
@@ -585,9 +602,14 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                     <ul className="space-y-1.5">
                       {monthEntries.map(e => <TimelineRow key={`${e.type}-${e.id}`} entry={e} stockUnit={detailStockUnit} trackUnit={data.item.trackUnit} itemLocations={data.item.locations} onDeleteCheck={handleDeleteCheck} onDeleteAddition={handleDeleteAddition} onConfirmReceipt={handleConfirmReceipt} onChanged={() => { reload(); onChange() }} loadingId={loadingId} />)}
                       {carry && (
-                        <li className="flex items-center justify-between bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2">
-                          <span className="text-[0.6875rem] font-medium text-[var(--warm-muted)]">이월분 · {yy}.{mm}.01</span>
-                          <span className="text-xs font-semibold text-[var(--warm-mid)]">잔량 {fmtQty(carry.remainingQty, detailStockUnit)}</span>
+                        <li className="flex items-center justify-between gap-2 bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2">
+                          <div className="min-w-0">
+                            <span className="text-[0.6875rem] font-medium text-[var(--warm-muted)]">이월분 · {yy}.{mm}.01</span>
+                            {carryInflow > 0 && (
+                              <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">점검 {r2(carryBase)} + 입수 {r2(carryInflow)}</p>
+                            )}
+                          </div>
+                          <span className="text-xs font-semibold text-[var(--warm-mid)] shrink-0">잔량 {fmtQty(carryTotal, detailStockUnit)}</span>
                         </li>
                       )}
                     </ul>
