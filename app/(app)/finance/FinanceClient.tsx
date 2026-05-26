@@ -1307,13 +1307,19 @@ export default function FinanceClient({
       } finally { release() }
     })
   }
-  const handleDeleteExp = (id: string) => {
-    if (!confirm('삭제하시겠습니까?')) return
+  const handleDeleteExp = (exp: Expense) => {
+    // #7: 고정지출에서 기록된 건은 '삭제'가 아니라 '이번 달 기록 취소'임을 명확히.
+    //     (지출 record만 삭제 — 고정지출 항목/템플릿 자체는 그대로 유지)
+    const isFixed = !!exp.recurringExpenseId
+    const msg = isFixed
+      ? '이번 달 고정지출 기록만 취소할까요?\n고정지출 항목 자체는 그대로 남고, 이번 달 기록(정산)만 취소됩니다.'
+      : '삭제하시겠습니까?'
+    if (!confirm(msg)) return
     startTransition(async () => {
       const release = trackSave()
       try {
-        await deleteExpense(id); setDetailExp(null); router.refresh()
-        pushToast('success', '삭제됨')
+        await deleteExpense(exp.id); setDetailExp(null); router.refresh()
+        pushToast('success', isFixed ? '이번 달 기록이 취소되었습니다' : '삭제됨')
       } finally { release() }
     })
   }
@@ -1746,7 +1752,7 @@ export default function FinanceClient({
                       const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
                       return (
                         <div key={`rec-${r.id}`}
-                          onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.payMethod ?? '계좌이체'); setRecRecAccId(r.financialAccountId ?? ''); setRecError('') }}
+                          onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
                           className="border border-amber-200 rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity bg-amber-50/30">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
@@ -1832,7 +1838,7 @@ export default function FinanceClient({
                       const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
                           return (
                             <tr key={`rec-${r.id}`}
-                              onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.payMethod ?? '계좌이체'); setRecRecAccId(r.financialAccountId ?? ''); setRecError('') }}
+                              onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
                               className="border-b border-[var(--warm-border)] bg-[var(--canvas)]/40 hover:bg-[var(--canvas)] transition-colors cursor-pointer"
                               style={{ boxShadow: 'inset 3px 0 0 #fbbf24' }}>
                               <td className="px-4 py-3 text-xs text-[var(--warm-muted)] overflow-hidden">
@@ -2398,8 +2404,10 @@ export default function FinanceClient({
                   )}
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                  <button onClick={() => handleDeleteExp(detailExp.id)} disabled={isPending}
-                    className="px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm rounded-xl transition-colors disabled:opacity-40">삭제</button>
+                  <button onClick={() => handleDeleteExp(detailExp)} disabled={isPending}
+                    className="px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm rounded-xl transition-colors disabled:opacity-40">
+                    {detailExp.recurringExpenseId ? '이번 달 기록 취소' : '삭제'}
+                  </button>
                   {detailExp.settleStatus === 'SETTLED' && (detailExp.payMethod === '신용카드' || detailExp.payMethod === '체크카드') && (
                     <button onClick={() => handleUnsettle(detailExp.id)} disabled={isPending}
                       className="px-4 py-2.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 text-sm rounded-xl transition-colors disabled:opacity-40">
@@ -3246,10 +3254,10 @@ export default function FinanceClient({
                       router.refresh()
                     })
                   }}>
-                  {isPending ? '저장 중...' : '기록 저장'}
+                  {isPending ? '기록 중...' : '지출로 기록 (정산 완료)'}
                 </Btn>
               </div>
-              {/* 예약 저장 — 결제일 전에 금액만 미리 입력해 두는 모드. 지출은 생성하지 않음. */}
+              {/* 금액만 저장 — 결제일 전에 금액만 미리 입력해 두는 모드. 지출은 생성하지 않음(정산 안 함). */}
               <button type="button"
                 disabled={isPending || recRecAmount <= 0}
                 onClick={() => {
@@ -3264,9 +3272,12 @@ export default function FinanceClient({
                     router.refresh()
                   })
                 }}
-                className="w-full px-4 py-2 bg-[var(--canvas)] border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-xs rounded-xl hover:bg-[var(--coral)]/5 disabled:opacity-60 transition-colors">
-                예약 저장 (결제일에 처리) — 금액만 보관
+                className="w-full px-4 py-2.5 bg-[var(--canvas)] border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-xs font-medium rounded-xl hover:bg-[var(--coral)]/5 disabled:opacity-60 transition-colors">
+                💾 금액만 저장 (정산 안 함 · 나중에 납부)
               </button>
+              <p className="text-[0.625rem] text-[var(--warm-muted)] text-center leading-relaxed">
+                ‘지출로 기록’은 바로 정산 처리돼요. 금액만 미리 적어둘 땐 아래 버튼을 쓰세요.
+              </p>
             </div>
           </div>
         </div>

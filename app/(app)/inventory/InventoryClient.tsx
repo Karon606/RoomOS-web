@@ -1943,6 +1943,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
       await Promise.all(toSave.map(r => deleteStockCheckDraft(r.id, locId)))
       onDraftChange?.()
       onDone()
+      onClose()   // #4: 위치별 최종 저장 후 점검 창(위치 패널) 닫기
     } catch {
       setError('저장 중 오류가 발생했습니다.')
     } finally {

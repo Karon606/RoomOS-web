@@ -693,6 +693,9 @@ export type RecurringExpenseWithStatus = {
   historicalAvg: number | null
   // 미리 입력된 예약 금액 — 결제일 모달에서 prefill될 값. 기록 시 자동 클리어
   pendingAmount: number | null
+  // #6: 가장 최근 실제 기록의 결제수단·계좌 — 기록 모달 기본값으로 사용(지난달 처리 방식 자동 대기). 없으면 null
+  lastPayMethod: string | null
+  lastFinancialAccountId: string | null
 }
 
 export async function getRecurringExpensesWithStatus(month: string): Promise<RecurringExpenseWithStatus[]> {
@@ -716,6 +719,21 @@ export async function getRecurringExpensesWithStatus(month: string): Promise<Rec
   const recurringList = allRecurring
 
   const recordedMap = new Map(recordedThisMonth.map(e => [e.recurringExpenseId!, e]))
+
+  // #6: 각 고정지출의 '가장 최근 실제 기록'의 결제수단·계좌 — 기록 모달 기본값(지난달 처리 방식 자동 대기)
+  const recurringIds = recurringList.map(re => re.id)
+  const lastRecords = recurringIds.length > 0
+    ? await prisma.expense.findMany({
+        where: { propertyId, recurringExpenseId: { in: recurringIds } },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        select: { recurringExpenseId: true, payMethod: true, financialAccountId: true },
+      })
+    : []
+  const lastRecordMap = new Map<string, { payMethod: string | null; financialAccountId: string | null }>()
+  for (const e of lastRecords) {
+    const id = e.recurringExpenseId!
+    if (!lastRecordMap.has(id)) lastRecordMap.set(id, { payMethod: e.payMethod, financialAccountId: e.financialAccountId })
+  }
 
   // 변동 항목 최근 3개월 평균 + 전년동월 수치 (isPending 항목 제외)
   const variableIds = recurringList.filter(re => (re as any).isVariable && !(new Date((re as any).activeSince ?? 0) > endDate)).map(re => re.id)
@@ -771,6 +789,8 @@ export async function getRecurringExpensesWithStatus(month: string): Promise<Rec
       recordedDate:      isPending ? null : (recorded ? new Date(recorded.date).toISOString().slice(0, 10) : null),
       historicalAvg:     historicalAvgVal,
       pendingAmount:     (re as any).pendingAmount ?? null,
+      lastPayMethod:        lastRecordMap.get(re.id)?.payMethod ?? null,
+      lastFinancialAccountId: lastRecordMap.get(re.id)?.financialAccountId ?? null,
     }
   })
 }

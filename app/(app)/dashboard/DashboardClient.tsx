@@ -1172,10 +1172,12 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
       setLease(l)
       if (l) {
         setPayAmount(l.rentAmount)
-        const { records, acquisitionDate: acq } = await getPaymentsByLease(l.id, targetMonth)
+        const { records, acquisitionDate: acq, lastPayMethod: leaseLast } = await getPaymentsByLease(l.id, targetMonth)
         if (cancelled) return
         setPayHistory(records as DashPayRecord[])
         setAcquisitionDate(acq ? new Date(acq) : null)
+        // #5: 이 입주자(lease)의 최근 납부방법을 기본값으로 (전역 localStorage 대신 입주자별)
+        setLastPayMethod(leaseLast ?? '')
       }
       setLoading(false)
     })()
@@ -1528,7 +1530,8 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <p className="text-[0.625rem] text-[var(--warm-muted)]">납부방법</p>
-                      <select name="payMethod" defaultValue={lastPayMethod}
+                      {/* #5: key에 lastPayMethod 포함 — lease 최근 방법 도착 시 remount되어 기본값 반영 */}
+                      <select key={`pm-${tenantId}-${lastPayMethod}`} name="payMethod" defaultValue={lastPayMethod}
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                         <option value="">선택 안 함</option>
                         {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}

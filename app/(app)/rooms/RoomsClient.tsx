@@ -468,9 +468,11 @@ export default function RoomsClient({
     setShowPayModal(true)
     if (room.leaseTermId) {
       setLoadingHistory(true)
-      const { records, acquisitionDate } = await getPaymentsByLease(room.leaseTermId, targetMonth)
+      const { records, acquisitionDate, lastPayMethod: leaseLast } = await getPaymentsByLease(room.leaseTermId, targetMonth)
       setPaymentHistory(records as PaymentRecord[])
       setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
+      // #5: 이 입주자(lease)의 최근 납부방법을 기본값으로 (전역 localStorage 대신 입주자별)
+      setLastPayMethod(leaseLast ?? '')
       setLoadingHistory(false)
       getPrevOwnerSettleState(room.leaseTermId, targetMonth)
         .then(s => { setPrevOwnerCanSettle(s.canSettle); setPrevOwnerMenuMode(s.menuMode) })
@@ -1875,7 +1877,8 @@ export default function RoomsClient({
                   )}
                   <div className="space-y-1">
                     <label className="text-xs text-[var(--warm-muted)]">결제 수단</label>
-                    <select name="payMethod" defaultValue={lastPayMethod || '계좌이체'}
+                    {/* #5: key에 lastPayMethod 포함 — lease 최근 방법이 fetch로 도착하면 select가 remount되어 기본값 반영 */}
+                    <select key={`pm-${selectedRoom?.leaseTermId ?? ''}-${lastPayMethod}`} name="payMethod" defaultValue={lastPayMethod || '계좌이체'}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                       <option value="계좌이체">계좌이체</option>
                       <option value="현금">현금</option>

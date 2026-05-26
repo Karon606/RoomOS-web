@@ -1179,7 +1179,7 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
   const [y, m] = targetMonth.split('-').map(Number)
   const monthStart = new Date(y, m - 1, 1)
   const monthEnd = new Date(y, m, 0); monthEnd.setHours(23, 59, 59, 999)
-  const [records, property] = await Promise.all([
+  const [records, property, lastWithMethod] = await Promise.all([
     prisma.paymentRecord.findMany({
       where: { leaseTermId, payDate: { gte: monthStart, lte: monthEnd } },
       orderBy: [{ payDate: 'asc' }, { seqNo: 'asc' }],
@@ -1188,7 +1188,13 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
       where: { id: propertyId },
       select: { acquisitionDate: true, prevOwnerCutoffDate: true },
     }),
+    // #5: 이 입주자(lease)의 가장 최근 납부방법 — 수납 모달 기본값(입주자별). 보증금 제외.
+    prisma.paymentRecord.findFirst({
+      where: { leaseTermId, isDeposit: false, payMethod: { not: null } },
+      orderBy: [{ payDate: 'desc' }, { seqNo: 'desc' }],
+      select: { payMethod: true },
+    }),
   ])
   const cutoff = property?.prevOwnerCutoffDate ?? property?.acquisitionDate ?? null
-  return { records, acquisitionDate: cutoff }
+  return { records, acquisitionDate: cutoff, lastPayMethod: lastWithMethod?.payMethod ?? null }
 }
