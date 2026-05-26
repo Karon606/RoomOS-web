@@ -122,7 +122,9 @@ export default function RoomManageClient({
   windowTypes: string[]
   directions: string[]
 }) {
-  const [rooms] = useState(initialRooms)
+  // #12: initialRooms를 useState로 캡처하면 router.refresh() 후에도 갱신 안 됨(즉시 적용·편집 미반영).
+  //      prop을 직접 사용 → revalidatePath+router.refresh 페어로 즉시 반영. (feedback_auto_refresh)
+  const rooms = initialRooms
   const windowTypeOptions  = windowTypes.map(v => ({ value: v, label: getWindowLabel(v) }))
   const directionOptions   = directions.map(v => ({ value: v, label: getDirectionLabel(v) }))
 
