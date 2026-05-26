@@ -5,6 +5,42 @@
 
 ## 완료된 것
 
+### 2026-05-26 운영 피드백 마라톤 (#1~#18, 전부 배포 또는 병합 완료)
+사용자가 실사용 중 연속으로 던진 18건. 스키마-프리는 main 즉시 배포, 스키마성 3건은 통합 브랜치
+`feat/schema-batch`에 모아 SQL 일괄 적용 후 main 병합(`640e296`). **SQL 3개 프로덕션 적용 완료**
+(recurring_expense_items, lease_terms.signatureImageUrl, rent_discounts + expenses.breakdownJson).
+
+**main 배포 (커밋)**
+- #2·#4·#5·#6·#7 (`89c2bf3`): 고정지출 기록 버튼 명확화 / 위치점검 창닫힘 / 수납 납부방법 입주자별 /
+  고정지출 지난달 방식·계좌 / '이번 달 기록 취소' 라벨.
+- #9 (`7a941f7`): 하단바 6탭(홈/방/입주자/수납/지출/재고)+전체. 모바일 '전체' 전체화면 그리드 메뉴.
+- #10 (`5deedd7`): 🔔 알림 클릭 딥링크 이동(/tenants?tenantId 등) + localStorage 날짜별 읽음처리·'모두 확인'.
+  (원인: 종이 EntityModalProvider 밖이라 useEntityModal no-op)
+- #11 (`6c212d2`): 보증금 수납 시 입력금액이 보증금액으로 덮어써져 월세 누락 → 보증금+이용료 전체 프리필.
+- #12 (`8cfa9c8`): 방 관리 예약가격 '즉시 적용' 미반영 → rooms useState(initialRooms) 캡처 제거(prop 직접).
+- #13 (`188b51d`): 공실 카드 표시정보 선택(창문/방향/층 등, 모바일 칩 최대4) + 방향 옵션 추가.
+- #15·#16 (`aab543f`): 체크리스트 → 스테이음 Lab 이동·대시보드 알림 제거 / '지금 급함'→'긴급'.
+- #17 (`311d36c`): 재고 알림 단위 박스→kg(specUnit) + 라벨 '입주자 관리'→'재고 관리에서 보기'.
+- #18 (`acb593e`): 안드로이드 뒤로가기 반복 로그아웃 완화 — /callback 재진입 가드(이미 인증이면 code 재교환 skip)
+  + 로그인 후 window.location.replace. ⚠️ Android 실기기 테스트 필요(잔존 시 refresh-token 회전 레이스 의심).
+- #3 (`6f6ae07`): 위치별 재고 점검 허브 과다차감 — 클라가 stale props로 계산하던 것을 서버권위로 전환.
+  lib/stockCheckMerge.ts applyLocationCheck(단위테스트). create/updateStockCheck에 locationPatch 모드
+  (DB 현재/직전 잔량 base) + 머지 시 시각 갱신. ⚠️ 실데이터 점검 시퀀스 검증 권장.
+
+**스키마 3건 (`feat/schema-batch`→main `640e296`)**
+- #8 계약서 출력 서명: LeaseTerm.signatureImageUrl — 서명 시 dataURL 저장, getContractData 반환,
+  ContractView 초기값 로드 → 재출력 시 서명 표시.
+- #1 관리비 부모+세부항목: RecurringExpenseItem + Expense.breakdownJson. 묶기 UI(기존 항목→부모 전환),
+  기록 모달 세부항목(변동 편집)·합계, 지출 상세 breakdown. (남은 것: 관리폼에서 부모 세부항목 직접 편집 — 후속)
+- #14 월세 할인: RentDiscount(입주자별·여러개·금액/%·영구/일시). lib/rentDiscount.ts(단위테스트 10/10).
+  **수납 관리 미수에 완전 반영**(getRoomPaymentStatus expected·이월·firstUnpaid 월별 할인). 수납 모달 할인 관리 UI.
+
+**남은 것 (검증/후속)**
+- #14 후속: **대시보드 '이달 미수납' 위젯 + 푸시 미수**에는 할인 미반영 — getDashboardData·unpaid.ts(발생주의
+  3중 복제)에 동일 헬퍼(discountedRent) 적용 필요. 실데이터 검증 세션에서. (수납 화면은 이미 반영)
+- 사용자 라이브 검증 대기: #1 묶기·기록 / #8 계약서 서명 / #14 할인 미수 / #3 재고 점검 시퀀스 / #18 Android.
+- #12 보충: 509호처럼 '이미 공실'인데 예약인상이 안 걸린 경우는 즉시적용 버튼으로 처리(즉시적용 자체는 #12로 수정됨).
+
 ### 2026-05-26 세션 2부 (운영 피드백 수정 — 고정지출·수납·재고, main `89c2bf3` 배포됨)
 사용자 운영 중 발견 버그 7건 중 **명확·저위험 5건 처리·배포**. #3(재고)·#1(재설계)은 아래 '할 일'에 설계/계획 남김.
 - **#4 재고 위치별 점검 최종저장 후 창 안 닫힘**: `LocationBatchCheckModal.doSave` 성공 후 `onClose()` 호출 추가.
