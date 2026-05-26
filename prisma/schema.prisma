@@ -302,6 +302,8 @@ model LeaseTerm {
   registrationStatus RegistrationStatus @default(NOT_REPORTED)
   contractUrl        String?
   contractOverride   Json?              // 입실자별 계약서 본문 덮어쓰기 (Property.contractTemplate 형식과 동일). null이면 영업장 공통 템플릿 사용
+  // #8 앱서명 재사용: 마지막으로 받은 서명 이미지(dataURL). 계약서 출력 에디터가 이 값을 불러와 표시·재인쇄.
+  signatureImageUrl  String?
   wishRooms          String?
   wishConditions     String?            // JSON: { floor?, windowType?, type?, direction? } — 호실 미지정 예약자용. "{}"이면 조건 무관(모든 빈 방 매칭)
   keepAlertAfterInquiry Boolean         @default(false)  // 입주 희망일이 지나도 알림 유지
@@ -326,9 +328,30 @@ model LeaseTerm {
   statusLogs     TenantStatusLog[]
   depositRefunds DepositRefund[]
   contractFiles  ContractFile[]
+  discounts      RentDiscount[]   // #14 월세 할인(입주자별, 여러 개 가능)
 
   @@index([propertyId, status]) // 영업장별 현재 거주자 조회 최적화
   @@map("lease_terms")
+}
+
+// #14 월세 할인 — 입주자(계약)별, 여러 개 중첩 가능.
+//   discountType: 'amount'(원) | 'percent'(%) — percent는 그 달 기본 임대료 기준.
+//   scope: 'permanent'(매월) | 'temporary'(startMonth~endMonth, YYYY-MM 포함).
+//   여러 할인 합산은 그 달 임대료를 초과하지 않게 캡(계산은 lib/rentDiscount.ts 순수함수).
+model RentDiscount {
+  id           String    @id @default(uuid()) @db.Uuid
+  leaseTermId  String    @db.Uuid
+  leaseTerm    LeaseTerm @relation(fields: [leaseTermId], references: [id], onDelete: Cascade)
+  discountType String    // 'amount' | 'percent'
+  value        Int       // 원(amount) 또는 % (percent)
+  scope        String    // 'permanent' | 'temporary'
+  startMonth   String?   // 'YYYY-MM' (temporary)
+  endMonth     String?   // 'YYYY-MM' (temporary)
+  memo         String?
+  createdAt    DateTime  @default(now())
+
+  @@index([leaseTermId])
+  @@map("rent_discounts")
 }
 
 // ============================================================
@@ -416,6 +439,8 @@ model Expense {
   financeName   String?
   receiptUrls   String?
   targetRoomId  String?
+  // #1 관리비 묶음: 장부엔 1줄(합계)이지만 세부항목 내역을 보관. JSON [{name, amount, isVariable}]
+  breakdownJson String?
   itemLabel    String?
   specValue    Float?
   specUnit     String?
@@ -672,9 +697,28 @@ model RecurringExpense {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   expenses        Expense[]
+  // #1 관리비 묶음: 세부항목(있으면 이 고정지출은 '부모/묶음'). 합계 = 세부 amount 합, 변동 = 하나라도 변동.
+  items           RecurringExpenseItem[]
 
   @@index([propertyId])
   @@map("recurring_expenses")
+}
+
+// #1 고정지출 세부항목 — 예: '관리비' 부모 아래 청소관리비(고정)·수도요금(변동) 등.
+// 부모(RecurringExpense)의 amount/isVariable 은 이 항목들로부터 파생(서버에서 동기화).
+model RecurringExpenseItem {
+  id                 String           @id @default(uuid()) @db.Uuid
+  recurringExpenseId String           @db.Uuid
+  recurringExpense   RecurringExpense @relation(fields: [recurringExpenseId], references: [id], onDelete: Cascade)
+  name               String
+  amount             Int              @default(0)   // 고정이면 그 금액, 변동이면 기본/직전 추정액
+  isVariable         Boolean          @default(false)
+  sortOrder          Int              @default(0)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([recurringExpenseId])
+  @@map("recurring_expense_items")
 }
 
 // ============================================================

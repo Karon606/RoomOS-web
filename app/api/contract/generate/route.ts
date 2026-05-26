@@ -166,6 +166,14 @@ export async function POST(req: Request) {
       select: { id: true, driveFileId: true, fileName: true, signedAt: true },
     })
 
+    // #8 서명 이미지를 lease에 영구 저장 — 다음에 계약서 출력 에디터를 열면 이 서명을 불러와 표시·재인쇄
+    if (lease?.id) {
+      await prisma.leaseTerm.update({
+        where: { id: lease.id },
+        data: { signatureImageUrl: body.signatureImageDataUrl },
+      })
+    }
+
     return NextResponse.json({
       ok: true,
       file: {

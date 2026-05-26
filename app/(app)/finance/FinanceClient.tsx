@@ -13,7 +13,7 @@ import {
   type RecurringExpenseWithStatus,
 } from './actions'
 import {
-  getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
+  getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
   type RecurringExpenseRow,
 } from '@/app/(app)/settings/actions'
 import { useRouter } from 'next/navigation'
@@ -46,6 +46,7 @@ type Expense = {
   roomId: string | null; room: { id: string; roomNo: string } | null
   recurringExpenseId: string | null; recurringExpense: { isVariable: boolean } | null
   receiptUrl: string | null
+  breakdownJson: string | null   // #1 관리비 묶음 세부 내역
   itemLabel: string | null
   specValue: number | null; specUnit: string | null
   qtyValue: number | null; qtyUnit: string | null
@@ -1085,6 +1086,8 @@ export default function FinanceClient({
   // ── 고정 지출 탭 상태 ────────────────────────────────────────
   const [recordingRec, setRecordingRec] = useState<RecurringExpenseWithStatus | null>(null)
   const [recRecAmount, setRecRecAmount] = useState(0)
+  // #1 관리비 묶음: 기록 시 세부항목별 금액(변동은 편집). 비어있으면 단일 금액 모드.
+  const [recRecItems, setRecRecItems]   = useState<{ name: string; amount: number; isVariable: boolean }[]>([])
   const [recRecDate, setRecRecDate]     = useState('')
   const [recRecMemo, setRecRecMemo]     = useState('')
   const [recRecPayMethod, setRecRecPayMethod] = useState('')
@@ -1097,6 +1100,10 @@ export default function FinanceClient({
   const [recMgmtLoading, setRecMgmtLoading] = useState(false)
   const [editingRecMgmt, setEditingRecMgmt] = useState<RecurringExpenseRow | null>(null)
   const [showRecMgmtForm, setShowRecMgmtForm] = useState(false)
+  // #1 묶기(여러 고정지출 → 관리비 부모로 전환) 모드
+  const [recGroupMode, setRecGroupMode] = useState(false)
+  const [recGroupSel, setRecGroupSel]   = useState<Set<string>>(new Set())
+  const [recGroupTitle, setRecGroupTitle] = useState('임대관리비')
   const [recMgmtForm, setRecMgmtForm]   = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', priorYearAmount: '', memo: '' })
   const [recMgmtPending, startRecMgmtTransition] = useTransition()
   const [recMgmtError, setRecMgmtError] = useState('')
@@ -1170,6 +1177,35 @@ export default function FinanceClient({
       await updateRecurringExpense(r.id, { isActive: !r.isActive })
       const list = await getRecurringExpenses()
       setRecMgmtList(list)
+      router.refresh()
+    })
+  }
+  const toggleGroupSel = (id: string) => {
+    setRecGroupSel(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  const handleGroupRec = () => {
+    const ids = [...recGroupSel]
+    if (ids.length < 2) { setRecMgmtError('묶을 항목을 2개 이상 선택하세요.'); return }
+    if (!recGroupTitle.trim()) { setRecMgmtError('묶음 이름을 입력하세요.'); return }
+    // 부모 카테고리·납부일·결제수단은 선택 항목 중 첫 항목 기준 (이후 수정 가능)
+    const base = recMgmtList.find(r => r.id === ids[0])
+    startRecMgmtTransition(async () => {
+      const res = await groupRecurringExpenses({
+        title: recGroupTitle.trim(),
+        category: base?.category ?? DEFAULT_RECURRING_CATEGORY,
+        dueDay: base?.dueDay ?? 25,
+        payMethod: base?.payMethod ?? null,
+        financialAccountId: base?.financialAccountId ?? null,
+        sourceIds: ids,
+      })
+      if (!res.ok) { setRecMgmtError(res.error); return }
+      const list = await getRecurringExpenses()
+      setRecMgmtList(list)
+      setRecGroupMode(false); setRecGroupSel(new Set()); setRecMgmtError('')
       router.refresh()
     })
   }
@@ -1752,7 +1788,7 @@ export default function FinanceClient({
                       const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
                       return (
                         <div key={`rec-${r.id}`}
-                          onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
+                          onClick={() => { setRecordingRec(r); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
                           className="border border-amber-200 rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity bg-amber-50/30">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
@@ -1838,7 +1874,7 @@ export default function FinanceClient({
                       const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
                           return (
                             <tr key={`rec-${r.id}`}
-                              onClick={() => { setRecordingRec(r); setRecRecAmount(expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
+                              onClick={() => { setRecordingRec(r); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
                               className="border-b border-[var(--warm-border)] bg-[var(--canvas)]/40 hover:bg-[var(--canvas)] transition-colors cursor-pointer"
                               style={{ boxShadow: 'inset 3px 0 0 #fbbf24' }}>
                               <td className="px-4 py-3 text-xs text-[var(--warm-muted)] overflow-hidden">
@@ -2385,6 +2421,26 @@ export default function FinanceClient({
                   {detailExp.vendor && <DetailRow label="구매처"   value={detailExp.vendor} />}
                   <DetailRow label="세부 항목"   value={detailExp.detail ?? '—'} />
                   <DetailRow label="금액"        value={<span className="text-red-400 font-semibold"><MoneyDisplay amount={detailExp.amount} prefix="-" /></span>} />
+                  {/* #1 관리비 묶음: 세부 내역(breakdownJson)이 있으면 펼쳐 표시 */}
+                  {detailExp.breakdownJson && (() => {
+                    let bd: { name: string; amount: number; isVariable: boolean }[] = []
+                    try { bd = JSON.parse(detailExp.breakdownJson) } catch { /* ignore */ }
+                    if (bd.length === 0) return null
+                    return (
+                      <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-3 space-y-1.5">
+                        <p className="text-[0.6875rem] font-medium text-[var(--warm-muted)]">세부 내역</p>
+                        {bd.map((it, i) => (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                            <span className="text-[var(--warm-dark)]">
+                              {it.name}
+                              {it.isVariable && <span className="ml-1 text-[0.5625rem] text-amber-600">(변동)</span>}
+                            </span>
+                            <span className="font-mono text-[var(--warm-dark)]">{it.amount.toLocaleString()}원</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                   {detailExp.room && <DetailRow label="대상 호실" value={`${detailExp.room.roomNo}호`} />}
                   <DetailRow label="결제수단"    value={detailExp.payMethod ?? '—'} />
                   {detailExp.financeName && <DetailRow label="금융사" value={detailExp.financeName} />}
@@ -3093,11 +3149,39 @@ export default function FinanceClient({
                   </button>
                 </div>
               </div>
+            ) : recGroupMode ? (
+              /* #1 묶기 모드 — 아래 목록에서 묶을 항목 선택 후 실행 */
+              <div className="rounded-xl border border-[var(--coral)]/40 bg-[var(--coral)]/5 p-3 space-y-2">
+                <p className="text-xs font-semibold text-[var(--warm-dark)]">묶을 고정지출을 선택하세요 (2개 이상)</p>
+                <div className="space-y-1">
+                  <label className="text-[0.6875rem] text-[var(--warm-mid)]">묶음 이름</label>
+                  <input type="text" value={recGroupTitle} onChange={e => setRecGroupTitle(e.target.value)}
+                    placeholder="예: 임대관리비"
+                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                </div>
+                <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
+                  선택 항목은 이 묶음의 세부항목으로 전환되고(각 변동/고정 유지), 원본은 비활성됩니다(과거 기록 보존).
+                </p>
+                <div className="flex gap-2">
+                  <button onClick={() => { setRecGroupMode(false); setRecGroupSel(new Set()); setRecMgmtError('') }}
+                    className="flex-1 py-2 text-sm rounded-xl border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>
+                  <button onClick={handleGroupRec} disabled={recMgmtPending || recGroupSel.size < 2}
+                    className="flex-1 py-2 text-sm font-medium rounded-xl text-white disabled:opacity-50" style={{ background: 'var(--coral)' }}>
+                    {recMgmtPending ? '묶는 중…' : `${recGroupSel.size}개 묶기`}
+                  </button>
+                </div>
+              </div>
             ) : (
-              <button onClick={openNewRecMgmt}
-                className="w-full py-2.5 text-sm font-medium rounded-xl border border-dashed border-[var(--coral)] text-[var(--coral)] hover:bg-[var(--coral)]/5 transition-colors">
-                + 새 항목 추가
-              </button>
+              <div className="flex gap-2">
+                <button onClick={openNewRecMgmt}
+                  className="flex-1 py-2.5 text-sm font-medium rounded-xl border border-dashed border-[var(--coral)] text-[var(--coral)] hover:bg-[var(--coral)]/5 transition-colors">
+                  + 새 항목 추가
+                </button>
+                <button onClick={() => { setRecGroupMode(true); setRecMgmtError('') }}
+                  className="px-4 py-2.5 text-sm font-medium rounded-xl border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                  🔗 묶기
+                </button>
+              </div>
             )}
 
             {/* 목록 */}
@@ -3107,11 +3191,22 @@ export default function FinanceClient({
               <p className="text-sm text-[var(--warm-muted)] text-center py-3">등록된 고정 지출이 없습니다.</p>
             ) : (
               <div className="space-y-2">
-                {recMgmtList.map(r => (
-                  <div key={r.id} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 border border-[var(--warm-border)] ${r.isActive ? 'bg-[var(--canvas)]' : 'bg-[var(--canvas)] opacity-50'}`}>
+                {recMgmtList.map(r => {
+                  const isParent = r.items && r.items.length > 0
+                  const selectable = recGroupMode && r.isActive
+                  return (
+                  <div key={r.id}
+                    onClick={selectable ? () => toggleGroupSel(r.id) : undefined}
+                    className={`flex items-center gap-3 rounded-xl px-3 py-2.5 border ${recGroupSel.has(r.id) ? 'border-[var(--coral)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] bg-[var(--canvas)]'} ${!r.isActive ? 'opacity-50' : ''} ${selectable ? 'cursor-pointer' : ''}`}>
+                    {recGroupMode && (
+                      <input type="checkbox" checked={recGroupSel.has(r.id)} disabled={!r.isActive}
+                        onChange={() => toggleGroupSel(r.id)} onClick={e => e.stopPropagation()}
+                        className="w-4 h-4 accent-[var(--coral)] shrink-0" />
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{r.title}</p>
+                        {isParent && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--coral)]/15 text-[var(--coral)]">묶음 {r.items.length}</span>}
                         {r.isAutoDebit && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">자동이체</span>}
                         {!r.isActive && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">비활성</span>}
                         {r.activeSince && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600">{r.activeSince.slice(0, 7)}부터</span>}
@@ -3121,7 +3216,13 @@ export default function FinanceClient({
                         {r.payMethod && <> · {r.payMethod}</>}
                         {r.financialAccountName && <> ({r.financialAccountName})</>}
                       </p>
+                      {isParent && (
+                        <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">
+                          {r.items.map(it => `${it.name}${it.isVariable ? '(변동)' : ''}`).join(' · ')}
+                        </p>
+                      )}
                     </div>
+                    {!recGroupMode && (
                     <div className="flex items-center gap-1 shrink-0">
                       <button onClick={() => handleToggleRecMgmt(r)}
                         className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
@@ -3132,8 +3233,10 @@ export default function FinanceClient({
                       <button onClick={() => handleDeleteRecMgmt(r.id, r.title)}
                         className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-red-200 text-red-400 hover:text-red-600 transition-colors">삭제</button>
                     </div>
+                    )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
@@ -3157,6 +3260,46 @@ export default function FinanceClient({
           </div>
           {/* 폼 */}
           <div className="p-5 space-y-3">
+            {recRecItems.length > 0 ? (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs text-[var(--warm-muted)]">날짜</label>
+                  <DatePicker value={recRecDate} onChange={setRecRecDate}
+                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                </div>
+                {/* #1 관리비 세부항목 — 변동 항목만 편집, 고정은 표시. 합계 자동. */}
+                <div className="space-y-1.5 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-3">
+                  <p className="text-[0.6875rem] font-medium text-[var(--warm-muted)]">세부항목 ({recRecItems.length})</p>
+                  {recRecItems.map((it, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="text-xs text-[var(--warm-dark)] flex-1 truncate">
+                        {it.name}
+                        {it.isVariable
+                          ? <span className="ml-1 text-[0.5625rem] text-amber-600 bg-amber-400/15 px-1 py-0.5 rounded-full">변동</span>
+                          : <span className="ml-1 text-[0.5625rem] text-[var(--warm-muted)]">고정</span>}
+                      </span>
+                      {it.isVariable ? (
+                        <div className="w-28">
+                          <MoneyInput value={it.amount} onChange={v => {
+                            setRecRecItems(prev => {
+                              const next = prev.map((p, j) => j === i ? { ...p, amount: v } : p)
+                              setRecRecAmount(next.reduce((s, p) => s + p.amount, 0))
+                              return next
+                            })
+                          }} placeholder="0원" />
+                        </div>
+                      ) : (
+                        <span className="text-xs font-mono text-[var(--warm-dark)] w-28 text-right pr-1">{it.amount.toLocaleString()}원</span>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between border-t border-[var(--warm-border)] pt-1.5 mt-1">
+                    <span className="text-xs font-semibold text-[var(--warm-dark)]">합계</span>
+                    <span className="text-sm font-bold font-mono text-[var(--coral)]">{recRecAmount.toLocaleString()}원</span>
+                  </div>
+                </div>
+              </>
+            ) : (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs text-[var(--warm-muted)]">날짜</label>
@@ -3173,6 +3316,7 @@ export default function FinanceClient({
                 <MoneyInput value={recRecAmount} onChange={v => setRecRecAmount(v)} placeholder="0원" />
               </div>
             </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs text-[var(--warm-muted)]">결제수단</label>
@@ -3248,6 +3392,7 @@ export default function FinanceClient({
                         payMethod: recRecPayMethod || undefined,
                         financialAccountId: recRecAccId || undefined,
                         memo: recRecMemo || undefined,
+                        breakdown: recRecItems.length > 0 ? recRecItems : undefined,
                       })
                       if (!res.ok) { setRecError(res.error); return }
                       setRecordingRec(null)

@@ -696,6 +696,8 @@ export type RecurringExpenseWithStatus = {
   // #6: 가장 최근 실제 기록의 결제수단·계좌 — 기록 모달 기본값으로 사용(지난달 처리 방식 자동 대기). 없으면 null
   lastPayMethod: string | null
   lastFinancialAccountId: string | null
+  // #1: 세부항목(있으면 '관리비 묶음' 부모). 합계 = 세부 amount 합, 변동 = 하나라도 변동.
+  items: { id: string; name: string; amount: number; isVariable: boolean; sortOrder: number }[]
 }
 
 export async function getRecurringExpensesWithStatus(month: string): Promise<RecurringExpenseWithStatus[]> {
@@ -708,6 +710,7 @@ export async function getRecurringExpensesWithStatus(month: string): Promise<Rec
     prisma.recurringExpense.findMany({
       where: { propertyId, isActive: true },
       orderBy: { dueDay: 'asc' },
+      include: { items: { orderBy: { sortOrder: 'asc' } } },
     }),
     prisma.expense.findMany({
       where: { propertyId, recurringExpenseId: { not: null }, date: { gte: startDate, lte: endDate } },
@@ -791,6 +794,9 @@ export async function getRecurringExpensesWithStatus(month: string): Promise<Rec
       pendingAmount:     (re as any).pendingAmount ?? null,
       lastPayMethod:        lastRecordMap.get(re.id)?.payMethod ?? null,
       lastFinancialAccountId: lastRecordMap.get(re.id)?.financialAccountId ?? null,
+      items: ((re as any).items ?? []).map((it: { id: string; name: string; amount: number; isVariable: boolean; sortOrder: number }) => ({
+        id: it.id, name: it.name, amount: it.amount, isVariable: it.isVariable, sortOrder: it.sortOrder,
+      })),
     }
   })
 }
@@ -804,6 +810,8 @@ export async function recordRecurringExpense(data: {
   payMethod?: string
   financialAccountId?: string
   memo?: string
+  // #1 관리비 묶음: 세부항목별 실제 금액. 있으면 amount는 무시하고 합계로 기록 + breakdown 보관.
+  breakdown?: { name: string; amount: number; isVariable: boolean }[]
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -816,12 +824,18 @@ export async function recordRecurringExpense(data: {
 
     const resolvedAccountId = data.financialAccountId ?? recurring.financialAccountId ?? null
 
+    // #1: 세부항목이 있으면 합계로 기록하고 내역을 breakdownJson 에 보관(장부엔 1줄)
+    const hasBreakdown = Array.isArray(data.breakdown) && data.breakdown.length > 0
+    const recordedAmount = hasBreakdown
+      ? data.breakdown!.reduce((s, it) => s + (Number(it.amount) || 0), 0)
+      : data.amount
+
     await prisma.$transaction([
       prisma.expense.create({
         data: {
           propertyId,
           date:                new Date(data.date),
-          amount:              data.amount,
+          amount:              recordedAmount,
           category:            recurring.category,
           detail:              recurring.title,
           payMethod:           data.payMethod ?? recurring.payMethod ?? '계좌이체',
@@ -829,6 +843,7 @@ export async function recordRecurringExpense(data: {
           memo:                data.memo ?? null,
           settleStatus:        (data.payMethod ?? recurring.payMethod) === '신용카드' ? 'UNSETTLED' : 'SETTLED',
           recurringExpenseId:  data.recurringExpenseId,
+          breakdownJson:       hasBreakdown ? JSON.stringify(data.breakdown) : null,
         },
       }),
       // 예약 금액 자동 클리어 — 같은 트랜잭션으로 처리해 부분 실패 방지

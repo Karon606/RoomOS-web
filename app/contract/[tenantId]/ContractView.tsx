@@ -185,8 +185,9 @@ export default function ContractView({ data }: { data: ContractData }) {
 
   // ── 서명 패드 모달 ──────────────────────────────────────────────
   const [signOpen, setSignOpen]       = useState(false)
-  // 캡처된 서명 PNG dataURL — 화면 서명란에 즉시 표시
-  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null)
+  // 캡처된 서명 PNG dataURL — 화면 서명란에 즉시 표시.
+  // #8: 이전에 저장된 앱서명이 있으면 초기값으로 불러와 표시(출력 시 (인) 대신 서명 보이게).
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(data.lease?.signatureImageUrl ?? null)
   const sigCanvasRef = useRef<HTMLCanvasElement>(null)
   const sigPadRef    = useRef<import('signature_pad').default | null>(null)
 
