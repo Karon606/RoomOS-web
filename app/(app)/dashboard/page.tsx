@@ -1178,8 +1178,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const inventoryRows = await getInventoryOverview()
     for (const r of inventoryRows) {
       if (r.daysUntilEmpty == null || r.daysUntilEmpty > r.alertThresholdDays) continue
+      // #17: 재고 표시 단위는 추적 단위(규격이면 specUnit=kg, 수량이면 qtyUnit=개/박스)와 일치시켜야 함.
+      //      이전엔 qtyUnit(박스)을 써서 재고 관리(kg)와 단위가 어긋났음.
+      const dispUnit = (r.trackUnit === 'qty' ? r.qtyUnit : (r.specUnit || r.qtyUnit)) ?? ''
       const stockLabel = r.currentStock != null
-        ? `${Math.round(r.currentStock * 100) / 100}${r.qtyUnit ?? ''}`
+        ? `${Math.round(r.currentStock * 100) / 100}${dispUnit}`
         : '잔량 미상'
       const emptyDate = r.daysUntilEmpty > 0
         ? new Date(today.getTime() + r.daysUntilEmpty * 86400000)
@@ -1190,7 +1193,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         link:      '/inventory',
         dotColor:  '#d4a847',
         timeLabel: r.daysUntilEmpty <= 0 ? '소진 임박' : `${r.daysUntilEmpty}일 남음`,
-        detail:    `${r.category} · ${r.label}\n현재 잔량: ${stockLabel}\n평균 소모: ${r.avgDaily ? `${Math.round(r.avgDaily * 100) / 100}${r.qtyUnit ?? ''}/일` : '—'}\n소진 예상: ${r.daysUntilEmpty}일\n알림 기준: ${r.alertThresholdDays}일 남음${r.reorderMemo ? `\n발주 메모: ${r.reorderMemo}` : ''}`,
+        detail:    `${r.category} · ${r.label}\n현재 잔량: ${stockLabel}\n평균 소모: ${r.avgDaily ? `${Math.round(r.avgDaily * 100) / 100}${dispUnit}/일` : '—'}\n소진 예상: ${r.daysUntilEmpty}일\n알림 기준: ${r.alertThresholdDays}일 남음${r.reorderMemo ? `\n발주 메모: ${r.reorderMemo}` : ''}`,
         exactDate: fmtShortDate(emptyDate),
       })
     }
