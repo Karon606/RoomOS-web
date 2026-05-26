@@ -718,7 +718,12 @@ export type RecurringExpenseRow = {
   activeSince: string | null
   priorYearAmount: number | null
   memo: string | null
+  // #1 관리비 묶음: 세부항목(있으면 부모). amount/isVariable은 이 항목들로부터 파생.
+  items: { id: string; name: string; amount: number; isVariable: boolean; sortOrder: number }[]
 }
+
+// #1 세부항목 입력 형태 (생성/수정 시)
+export type RecurringItemInput = { name: string; amount: number; isVariable: boolean }
 
 export async function getRecurringExpenses(): Promise<RecurringExpenseRow[]> {
   const propertyId = await getPropertyId()
@@ -731,6 +736,7 @@ export async function getRecurringExpenses(): Promise<RecurringExpenseRow[]> {
       financialAccount: { select: { brand: true, alias: true } },
       isAutoDebit: true, isVariable: true, alertDaysBefore: true,
       isActive: true, activeSince: true, priorYearAmount: true, memo: true,
+      items: { orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, amount: true, isVariable: true, sortOrder: true } },
     },
   })
   return list.map(r => ({
@@ -743,18 +749,33 @@ export async function getRecurringExpenses(): Promise<RecurringExpenseRow[]> {
   }))
 }
 
+// #1: 세부항목으로부터 부모의 합계·변동여부 파생
+function deriveFromItems(items: RecurringItemInput[]): { amount: number; isVariable: boolean } {
+  const amount = items.reduce((s, it) => s + (Number(it.amount) || 0), 0)
+  const isVariable = items.some(it => it.isVariable)
+  return { amount, isVariable }
+}
+
 export async function addRecurringExpense(data: {
   title: string; amount: number; category: string; dueDay: number
   payMethod?: string; financialAccountId?: string | null; isAutoDebit?: boolean; isVariable?: boolean; alertDaysBefore?: number; activeSince?: string; priorYearAmount?: number; memo?: string
+  // #1 관리비 묶음: 세부항목. 있으면 amount/isVariable은 세부에서 파생.
+  items?: RecurringItemInput[]
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const { activeSince, ...rest } = data
+    const { activeSince, items, ...rest } = data
+    const hasItems = Array.isArray(items) && items.length > 0
+    const derived = hasItems ? deriveFromItems(items!) : null
     const rec = await prisma.recurringExpense.create({
       data: {
         propertyId, ...rest, isActive: true,
+        ...(derived ? { amount: derived.amount, isVariable: derived.isVariable } : {}),
         activeSince: activeSince ? new Date(activeSince) : null,
+        ...(hasItems ? {
+          items: { create: items!.map((it, i) => ({ name: it.name, amount: Number(it.amount) || 0, isVariable: !!it.isVariable, sortOrder: i })) },
+        } : {}),
       },
     })
     revalidatePath('/settings')
@@ -767,17 +788,91 @@ export async function addRecurringExpense(data: {
 export async function updateRecurringExpense(id: string, data: Partial<{
   title: string; amount: number; category: string; dueDay: number
   payMethod: string | null; financialAccountId: string | null; isAutoDebit: boolean; isVariable: boolean; alertDaysBefore: number; isActive: boolean; activeSince: string | null; priorYearAmount: number | null; memo: string | null
+  // #1 관리비 묶음: 세부항목 전체 교체(있으면 amount/isVariable 파생). undefined면 항목 미변경.
+  items: RecurringItemInput[]
 }>): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    const { activeSince, ...rest } = data
+    const { activeSince, items, ...rest } = data
     const updateData: Record<string, unknown> = { ...rest }
     if ('activeSince' in data) {
       updateData.activeSince = activeSince ? new Date(activeSince) : null
     }
-    await prisma.recurringExpense.update({ where: { id }, data: updateData })
+    // #1: 세부항목이 전달되면 전체 교체 + 부모 합계·변동 파생
+    if (items !== undefined) {
+      const hasItems = Array.isArray(items) && items.length > 0
+      if (hasItems) {
+        const derived = deriveFromItems(items)
+        updateData.amount = derived.amount
+        updateData.isVariable = derived.isVariable
+      }
+      await prisma.$transaction([
+        prisma.recurringExpenseItem.deleteMany({ where: { recurringExpenseId: id } }),
+        ...(hasItems
+          ? [prisma.recurringExpenseItem.createMany({
+              data: items.map((it, i) => ({ recurringExpenseId: id, name: it.name, amount: Number(it.amount) || 0, isVariable: !!it.isVariable, sortOrder: i })),
+            })]
+          : []),
+        prisma.recurringExpense.update({ where: { id }, data: updateData }),
+      ])
+    } else {
+      await prisma.recurringExpense.update({ where: { id }, data: updateData })
+    }
     revalidatePath('/settings')
     return { ok: true }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+// #1: 기존에 따로 등록된 고정지출들을 한 부모(관리비)로 묶기.
+//  선택한 항목들을 부모의 세부항목으로 전환하고, 원본은 비활성(isActive=false)해 목록에서 숨김.
+//  (원본의 과거 기록 Expense는 recurringExpenseId가 그대로라 보존됨 — 무손실)
+export async function groupRecurringExpenses(data: {
+  title: string; category: string; dueDay: number
+  payMethod?: string | null; financialAccountId?: string | null; isAutoDebit?: boolean; alertDaysBefore?: number; memo?: string | null
+  sourceIds: string[]
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (!data.sourceIds || data.sourceIds.length === 0) return { ok: false, error: '묶을 항목을 선택하세요.' }
+    // 선택 항목 조회 (이 영업장 소유 확인)
+    const sources = await prisma.recurringExpense.findMany({
+      where: { id: { in: data.sourceIds }, propertyId },
+      select: { id: true, title: true, amount: true, isVariable: true },
+    })
+    if (sources.length === 0) return { ok: false, error: '선택한 항목을 찾을 수 없습니다.' }
+    const items: RecurringItemInput[] = sources.map(s => ({ name: s.title, amount: s.amount, isVariable: s.isVariable }))
+    const derived = deriveFromItems(items)
+    const result = await prisma.$transaction(async (tx) => {
+      const parent = await tx.recurringExpense.create({
+        data: {
+          propertyId,
+          title: data.title,
+          category: data.category,
+          dueDay: data.dueDay,
+          amount: derived.amount,
+          isVariable: derived.isVariable,
+          payMethod: data.payMethod ?? null,
+          financialAccountId: data.financialAccountId ?? null,
+          isAutoDebit: data.isAutoDebit ?? false,
+          alertDaysBefore: data.alertDaysBefore ?? 7,
+          memo: data.memo ?? null,
+          isActive: true,
+          items: { create: items.map((it, i) => ({ name: it.name, amount: it.amount, isVariable: it.isVariable, sortOrder: i })) },
+        },
+      })
+      // 원본은 비활성 (기록 보존, 목록에서만 숨김)
+      await tx.recurringExpense.updateMany({
+        where: { id: { in: sources.map(s => s.id) }, propertyId },
+        data: { isActive: false },
+      })
+      return parent
+    })
+    revalidatePath('/settings')
+    revalidatePath('/finance')
+    return { ok: true, id: result.id }
   } catch (e) {
     return { ok: false, error: (e as Error).message }
   }
