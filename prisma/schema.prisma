@@ -418,6 +418,8 @@ model Expense {
   financeName   String?
   receiptUrls   String?
   targetRoomId  String?
+  // #1 관리비 묶음: 장부엔 1줄(합계)이지만 세부항목 내역을 보관. JSON [{name, amount, isVariable}]
+  breakdownJson String?
   itemLabel    String?
   specValue    Float?
   specUnit     String?
@@ -674,9 +676,28 @@ model RecurringExpense {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   expenses        Expense[]
+  // #1 관리비 묶음: 세부항목(있으면 이 고정지출은 '부모/묶음'). 합계 = 세부 amount 합, 변동 = 하나라도 변동.
+  items           RecurringExpenseItem[]
 
   @@index([propertyId])
   @@map("recurring_expenses")
+}
+
+// #1 고정지출 세부항목 — 예: '관리비' 부모 아래 청소관리비(고정)·수도요금(변동) 등.
+// 부모(RecurringExpense)의 amount/isVariable 은 이 항목들로부터 파생(서버에서 동기화).
+model RecurringExpenseItem {
+  id                 String           @id @default(uuid()) @db.Uuid
+  recurringExpenseId String           @db.Uuid
+  recurringExpense   RecurringExpense @relation(fields: [recurringExpenseId], references: [id], onDelete: Cascade)
+  name               String
+  amount             Int              @default(0)   // 고정이면 그 금액, 변동이면 기본/직전 추정액
+  isVariable         Boolean          @default(false)
+  sortOrder          Int              @default(0)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([recurringExpenseId])
+  @@map("recurring_expense_items")
 }
 
 // ============================================================
