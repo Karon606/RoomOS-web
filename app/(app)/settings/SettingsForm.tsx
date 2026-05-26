@@ -17,7 +17,7 @@ import {
   saveContractTemplate, saveBusinessInfo,
   createStampUploadSession, finalizeStamp, deleteStamp,
   createLogoUploadSession, finalizeLogo, deleteLogo,
-  type MemberWithUser, type RecurringExpenseRow, type ContractSettings,
+  type MemberWithUser, type RecurringExpenseRow, type ContractSettings, type RecurringItemInput,
 } from './actions'
 import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
@@ -364,6 +364,16 @@ export default function SettingsForm({
   const [recForm, setRecForm] = useState({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: '', memo: '' })
   const [recDueDayDisp, setRecDueDayDisp] = useState(`${DEFAULT_RECURRING_DUE_DAY}일`)
   const [recPending, startRecTransition] = useTransition()
+  // #1 세부항목(관리비 묶음) — 한 번에 납부하는 여러 항목. 있으면 부모 금액·변동은 합산 파생.
+  const [recItems, setRecItems] = useState<{ name: string; amount: string; isVariable: boolean }[]>([])
+  const recValidItems = recItems.filter(it => it.name.trim())
+  const recItemsActive = recValidItems.length > 0
+  const recItemsTotal = recValidItems.reduce((s, it) => s + (Number(it.amount.replace(/[^0-9]/g, '')) || 0), 0)
+  const recItemsHasVariable = recValidItems.some(it => it.isVariable)
+  const addRecItem = () => setRecItems(prev => [...prev, { name: '', amount: '', isVariable: false }])
+  const updateRecItem = (i: number, patch: Partial<{ name: string; amount: string; isVariable: boolean }>) =>
+    setRecItems(prev => prev.map((it, idx) => idx === i ? { ...it, ...patch } : it))
+  const removeRecItem = (i: number) => setRecItems(prev => prev.filter((_, idx) => idx !== i))
 
   const fmtRecDueDay = (d: string) => {
     const n = parseInt(d, 10)
@@ -388,40 +398,48 @@ export default function SettingsForm({
   const openNewRec = () => {
     setEditingRec(null)
     setRecForm({ title: '', amount: '', category: DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: acqDate ?? '', memo: '' })
+    setRecItems([])
     setRecDueDayDisp(`${DEFAULT_RECURRING_DUE_DAY}일`)
     setShowRecForm(true)
   }
   const openEditRec = (r: RecurringExpenseRow) => {
     setEditingRec(r)
     setRecForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', memo: r.memo ?? '' })
+    setRecItems(r.items.map(it => ({ name: it.name, amount: String(it.amount), isVariable: it.isVariable })))
     setRecDueDayDisp(fmtRecDueDay(r.dueDay.toString()))
     setShowRecForm(true)
   }
   const handleSaveRec = () => {
+    // 세부항목이 있으면 부모 금액·변동은 합산 파생, 없으면 수동 입력값.
+    const manualAmount = Number(recForm.amount.replace(/[^0-9]/g, ''))
+    const effectiveAmount = recItemsActive ? recItemsTotal : manualAmount
+    // 세부항목 페이로드: 활성이면 배열, (수정 시) 부모였다가 다 지웠으면 빈 배열로 클리어, 그 외 undefined(미변경).
+    const itemsPayload: RecurringItemInput[] | undefined =
+      recItemsActive
+        ? recValidItems.map(it => ({ name: it.name.trim(), amount: Number(it.amount.replace(/[^0-9]/g, '')) || 0, isVariable: it.isVariable }))
+        : (editingRec && editingRec.items.length > 0 ? [] : undefined)
     const data = {
       title: recForm.title.trim(),
-      amount: Number(recForm.amount.replace(/[^0-9]/g, '')),
+      amount: effectiveAmount,
       category: recForm.category,
       dueDay: parseInt(recForm.dueDay) || 25,
       payMethod: recForm.payMethod || undefined,
       isAutoDebit: recForm.isAutoDebit,
-      isVariable: recForm.isVariable,
+      isVariable: recItemsActive ? recItemsHasVariable : recForm.isVariable,
       alertDaysBefore: parseInt(recForm.alertDaysBefore) || 7,
       activeSince: recForm.activeSince || undefined,
       memo: recForm.memo || undefined,
+      ...(itemsPayload !== undefined ? { items: itemsPayload } : {}),
     }
     if (!data.title || !data.amount) return
     startRecTransition(async () => {
       if (editingRec) {
         await updateRecurringExpense(editingRec.id, data)
-        setRecurringList(prev => prev.map(r => r.id === editingRec.id ? { ...r, ...data, payMethod: data.payMethod ?? null, memo: data.memo ?? null, activeSince: data.activeSince ?? null } : r))
       } else {
-        const res = await addRecurringExpense(data)
-        if (res.ok) {
-          const updated = await getRecurringExpenses()
-          setRecurringList(updated)
-        }
+        await addRecurringExpense(data)
       }
+      // 세부항목 파생(금액·변동·항목 id·정렬)을 정확히 반영하려면 서버 재조회가 안전.
+      setRecurringList(await getRecurringExpenses())
       setShowRecForm(false)
     })
   }
@@ -691,10 +709,17 @@ export default function SettingsForm({
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
-                    <MoneyInput
-                      value={Number(recForm.amount) || 0}
-                      onChange={v => setRecForm(p => ({ ...p, amount: String(v) }))}
-                      placeholder="0원" />
+                    {recItemsActive ? (
+                      <div className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm flex items-center justify-between">
+                        <span className="font-medium text-[var(--warm-dark)]">{recItemsTotal.toLocaleString()}원</span>
+                        <span className="text-[0.625rem] text-[var(--warm-muted)]">세부항목 합계</span>
+                      </div>
+                    ) : (
+                      <MoneyInput
+                        value={Number(recForm.amount) || 0}
+                        onChange={v => setRecForm(p => ({ ...p, amount: String(v) }))}
+                        placeholder="0원" />
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">납부일 (매월)</label>
@@ -716,6 +741,44 @@ export default function SettingsForm({
                       placeholder="25일, 말일 등"
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                   </div>
+                </div>
+                {/* #1 세부항목(관리비 묶음) — 한 번에 납부하는 여러 항목을 나눠 적기 */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">세부항목 (선택)</label>
+                    <button type="button" onClick={addRecItem}
+                      className="text-[0.6875rem] px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--coral)] hover:bg-[var(--coral)]/5 transition-colors">+ 항목 추가</button>
+                  </div>
+                  {recItems.length === 0 ? (
+                    <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
+                      한 번에 납부하는 여러 항목(예: 관리비 = 청소관리비 + 수도요금 + 공용전기)으로 나누면, 위 금액·변동 여부가 세부항목에서 자동 합산됩니다.
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {recItems.map((it, i) => (
+                        <div key={i} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg p-2 space-y-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <input type="text" value={it.name} onChange={e => updateRecItem(i, { name: e.target.value })}
+                              placeholder="세부항목명 (예: 청소관리비)"
+                              className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
+                            <button type="button" onClick={() => removeRecItem(i)}
+                              className="shrink-0 w-7 h-7 flex items-center justify-center text-red-400 hover:text-red-600 rounded-lg transition-colors" aria-label="세부항목 삭제">✕</button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 min-w-0">
+                              <MoneyInput value={Number(it.amount.replace(/[^0-9]/g, '')) || 0}
+                                onChange={v => updateRecItem(i, { amount: String(v) })} placeholder="0원" />
+                            </div>
+                            <label className="flex items-center gap-1 shrink-0 text-xs text-[var(--warm-mid)] cursor-pointer">
+                              <input type="checkbox" checked={it.isVariable}
+                                onChange={e => updateRecItem(i, { isVariable: e.target.checked })} className="accent-[var(--coral)]" />변동
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                      <p className="text-[0.625rem] text-[var(--warm-muted)]">세부항목이 있으면 위 금액·변동 금액은 자동 합산값입니다. 모두 지우면 단순 고정지출로 돌아갑니다.</p>
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리</label>
@@ -755,11 +818,15 @@ export default function SettingsForm({
                     <input type="checkbox" checked={recForm.isAutoDebit} onChange={e => setRecForm(p => ({ ...p, isAutoDebit: e.target.checked }))} className="accent-[var(--coral)]" />
                     <span className="text-xs text-[var(--warm-dark)]">자동이체 항목</span>
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={recForm.isVariable} onChange={e => setRecForm(p => ({ ...p, isVariable: e.target.checked }))} className="accent-[var(--coral)]" />
+                  <label className={`flex items-center gap-2 ${recItemsActive ? 'opacity-60' : 'cursor-pointer'}`}>
+                    <input type="checkbox" disabled={recItemsActive}
+                      checked={recItemsActive ? recItemsHasVariable : recForm.isVariable}
+                      onChange={e => setRecForm(p => ({ ...p, isVariable: e.target.checked }))} className="accent-[var(--coral)]" />
                     <div>
                       <span className="text-xs text-[var(--warm-dark)]">변동 금액</span>
-                      <p className="text-[0.625rem] text-[var(--warm-muted)] leading-tight mt-0.5">전기·수도 등 매달 금액이 달라지는 항목</p>
+                      <p className="text-[0.625rem] text-[var(--warm-muted)] leading-tight mt-0.5">
+                        {recItemsActive ? '세부항목에 변동 항목이 있으면 자동으로 변동 처리됩니다' : '전기·수도 등 매달 금액이 달라지는 항목'}
+                      </p>
                     </div>
                   </label>
                 </div>
@@ -771,7 +838,7 @@ export default function SettingsForm({
                 <div className="flex gap-2">
                   <button onClick={() => setShowRecForm(false)}
                     className="flex-1 py-2 text-sm rounded-xl border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">취소</button>
-                  <button onClick={handleSaveRec} disabled={recPending || !recForm.title.trim() || !recForm.amount}
+                  <button onClick={handleSaveRec} disabled={recPending || !recForm.title.trim() || !(recItemsActive ? recItemsTotal : Number(recForm.amount.replace(/[^0-9]/g, '')))}
                     className="flex-1 py-2 text-sm font-medium rounded-xl text-white transition-colors disabled:opacity-50"
                     style={{ background: 'var(--coral)' }}>{recPending ? '저장 중…' : '저장'}</button>
                 </div>
@@ -789,12 +856,18 @@ export default function SettingsForm({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{r.title}</p>
+                      {r.items.length > 0 && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--coral)]/10 text-[var(--coral)]">묶음 {r.items.length}</span>}
                       {r.isAutoDebit && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">자동이체</span>}
                       {!r.isActive && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">비활성</span>}
                     </div>
                     <p className="text-xs text-[var(--warm-muted)] mt-0.5">
                       매월 {r.dueDay >= 30 ? '말일' : `${r.dueDay}일`} · {r.amount.toLocaleString()}원 · {r.category} · {r.alertDaysBefore}일 전 알림
                     </p>
+                    {r.items.length > 0 && (
+                      <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">
+                        {r.items.map(it => `${it.name}${it.isVariable ? '(변동)' : ''}`).join(' · ')}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button onClick={() => handleToggleRec(r)}
