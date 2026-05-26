@@ -124,18 +124,22 @@
 - **검증 제약**: 프로덕션 재고 데이터를 변경(쓰기)하며 테스트할 수 없음 → **계산 로직을 순수함수로 추출해 단위테스트**로
   검증 + **사용자 실제 점검 시퀀스로 최종 확인** 후 배포. (착수 전 이 방식 OK인지 확인)
 
-#### #1. 고정지출 '관리비' 부모 + 세부항목 재설계 (스키마 변경 — 설계 확인 후 착수)
-- **맥락**: 관리비를 청소관리비·공용전기비·공과금(기타)·전기안전검사·상하수도요금 등 **여러 고정지출로 따로 등록** 중.
-  한 번에 납부(관리비 고지서 1장)인데, 영수증을 **지출 수정 화면**에서 첨부하면 관련 없는 건까지 퍼지는 느낌 + 관리 번거로움.
-  사용자 희망: "임대관리비 부모 1건에 전체 금액, 그 안에 세부항목(어떤 건 고정·어떤 건 변동) 구분."
-- **설계안(초안 — 확인 필요)**:
-  · 모델: `RecurringExpense`에 부모 개념 추가. 案A) 자식 테이블 `RecurringExpenseItem{ parentId, name, amount, isVariable }`
-    + 부모가 영수증(고지서)·합계 보유. 案B) 기존 RecurringExpense에 `groupId` 추가해 묶고 그룹 단위 영수증 공유.
-  · 기록 시 장부 표기: (가) 부모 1줄(관리비 합계)로 기록 + detail에 세부 내역, vs (나) 세부항목별 Expense 여러 줄. → **사용자 결정 필요.**
-  · 영수증: 부모(고지서)에 1장 → 세부항목 공유. 첨부/삭제는 부모 단위.
-- **착수 전 물어볼 것**: ① 기록 장부를 1줄(합계) vs 세부 여러 줄 중 무엇으로? ② 세부항목 고정/변동 구분(전기·공과금=변동?
-  청소·안전검사=고정?) ③ 기존 따로 등록된 고정지출들을 새 부모로 **마이그레이션**할지 새로 만들지?
-- 메모리: 금융 정확성 민감 → [[project_push_alert_policy]] 류 신중. 스키마 변경은 마이그레이션 필요.
+#### #1. 고정지출 '관리비' 부모 + 세부항목 재설계 — 설계 확정·토대 구현 중 (브랜치 `feat/recurring-expense-items`)
+- **맥락**: 관리비를 청소관리비·공용전기비·공과금(기타)·전기안전검사·상하수도요금 등 여러 고정지출로 따로 등록 중.
+  한 번에 납부(고지서 1장)인데 영수증을 지출 수정 화면에서 첨부 → 번거로움. "임대관리비 부모 1건 + 세부항목(고정/변동 혼재)".
+- **확정 설계(2026-05-26 사용자 답)**:
+  ① 장부엔 **관리비 1줄(합계)** + 그 안에 세부항목 내역. ② 세부항목별 고정/변동: **수도요금=변동, 나머지=고정** → 합계는 변동.
+  ③ 기존 고정지출을 **'묶기' UI로 선택→부모로 전환**(마이그레이션). ④ 영수증은 그 1줄(Expense)에 첨부.
+- **구현 진행(브랜치 `feat/recurring-expense-items`, 커밋 `04eb29f` — main 미병합·미배포)**:
+  · ✅ 스키마: `RecurringExpenseItem{ recurringExpenseId, name, amount, isVariable, sortOrder }` + `Expense.breakdownJson` + `RecurringExpense.items`.
+    `migrate_recurring_expense_items.sql`(프로덕션 적용용, 추가 전용·무손실). `prisma generate` 완료.
+  · ✅ 서버 일부: `getRecurringExpensesWithStatus` items 포함, `recordRecurringExpense` breakdown 받아 합계 기록+breakdownJson.
+  · ⏳ 남은 것: settings `RecurringExpenseRow.items` + add/update가 items 수용 + **`groupRecurringExpenses`(묶기)** + UI
+    (고정지출 관리 모달 세부항목 편집·묶기, 기록 모달에서 변동항목 금액 편집·합계, 지출 상세 breakdown 표시).
+- **⚠️ 배포 순서 제약(중요)**: 새 테이블/컬럼을 쓰는 코드를 main에 push하면 **SQL 적용 전엔 프로덕션 재무 페이지가 깨짐**.
+  → 반드시 **① 사용자가 `migrate_recurring_expense_items.sql`을 Supabase에 적용 → ② 브랜치 완성·테스트 → ③ main 병합·배포** 순서.
+- **⚠️ 검증**: 재무 데이터라 iCloud dev 런타임 검증 불가 → 기록 합계·breakdown·묶기 마이그레이션은 **사용자와 함께 실데이터로 확인** 후 신뢰.
+- 메모리: 금융 정확성 민감([[project_push_alert_policy]]). 다음 세션은 이 브랜치 체크아웃해서 이어갈 것.
 
 ### A. 우선순위 높음 — 운영자(슈퍼관리자) 대시보드 + 베타 접근 관리
 - 앱 안 운영자 전용 영역(/admin 또는 (admin) 그룹). 슈퍼관리자 역할 신규 필요(현재는 영업장 단위 UserPropertyRole만).
