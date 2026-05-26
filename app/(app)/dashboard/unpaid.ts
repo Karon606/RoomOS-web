@@ -12,6 +12,7 @@
 
 import prisma from '@/lib/prisma'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
+import { discountedRent } from '@/lib/rentDiscount'
 
 function monthRange(startMonth: string, endMonth: string): string[] {
   const result: string[] = []
@@ -65,6 +66,8 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
         dueDay: true,
         overrideDueDay: true,
         overrideDueDayMonth: true,
+        // #14 월세 할인 — 미수 계산에 월별 할인 반영(대시보드 발생주의 블록과 동일)
+        discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
         room: { select: { roomNo: true } },
         tenant: { select: { id: true, name: true } },
       },
@@ -219,7 +222,6 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
       !!(cutoffMonthStr && firstMonth === cutoffMonthStr && !isNaN(dueDayNum) && dueDayNum < cutoffDay && opPaidInCutoff === 0)
 
     const months = monthRange(firstMonth, targetMonth)
-    let billableMonths = 0
     const billableMonthList: string[] = []
     const lPrevOwnerMonths = prevOwnerMonthsByLease[l.id]
     for (const mon of months) {
@@ -227,18 +229,19 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
       if (prevOwnerLeaseIds.has(l.id) && mon === cutoffMonthStr) continue
       if (lPrevOwnerMonths?.has(mon)) continue
       if (moveOutMonth && mon > moveOutMonth) continue
-      billableMonths++
       billableMonthList.push(mon)
     }
-    const totalExpected = billableMonths * l.rentAmount
+    // #14 월세 할인 — 각 월 청구액은 할인 반영(수납 페이지·대시보드 발생주의와 동일 헬퍼)
+    const billForMonth = (mon: string) => discountedRent(l.discounts, mon, l.rentAmount)
+    const totalExpected = billableMonthList.reduce((s, mon) => s + billForMonth(mon), 0)
     const totalReceived = accrualByLeaseForView[l.id] ?? 0
     unpaidMap[l.id] = Math.max(0, totalExpected - totalReceived)
 
     let allocated = 0
     let firstUnpaid: string | null = null
     for (const mon of billableMonthList) {
-      if (totalReceived - allocated < l.rentAmount) { firstUnpaid = mon; break }
-      allocated += l.rentAmount
+      if (totalReceived - allocated < billForMonth(mon)) { firstUnpaid = mon; break }
+      allocated += billForMonth(mon)
     }
     firstUnpaidByLease[l.id] = firstUnpaid
 
@@ -246,9 +249,10 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
     let received = totalReceived
     let leaseOverdue = 0
     for (const mon of billableMonthList) {
-      const allocThis = Math.min(received, l.rentAmount)
+      const monthBill = billForMonth(mon)
+      const allocThis = Math.min(received, monthBill)
       received -= allocThis
-      const monthUnpaid = l.rentAmount - allocThis
+      const monthUnpaid = monthBill - allocThis
       if (monthUnpaid <= 0) continue
       const dueDayStr = effectiveDueDayForMonth(l, mon)
       const days = dueDayStr ? calcDaysOverdueForMonth(dueDayStr, mon) : null

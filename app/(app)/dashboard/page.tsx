@@ -6,6 +6,7 @@ import { getPaymentMethods } from '@/app/(app)/settings/actions'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
+import { discountedRent } from '@/lib/rentDiscount'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
 
@@ -121,7 +122,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     prisma.leaseTerm.findMany({
       // RESERVED는 아직 입주 안 한 상태 → 미수 합산 대상에서 제외
       where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
-      select: { id: true, rentAmount: true },
+      // #14 월세 할인 — 수납현황 위젯(완료 건수·예상 수입)에 할인 반영
+      select: { id: true, rentAmount: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
     }),
     prisma.paymentRecord.findMany({
       where: {
@@ -295,6 +297,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         dueDay: true,
         overrideDueDay: true,
         overrideDueDayMonth: true,
+        // #14 월세 할인 — 발생주의 미수 계산에 월별 할인 반영
+        discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
         room: { select: { roomNo: true } },
         tenant: { select: { id: true, name: true } },
       },
@@ -569,11 +573,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }, {} as Record<string, number>)
 
   const billableLeases = activeLeases.filter(l => l.rentAmount > 0)
-  const paidCount      = billableLeases.filter(l => (paymentByLeaseForStatus[l.id] ?? 0) >= l.rentAmount).length
+  // #14 월세 할인 — 이달(targetMonth) 청구액은 할인 반영. 완납 판정·예상 수입 모두 할인가 기준.
+  const billThisMonth  = (l: { rentAmount: number; discounts?: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[] }) =>
+    discountedRent(l.discounts, targetMonth, l.rentAmount)
+  const paidCount      = billableLeases.filter(l => (paymentByLeaseForStatus[l.id] ?? 0) >= billThisMonth(l)).length
   // 양도인 몫 제외 — 수납완료 + 미수납과 합산이 맞도록
   const totalExpected  = billableLeases
     .filter(l => !prevOwnerLeaseIds.has(l.id))
-    .reduce((s, l) => s + l.rentAmount, 0)
+    .reduce((s, l) => s + billThisMonth(l), 0)
 
   const categoryBreakdown = expByCategory.map(c => ({
     category: c.category,
@@ -832,7 +839,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
     // 청구 가능 월 수 (인수월 자동 양도인 처리, 퇴실 후 제외) — viewMonth까지
     const months = monthRange(firstMonth, targetMonth)
-    let billableMonths = 0
     const billableMonthList: string[] = []
     const lPrevOwnerMonths = prevOwnerMonthsByLease[l.id]
     for (const mon of months) {
@@ -841,10 +847,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       // 양도인 정산 처리된 월 — 현 원장 청구 제외
       if (lPrevOwnerMonths?.has(mon)) continue
       if (moveOutMonth && mon > moveOutMonth) continue
-      billableMonths++
       billableMonthList.push(mon)
     }
-    const totalExpected = billableMonths * l.rentAmount
+    // #14 월세 할인 — 각 월 청구액은 할인 반영(수납 페이지 getRoomPaymentStatus와 동일 헬퍼)
+    const billForMonth = (mon: string) => discountedRent(l.discounts, mon, l.rentAmount)
+    const totalExpected = billableMonthList.reduce((s, mon) => s + billForMonth(mon), 0)
     const totalReceived = accrualByLeaseForView[l.id] ?? 0
     unpaidMap[l.id] = Math.max(0, totalExpected - totalReceived)
 
@@ -852,8 +859,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     let allocated = 0
     let firstUnpaid: string | null = null
     for (const mon of billableMonthList) {
-      if (totalReceived - allocated < l.rentAmount) { firstUnpaid = mon; break }
-      allocated += l.rentAmount
+      if (totalReceived - allocated < billForMonth(mon)) { firstUnpaid = mon; break }
+      allocated += billForMonth(mon)
     }
     firstUnpaidByLease[l.id] = firstUnpaid
 
@@ -862,9 +869,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     let leaseOverdue = 0
     let leaseUpcoming = 0
     for (const mon of billableMonthList) {
-      const allocThis = Math.min(received, l.rentAmount)
+      const monthBill = billForMonth(mon)
+      const allocThis = Math.min(received, monthBill)
       received -= allocThis
-      const monthUnpaid = l.rentAmount - allocThis
+      const monthUnpaid = monthBill - allocThis
       if (monthUnpaid <= 0) continue
       const dueDayStr = effectiveDueDayForMonth(l, mon)
       const days = dueDayStr ? calcDaysOverdueForMonth(dueDayStr, mon) : null
