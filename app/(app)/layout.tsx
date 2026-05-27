@@ -41,6 +41,10 @@ export default async function AppLayout({
   })
   const properties = roles.map(r => ({ id: r.property.id, name: r.property.name }))
 
+  // 소속 영업장이 없으면 앱 페이지(대시보드 등) 진입 불가 — 데이터가 영업장 단위라 빈 컨텍스트면 로드 실패.
+  // 운영자는 운영자 페이지로, 그 외엔 영업장 선택/개설로.
+  if (properties.length === 0) redirect(isSuperAdmin ? '/admin' : '/property-select')
+
   return (
     <AppShell
       user={{ email: claims.email, user_metadata: claims.user_metadata }}

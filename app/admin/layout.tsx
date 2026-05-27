@@ -1,11 +1,14 @@
 import Link from 'next/link'
 import { requireSuperAdmin } from '@/lib/auth/access'
+import prisma from '@/lib/prisma'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 import AdminNav from './AdminNav'
 
 // 운영자(슈퍼관리자) 전용 영역. (app) 셸 게이트 밖 — 자체 가드.
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  await requireSuperAdmin()
+  const ctx = await requireSuperAdmin()
+  // 관리할 영업장이 있는 운영자에게만 '앱으로' 표시 (영업장 없는 순수 운영자는 갈 곳 없음)
+  const myPropertyCount = await prisma.userPropertyRole.count({ where: { userId: ctx.userId } })
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
@@ -23,9 +26,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               운영자
             </span>
           </div>
-          <Link href="/dashboard" className="text-sm whitespace-nowrap" style={{ color: 'var(--ink-3)' }}>
-            앱으로 →
-          </Link>
+          {myPropertyCount > 0 && (
+            <Link href="/property-select" className="text-sm whitespace-nowrap" style={{ color: 'var(--ink-3)' }}>
+              앱으로 →
+            </Link>
+          )}
         </div>
         <div className="max-w-5xl mx-auto px-4 pb-2">
           <AdminNav />
