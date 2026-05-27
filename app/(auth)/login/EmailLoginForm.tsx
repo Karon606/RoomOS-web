@@ -52,6 +52,7 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
   const [phone, setPhone]                 = useState('')
   const [addressBase, setAddressBase]     = useState('')
   const [addressDetail, setAddressDetail] = useState('')
+  const [inviteCode, setInviteCode]       = useState('')
   const [loading, setLoading]             = useState(false)
   const [error, setError]                 = useState<string | null>(null)
   const [success, setSuccess]             = useState<string | null>(null)
@@ -95,10 +96,25 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
       }
 
       if (mode === 'signup') {
-        const { error } = await supabase.auth.signUp({ email, password })
-        if (error) throw error
         const address = [addressBase, addressDetail].map(s => s.trim()).filter(Boolean).join(' ')
-        await syncUserToDB({ realName, phone, address })
+        const invite = inviteCode.trim().toUpperCase()
+        // 이메일 인증이 켜져 있으면 signUp 직후 세션이 없어 syncUserToDB가 no-op이므로,
+        // 실명·연락처·초대코드를 user_metadata에 실어 첫 로그인 시 회수·적용한다.
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              real_name: realName || undefined,
+              phone: phone || undefined,
+              address: address || undefined,
+              invite_code: invite || undefined,
+            },
+          },
+        })
+        if (error) throw error
+        // 세션이 즉시 생기는 환경(인증 비활성)에서는 바로 반영
+        await syncUserToDB({ realName, phone, address, inviteCode: invite })
         setSuccess('가입이 완료됐습니다. 이메일로 로그인해주세요.')
         reset('login')
         return
@@ -210,6 +226,21 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
             onAddressChange={setAddressBase}
             onDetailChange={setAddressDetail}
           />
+          <div>
+            <Label>초대코드</Label>
+            <input
+              type="text"
+              placeholder="STAY-XXXXXX (선택)"
+              value={inviteCode}
+              onChange={e => setInviteCode(e.target.value.toUpperCase())}
+              autoComplete="off"
+              className={inputCls}
+              style={inputStyle}
+            />
+            <p className="text-[11px] mt-1 px-1" style={{ color: 'var(--warm-muted)' }}>
+              초대코드가 있으면 가입 즉시 이용할 수 있어요. 없으면 운영자 승인 후 이용 가능합니다.
+            </p>
+          </div>
           <div className="h-px" style={{ background: 'var(--warm-border)' }} />
         </>
       )}

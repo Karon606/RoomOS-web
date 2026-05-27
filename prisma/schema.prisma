@@ -23,6 +23,13 @@ enum UserRole {
   STAFF
 }
 
+// 앱 전체 접근 상태 (베타 게이팅) — 영업장 역할(UserRole)과 별개
+enum AccessStatus {
+  PENDING   // 가입했으나 운영자 승인 대기 (기능 잠김)
+  APPROVED  // 승인됨 (정상 사용)
+  REJECTED  // 거절/차단
+}
+
 enum ContactType {
   PHONE
   KAKAO
@@ -87,6 +94,12 @@ model User {
   phone     String?
   address   String?
   avatarUrl String?
+  // ── 접근 제어 (베타 게이팅 / 운영자) ──
+  status       AccessStatus @default(PENDING) // 신규 가입 = 승인 대기. 기존 사용자는 마이그레이션에서 APPROVED 백필.
+  isSuperAdmin Boolean      @default(false)    // 앱 전체 운영자(env SUPER_ADMIN_EMAILS 와 병행)
+  approvedAt   DateTime?
+  approvedBy   String?      @db.Uuid           // 승인/거절한 운영자 user id
+  inviteCode   String?                         // 가입 시 사용한 초대코드(있으면)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -959,4 +972,24 @@ model ContractFile {
   @@index([tenantId, createdAt])
   @@index([propertyId, createdAt])
   @@map("contract_files")
+}
+
+// ============================================================
+// [14] InviteCode — 초대코드/쿠폰 (선착순 N명 무료 베타)
+// ============================================================
+
+model InviteCode {
+  id          String    @id @default(uuid()) @db.Uuid
+  code        String    @unique
+  note        String?   // 메모(용도 표시)
+  maxUses     Int       @default(1)    // 선착순 N명. 0 이하면 무제한
+  usedCount   Int       @default(0)
+  autoApprove Boolean   @default(true) // 코드로 가입 시 자동 승인 여부
+  isActive    Boolean   @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String?   @db.Uuid       // 발급한 운영자 user id
+
+  @@map("invite_codes")
 }

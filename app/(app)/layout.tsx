@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma'
 import AppShell from '@/components/layout/AppShell'
 import { EntityModalProvider } from '@/components/entity-modal/EntityModal'
 import ClearAppBadge from '@/components/ClearAppBadge'
+import { isSuperAdminEmail } from '@/lib/auth/access'
 
 export default async function AppLayout({
   children,
@@ -19,12 +20,22 @@ export default async function AppLayout({
   const claims = data?.claims
   if (!claims) redirect('/login')
 
+  // ── 베타 접근 게이팅 ── 승인된 사용자(또는 슈퍼관리자)만 앱 진입.
+  // 미승인/거절은 /pending 으로. (슈퍼관리자는 status 무관 통과 — env 또는 DB)
+  const userId = claims.sub as string
+  const me = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { status: true, isSuperAdmin: true },
+  })
+  const isSuperAdmin = isSuperAdminEmail(claims.email as string | undefined) || (me?.isSuperAdmin ?? false)
+  if (!isSuperAdmin && me?.status !== 'APPROVED') redirect('/pending')
+
   // 헤더 영업장 스위처용 — getUser() 네트워크 왕복을 피하려 claims.sub로 직접 조회.
   // 헤더엔 id·name만 필요(실제 전환은 selectProperty가 권한 재확인).
   const cookieStore = await cookies()
   const currentPropertyId = cookieStore.get('selected_property_id')?.value ?? null
   const roles = await prisma.userPropertyRole.findMany({
-    where: { userId: claims.sub as string },
+    where: { userId },
     select: { property: { select: { id: true, name: true } } },
     orderBy: { createdAt: 'asc' },
   })
@@ -35,6 +46,7 @@ export default async function AppLayout({
       user={{ email: claims.email, user_metadata: claims.user_metadata }}
       properties={properties}
       currentPropertyId={currentPropertyId}
+      isSuperAdmin={isSuperAdmin}
     >
       <ClearAppBadge />
       <EntityModalProvider>

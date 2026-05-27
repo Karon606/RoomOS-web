@@ -1,6 +1,6 @@
 # 스테이음 작업 로그
 
-마지막 업데이트: 2026-05-26
+마지막 업데이트: 2026-05-27
 브랜치: main
 
 ## 완료된 것
@@ -178,7 +178,8 @@
 
 ### ★ 운영 피드백 후속 (2026-05-26 — 사용자 확인 대기)
 
-#### #3. 재고 점검 허브 자동 차감 과다 (위치별 연속 점검 시) — 버그 확정, 신중 수정 필요
+#### ✅ #3. 재고 점검 허브 자동 차감 과다 (위치별 연속 점검 시) — 완료·배포 (`6f6ae07` + `074580a`), 라이브 검증만 대기
+> ✅ **해결(2026-05-26~27)**: 클라 stale-props 계산 → **서버 권위**로 전환(`6f6ae07`, `lib/stockCheckMerge.ts applyLocationCheck` 단위테스트) + 수정모달 창고 처리 일치(`074580a`). 아래는 당시 분석 기록(보존). **남은 건 사용자 실데이터 점검 시퀀스 최종 확인뿐.**
 - **증상**: 5/22 잔량 155(창고135·4층10·5층10)에서, 5/26 4층 +5 보충·5층 +10 보충 + 실측(4층9·5층11) 하면
   **기대 최종 140**(창고 120+9+11)인데 **135**로 나옴(과다 차감). 또 두 위치 보충이 한 기록에 같이 안 보이고 점검시각도 09:23 고정.
 - **원인**: `InventoryClient.tsx` LocationBatchCheckModal `doSave`(1894~)가 허브 차감·타위치 이월을 **props의
@@ -190,28 +191,54 @@
 - **검증 제약**: 프로덕션 재고 데이터를 변경(쓰기)하며 테스트할 수 없음 → **계산 로직을 순수함수로 추출해 단위테스트**로
   검증 + **사용자 실제 점검 시퀀스로 최종 확인** 후 배포. (착수 전 이 방식 OK인지 확인)
 
-#### #1. 고정지출 '관리비' 부모 + 세부항목 재설계 — 설계 확정·토대 구현 중 (브랜치 `feat/recurring-expense-items`)
+#### ✅ #1. 고정지출 '관리비' 부모 + 세부항목 재설계 — 완료·배포 (스키마 `640e296` + 후속 `811a35d`), 라이브 검증만 대기
 - **맥락**: 관리비를 청소관리비·공용전기비·공과금(기타)·전기안전검사·상하수도요금 등 여러 고정지출로 따로 등록 중.
   한 번에 납부(고지서 1장)인데 영수증을 지출 수정 화면에서 첨부 → 번거로움. "임대관리비 부모 1건 + 세부항목(고정/변동 혼재)".
 - **확정 설계(2026-05-26 사용자 답)**:
   ① 장부엔 **관리비 1줄(합계)** + 그 안에 세부항목 내역. ② 세부항목별 고정/변동: **수도요금=변동, 나머지=고정** → 합계는 변동.
   ③ 기존 고정지출을 **'묶기' UI로 선택→부모로 전환**(마이그레이션). ④ 영수증은 그 1줄(Expense)에 첨부.
-- **구현 진행(브랜치 `feat/recurring-expense-items`, 커밋 `04eb29f` — main 미병합·미배포)**:
+- **구현 완료(main 병합·배포됨 — 스키마배치 `640e296` + 후속 `811a35d`, 구 작업브랜치 `feat/recurring-expense-items` 병합 완료)**:
   · ✅ 스키마: `RecurringExpenseItem{ recurringExpenseId, name, amount, isVariable, sortOrder }` + `Expense.breakdownJson` + `RecurringExpense.items`.
-    `migrate_recurring_expense_items.sql`(프로덕션 적용용, 추가 전용·무손실). `prisma generate` 완료.
-  · ✅ 서버 일부: `getRecurringExpensesWithStatus` items 포함, `recordRecurringExpense` breakdown 받아 합계 기록+breakdownJson.
-  · ⏳ 남은 것: settings `RecurringExpenseRow.items` + add/update가 items 수용 + **`groupRecurringExpenses`(묶기)** + UI
-    (고정지출 관리 모달 세부항목 편집·묶기, 기록 모달에서 변동항목 금액 편집·합계, 지출 상세 breakdown 표시).
-- **⚠️ 배포 순서 제약(중요)**: 새 테이블/컬럼을 쓰는 코드를 main에 push하면 **SQL 적용 전엔 프로덕션 재무 페이지가 깨짐**.
-  → 반드시 **① 사용자가 `migrate_recurring_expense_items.sql`을 Supabase에 적용 → ② 브랜치 완성·테스트 → ③ main 병합·배포** 순서.
-- **⚠️ 검증**: 재무 데이터라 iCloud dev 런타임 검증 불가 → 기록 합계·breakdown·묶기 마이그레이션은 **사용자와 함께 실데이터로 확인** 후 신뢰.
-- 메모리: 금융 정확성 민감([[project_push_alert_policy]]). 다음 세션은 이 브랜치 체크아웃해서 이어갈 것.
+    `migrate_recurring_expense_items.sql` **프로덕션 적용 완료**. `prisma generate` 완료.
+  · ✅ 서버: `getRecurringExpensesWithStatus` items 포함, `recordRecurringExpense` breakdown 받아 합계 기록+breakdownJson.
+  · ✅ UI 전부 완료: settings `RecurringExpenseRow.items` + add/update items 수용 + **`groupRecurringExpenses`(묶기)** +
+    고정지출 관리 모달 **세부항목 직접 편집**(`811a35d`, 5/27) + 기록 모달 변동항목 금액 편집·합계 + 지출 상세 breakdown 표시.
+- **배포 순서(완료)**: SQL 3건은 프로덕션 적용 완료 → 코드 main 병합·배포 완료(`640e296`·`811a35d`). 더 이상 미배포 브랜치 없음.
+- **⚠️ 남은 것 = 라이브 검증뿐**: 재무 데이터라 iCloud dev 런타임 검증 불가 → 기록 합계·breakdown·묶기는 **사용자와 함께 실데이터로 확인** 후 신뢰.
+- 메모리: 금융 정확성 민감([[project_push_alert_policy]]).
 
-### A. 우선순위 높음 — 운영자(슈퍼관리자) 대시보드 + 베타 접근 관리
+### A. 우선순위 높음 — 운영자(슈퍼관리자) 대시보드 + 베타 접근 관리 ✅ 코드 완료(2026-05-27, 로컬·미푸시) — 활성화 대기
 - 앱 안 운영자 전용 영역(/admin 또는 (admin) 그룹). 슈퍼관리자 역할 신규 필요(현재는 영업장 단위 UserPropertyRole만).
 - 담을 것: 전체 가입자 조회(실명·이메일·전화·주소), 가입 승인/거절, 영업장 현황·통계.
 - 베타 게이팅(당장 필요 — 제한된 테스터만): 가입해도 운영자 승인해야 기능 해제. 쿠폰·초대 코드(선착순 N명 무료).
 - 결제·구독(PG)은 추후(쿠폰·승인이 임시 운영 수단): 포트원·토스페이먼츠, 플랜·7일 체험·쿠폰·웹훅·기능 게이팅.
+
+**확정 설계(2026-05-27 사용자 답):** ① 운영자 식별 = **env `SUPER_ADMIN_EMAILS`(부트스트랩·잠김방지) + `User.isSuperAdmin`(DB)** 병행.
+② 1차 범위 = **초대코드/쿠폰까지** 포함. ③ 신규 가입 = **전부 PENDING(승인 대기)**, 기존 사용자는 마이그레이션에서 APPROVED 백필.
+
+**스키마 변경(추가 전용):** `enum AccessStatus{PENDING/APPROVED/REJECTED}`, `User.{status(@default PENDING)·isSuperAdmin·approvedAt·approvedBy·inviteCode}`,
+`InviteCode{code·note·maxUses·usedCount·autoApprove·isActive·expiresAt·createdBy}`. → **`migrate_admin_beta_gating.sql`**(루트, 추가전용+기존 APPROVED 백필).
+⚠️ **배포 순서**: SQL 먼저 적용 → 코드 배포(신규 컬럼/테이블 사용, #1과 동일 제약). 현재 로컬만, 미푸시(다음 작업과 묶어 푸시 예정).
+
+**✅ 체크포인트 1 — 토대 완료(빌드·lint 통과):**
+  · schema.prisma 변경 + `prisma generate` 완료. `migrate_admin_beta_gating.sql` 작성.
+  · **`lib/auth/access.ts`(신규)**: `isSuperAdminEmail()`(env), `getAccessContext()`(claims+DB, 슈퍼관리자는 status 무관 APPROVED 간주), `requireSuperAdmin()` 가드.
+  · **게이트**: `app/(app)/layout.tsx` — claims 확인 직후 `me.status!==APPROVED && !isSuperAdmin → redirect('/pending')`. 앱 전체 단일 게이트.
+  · **`app/pending/page.tsx`(신규)**: 승인 대기/거절 안내(브랜드 StayeumWordmark·Terracotta), 로그아웃. 승인됨/운영자면 /dashboard 리다이렉트.
+**✅ 체크포인트 2 — 운영자 영역(`app/admin/`, (app) 셸 밖·자체 `requireSuperAdmin()` 가드):**
+  · `app/admin/layout.tsx`(헤더+`AdminNav` 탭: 가입자/영업장/초대코드, '앱으로→' 링크) · `app/admin/page.tsx`(→ /admin/users 리다이렉트).
+  · **가입자**(`users/page.tsx`+`UsersClient.tsx`): 실명·이메일·전화·주소·상태·가입일·소유/참여수 목록 + 상태필터(기본 '승인 대기') + **승인/거절/대기로** + **운영자 지정/해제**(본인 제외). `actions.getSignups·setUserStatus·setSuperAdmin`.
+  · **영업장**(`properties/page.tsx`): 전체 Property + 소유자·방수·입주자수·구성원수·개설일 + 총계. `getPropertiesOverview`.
+**✅ 체크포인트 3 — 초대코드/쿠폰:**
+  · 운영자(`invites/page.tsx`+`InvitesClient.tsx`): 코드 발급(코드 비우면 STAY-XXXXXX 자동생성)·메모·사용인원(0=무제한)·만료일(**DatePicker**, [[feedback_date_input]] 준수)·자동승인 토글, 목록·활성화/비활성·삭제. `getInviteCodes·createInviteCode·toggleInviteCode·deleteInviteCode`.
+  · 가입 연동: `EmailLoginForm` 회원가입에 **초대코드 입력칸** + signUp `options.data`에 real_name·phone·address·invite_code 적재(이메일 인증 ON이면 signUp 직후 세션 없음 → 첫 로그인 때 `syncUserToDB`가 user_metadata에서 회수). `syncUserToDB`에 `redeemInviteCode`(트랜잭션, 선착순 usedCount<maxUses·미만료·active·autoApprove면 status=APPROVED). ⚠️ **Google OAuth 가입은 코드 입력 없음 → PENDING(수동 승인)**.
+**✅ 체크포인트 4 — Sidebar 진입점:** layout→AppShell→Sidebar로 `isSuperAdmin` 전달 → 계정 섹션(데스크톱 NavContent + 모바일 MobileMenu)에 슈퍼관리자만 보이는 '운영자'(/admin) 링크.
+- **검증**: `npm run build` 성공(/admin·/admin/users·/admin/properties·/admin/invites·/pending 생성), 신규/변경 파일 ESLint 클린(Sidebar의 IcoLab·<img> 경고는 기존). GUI 인터랙티브는 iCloud dev 한계로 실기기/프로덕션 권장.
+
+**⚠️ 활성화에 필요(배포 전/시):**
+  1. **`migrate_admin_beta_gating.sql` 을 Supabase에 먼저 적용**(기존 사용자 APPROVED 백필 포함) → 그 다음 코드 배포.
+  2. **env `SUPER_ADMIN_EMAILS`** 설정 — 로컬 `.env.local` + Vercel(prod/dev). 예: `SUPER_ADMIN_EMAILS=gunwoo80@gmail.com`. (미설정 시 DB `isSuperAdmin`만으로 운영자 식별 → 첫 운영자 부트스트랩 곤란하니 env 권장.)
+  3. 현재 로컬만·미푸시 — 다음 작업과 묶어 push 예정.
 
 ### B. 통합 상세 모달 2b — 수납 '쓰기' 제자리 확장 (신중 작업)
 - 수납 등록·납부일 임시/영구조정을 공유 모달 제자리 전체기능으로. RoomsClient 수납 모달(~750줄:

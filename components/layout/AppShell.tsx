@@ -22,11 +22,13 @@ export default function AppShell({
   user,
   properties,
   currentPropertyId,
+  isSuperAdmin = false,
   children,
 }: {
   user: AppUser
   properties: SwitchProperty[]
   currentPropertyId: string | null
+  isSuperAdmin?: boolean
   children: React.ReactNode
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -34,7 +36,7 @@ export default function AppShell({
 
   return (
     <div className="flex h-dvh overflow-hidden" style={{ background: 'var(--canvas)' }}>
-      <Sidebar user={user} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar user={user} isSuperAdmin={isSuperAdmin} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* fallback은 실제 헤더와 동일한 외형 — 내용물만 없앤 투명 껍데기.
