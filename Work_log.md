@@ -237,8 +237,13 @@
 
 **⚠️ 활성화에 필요(배포 전/시):**
   1. **`migrate_admin_beta_gating.sql` 을 Supabase에 먼저 적용**(기존 사용자 APPROVED 백필 포함) → 그 다음 코드 배포.
-  2. **env `SUPER_ADMIN_EMAILS`** 설정 — 로컬 `.env.local` + Vercel(prod/dev). 예: `SUPER_ADMIN_EMAILS=gunwoo80@gmail.com`. (미설정 시 DB `isSuperAdmin`만으로 운영자 식별 → 첫 운영자 부트스트랩 곤란하니 env 권장.)
-  3. 현재 로컬만·미푸시 — 다음 작업과 묶어 push 예정.
+  2. **env `SUPER_ADMIN_EMAILS`** 설정 — 로컬 `.env.local`(적용됨: `stayeum2026@gmail.com,gunwoo80@gmail.com`) + **Vercel(prod) 설정 필요**. (미설정 시 DB `isSuperAdmin`만으로 식별. 미가입 주소는 env만 가능, 가입 후엔 DB 플래그도 가능.)
+
+**✅ 배포됨 (2026-05-27→28):** `990d10c`(A 본체) + `727179f`(게이트 누수 수정) + `3560186`(영업장 0개 운영자 크래시 수정). SQL(`migrate_admin_beta_gating.sql`) 프로덕션 적용 완료. stayeum2026 운영자 셋업 완료(DB 플래그).
+- **영업장 0개 크래시 수정(`3560186`)**: 순수 운영자(stayeum2026, 소속 영업장 없음)가 /dashboard 가면 빈 영업장 컨텍스트로 로드 실패("this page couldn't load"). → (app) 레이아웃에서 properties 0개면 운영자→/admin·그외→/property-select 리다이렉트. 운영자 헤더 '앱으로'는 /property-select로 + 영업장 보유 운영자에게만 표시.
+- **게이트 누수 수정(`727179f`)**: 게이트가 `(app)/*`만 막아 **`/property-select` 진입점이 무방비**였음(미승인자도 영업장 개설 가능 → 베타 게이팅 무력화). → property-select 페이지·`createProperty` 액션에 승인 가드 추가, **운영자는 소속 영업장 없으면 `/admin`으로 라우팅**(+property-select에 '운영자 페이지' 링크, /pending도 운영자는 /admin으로).
+- 운영자 계정 셋업: stayeum2026@gmail.com(주력·영구) 구글 로그인 → 행 생성 후 `UPDATE users SET isSuperAdmin=true,status='APPROVED'` 로 즉시 운영자. gunwoo80은 임시(나중 제거 가능, env에만 두면 한 곳 수정으로 제거).
+- ⚠️ Google OAuth 가입은 초대코드 입력 없음 → PENDING(수동 승인). 신규 가입자 관리하려면 운영자 계정으로 /admin에서 승인.
 
 ### B. 통합 상세 모달 2b — 수납 '쓰기' 제자리 확장 (신중 작업)
 - 수납 등록·납부일 임시/영구조정을 공유 모달 제자리 전체기능으로. RoomsClient 수납 모달(~750줄:
