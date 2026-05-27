@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
+import { getAccessContext } from '@/lib/auth/access'
 
 export async function getMyProperties() {
   const supabase = await createClient()
@@ -57,26 +58,29 @@ export async function selectProperty(propertyId: string): Promise<{ ok: true } |
 
     return { ok: true }
   } catch (err) {
-    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
 
 export async function createProperty(name: string): Promise<{ ok: true; propertyId: string } | { ok: false; error: string }> {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { ok: false, error: '로그인이 필요합니다.' }
+    // 베타 게이팅 — 승인된 사용자/운영자만 영업장 개설 가능
+    const ctx = await getAccessContext()
+    if (!ctx) return { ok: false, error: '로그인이 필요합니다.' }
+    if (!ctx.isSuperAdmin && ctx.status !== 'APPROVED') {
+      return { ok: false, error: '아직 승인 대기 중인 계정입니다. 운영자 승인 후 이용할 수 있어요.' }
+    }
 
     const trimmed = name.trim()
     if (!trimmed) return { ok: false, error: '영업장 이름을 입력해주세요.' }
 
     const property = await prisma.property.create({
-      data: { name: trimmed, ownerId: user.id },
+      data: { name: trimmed, ownerId: ctx.userId },
     })
 
     await prisma.userPropertyRole.create({
-      data: { userId: user.id, propertyId: property.id, role: 'OWNER' },
+      data: { userId: ctx.userId, propertyId: property.id, role: 'OWNER' },
     })
 
     const cookieStore = await cookies()

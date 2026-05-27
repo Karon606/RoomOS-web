@@ -7,8 +7,9 @@ import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 export default async function PendingPage() {
   const ctx = await getAccessContext()
   if (!ctx) redirect('/login')
-  // 이미 승인됐거나 운영자면 앱으로
-  if (ctx.isSuperAdmin || ctx.status === 'APPROVED') redirect('/dashboard')
+  // 운영자는 운영자 페이지로(영업장 없을 수 있음), 일반 승인 사용자는 앱으로
+  if (ctx.isSuperAdmin) redirect('/admin')
+  if (ctx.status === 'APPROVED') redirect('/dashboard')
 
   const rejected = ctx.status === 'REJECTED'
 
