@@ -283,6 +283,13 @@
 - ✅ 통합모달 도입 후 죽은 서브모달 코드 정리 (2026-05-23 완료).
 - ✅ 재고 이월분: 점검 후 입수분 반영 완료 (2026-05-27, `fea5c4d`). 점검 잔량 + 점검 이후~월초 입수(구매수령·무상) 합산, 내역 표시.
 
+### 보안 점검 (권장 — 2026-05-28 Supabase 메일 계기로 발견)
+- **public 테이블 Data API 노출 / RLS 점검**: 이 앱은 데이터 접근을 **Prisma 직결로만** 하고 Supabase는 인증(auth)에만 씀
+  (`.from()` 테이블 호출 0건 — 전수 확인). 그런데 Supabase 기본값상 public 스키마 테이블이 Data API(PostgREST)에 노출돼
+  있고 RLS가 꺼져 있으면, 브라우저에 노출되는 `anon` 키로 **고객 PII(users.realName·phone·address, tenants 등)가 외부에서
+  읽힐 수 있음.** → Supabase 대시보드 **Security Advisor**로 노출 테이블 확인 후 Data API 비활성화 또는 RLS 적용으로 잠글 것.
+  (참고: Supabase 2026-05-30 "Data API 기본값 변경"은 **신규 프로젝트만**, 기존은 2026-10-30까지 현행 → 앱 기능 영향 없음. 보안만 별개로 챙기면 됨.)
+
 ### J. 나중에 (낮은 우선순위)
 - **@stayeum.com 이메일 수신**: 현재 발송만 가능. Cloudflare Email Routing(무료)으로 → Gmail 포워딩.
 - **구글 로그인 supabase.co 노출 제거**: 리다이렉트 중 잠깐 노출. 완전 제거는 Custom Domain(유료, Pro). 체감 짧음.
