@@ -384,7 +384,15 @@
 - **검증**: build 통과, ESLint 신규코드 클린(769 set-state-in-effect는 기존 FinanceTab 이슈·무관),
   urgencyDaysOf 단위테스트 18/18 통과(모든 실제 라벨 형식). ⚠️ 2존 시각/인터랙티브 확인은 iCloud dev Fast Refresh로 불가 → 프로덕션/실기기 권장.
 - **종(L-2)과의 관계**: 종은 computeAlerts의 numeric `urgency`로 이미 정렬됨(별개 서브시스템). L은 대시보드 AlertsStrip 전용.
-- **남은 여지**: 카테고리별 차등 임계값(현재 전역 2일), 긴급 항목 within-group 부분펼침(B안 요소)은 필요 시.
+- **남은 여지**: ~~카테고리별 차등 임계값~~ → ✅ 적용(2026-05-28, L 후속). 긴급 항목 within-group 부분펼침(B안 요소)은 필요 시.
+
+#### L 후속 폴리시 ✅ (2026-05-28) — 카테고리별 '지금 급함' 임계값
+- 기존: 전역 `ALERT_URGENT_WITHIN_DAYS = 2`로 모든 카테고리 동일 임계값. 미납은 도래 즉시 급하고 재고는 며칠 전부터 급한데 동일 잣대였음.
+- 변경: `lib/appConfig.ts` 에 `ALERT_URGENT_CATEGORY_DAYS` 맵 신규. 카테고리별 오버라이드(없으면 전역값 폴백).
+  · unpaid 0(도래 즉시) · upcoming 2 · moveout 3 · movein 3 · tour 1 · wish −1(절대 긴급 X) · request 0 · recurring 2 · inventory 5.
+- DashboardClient `AlertsStrip`의 urgent 분리 로직: 전역 비교 → `thresholdFor(category)` 호출로 항목별 임계값 비교. `restItems` 도 동일 기준.
+- 결과: 진짜 급한 것만 '지금 급함' 존에, 카테고리 본연의 시간 감각 반영. 사업장별 튜닝이 필요해지면 Property 컬럼으로 이전.
+- 빌드 통과, 신규 코드 lint 클린. SQL 불필요. 즉시 배포 가능.
 
 #### L(원안). 대시보드 동적 알림 센터 (Dynamic Notification Center) — 2026-05-23 제안
 - **문제**: 대시보드 알림이 많다 보니(납부 예정·퇴실 예정·투어 예정·희망호실 조건 매칭 등) 정해진 고정 순서라
