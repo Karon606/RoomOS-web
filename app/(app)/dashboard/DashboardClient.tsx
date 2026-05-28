@@ -609,6 +609,9 @@ function AlertsStrip({ alerts, onOpenAlert }: {
     for (const g of groups) init[g.cat] = urgent.length === 0 && g.items.length <= COLLAPSE_THRESHOLD
     return init
   })
+  // 그룹 내 부분 펼침 (L 후속) — 그룹을 열어도 가장 급한 N개만 우선 보이고 나머지는 '+M건 더 보기' 뒤로.
+  // 그룹 items 는 이미 긴급도 오름차순 정렬돼 있어 slice(0, LIMIT) = 가장 급한 N개.
+  const [groupFullOpen, setGroupFullOpen] = useState<Record<string, boolean>>({})
 
   if (alerts.length === 0) return null
 
@@ -664,15 +667,31 @@ function AlertsStrip({ alerts, onOpenAlert }: {
               <span className="text-[var(--warm-muted)] text-xs ml-1" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 150ms' }}>›</span>
             </button>
 
-            {isOpen && (
-              <div>
-                {g.items.map((item, i) => (
-                  <div key={i} style={{ borderTop: i === 0 ? `1px solid ${DIVIDER_COLOR}` : 'none', borderBottom: i < g.items.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
-                    <AlertRow item={item} onOpen={onOpenAlert} />
-                  </div>
-                ))}
-              </div>
-            )}
+            {isOpen && (() => {
+              const isFullOpen = groupFullOpen[g.cat] ?? false
+              const hasMore = g.items.length > COLLAPSE_THRESHOLD
+              const visibleItems = (hasMore && !isFullOpen) ? g.items.slice(0, COLLAPSE_THRESHOLD) : g.items
+              const hiddenCount = g.items.length - visibleItems.length
+              return (
+                <div>
+                  {visibleItems.map((item, i) => (
+                    <div key={i} style={{ borderTop: i === 0 ? `1px solid ${DIVIDER_COLOR}` : 'none', borderBottom: i < visibleItems.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
+                      <AlertRow item={item} onOpen={onOpenAlert} />
+                    </div>
+                  ))}
+                  {hasMore && (
+                    <button
+                      type="button"
+                      onClick={() => setGroupFullOpen(prev => ({ ...prev, [g.cat]: !isFullOpen }))}
+                      className="w-full text-center py-2 text-[0.6875rem] font-medium hover:opacity-70 transition-opacity"
+                      style={{ color: 'var(--warm-mid)', borderTop: `1px solid ${DIVIDER_COLOR}`, background: 'rgba(0,0,0,0.012)' }}
+                    >
+                      {isFullOpen ? '접기' : `+ ${hiddenCount}건 더 보기`}
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         )
       })}
