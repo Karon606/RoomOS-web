@@ -4,6 +4,7 @@ import './globals.css'
 import { ThemeProvider, themeBootstrapScript } from '@/components/theme/ThemeProvider'
 import { FontSizeProvider, fontSizeBootstrapScript } from '@/components/theme/FontSizeProvider'
 import NavProgress from '@/components/layout/NavProgress'
+import { Analytics } from '@vercel/analytics/next'
 
 // 가이드 명시: Numbers·Mono·Meta는 DM Mono
 const dmMono = DM_Mono({
@@ -68,6 +69,7 @@ export default function RootLayout({
         <FontSizeProvider>
           <ThemeProvider>{children}</ThemeProvider>
         </FontSizeProvider>
+        <Analytics />
       </body>
     </html>
   )
