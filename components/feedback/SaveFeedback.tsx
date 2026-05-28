@@ -42,13 +42,14 @@ export default function SaveFeedback() {
         </div>
       )}
 
-      {/* 우상단 토스트 스택 */}
-      <div className="fixed top-3 right-3 z-[201] flex flex-col gap-2 pointer-events-none" style={{ maxWidth: 'calc(100vw - 24px)' }}>
+      {/* 화면 중앙 토스트 스택 (viewport center — 스크롤 위치 무관하게 눈에 잘 띔) */}
+      <div className="fixed left-1/2 top-1/2 z-[201] flex flex-col gap-2 items-center pointer-events-none"
+        style={{ transform: 'translate(-50%, -50%)', maxWidth: 'calc(100vw - 24px)' }}>
         {toasts.map(t => (
           <div
             key={t.id}
             role="status"
-            className="pointer-events-auto rounded-xl px-3.5 py-2.5 text-sm font-medium shadow-lift animate-roos-toast"
+            className="pointer-events-auto rounded-xl px-4 py-3 text-sm font-medium shadow-lift animate-roos-toast text-center"
             style={{
               background: t.kind === 'error'
                 ? 'color-mix(in srgb, var(--coral) 92%, white)'
@@ -56,8 +57,8 @@ export default function SaveFeedback() {
                 ? 'color-mix(in srgb, #10b981 92%, white)'
                 : 'var(--ink-2)',
               color: '#fff',
-              minWidth: 200,
-              maxWidth: 360,
+              minWidth: 240,
+              maxWidth: 380,
             }}
           >
             {t.message}
@@ -65,8 +66,8 @@ export default function SaveFeedback() {
         ))}
         <style>{`
           @keyframes roos-toast-in {
-            from { opacity: 0; transform: translateY(-8px) scale(0.96); }
-            to   { opacity: 1; transform: translateY(0)    scale(1); }
+            from { opacity: 0; transform: scale(0.92); }
+            to   { opacity: 1; transform: scale(1); }
           }
           .animate-roos-toast { animation: roos-toast-in 180ms ease-out; }
         `}</style>
