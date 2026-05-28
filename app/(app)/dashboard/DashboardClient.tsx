@@ -9,7 +9,6 @@ import { Loading } from '@/components/ui/Loading'
 import { DatePicker } from '@/components/ui/DatePicker'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { getTrendData, type TrendRange, type TrendPoint } from './actions'
-import RoomDistribution from './RoomDistribution'
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -1920,6 +1919,38 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
   const [unpaidExpanded, setUnpaidExpanded]       = useState(false)
   const [activityExpanded, setActivityExpanded]   = useState(false)
 
+  // 방 현황 차원 그룹화 — 사용자가 차원을 다중·순서대로 골라 호실 카드 묶음 단위가 바뀜.
+  // 디폴트 ['floor'] = 기존 동작(층별 묶음) 유지. 선택 상태는 localStorage 보존.
+  type RoomDimKey = 'floor' | 'tier' | 'windowType' | 'direction' | 'type'
+  const ROOM_DIMS: { key: RoomDimKey; label: string }[] = [
+    { key: 'floor',      label: '층' },
+    { key: 'tier',       label: '등급' },
+    { key: 'windowType', label: '창문' },
+    { key: 'direction',  label: '방향' },
+    { key: 'type',       label: '방타입' },
+  ]
+  const ROOM_DIMS_STORAGE_KEY = 'stayeum-dashboard-room-dims'
+  const [roomDims, setRoomDims] = useState<RoomDimKey[]>(['floor'])
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(ROOM_DIMS_STORAGE_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw) as RoomDimKey[]
+        if (Array.isArray(parsed) && parsed.every(k => ROOM_DIMS.some(d => d.key === k))) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setRoomDims(parsed)
+        }
+      }
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    try { localStorage.setItem(ROOM_DIMS_STORAGE_KEY, JSON.stringify(roomDims)) } catch { /* ignore */ }
+  }, [roomDims])
+  const toggleRoomDim = (key: RoomDimKey) => {
+    setRoomDims(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
+  }
+
   const prev = data.trend[data.trend.length - 2]
   const cur  = data.trend[data.trend.length - 1]
   const revChange = prev && prev.revenue > 0
@@ -2101,8 +2132,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                 <div className="flex flex-col gap-3.5">
 
                   {/* 방 현황 그리드 */}
-                  <div className="rounded-xl p-5 flex flex-col" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-                    <div className="flex items-center justify-between mb-3.5 shrink-0">
+                  <div className="rounded-xl p-5 flex flex-col gap-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+                    <div className="flex items-center justify-between shrink-0">
                       <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>
                         방 현황
                         <span style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 6 }}>{data.totalRooms}개 호실</span>
@@ -2113,8 +2144,39 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                       <p className="text-center py-8 text-sm" style={{ color: 'var(--warm-muted)' }}>등록된 호실 없음</p>
                     ) : (
                       <>
+                        {/* 차원 칩 — 호실 카드 묶음 단위 선택 (순서대로 우선순위) */}
+                        <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                          <span style={{ fontSize: '0.625rem', color: 'var(--warm-muted)' }}>묶음</span>
+                          {ROOM_DIMS.map(d => {
+                            const idx = roomDims.indexOf(d.key)
+                            const on = idx >= 0
+                            return (
+                              <button key={d.key} type="button" onClick={() => toggleRoomDim(d.key)}
+                                className="px-2.5 py-1 text-[0.6875rem] rounded-md transition-colors flex items-center gap-1"
+                                style={{
+                                  background: on ? 'var(--persimmon)' : 'var(--canvas)',
+                                  color: on ? '#fff' : 'var(--warm-mid)',
+                                  border: '1px solid ' + (on ? 'var(--persimmon)' : 'var(--warm-border)'),
+                                  fontWeight: on ? 600 : 500,
+                                }}>
+                                {on && roomDims.length > 1 && (
+                                  <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[0.5rem] font-bold"
+                                    style={{ background: 'rgba(255,255,255,0.25)' }}>
+                                    {idx + 1}
+                                  </span>
+                                )}
+                                {d.label}
+                              </button>
+                            )
+                          })}
+                          {roomDims.length > 0 && (
+                            <button type="button" onClick={() => setRoomDims([])}
+                              className="text-[0.625rem] underline-offset-2 hover:underline"
+                              style={{ color: 'var(--warm-muted)' }}>전체</button>
+                          )}
+                        </div>
                         {/* 범례 */}
-                        <div className="flex gap-3.5 mb-3 shrink-0 flex-wrap">
+                        <div className="flex gap-3.5 shrink-0 flex-wrap">
                           <div className="flex items-center gap-[5px]" style={{ fontSize: '0.625rem', color: 'var(--warm-muted)' }}>
                             <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(16,185,129,0.35)' }} />납부완료
                           </div>
@@ -2136,16 +2198,45 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               const n = r.roomNo.replace(/[^0-9]/g, '')
                               return n.length >= 3 ? n.slice(0, n.length - 2) : '기타'
                             }
-                            const floorGroups = data.rooms.reduce((acc, r) => {
-                              const f = getFloor(r)
-                              if (!acc[f]) acc[f] = []
-                              acc[f].push(r)
-                              return acc
-                            }, {} as Record<string, typeof data.rooms>)
-                            const sortedFloors = Object.keys(floorGroups).sort((a, b) => {
-                              if (a === '기타') return 1
-                              if (b === '기타') return -1
-                              return Number(a) - Number(b)
+                            // 차원별 값 추출 + 라벨 변환
+                            const UNSET = '미지정'
+                            const dimValue = (r: typeof data.rooms[0], k: RoomDimKey): string => {
+                              switch (k) {
+                                case 'floor':      return `${getFloor(r)}층`
+                                case 'tier':       return r.tier ?? UNSET
+                                case 'windowType': return r.windowType ? (DASH_WINDOW_LABEL[r.windowType] ?? r.windowType) : UNSET
+                                case 'direction':  return r.direction ? (DASH_DIR_LABEL[r.direction] ?? r.direction) : UNSET
+                                case 'type':       return r.type ?? UNSET
+                              }
+                            }
+                            const dimSortKey = (k: RoomDimKey, v: string): number | string => {
+                              if (k === 'floor') {
+                                if (v === `${UNSET}층`) return 99999
+                                const n = parseInt(v.replace(/[^0-9]/g, ''), 10)
+                                return isNaN(n) ? 99998 : n
+                              }
+                              return v === UNSET ? '~~~' + v : v // UNSET을 뒤로
+                            }
+                            // 그룹 키 = 선택된 차원 값들을 '|' 로 join (내부 키), 라벨 = ' · '
+                            const groups = new Map<string, { label: string; values: string[]; rooms: typeof data.rooms }>()
+                            for (const r of data.rooms) {
+                              const values = roomDims.map(k => dimValue(r, k))
+                              const key = values.join('|') || '__all__'
+                              const label = values.length > 0 ? values.join(' · ') : ''
+                              const g = groups.get(key)
+                              if (g) g.rooms.push(r)
+                              else groups.set(key, { label, values, rooms: [r] })
+                            }
+                            // 차원 순서대로 정렬
+                            const sortedGroups = Array.from(groups.values()).sort((a, b) => {
+                              for (let i = 0; i < roomDims.length; i++) {
+                                const k = roomDims[i]
+                                const ka = dimSortKey(k, a.values[i])
+                                const kb = dimSortKey(k, b.values[i])
+                                if (ka < kb) return -1
+                                if (ka > kb) return 1
+                              }
+                              return 0
                             })
                             const renderCell = (r: typeof data.rooms[0]) => {
                               const hasNonResident = !!r.nonResidentName
@@ -2180,11 +2271,22 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 </div>
                               )
                             }
-                            return sortedFloors.map(floor => (
-                              <div key={floor} className="space-y-1.5">
-                                <p style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--warm-muted)' }}>{floor}층</p>
+                            // 차원 0개 = 한 덩어리(헤더 없이) 표시
+                            if (roomDims.length === 0) {
+                              return (
                                 <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
-                                  {floorGroups[floor].map(r => renderCell(r))}
+                                  {data.rooms.map(r => renderCell(r))}
+                                </div>
+                              )
+                            }
+                            return sortedGroups.map(g => (
+                              <div key={g.label} className="space-y-1.5">
+                                <p style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--warm-muted)' }}>
+                                  {g.label}
+                                  <span style={{ fontWeight: 400, marginLeft: 4 }}>({g.rooms.length})</span>
+                                </p>
+                                <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+                                  {g.rooms.map(r => renderCell(r))}
                                 </div>
                               </div>
                             ))
@@ -2226,9 +2328,6 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                       </div>
                     </div>
                   )}
-
-                  {/* 호실 분포 (3차 — 다차원 그룹화) */}
-                  <RoomDistribution rooms={data.rooms} />
 
                   {/* 이달 손익 현황 */}
                   <div className="rounded-xl p-5 flex flex-col gap-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
