@@ -25,13 +25,20 @@ export default async function AppLayout({
   const userId = claims.sub as string
   const me = await prisma.user.findUnique({
     where: { id: userId },
-    select: { status: true, isSuperAdmin: true },
+    select: { status: true, isSuperAdmin: true, realName: true },
   })
   const isSuperAdmin = isSuperAdminEmail(claims.email as string | undefined) || (me?.isSuperAdmin ?? false)
   if (!isSuperAdmin && me?.status !== 'APPROVED') redirect('/pending')
 
   // 헤더 영업장 스위처용. 일반 사용자 = 본인 소속 영업장만. 슈퍼관리자 = 전체 활성 영업장(자유 전환).
   const cookieStore = await cookies()
+
+  // 프로필 미입력 안내 — Google OAuth 등 가입 시 실명·연락처 수집 폼이 없었던 케이스용 후처리.
+  // 슈퍼관리자는 제외(시스템 운영자), 한 번 '나중에' 선택했으면 30일간 안내 안 함.
+  if (!isSuperAdmin && !me?.realName) {
+    const skipped = cookieStore.get('profile_setup_skipped')?.value === '1'
+    if (!skipped) redirect('/profile-setup')
+  }
   const currentPropertyId = cookieStore.get('selected_property_id')?.value ?? null
   let properties: { id: string; name: string }[]
   let myPropertyIds: Set<string>

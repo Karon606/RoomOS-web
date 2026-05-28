@@ -1,4 +1,5 @@
 import { getPropertiesOverview, enterPropertyAsAdmin } from '../actions'
+import EnterButton from './EnterButton'
 
 const fmtDate = (d: Date) =>
   new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
@@ -54,13 +55,7 @@ export default async function AdminPropertiesPage() {
               </p>
               <form action={enterPropertyAsAdmin} className="mt-3">
                 <input type="hidden" name="propertyId" value={p.id} />
-                <button
-                  type="submit"
-                  className="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
-                  style={{ background: 'var(--ink-2)', color: 'var(--cream)' }}
-                >
-                  관리자 권한으로 진입 →
-                </button>
+                <EnterButton />
               </form>
             </li>
           ))}
