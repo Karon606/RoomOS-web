@@ -193,6 +193,14 @@
   · `RoomManageClient.tsx`: ① Room 타입에 `tier` 추가, ② `filterTier` 상태·리셋·activeCount·필터로직 동기화, ③ 필터 UI에 등급 드롭다운(방 타입 옆), ④ `TierSection` 컴포넌트(등록·수정 폼 둘 다), ⑤ 카드에 등급 칩 표시, ⑥ 상세 모달에 등급 DetailRow, ⑦ `BatchEditRoomsModal`에 등급 미변경/선택 chip 그룹 + state + apply 합류.
 - 빌드 통과. ⚠️ **푸시 전 SQL 적용 필요**: `migrate_room_tier.sql` (ALTER TABLE properties/rooms ADD COLUMN). 없이 푸시하면 환경설정·호실관리 페이지 Prisma 쿼리 실패.
 
+**✅ 3차 완료 (코드, SQL 불필요 — 스키마 변경 없음):**
+- **#1a + #1b 대시보드 다차원 그룹화** — 대시보드 좌측 칼럼 '방 현황' 아래 **'호실 분포'** 위젯 신규.
+  · 차원 5개 multi-select chip: **층·등급·창문·방향·방타입** (사용자 명시 4개 + 방타입). 디폴트 [층, 등급], 선택 상태 localStorage 보존.
+  · 선택된 차원 조합으로 호실 그룹화 → 그룹별 카드 표시. 차원 0개 = 전체 합계 하나, 빈 그룹 자동 숨김, 그룹명 사전순 정렬.
+  · 카드 표시 데이터(사용자 선택 multi-select): **호실수·점유율%·입주(ACTIVE)·예약(RESERVED)·퇴실예정(CHECKOUT_PENDING)·공실·평균 기본 이용료**. 점유율 = (전체-공실)/전체.
+  · 신규: `app/(app)/dashboard/RoomDistribution.tsx` (client). 변경: dashboard/page.tsx rooms select에 `tier: true` + roomsData map에 `tier` 전달, DashboardData.rooms 타입에 `tier`, DashboardClient에 import + 방 현황 뒤 위치에 렌더.
+- 빌드·신규 파일 lint 클린. **SQL 변경 없음** → 즉시 푸시·배포 가능.
+
 **남은 작업:**
    - 환경설정에 옵션 등록(roomTypeOptions 패턴 미러링: `Property.roomTierOptions` 같은 콤마구분 컬럼 추가).
    - `Room.tier` 필드 신규 + 마이그레이션 SQL.
