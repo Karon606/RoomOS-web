@@ -241,6 +241,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       qtyUnit: it.qtyUnit,
       alertThresholdDays: it.alertThresholdDays,
       reorderMemo: it.reorderMemo,
+      purchaseUrl: it.purchaseUrl,
       memo: it.memo,
       trackUnit: (it.trackUnit === 'qty' ? 'qty' : 'spec') as 'spec' | 'qty',
       isArchived: it.isArchived,

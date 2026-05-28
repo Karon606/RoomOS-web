@@ -240,6 +240,7 @@ export async function updateTrackedItem(id: string, data: {
   label?: string
   specUnit?: string | null; qtyUnit?: string | null; memo?: string | null
   alertThresholdDays?: number; reorderMemo?: string | null
+  purchaseUrl?: string | null
   trackUnit?: 'spec' | 'qty'
 }): Promise<{ ok: true; renamedExpenses: number } | { ok: false; error: string }> {
   try {
@@ -280,6 +281,7 @@ export async function updateTrackedItem(id: string, data: {
         memo:               data.memo               ?? it.memo,
         alertThresholdDays: data.alertThresholdDays ?? it.alertThresholdDays,
         reorderMemo:        data.reorderMemo        ?? it.reorderMemo,
+        purchaseUrl:        data.purchaseUrl        ?? it.purchaseUrl,
         trackUnit:          data.trackUnit          ?? it.trackUnit,
       },
     })

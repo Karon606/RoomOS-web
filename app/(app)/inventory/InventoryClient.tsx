@@ -347,6 +347,18 @@ function InventoryCard({ row, onOpen, selectMode, isSelected, hasDraft }: { row:
           발주 · {row.reorderMemo}
         </p>
       )}
+      {row.purchaseUrl && (
+        <a href={row.purchaseUrl} target="_blank" rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          className="inline-flex items-center gap-1 self-start text-[0.625rem] text-[var(--coral)] bg-[var(--coral)]/5 hover:bg-[var(--coral)]/10 border border-[var(--coral)]/30 rounded-lg px-2 py-1 leading-none transition-colors">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+          구매 페이지 열기
+        </a>
+      )}
       {row.locations.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {row.lastCheckLocationBreakdown.length > 0
@@ -746,6 +758,7 @@ function SettingsForm({ row, onCancel, onDone }: {
   const [labelEdit, setLabelEdit]         = useState(row.label)
   const [thresholdDays, setThresholdDays] = useState(String(row.alertThresholdDays))
   const [reorderMemo, setReorderMemo]     = useState(row.reorderMemo ?? '')
+  const [purchaseUrl, setPurchaseUrl]     = useState(row.purchaseUrl ?? '')
   const [memo, setMemo]                   = useState(row.memo ?? '')
   const [trackUnit, setTrackUnit]         = useState<'spec' | 'qty'>(row.trackUnit)
   const [pending, startTransition] = useTransition()
@@ -762,6 +775,7 @@ function SettingsForm({ row, onCancel, onDone }: {
         label: labelEdit.trim(),
         alertThresholdDays: n,
         reorderMemo: reorderMemo.trim() || null,
+        purchaseUrl: purchaseUrl.trim() || null,
         memo: memo.trim() || null,
         trackUnit,
       })
@@ -821,6 +835,16 @@ function SettingsForm({ row, onCancel, onDone }: {
           rows={3}
           placeholder="예: 쿠팡 / 100매 박스 단위 / 영업장 카드 결제"
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] resize-none" />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">구매 링크</label>
+        <input type="url" value={purchaseUrl} onChange={e => setPurchaseUrl(e.target.value)}
+          placeholder="https://www.coupang.com/..."
+          autoComplete="off"
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+        <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
+          입력해두면 재고 카드에서 한 번에 구매 페이지로 이동할 수 있어요.
+        </p>
       </div>
       {/* 위치 할당 섹션 */}
       <LocationAssignSection trackedItemId={row.id} initialLocations={row.locations} />
@@ -1290,9 +1314,16 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
               <div key={l.id} className="space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{l.name}</span>
-                  {restocked > 0 && (
-                    <span className="text-[0.625rem] text-[var(--coral)] shrink-0">창고 → +{Math.round(restocked * 100) / 100}</span>
-                  )}
+                  <div className="flex items-baseline gap-1.5 shrink-0">
+                    <button type="button"
+                      onClick={() => setAfterQtys(p => ({ ...p, [l.id]: beforeQtys[l.id] ?? '' }))}
+                      className="text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10">
+                      유지
+                    </button>
+                    {restocked > 0 && (
+                      <span className="text-[0.625rem] text-[var(--coral)]">창고 → +{Math.round(restocked * 100) / 100}</span>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   <div>
@@ -1772,6 +1803,20 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{loc.name}</span>
                   <div className="flex items-baseline gap-1.5 shrink-0">
+                    <button type="button"
+                      onClick={() => {
+                        const cur = beforeQtys[loc.id] ?? ''
+                        if (cur === '' && prevQty !== undefined) {
+                          const v = String(prevQty)
+                          setBeforeQtys(p => ({ ...p, [loc.id]: v }))
+                          setAfterQtys(p => ({ ...p, [loc.id]: v }))
+                        } else {
+                          setAfterQtys(p => ({ ...p, [loc.id]: cur }))
+                        }
+                      }}
+                      className="text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10">
+                      유지
+                    </button>
                     {restocked > 0 && (
                       <span className="text-[0.625rem] text-[var(--coral)]">창고 → +{Math.round(restocked * 100) / 100}</span>
                     )}
@@ -2102,6 +2147,24 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                       <p className="text-[0.625rem] text-[var(--warm-muted)]">{r.category}</p>
                     </div>
                     <div className="flex items-baseline gap-1.5 shrink-0">
+                      <button type="button"
+                        onClick={() => {
+                          if (isHubLocation) {
+                            if (prev != null) setAfterQtys(p => ({ ...p, [r.id]: String(prev.qty) }))
+                          } else {
+                            const cur = beforeQtys[r.id] ?? ''
+                            if (cur === '' && prev != null) {
+                              const v = String(prev.qty)
+                              setBeforeQtys(p => ({ ...p, [r.id]: v }))
+                              setAfterQtys(p => ({ ...p, [r.id]: v }))
+                            } else {
+                              setAfterQtys(p => ({ ...p, [r.id]: cur }))
+                            }
+                          }
+                        }}
+                        className="text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10">
+                        유지
+                      </button>
                       {restocked > 0 && !isHubLocation && (
                         <span className="text-[0.625rem] text-[var(--coral)]">창고 → +{Math.round(restocked * 100) / 100}</span>
                       )}
