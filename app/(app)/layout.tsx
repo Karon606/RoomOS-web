@@ -30,20 +30,38 @@ export default async function AppLayout({
   const isSuperAdmin = isSuperAdminEmail(claims.email as string | undefined) || (me?.isSuperAdmin ?? false)
   if (!isSuperAdmin && me?.status !== 'APPROVED') redirect('/pending')
 
-  // 헤더 영업장 스위처용 — getUser() 네트워크 왕복을 피하려 claims.sub로 직접 조회.
-  // 헤더엔 id·name만 필요(실제 전환은 selectProperty가 권한 재확인).
+  // 헤더 영업장 스위처용. 일반 사용자 = 본인 소속 영업장만. 슈퍼관리자 = 전체 활성 영업장(자유 전환).
   const cookieStore = await cookies()
   const currentPropertyId = cookieStore.get('selected_property_id')?.value ?? null
-  const roles = await prisma.userPropertyRole.findMany({
-    where: { userId },
-    select: { property: { select: { id: true, name: true } } },
-    orderBy: { createdAt: 'asc' },
-  })
-  const properties = roles.map(r => ({ id: r.property.id, name: r.property.name }))
+  let properties: { id: string; name: string }[]
+  let myPropertyIds: Set<string>
+  if (isSuperAdmin) {
+    const all = await prisma.property.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true },
+      orderBy: { createdAt: 'asc' },
+    })
+    properties = all
+    const myRoles = await prisma.userPropertyRole.findMany({
+      where: { userId },
+      select: { propertyId: true },
+    })
+    myPropertyIds = new Set(myRoles.map(r => r.propertyId))
+  } else {
+    const roles = await prisma.userPropertyRole.findMany({
+      where: { userId },
+      select: { property: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'asc' },
+    })
+    properties = roles.map(r => ({ id: r.property.id, name: r.property.name }))
+    myPropertyIds = new Set(properties.map(p => p.id))
+  }
 
-  // 소속 영업장이 없으면 앱 페이지(대시보드 등) 진입 불가 — 데이터가 영업장 단위라 빈 컨텍스트면 로드 실패.
-  // 운영자는 운영자 페이지로, 그 외엔 영업장 선택/개설로.
+  // 활성 영업장이 0개면 진입 불가 (데이터가 영업장 단위라 빈 컨텍스트면 로드 실패). 운영자는 /admin, 그 외엔 /property-select.
   if (properties.length === 0) redirect(isSuperAdmin ? '/admin' : '/property-select')
+
+  // 슈퍼관리자가 본인 소속 아닌 영업장을 보고 있으면 = 관리자 뷰
+  const isAdminView = isSuperAdmin && currentPropertyId != null && !myPropertyIds.has(currentPropertyId)
 
   return (
     <AppShell
@@ -51,6 +69,7 @@ export default async function AppLayout({
       properties={properties}
       currentPropertyId={currentPropertyId}
       isSuperAdmin={isSuperAdmin}
+      isAdminView={isAdminView}
     >
       <ClearAppBadge />
       <EntityModalProvider>

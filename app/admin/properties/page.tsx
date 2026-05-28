@@ -1,4 +1,4 @@
-import { getPropertiesOverview } from '../actions'
+import { getPropertiesOverview, enterPropertyAsAdmin } from '../actions'
 
 const fmtDate = (d: Date) =>
   new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
@@ -52,6 +52,16 @@ export default async function AdminPropertiesPage() {
                 소유자 {p.owner.realName || p.owner.name || p.owner.email} · 방 {p._count.rooms} · 입주자{' '}
                 {p._count.tenants} · 구성원 {p._count.userRoles} · 개설 {fmtDate(p.createdAt)}
               </p>
+              <form action={enterPropertyAsAdmin} className="mt-3">
+                <input type="hidden" name="propertyId" value={p.id} />
+                <button
+                  type="submit"
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                  style={{ background: 'var(--ink-2)', color: 'var(--cream)' }}
+                >
+                  관리자 권한으로 진입 →
+                </button>
+              </form>
             </li>
           ))}
         </ul>

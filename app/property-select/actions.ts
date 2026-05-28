@@ -37,15 +37,20 @@ export async function getMyProperties() {
 
 export async function selectProperty(propertyId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const supabase = await createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) redirect('/login')
-    const user = session.user
+    const ctx = await getAccessContext()
+    if (!ctx) redirect('/login')
 
-    const hasAccess = await prisma.userPropertyRole.findFirst({
-      where: { userId: user.id, propertyId },
-    })
-    if (!hasAccess) return { ok: false, error: '접근 권한이 없습니다.' }
+    // 슈퍼관리자 = 가입 여부와 무관하게 모든 영업장 진입 가능 (앱 전체 운영자 권한).
+    // 일반 사용자 = UserPropertyRole 보유 시에만.
+    if (!ctx.isSuperAdmin) {
+      const hasAccess = await prisma.userPropertyRole.findFirst({
+        where: { userId: ctx.userId, propertyId },
+      })
+      if (!hasAccess) return { ok: false, error: '접근 권한이 없습니다.' }
+    }
+    // 슈퍼관리자라도 존재하는 영업장이어야 함
+    const exists = await prisma.property.findUnique({ where: { id: propertyId }, select: { id: true } })
+    if (!exists) return { ok: false, error: '영업장을 찾을 수 없습니다.' }
 
     const cookieStore = await cookies()
     cookieStore.set('selected_property_id', propertyId, {

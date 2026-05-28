@@ -2,6 +2,7 @@ import { createClient } from './supabase/server'
 import { cookies } from 'next/headers'
 import prisma from './prisma'
 import { redirect } from 'next/navigation'
+import { isSuperAdminEmail } from './auth/access'
 
 export type { Role } from './role-types'
 export { ROLE_LABEL } from './role-types'
@@ -15,6 +16,14 @@ export async function getMyRole(): Promise<Role> {
   const cookieStore = await cookies()
   const propertyId = cookieStore.get('selected_property_id')?.value
   if (!propertyId) redirect('/property-select')
+
+  // 슈퍼관리자 = 어느 영업장이든 OWNER로 간주 (앱 전체 운영자 권한).
+  // env SUPER_ADMIN_EMAILS 또는 User.isSuperAdmin = true.
+  const me = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { isSuperAdmin: true, email: true },
+  })
+  if (isSuperAdminEmail(user.email ?? me?.email ?? null) || me?.isSuperAdmin) return 'OWNER'
 
   const record = await prisma.userPropertyRole.findUnique({
     where: { userId_propertyId: { userId: user.id, propertyId } },

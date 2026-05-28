@@ -23,12 +23,14 @@ export default function AppShell({
   properties,
   currentPropertyId,
   isSuperAdmin = false,
+  isAdminView = false,
   children,
 }: {
   user: AppUser
   properties: SwitchProperty[]
   currentPropertyId: string | null
   isSuperAdmin?: boolean
+  isAdminView?: boolean
   children: React.ReactNode
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -36,6 +38,15 @@ export default function AppShell({
 
   return (
     <div className="flex h-dvh overflow-hidden" style={{ background: 'var(--canvas)' }}>
+      {isAdminView && (
+        <div className="fixed top-0 inset-x-0 z-[70] flex items-center justify-center gap-1.5 px-3 py-1 text-[11px] font-medium"
+          style={{ background: 'var(--ink-2)', color: 'var(--sand)', letterSpacing: '0.02em' }}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6l-8-4Z"/>
+          </svg>
+          스테이음 관리자 뷰 — 본인 소속 영업장이 아닙니다
+        </div>
+      )}
       <Sidebar user={user} isSuperAdmin={isSuperAdmin} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex flex-col flex-1 overflow-hidden">

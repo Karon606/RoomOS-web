@@ -1,9 +1,29 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { cookies } from 'next/headers'
+import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import { requireSuperAdmin } from '@/lib/auth/access'
 import type { AccessStatus } from '@/lib/auth/access'
+
+// 슈퍼관리자가 임의 영업장에 진입 (가입 여부 무관). 쿠키 설정 + /dashboard 이동.
+export async function enterPropertyAsAdmin(formData: FormData) {
+  await requireSuperAdmin()
+  const propertyId = formData.get('propertyId') as string | null
+  if (!propertyId) return
+  const exists = await prisma.property.findUnique({ where: { id: propertyId }, select: { id: true } })
+  if (!exists) return
+  const cookieStore = await cookies()
+  cookieStore.set('selected_property_id', propertyId, {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path:     '/',
+    maxAge:   60 * 60 * 24 * 7,
+  })
+  redirect('/dashboard')
+}
 
 // ── 가입자 목록 ──
 export async function getSignups() {
