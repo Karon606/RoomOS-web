@@ -20,6 +20,7 @@ import {
   createLogoUploadSession, finalizeLogo, deleteLogo,
   type MemberWithUser, type RecurringExpenseRow, type ContractSettings, type RecurringItemInput,
 } from './actions'
+import { regenerateJoinCode, approveJoinRequest, rejectJoinRequest } from './memberActions'
 import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { Btn } from '@/components/ui/Btn'
@@ -70,16 +71,28 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'appearance', label: '화면' },
 ]
 
+type JoinRequestRow = {
+  id: string
+  role: Role
+  message: string | null
+  createdAt: Date
+  user: { id: string; email: string; name: string | null; realName: string | null; phone: string | null }
+}
+
 export default function SettingsForm({
   property,
   members: initialMembers,
   myRole,
   contractSettings,
+  initialJoinCode,
+  initialJoinRequests,
 }: {
   property: Property | null
   members: MemberWithUser[]
   myRole: Role
   contractSettings: ContractSettings
+  initialJoinCode?: string | null
+  initialJoinRequests?: JoinRequestRow[]
 }) {
   const router = useRouter()
   const [tab, setTab]             = useState<Tab>('basic')
@@ -300,6 +313,38 @@ export default function SettingsForm({
     if (!result.ok) { showToast(result.error); return }
     setMembers(prev => prev.filter(m => m.userId !== userId))
     showToast('멤버가 제거되었습니다.')
+  }
+
+  // ── 참여 코드 + 참여 요청 (D) ───────────────────────────────────────
+  const [joinCode, setJoinCode] = useState<string | null>(initialJoinCode ?? null)
+  const [joinRequests, setJoinRequests] = useState<JoinRequestRow[]>(initialJoinRequests ?? [])
+
+  const handleRegenJoinCode = async () => {
+    if (joinCode && !confirm('새 코드를 발급하면 기존 코드는 더 이상 사용할 수 없습니다. 계속할까요?')) return
+    const res = await regenerateJoinCode()
+    if (!res.ok) { showToast(res.error); return }
+    setJoinCode(res.code)
+    showToast('참여 코드 발급됨')
+  }
+
+  const handleCopyJoinCode = async () => {
+    if (!joinCode) return
+    try { await navigator.clipboard.writeText(joinCode); showToast('코드 복사됨') } catch { /* ignore */ }
+  }
+
+  const handleApproveJoin = async (id: string, role: Role) => {
+    const res = await approveJoinRequest(id, role)
+    if (!res.ok) { showToast(res.error); return }
+    setJoinRequests(prev => prev.filter(r => r.id !== id))
+    showToast('승인됨 — 멤버로 추가됐습니다.')
+    router.refresh()
+  }
+
+  const handleRejectJoin = async (id: string) => {
+    const res = await rejectJoinRequest(id)
+    if (!res.ok) { showToast(res.error); return }
+    setJoinRequests(prev => prev.filter(r => r.id !== id))
+    showToast('거절됨')
   }
 
   // ── 부가수익 카테고리 ────────────────────────────────────────────
@@ -934,6 +979,82 @@ export default function SettingsForm({
       {/* 멤버 관리 탭 */}
       {tab === 'members' && (
         <div className="space-y-4">
+
+          {/* 참여 코드 (D) — 소유자만 발급/재발급 */}
+          {isOwner && (
+            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 space-y-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <h2 className="text-sm font-semibold text-[var(--warm-dark)]">참여 코드</h2>
+                {joinCode && (
+                  <span className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>
+                    공유 가능 (현재 1개)
+                  </span>
+                )}
+              </div>
+              <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-muted)' }}>
+                이 코드를 공유하면, 받은 사람이 영업장 선택 화면에서 입력해 <strong>참여 요청</strong>을 보낼 수 있습니다.
+                소유자(나)가 아래 <strong>참여 요청</strong> 섹션에서 승인하면 멤버로 추가됩니다.
+              </p>
+              <div className="flex items-center gap-2">
+                {joinCode ? (
+                  <>
+                    <code className="flex-1 px-3 py-2.5 rounded-xl text-base font-mono font-semibold tracking-[0.25em] text-center"
+                      style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--persimmon-d)' }}>
+                      {joinCode}
+                    </code>
+                    <Btn type="button" variant="secondary" size="sm" onClick={handleCopyJoinCode}>복사</Btn>
+                    <Btn type="button" variant="secondary" size="sm" onClick={handleRegenJoinCode}>재발급</Btn>
+                  </>
+                ) : (
+                  <Btn type="button" variant="primary" size="md" onClick={handleRegenJoinCode}>참여 코드 발급</Btn>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 참여 요청 목록 (D) — pending 요청 */}
+          {isOwner && joinRequests.length > 0 && (
+            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 space-y-3">
+              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">참여 요청 ({joinRequests.length})</h2>
+              <ul className="space-y-2">
+                {joinRequests.map(req => {
+                  const name = req.user.realName || req.user.name || req.user.email
+                  return (
+                    <li key={req.id} className="bg-[var(--canvas)] rounded-xl px-4 py-3 space-y-2">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{name}</p>
+                        <p className="text-[0.625rem] shrink-0" style={{ color: 'var(--warm-muted)' }}>
+                          {new Intl.DateTimeFormat('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(req.createdAt))}
+                        </p>
+                      </div>
+                      <p className="text-xs truncate" style={{ color: 'var(--warm-muted)' }}>
+                        {req.user.email}{req.user.phone ? ` · ${req.user.phone}` : ''}
+                      </p>
+                      {req.message && (
+                        <p className="text-xs leading-relaxed bg-[var(--cream-soft)] rounded-lg px-2.5 py-2"
+                          style={{ color: 'var(--warm-dark)' }}>
+                          {req.message}
+                        </p>
+                      )}
+                      <div className="flex gap-2 items-center">
+                        <select
+                          defaultValue="STAFF"
+                          onChange={e => { req.role = e.target.value as Role }}
+                          className="text-xs bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 outline-none"
+                          style={{ color: 'var(--warm-dark)' }}>
+                          <option value="MANAGER">관리자</option>
+                          <option value="STAFF">스태프</option>
+                        </select>
+                        <Btn type="button" variant="primary" size="sm" onClick={() => handleApproveJoin(req.id, req.role)}>승인</Btn>
+                        <Btn type="button" variant="secondary" size="sm" onClick={() => handleRejectJoin(req.id)}>거절</Btn>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+
           {/* 현재 멤버 목록 */}
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
             <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-4">멤버 목록</h2>

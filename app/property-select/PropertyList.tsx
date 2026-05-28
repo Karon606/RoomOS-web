@@ -2,7 +2,7 @@
 
 import { useTransition, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { selectProperty, signOut, createProperty } from './actions'
+import { selectProperty, signOut, createProperty, requestJoinByCode } from './actions'
 
 const ROLE_STYLE: Record<string, { bg: string; color: string }> = {
   OWNER:   { bg: 'rgba(244,98,58,0.12)', color: 'var(--persimmon-d)' },
@@ -29,6 +29,13 @@ export default function PropertyList({ properties }: { properties: Property[] })
   const [newName, setNewName] = useState('')
   const [createError, setCreateError] = useState('')
   const [isCreating, setIsCreating] = useState(false)
+  // 참여 코드 입력
+  const [showJoin, setShowJoin] = useState(false)
+  const [joinCode, setJoinCode] = useState('')
+  const [joinMsg, setJoinMsg] = useState('')
+  const [joinError, setJoinError] = useState('')
+  const [joinSuccess, setJoinSuccess] = useState('')
+  const [isJoining, setIsJoining] = useState(false)
 
   const handleCreate = async () => {
     if (!newName.trim()) return
@@ -43,6 +50,16 @@ export default function PropertyList({ properties }: { properties: Property[] })
     router.push('/dashboard')
   }
 
+  const handleJoin = async () => {
+    if (!joinCode.trim()) return
+    setIsJoining(true); setJoinError(''); setJoinSuccess('')
+    const result = await requestJoinByCode(joinCode, joinMsg || undefined)
+    setIsJoining(false)
+    if (!result.ok) { setJoinError(result.error); return }
+    setJoinSuccess(`'${result.propertyName}' 운영자에게 참여 요청이 전송됐습니다. 승인되면 영업장 목록에 표시됩니다.`)
+    setJoinCode(''); setJoinMsg('')
+  }
+
   const handleSelect = (propertyId: string) => {
     if (selectingId) return  // 이미 선택 중이면 무시
     setSelectingId(propertyId)
@@ -55,6 +72,48 @@ export default function PropertyList({ properties }: { properties: Property[] })
       }
     })
   }
+
+  const JoinForm = () => (
+    <div className="rounded-xl p-6 space-y-3"
+         style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <p className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>참여 코드로 영업장 참여</p>
+      <input
+        autoFocus
+        type="text"
+        value={joinCode}
+        onChange={e => setJoinCode(e.target.value.toUpperCase())}
+        placeholder="영업장 운영자에게 받은 6자 코드"
+        autoComplete="off"
+        className="w-full rounded-xl px-3 py-2.5 text-sm outline-none font-mono"
+        style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
+      />
+      <textarea
+        value={joinMsg}
+        onChange={e => setJoinMsg(e.target.value)}
+        rows={2}
+        placeholder="간단한 메시지 (선택) — 본인 소개 등"
+        className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none"
+        style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
+      />
+      {joinError && <p className="text-xs" style={{ color: '#dc2626' }}>{joinError}</p>}
+      {joinSuccess && <p className="text-xs leading-relaxed" style={{ color: 'var(--persimmon-d)' }}>{joinSuccess}</p>}
+      <div className="flex gap-2">
+        <button
+          onClick={() => { setShowJoin(false); setJoinCode(''); setJoinMsg(''); setJoinError(''); setJoinSuccess('') }}
+          className="flex-1 py-2.5 rounded-xl text-sm"
+          style={{ background: 'var(--canvas)', color: 'var(--warm-muted)', border: '1px solid var(--warm-border)' }}>
+          닫기
+        </button>
+        <button
+          onClick={handleJoin}
+          disabled={isJoining || !joinCode.trim()}
+          className="flex-1 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50"
+          style={{ background: 'var(--coral)', color: 'var(--warm-dark)' }}>
+          {isJoining ? '요청 중...' : '참여 요청 보내기'}
+        </button>
+      </div>
+    </div>
+  )
 
   const CreateForm = () => (
     <div className="rounded-xl p-6 space-y-3"
@@ -101,16 +160,25 @@ export default function PropertyList({ properties }: { properties: Property[] })
           <p className="text-sm" style={{ color: 'var(--warm-muted)' }}>
             영업장 오너로부터 초대를 받거나<br />새 영업장을 직접 개설하세요.
           </p>
-          {!showCreate && (
-            <button
-              onClick={() => setShowCreate(true)}
-              className="mt-2 px-6 py-2.5 rounded-xl text-sm font-medium"
-              style={{ background: 'var(--coral)', color: 'var(--warm-dark)' }}>
-              + 새 영업장 개설
-            </button>
+          {!showCreate && !showJoin && (
+            <div className="flex flex-col gap-2 items-center mt-2">
+              <button
+                onClick={() => setShowCreate(true)}
+                className="px-6 py-2.5 rounded-xl text-sm font-medium"
+                style={{ background: 'var(--coral)', color: 'var(--warm-dark)' }}>
+                + 새 영업장 개설
+              </button>
+              <button
+                onClick={() => setShowJoin(true)}
+                className="text-sm"
+                style={{ color: 'var(--persimmon-d)' }}>
+                참여 코드로 영업장 참여 →
+              </button>
+            </div>
           )}
         </div>
         {showCreate && <CreateForm />}
+        {showJoin && <JoinForm />}
         <form action={signOut}>
           <button type="submit"
             className="w-full text-sm py-2 transition-colors"
@@ -176,14 +244,25 @@ export default function PropertyList({ properties }: { properties: Property[] })
 
       {showCreate ? (
         <CreateForm />
+      ) : showJoin ? (
+        <JoinForm />
       ) : (
-        <button
-          onClick={() => setShowCreate(true)}
-          disabled={isPending}
-          className="w-full py-3 rounded-xl text-sm font-medium disabled:opacity-40"
-          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-mid)' }}>
-          + 새 영업장 개설
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => setShowCreate(true)}
+            disabled={isPending}
+            className="w-full py-3 rounded-xl text-sm font-medium disabled:opacity-40"
+            style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-mid)' }}>
+            + 새 영업장 개설
+          </button>
+          <button
+            onClick={() => setShowJoin(true)}
+            disabled={isPending}
+            className="w-full py-2.5 rounded-xl text-sm disabled:opacity-40"
+            style={{ background: 'transparent', border: '1px dashed var(--warm-border)', color: 'var(--persimmon-d)' }}>
+            참여 코드로 영업장 참여
+          </button>
+        </div>
       )}
 
       <form action={signOut}>

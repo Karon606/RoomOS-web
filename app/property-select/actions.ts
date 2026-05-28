@@ -105,3 +105,57 @@ export async function signOut() {
   cookieStore.delete('selected_property_id')
   redirect('/login')
 }
+
+// D — 사용자가 영업장 참여 코드를 입력해서 참여 요청을 보냄.
+// 운영자가 settings에서 승인하면 UserPropertyRole 생성.
+export async function requestJoinByCode(code: string, message?: string): Promise<
+  | { ok: true; propertyName: string }
+  | { ok: false; error: string }
+> {
+  try {
+    const ctx = await getAccessContext()
+    if (!ctx) return { ok: false, error: '로그인이 필요합니다.' }
+    if (!ctx.isSuperAdmin && ctx.status !== 'APPROVED') {
+      return { ok: false, error: '아직 승인 대기 중인 계정입니다. 운영자 승인 후 이용할 수 있어요.' }
+    }
+
+    const trimmed = code.trim().toUpperCase()
+    if (!trimmed) return { ok: false, error: '참여 코드를 입력해주세요.' }
+
+    const property = await prisma.property.findUnique({
+      where: { joinCode: trimmed },
+      select: { id: true, name: true, ownerId: true },
+    })
+    if (!property) return { ok: false, error: '유효하지 않은 코드입니다.' }
+    if (property.ownerId === ctx.userId) {
+      return { ok: false, error: '본인이 소유한 영업장입니다.' }
+    }
+
+    const existingRole = await prisma.userPropertyRole.findUnique({
+      where: { userId_propertyId: { userId: ctx.userId, propertyId: property.id } },
+    })
+    if (existingRole) return { ok: false, error: '이미 이 영업장의 구성원입니다.' }
+
+    // 같은 (영업장, 사용자) 요청은 1개. PENDING 갱신 또는 신규 생성.
+    await prisma.joinRequest.upsert({
+      where: { propertyId_userId: { propertyId: property.id, userId: ctx.userId } },
+      update: {
+        status: 'PENDING',
+        message: (message ?? '').trim() || null,
+        decidedAt: null,
+        decidedBy: null,
+      },
+      create: {
+        propertyId: property.id,
+        userId: ctx.userId,
+        status: 'PENDING',
+        message: (message ?? '').trim() || null,
+      },
+    })
+
+    return { ok: true, propertyName: property.name }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}

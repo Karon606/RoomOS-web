@@ -30,6 +30,13 @@ enum AccessStatus {
   REJECTED  // 거절/차단
 }
 
+// 영업장 참여 요청 상태 (D — 사용자가 코드 입력 → 영업장 운영자 승인)
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum ContactType {
   PHONE
   KAKAO
@@ -105,6 +112,7 @@ model User {
 
   propertyRoles   UserPropertyRole[]
   ownedProperties Property[]
+  joinRequests    JoinRequest[]
   statusLogs      TenantStatusLog[]
 
   @@map("users")
@@ -120,6 +128,7 @@ model Property {
   address     String?
   phone       String?
   description String?
+  joinCode    String?   @unique  // 영업장 참여 코드 — 사용자가 입력하면 운영자에게 참여 요청 전송
   isActive         Boolean   @default(true)
   acquisitionDate      DateTime? @db.Date
   prevOwnerCutoffDate  DateTime? @db.Date
@@ -145,6 +154,7 @@ model Property {
   owner   User   @relation(fields: [ownerId], references: [id])
 
   userRoles         UserPropertyRole[]
+  joinRequests      JoinRequest[]
   rooms             Room[]
   tenants           Tenant[]
   leaseTerms        LeaseTerm[]
@@ -995,4 +1005,29 @@ model InviteCode {
   createdBy   String?   @db.Uuid       // 발급한 운영자 user id
 
   @@map("invite_codes")
+}
+
+// ============================================================
+// [15] JoinRequest — 영업장 참여 요청 (D)
+// ============================================================
+// 사용자가 영업장 참여 코드를 입력 → 운영자가 승인하면 UserPropertyRole 생성.
+// 거절 후 재요청 가능(동일 record를 PENDING으로 갱신). 한 (영업장, 사용자) 쌍에 record 하나.
+
+model JoinRequest {
+  id          String            @id @default(uuid()) @db.Uuid
+  propertyId  String            @db.Uuid
+  property    Property          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  userId      String            @db.Uuid
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      JoinRequestStatus @default(PENDING)
+  role        UserRole          @default(STAFF)  // 승인 시 부여할 역할 (운영자가 결정)
+  message     String?                            // 사용자가 적은 메모 (선택)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  decidedAt   DateTime?
+  decidedBy   String?           @db.Uuid         // 승인/거절한 운영자 user id
+
+  @@unique([propertyId, userId])
+  @@index([propertyId, status])
+  @@map("join_requests")
 }
