@@ -10,10 +10,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // 관리할 영업장이 있는 운영자에게만 '앱으로' 표시 (영업장 없는 순수 운영자는 갈 곳 없음)
   const myPropertyCount = await prisma.userPropertyRole.count({ where: { userId: ctx.userId } })
 
+  // 루트 html/body가 overflow:hidden(iOS 헤더 보호용)이라 페이지 자체 스크롤 불가 →
+  // (app) 셸과 같은 패턴: 전체 h-dvh + 헤더 shrink-0 + main 자체에 overflow-y-auto.
   return (
-    <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
+    <div className="flex flex-col h-dvh" style={{ background: 'var(--canvas)' }}>
       <header
-        className="sticky top-0 z-10 border-b"
+        className="shrink-0 border-b"
         style={{ background: 'var(--cream)', borderColor: 'var(--cream-3)' }}
       >
         <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
@@ -36,7 +38,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-5">{children}</main>
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-5xl mx-auto px-4 py-5">{children}</div>
+      </main>
     </div>
   )
 }
