@@ -805,9 +805,12 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
 
   return (
     <div className="space-y-5">
-      {/* ── 세부 재무 요약 ── */}
+      {/* ── 세부 재무 요약 ── 모바일 2칸·태블릿 3칸·데스크탑 5칸 (긴 금액이 칸 넘어가지 않게) */}
       <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--warm-border)' }}>
-        <div className="grid grid-cols-5 divide-x" style={{ borderColor: 'var(--warm-border)', background: 'var(--cream)' }}>
+        <div
+          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5"
+          style={{ borderColor: 'var(--warm-border)', background: 'var(--cream)' }}
+        >
           {[
             { label: '수납액 (귀속)', value: data.paidRevenue,  color: 'var(--coral)' },
             { label: '기타수익', value: data.extraRevenue, color: '#f97316' },
@@ -815,9 +818,13 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             { label: '순수익',   value: data.netProfit,    color: data.netProfit >= 0 ? '#22c55e' : '#ef4444' },
             { label: '보유 보증금', value: data.totalDeposit, color: '#a855f7' },
           ].map((item, i) => (
-            <div key={i} className="px-4 py-3 text-center" style={{ borderColor: 'var(--warm-border)' }}>
-              <p className="text-[10.5px] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>{item.label}</p>
-              <p className="text-sm font-bold" style={{ color: item.color }}>
+            <div
+              key={i}
+              className="px-3 py-3 text-center min-w-0"
+              style={{ borderRight: '1px solid var(--warm-border)', borderBottom: '1px solid var(--warm-border)' }}
+            >
+              <p className="text-[10.5px] font-medium mb-1 truncate" style={{ color: 'var(--warm-muted)' }}>{item.label}</p>
+              <p className="text-[13px] font-bold leading-tight break-all" style={{ color: item.color }}>
                 <MoneyDisplay amount={Math.abs(item.value)} prefix={item.value < 0 ? '-' : ''} />
               </p>
             </div>
