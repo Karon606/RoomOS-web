@@ -176,6 +176,22 @@
 
 ## 할 일 (남은 것)
 
+### ★ 신규 요청 배치 (2026-05-28 사용자) — 1차 완료, 2·3차 남음
+
+**✅ 1차 완료 (코드·로컬, 푸시 전 SQL 적용 필요):**
+- **#2 재고 점검 '유지' 버튼** — `app/(app)/inventory/InventoryClient.tsx` 3폼(CheckForm·CheckEditForm·LocationBatchCheckModal) 비허브 행 헤더에 작은 '유지' 버튼 추가. 클릭 → 보충 후 = 보충 전(or 이전 잔량) 자동 채움. LocationBatchCheckModal은 허브 케이스도 잔량 = prev로 채움. [[project_inventory_check_consistency]] 통일 준수.
+- **#1e 재고 구매 링크** — `TrackedItem.purchaseUrl String?` 신규(스키마+`migrate_tracked_item_purchase_url.sql` 추가전용). constants/overview/actions 전파, SettingsForm 입력칸 추가(발주 메모 아래), 인벤토리 카드에 '구매 페이지 열기' 외부링크 버튼(외부링크 아이콘+target=_blank+stopPropagation). 향후 제휴 링크 수익모델 활용 여지.
+- 빌드·새 코드 lint 클린. ⚠️ **푸시 전 SQL 적용 필요**: `migrate_tracked_item_purchase_url.sql` (ALTER TABLE tracked_items ADD COLUMN IF NOT EXISTS "purchaseUrl" TEXT). SQL 없이 배포하면 인벤토리 페이지 Prisma 쿼리 실패.
+
+**남은 작업:**
+1. ~~(호실 등급 시스템)~~ → **2차**: 용어 = **"등급"** (DB: Room.tier). 환경설정에 옵션 등록 + `Property.roomTierOptions`/`Room.tier` 스키마 추가 + SQL. 호실관리에 등급 필터.
+   - 환경설정에 옵션 등록(roomTypeOptions 패턴 미러링: `Property.roomTierOptions` 같은 콤마구분 컬럼 추가).
+   - `Room.tier` 필드 신규 + 마이그레이션 SQL.
+   - 호실관리에 이 타입 **필터** 추가.
+   - **대시보드에 층별 + 타입조합 그룹화 표시** — 예: "4층 + 내창 + 스탠다드", "내창 + 실속형 + 북향" 등 사용자가 차원 조합(층·창문·등급·방향)을 골라 그룹별 카드/숫자로 표시. UX는 다차원 그룹 빌더(드롭다운/칩 다중선택) 형태로 설계 합의 필요.
+2. **(재고 구매 링크)** — `TrackedItem.purchaseUrl` 필드 추가 + 인벤토리 카드에서 새 탭으로 바로 열기(target=_blank rel=noopener). 향후 수익모델(아마존 어소시에이트·쿠팡 파트너스 등 제휴 링크) 활용 여지.
+3. **(재고 점검 '유지' 버튼)** — 점검 시 보충 전 그대로 유지하는 케이스가 많음 → 보충 후=보충 전을 한 클릭으로 채우는 버튼. 3폼([[project_inventory_check_consistency]] — CheckForm·CheckEditForm·LocationBatchCheckModal) 동기화 필수.
+
 ### ★ 운영 피드백 후속 (2026-05-26 — 사용자 확인 대기)
 
 #### ✅ #3. 재고 점검 허브 자동 차감 과다 (위치별 연속 점검 시) — 완료·배포 (`6f6ae07` + `074580a`), 라이브 검증만 대기
