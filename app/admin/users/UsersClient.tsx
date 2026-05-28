@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { pushToast } from '@/lib/saveStatus'
 import { setUserStatus, setSuperAdmin } from '../actions'
 
 type Row = {
@@ -36,16 +37,14 @@ export default function UsersClient({ rows, pendingCount }: { rows: Row[]; pendi
   const [pending, startTransition] = useTransition()
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>(pendingCount > 0 ? 'PENDING' : 'ALL')
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
 
   const visible = filter === 'ALL' ? rows : rows.filter((r) => r.status === filter)
 
   function run(id: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
     setBusyId(id)
-    setErr(null)
     startTransition(async () => {
       const res = await fn()
-      if (!res.ok) setErr(res.error ?? '처리에 실패했습니다.')
+      if (!res.ok) pushToast('error', res.error ?? '처리에 실패했습니다.')
       else router.refresh()
       setBusyId(null)
     })
@@ -86,12 +85,6 @@ export default function UsersClient({ rows, pendingCount }: { rows: Row[]; pendi
           )
         })}
       </div>
-
-      {err && (
-        <p className="text-sm" style={{ color: 'var(--persimmon-d)' }}>
-          {err}
-        </p>
-      )}
 
       {visible.length === 0 ? (
         <p className="text-sm py-8 text-center" style={{ color: 'var(--ink-mute)' }}>

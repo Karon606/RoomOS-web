@@ -1,6 +1,7 @@
 import { requireSuperAdmin } from '@/lib/auth/access'
 import prisma from '@/lib/prisma'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
+import SaveFeedback from '@/components/feedback/SaveFeedback'
 import AdminNav from './AdminNav'
 import AdminProfile from './AdminProfile'
 
@@ -41,6 +42,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-5xl mx-auto px-4 py-5">{children}</div>
       </main>
+      {/* 토스트·상단 진행바 — (app) 셸 밖이라 여기에도 마운트 (운영자 페이지 작업 피드백용) */}
+      <SaveFeedback />
     </div>
   )
 }

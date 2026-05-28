@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { pushToast } from '@/lib/saveStatus'
 import { createInviteCode, toggleInviteCode, deleteInviteCode } from '../actions'
 
 type Row = {
@@ -62,10 +63,10 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
 
   function act(id: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
     setBusyId(id)
-    setErr(null)
     startTransition(async () => {
       const res = await fn()
-      if (!res.ok) setErr(res.error ?? '처리 실패')
+      // 리스트 액션(토글·삭제)은 호출 지점이 페이지 곳곳이라 토스트로 — 인라인 에러는 발급 폼 전용.
+      if (!res.ok) pushToast('error', res.error ?? '처리 실패')
       else router.refresh()
       setBusyId(null)
     })
