@@ -183,8 +183,17 @@
 - **#1e 재고 구매 링크** — `TrackedItem.purchaseUrl String?` 신규(스키마+`migrate_tracked_item_purchase_url.sql` 추가전용). constants/overview/actions 전파, SettingsForm 입력칸 추가(발주 메모 아래), 인벤토리 카드에 '구매 페이지 열기' 외부링크 버튼(외부링크 아이콘+target=_blank+stopPropagation). 향후 제휴 링크 수익모델 활용 여지.
 - 빌드·새 코드 lint 클린. ⚠️ **푸시 전 SQL 적용 필요**: `migrate_tracked_item_purchase_url.sql` (ALTER TABLE tracked_items ADD COLUMN IF NOT EXISTS "purchaseUrl" TEXT). SQL 없이 배포하면 인벤토리 페이지 Prisma 쿼리 실패.
 
+**✅ 2차 완료 (코드·로컬, 푸시 전 SQL 적용 필요):**
+- **#1c 환경설정 "등급" 옵션 + #1d 호실관리 등급 필터** — 용어 = **"등급"** (DB: `Room.tier`/`Property.roomTierOptions`).
+  · 스키마: `Property.roomTierOptions String?` + `Room.tier String?` + `migrate_room_tier.sql` 추가 전용.
+  · 환경설정 백엔드: `getRoomTierOptions·addRoomTierOption·deleteRoomTierOption` + 제네릭 `ReorderableField` 에 `'roomTierOptions'` 등록(rename·reorder·reset·revalidate 자동 합류). 기본값 `'스탠다드,실속형'`.
+  · 환경설정 UI(`SettingsForm.tsx`): 방타입 OptionSection 바로 아래 **'등급 관리'** OptionSection 추가(설명·placeholder 별도).
+  · 호실관리 페이지: `getRoomTierOptions()` fetch 추가 → `RoomManageClient`에 `roomTiers` prop 전파.
+  · `room-manage/actions.ts`: `addRoom`/`updateRoom`이 `tier` 폼필드 읽어 저장, `batchUpdateRooms` data 타입에 `tier?` 추가.
+  · `RoomManageClient.tsx`: ① Room 타입에 `tier` 추가, ② `filterTier` 상태·리셋·activeCount·필터로직 동기화, ③ 필터 UI에 등급 드롭다운(방 타입 옆), ④ `TierSection` 컴포넌트(등록·수정 폼 둘 다), ⑤ 카드에 등급 칩 표시, ⑥ 상세 모달에 등급 DetailRow, ⑦ `BatchEditRoomsModal`에 등급 미변경/선택 chip 그룹 + state + apply 합류.
+- 빌드 통과. ⚠️ **푸시 전 SQL 적용 필요**: `migrate_room_tier.sql` (ALTER TABLE properties/rooms ADD COLUMN). 없이 푸시하면 환경설정·호실관리 페이지 Prisma 쿼리 실패.
+
 **남은 작업:**
-1. ~~(호실 등급 시스템)~~ → **2차**: 용어 = **"등급"** (DB: Room.tier). 환경설정에 옵션 등록 + `Property.roomTierOptions`/`Room.tier` 스키마 추가 + SQL. 호실관리에 등급 필터.
    - 환경설정에 옵션 등록(roomTypeOptions 패턴 미러링: `Property.roomTierOptions` 같은 콤마구분 컬럼 추가).
    - `Room.tier` 필드 신규 + 마이그레이션 SQL.
    - 호실관리에 이 타입 **필터** 추가.
