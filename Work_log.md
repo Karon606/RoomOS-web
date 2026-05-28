@@ -291,7 +291,21 @@
 - Sidebar "운영" 그룹에 '계약서'(IcoContract) 메뉴 추가. 삭제는 tenants/actions deleteContractFile 재사용(Drive 원본도 삭제).
 - 남은 개선 여지: 계약서 직접 업로드/생성 진입은 기존 고객 상세(ContractFilesPanel) 유지 — 통합 페이지는 조회·관리 중심.
 
-### D. 영업장 구성원 초대·참여 — 미구현 (두 흐름 다 지원, 2026-05-18 결정)
+### ✅ D. 영업장 구성원 초대·참여 (2026-05-28, 코드·로컬 — SQL 적용 후 푸시)
+**구현(두 흐름 다 지원):**
+- **흐름 A — 이메일 직접 초대**: 기존 settings/actions.ts 의 `inviteMember/updateMemberRole/removeMember`가 이미 동작(기존 UI 그대로 유지, 변경 없음).
+- **흐름 B — 참여 코드 (신규)**: 운영자가 6자 참여 코드 발급/재발급 → 공유 → 받은 사람이 영업장 선택 화면에서 입력하면 PENDING 요청 생성 → 운영자가 settings에서 승인/거절 → 승인 시 UserPropertyRole 생성.
+- **스키마**: `Property.joinCode String? @unique` + `JoinRequest{propertyId·userId·status·role·message·createdAt·decidedAt·decidedBy}` + `JoinRequestStatus enum(PENDING/APPROVED/REJECTED)`. (영업장,사용자) unique → 거절 후 재요청 시 동일 record를 PENDING으로 갱신.
+- **`migrate_join_requests.sql`** 추가 전용. **SQL 적용 후** 코드 푸시 필요.
+- **신규 서버 액션** `settings/memberActions.ts`: `getJoinCode·regenerateJoinCode·listJoinRequests·approveJoinRequest·rejectJoinRequest`. 권한: 읽기=requireEdit, 쓰기=requireOwner.
+- **사용자 측** `property-select/actions.ts`에 `requestJoinByCode(code, message?)` — getAccessContext 가드(미승인은 차단), 코드로 영업장 찾기, 본인 소유/이미 구성원 검사, JoinRequest upsert(같은 쌍 1개).
+- **UI 운영자(settings 멤버 관리 탭)**: 신규 '참여 코드' 박스(발급/재발급/복사) + 신규 '참여 요청' 박스(이름·연락처·메시지·역할 select·승인/거절). 기존 멤버 목록·이메일 초대 박스는 그대로 유지.
+- **UI 사용자(property-select)**: '참여 코드로 영업장 참여' 입구(빈 상태/리스트 상태 둘 다). 새 영업장 개설 옆에 점선 보더 버튼. 코드+선택 메시지 입력 → 성공 시 안내.
+- 빌드 통과. lint는 기존 CreateForm 인라인 패턴과 동종 4건(기존 컨벤션 유지).
+
+⚠️ **활성화**: 1) `migrate_join_requests.sql` 적용. 2) 그 다음 코드 푸시 → Vercel 배포.
+
+### D. 영업장 구성원 초대·참여 — 미구현 (두 흐름 다 지원, 2026-05-18 결정) — 위 ✅로 대체
 - 모델 A: 운영자가 이메일 입력 → 초대 발송. 모델 B: 사용자가 참여 코드 입력 → 운영자 승인/거절.
 - 운영자용 "구성원·요청 관리" 화면. 참여 코드는 영업장 개설 시 자동 생성·재발급 가능.
 - 신규 초대 = Supabase inviteUserByEmail(admin API), 기존 계정 = UserPropertyRole 행 추가. 초대 템플릿 등록됨.
