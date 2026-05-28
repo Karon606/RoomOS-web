@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   updatePropertySettings,
   getRoomTypeOptions, addRoomTypeOption, deleteRoomTypeOption,
+  getRoomTierOptions, addRoomTierOption, deleteRoomTierOption,
   getWindowTypeOptions, addWindowTypeOption, deleteWindowTypeOption,
   getRoomDirectionOptions, addRoomDirectionOption, deleteRoomDirectionOption,
   getIncomeCategories, addIncomeCategory, deleteIncomeCategory,
@@ -180,6 +181,36 @@ export default function SettingsForm({
   const handleResetRoomTypes = async () => {
     if (!confirm('방타입을 기본값(원룸, 미니룸)으로 초기화할까요?')) return
     setRoomTypes(await resetOptionsToDefault('roomTypeOptions'))
+  }
+
+  // ── 호실 등급 (스탠다드/실속형 등 — 방 타입과 별개 차원) ─────────────────
+  const [roomTiers, setRoomTiers] = useState<string[]>([])
+  const [newRoomTier, setNewRoomTier] = useState('')
+
+  useEffect(() => { getRoomTierOptions().then(setRoomTiers).catch(console.error) }, [])
+
+  const handleAddRoomTier = async () => {
+    const v = newRoomTier.trim(); if (!v) return
+    await addRoomTierOption(v)
+    setRoomTiers(prev => [...prev, v]); setNewRoomTier('')
+  }
+  const handleDeleteRoomTier = async (name: string) => {
+    if (!confirm(`'${name}' 등급을 삭제할까요?`)) return
+    await deleteRoomTierOption(name)
+    setRoomTiers(prev => prev.filter(t => t !== name))
+  }
+  const handleReorderRoomTiers = async (items: string[]) => {
+    setRoomTiers(items)
+    await reorderOptions('roomTierOptions', items)
+  }
+  const handleRenameRoomTier = async (oldVal: string, newVal: string) => {
+    if (!newVal.trim() || newVal === oldVal) return
+    await renameOption('roomTierOptions', oldVal, newVal.trim())
+    setRoomTiers(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
+  }
+  const handleResetRoomTiers = async () => {
+    if (!confirm('등급을 기본값(스탠다드, 실속형)으로 초기화할까요?')) return
+    setRoomTiers(await resetOptionsToDefault('roomTierOptions'))
   }
 
   // ── 창문 유형 ───────────────────────────────────────────────────
@@ -608,6 +639,20 @@ export default function SettingsForm({
             onRename={handleRenameRoomType}
             onReset={handleResetRoomTypes}
             placeholder="예: 원룸, 투룸, 복층..."
+          />
+          <OptionSection
+            title="등급 관리"
+            description="스탠다드/실속형/프리미엄처럼 호실의 등급(패키지)을 구분하는 옵션입니다. 방 타입과는 별개 차원으로, 같은 원룸이라도 등급이 다를 수 있어요."
+            items={roomTiers}
+            getLabel={v => v}
+            newValue={newRoomTier}
+            onNewValueChange={setNewRoomTier}
+            onAdd={handleAddRoomTier}
+            onDelete={handleDeleteRoomTier}
+            onReorder={handleReorderRoomTiers}
+            onRename={handleRenameRoomTier}
+            onReset={handleResetRoomTiers}
+            placeholder="예: 스탠다드, 실속형, 프리미엄..."
           />
           <OptionSection
             title="창문 유형 관리"

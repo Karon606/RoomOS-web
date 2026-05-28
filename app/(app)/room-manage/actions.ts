@@ -56,6 +56,7 @@ export async function addRoom(formData: FormData): Promise<{ ok: true; id: strin
 
   const roomNo = formData.get('roomNo') as string
   const type = formData.get('type') as string
+  const tier = formData.get('tier') as string
   const baseRent = Number(formData.get('baseRent')) || 0
   const memo = formData.get('memo') as string
 
@@ -85,6 +86,7 @@ export async function addRoom(formData: FormData): Promise<{ ok: true; id: strin
       propertyId,
       roomNo:   roomNo.trim(),
       type:     type || null,
+      tier:     tier || null,
       baseRent,
       memo:     memo || null,
       isVacant: true,
@@ -114,6 +116,7 @@ export async function updateRoom(formData: FormData) {
   const id      = formData.get('id') as string
   const roomNo  = formData.get('roomNo') as string
   const type    = formData.get('type') as string
+  const tier    = formData.get('tier') as string
   const baseRent = Number(formData.get('baseRent')) || 0
   const memo    = formData.get('memo') as string
   const floor      = (formData.get('floor') as string)?.trim() || null
@@ -144,6 +147,7 @@ export async function updateRoom(formData: FormData) {
     data: {
       roomNo:    roomNo.trim(),
       type:      type || null,
+      tier:      tier || null,
       baseRent,
       memo:      memo || null,
       floor,
@@ -426,6 +430,7 @@ export async function batchUpdateRooms(
   roomIds: string[],
   data: {
     type?: string | null
+    tier?: string | null
     baseRent?: number
     scheduledRent?: number | null
     windowType?: string | null

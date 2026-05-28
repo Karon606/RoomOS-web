@@ -124,6 +124,7 @@ model Property {
   acquisitionDate      DateTime? @db.Date
   prevOwnerCutoffDate  DateTime? @db.Date
   roomTypeOptions    String?   // 방타입 목록 (콤마 구분, 예: "원룸,미니룸,복층")
+  roomTierOptions    String?   // 호실 등급 목록 (콤마 구분, 예: "스탠다드,실속형,프리미엄") — 방 타입과 별개 차원
   windowTypeOptions  String?   // 창문 유형 목록 (콤마 구분, 기본값: "WINDOW,NO_WINDOW")
   directionOptions   String?   // 방향 목록 (콤마 구분, 예: "북향,동향,남향,서향")
   incomeCategories   String?   // 부가수익 카테고리 (콤마 구분)
@@ -193,6 +194,7 @@ model Room {
   id         String     @id @default(uuid()) @db.Uuid
   roomNo     String     // TEXT — 하드코딩 금지, 영업장별 자유 구성
   type       String?
+  tier       String?    // 호실 등급 (스탠다드/실속형 등) — Property.roomTierOptions 중 하나
   memo       String?
   baseRent             Int        @default(0)
   scheduledRent        Int?                   // 예약된 변경 이용료 (가격 예약 시스템)

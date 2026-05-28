@@ -34,6 +34,7 @@ type Room = {
   id: string
   roomNo: string
   type: string | null
+  tier: string | null
   baseRent: number
   scheduledRent: number | null
   rentUpdateDate: Date | string | null
@@ -114,11 +115,13 @@ function deriveFloor(roomNo: string): string {
 export default function RoomManageClient({
   initialRooms,
   roomTypes,
+  roomTiers,
   windowTypes,
   directions,
 }: {
   initialRooms: Room[]
   roomTypes: string[]
+  roomTiers: string[]
   windowTypes: string[]
   directions: string[]
 }) {
@@ -140,6 +143,7 @@ export default function RoomManageClient({
   const [showFilters, setShowFilters]         = useState(false)
   const [filterRoomNo, setFilterRoomNo]       = useState('')
   const [filterType, setFilterType]           = useState('')
+  const [filterTier, setFilterTier]           = useState('')
   const [filterWindowType, setFilterWindowType] = useState('')
   const [filterDirection, setFilterDirection] = useState('')
   const [filterAreaPyeong, setFilterAreaPyeong] = useState<AreaPyeongRange>('')
@@ -148,13 +152,14 @@ export default function RoomManageClient({
   const [filterRentMax, setFilterRentMax]     = useState<number | undefined>(undefined)
 
   const resetFilters = () => {
-    setFilterRoomNo(''); setFilterType(''); setFilterWindowType(''); setFilterDirection('')
+    setFilterRoomNo(''); setFilterType(''); setFilterTier(''); setFilterWindowType(''); setFilterDirection('')
     setFilterAreaPyeong(''); setFilterAreaM2('')
     setFilterRentMin(undefined); setFilterRentMax(undefined)
   }
   const activeFilterCount =
     (filterRoomNo ? 1 : 0) +
     (filterType ? 1 : 0) +
+    (filterTier ? 1 : 0) +
     (filterWindowType ? 1 : 0) +
     (filterDirection ? 1 : 0) +
     (filterAreaPyeong ? 1 : 0) +
@@ -225,6 +230,7 @@ export default function RoomManageClient({
 
   // 기타
   const [types, setTypes]   = useState<string[]>(roomTypes)
+  const [tiers, setTiers]   = useState<string[]>(roomTiers)
   const [error, setError]   = useState('')
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
@@ -262,6 +268,7 @@ export default function RoomManageClient({
       }
       if (roomNoQ && !r.roomNo.toLowerCase().includes(roomNoQ)) return false
       if (filterType && r.type !== filterType) return false
+      if (filterTier && r.tier !== filterTier) return false
       if (filterWindowType && r.windowType !== filterWindowType) return false
       if (filterDirection && r.direction !== filterDirection) return false
       if (!matchAreaPyeong(r.areaPyeong)) return false
@@ -467,6 +474,18 @@ export default function RoomManageClient({
     </div>
   )
 
+  const TierSection = ({ defaultValue }: { defaultValue?: string }) => (
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-[var(--warm-mid)]">등급</label>
+      <select name="tier" defaultValue={defaultValue ?? ''}
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+        <option value="">선택</option>
+        {tiers.map(t => <option key={t} value={t}>{t}</option>)}
+      </select>
+      <p className="text-[0.625rem] text-[var(--warm-muted)]">등급(스탠다드/실속형 등) 추가·관리는 환경설정에서 할 수 있습니다.</p>
+    </div>
+  )
+
   // ── 렌더 ─────────────────────────────────────────────────────────
 
   return (
@@ -562,6 +581,17 @@ export default function RoomManageClient({
               >
                 <option value="">전체</option>
                 {types.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">등급</label>
+              <select
+                value={filterTier}
+                onChange={e => setFilterTier(e.target.value)}
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
+              >
+                <option value="">전체</option>
+                {tiers.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div className="space-y-1">
@@ -721,6 +751,7 @@ export default function RoomManageClient({
                     {cardFields.spec && (
                       <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-[var(--warm-muted)]">
                         {room.type && <span>{room.type}</span>}
+                        {room.tier && <span>{room.tier}</span>}
                         {(room.windowType || room.direction) && (
                           <span>
                             {[
@@ -810,6 +841,7 @@ export default function RoomManageClient({
                 <div className="px-6 py-5 space-y-2.5">
                   <DetailRow label="입주자"    value={tenant ?? '공실'} />
                   {r.type && <DetailRow label="방 타입" value={r.type} />}
+                  {r.tier && <DetailRow label="등급" value={r.tier} />}
                   <DetailRow label="기본 이용료" value={<MoneyDisplay amount={r.baseRent} />} />
                   {r.scheduledRent != null && (
                     <>
@@ -902,6 +934,7 @@ export default function RoomManageClient({
         <BatchEditRoomsModal
           selectedIds={Array.from(selectedIds)}
           roomTypes={types}
+          roomTiers={tiers}
           windowTypeOptions={windowTypeOptions}
           directionOptions={directionOptions}
           onClose={() => setShowBatchEdit(false)}
@@ -954,6 +987,7 @@ export default function RoomManageClient({
               </div>
             </div>
             <TypeSection />
+            <TierSection />
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">기본 월 이용료</label>
               <MoneyInput name="baseRent" placeholder="0원" />
@@ -1070,6 +1104,7 @@ export default function RoomManageClient({
               </div>
             </div>
             <TypeSection defaultValue={editRoom.type ?? ''} />
+            <TierSection defaultValue={editRoom.tier ?? ''} />
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">기본 월 이용료</label>
               <MoneyInput name="baseRent" defaultValue={editRoom.baseRent} />
@@ -1260,15 +1295,17 @@ function uploadFileToDriveSession(
 
 // ── 호실 일괄 편집 모달 ──────────────────────────────────────────
 
-function BatchEditRoomsModal({ selectedIds, roomTypes, windowTypeOptions, directionOptions, onClose, onDone }: {
+function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOptions, directionOptions, onClose, onDone }: {
   selectedIds: string[]
   roomTypes: string[]
+  roomTiers: string[]
   windowTypeOptions: { value: string; label: string }[]
   directionOptions: { value: string; label: string }[]
   onClose: () => void
   onDone: () => void
 }) {
   const [type, setType]             = useState('')
+  const [tier, setTier]             = useState('')
   const [baseRent, setBaseRent]     = useState<number | undefined>(undefined)
   const [scheduledRent, setScheduledRent] = useState<number | undefined>(undefined)
   const [clearScheduled, setClearScheduled] = useState(false)
@@ -1280,6 +1317,7 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, windowTypeOptions, direct
   const handleApply = async () => {
     const data: Parameters<typeof batchUpdateRooms>[1] = {}
     if (type) data.type = type
+    if (tier) data.tier = tier
     if (baseRent != null) data.baseRent = baseRent
     if (clearScheduled) data.scheduledRent = null
     else if (scheduledRent != null) data.scheduledRent = scheduledRent
@@ -1309,6 +1347,19 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, windowTypeOptions, direct
               <button key={t} type="button"
                 onClick={() => setType(t === '미변경' ? '' : t)}
                 className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${(t === '미변경' && !type) || type === t ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}>
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">등급</label>
+          <div className="flex gap-1 flex-wrap">
+            {['미변경', ...roomTiers].map(t => (
+              <button key={t} type="button"
+                onClick={() => setTier(t === '미변경' ? '' : t)}
+                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${(t === '미변경' && !tier) || tier === t ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}>
                 {t}
               </button>
             ))}

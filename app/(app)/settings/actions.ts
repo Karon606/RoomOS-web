@@ -95,6 +95,44 @@ export async function deleteRoomTypeOption(name: string) {
   revalidatePath('/room-manage')
 }
 
+// ── 호실 등급 관리 ─────────────────────────────────────────────────
+// 방 타입(원룸/미니룸/복층)과 별개 차원의 등급(스탠다드/실속형/프리미엄 등) 관리.
+
+export async function getRoomTierOptions(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { roomTierOptions: true } as any,
+  })
+  const raw = (property as any)?.roomTierOptions ?? '스탠다드,실속형'
+  return raw.split(',').map((s: string) => s.trim()).filter(Boolean)
+}
+
+export async function addRoomTierOption(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getRoomTierOptions()
+  if (current.includes(name)) return
+  const updated = [...current, name].join(',')
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { roomTierOptions: updated } as any,
+  })
+  revalidatePath('/room-manage')
+}
+
+export async function deleteRoomTierOption(name: string) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const current = await getRoomTierOptions()
+  const updated = current.filter((t: string) => t !== name).join(',')
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { roomTierOptions: updated } as any,
+  })
+  revalidatePath('/room-manage')
+}
+
 // ── 창문 유형 관리 ─────────────────────────────────────────────────
 
 export async function getWindowTypeOptions(): Promise<string[]> {
@@ -251,10 +289,11 @@ export async function deleteExpenseCategory(name: string) {
 
 // ── 순서 변경 ─────────────────────────────────────────────────────
 
-type ReorderableField = 'roomTypeOptions' | 'windowTypeOptions' | 'directionOptions' | 'incomeCategories' | 'expenseCategories' | 'paymentMethods'
+type ReorderableField = 'roomTypeOptions' | 'roomTierOptions' | 'windowTypeOptions' | 'directionOptions' | 'incomeCategories' | 'expenseCategories' | 'paymentMethods'
 
 const FIELD_DEFAULTS: Record<ReorderableField, string> = {
   roomTypeOptions:   '원룸,미니룸',
+  roomTierOptions:   '스탠다드,실속형',
   windowTypeOptions: 'OUTER,INNER',
   directionOptions:  '북향,북동향,동향,남동향,남향,남서향,서향,북서향',
   incomeCategories:  '건조기,세탁기,자판기,이자수익,기타',
@@ -272,7 +311,7 @@ export async function resetOptionsToDefault(field: ReorderableField): Promise<st
   })
   revalidatePath('/settings')
   if (['incomeCategories', 'expenseCategories', 'paymentMethods'].includes(field)) revalidatePath('/finance')
-  if (['roomTypeOptions', 'windowTypeOptions', 'directionOptions'].includes(field)) revalidatePath('/room-manage')
+  if (['roomTypeOptions', 'roomTierOptions', 'windowTypeOptions', 'directionOptions'].includes(field)) revalidatePath('/room-manage')
   return defaultVal.split(',').map(s => s.trim()).filter(Boolean)
 }
 
@@ -287,7 +326,7 @@ export async function reorderOptions(field: ReorderableField, items: string[]): 
   if (field === 'incomeCategories' || field === 'expenseCategories' || field === 'paymentMethods') {
     revalidatePath('/finance')
   }
-  if (field === 'roomTypeOptions' || field === 'windowTypeOptions' || field === 'directionOptions') {
+  if (field === 'roomTypeOptions' || field === 'roomTierOptions' || field === 'windowTypeOptions' || field === 'directionOptions') {
     revalidatePath('/room-manage')
   }
 }
@@ -309,7 +348,7 @@ export async function renameOption(field: ReorderableField, oldValue: string, ne
   if (field === 'incomeCategories' || field === 'expenseCategories' || field === 'paymentMethods') {
     revalidatePath('/finance')
   }
-  if (field === 'roomTypeOptions' || field === 'windowTypeOptions' || field === 'directionOptions') {
+  if (field === 'roomTypeOptions' || field === 'roomTierOptions' || field === 'windowTypeOptions' || field === 'directionOptions') {
     revalidatePath('/room-manage')
   }
 }
