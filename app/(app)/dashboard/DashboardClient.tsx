@@ -20,7 +20,7 @@ import { recordRecurringExpense } from '@/app/(app)/finance/actions'
 import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
-import { ALERT_URGENT_WITHIN_DAYS } from '@/lib/appConfig'
+import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appConfig'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
@@ -577,13 +577,16 @@ function AlertsStrip({ alerts, onOpenAlert }: {
   alerts: DashboardData['alerts']
   onOpenAlert: (alert: AlertItem) => void
 }) {
-  // 긴급도(D-N) 부여 후 '지금 급함'(경과 or D-N 이내)과 '예정'으로 분리
-  const withU = alerts.map(a => ({ a, u: urgencyDaysOf(a.timeLabel) }))
+  // 긴급도(D-N) 부여 후 '지금 급함'(경과 or 카테고리별 D-N 이내)과 '예정'으로 분리.
+  // L 후속(2026-05-28): 카테고리별 임계값 — 미납은 0(도래 즉시), 퇴실/입주는 3(사전 준비), 재고는 5(발주 리드타임) 등.
+  const thresholdFor = (cat: AlertItem['category']): number =>
+    ALERT_URGENT_CATEGORY_DAYS[cat ?? 'other'] ?? ALERT_URGENT_WITHIN_DAYS
+  const withU = alerts.map(a => ({ a, u: urgencyDaysOf(a.timeLabel), t: thresholdFor(a.category) }))
   const urgent = withU
-    .filter(x => x.u <= ALERT_URGENT_WITHIN_DAYS)
+    .filter(x => x.u <= x.t)
     .sort((x, y) => x.u - y.u)   // 가장 급한(많이 경과한) 순 — 카테고리 무관
     .map(x => x.a)
-  const restItems = withU.filter(x => x.u > ALERT_URGENT_WITHIN_DAYS)
+  const restItems = withU.filter(x => x.u > x.t)
 
   // 예정: 긴급 존에 안 든 항목만 카테고리 그룹 (그룹 내 가까운 순)
   const groups = (() => {
