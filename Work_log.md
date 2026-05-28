@@ -194,12 +194,12 @@
 - 빌드 통과. ⚠️ **푸시 전 SQL 적용 필요**: `migrate_room_tier.sql` (ALTER TABLE properties/rooms ADD COLUMN). 없이 푸시하면 환경설정·호실관리 페이지 Prisma 쿼리 실패.
 
 **✅ 3차 완료 (코드, SQL 불필요 — 스키마 변경 없음):**
-- **#1a + #1b 대시보드 다차원 그룹화** — 대시보드 좌측 칼럼 '방 현황' 아래 **'호실 분포'** 위젯 신규.
-  · 차원 5개 multi-select chip: **층·등급·창문·방향·방타입** (사용자 명시 4개 + 방타입). 디폴트 [층, 등급], 선택 상태 localStorage 보존.
-  · 선택된 차원 조합으로 호실 그룹화 → 그룹별 카드 표시. 차원 0개 = 전체 합계 하나, 빈 그룹 자동 숨김, 그룹명 사전순 정렬.
-  · 카드 표시 데이터(사용자 선택 multi-select): **호실수·점유율%·입주(ACTIVE)·예약(RESERVED)·퇴실예정(CHECKOUT_PENDING)·공실·평균 기본 이용료**. 점유율 = (전체-공실)/전체.
-  · 신규: `app/(app)/dashboard/RoomDistribution.tsx` (client). 변경: dashboard/page.tsx rooms select에 `tier: true` + roomsData map에 `tier` 전달, DashboardData.rooms 타입에 `tier`, DashboardClient에 import + 방 현황 뒤 위치에 렌더.
-- 빌드·신규 파일 lint 클린. **SQL 변경 없음** → 즉시 푸시·배포 가능.
+- **#1a + #1b 대시보드 다차원 그룹화** — 사용자 의도는 *기존 '방 현황' 호실 카드의 묶음 단위를 차원 조합으로 바꾸는 것*이었음(개별 통계 위젯 X). 1차 시도 별도 RoomDistribution 위젯은 의도 오해 → 폐기·재작업.
+  · **재작업(2026-05-28)**: 별도 위젯 제거(`RoomDistribution.tsx` 삭제, import 제거). 기존 **방 현황 그리드 헤더 아래에 차원 칩 5개**(층·등급·창문·방향·방타입). 다중 선택 + **순서 보존**(앞=상위 묶음). 디폴트 [층] = 기존 동작 유지. 선택 상태 localStorage 보존.
+  · 그룹화 = 선택 차원 값들의 카르테시안 곱(빈 그룹 자동 숨김). 라벨은 ' · ' 조인(예: "4층 · 스탠다드"). 정렬은 차원 순서대로 dim별 sortKey 적용(층=숫자, 그 외=사전순, '미지정'은 뒤).
+  · 각 그룹 안엔 기존 호실 카드(renderCell) 그대로(상태색·이름·이용료). 차원 0개 선택 시 헤더 없이 한 덩어리(전체) 표시.
+  · dashboard/page.tsx rooms select에 `tier:true` + roomsData map에 `tier` 추가(2차 SQL 의존 — `rooms.tier` 컬럼 필요). DashboardData.rooms 타입에 `tier`.
+- 빌드 통과. **SQL 변경 없음** (2차 `rooms.tier` 컬럼은 별도 — 이미 필수).
 
 **남은 작업:**
    - 환경설정에 옵션 등록(roomTypeOptions 패턴 미러링: `Property.roomTierOptions` 같은 콤마구분 컬럼 추가).
@@ -319,8 +319,13 @@
 - 기존: app/api/export, app/api/import, import/preview.
 
 ### G. 영업장 랜딩 페이지 + 유입 트래킹
-- 공개 페이지 `stayeum.com/stay/<슬러그>`. 바로 할 일: thestay-jegi(순수 정적 HTML) → public/stay/thestay-jegi/.
-- 비전: 회원이 각자 페이지 제작·관리 + 유입 트래킹(페이지뷰·referrer/UTM) 대시보드 노출.
+- **공개 페이지 라우트 = `/members/<slug>`** ([[project_public_listing_page]] 정설). 초기 `/stay/<slug>` 시도는 폐기.
+- **✅ 1단계 완료**: 첫 영업장(더스테이 제기) 정적 HTML 라이브 — `public/members/thestayjegi/index.html` (배포됨, 3차례 다듬음). 360° 객실 라벨 포함.
+- **✅ 유입 트래킹(2026-05-28)**: `@vercel/analytics` 설치 + 루트 layout에 `<Analytics />`(앱 전체) + 정적 랜딩 head에 `/_vercel/insights/script.js`(공개 페이지) → 페이지뷰·referrer·국가 등 자동 수집. **Vercel 대시보드 → Analytics 탭**에서 확인. 무료 한도(2,500/월 hobby, 250k/월 pro) 충분.
+- **✅ 정리**: 구버전 `public/stay/thestay-jegi/` 제거 (5/18 1회 커밋 후 방치된 잔재).
+- **비전 남은 것**:
+  · 2단계 — **회원이 직접 페이지 편집** = 인앱 편집기(Property.slug 필드 + 콘텐츠 저장 구조 + UI). 큰 작업, 별도 세션 권장.
+  · 유입 트래킹 **인앱 대시보드 위젯** (Vercel API 또는 자체 events 테이블로 페이지뷰/referrer를 운영자 대시보드에 표시). Vercel Analytics가 외부 대시보드에 있어 1차 가치는 충족 — 인앱 노출은 데이터 쌓인 뒤 자체 트래킹으로 별도 작업.
 
 ### H. #6 국가 서류·양식 페이지 (별도 세션 권장)
 - DocumentTemplate 모델 신규. 카테고리·태그 + 다운로드 링크/파일 업로드 + 안내 링크.
