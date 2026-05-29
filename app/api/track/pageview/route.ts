@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
 import prisma from '@/lib/prisma'
+import { parseUA, categorizeReferrer } from '@/lib/tracking/uaParse'
 
-// 공개 랜딩 페이지 페이지뷰 수집 — 정적 HTML 의 작은 클라이언트 스크립트에서 POST.
-// 익명 집계 위주(IP·UA는 해시 후 폐기). CORS 는 같은 도메인이라 별도 처리 불필요.
+// 공개 랜딩 페이지 페이지뷰 수집 — 정적 HTML 의 클라이언트 스크립트에서 POST.
+// 익명 집계 위주(IP·UA는 해시 후 폐기). closeup(체류·스크롤)은 /api/track/closeup 으로.
 
 const MAX_LEN = 512
 const trim = (v: string | null | undefined): string | null => {
@@ -18,7 +19,6 @@ function extractHost(referrer: string | null | undefined): string | null {
   try { return new URL(referrer).host || null } catch { return null }
 }
 
-// 흔한 봇/크롤러 User-Agent 키워드 (대소문자 무시)
 const BOT_KEYWORDS = [
   'bot', 'spider', 'crawler', 'crawl', 'slurp', 'mediapartners', 'preview',
   'facebookexternalhit', 'twitterbot', 'linkedinbot', 'whatsapp', 'pinterest',
@@ -26,27 +26,33 @@ const BOT_KEYWORDS = [
   'ahrefs', 'semrush', 'mj12bot', 'monitoring', 'uptime', 'pingdom',
 ]
 function detectBot(ua: string | null): boolean {
-  if (!ua) return true // UA 없음 = 의심
+  if (!ua) return true
   const l = ua.toLowerCase()
   return BOT_KEYWORDS.some(k => l.includes(k))
 }
 
-// 간단 모바일 감지
-function detectMobile(ua: string | null): boolean {
-  if (!ua) return false
-  return /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile/i.test(ua)
-}
-
-// 익명 식별자: IP+UA+slug + 오늘 날짜 → SHA-256. 매일 바뀌어 추적 한계 둠(프라이버시).
 function visitorHash(ip: string | null, ua: string | null, slug: string): string {
   const today = new Date().toISOString().slice(0, 10)
   return createHash('sha256').update(`${today}|${ip ?? ''}|${ua ?? ''}|${slug}`).digest('hex').slice(0, 16)
 }
 
+// 안전 정수 변환 (음수·NaN·과대값 제거)
+function safeInt(v: unknown, max = 10000): number | null {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n) || n < 0 || n > max) return null
+  return Math.floor(n)
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null) as
-      | { slug?: string; path?: string; referrer?: string; utmSource?: string; utmMedium?: string; utmCampaign?: string }
+      | {
+          slug?: string; path?: string; referrer?: string
+          utmSource?: string; utmMedium?: string; utmCampaign?: string
+          screenWidth?: number; screenHeight?: number
+          viewportWidth?: number; viewportHeight?: number
+          language?: string
+        }
       | null
     if (!body || typeof body.slug !== 'string' || !body.slug.trim()) {
       return NextResponse.json({ ok: false }, { status: 400 })
@@ -58,8 +64,15 @@ export async function POST(req: NextRequest) {
     const utmSource   = trim(body.utmSource)
     const utmMedium   = trim(body.utmMedium)
     const utmCampaign = trim(body.utmCampaign)
+    const language    = trim(body.language)
 
-    // 클라 헤더에서 IP/UA 추출 (Vercel/Proxy 헤더 우선)
+    // Vercel 자동 헤더 — 도시 단위 위치
+    const country = trim(req.headers.get('x-vercel-ip-country'))
+    const region  = trim(req.headers.get('x-vercel-ip-country-region'))
+    const cityRaw = req.headers.get('x-vercel-ip-city')
+    const city    = cityRaw ? trim(decodeURIComponent(cityRaw)) : null
+
+    // 헤더 IP/UA
     const ip =
       req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
       req.headers.get('x-real-ip') ||
@@ -67,26 +80,44 @@ export async function POST(req: NextRequest) {
     const ua = req.headers.get('user-agent')
 
     const isBot = detectBot(ua)
-    const isMobile = detectMobile(ua)
+    const uaInfo = parseUA(ua)
+    const isMobile = uaInfo.deviceType === 'mobile'
+    const refInfo = categorizeReferrer(referrerHost)
     const vh = visitorHash(ip, ua, slug)
 
-    await prisma.pageView.create({
+    const created = await prisma.pageView.create({
       data: {
         slug,
         path,
         referrer,
         referrerHost,
+        searchEngine:     refInfo.searchEngine,
+        referrerCategory: refInfo.referrerCategory,
         utmSource,
         utmMedium,
         utmCampaign,
+        country,
+        region,
+        city,
+        os:             uaInfo.os,
+        osVersion:      uaInfo.osVersion,
+        browser:        uaInfo.browser,
+        browserVersion: uaInfo.browserVersion,
+        deviceType:     uaInfo.deviceType,
+        screenWidth:   safeInt(body.screenWidth,   20000),
+        screenHeight:  safeInt(body.screenHeight,  20000),
+        viewportWidth: safeInt(body.viewportWidth, 20000),
+        viewportHeight: safeInt(body.viewportHeight, 20000),
+        language,
         userAgent: trim(ua),
         isMobile,
         visitorHash: vh,
         isBot,
       },
+      select: { id: true },
     })
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, id: created.id })
   } catch {
     return NextResponse.json({ ok: false }, { status: 500 })
   }

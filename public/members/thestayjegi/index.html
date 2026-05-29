@@ -19,12 +19,28 @@
 <!-- Vercel Web Analytics — 페이지뷰·referrer 자동 수집 (Vercel 대시보드 Analytics 탭에서 확인) -->
 <script defer src="/_vercel/insights/script.js"></script>
 
-<!-- 스테이음 자체 트래킹 — 운영자 대시보드(/marketing)에서 영업장별 페이지뷰·유입·UTM 확인 -->
+<!-- 스테이음 자체 트래킹 — 운영자 대시보드(/marketing)에서 영업장별 트래픽 분석 -->
 <script>
 (function () {
   try {
-    var SLUG = 'thestayjegi'; // 영업장 publicSlug
+    var SLUG = 'thestayjegi';
     var qs = new URLSearchParams(window.location.search);
+
+    // 입장 시점에 1차 페이지뷰 기록 (id 반환받아 closeup 업데이트에 사용)
+    var pv_id = null;
+    var startedAt = Date.now();
+    var maxScrollPct = 0;
+
+    function getScrollPct() {
+      var doc = document.documentElement;
+      var body = document.body;
+      var winH = window.innerHeight || doc.clientHeight;
+      var docH = Math.max(body.scrollHeight, doc.scrollHeight, body.offsetHeight, doc.offsetHeight, body.clientHeight, doc.clientHeight);
+      var scrolled = (window.pageYOffset || doc.scrollTop || 0) + winH;
+      if (docH <= winH) return 100;
+      return Math.max(0, Math.min(100, Math.round(scrolled / docH * 100)));
+    }
+
     var payload = {
       slug: SLUG,
       path: window.location.pathname,
@@ -32,15 +48,60 @@
       utmSource:   qs.get('utm_source')   || null,
       utmMedium:   qs.get('utm_medium')   || null,
       utmCampaign: qs.get('utm_campaign') || null,
+      // 화면/언어
+      screenWidth:    window.screen && screen.width  || null,
+      screenHeight:   window.screen && screen.height || null,
+      viewportWidth:  window.innerWidth  || null,
+      viewportHeight: window.innerHeight || null,
+      language: navigator.language || null,
     };
-    // 페이지가 닫힐 때도 살아남게 sendBeacon 우선
-    var url = '/api/track/pageview';
-    var json = JSON.stringify(payload);
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(url, new Blob([json], { type: 'application/json' }));
-    } else {
-      fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json, keepalive: true }).catch(function(){});
+
+    // 1) 입장 기록 (fetch 로 id 받기)
+    fetch('/api/track/pageview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(data){ if (data && data.id) pv_id = data.id; })
+      .catch(function(){});
+
+    // 2) 스크롤 추적
+    var ticking = false;
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(function(){
+        var p = getScrollPct();
+        if (p > maxScrollPct) maxScrollPct = p;
+        ticking = false;
+      });
     }
+    window.addEventListener('scroll', onScroll, { passive: true });
+
+    // 3) 페이지 닫을 때 closeup (체류시간 + 최대 스크롤) — sendBeacon 으로 안전 전송
+    function sendCloseup() {
+      if (!pv_id) return;
+      var data = {
+        id: pv_id,
+        durationMs: Date.now() - startedAt,
+        scrollDepthPct: getScrollPct() > maxScrollPct ? getScrollPct() : maxScrollPct,
+      };
+      var url = '/api/track/closeup';
+      var json = JSON.stringify(data);
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url, new Blob([json], { type: 'application/json' }));
+      } else {
+        // 일부 브라우저는 unload 중 fetch가 실패할 수 있음 — 최선 노력
+        try { fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json, keepalive: true }); } catch(e){}
+      }
+    }
+    // visibilitychange(hidden)는 모바일 백그라운드 전환에도 발동 — 더 안정적
+    document.addEventListener('visibilitychange', function(){
+      if (document.visibilityState === 'hidden') sendCloseup();
+    });
+    window.addEventListener('pagehide', sendCloseup);
+    window.addEventListener('beforeunload', sendCloseup);
   } catch (e) { /* tracking 실패해도 페이지엔 영향 없게 */ }
 })();
 </script>

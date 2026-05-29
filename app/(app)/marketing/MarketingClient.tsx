@@ -6,6 +6,42 @@ import { getMarketingStats, type MarketingStats, type MarketingRange } from './a
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
 
+// 작은 막대 패널 공통 컴포넌트 — 채널·디바이스·OS·브라우저·국가 등에서 재사용
+function BarPanel({
+  title, rows, color, emptyText,
+}: {
+  title: string
+  rows: { label: string; count: number; percent: number }[]
+  color: string
+  emptyText: string
+}) {
+  return (
+    <div className="rounded-xl p-4"
+      style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+      <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>{title}</p>
+      {rows.length === 0 ? (
+        <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>{emptyText}</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {rows.map((r, i) => (
+            <li key={i}>
+              <div className="flex items-baseline justify-between gap-2 mb-1">
+                <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>{r.label}</span>
+                <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>
+                  {fmt(r.count)} · {r.percent}%
+                </span>
+              </div>
+              <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--canvas)' }}>
+                <div className="h-full rounded-full" style={{ width: `${r.percent}%`, background: color }} />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 const RANGES: { key: MarketingRange; label: string; granularity: string }[] = [
   { key: 'today', label: '오늘',  granularity: '시간별' },
   { key: '7d',    label: '7일',   granularity: '일별' },
@@ -51,8 +87,14 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
 
   const trendMax = Math.max(1, ...stats.trend.map(d => d.views))
   const hourMax  = Math.max(1, ...stats.hourly.map(h => h.count))
-  const devTotal = stats.devices.mobile + stats.devices.desktop || 1
   const currentRangeMeta = RANGES.find(r => r.key === range) ?? RANGES[2]
+  const fmtDuration = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`
+    const s = Math.round(ms / 1000)
+    if (s < 60) return `${s}초`
+    const m = Math.floor(s / 60); const rs = s % 60
+    return rs === 0 ? `${m}분` : `${m}분 ${rs}초`
+  }
 
   return (
     <div className="space-y-4" style={{ opacity: pending ? 0.6 : 1, transition: 'opacity 150ms' }}>
@@ -162,11 +204,66 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
         )}
       </div>
 
-      {/* 유입 출처 + 디바이스 */}
+      {/* 참여도 (평균 체류·스크롤·이탈률) */}
+      <div className="rounded-xl p-4"
+        style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+        <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>
+          참여도 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(샘플 {fmt(stats.engagement.sampleCount)}건)</span>
+        </p>
+        {stats.engagement.sampleCount === 0 ? (
+          <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>
+            아직 측정 데이터 없음 (페이지를 닫을 때 수집되므로 첫 방문 후 5초 정도 뒤 새로고침 시 반영)
+          </p>
+        ) : (
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <p className="text-[10px]" style={{ color: 'var(--warm-muted)' }}>평균 체류</p>
+              <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{fmtDuration(stats.engagement.avgDurationMs)}</p>
+            </div>
+            <div>
+              <p className="text-[10px]" style={{ color: 'var(--warm-muted)' }}>평균 스크롤</p>
+              <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{stats.engagement.avgScrollPct}%</p>
+            </div>
+            <div>
+              <p className="text-[10px]" style={{ color: 'var(--warm-muted)' }}>이탈률 <span className="text-[9px]">(5초↓)</span></p>
+              <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{stats.engagement.bounceRatePct}%</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 채널 카테고리 + 디바이스 종류 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <BarPanel title="채널" rows={stats.channels.map(c => ({ label: c.category, count: c.count, percent: c.percent }))}
+          color="var(--persimmon)" emptyText="아직 데이터 없음" />
+        <BarPanel title="디바이스 종류" rows={stats.deviceTypes.map(d => ({ label: d.type, count: d.count, percent: d.percent }))}
+          color="var(--camel)" emptyText="아직 데이터 없음" />
+      </div>
+
+      {/* 검색엔진·소셜 분류된 이름 + 유입 호스트 Top */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <div className="rounded-xl p-4"
           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>유입 출처 Top 8</p>
+          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>검색엔진 · 소셜</p>
+          {stats.namedSources.length === 0 ? (
+            <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>아직 분류된 유입 없음</p>
+          ) : (
+            <ul className="space-y-1">
+              {stats.namedSources.map((s, i) => (
+                <li key={i} className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>
+                    {s.name} <span className="text-[10px]" style={{ color: 'var(--warm-muted)' }}>({s.category})</span>
+                  </span>
+                  <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(s.count)}건</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-xl p-4"
+          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>유입 호스트 Top 8</p>
           {stats.referrers.length === 0 ? (
             <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>아직 데이터 없음</p>
           ) : (
@@ -187,35 +284,72 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
             </ul>
           )}
         </div>
+      </div>
 
+      {/* 지역 (국가 + 도시) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <BarPanel title="국가 Top" rows={stats.countries.map(c => ({ label: c.country, count: c.count, percent: c.percent }))}
+          color="var(--persimmon)" emptyText="아직 데이터 없음" />
         <div className="rounded-xl p-4"
           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>디바이스</p>
-          {devTotal === 1 && stats.devices.mobile === 0 && stats.devices.desktop === 0 ? (
+          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>도시 Top 12</p>
+          {stats.cities.length === 0 ? (
             <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>아직 데이터 없음</p>
           ) : (
-            <div className="space-y-3">
-              {[
-                { label: '모바일', count: stats.devices.mobile },
-                { label: '데스크탑/태블릿', count: stats.devices.desktop },
-              ].map((d, i) => {
-                const pct = Math.round((d.count / devTotal) * 100)
-                return (
-                  <div key={i}>
-                    <div className="flex items-baseline justify-between mb-1">
-                      <span className="text-xs" style={{ color: 'var(--warm-dark)' }}>{d.label}</span>
-                      <span className="text-[11px] tabular-nums" style={{ color: 'var(--warm-muted)' }}>
-                        {fmt(d.count)} · {pct}%
-                      </span>
-                    </div>
-                    <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--canvas)' }}>
-                      <div className="h-full rounded-full"
-                        style={{ width: `${pct}%`, background: i === 0 ? 'var(--persimmon)' : 'var(--camel)' }} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+            <ul className="space-y-1">
+              {stats.cities.map((c, i) => (
+                <li key={i} className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>
+                    {c.city} {c.country && <span className="text-[10px]" style={{ color: 'var(--warm-muted)' }}>({c.country})</span>}
+                  </span>
+                  <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(c.count)}건</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {/* OS + 브라우저 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <BarPanel title="OS Top" rows={stats.oses.map(o => ({ label: o.os, count: o.count, percent: o.percent }))}
+          color="var(--camel)" emptyText="아직 데이터 없음" />
+        <BarPanel title="브라우저 Top" rows={stats.browsers.map(b => ({ label: b.browser, count: b.count, percent: b.percent }))}
+          color="var(--persimmon)" emptyText="아직 데이터 없음" />
+      </div>
+
+      {/* 언어 + 화면 해상도 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className="rounded-xl p-4"
+          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>언어</p>
+          {stats.languages.length === 0 ? (
+            <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>아직 데이터 없음</p>
+          ) : (
+            <ul className="space-y-1">
+              {stats.languages.map((l, i) => (
+                <li key={i} className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-mono" style={{ color: 'var(--warm-dark)' }}>{l.language}</span>
+                  <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(l.count)}건</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="rounded-xl p-4"
+          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+          <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>화면 해상도</p>
+          {stats.resolutions.length === 0 ? (
+            <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>아직 데이터 없음</p>
+          ) : (
+            <ul className="space-y-1">
+              {stats.resolutions.map((r, i) => (
+                <li key={i} className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-mono" style={{ color: 'var(--warm-dark)' }}>{r.res}</span>
+                  <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(r.count)}건</span>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </div>

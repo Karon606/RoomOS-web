@@ -1049,15 +1049,40 @@ model PageView {
   // 유입 출처
   referrer     String?                         // 원본 document.referrer (디버그용)
   referrerHost String?                         // 호스트만 ('instagram.com', 'google.com', null=직접)
+  searchEngine String?                         // 분류 결과: '구글'·'네이버'·'다음'·'빙'·'유튜브'·'인스타'·'페북'·'트위터'·'카카오'·null
+  referrerCategory String?                     // 'search'·'social'·'direct'·'other'
 
   // UTM
   utmSource    String?
   utmMedium    String?
   utmCampaign  String?
 
-  // 클라이언트
+  // 위치 (Vercel x-vercel-ip-* 헤더 — 도시 단위 정확도)
+  country      String?                         // 'KR'·'US' (ISO 3166-1 alpha-2)
+  region       String?                         // 행정구역
+  city         String?                         // 도시명
+
+  // 디바이스/브라우저 (User-Agent 파싱)
+  os           String?                         // 'iOS'·'Android'·'Windows'·'macOS'·'Linux'
+  osVersion    String?                         // '17.1'·'14'·'11'
+  browser      String?                         // 'Chrome'·'Safari'·'Firefox'·'Edge'·'Samsung'
+  browserVersion String?                       // '130'
+  deviceType   String?                         // 'mobile'·'tablet'·'desktop'
+
+  // 화면 (클라이언트 JS)
+  screenWidth   Int?
+  screenHeight  Int?
+  viewportWidth Int?
+  viewportHeight Int?
+  language      String?                        // 'ko-KR'
+
+  // 참여도 (페이지 닫을 때 sendBeacon 으로 업데이트 — 별도 endpoint)
+  durationMs    Int?                           // 체류 시간 (밀리초)
+  scrollDepthPct Int?                          // 0-100, 최대 스크롤 깊이
+
+  // 클라이언트 (원본 보존용 — 디버그)
   userAgent    String?
-  isMobile     Boolean  @default(false)
+  isMobile     Boolean  @default(false)        // 이전 호환 (deviceType='mobile' 와 동일)
 
   // 익명 식별자 (방문자 추정용)
   visitorHash  String?
@@ -1067,5 +1092,6 @@ model PageView {
 
   @@index([slug, occurredAt])
   @@index([slug, isBot, occurredAt])
+  @@index([slug, country, occurredAt])
   @@map("page_views")
 }

@@ -31,16 +31,38 @@ export type MarketingStats = {
   // 범위 내 핵심 지표
   rangeViews: number      // 범위 내 총 페이지뷰
   rangeVisitors: number   // 범위 내 유니크 방문자(visitorHash 기준)
+  // 참여도 (범위 내 평균, durationMs/scrollDepthPct 가 채워진 행만)
+  engagement: {
+    avgDurationMs: number   // 평균 체류 시간
+    avgScrollPct: number    // 평균 스크롤 깊이
+    sampleCount: number     // 측정된 샘플 수
+    bounceRatePct: number   // 이탈률(체류 5초 미만)
+  }
   // 트렌드 (자동 세분도)
   trend: { label: string; views: number; visitors: number }[]
-  // 유입 출처 Top (범위 내)
+  // 유입 출처 Top (범위 내, 호스트 기준)
   referrers: { host: string; count: number; percent: number }[]
+  // 채널 카테고리 (검색/소셜/직접/기타)
+  channels: { category: string; count: number; percent: number }[]
+  // 검색엔진·소셜 분류된 이름 Top
+  namedSources: { name: string; category: string; count: number }[]
   // UTM 캠페인 (범위 내)
   campaigns: { source: string; medium: string; campaign: string; count: number }[]
   // 시간대 0-23 (범위 내)
   hourly: { hour: number; count: number }[]
-  // 디바이스 (범위 내)
-  devices: { mobile: number; desktop: number }
+  // 디바이스 종류 (mobile/tablet/desktop)
+  deviceTypes: { type: string; count: number; percent: number }[]
+  // OS Top
+  oses: { os: string; count: number; percent: number }[]
+  // 브라우저 Top
+  browsers: { browser: string; count: number; percent: number }[]
+  // 지역 (국가 / 도시)
+  countries: { country: string; count: number; percent: number }[]
+  cities: { city: string; country: string | null; count: number }[]
+  // 언어 Top
+  languages: { language: string; count: number }[]
+  // 화면 해상도 Top
+  resolutions: { res: string; count: number }[]
   // 봇 트래픽 (참고용 — 범위 내)
   botCount: number
 }
@@ -64,11 +86,24 @@ const toKst = (d: Date) => new Date(d.getTime() + KST_OFFSET)
 type Row = {
   occurredAt: Date
   referrerHost: string | null
+  searchEngine: string | null
+  referrerCategory: string | null
   utmSource: string | null
   utmMedium: string | null
   utmCampaign: string | null
   isMobile: boolean
   visitorHash: string | null
+  country: string | null
+  region: string | null
+  city: string | null
+  os: string | null
+  browser: string | null
+  deviceType: string | null
+  language: string | null
+  screenWidth: number | null
+  screenHeight: number | null
+  durationMs: number | null
+  scrollDepthPct: number | null
 }
 
 function buildTrend(rows: Row[], start: Date, bucket: MarketingBucket): { label: string; views: number; visitors: number }[] {
@@ -146,10 +181,12 @@ export async function getMarketingStats(range: MarketingRange = '30d'): Promise<
       range, bucket, publicSlug: null, publicUrl: null,
       totals: { today: 0, week: 0, month: 0, allTime: 0 },
       rangeViews: 0, rangeVisitors: 0,
+      engagement: { avgDurationMs: 0, avgScrollPct: 0, sampleCount: 0, bounceRatePct: 0 },
       trend: [],
-      referrers: [], campaigns: [],
+      referrers: [], channels: [], namedSources: [], campaigns: [],
       hourly: Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 })),
-      devices: { mobile: 0, desktop: 0 },
+      deviceTypes: [], oses: [], browsers: [],
+      countries: [], cities: [], languages: [], resolutions: [],
       botCount: 0,
     }
   }
@@ -159,8 +196,14 @@ export async function getMarketingStats(range: MarketingRange = '30d'): Promise<
     where: { slug, isBot: false, occurredAt: { gte: start } },
     orderBy: { occurredAt: 'asc' },
     select: {
-      occurredAt: true, referrerHost: true, utmSource: true, utmMedium: true, utmCampaign: true,
+      occurredAt: true,
+      referrerHost: true, searchEngine: true, referrerCategory: true,
+      utmSource: true, utmMedium: true, utmCampaign: true,
       isMobile: true, visitorHash: true,
+      country: true, region: true, city: true,
+      os: true, browser: true, deviceType: true,
+      language: true, screenWidth: true, screenHeight: true,
+      durationMs: true, scrollDepthPct: true,
     },
   })
 
@@ -220,16 +263,125 @@ export async function getMarketingStats(range: MarketingRange = '30d'): Promise<
   }
   const hourly = hourCounts.map((count, hour) => ({ hour, count }))
 
-  // 디바이스 (범위 내)
-  const mobile = inRange.filter(r => r.isMobile).length
-  const desktop = inRange.length - mobile
+  // 채널 카테고리 (검색/소셜/직접/기타)
+  const chMap = new Map<string, number>()
+  for (const r of inRange) {
+    const c = r.referrerCategory || (r.referrerHost ? 'other' : 'direct')
+    chMap.set(c, (chMap.get(c) ?? 0) + 1)
+  }
+  const chTotal = Array.from(chMap.values()).reduce((s, v) => s + v, 0) || 1
+  const CHANNEL_LABEL: Record<string, string> = { search: '검색', social: '소셜', direct: '직접', other: '기타' }
+  const channels = Array.from(chMap.entries())
+    .map(([k, count]) => ({ category: CHANNEL_LABEL[k] ?? k, count, percent: Math.round((count / chTotal) * 100) }))
+    .sort((a, b) => b.count - a.count)
+
+  // 분류된 검색엔진·소셜 이름 Top
+  const namedMap = new Map<string, { count: number; category: string }>()
+  for (const r of inRange) {
+    if (!r.searchEngine) continue
+    const cat = CHANNEL_LABEL[r.referrerCategory ?? ''] ?? '기타'
+    const existing = namedMap.get(r.searchEngine)
+    if (existing) existing.count++
+    else namedMap.set(r.searchEngine, { count: 1, category: cat })
+  }
+  const namedSources = Array.from(namedMap.entries())
+    .map(([name, v]) => ({ name, category: v.category, count: v.count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10)
+
+  // 디바이스 타입
+  const dtMap = new Map<string, number>()
+  for (const r of inRange) {
+    const t = r.deviceType || (r.isMobile ? 'mobile' : 'desktop')
+    dtMap.set(t, (dtMap.get(t) ?? 0) + 1)
+  }
+  const dtTotal = Array.from(dtMap.values()).reduce((s, v) => s + v, 0) || 1
+  const DT_LABEL: Record<string, string> = { mobile: '모바일', tablet: '태블릿', desktop: '데스크탑' }
+  const deviceTypes = Array.from(dtMap.entries())
+    .map(([t, count]) => ({ type: DT_LABEL[t] ?? t, count, percent: Math.round((count / dtTotal) * 100) }))
+    .sort((a, b) => b.count - a.count)
+
+  // OS Top
+  const osMap = new Map<string, number>()
+  for (const r of inRange) if (r.os) osMap.set(r.os, (osMap.get(r.os) ?? 0) + 1)
+  const osTotal = Array.from(osMap.values()).reduce((s, v) => s + v, 0) || 1
+  const oses = Array.from(osMap.entries())
+    .map(([os, count]) => ({ os, count, percent: Math.round((count / osTotal) * 100) }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8)
+
+  // 브라우저 Top
+  const brMap = new Map<string, number>()
+  for (const r of inRange) if (r.browser) brMap.set(r.browser, (brMap.get(r.browser) ?? 0) + 1)
+  const brTotal = Array.from(brMap.values()).reduce((s, v) => s + v, 0) || 1
+  const browsers = Array.from(brMap.entries())
+    .map(([browser, count]) => ({ browser, count, percent: Math.round((count / brTotal) * 100) }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8)
+
+  // 국가
+  const ctMap = new Map<string, number>()
+  for (const r of inRange) {
+    const c = r.country || '미상'
+    ctMap.set(c, (ctMap.get(c) ?? 0) + 1)
+  }
+  const ctTotal = Array.from(ctMap.values()).reduce((s, v) => s + v, 0) || 1
+  const countries = Array.from(ctMap.entries())
+    .map(([country, count]) => ({ country, count, percent: Math.round((count / ctTotal) * 100) }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10)
+
+  // 도시 (국가 함께)
+  const cityMap = new Map<string, { city: string; country: string | null; count: number }>()
+  for (const r of inRange) {
+    if (!r.city) continue
+    const key = `${r.country ?? ''}|${r.city}`
+    const existing = cityMap.get(key)
+    if (existing) existing.count++
+    else cityMap.set(key, { city: r.city, country: r.country, count: 1 })
+  }
+  const cities = Array.from(cityMap.values()).sort((a, b) => b.count - a.count).slice(0, 12)
+
+  // 언어 Top
+  const langMap = new Map<string, number>()
+  for (const r of inRange) if (r.language) langMap.set(r.language, (langMap.get(r.language) ?? 0) + 1)
+  const languages = Array.from(langMap.entries())
+    .map(([language, count]) => ({ language, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8)
+
+  // 화면 해상도 Top (보기 좋게 묶기)
+  const resMap = new Map<string, number>()
+  for (const r of inRange) {
+    if (!r.screenWidth || !r.screenHeight) continue
+    const k = `${r.screenWidth} × ${r.screenHeight}`
+    resMap.set(k, (resMap.get(k) ?? 0) + 1)
+  }
+  const resolutions = Array.from(resMap.entries())
+    .map(([res, count]) => ({ res, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8)
+
+  // 참여도 — durationMs / scrollDepthPct 채워진 행만 평균
+  const dur = inRange.filter(r => r.durationMs !== null) as (Row & { durationMs: number })[]
+  const scr = inRange.filter(r => r.scrollDepthPct !== null) as (Row & { scrollDepthPct: number })[]
+  const avgDurationMs = dur.length > 0 ? Math.round(dur.reduce((s, r) => s + r.durationMs, 0) / dur.length) : 0
+  const avgScrollPct  = scr.length > 0 ? Math.round(scr.reduce((s, r) => s + r.scrollDepthPct, 0) / scr.length) : 0
+  const bounces = dur.filter(r => r.durationMs < 5000).length
+  const bounceRatePct = dur.length > 0 ? Math.round((bounces / dur.length) * 100) : 0
+  const engagement = {
+    avgDurationMs, avgScrollPct,
+    sampleCount: Math.max(dur.length, scr.length),
+    bounceRatePct,
+  }
 
   return {
     range, bucket, publicSlug: slug, publicUrl,
     totals: { today: todayCount, week: weekCount, month: monthCount, allTime: allTimeCount },
-    rangeViews, rangeVisitors,
-    trend, referrers, campaigns, hourly,
-    devices: { mobile, desktop },
+    rangeViews, rangeVisitors, engagement,
+    trend, referrers, channels, namedSources, campaigns, hourly,
+    deviceTypes, oses, browsers,
+    countries, cities, languages, resolutions,
     botCount,
   }
 }
