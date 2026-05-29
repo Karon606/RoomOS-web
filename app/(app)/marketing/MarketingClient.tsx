@@ -1,11 +1,33 @@
 'use client'
 
 import Link from 'next/link'
-import { type MarketingStats } from './actions'
+import { useState, useTransition } from 'react'
+import { getMarketingStats, type MarketingStats, type MarketingRange } from './actions'
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
 
-export default function MarketingClient({ stats }: { stats: MarketingStats }) {
+const RANGES: { key: MarketingRange; label: string; granularity: string }[] = [
+  { key: 'today', label: '오늘',  granularity: '시간별' },
+  { key: '7d',    label: '7일',   granularity: '일별' },
+  { key: '30d',   label: '30일',  granularity: '일별' },
+  { key: '90d',   label: '90일',  granularity: '일별' },
+  { key: '1y',    label: '1년',   granularity: '월별' },
+]
+
+export default function MarketingClient({ initialStats }: { initialStats: MarketingStats }) {
+  const [stats, setStats] = useState<MarketingStats>(initialStats)
+  const [range, setRange] = useState<MarketingRange>(initialStats.range)
+  const [pending, startTransition] = useTransition()
+
+  const handleRange = (r: MarketingRange) => {
+    if (r === range) return
+    setRange(r)
+    startTransition(async () => {
+      const fresh = await getMarketingStats(r)
+      setStats(fresh)
+    })
+  }
+
   if (!stats.publicSlug) {
     return (
       <div className="space-y-4">
@@ -27,12 +49,13 @@ export default function MarketingClient({ stats }: { stats: MarketingStats }) {
     )
   }
 
-  const dailyMax = Math.max(1, ...stats.dailyTrend.map(d => d.views))
+  const trendMax = Math.max(1, ...stats.trend.map(d => d.views))
   const hourMax  = Math.max(1, ...stats.hourly.map(h => h.count))
   const devTotal = stats.devices.mobile + stats.devices.desktop || 1
+  const currentRangeMeta = RANGES.find(r => r.key === range) ?? RANGES[2]
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" style={{ opacity: pending ? 0.6 : 1, transition: 'opacity 150ms' }}>
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>마케팅</h1>
@@ -45,12 +68,38 @@ export default function MarketingClient({ stats }: { stats: MarketingStats }) {
         </div>
         {stats.botCount > 0 && (
           <span className="text-[11px]" style={{ color: 'var(--warm-muted)' }}>
-            봇 트래픽 {fmt(stats.botCount)}건 제외
+            봇 {fmt(stats.botCount)}건 제외
           </span>
         )}
       </div>
 
-      {/* 총계 */}
+      {/* 범위 선택 */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {RANGES.map(r => {
+          const active = r.key === range
+          return (
+            <button
+              key={r.key}
+              type="button"
+              onClick={() => handleRange(r.key)}
+              disabled={pending}
+              className="px-3 py-1.5 text-xs rounded-lg transition-colors disabled:opacity-50"
+              style={{
+                background: active ? 'var(--persimmon)' : 'var(--cream)',
+                color: active ? '#fff' : 'var(--warm-mid)',
+                border: '1px solid ' + (active ? 'var(--persimmon)' : 'var(--warm-border)'),
+                fontWeight: active ? 600 : 500,
+              }}>
+              {r.label}
+            </button>
+          )
+        })}
+        <span className="text-[11px] ml-2" style={{ color: 'var(--warm-muted)' }}>
+          {currentRangeMeta.granularity}
+        </span>
+      </div>
+
+      {/* 누적 4 카드 (범위 무관, 참고용) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {[
           { label: '오늘',    v: stats.totals.today },
@@ -66,28 +115,54 @@ export default function MarketingClient({ stats }: { stats: MarketingStats }) {
         ))}
       </div>
 
-      {/* 일별 추이 (30일 막대) */}
-      <div className="rounded-xl p-4"
-        style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-        <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>일별 추이 (최근 30일)</p>
-        <div className="flex items-end gap-[3px] h-24">
-          {stats.dailyTrend.map((d, i) => {
-            const h = (d.views / dailyMax) * 100
-            return (
-              <div key={i} className="flex-1 flex flex-col justify-end items-center" title={`${d.date}: ${d.views}뷰 · ${d.visitors}명`}>
-                <div className="w-full rounded-t-sm"
-                  style={{ height: `${Math.max(2, h)}%`, background: 'var(--persimmon)' }} />
-              </div>
-            )
-          })}
+      {/* 범위 내 강조 카드 (총뷰 + 유니크 방문자) */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-xl p-4"
+          style={{ background: 'var(--persimmon)', color: '#fff' }}>
+          <p className="text-[11px] opacity-80">선택 범위 페이지뷰</p>
+          <p className="text-xl font-bold mt-1 tabular-nums">{fmt(stats.rangeViews)}</p>
         </div>
-        <div className="flex justify-between text-[10px] mt-1.5" style={{ color: 'var(--warm-muted)' }}>
-          <span>{stats.dailyTrend[0]?.date.slice(5)}</span>
-          <span>{stats.dailyTrend[stats.dailyTrend.length - 1]?.date.slice(5)}</span>
+        <div className="rounded-xl p-4"
+          style={{ background: 'var(--ink-2)', color: 'var(--sand)' }}>
+          <p className="text-[11px] opacity-80">유니크 방문자 (추정)</p>
+          <p className="text-xl font-bold mt-1 tabular-nums">{fmt(stats.rangeVisitors)}</p>
         </div>
       </div>
 
-      {/* 유입 출처 + 디바이스 (2칸 그리드) */}
+      {/* 트렌드 차트 (자동 세분도) */}
+      <div className="rounded-xl p-4"
+        style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+        <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>
+          추이 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>({currentRangeMeta.label} · {currentRangeMeta.granularity})</span>
+        </p>
+        {stats.trend.length === 0 ? (
+          <p className="text-xs text-center py-6" style={{ color: 'var(--warm-muted)' }}>데이터 없음</p>
+        ) : (
+          <>
+            <div className="flex items-end gap-[3px] h-28">
+              {stats.trend.map((d, i) => {
+                const h = (d.views / trendMax) * 100
+                return (
+                  <div key={i} className="flex-1 flex flex-col justify-end items-center"
+                    title={`${d.label}: ${d.views}뷰 · ${d.visitors}명`}>
+                    <div className="w-full rounded-t-sm"
+                      style={{ height: `${Math.max(2, h)}%`, background: 'var(--persimmon)' }} />
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex justify-between text-[10px] mt-1.5" style={{ color: 'var(--warm-muted)' }}>
+              <span>{stats.trend[0]?.label}</span>
+              {stats.trend.length > 2 && (
+                <span>{stats.trend[Math.floor(stats.trend.length / 2)]?.label}</span>
+              )}
+              <span>{stats.trend[stats.trend.length - 1]?.label}</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* 유입 출처 + 디바이스 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <div className="rounded-xl p-4"
           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
@@ -145,11 +220,11 @@ export default function MarketingClient({ stats }: { stats: MarketingStats }) {
         </div>
       </div>
 
-      {/* 시간대(0-23) 막대 */}
+      {/* 시간대(0-23) */}
       <div className="rounded-xl p-4"
         style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>
-          시간대 (KST 0-23시 누적)
+          시간대 분포 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(KST 0-23시 누적)</span>
         </p>
         <div className="flex items-end gap-[2px] h-20">
           {stats.hourly.map((h, i) => {
