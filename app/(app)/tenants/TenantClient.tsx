@@ -12,6 +12,7 @@ import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPayme
 import { calcProRata, PRORATE_BASE_DAYS } from '@/lib/prorate'
 import { Btn } from '@/components/ui/Btn'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
+import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { PhoneInput } from '@/components/ui/PhoneInput'
@@ -346,6 +347,7 @@ export default function TenantClient({
   const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
   const router = useRouter()
   const searchParams = useSearchParams()
+  const entityModal = useEntityModal()
 
   const initColVis = Object.fromEntries(
     COL_DEFS.map(c => [c.key, c.defaultOn])
@@ -2142,11 +2144,24 @@ export default function TenantClient({
                           수정
                         </Btn>
                       </div>
-                      <PrismNavBar current="tenant" links={{
-                        roomId: lease?.room?.id ?? null,
-                        tenantId: t.id,
-                        leaseTermId: lease?.id ?? null,
-                      }} />
+                      <PrismNavBar
+                        current="tenant"
+                        links={{
+                          roomId: lease?.room?.id ?? null,
+                          tenantId: t.id,
+                          leaseTermId: lease?.id ?? null,
+                        }}
+                        /* 2중 스택 회피 — 호실/수납 면으로 갈 때 자기 팝업을 먼저 닫고 셸을 연다. */
+                        onSelect={kind => {
+                          if (kind === 'tenant') return
+                          closeDetail()
+                          if (kind === 'room' && lease?.room?.id) {
+                            entityModal.open({ kind: 'room', roomId: lease.room.id })
+                          } else if (kind === 'payment' && lease?.id) {
+                            entityModal.open({ kind: 'payment', leaseTermId: lease.id })
+                          }
+                        }}
+                      />
                     </div>
                   </>
               )}

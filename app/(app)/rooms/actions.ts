@@ -1085,6 +1085,49 @@ export async function getTenantLeaseForDashboard(tenantId: string, targetMonth?:
   return { ...lease, carryOver }
 }
 
+// 풀 고객 상세 — Prism 셸의 kind='tenant' body 가 사용. quickInfo 대비 contacts 전체 필드·
+// lease 전체 필드(청소비·납부방식·전입신고·결제수단·현금영수증·방문경로·희망 호실·계약서 URL)·
+// 추가 정보·짧은 결제 요약(분석 탭) 포함.
+export async function getTenantDetail(tenantId: string) {
+  const supabase = await createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return null
+  return prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: {
+      id: true, name: true, englishName: true,
+      gender: true, nationality: true, job: true,
+      birthdate: true, isBasicRecipient: true, memo: true,
+      contacts: {
+        select: {
+          id: true, contactType: true, contactValue: true,
+          isPrimary: true, isEmergency: true, isHomeCountry: true,
+          emergencyRelation: true, countryCode: true,
+        },
+      },
+      leaseTerms: {
+        where: { status: { in: ['ACTIVE', 'RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
+        select: {
+          id: true, status: true, isShortTerm: true,
+          rentAmount: true, depositAmount: true, cleaningFee: true,
+          dueDay: true, paymentTiming: true,
+          moveInDate: true, moveOutDate: true, expectedMoveOut: true, inquiryAt: true,
+          registrationStatus: true, payMethod: true, cashReceipt: true,
+          visitRoute: true, wishRooms: true, wishConditions: true, contractUrl: true,
+          room: { select: { id: true, roomNo: true } },
+          paymentRecords: {
+            select: { id: true, expectedAmount: true, actualAmount: true, isPaid: true, payDate: true, targetMonth: true },
+            orderBy: { targetMonth: 'desc' },
+            take: 24,
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      },
+    },
+  })
+}
+
 export async function getTenantQuickInfo(tenantId: string) {
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()

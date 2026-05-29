@@ -12,6 +12,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
+import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { Loading } from '@/components/ui/Loading'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { formatPhone } from '@/lib/formatPhone'
@@ -237,6 +238,7 @@ export default function RoomsClient({
   const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
   const router = useRouter()
   const searchParams = useSearchParams()
+  const entityModal = useEntityModal()
   const [selectedRoom, setSelectedRoom] = useState<RoomStatus | null>(null)
   const [paymentHistory, setPaymentHistory] = useState<PaymentRecord[]>([])
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
@@ -1888,11 +1890,24 @@ export default function RoomsClient({
                       </Btn>
                     )}
                   </div>
-                  <PrismNavBar current="payment" links={{
-                    roomId: selectedRoom.roomId,
-                    tenantId: selectedRoom.tenantId ?? null,
-                    leaseTermId: selectedRoom.leaseTermId ?? null,
-                  }} />
+                  <PrismNavBar
+                    current="payment"
+                    links={{
+                      roomId: selectedRoom.roomId,
+                      tenantId: selectedRoom.tenantId ?? null,
+                      leaseTermId: selectedRoom.leaseTermId ?? null,
+                    }}
+                    /* 2중 스택 회피 — 호실/고객 면으로 갈 때 수납 팝업을 먼저 닫고 셸을 연다. */
+                    onSelect={kind => {
+                      if (kind === 'payment') return
+                      setShowPayModal(false); setShowPayForm(false)
+                      if (kind === 'room') {
+                        entityModal.open({ kind: 'room', roomId: selectedRoom.roomId })
+                      } else if (kind === 'tenant' && selectedRoom.tenantId) {
+                        entityModal.open({ kind: 'tenant', tenantId: selectedRoom.tenantId })
+                      }
+                    }}
+                  />
                 </div>
               </>
             )}
