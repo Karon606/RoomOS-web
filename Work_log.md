@@ -535,7 +535,32 @@
 - **사이드 효과**: room-manage 페이지에서 상세 팝업 열 때 잠깐 "불러오는 중…" 플리커 가능 — RoomDetailBody가 서버 액션 재fetch. 데이터 신선도는 +1(편집 후 즉시 반영), UX 살짝 -1. 거슬리면 `initial` prop 추가하는 후속 가능.
 - **남은 격차**: 헤더(호실번호+상태 뱃지)와 푸터(삭제·수정·PrismNavBar)는 여전히 페이지마다 직접 그림 — 본문만 통일. 다음 단계로 헤더/푸터까지 흡수하면 RoomDetailFull 카드 통째로 공유 가능. 수정·삭제 액션을 callback prop 으로 받는 패턴이면 EntityModal에서도 동일 풀팝업 가능.
 
-### N-3. Prism Phase 2.2 — 고객(Tenant) 풀팝업 추출 (예정)
+### N-2b. Prism Phase 2.2 — 위젯 모델 + PrismShell + room-manage 마이그레이션 (2026-05-30)
+
+- **멘탈 모델 전환**: "페이지 종속 팝업" → "데이터 조합으로 발현되는 뷰". 원자 단위 위젯(InfoRow·PhotoStrip 등)을 entity·view 별로 조합. 페이지가 데이터 소유 X.
+- **2중 스택 해소(부분)**: PrismShell 안 PrismNavBar 클릭이 **인플레이스 body 교체** → 같은 셸 안에서 면만 바뀜. room-manage 카드 클릭 진입 → 셸이 곧장 뜸(자체 모달 없음). Phase 2.3/2.4 에서 tenant·rooms 도 셸로 이주하면 2중 스택 완전 제거.
+- **신규 위젯 (components/entity-modal/widgets/)**:
+  · `InfoRow` — 모든 entity 공유 표시 한 줄
+  · `PhotoStrip` — 사진 가로 스트립 + 풀스크린 Lightbox(키보드·스와이프·Drive 원본). 호실 외 entity 사진도 재사용 가능
+  · `RoomBasicInfo` — 상태·입주자·타입·등급·기본/예약/비거주 이용료 + 예정 즉시 적용 버튼 (콜백 prop)
+  · `RoomSpatialInfo` — 층·창문·방향·면적
+  · `MemoSection` — 메모(빈 값 시 미렌더)
+- **신규 body (components/entity-modal/bodies/)**: `RoomBody` — 호실 위젯들의 조합. 자체 getRoomDetail fetch.
+- **PrismNavBar 확장**: `onSelect` 옵셔널 prop. 셸 내부에선 인플레이스 전환, 페이지 자체 팝업 안에선 entityModal.open() 폴백.
+- **EntityModal → PrismShellView 패턴**: kind 라우팅 + footer 액션 행([삭제][수정] for room) + PrismNavBar(onSelect={setKind}). 호실 액션은 셸이 직접 처리 — 삭제(deleteRoom + router.refresh), 예정 즉시 적용(applyScheduledRentNow + router.refresh), 수정(`/room-manage?roomId=X&edit=1` 로 push + close). Tenant/Payment 면은 기존 미니 요약 + 딥링크 유지(Phase 2.3/2.4 에서 위젯화).
+- **RoomManageClient 마이그레이션**:
+  · 인라인 상세 모달 JSX 완전 제거(~50줄)
+  · `detailRoom` state, `closeDetail`, `handleDelete`, `handleApplyScheduledNow` 함수 제거
+  · 카드 클릭 → `entityModal.open({kind:'room', roomId})`
+  · URL `?roomId=X` → 셸 열림, `?roomId=X&edit=1` → `openEdit(found)` 직접 (편집 폼은 페이지 종속 잔존)
+  · deleteRoom/applyScheduledRentNow import 제거 (셸이 사용)
+  · 1368 → 1297줄 (-71)
+- **RoomDetailBody.tsx 삭제** — 위젯 조합(RoomBody)로 대체.
+- **검증**: `npx tsc --noEmit` 통과.
+- **사용자 시점 변화**: 호실 관리 카드 클릭 → 동일한 콘텐츠가 PrismShell 로 뜸(헤더·푸터 통일됨). 인플레이스 [고객][수납] 전환 시 새 모달 안 뜨고 같은 셸의 body 만 부드럽게 갈아끼움(2중 스택 X). 수정 누르면 `/room-manage?roomId=X&edit=1` 로 push → 편집 폼 자동 열림(같은 페이지면 무이동, 다른 페이지면 일시 배경 전환 — Phase 2.5 에서 위젯 편집 모드로 흡수 예정).
+- **남은 한계**: tenant·rooms 페이지의 자체 팝업 안에서 PrismNavBar 클릭은 여전히 셸을 그 위에 띄움(2중 스택 잔존). Phase 2.3/2.4 가 해소.
+
+### N-3. Prism Phase 2.3 — 고객(Tenant) 위젯화 + 셸 이주 (예정)
 - TenantClient 상세 팝업 ~510줄. 탭 3개(상세/요청·컴플레인/AI), 편집 모드, 퇴실예정·비거주 전환 액션.
 - RoomDetailBody 패턴 그대로 — TenantDetailBody에 fetch+탭+읽기 표시. 편집은 callback prop.
 - 위험: 폼 상태 동기화, 회귀 가능. 데이터는 안 깨짐.

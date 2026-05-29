@@ -2,8 +2,11 @@
 
 // Prism 공통 하단 네비 — 어느 상세 팝업에서 보든 같은 자리·같은 모양·같은 순서.
 // 현재 면(호실/고객/수납)은 Terracotta 강조, 연결 대상이 없으면 disabled.
-// 클릭 시 entityModal.open() — Phase 2에서 각 페이지의 풀 상세 팝업 추출 후
-// 클릭 대상이 진짜 풀 팝업으로 바뀐다. 현재는 간이 EntityModal 로 폴백.
+//
+// 두 가지 모드:
+//  · onSelect 제공 → "인플레이스 전환" — 같은 셸 안에서 body 만 갈아끼움 (2중 스택 X). PrismShell 안에서 쓰인다.
+//  · onSelect 미제공 → entityModal.open() 호출 — 페이지 자체 팝업 위에 셸이 새로 뜸 (현재 페이지 팝업의 기본 동작).
+// Phase 2.3/2.4 에서 페이지 팝업들이 PrismShell 로 이주하면 onSelect 모드만 남는다.
 
 import { useEntityModal } from './EntityModal'
 
@@ -14,25 +17,24 @@ export type PrismLinks = {
   leaseTermId?: string | null
 }
 
-export function PrismNavBar({ current, links }: { current: PrismCurrent; links: PrismLinks }) {
+export function PrismNavBar({ current, links, onSelect }: {
+  current: PrismCurrent
+  links: PrismLinks
+  onSelect?: (kind: PrismCurrent) => void
+}) {
   const entityModal = useEntityModal()
 
-  const items: { kind: PrismCurrent; label: string; enabled: boolean; onClick: () => void }[] = [
-    {
-      kind: 'room', label: '호실',
-      enabled: !!links.roomId,
-      onClick: () => entityModal.open({ kind: 'room', roomId: links.roomId ?? undefined }),
-    },
-    {
-      kind: 'tenant', label: '고객',
-      enabled: !!links.tenantId,
-      onClick: () => entityModal.open({ kind: 'tenant', tenantId: links.tenantId ?? undefined }),
-    },
-    {
-      kind: 'payment', label: '수납',
-      enabled: !!links.leaseTermId,
-      onClick: () => entityModal.open({ kind: 'payment', leaseTermId: links.leaseTermId ?? undefined }),
-    },
+  const handle = (kind: PrismCurrent) => {
+    if (onSelect) { onSelect(kind); return }
+    if (kind === 'room')         entityModal.open({ kind: 'room',    roomId:      links.roomId ?? undefined })
+    else if (kind === 'tenant')  entityModal.open({ kind: 'tenant',  tenantId:    links.tenantId ?? undefined })
+    else                          entityModal.open({ kind: 'payment', leaseTermId: links.leaseTermId ?? undefined })
+  }
+
+  const items: { kind: PrismCurrent; label: string; enabled: boolean }[] = [
+    { kind: 'room',    label: '호실', enabled: !!links.roomId },
+    { kind: 'tenant',  label: '고객', enabled: !!links.tenantId },
+    { kind: 'payment', label: '수납', enabled: !!links.leaseTermId },
   ]
 
   return (
@@ -44,7 +46,7 @@ export function PrismNavBar({ current, links }: { current: PrismCurrent; links: 
             key={it.kind}
             type="button"
             disabled={!it.enabled || isCurrent}
-            onClick={it.onClick}
+            onClick={() => handle(it.kind)}
             aria-current={isCurrent ? 'page' : undefined}
             className={`flex-1 px-3 py-2 text-xs font-semibold rounded-lg transition-colors disabled:cursor-default ${
               isCurrent

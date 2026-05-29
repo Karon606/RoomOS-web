@@ -2,14 +2,13 @@
 
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addRoom, updateRoom, deleteRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, applyScheduledRentNow, batchUpdateRooms } from './actions'
+import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, batchUpdateRooms } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
-import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
-import { RoomDetailBody } from '@/components/entity-modal/RoomDetailBody'
+import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { Loading } from '@/components/ui/Loading'
 import { Modal as SharedModal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
@@ -187,7 +186,6 @@ export default function RoomManageClient({
   }
 
   // 모달 상태
-  const [detailRoom, setDetailRoom]   = useState<Room | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editRoom, setEditRoom]         = useState<Room | null>(null)
   const [rentUpdateDateVal, setRentUpdateDateVal] = useState('')
@@ -202,13 +200,16 @@ export default function RoomManageClient({
   const [addNrEnabled, setAddNrEnabled]   = useState(false)
   const [addNrDateVal, setAddNrDateVal]   = useState('')
 
-  // URL ?roomId=xxx로 진입 시 해당 호실 상세 팝업 자동 열기
+  // URL ?roomId=xxx 자동 열기 — ?edit=1 면 편집 폼, 아니면 Prism 셸의 호실 면.
   const searchParams = useSearchParams()
   useEffect(() => {
     const roomId = searchParams.get('roomId')
     if (!roomId) return
     const found = initialRooms.find(r => r.id === roomId)
-    if (found) setDetailRoom(found)
+    if (!found) return
+    if (searchParams.get('edit') === '1') openEdit(found)
+    else entityModal.open({ kind: 'room', roomId })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, initialRooms])
   // 라이트박스 (사진 확대 보기)
 
@@ -233,22 +234,11 @@ export default function RoomManageClient({
   const [error, setError]   = useState('')
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
+  const entityModal = useEntityModal()
   const photoInputRef    = useRef<HTMLInputElement>(null)
   const addPhotoInputRef = useRef<HTMLInputElement>(null)
 
-  const handleApplyScheduledNow = (room: Room) => {
-    if (room.scheduledRent == null) return
-    const diff = room.scheduledRent - room.baseRent
-    const dirLabel = diff > 0 ? '인상' : diff < 0 ? '인하' : '동결'
-    const ok = confirm(`${fmtRoomNo(room.roomNo)} 예정 가격을 즉시 적용할까요?\n\n기존 ${room.baseRent.toLocaleString()}원 → ${dirLabel} ${room.scheduledRent.toLocaleString()}원`)
-    if (!ok) return
-    startTransition(async () => {
-      const res = await withSave(() => applyScheduledRentNow(room.id), { success: '예정 가격 적용됨' })
-      if (!res.ok) { setError(res.error); return }
-      setDetailRoom(null)
-      router.refresh()
-    })
-  }
+  // handleApplyScheduledNow 는 Prism 셸 (EntityModal) 이 자체 처리. 페이지 레벨에서 제거.
 
   const currentTenant = (room: Room) => room.leaseTerms[0]?.tenant?.name ?? null
 
@@ -289,10 +279,8 @@ export default function RoomManageClient({
 
   // ── 핸들러 ────────────────────────────────────────────────────────
 
-  const closeDetail = () => { setDetailRoom(null); setError('') }
-
   const openEdit = (room: Room) => {
-    setDetailRoom(null)
+    entityModal.close()
     setEditRoom(room)
     setEditPhotos(room.photos)
     setEditFloorVal(room.floor ?? '')
@@ -392,16 +380,7 @@ export default function RoomManageClient({
     })
   }
 
-  const handleDelete = async (id: string, roomNo: string) => {
-    if (!confirm(`${fmtRoomNo(roomNo)}를 삭제하시겠습니까?`)) return
-    setError('')
-    startTransition(async () => {
-      const res = await withSave(() => deleteRoom(id), { success: `${fmtRoomNo(roomNo)} 삭제됨` })
-      if (!res.ok) { setError(res.error); return }
-      closeDetail()
-      window.location.reload()
-    })
-  }
+  // handleDelete 는 Prism 셸(EntityModal)이 자체 처리.
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!editRoom || !e.target.files?.length) return
@@ -731,7 +710,7 @@ export default function RoomManageClient({
                 selected={selected}
                 tipColor={tipTone ? statusTipColor(tipTone) : undefined}
                 tipBg={tipTone ? statusRowTint(tipTone) : undefined}
-                onClick={() => selectMode ? toggleSelectRoom(room.id) : (setDetailRoom(room), setError(''))}
+                onClick={() => selectMode ? toggleSelectRoom(room.id) : (entityModal.open({ kind: 'room', roomId: room.id }), setError(''))}
                 className="overflow-hidden flex items-stretch">
                 {/* 정보 */}
                 <div className="flex-1 p-4 min-w-0 space-y-1">
@@ -797,57 +776,7 @@ export default function RoomManageClient({
         </div>
       )}
 
-      {/* ── 상세 모달 ───────────────────────────────────────────────── */}
-      {detailRoom && (() => {
-        const r = detailRoom
-        return (
-          <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
-            onClick={closeDetail}>
-            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
-              onClick={e => e.stopPropagation()}>
-
-              {/* 헤더 */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <h2 className="text-base font-bold text-[var(--warm-dark)]">{fmtRoomNo(r.roomNo)}</h2>
-                  {(() => { const rs = getRoomStatus(r); return rs.badge
-                    ? <StatusBadge tone={rs.badge.tone}>{rs.badge.label}</StatusBadge>
-                    : <span className="text-xs font-medium text-[var(--warm-mid)]">{rs.label}</span>
-                  })()}
-                </div>
-                <button onClick={closeDetail} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
-              </div>
-
-              {/* 바디 — Prism 공유 RoomDetailBody (사진 슬라이더+라이트박스+정보행) */}
-              <div className="flex-1 overflow-y-auto px-6 py-5">
-                <RoomDetailBody roomId={r.id} onApplyScheduledNow={() => handleApplyScheduledNow(r)} />
-              </div>
-
-              {/* 푸터 — Prism: 액션 행 + 공통 네비 행 */}
-              <div className="border-t border-[var(--warm-border)] px-6 py-3 shrink-0 space-y-2">
-                <div className="flex gap-2 flex-wrap items-center">
-                  <button
-                    onClick={() => handleDelete(r.id, r.roomNo)}
-                    disabled={r.leaseTerms.length > 0 || isPending}
-                    title={r.leaseTerms.length > 0 ? '입주자(예약 포함)가 있는 호실은 삭제할 수 없습니다' : ''}
-                    className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                    삭제
-                  </button>
-                  <div className="flex-1" />
-                  <Btn variant="primary" size="md" onClick={() => openEdit(r)}>
-                    수정
-                  </Btn>
-                </div>
-                <PrismNavBar current="room" links={{
-                  roomId: r.id,
-                  tenantId: r.leaseTerms[0]?.tenant?.id ?? null,
-                  leaseTermId: r.leaseTerms[0]?.id ?? null,
-                }} />
-              </div>
-            </div>
-          </div>
-        )
-      })()}
+      {/* 상세 모달은 전역 Prism 셸(EntityModal)이 담당. 카드 클릭이 entityModal.open() 호출 */}
 
       {/* ── 배치 편집 모달 ─────────────────────────────────────────────── */}
       {showBatchEdit && (
