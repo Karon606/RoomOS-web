@@ -9,6 +9,7 @@ import { Loading } from '@/components/ui/Loading'
 import { DatePicker } from '@/components/ui/DatePicker'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { getTrendData, type TrendRange, type TrendPoint } from './actions'
+import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -56,7 +57,7 @@ export type DashboardData = {
   genderDist:        { label: string; count: number; percent: number }[]
   nationalityDist:   { label: string; count: number; percent: number }[]
   jobDist:           { label: string; count: number; percent: number }[]
-  rooms:             { roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; nonResidentName: string | null; nonResidentId: string | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
+  rooms:             { id: string; roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; nonResidentName: string | null; nonResidentId: string | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
   nonResidentItems:  { roomNo: string; tenantId: string; tenantName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid' }[]
   alerts:            { category?: 'unpaid' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string; sortKey?: number }[]
   expectedExpense:   number
@@ -1693,94 +1694,8 @@ function DashEditRow({ editAmount, editDate, editPayMethod, editMemo, setEditAmo
 
 // ── 방 상세 팝업 ─────────────────────────────────────────────────
 
-function RoomDetailPopup({ room, onClose, onOpenPayment, onOpenTenantInfo }: {
-  room: DashboardData['rooms'][number]
-  onClose: () => void
-  onOpenPayment: (tenantId: string) => void
-  onOpenTenantInfo: (tenantId: string) => void
-}) {
-  return (
-    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
-      onClick={onClose}>
-      <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-xs overflow-hidden"
-        onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
-          <div className="flex items-center gap-2">
-            <span className="text-base font-bold text-[var(--warm-dark)]">{fmtRoomNo(room.roomNo)}</span>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium
-              ${room.isVacant ? 'bg-[var(--canvas)] text-[var(--warm-mid)]' : 'bg-[var(--coral)]/20 text-[var(--coral)]'}`}>
-              {room.isVacant ? '공실' : (DASH_STATUS_LABEL[room.tenantStatus ?? ''] ?? '거주중')}
-            </span>
-          </div>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-lg leading-none">✕</button>
-        </div>
-        <div className="px-5 py-4 space-y-2 text-sm">
-          {room.tenantName && (
-            <div className="flex justify-between">
-              <span className="text-[var(--warm-muted)]">입주자</span>
-              <span className="font-medium text-[var(--warm-dark)]">{room.tenantName}</span>
-            </div>
-          )}
-          {room.type && (
-            <div className="flex justify-between">
-              <span className="text-[var(--warm-muted)]">타입</span>
-              <span className="text-[var(--warm-dark)]">{room.type}</span>
-            </div>
-          )}
-          {room.windowType && (
-            <div className="flex justify-between">
-              <span className="text-[var(--warm-muted)]">창문</span>
-              <span className="text-[var(--warm-dark)]">{DASH_WINDOW_LABEL[room.windowType] ?? room.windowType}</span>
-            </div>
-          )}
-          {room.direction && (
-            <div className="flex justify-between">
-              <span className="text-[var(--warm-muted)]">방향</span>
-              <span className="text-[var(--warm-dark)]">{DASH_DIR_LABEL[room.direction] ?? room.direction}</span>
-            </div>
-          )}
-          {(room.areaPyeong || room.areaM2) && (
-            <div className="flex justify-between">
-              <span className="text-[var(--warm-muted)]">면적</span>
-              <span className="text-[var(--warm-dark)]">
-                {[room.areaPyeong ? `${room.areaPyeong}평` : null, room.areaM2 ? `${room.areaM2}㎡` : null].filter(Boolean).join(' / ')}
-              </span>
-            </div>
-          )}
-          <div className="flex justify-between border-t border-[var(--warm-border)] pt-2 mt-1">
-            <span className="text-[var(--warm-muted)]">기본 이용료</span>
-            <span className="font-semibold text-[var(--warm-dark)]">{room.baseRent.toLocaleString()}원</span>
-          </div>
-          {room.scheduledRent && (
-            <div className="flex justify-between">
-              <span className="text-[var(--warm-muted)]">예약 이용료</span>
-              <span className="font-semibold" style={{ color: 'var(--coral)' }}>
-                {room.scheduledRent.toLocaleString()}원
-                {room.rentUpdateDate && <span className="text-[0.625rem] font-normal ml-1 opacity-70">({room.rentUpdateDate} 적용)</span>}
-              </span>
-            </div>
-          )}
-        </div>
-        {room.tenantId && (
-          <div className="px-5 pb-4 flex flex-col gap-2">
-            <button
-              onClick={() => { onOpenPayment(room.tenantId!); onClose() }}
-              className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-colors hover:bg-[var(--canvas)]"
-              style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-              호실 수납 관리 →
-            </button>
-            <button
-              onClick={() => { onOpenTenantInfo(room.tenantId!); onClose() }}
-              className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-colors hover:bg-[var(--canvas)]"
-              style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-              입주자 정보 보기 →
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
+// RoomDetailPopup 제거됨 (2026-05-29) — 대시보드 방 현황 클릭은 전역 EntityModal(Pivot)로 일원화.
+// 호실/고객/수납 탭이 모든 진입점에서 동일한 라벨·위치·모양·순서 + 현재 탭만 Terracotta 강조.
 
 // ── 입주자 빠른 정보 모달 ─────────────────────────────────────────
 
@@ -1940,7 +1855,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
     ? '오늘 기준'
     : `${Number(targetMonth.slice(5))}월 말일 기준`
   const [tab, setTab]                             = useState<Tab>('overview')
-  const [selectedRoom, setSelectedRoom]           = useState<DashboardData['rooms'][number] | null>(null)
+  // 호실 클릭 → 통합 EntityModal(Pivot) 으로 열기 (공실은 호실 탭만 활성, 고객·수납은 비활성으로 통일)
+  const entityModal = useEntityModal()
   const [dashTenantId, setDashTenantId]           = useState<string | null>(null)
   const [tenantInfoId, setTenantInfoId]           = useState<string | null>(null)
   const [selectedAlert, setSelectedAlert]         = useState<AlertItem | null>(null)
@@ -2290,7 +2206,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               return (
                                 <div
                                   key={r.roomNo}
-                                  onClick={() => setSelectedRoom(r)}
+                                  onClick={() => entityModal.open({ kind: 'room', roomId: r.id })}
                                   className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[3px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
                                   style={cellStyle}
                                 >
@@ -2635,14 +2551,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         </div>
       </div>
 
-      {selectedRoom && (
-        <RoomDetailPopup
-          room={selectedRoom}
-          onClose={() => setSelectedRoom(null)}
-          onOpenPayment={id => { setSelectedRoom(null); setDashTenantId(id) }}
-          onOpenTenantInfo={id => { setSelectedRoom(null); setTenantInfoId(id) }}
-        />
-      )}
+      {/* RoomDetailPopup 제거됨 — 호실 클릭은 EntityModal(Pivot)로 일원화 (호실/고객/수납 통일된 탭) */}
       {selectedAlert && (
         <AlertDetailModal
           alert={selectedAlert}

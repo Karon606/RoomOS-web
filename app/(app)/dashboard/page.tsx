@@ -236,6 +236,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     prisma.room.findMany({
       where: { propertyId },
       select: {
+        id: true,
         roomNo: true,
         isVacant: true,
         type: true,
@@ -747,6 +748,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   // ── 방 현황 그리드 ───────────────────────────────────────────
   const roomsData = roomsWithTenants.map(r => ({
+    id:            r.id,
     roomNo:        r.roomNo,
     isVacant:      r.isVacant,
     type:          r.type,
