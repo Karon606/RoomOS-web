@@ -11,9 +11,10 @@ import { Btn } from '@/components/ui/Btn'
 import { Modal } from '@/components/ui/Modal'
 import { kstMonthStr } from '@/lib/kstDate'
 import {
-  getEntityLinks, getRoomQuickInfo, getTenantQuickInfo, getLeaseSettlementInfo, getPaymentsByLease,
+  getEntityLinks, getTenantQuickInfo, getLeaseSettlementInfo, getPaymentsByLease,
 } from '@/app/(app)/rooms/actions'
 import { STATUS_LABEL } from '@/lib/statusColors'
+import { RoomDetailBody } from './RoomDetailBody'
 
 type EntityKind = 'room' | 'tenant' | 'payment'
 type Seed = { kind: EntityKind; roomId?: string | null; tenantId?: string | null; leaseTermId?: string | null }
@@ -106,7 +107,7 @@ function EntityModalView({ kind, links, setKind, onClose }: {
       }
     >
       <div className="px-5 sm:px-6 py-4">
-        {kind === 'room'    && (hasRoom   ? <RoomView roomId={links!.roomId!} /> : <Empty label="연결된 호실이 없습니다." />)}
+        {kind === 'room'    && (hasRoom   ? <RoomDetailBody roomId={links!.roomId!} /> : <Empty label="연결된 호실이 없습니다." />)}
         {kind === 'tenant'  && (hasTenant ? <TenantView tenantId={links!.tenantId!} /> : <Empty label="연결된 고객이 없습니다." />)}
         {kind === 'payment' && (hasPay    ? <PaymentView leaseTermId={links!.leaseTermId!} month={month} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
       </div>
@@ -123,29 +124,7 @@ const Row = ({ k, v }: { k: string; v: React.ReactNode }) => (
   </div>
 )
 
-function RoomView({ roomId }: { roomId: string }) {
-  const [info, setInfo] = useState<Awaited<ReturnType<typeof getRoomQuickInfo>> | null>(null)
-  useEffect(() => { let a = true; getRoomQuickInfo(roomId).then(d => { if (a) setInfo(d) }); return () => { a = false } }, [roomId])
-  if (!info) return <Loading />
-  return (
-    <div className="space-y-3">
-      {info.photos.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
-          {info.photos.map(p => <img key={p.id} src={p.storageUrl} alt="" className="h-28 w-28 object-cover rounded-xl shrink-0" />)}
-        </div>
-      )}
-      <div>
-        <Row k="상태" v={info.isVacant ? '공실' : '거주중'} />
-        <Row k="입주자" v={info.leaseTerms[0]?.tenant?.name ?? '공실'} />
-        {info.type && <Row k="방 타입" v={info.type} />}
-        <Row k="기본 이용료" v={fmtWon(info.baseRent)} />
-        {info.scheduledRent != null && <Row k="예약 이용료" v={fmtWon(info.scheduledRent)} />}
-        {info.direction && <Row k="방향" v={info.direction} />}
-        {info.memo && <Row k="메모" v={info.memo} />}
-      </div>
-    </div>
-  )
-}
+// RoomView 미니 요약은 RoomDetailBody (풀팝업 본문) 으로 대체됨 (Phase 2.1).
 
 function TenantView({ tenantId }: { tenantId: string }) {
   const [info, setInfo] = useState<Awaited<ReturnType<typeof getTenantQuickInfo>> | null>(null)

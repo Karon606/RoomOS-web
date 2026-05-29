@@ -11,7 +11,7 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
-import { useEntityModal } from '@/components/entity-modal/EntityModal'
+import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
 import { Loading } from '@/components/ui/Loading'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { formatPhone } from '@/lib/formatPhone'
@@ -237,7 +237,6 @@ export default function RoomsClient({
   const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
   const router = useRouter()
   const searchParams = useSearchParams()
-  const entityModal = useEntityModal()
   const [selectedRoom, setSelectedRoom] = useState<RoomStatus | null>(null)
   const [paymentHistory, setPaymentHistory] = useState<PaymentRecord[]>([])
   const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
@@ -1833,74 +1832,67 @@ export default function RoomsClient({
                   </div>
                 )}
 
-                {/* 읽기 전용 푸터 */}
-                <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0 flex-wrap items-center">
-                  {canEdit && selectedRoom.leaseTermId && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-[0.625rem] text-[var(--warm-muted)]">양도인 메뉴</span>
-                      <select
-                        value={prevOwnerMenuMode}
-                        onChange={e => {
-                          const mode = e.target.value as 'auto' | 'show' | 'hide'
-                          setPrevOwnerMenuMode(mode)
+                {/* 읽기 전용 푸터 — Prism: 액션 행 + 공통 네비 행 */}
+                <div className="border-t border-[var(--warm-border)] px-6 py-3 shrink-0 space-y-2">
+                  <div className="flex gap-2 flex-wrap items-center">
+                    {canEdit && selectedRoom.leaseTermId && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-[0.625rem] text-[var(--warm-muted)]">양도인 메뉴</span>
+                        <select
+                          value={prevOwnerMenuMode}
+                          onChange={e => {
+                            const mode = e.target.value as 'auto' | 'show' | 'hide'
+                            setPrevOwnerMenuMode(mode)
+                            startTransition(async () => {
+                              const release = trackSave()
+                              try {
+                                await setPrevOwnerSettleMenu(selectedRoom.leaseTermId!, mode)
+                                const s = await getPrevOwnerSettleState(selectedRoom.leaseTermId!, targetMonth)
+                                setPrevOwnerCanSettle(s.canSettle)
+                                pushToast('success', '양도인 정산 메뉴 설정 변경됨')
+                              } finally { release() }
+                            })
+                          }}
+                          className="text-[0.625rem] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-1.5 py-1 text-[var(--warm-dark)] outline-none">
+                          <option value="auto">자동</option>
+                          <option value="show">항상 표시</option>
+                          <option value="hide">숨김</option>
+                        </select>
+                      </div>
+                    )}
+                    <div className="flex-1" />
+                    {canEdit && prevOwnerCanSettle && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!selectedRoom.leaseTermId) return
+                          if (!confirm(`${Number(targetMonth.slice(5))}월 임대료를 양도인 정산으로 처리할까요?\n이 달은 현 소유주 미납·매출 집계에서 제외됩니다.`)) return
                           startTransition(async () => {
                             const release = trackSave()
                             try {
-                              await setPrevOwnerSettleMenu(selectedRoom.leaseTermId!, mode)
-                              const s = await getPrevOwnerSettleState(selectedRoom.leaseTermId!, targetMonth)
-                              setPrevOwnerCanSettle(s.canSettle)
-                              pushToast('success', '양도인 정산 메뉴 설정 변경됨')
+                              const res = await savePrevOwnerSettle(selectedRoom.leaseTermId!, targetMonth)
+                              if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+                              pushToast('success', '양도인 정산 처리됨')
+                              setShowPayModal(false)
+                              router.refresh()
                             } finally { release() }
                           })
                         }}
-                        className="text-[0.625rem] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-1.5 py-1 text-[var(--warm-dark)] outline-none">
-                        <option value="auto">자동</option>
-                        <option value="show">항상 표시</option>
-                        <option value="hide">숨김</option>
-                      </select>
-                    </div>
-                  )}
-                  {selectedRoom.tenantId && (
-                    <button
-                      type="button"
-                      onClick={() => entityModal.open({ kind: 'tenant', tenantId: selectedRoom.tenantId! })}
-                      className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                      입주자 정보
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => entityModal.open({ kind: 'room', roomId: selectedRoom.roomId })}
-                    className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                    호실 정보
-                  </button>
-                  <div className="flex-1" />
-                  {canEdit && prevOwnerCanSettle && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!selectedRoom.leaseTermId) return
-                        if (!confirm(`${Number(targetMonth.slice(5))}월 임대료를 양도인 정산으로 처리할까요?\n이 달은 현 소유주 미납·매출 집계에서 제외됩니다.`)) return
-                        startTransition(async () => {
-                          const release = trackSave()
-                          try {
-                            const res = await savePrevOwnerSettle(selectedRoom.leaseTermId!, targetMonth)
-                            if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-                            pushToast('success', '양도인 정산 처리됨')
-                            setShowPayModal(false)
-                            router.refresh()
-                          } finally { release() }
-                        })
-                      }}
-                      className="px-3 py-2 text-xs font-medium rounded-lg bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors">
-                      양도인 정산
-                    </button>
-                  )}
-                  {canEdit && (
-                    <Btn variant="primary" size="md" onClick={() => { setShowPayForm(true); setError('') }}>
-                      수납 등록
-                    </Btn>
-                  )}
+                        className="px-3 py-2 text-xs font-medium rounded-lg bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors">
+                        양도인 정산
+                      </button>
+                    )}
+                    {canEdit && (
+                      <Btn variant="primary" size="md" onClick={() => { setShowPayForm(true); setError('') }}>
+                        수납 등록
+                      </Btn>
+                    )}
+                  </div>
+                  <PrismNavBar current="payment" links={{
+                    roomId: selectedRoom.roomId,
+                    tenantId: selectedRoom.tenantId ?? null,
+                    leaseTermId: selectedRoom.leaseTermId ?? null,
+                  }} />
                 </div>
               </>
             )}

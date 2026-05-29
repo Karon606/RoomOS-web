@@ -494,6 +494,57 @@
   · ✅ 배포됨 (main `d948453`).
 - 참고: Brand Guide v1.1/v1.2 리스킨([[project_status_colors_pending]])과 색·radius는 별개로 진행 가능(IA 우선).
 
+### N. Prism(프리즘) 본질화 — Phase 1: 공통 하단 네비 통일 (2026-05-30)
+
+- **맥락**: 회전 애니메이션 시도(3D rotateY) 했으나 "휙휙 도는 느낌 전혀 안 남" → 폐기. 본질 재정의:
+  Prism = 어디 페이지서 상세 팝업을 열든 **하단에 같은 자리·같은 모양·같은 순서의 3버튼**(호실/고객/수납),
+  현재 면은 Terracotta 강조, 연결 대상 없으면 비활성. 안드로이드 시스템 바처럼 어딜 가나 유지.
+  스샷에서 확인된 격차: 고객=[삭제][수납정보][호실정보][계약서출력][수정], 호실=[삭제][입주자정보][수납정보][수정],
+  수납=[양도인메뉴][입주자정보][호실정보][양도인정산][수납등록] — 라벨·순서·강조·위치 다 다름.
+- **Phase 1 (UI 통일만, 클릭 동작은 기존 entityModal.open() 유지)**:
+  · 신규 [components/entity-modal/PrismNavBar.tsx](components/entity-modal/PrismNavBar.tsx) — 3버튼 공통(호실/고객/수납),
+    `current`·`links`(roomId/tenantId/leaseTermId) prop. 현재 면 disabled+Terracotta, 비활성 면 disabled+opacity-40.
+  · [TenantClient.tsx:2123-2150](app/(app)/tenants/TenantClient.tsx#L2123-L2150) — 푸터 2줄(액션[삭제·계약서출력·수정] + PrismNavBar current="tenant").
+    useEntityModal 직접 호출 제거(PrismNavBar 내부에서 처리).
+  · [RoomManageClient.tsx:897-919](app/(app)/room-manage/RoomManageClient.tsx#L897-L919) — 푸터 2줄(액션[삭제·수정] + PrismNavBar current="room").
+  · [RoomsClient.tsx:1836-1905](app/(app)/rooms/RoomsClient.tsx#L1836-L1905) — 푸터 2줄(액션[양도인메뉴·양도인정산·수납등록] + PrismNavBar current="payment").
+  · EntityModal 자체 내부 navBtn은 시각 동일(같은 클래스·순서) — `setKind` 인플레이스 전환이라 PrismNavBar로 치환하면 매 클릭 재페치 회귀.
+    Phase 1에선 시각 통일만 목표라 그대로 두고, Phase 2 풀팝업 추출 단계에서 자연 정리.
+  · 타입체크 클린(npx tsc --noEmit, .next 자동생성 제외).
+- **남은 격차(Phase 2/3 — 본질의 본질)**:
+  사용자 비전 = 클릭 시 그 면의 **진짜 풀 팝업**이 그 자리에 뜸(현재처럼 미니 요약 EntityModal이 아니라).
+  뒷 배경은 처음 들어온 페이지 유지(닫으면 그 페이지로). 이를 위해서는 각 페이지의 풀 상세 팝업
+  (Tenant 상세 ~510줄·Room 상세 ~127줄·Payment 상세 ~660줄)을 페이지 비종속 공유 컴포넌트로 추출 필요.
+  Payment는 결제 정확성·양도인 정산·임시조정 등 얽힘 커서 [[project_entity_modal]]의 "2b 고위험" 그대로 — 신중한 세션에서.
+  Tenant/Room부터 단계 분할 가능.
+- **GUI 확인 미수행**: 세션 dev 서버 미가동, 실기기 또는 다음 세션에서 세 페이지 모두 동일 하단바인지 시각 확인 필요.
+
+### N-2. Prism Phase 2.1 — 호실 풀팝업 본문 통일 (2026-05-30)
+
+- **목표**: Phase 1의 "버튼만 통일"을 넘어 본질 — **면 클릭 = 그 entity의 진짜 풀팝업 본문이 그 자리에 뜸**. 호실(저위험·~127줄)부터 진행. 고객·수납은 차후.
+- **공유 데이터**: [rooms/actions.ts](app/(app)/rooms/actions.ts) 신규 `getRoomDetail(roomId)` — quickInfo 대비 tier·floor·비거주 가격·areaPyeong/M2·풀 leaseTerms 포함, 상태 라벨/뱃지(`{label, badge:{tone,label}|null}`)까지 서버에서 계산해 돌려줌.
+- **공유 컴포넌트**: 신규 [components/entity-modal/RoomDetailBody.tsx](components/entity-modal/RoomDetailBody.tsx) — 자체 fetch + 내부 Lightbox(키보드·스와이프·Drive 원본). props: `roomId`, optional `onApplyScheduledNow`(room-manage 페이지에서만 전달 → 버튼 표시).
+- **EntityModal 정리**: [EntityModal.tsx](components/entity-modal/EntityModal.tsx) — 미니 `RoomView`(요약 6필드) 삭제 → `<RoomDetailBody roomId={...} />` 사용. `getRoomQuickInfo` import 제거.
+- **RoomManageClient 정리**: [RoomManageClient.tsx](app/(app)/room-manage/RoomManageClient.tsx) — 인라인 상세 팝업의 본문(사진 슬라이더 + 정보행, ~70줄) 제거 → `<RoomDetailBody roomId={r.id} onApplyScheduledNow={...} />`. 부수 정리:
+  · `lightboxPhotos/lightboxIndex` state 제거 + Lightbox render 제거 (이제 RoomDetailBody 내부)
+  · 로컬 `Lightbox` 함수 정의(~155줄) 제거
+  · 로컬 `DetailRow` 함수(~7줄) 제거 — RoomDetailBody 내부로 이동
+  · IIFE 안 unused `const tenant` 제거
+  · 결과: RoomManageClient 1618 → 1368줄 (-250). EntityModal 230 → 209줄. RoomDetailBody +290줄. 순증 미미, 로직 통일.
+- **검증**: `npx tsc --noEmit` 통과(.next 자동생성 제외 0 에러).
+- **사이드 효과**: room-manage 페이지에서 상세 팝업 열 때 잠깐 "불러오는 중…" 플리커 가능 — RoomDetailBody가 서버 액션 재fetch. 데이터 신선도는 +1(편집 후 즉시 반영), UX 살짝 -1. 거슬리면 `initial` prop 추가하는 후속 가능.
+- **남은 격차**: 헤더(호실번호+상태 뱃지)와 푸터(삭제·수정·PrismNavBar)는 여전히 페이지마다 직접 그림 — 본문만 통일. 다음 단계로 헤더/푸터까지 흡수하면 RoomDetailFull 카드 통째로 공유 가능. 수정·삭제 액션을 callback prop 으로 받는 패턴이면 EntityModal에서도 동일 풀팝업 가능.
+
+### N-3. Prism Phase 2.2 — 고객(Tenant) 풀팝업 추출 (예정)
+- TenantClient 상세 팝업 ~510줄. 탭 3개(상세/요청·컴플레인/AI), 편집 모드, 퇴실예정·비거주 전환 액션.
+- RoomDetailBody 패턴 그대로 — TenantDetailBody에 fetch+탭+읽기 표시. 편집은 callback prop.
+- 위험: 폼 상태 동기화, 회귀 가능. 데이터는 안 깨짐.
+
+### N-4. Prism Phase 2.3 — 수납(Payment) 풀팝업 추출 (별도 세션 권장)
+- RoomsClient 수납 상세 ~660줄. 결제 정확성·양도인 정산·임시조정·FIFO 귀속 얽힘.
+- 회귀 테스트 시나리오 통과 후에만 머지(수납 등록·할인·임시조정·양도인 정산 각 1회).
+- 메모리 [[project_entity_modal]] "2b 고위험" 그대로.
+
 ---
 
 ## 참고 / 주의사항

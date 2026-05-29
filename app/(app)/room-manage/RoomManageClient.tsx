@@ -8,7 +8,8 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
-import { useEntityModal } from '@/components/entity-modal/EntityModal'
+import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
+import { RoomDetailBody } from '@/components/entity-modal/RoomDetailBody'
 import { Loading } from '@/components/ui/Loading'
 import { Modal as SharedModal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
@@ -210,8 +211,6 @@ export default function RoomManageClient({
     if (found) setDetailRoom(found)
   }, [searchParams, initialRooms])
   // 라이트박스 (사진 확대 보기)
-  const [lightboxPhotos, setLightboxPhotos] = useState<Photo[] | null>(null)
-  const [lightboxIndex, setLightboxIndex]   = useState(0)
 
   // 사진
   const [editPhotos, setEditPhotos]           = useState<Photo[]>([])
@@ -234,7 +233,6 @@ export default function RoomManageClient({
   const [error, setError]   = useState('')
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
-  const entityModal = useEntityModal()
   const photoInputRef    = useRef<HTMLInputElement>(null)
   const addPhotoInputRef = useRef<HTMLInputElement>(null)
 
@@ -801,8 +799,7 @@ export default function RoomManageClient({
 
       {/* ── 상세 모달 ───────────────────────────────────────────────── */}
       {detailRoom && (() => {
-        const r      = detailRoom
-        const tenant = currentTenant(r)
+        const r = detailRoom
         return (
           <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
             onClick={closeDetail}>
@@ -821,108 +818,31 @@ export default function RoomManageClient({
                 <button onClick={closeDetail} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
               </div>
 
-              {/* 사진 슬라이더 — 클릭하면 확대 라이트박스 */}
-              {r.photos.length > 0 && (
-                <div className="shrink-0 border-b border-[var(--warm-border)]">
-                  <div className="flex gap-2 overflow-x-auto px-4 py-3"
-                    style={{ scrollbarWidth: 'none' }}>
-                    {r.photos.map((p, idx) => (
-                      <img key={p.id} src={p.storageUrl} alt=""
-                        onClick={() => { setLightboxPhotos(r.photos); setLightboxIndex(idx) }}
-                        className="h-44 w-44 object-cover rounded-xl shrink-0 cursor-zoom-in" />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* 바디 */}
-              <div className="flex-1 overflow-y-auto">
-                {/* 정보 */}
-                <div className="px-6 py-5 space-y-2.5">
-                  <DetailRow label="입주자"    value={tenant ?? '공실'} />
-                  {r.type && <DetailRow label="방 타입" value={r.type} />}
-                  {r.tier && <DetailRow label="등급" value={r.tier} />}
-                  <DetailRow label="기본 이용료" value={<MoneyDisplay amount={r.baseRent} />} />
-                  {r.scheduledRent != null && (
-                    <>
-                      <DetailRow label="예약 이용료" value={
-                        <span className="text-amber-400">
-                          <MoneyDisplay amount={r.scheduledRent} />
-                          {r.rentUpdateDate && <span className="text-[var(--warm-muted)] ml-1 text-xs">({fmtDate(r.rentUpdateDate)} 적용)</span>}
-                        </span>
-                      } />
-                      {r.leaseTerms.length === 0 && (
-                        <div className="flex justify-end">
-                          <button type="button" onClick={() => handleApplyScheduledNow(r)} disabled={isPending}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 ring-1 ring-amber-200 hover:bg-amber-100 transition-colors disabled:opacity-60">
-                            {isPending ? '적용 중...' : '예정 가격 즉시 적용'}
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {r.nonResidentRent != null && (
-                    <>
-                      <div className="border-t border-[var(--warm-border)] my-1" />
-                      <DetailRow label="비거주 이용료" value={
-                        <span className="text-indigo-600 font-medium">
-                          <MoneyDisplay amount={r.nonResidentRent} />
-                        </span>
-                      } />
-                      {r.nonResidentScheduled != null && (
-                        <DetailRow label="비거주 예약료" value={
-                          <span className="text-amber-400">
-                            <MoneyDisplay amount={r.nonResidentScheduled} />
-                            {r.nonResidentRentDate && (
-                              <span className="text-[var(--warm-muted)] ml-1 text-xs">({fmtDate(r.nonResidentRentDate)} 적용)</span>
-                            )}
-                          </span>
-                        } />
-                      )}
-                    </>
-                  )}
-                  {r.floor      && <DetailRow label="층"       value={`${r.floor}층`} />}
-                  {r.windowType && <DetailRow label="창문 타입" value={getWindowLabel(r.windowType)} />}
-                  {r.direction  && <DetailRow label="방향"     value={getDirectionLabel(r.direction)} />}
-                  {(r.areaPyeong || r.areaM2) && (
-                    <DetailRow label="면적" value={[
-                      r.areaPyeong ? `${r.areaPyeong}평` : '',
-                      r.areaM2     ? `${r.areaM2}㎡`    : '',
-                    ].filter(Boolean).join(' / ')} />
-                  )}
-                  {r.memo && <DetailRow label="메모" value={r.memo} />}
-                </div>
+              {/* 바디 — Prism 공유 RoomDetailBody (사진 슬라이더+라이트박스+정보행) */}
+              <div className="flex-1 overflow-y-auto px-6 py-5">
+                <RoomDetailBody roomId={r.id} onApplyScheduledNow={() => handleApplyScheduledNow(r)} />
               </div>
 
-              {/* 푸터 */}
-              <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0 flex-wrap">
-                <button
-                  onClick={() => handleDelete(r.id, r.roomNo)}
-                  disabled={r.leaseTerms.length > 0 || isPending}
-                  title={r.leaseTerms.length > 0 ? '입주자(예약 포함)가 있는 호실은 삭제할 수 없습니다' : ''}
-                  className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                  삭제
-                </button>
-                {r.leaseTerms[0]?.tenant?.id && (
+              {/* 푸터 — Prism: 액션 행 + 공통 네비 행 */}
+              <div className="border-t border-[var(--warm-border)] px-6 py-3 shrink-0 space-y-2">
+                <div className="flex gap-2 flex-wrap items-center">
                   <button
-                    type="button"
-                    onClick={() => entityModal.open({ kind: 'tenant', tenantId: r.leaseTerms[0].tenant!.id })}
-                    className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                    입주자 정보
+                    onClick={() => handleDelete(r.id, r.roomNo)}
+                    disabled={r.leaseTerms.length > 0 || isPending}
+                    title={r.leaseTerms.length > 0 ? '입주자(예약 포함)가 있는 호실은 삭제할 수 없습니다' : ''}
+                    className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                    삭제
                   </button>
-                )}
-                {r.leaseTerms[0]?.id && (
-                  <button
-                    type="button"
-                    onClick={() => entityModal.open({ kind: 'payment', leaseTermId: r.leaseTerms[0].id })}
-                    className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                    수납 정보
-                  </button>
-                )}
-                <div className="flex-1" />
-                <Btn variant="primary" size="md" onClick={() => openEdit(r)}>
-                  수정
-                </Btn>
+                  <div className="flex-1" />
+                  <Btn variant="primary" size="md" onClick={() => openEdit(r)}>
+                    수정
+                  </Btn>
+                </div>
+                <PrismNavBar current="room" links={{
+                  roomId: r.id,
+                  tenantId: r.leaseTerms[0]?.tenant?.id ?? null,
+                  leaseTermId: r.leaseTerms[0]?.id ?? null,
+                }} />
               </div>
             </div>
           </div>
@@ -1227,15 +1147,6 @@ export default function RoomManageClient({
         </Modal>
       )}
 
-      {/* ── 사진 라이트박스 ───────────────────────────────────────── */}
-      {lightboxPhotos && (
-        <Lightbox
-          photos={lightboxPhotos}
-          index={lightboxIndex}
-          onIndexChange={setLightboxIndex}
-          onClose={() => setLightboxPhotos(null)}
-        />
-      )}
     </div>
   )
 }
@@ -1427,15 +1338,6 @@ function Modal({ title, children, onClose }: {
   )
 }
 
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between py-2 border-b border-[var(--warm-border)]/50 last:border-0 gap-4">
-      <span className="text-xs text-[var(--warm-muted)] shrink-0">{label}</span>
-      <span className="text-sm text-[var(--warm-dark)] text-right">{value}</span>
-    </div>
-  )
-}
-
 function Field({ label, name, placeholder, defaultValue }: {
   label: string; name: string; placeholder?: string; defaultValue?: string
 }) {
@@ -1464,165 +1366,3 @@ function SelectField({ label, name, options, defaultValue, hint }: {
   )
 }
 
-// ── 사진 확대 라이트박스 ─────────────────────────────────────────
-
-function Lightbox({ photos, index, onIndexChange, onClose }: {
-  photos: Photo[]
-  index: number
-  onIndexChange: (i: number) => void
-  onClose: () => void
-}) {
-  const total = photos.length
-  const [mounted, setMounted]   = useState(false)  // 진입 애니메이션 트리거
-  const [drag, setDrag]         = useState(0)      // 현재 드래그 오프셋(px)
-  const [animating, setAnimating] = useState(false) // 손가락 떼고 미끄러질 때 transition on
-  const touchStart = useRef<{ x: number; y: number } | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    // mount 직후 한 프레임 후 mounted=true 로 전환 → fade+scale 진입
-    const t = requestAnimationFrame(() => setMounted(true))
-    return () => cancelAnimationFrame(t)
-  }, [])
-
-  const go = (delta: number) => {
-    const next = (index + delta + total) % total
-    setAnimating(true)
-    onIndexChange(next)
-    setTimeout(() => setAnimating(false), 320)
-  }
-
-  // 키보드 ←/→/ESC
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft')  go(-1)
-      if (e.key === 'ArrowRight') go(1)
-      if (e.key === 'Escape')     onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, total])
-
-  // 터치 스와이프 — 드래그 중 실시간 이동
-  const onTouchStart = (e: React.TouchEvent) => {
-    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
-    setAnimating(false)
-  }
-  const onTouchMove = (e: React.TouchEvent) => {
-    if (!touchStart.current) return
-    const dx = e.touches[0].clientX - touchStart.current.x
-    const dy = e.touches[0].clientY - touchStart.current.y
-    // 가로 우세 시 사진 따라 이동, 세로 우세는 무시
-    if (Math.abs(dx) > Math.abs(dy)) setDrag(dx)
-  }
-  const onTouchEnd = () => {
-    if (!touchStart.current) { setDrag(0); return }
-    const w = containerRef.current?.offsetWidth ?? window.innerWidth
-    const threshold = Math.max(50, w * 0.15)
-    setAnimating(true)
-    if (Math.abs(drag) > threshold) {
-      go(drag > 0 ? -1 : 1)
-    }
-    setDrag(0)
-    touchStart.current = null
-  }
-
-  const handleClose = () => {
-    setMounted(false)
-    setTimeout(onClose, 200)
-  }
-
-  // translateX: 현재 인덱스 위치 + 드래그 오프셋
-  const trackTransform = `translate3d(calc(${-index * 100}% + ${drag}px), 0, 0)`
-
-  return (
-    <div
-      className={`fixed inset-0 z-[300] flex items-center justify-center select-none transition-[opacity,backdrop-filter] duration-200 ${
-        mounted ? 'opacity-100' : 'opacity-0'
-      }`}
-      style={{ background: 'rgba(0,0,0,0.95)' }}
-      onClick={handleClose}
-    >
-      {/* 닫기 */}
-      <button
-        onClick={(e) => { e.stopPropagation(); handleClose() }}
-        className="absolute top-4 right-4 z-10 text-white/80 hover:text-white text-3xl leading-none w-10 h-10 flex items-center justify-center rounded-full bg-black/40"
-        aria-label="닫기"
-      >
-        ✕
-      </button>
-
-      {/* 원본 보기 — Drive에서 풀해상도 열기 */}
-      {photos[index]?.driveFileId && (
-        <a
-          href={`https://drive.google.com/file/d/${photos[index].driveFileId}/view`}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={e => e.stopPropagation()}
-          className="absolute top-4 right-16 z-10 text-white/80 hover:text-white text-xs px-3 h-10 flex items-center rounded-full bg-black/40"
-        >
-          원본 보기 ↗
-        </a>
-      )}
-
-      {/* 인덱스 */}
-      <div className="absolute top-4 left-4 z-10 text-white/80 text-sm font-medium px-3 py-1 rounded-full bg-black/40">
-        {index + 1} / {total}
-      </div>
-
-      {/* 좌측 이전 (데스크탑) */}
-      {total > 1 && (
-        <button
-          onClick={(e) => { e.stopPropagation(); go(-1) }}
-          className="absolute left-4 top-1/2 -translate-y-1/2 z-10 text-white/80 hover:text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hidden sm:flex"
-          aria-label="이전"
-        >
-          ‹
-        </button>
-      )}
-
-      {/* 우측 다음 (데스크탑) */}
-      {total > 1 && (
-        <button
-          onClick={(e) => { e.stopPropagation(); go(1) }}
-          className="absolute right-4 top-1/2 -translate-y-1/2 z-10 text-white/80 hover:text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hidden sm:flex"
-          aria-label="다음"
-        >
-          ›
-        </button>
-      )}
-
-      {/* 가로 슬라이드 트랙 — 모든 사진을 나란히 두고 translateX로 이동 */}
-      <div
-        ref={containerRef}
-        className={`w-full h-full overflow-hidden ${mounted ? 'scale-100' : 'scale-95'} transition-transform duration-200`}
-        onClick={(e) => e.stopPropagation()}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-      >
-        <div
-          className="flex h-full"
-          style={{
-            transform: trackTransform,
-            transition: animating ? 'transform 320ms cubic-bezier(0.22,1,0.36,1)' : 'none',
-          }}
-        >
-          {photos.map(p => (
-            <div key={p.id} className="w-full h-full shrink-0 flex items-center justify-center px-2">
-              <img
-                src={p.driveFileId
-                  ? `https://drive.google.com/thumbnail?id=${p.driveFileId}&sz=w2000`
-                  : p.storageUrl}
-                alt={p.fileName ?? ''}
-                className="max-w-[95vw] max-h-[90vh] object-contain pointer-events-none"
-                draggable={false}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}

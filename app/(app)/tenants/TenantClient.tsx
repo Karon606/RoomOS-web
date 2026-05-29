@@ -11,7 +11,7 @@ import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { calcProRata, PRORATE_BASE_DAYS } from '@/lib/prorate'
 import { Btn } from '@/components/ui/Btn'
-import { useEntityModal } from '@/components/entity-modal/EntityModal'
+import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { PhoneInput } from '@/components/ui/PhoneInput'
@@ -346,7 +346,6 @@ export default function TenantClient({
   const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
   const router = useRouter()
   const searchParams = useSearchParams()
-  const entityModal = useEntityModal()
 
   const initColVis = Object.fromEntries(
     COL_DEFS.map(c => [c.key, c.defaultOn])
@@ -2121,42 +2120,33 @@ export default function TenantClient({
                       )}
                     </div>
 
-                    {/* 읽기 전용 푸터 */}
-                    <div className="border-t border-[var(--warm-border)] px-6 py-3 flex gap-2 shrink-0 flex-wrap">
-                      <button
-                        onClick={() => handleDelete(t.id, t.name)}
-                        disabled={isPending}
-                        className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
-                        삭제
-                      </button>
-                      {lease?.id && (
+                    {/* 읽기 전용 푸터 — Prism: 액션 행 + 공통 네비 행 */}
+                    <div className="border-t border-[var(--warm-border)] px-6 py-3 shrink-0 space-y-2">
+                      <div className="flex gap-2 flex-wrap items-center">
                         <button
-                          type="button"
-                          onClick={() => entityModal.open({ kind: 'payment', leaseTermId: lease.id })}
-                          className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                          수납 정보
+                          onClick={() => handleDelete(t.id, t.name)}
+                          disabled={isPending}
+                          className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
+                          삭제
                         </button>
-                      )}
-                      {lease?.room?.id && (
-                        <button
-                          type="button"
-                          onClick={() => entityModal.open({ kind: 'room', roomId: lease.room!.id })}
+                        <a
+                          href={`/contract/${t.id}`}
+                          target="_blank"
+                          rel="noreferrer"
                           className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                          호실 정보
-                        </button>
-                      )}
-                      <a
-                        href={`/contract/${t.id}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                        계약서 출력
-                      </a>
-                      <div className="flex-1" />
-                      <Btn variant="primary" size="md"
-                        onClick={() => { setDetailEditMode(true); setDetailTab('info'); setError('') }}>
-                        수정
-                      </Btn>
+                          계약서 출력
+                        </a>
+                        <div className="flex-1" />
+                        <Btn variant="primary" size="md"
+                          onClick={() => { setDetailEditMode(true); setDetailTab('info'); setError('') }}>
+                          수정
+                        </Btn>
+                      </div>
+                      <PrismNavBar current="tenant" links={{
+                        roomId: lease?.room?.id ?? null,
+                        tenantId: t.id,
+                        leaseTermId: lease?.id ?? null,
+                      }} />
                     </div>
                   </>
               )}

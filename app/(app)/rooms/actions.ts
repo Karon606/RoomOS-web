@@ -1141,6 +1141,47 @@ export async function getRoomQuickInfo(roomId: string) {
   })
 }
 
+// 풀 호실 상세 — Prism 호실 면(어디 페이지서 열든) + room-manage 인라인 상세 공유.
+// quickInfo 와 달리 tier·floor·비거주·areaPyeong/M2 까지 포함하고, 상태 라벨/뱃지 정보를 같이 돌려준다.
+export async function getRoomDetail(roomId: string) {
+  const supabase = await createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return null
+  const room = await prisma.room.findUnique({
+    where: { id: roomId },
+    select: {
+      id: true, roomNo: true, type: true, tier: true,
+      baseRent: true, scheduledRent: true, rentUpdateDate: true,
+      nonResidentRent: true, nonResidentScheduled: true, nonResidentRentDate: true,
+      floor: true, windowType: true, direction: true,
+      areaPyeong: true, areaM2: true,
+      memo: true, isVacant: true,
+      photos: {
+        select: { id: true, storageUrl: true, fileName: true, driveFileId: true },
+        orderBy: { sortOrder: 'asc' },
+      },
+      leaseTerms: {
+        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        select: {
+          id: true, status: true, tenantId: true,
+          tenant: { select: { id: true, name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      },
+    },
+  })
+  if (!room) return null
+  // 상태 라벨/뱃지 — RoomManageClient.getRoomStatus 와 동일 로직
+  const lease = room.leaseTerms[0]
+  let status: { label: string; badge: { tone: 'movein' | 'exit'; label: string } | null }
+  if (!lease)                              status = { label: '공실',     badge: null }
+  else if (lease.status === 'RESERVED')         status = { label: '예약',     badge: { tone: 'movein', label: '입실 예정' } }
+  else if (lease.status === 'CHECKOUT_PENDING') status = { label: '퇴실 예정', badge: { tone: 'exit',   label: '퇴실 예정' } }
+  else                                          status = { label: '거주중',   badge: null }
+  return { ...room, status }
+}
+
 // 호실↔고객(lease)↔수납을 잇는 식별자 — 통합 상세 모달의 교차 네비용.
 // 어느 한 id를 주면 연결된 나머지 id들을 해소해 돌려준다.
 export async function getEntityLinks(input: { roomId?: string; tenantId?: string; leaseTermId?: string }): Promise<
