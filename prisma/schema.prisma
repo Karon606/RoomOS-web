@@ -129,6 +129,7 @@ model Property {
   phone       String?
   description String?
   joinCode    String?   @unique  // 영업장 참여 코드 — 사용자가 입력하면 운영자에게 참여 요청 전송
+  publicSlug  String?   @unique  // 공개 랜딩 페이지 slug (예: 'thestayjegi') — /members/<slug> + 트래픽 매칭용
   isActive         Boolean   @default(true)
   acquisitionDate      DateTime? @db.Date
   prevOwnerCutoffDate  DateTime? @db.Date
@@ -1030,4 +1031,41 @@ model JoinRequest {
   @@unique([propertyId, userId])
   @@index([propertyId, status])
   @@map("join_requests")
+}
+
+// ============================================================
+// [16] PageView — 공개 랜딩 페이지(/members/<slug>) 트래픽 (G 인앱 트래킹)
+// ============================================================
+// 정적 HTML head 의 작은 스크립트가 POST /api/track/pageview 로 보냄.
+// 익명·집계 위주(개인 식별 X): visitorHash = IP+UA 1방향 해시.
+
+model PageView {
+  id           String   @id @default(uuid()) @db.Uuid
+  slug         String                          // /members/<slug> 의 slug — Property.publicSlug 와 매칭
+  path         String                          // 실제 경로 (확장 대비, 보통 '/members/<slug>/')
+
+  occurredAt   DateTime @default(now())
+
+  // 유입 출처
+  referrer     String?                         // 원본 document.referrer (디버그용)
+  referrerHost String?                         // 호스트만 ('instagram.com', 'google.com', null=직접)
+
+  // UTM
+  utmSource    String?
+  utmMedium    String?
+  utmCampaign  String?
+
+  // 클라이언트
+  userAgent    String?
+  isMobile     Boolean  @default(false)
+
+  // 익명 식별자 (방문자 추정용)
+  visitorHash  String?
+
+  // 봇 필터링 신호
+  isBot        Boolean  @default(false)
+
+  @@index([slug, occurredAt])
+  @@index([slug, isBot, occurredAt])
+  @@map("page_views")
 }

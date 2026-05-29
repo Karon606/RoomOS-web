@@ -19,6 +19,32 @@
 <!-- Vercel Web Analytics — 페이지뷰·referrer 자동 수집 (Vercel 대시보드 Analytics 탭에서 확인) -->
 <script defer src="/_vercel/insights/script.js"></script>
 
+<!-- 스테이음 자체 트래킹 — 운영자 대시보드(/marketing)에서 영업장별 페이지뷰·유입·UTM 확인 -->
+<script>
+(function () {
+  try {
+    var SLUG = 'thestayjegi'; // 영업장 publicSlug
+    var qs = new URLSearchParams(window.location.search);
+    var payload = {
+      slug: SLUG,
+      path: window.location.pathname,
+      referrer: document.referrer || null,
+      utmSource:   qs.get('utm_source')   || null,
+      utmMedium:   qs.get('utm_medium')   || null,
+      utmCampaign: qs.get('utm_campaign') || null,
+    };
+    // 페이지가 닫힐 때도 살아남게 sendBeacon 우선
+    var url = '/api/track/pageview';
+    var json = JSON.stringify(payload);
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(url, new Blob([json], { type: 'application/json' }));
+    } else {
+      fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json, keepalive: true }).catch(function(){});
+    }
+  } catch (e) { /* tracking 실패해도 페이지엔 영향 없게 */ }
+})();
+</script>
+
 <style>
 :root {
   --forest: #2A4538;

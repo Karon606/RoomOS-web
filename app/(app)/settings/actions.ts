@@ -47,6 +47,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       prevOwnerCutoffDate: true,
       defaultDeposit: true,
       defaultCleaningFee: true,
+      publicSlug: true,
       logoDriveFileId: true,
     },
   })
@@ -492,6 +493,10 @@ export async function updatePropertySettings(formData: FormData) {
   const prevOwnerCutoffDate = formData.get('prevOwnerCutoffDate') as string
   const defaultDeposit    = formData.get('defaultDeposit')
   const defaultCleaningFee = formData.get('defaultCleaningFee')
+  const publicSlugRaw     = formData.get('publicSlug') as string | null
+  const publicSlug = publicSlugRaw
+    ? publicSlugRaw.trim().toLowerCase().replace(/[^a-z0-9-]/g, '')
+    : ''
 
   await prisma.property.update({
     where: { id: propertyId },
@@ -503,11 +508,13 @@ export async function updatePropertySettings(formData: FormData) {
       prevOwnerCutoffDate: prevOwnerCutoffDate ? new Date(prevOwnerCutoffDate) : null,
       defaultDeposit:   defaultDeposit   ? Number(String(defaultDeposit).replace(/[^0-9]/g, ''))   : null,
       defaultCleaningFee: defaultCleaningFee ? Number(String(defaultCleaningFee).replace(/[^0-9]/g, '')) : null,
+      publicSlug:       publicSlug || null,
     },
   })
 
   revalidatePath('/settings')
   revalidatePath('/rooms')
+  revalidatePath('/marketing')
 }
 
 // ── 계약서 (영업장별 템플릿 + 사업자 정보 + 도장) ─────────────────

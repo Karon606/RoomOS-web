@@ -97,6 +97,7 @@ const NAV_GROUPS = [
     label: '시장분석',
     items: [
       { href: '/market-analysis', label: '시세 조사', Icon: IcoMarket },
+      { href: '/marketing',       label: '마케팅',    Icon: IcoMarket },
     ],
   },
   {
