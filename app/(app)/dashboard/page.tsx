@@ -1209,6 +1209,49 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }
   } catch { /* inventory 모듈 로드 실패 시 무시 */ }
 
+  // ── 재고 점검 임시저장 (저장 안 한 채 남아 있는 점검) ─────────────────
+  try {
+    const drafts = await prisma.stockCheckDraft.findMany({
+      where: { trackedItem: { propertyId } },
+      select: {
+        trackedItemId: true,
+        updatedAt: true,
+        trackedItem: { select: { label: true, category: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    })
+    // 같은 trackedItem 의 위치별 드래프트 여러 개는 1건으로 묶음
+    type DraftEntry = { label: string; category: string; latestUpdate: Date; count: number }
+    const draftMap = new Map<string, DraftEntry>()
+    for (const d of drafts) {
+      const existing = draftMap.get(d.trackedItemId)
+      if (existing) {
+        existing.count++
+        if (d.updatedAt > existing.latestUpdate) existing.latestUpdate = d.updatedAt
+      } else {
+        draftMap.set(d.trackedItemId, {
+          label: d.trackedItem.label,
+          category: d.trackedItem.category,
+          latestUpdate: d.updatedAt,
+          count: 1,
+        })
+      }
+    }
+    for (const v of draftMap.values()) {
+      const sinceMs = Date.now() - v.latestUpdate.getTime()
+      const sinceHr = Math.floor(sinceMs / (60 * 60 * 1000))
+      const sinceTxt = sinceHr < 1 ? '방금 전' : sinceHr < 24 ? `${sinceHr}시간 전` : `${Math.floor(sinceHr / 24)}일 전`
+      alertItems.push({
+        category:  'inventory',
+        text:      `${v.label} 점검 임시저장 중`,
+        link:      '/inventory',
+        dotColor:  '#d4a847',
+        timeLabel: '임시저장 보관 중',  // urgencyDaysOf=9999 → 긴급 아님(예정 그룹)
+        detail:    `${v.category} · ${v.label}\n${v.count > 1 ? `위치별 ${v.count}건 임시저장됨\n` : ''}점검 모달을 다시 열어 '저장' 버튼으로 확정해주세요.\n마지막 임시저장: ${sinceTxt}`,
+      })
+    }
+  } catch { /* StockCheckDraft 미지원 등 무시 */ }
+
   // (체크리스트 알림은 제거됨 — 체크리스트를 스테이음 Lab으로 이동, 대시보드 알림 비노출. 2026-05-26)
 
   // ── 고정 지출 알림 ───────────────────────────────────────────
