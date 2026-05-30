@@ -12,15 +12,14 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Btn } from '@/components/ui/Btn'
 import { Modal } from '@/components/ui/Modal'
 import { kstMonthStr } from '@/lib/kstDate'
-import {
-  getEntityLinks, getLeaseSettlementInfo, getPaymentsByLease,
-} from '@/app/(app)/rooms/actions'
+import { getEntityLinks } from '@/app/(app)/rooms/actions'
 import { deleteRoom, applyScheduledRentNow } from '@/app/(app)/room-manage/actions'
 import { deleteTenant } from '@/app/(app)/tenants/actions'
 import { withSave } from '@/lib/saveStatus'
 import { PrismNavBar } from './PrismNavBar'
 import { RoomBody } from './bodies/RoomBody'
 import { TenantBody } from './bodies/TenantBody'
+import { PaymentBody } from './bodies/PaymentBody'
 
 type EntityKind = 'room' | 'tenant' | 'payment'
 type Seed = { kind: EntityKind; roomId?: string | null; tenantId?: string | null; leaseTermId?: string | null }
@@ -36,7 +35,6 @@ export function useEntityModal(): Ctx {
 }
 
 const fmtRoomNo = (no?: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—')
-const fmtWon = (n: number) => `${n.toLocaleString()}원`
 
 export function EntityModalProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<{ kind: EntityKind; seed: Seed; links: Links } | null>(null)
@@ -122,9 +120,8 @@ function PrismShellView({ kind, links, setKind, onClose }: {
     onClose()
   }
 
-  const deepLink =
-    kind === 'payment' && links?.roomNo ? { href: `/rooms?month=${month}&roomNo=${links.roomNo}`, label: '수납 관리에서 열기' }
-    : null
+  // Phase 2.4a (2026-05-30): kind='payment' 의 '수납 관리에서 열기' 딥링크 제거.
+  // PaymentBody 내부 summary→full 모드 토글이 in-place 전환 (배경 안 바뀜) — 사용자 비전.
 
   return (
     <Modal
@@ -162,12 +159,7 @@ function PrismShellView({ kind, links, setKind, onClose }: {
               </Btn>
             </div>
           )}
-          {deepLink && (
-            <Btn variant="secondary" size="sm" fullWidth
-              onClick={() => { router.push(deepLink.href); onClose() }}>
-              {deepLink.label}
-            </Btn>
-          )}
+          {/* deepLink 행 — Phase 2.4a 에서 수납 딥링크 in-place 전환으로 대체됨. 다른 kind 에 필요시 부활. */}
           {/* 공통 하단 네비 — onSelect 로 같은 셸 안에서 body 만 교체 (in-place). */}
           <PrismNavBar
             current={kind}
@@ -184,81 +176,12 @@ function PrismShellView({ kind, links, setKind, onClose }: {
       <div className="px-5 sm:px-6 py-4">
         {kind === 'room'    && (hasRoom   ? <RoomBody roomId={links!.roomId!} onApplyScheduledNow={handleApplyScheduledNow} /> : <Empty label="연결된 호실이 없습니다." />)}
         {kind === 'tenant'  && (hasTenant ? <TenantBody tenantId={links!.tenantId!} /> : <Empty label="연결된 고객이 없습니다." />)}
-        {kind === 'payment' && (hasPay    ? <PaymentView leaseTermId={links!.leaseTermId!} month={month} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
+        {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={links!.leaseTermId!} month={month} canEdit roomNo={links?.roomNo ?? null} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
       </div>
     </Modal>
   )
 }
 
 const Empty = ({ label }: { label: string }) => <p className="text-sm text-[var(--warm-muted)] text-center py-8">{label}</p>
-const Loading = () => <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
-const Row = ({ k, v }: { k: string; v: React.ReactNode }) => (
-  <div className="flex justify-between py-1.5 border-b border-[var(--warm-border)]/50 last:border-0">
-    <span className="text-xs text-[var(--warm-muted)]">{k}</span>
-    <span className="text-sm text-[var(--warm-dark)]">{v}</span>
-  </div>
-)
-
-// TenantView 미니 요약은 TenantBody (풀팝업 본문) 으로 대체됨 (Phase 2.3b).
-// PaymentView — 미니 요약 (Phase 2.4 에서 위젯 조합으로 대체 예정).
-
-function PaymentView({ leaseTermId, month }: { leaseTermId: string; month: string }) {
-  const [info, setInfo] = useState<Awaited<ReturnType<typeof getLeaseSettlementInfo>> | null>(null)
-  const [records, setRecords] = useState<Awaited<ReturnType<typeof getPaymentsByLease>>['records'] | null>(null)
-  useEffect(() => {
-    let a = true
-    getLeaseSettlementInfo(leaseTermId, month).then(d => { if (a) setInfo(d) })
-    getPaymentsByLease(leaseTermId, month).then(d => { if (a) setRecords(d.records) }).catch(() => { if (a) setRecords([]) })
-    return () => { a = false }
-  }, [leaseTermId, month])
-  if (!info) return <Loading />
-  const payDateStr = (d: Date | string) => { const t = new Date(d); return `${t.getMonth() + 1}.${t.getDate()}` }
-  return (
-    <div className="space-y-3">
-      <p className="text-[0.625rem] text-[var(--warm-muted)]">총 수납·잔액·이월액은 입금일 기준입니다. ({month.slice(0, 4)}년 {Number(month.slice(5))}월)</p>
-      <div className="grid grid-cols-3 gap-2">
-        <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-          <p className="text-xs text-[var(--warm-muted)]">총 수납</p>
-          <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]">{fmtWon(info.totalPaid)}</p>
-        </div>
-        <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-          <p className="text-xs text-[var(--warm-muted)]">잔액</p>
-          <p className={`text-sm font-bold mt-0.5 ${info.balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            {info.balance > 0 ? `+${fmtWon(info.balance)}` : info.balance < 0 ? `-${fmtWon(Math.abs(info.balance))}` : '0원'}
-          </p>
-        </div>
-        <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-          <p className="text-xs text-[var(--warm-muted)]">이월액</p>
-          <p className="text-sm font-bold mt-0.5 text-[var(--coral)]">
-            {info.carryOver !== 0 ? `${info.carryOver > 0 ? '+' : '-'}${fmtWon(Math.abs(info.carryOver))}` : '0원'}
-          </p>
-        </div>
-      </div>
-      <div>
-        <Row k="월 이용료" v={fmtWon(info.expected)} />
-        {info.dueDay && <Row k="납부일" v={info.dueDay.includes('말') ? '매월 말일' : `매월 ${info.dueDay}일`} />}
-      </div>
-      <div className="space-y-1">
-        <p className="text-xs font-semibold text-[var(--warm-mid)]">이번 달 납부 내역</p>
-        {records === null ? (
-          <p className="text-xs text-[var(--warm-muted)] py-2">불러오는 중…</p>
-        ) : records.length === 0 ? (
-          <p className="text-xs text-[var(--warm-muted)] py-2">이 달 납부 기록이 없습니다.</p>
-        ) : (
-          <ul className="space-y-1">
-            {records.map(r => (
-              <li key={r.id} className="flex items-center justify-between bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
-                <span className="text-[var(--warm-mid)]">
-                  {payDateStr(r.payDate)}
-                  {r.isDeposit && <span className="ml-1.5 text-[0.5625rem] text-[var(--coral)]">보증금</span>}
-                  {r.payMethod && <span className="ml-1.5 text-[var(--warm-muted)]">· {r.payMethod}</span>}
-                </span>
-                <span className="font-semibold text-[var(--warm-dark)]">{fmtWon(r.actualAmount)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
-  )
-}
+// TenantView 미니 요약 → TenantBody (Phase 2.3b).
+// PaymentView 미니 요약 → PaymentBody (sub-mode: summary/full) (Phase 2.4a).

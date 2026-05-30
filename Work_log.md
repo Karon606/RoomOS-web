@@ -589,7 +589,33 @@
   · TenantClient 자체 모달은 그대로 유지 (페이지 진입 + 풀 CRUD/편집 전담)
 - **검증**: `npx tsc --noEmit` 통과.
 
-### N-4. Prism Phase 2.4 — 수납(Payment) 요약 위젯화 + 표시 모드 (예정)
+### N-4a. Prism Phase 2.4a — 수납 위젯화 1차 + 셸 in-place 풀모드 (2026-05-30)
+
+- **사용자 비전 확정**: "수납 관리에서 열기" 클릭해도 **배경은 처음 접속한 페이지 그대로**, 프리즘 모듈만 풀팝업으로 in-place 전환. router.push 제거.
+- **추출 전략**: 결제 정확성 위험 단계별 분할. 한 세션에 8개 통째 X. 이번 = 저~중 위험 4개. 다음 세션(2.4b) = 고위험 4개.
+- **신규 위젯 (components/entity-modal/widgets/)**:
+  · `PaymentSummaryCards` — 총수납·잔액·이월액 3카드. settlement prop 만 받음. 읽기 전용.
+  · `DiscountWidget` — 월세 할인 추가/삭제. 자체 fetch (getRentDiscounts) + onChange 콜백. 위젯 내부 state.
+  · `DueDayTempAdjustWidget` — 납부일 임시 조정. 입력 변환 로직(같은 월 = 숫자/말일, 다른 월 = full date) 그대로 이주. 위젯에 room override prop 필요.
+  · `DueDayPermanentChangeWidget` — 영구 변경 + 일할 정산. calcProRata 결과 실시간 표시(extra/refund/none).
+- **신규 body**: `bodies/PaymentBody.tsx` — 2 sub-mode:
+  · **summary**: SummaryCards + 월 이용료·납부일 + 이번 달 납부 내역(읽기) + "수납 관리에서 자세히 ▼" 버튼
+  · **full**: SummaryCards + 월 이용료·납부일 + DiscountWidget + DueDayPermanentChangeWidget + 고급 기능 딥링크
+  · 토글: 같은 셸 안에서 in-place body 교체. 배경 안 바뀜. 사용자 비전 본질.
+- **PrismShell wiring** ([EntityModal.tsx](components/entity-modal/EntityModal.tsx)):
+  · kind='payment' body = `PaymentBody` (이전 `PaymentView` 미니 요약 제거)
+  · '수납 관리에서 열기' 푸터 딥링크 **제거** — PaymentBody 내부 모드 토글로 대체
+  · 사용 안 되는 getLeaseSettlementInfo·getPaymentsByLease·fmtWon·Loading·Row 정리
+- **남은 격차 (Phase 2.4b — 고위험·다음 세션)**:
+  · **PaymentRecordList** (편집·삭제) — 귀속월 변경 회귀 위험
+  · **PaymentEntryForm** (FIFO 자동 충당) — 알고리즘 정확성
+  · **PrevOwnerSettleWidget** — 매출/미납 집계 영향
+  · **DepositCleaningSplit** — 분리 저장 로직
+  · DueDayTempAdjustWidget 도 만들었지만 PaymentBody 에 wiring 안 함 — override 정보 fetch 추가 필요 (다음 세션)
+- **남은 격차 (Phase 2.4c)**: RoomsClient 자체 모달을 셸로 마이그레이션 → 2중 스택 완전 제거.
+- **검증**: `npx tsc --noEmit` 통과.
+
+### N-5. Prism Phase 2.4b — 수납 위젯화 2차 (예정, 고위험)
 - TenantClient 상세 팝업 ~510줄. 탭 3개(상세/요청·컴플레인/AI), 편집 모드, 퇴실예정·비거주 전환 액션.
 - RoomDetailBody 패턴 그대로 — TenantDetailBody에 fetch+탭+읽기 표시. 편집은 callback prop.
 - 위험: 폼 상태 동기화, 회귀 가능. 데이터는 안 깨짐.
