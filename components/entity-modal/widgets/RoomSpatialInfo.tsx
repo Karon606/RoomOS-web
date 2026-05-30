@@ -2,10 +2,18 @@
 
 import { InfoRow } from './InfoRow'
 
-const WINDOW_TYPE_LABEL: Record<string, string> = { interior: '내창', exterior: '외창' }
+// DB 실제 값은 대문자 enum (settings 폼 기준 OUTER/INNER, NORTH/EAST/SOUTH/WEST 및 대각선).
+// 일부 마이그레이션 전 데이터가 소문자/한글일 수 있어 둘 다 매핑한다.
+const WINDOW_TYPE_LABEL: Record<string, string> = {
+  OUTER: '외창', INNER: '내창',
+  exterior: '외창', interior: '내창',
+}
 const DIRECTION_LABEL: Record<string, string> = {
-  east: '동향', west: '서향', south: '남향', north: '북향',
-  southeast: '남동향', southwest: '남서향', northeast: '북동향', northwest: '북서향',
+  NORTH: '북향', NORTH_EAST: '북동향', EAST: '동향', SOUTH_EAST: '남동향',
+  SOUTH: '남향', SOUTH_WEST: '남서향', WEST: '서향', NORTH_WEST: '북서향',
+  // 소문자 호환
+  north: '북향', northeast: '북동향', east: '동향', southeast: '남동향',
+  south: '남향', southwest: '남서향', west: '서향', northwest: '북서향',
 }
 
 export function RoomSpatialInfo({ room }: {
