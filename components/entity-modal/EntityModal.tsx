@@ -13,13 +13,14 @@ import { Btn } from '@/components/ui/Btn'
 import { Modal } from '@/components/ui/Modal'
 import { kstMonthStr } from '@/lib/kstDate'
 import {
-  getEntityLinks, getTenantQuickInfo, getLeaseSettlementInfo, getPaymentsByLease,
+  getEntityLinks, getLeaseSettlementInfo, getPaymentsByLease,
 } from '@/app/(app)/rooms/actions'
 import { deleteRoom, applyScheduledRentNow } from '@/app/(app)/room-manage/actions'
-import { STATUS_LABEL } from '@/lib/statusColors'
+import { deleteTenant } from '@/app/(app)/tenants/actions'
 import { withSave } from '@/lib/saveStatus'
 import { PrismNavBar } from './PrismNavBar'
 import { RoomBody } from './bodies/RoomBody'
+import { TenantBody } from './bodies/TenantBody'
 
 type EntityKind = 'room' | 'tenant' | 'payment'
 type Seed = { kind: EntityKind; roomId?: string | null; tenantId?: string | null; leaseTermId?: string | null }
@@ -106,9 +107,23 @@ function PrismShellView({ kind, links, setKind, onClose }: {
     onClose()
   }
 
+  // 고객 액션 — 삭제는 셸이 직접, 편집은 페이지로 위임 (탭·상태전환·요청 CRUD 가 페이지 종속).
+  const handleDeleteTenant = () => {
+    if (!links?.tenantId) return
+    if (!confirm(`${links.tenantName ?? '이 고객'}을 삭제할까요? 되돌릴 수 없습니다.`)) return
+    startTransition(async () => {
+      const res = await withSave(() => deleteTenant(links.tenantId!), { success: '삭제됨' })
+      if (res.ok) { onClose(); router.refresh() }
+    })
+  }
+  const handleEditTenant = () => {
+    if (!links?.tenantId) return
+    router.push(`/tenants?tenantId=${links.tenantId}&edit=1`)
+    onClose()
+  }
+
   const deepLink =
-    kind === 'tenant'  && links?.tenantId ? { href: `/tenants?tenantId=${links.tenantId}`, label: '고객 관리에서 열기' }
-    : kind === 'payment' && links?.roomNo ? { href: `/rooms?month=${month}&roomNo=${links.roomNo}`, label: '수납 관리에서 열기' }
+    kind === 'payment' && links?.roomNo ? { href: `/rooms?month=${month}&roomNo=${links.roomNo}`, label: '수납 관리에서 열기' }
     : null
 
   return (
@@ -125,6 +140,24 @@ function PrismShellView({ kind, links, setKind, onClose }: {
               </button>
               <div className="flex-1" />
               <Btn variant="primary" size="md" onClick={handleEditRoom} disabled={isPending}>
+                수정
+              </Btn>
+            </div>
+          )}
+          {kind === 'tenant' && hasTenant && (
+            <div className="flex gap-2 items-center">
+              <button type="button" onClick={handleDeleteTenant} disabled={isPending}
+                className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
+                삭제
+              </button>
+              {links?.tenantId && (
+                <a href={`/contract/${links.tenantId}`} target="_blank" rel="noreferrer"
+                  className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                  계약서 출력
+                </a>
+              )}
+              <div className="flex-1" />
+              <Btn variant="primary" size="md" onClick={handleEditTenant} disabled={isPending}>
                 수정
               </Btn>
             </div>
@@ -150,7 +183,7 @@ function PrismShellView({ kind, links, setKind, onClose }: {
     >
       <div className="px-5 sm:px-6 py-4">
         {kind === 'room'    && (hasRoom   ? <RoomBody roomId={links!.roomId!} onApplyScheduledNow={handleApplyScheduledNow} /> : <Empty label="연결된 호실이 없습니다." />)}
-        {kind === 'tenant'  && (hasTenant ? <TenantView tenantId={links!.tenantId!} /> : <Empty label="연결된 고객이 없습니다." />)}
+        {kind === 'tenant'  && (hasTenant ? <TenantBody tenantId={links!.tenantId!} /> : <Empty label="연결된 고객이 없습니다." />)}
         {kind === 'payment' && (hasPay    ? <PaymentView leaseTermId={links!.leaseTermId!} month={month} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
       </div>
     </Modal>
@@ -166,27 +199,8 @@ const Row = ({ k, v }: { k: string; v: React.ReactNode }) => (
   </div>
 )
 
-// TenantView/PaymentView — 미니 요약(Phase 2.3/2.4 에서 위젯 조합으로 대체 예정).
-
-function TenantView({ tenantId }: { tenantId: string }) {
-  const [info, setInfo] = useState<Awaited<ReturnType<typeof getTenantQuickInfo>> | null>(null)
-  useEffect(() => { let a = true; getTenantQuickInfo(tenantId).then(d => { if (a) setInfo(d) }); return () => { a = false } }, [tenantId])
-  if (!info) return <Loading />
-  const lease = info.leaseTerms[0]
-  const primary = info.contacts[0]
-  return (
-    <div>
-      {lease && <Row k="상태" v={STATUS_LABEL[lease.status] ?? lease.status} />}
-      {lease?.room && <Row k="호실" v={fmtRoomNo(lease.room.roomNo)} />}
-      {primary && <Row k="연락처" v={primary.contactValue} />}
-      {info.nationality && <Row k="국적" v={info.nationality} />}
-      {info.job && <Row k="직업" v={info.job} />}
-      {lease && lease.rentAmount > 0 && <Row k="월 이용료" v={fmtWon(lease.rentAmount)} />}
-      {lease && lease.depositAmount > 0 && <Row k="보증금" v={fmtWon(lease.depositAmount)} />}
-      {info.memo && <Row k="메모" v={info.memo} />}
-    </div>
-  )
-}
+// TenantView 미니 요약은 TenantBody (풀팝업 본문) 으로 대체됨 (Phase 2.3b).
+// PaymentView — 미니 요약 (Phase 2.4 에서 위젯 조합으로 대체 예정).
 
 function PaymentView({ leaseTermId, month }: { leaseTermId: string; month: string }) {
   const [info, setInfo] = useState<Awaited<ReturnType<typeof getLeaseSettlementInfo>> | null>(null)

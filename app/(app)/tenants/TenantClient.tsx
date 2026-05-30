@@ -441,15 +441,17 @@ export default function TenantClient({
   // colWidths 변경 시 ref 동기화
   useEffect(() => { colWidthsRef.current = colWidths }, [colWidths])
 
-  // URL 파라미터로 특정 입주자 팝업 열기 (/tenants?tenantId=xxx&tab=requests)
+  // URL 파라미터로 특정 입주자 팝업 열기 (/tenants?tenantId=xxx&tab=requests&edit=1)
   useEffect(() => {
     const tenantId = searchParams.get('tenantId')
     const tab = searchParams.get('tab')
+    const edit = searchParams.get('edit')
     if (tenantId) {
       const found = initialTenants.find(t => t.id === tenantId)
       if (found) {
         setDetailTenant(found)
         setDetailTab(tab === 'requests' ? 'requests' : tab === 'analysis' ? 'analysis' : 'info')
+        if (edit === '1') setDetailEditMode(true)
       }
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps

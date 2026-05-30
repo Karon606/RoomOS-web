@@ -560,7 +560,36 @@
 - **사용자 시점 변화**: 호실 관리 카드 클릭 → 동일한 콘텐츠가 PrismShell 로 뜸(헤더·푸터 통일됨). 인플레이스 [고객][수납] 전환 시 새 모달 안 뜨고 같은 셸의 body 만 부드럽게 갈아끼움(2중 스택 X). 수정 누르면 `/room-manage?roomId=X&edit=1` 로 push → 편집 폼 자동 열림(같은 페이지면 무이동, 다른 페이지면 일시 배경 전환 — Phase 2.5 에서 위젯 편집 모드로 흡수 예정).
 - **남은 한계**: tenant·rooms 페이지의 자체 팝업 안에서 PrismNavBar 클릭은 여전히 셸을 그 위에 띄움(2중 스택 잔존). Phase 2.3/2.4 가 해소.
 
-### N-3. Prism Phase 2.3 — 고객(Tenant) 위젯화 + 셸 이주 (예정)
+### N-3a. Prism Phase 2.3a — 2중 스택 즉시 해소 (2026-05-30)
+- **증상**: 고객 관리 페이지에서 상세 팝업 후 [호실] 클릭 시 셸이 그 위에 떠 2중 스택. 수납 팝업도 동일.
+- **수정**: TenantClient / RoomsClient 의 PrismNavBar 에 커스텀 onSelect 박아 다른 면 클릭 시 자기 팝업을 먼저 닫고 entityModal.open() 호출. 시각상 2개 모달이 겹치는 순간이 사라짐.
+- **`getTenantDetail` 서버 액션 미리 추가** — 2.3b 본문 추출 대비.
+- main `c05a47f`.
+
+### N-3b. Prism Phase 2.3b — 고객 본문 위젯화 + 셸의 [고객] 면 풀 콘텐츠 (2026-05-30)
+- **목표**: 셸 [고객] 면이 이전엔 미니 요약(6필드) → 이제 진짜 풀 콘텐츠. 어디서 들어오든(대시보드·셸 안 전환·페이지) 동일한 본문.
+- **신규 위젯 (components/entity-modal/widgets/)**:
+  · `Section` + `Grid` + `Item` (제목 + 2열 표) — 모든 entity 표시 공유 원자
+  · `TenantBasicInfo` (이름·호실·영어이름·성별·국적+국기·직업·생년월일·기초수급자)
+  · `TenantContactInfo` (주/비상/본국 연락처)
+  · `TenantContractInfo` (월이용료·보증금·청소비·납부일·납부방식·입주일·거주기간·퇴실예정·문의일시) — 읽기 전용 (납입일 변경 인라인 폼은 페이지로 위임)
+  · `TenantAdditionalInfo` (전입신고·결제수단·현금영수증·방문경로·희망 이동 호실·계약서 URL)
+  · `ContractFilesPanel` — TenantClient 의 ~80줄 그대로 이주 (출력/서명·스캔 본 업로드·삭제)
+- **신규 body**: `bodies/TenantBody.tsx` — 자체 fetch + 위젯 한 화면 스크롤 조합:
+  · 상태 칩 → BasicInfo → Contact → ContractInfo → AdditionalInfo → 메모 → ContractFilesPanel → 수납 요약 카드 3개 + AI 분석 버튼 → "고객 관리에서 더 보기" 딥링크
+- **PrismShell 와이어링** ([EntityModal.tsx](components/entity-modal/EntityModal.tsx)):
+  · kind='tenant' body = `TenantBody` (이전 미니 `TenantView` 제거)
+  · 액션 행 추가 — [삭제] + [계약서 출력] + [수정]. 삭제는 `deleteTenant` 직접, 수정은 `/tenants?tenantId=X&edit=1` push (TenantClient 가 ?edit=1 감지 → 자동 편집 모드)
+  · STATUS_LABEL·getTenantQuickInfo import 정리
+- **TenantClient URL 핸들링 확장**: `?tenantId=X&edit=1` → 상세 + 편집 모드 자동 진입 (셸에서 [수정] 누르면 페이지로 점프)
+- **남은 격차 (Phase 2.3c+)**:
+  · 상태 전환 버튼(퇴실예정·비거주 등) — 셸엔 아직 X, 페이지 진입 필요
+  · 요청·컴플레인 CRUD — 셸엔 X (페이지에서)
+  · 납입일 변경 인라인 폼 — 셸엔 X
+  · TenantClient 자체 모달은 그대로 유지 (페이지 진입 + 풀 CRUD/편집 전담)
+- **검증**: `npx tsc --noEmit` 통과.
+
+### N-4. Prism Phase 2.4 — 수납(Payment) 요약 위젯화 + 표시 모드 (예정)
 - TenantClient 상세 팝업 ~510줄. 탭 3개(상세/요청·컴플레인/AI), 편집 모드, 퇴실예정·비거주 전환 액션.
 - RoomDetailBody 패턴 그대로 — TenantDetailBody에 fetch+탭+읽기 표시. 편집은 callback prop.
 - 위험: 폼 상태 동기화, 회귀 가능. 데이터는 안 깨짐.
