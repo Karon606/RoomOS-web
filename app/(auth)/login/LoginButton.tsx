@@ -9,17 +9,22 @@ export default function LoginButton({ returnTo }: { returnTo?: string }) {
 
   const handleGoogleLogin = async () => {
     setIsLoading(true)
-    const { error } = await supabase.auth.signInWithOAuth({
+    // skipBrowserRedirect 으로 URL만 받아 window.location.replace 사용 → /login 이 history 에 안 남도록.
+    // (#18 안드로이드 뒤로가기 시 google.com/accounts 노출 회피 — 2026-05-30)
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/callback?returnTo=${returnTo ?? '/property-select'}`,
         queryParams: { prompt: 'select_account' },
+        skipBrowserRedirect: true,
       },
     })
-    if (error) {
-      console.error('Google 로그인 실패:', error.message)
+    if (error || !data?.url) {
+      console.error('Google 로그인 실패:', error?.message)
       setIsLoading(false)
+      return
     }
+    window.location.replace(data.url)
   }
 
   return (

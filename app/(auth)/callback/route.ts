@@ -13,7 +13,8 @@ export async function GET(request: NextRequest) {
   // PKCE 실패로 세션이 무효화돼 로그아웃되는 문제 방지 — 이미 인증된 세션이면 그냥 통과.
   const { data: { user: existingUser } } = await supabase.auth.getUser()
   if (existingUser) {
-    return NextResponse.redirect(`${origin}${returnTo}`)
+    // 백 트랩 신호 — 랜딩 페이지에서 popstate 1회 소비해 google.com/accounts 노출 차단(2026-05-30).
+    return NextResponse.redirect(`${origin}${returnTo}${returnTo.includes('?') ? '&' : '?'}_fa=1`)
   }
 
   if (code) {
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
         },
       })
 
-      return NextResponse.redirect(`${origin}${returnTo}`)
+      return NextResponse.redirect(`${origin}${returnTo}${returnTo.includes('?') ? '&' : '?'}_fa=1`)
     }
   }
 
