@@ -115,6 +115,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo }: {
                   leaseTermId: settlement.leaseTermId,
                   tenantId: settlement.tenantId,
                   expected: settlement.expected,
+                  balance: settlement.balance,
                   depositAmount: settlement.depositAmount,
                   cleaningFee: settlement.cleaningFee,
                   moveInDate: settlement.moveInDate,

@@ -778,7 +778,30 @@ export default function RoomsClient({
 
         <div className="flex-1" />
 
-        {/* 열 설정 드롭다운 — 데스크탑만 */}
+        {/* 공실 표시 설정 — 항상 노출 (공실 0실에도). 카드 칩 ON/OFF */}
+        <div className="relative" ref={vacantColMenuRef}>
+          <button
+            onClick={() => setShowVacantColMenu(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl transition-colors
+              ${showVacantColMenu ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
+          >
+            <span>⚙</span> 공실 표시
+          </button>
+          {showVacantColMenu && (
+            <div className="absolute right-0 top-full mt-1.5 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-3 z-50 shadow-lift min-w-[160px] space-y-2">
+              {VACANT_COL_DEFS.map(col => (
+                <label key={col.key} className="flex items-center gap-2.5 cursor-pointer group">
+                  <input type="checkbox" checked={vacantColVis[col.key] ?? false}
+                    onChange={e => setVacantColVis(v => ({ ...v, [col.key]: e.target.checked }))}
+                    className="w-3.5 h-3.5 rounded accent-indigo-500" />
+                  <span className="text-xs text-[var(--warm-dark)] group-hover:text-[var(--warm-dark)] transition-colors">{col.label}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 열 설정 드롭다운 — 데스크탑만 (메인 표 컬럼) */}
         <div className="hidden sm:block relative" ref={colMenuRef}>
           <button
             onClick={() => setShowColMenu(v => !v)}
@@ -1093,33 +1116,11 @@ export default function RoomsClient({
           </table>
       </div>
 
-      {/* 공실 섹션 */}
+      {/* 공실 섹션 — 열 설정 버튼은 페이지 상단으로 이주(공실 0실에도 항상 보이게) */}
       {vacants.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-[var(--warm-muted)]">공실 {vacants.length}실</h2>
-            {/* 공실 표시 정보 설정 — 데스크탑(열)·모바일(카드 칩) 공통 */}
-            <div className="relative" ref={vacantColMenuRef}>
-              <button
-                onClick={() => setShowVacantColMenu(v => !v)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors
-                  ${showVacantColMenu ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
-              >
-                <span>⚙</span> 열 설정
-              </button>
-              {showVacantColMenu && (
-                <div className="absolute right-0 top-full mt-1.5 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-3 z-50 shadow-lift min-w-[160px] space-y-2">
-                  {VACANT_COL_DEFS.map(col => (
-                    <label key={col.key} className="flex items-center gap-2.5 cursor-pointer group">
-                      <input type="checkbox" checked={vacantColVis[col.key] ?? false}
-                        onChange={e => setVacantColVis(v => ({ ...v, [col.key]: e.target.checked }))}
-                        className="w-3.5 h-3.5 rounded accent-indigo-500" />
-                      <span className="text-xs text-[var(--warm-dark)] group-hover:text-[var(--warm-dark)] transition-colors">{col.label}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
 
           {/* 공실 — 모바일 카드 (열 설정으로 고른 정보를 칩으로, 최대 4개) */}

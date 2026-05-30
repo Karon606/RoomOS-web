@@ -167,17 +167,26 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange 
         }
         return (
           <div key={p.id}
-            className={`flex items-center justify-between rounded-xl px-3 py-2.5 ${
+            className={`rounded-xl px-3 py-2.5 space-y-1.5 ${
               p.isDeposit ? 'bg-purple-50 border border-purple-200' :
               prevOwner ? 'bg-amber-50 border border-amber-200' : 'bg-[var(--canvas)]'
             }`}>
-            <div>
+            {/* 줄1: 회차·날짜·방법 + 금액(우측, 안 줄임) */}
+            <div className="flex items-baseline justify-between gap-2">
               <p className={`text-xs ${p.isDeposit ? 'text-purple-600' : prevOwner ? 'text-amber-600' : 'text-[var(--warm-mid)]'}`}>
                 {p.seqNo}회차 · {fmtDate(p.payDate)} · {p.payMethod ?? '—'}
-                {p.isDeposit && <span className="ml-1.5 text-[0.625rem] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>}
-                {prevOwner && <span className="ml-1.5 text-[0.625rem] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
+              </p>
+              <span className={`text-sm font-semibold whitespace-nowrap ${p.isDeposit ? 'text-purple-700' : prevOwner ? 'text-amber-700' : 'text-[var(--warm-dark)]'}`}>
+                {p.actualAmount.toLocaleString()}원
+              </span>
+            </div>
+            {/* 줄2: 뱃지들 + 메모 + 액션 버튼 */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1 flex-wrap">
+                {p.isDeposit && <span className="text-[0.625rem] font-semibold bg-purple-200 text-purple-800 rounded px-1.5 py-0.5">보증금</span>}
+                {prevOwner && <span className="text-[0.625rem] font-semibold bg-amber-200 text-amber-800 rounded px-1.5 py-0.5">양도인</span>}
                 {!p.isDeposit && (
-                  <span className={`ml-1.5 text-[0.625rem] font-semibold rounded px-1 py-0.5 ${
+                  <span className={`text-[0.625rem] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap ${
                     p.targetMonth === targetMonth
                       ? 'bg-[var(--cream-2)] text-[var(--warm-mid)]'
                       : 'bg-[var(--badge-await-bg)] text-[var(--badge-await-fg)]'
@@ -187,15 +196,10 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange 
                     {p.targetMonth > targetMonth && ' (선납)'}
                   </span>
                 )}
-              </p>
-              {p.memo && !p.isDeposit && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`text-sm font-semibold ${p.isDeposit ? 'text-purple-700' : prevOwner ? 'text-amber-700' : 'text-[var(--warm-dark)]'}`}>
-                {p.actualAmount.toLocaleString()}원
-              </span>
+                {p.memo && !p.isDeposit && <span className="text-[0.6875rem] text-[var(--coral)]">· {p.memo}</span>}
+              </div>
               {canEdit && (
-                <div className="flex gap-1.5 ml-1">
+                <div className="flex gap-1.5">
                   <button onClick={() => startEdit(p)}
                     className="text-[0.625rem] font-medium px-2 py-1 rounded-lg border transition-colors"
                     style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>

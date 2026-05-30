@@ -19,6 +19,7 @@ type Room = {
   leaseTermId: string
   tenantId: string | null
   expected: number
+  balance: number       // 음수면 미수, 양수면 선납 — 미수 보충 자동 프리필용
   depositAmount: number
   cleaningFee: number
   moveInDate: string | null
@@ -36,12 +37,18 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
   const [pending, startTransition] = useTransition()
   const [tmOptions, setTmOptions] = useState<TmOption[]>([])
   const [forcedTm, setForcedTm] = useState<'auto' | string>('auto')
-  const [payAmount, setPayAmount] = useState<number>(0)
+  // 자동 프리필 — 미수가 있으면(balance<0) 그 절댓값(이번 달 보충), 아니면 expected.
+  // 사용자가 직접 바꾸면 그대로 유지. room 이 바뀌면 다시 프리필.
+  const [payAmount, setPayAmount] = useState<number>(room.balance < 0 ? -room.balance : room.expected)
+  useEffect(() => {
+    setPayAmount(room.balance < 0 ? -room.balance : room.expected)
+  }, [room.balance, room.expected])
   const [payDateVal, setPayDateVal] = useState<string>(kstYmdStr())
   const [payMethod, setPayMethod] = useState<string>('계좌이체')
   const [memo, setMemo] = useState<string>('')
   const [isDepositMode, setIsDepositMode] = useState(false)
   const [isCleaningFeeMode, setIsCleaningFeeMode] = useState(false)
+  const [showSpecialModes, setShowSpecialModes] = useState(false) // 보증금/청소비 분리 모드 토글 (기본 숨김)
   const [error, setError] = useState<string>('')
 
   // lastPayMethod localStorage 동기화
@@ -149,7 +156,14 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
           <MoneyInput value={payAmount} onChange={setPayAmount} placeholder="0원" />
         </div>
       </div>
-      {room.depositAmount > 0 && (
+      {/* 보증금/청소비 분리 모드 — 기본 숨김. 입주 첫 달에만 주로 쓰이므로. */}
+      {(room.depositAmount > 0 || room.cleaningFee > 0) && !showSpecialModes && !isDepositMode && !isCleaningFeeMode && (
+        <button type="button" onClick={() => setShowSpecialModes(true)}
+          className="text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">
+          보증금·청소비 함께 수납 ▾
+        </button>
+      )}
+      {room.depositAmount > 0 && (showSpecialModes || isDepositMode) && (
         <div className="space-y-1">
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={isDepositMode}
@@ -180,7 +194,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
           )}
         </div>
       )}
-      {room.depositAmount === 0 && room.cleaningFee > 0 && (
+      {room.depositAmount === 0 && room.cleaningFee > 0 && (showSpecialModes || isCleaningFeeMode) && (
         <div className="space-y-1">
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={isCleaningFeeMode}

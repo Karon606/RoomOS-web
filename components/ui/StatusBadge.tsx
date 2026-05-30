@@ -39,6 +39,18 @@ const BADGE: Record<BadgeTone, { bg: string; fg: string }> = {
   info:    { bg: 'var(--badge-info-bg)',    fg: 'var(--badge-info-fg)'    }, // 일반 정보 — 중립
 }
 
+// 뱃지 아래 보조 텍스트 색 — 행 배경(옅은 틴트) 위에 놓이므로 진한 톤(badge bg)으로.
+// 흰색 fg 그대로 쓰면 옅은 배경에 묻혀 안 보임 (사용자 피드백 2026-05-30).
+const SUB_FG: Record<BadgeTone, string> = {
+  paid:    'var(--badge-paid-bg)',
+  await:   'var(--badge-await-bg)',
+  unpaid:  'var(--badge-unpaid-bg)',
+  overdue: 'var(--coral)',
+  exit:    'var(--badge-exit-bg)',
+  movein:  'var(--badge-movein-bg)',
+  info:    'var(--warm-mid)',
+}
+
 export function StatusBadge({
   tone,
   children,
@@ -61,7 +73,7 @@ export function StatusBadge({
         {children}
       </span>
       {sub && (
-        <span className="text-[10px] font-medium whitespace-nowrap" style={{ color: s.fg, opacity: 0.85 }}>
+        <span className="text-[10px] font-semibold whitespace-nowrap" style={{ color: SUB_FG[tone] }}>
           {sub}
         </span>
       )}
