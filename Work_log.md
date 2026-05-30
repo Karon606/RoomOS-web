@@ -681,6 +681,117 @@
 - 회귀 테스트 시나리오 통과 후에만 머지(수납 등록·할인·임시조정·양도인 정산 각 1회).
 - 메모리 [[project_entity_modal]] "2b 고위험" 그대로.
 
+### O. 호실 셸 enum 라벨 매핑 fix (2026-05-30, b340ad2)
+- **증상**: 호실 셸의 창문 타입에 `OUTER`, 방향에 `SOUTH` 등 raw enum 값 그대로 노출.
+- **원인**: Phase 2.2 의 `components/entity-modal/widgets/RoomSpatialInfo.tsx` 가 소문자 키(`exterior`/`south`)로 매핑 표를 만들어 매칭이 일어나지 않아 fallback(`val`)이 표시됨.
+- **수정**: DB 실제 값은 대문자 enum(`OUTER`/`INNER`, `NORTH`/`NORTH_EAST`/.../`NORTH_WEST`). `RoomManageClient` 의 기존 매핑(대문자)과 일치시키고 소문자도 호환 유지. settings 폼 기준.
+
+### P. 수납 UX 회귀 6건 (2026-05-30, b370207)
+사용자 회귀 발견 → 한 번에 6건 잡음.
+
+1. **PaymentEntryForm 금액 자동 프리필** — 미수 있으면(`balance<0`) 그 절댓값(보충액), 없으면 `expected`. `room` 데이터 바뀌면 useEffect 로 재프리필. settlement 에 `balance` 노출.
+2. **보증금/청소비 분리 모드 체크박스 숨김** — 기본 숨김 + "보증금·청소비 함께 수납 ▾" 토글로 노출. 첫 달 외엔 거의 안 쓰여서.
+3. **PrevOwnerSettleWidget 설명 명확화** — "메뉴 모드"(언제든 변경 가능) vs "양도인 정산 버튼"(계약당 1회) 구분 명시. 모호한 '한 번만' 제거.
+4. **PaymentRecordList 레이아웃 재구성** — 줄1=회차·날짜·방법 + 금액(우측, nowrap), 줄2=뱃지(보증금/양도인/귀속월)+메모+액션. 셸 좁은 폭에서도 "귀속 5월" 안 잘리고 270,000원 안 줄바뀜.
+5. **공실 '열 설정' 버튼 위치** — 페이지 하단(공실 섹션 헤더) → 상단 필터 행. 공실 0실에도 항상 노출. 라벨도 "공실 표시" 로 변경(메인 표 열 설정과 구분).
+6. **StatusBadge sub 가독성** — "8일 초과" 등 색을 흰색(badge fg) → tone별 진한 톤(overdue=coral, unpaid=amber bg, ...)으로. `SUB_FG` 맵 추가. 옅은 행 틴트에서 가독성 회복.
+
+### Q. 계약서 워드마크 색 fix (2026-05-30, 187cb6f)
+- **증상**: 계약서 출력 페이지의 'made with 스테이음' 워드마크의 'eum'·Arch 가 브랜드 Terracotta(`#a03c2e`)가 아니라 다른 주황(`#e84a1a`)으로 노출. 메모리 `feedback_brand_wordmark` 위반.
+- **수정**: `.made-with` 가 `--persimmon` 까지 오버라이드하던 거 제거. `'stay'` 만 톤 다운한 회색(`--ink: #4a4a4a`)으로 유지하고 `'eum'`·Arch 는 브랜드 색 그대로.
+
+### R. A2 — Dead code 청소 (2026-05-30, 2e50e62) — 합계 −460줄
+Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡동사니 정리. 기능 영향 0.
+
+- **RoomsClient 1216 → 959 (−257줄)**
+  · payment 모달 state 다수(`selectedRoom`·`paymentHistory`·`payDiscounts`·`prevOwner*`·`override*`·`payAmount`·`isDeposit*`·`edit*` 등)
+  · 핸들러: `handleSavePayment`, `handle*Discount`, `handle*Payment`
+  · 미사용 actions/lib imports(`savePayment`·`updatePayment`·`addRentDiscount`·`getPrevOwnerSettleState` 등 + `calcProRata`·`PRORATE_BASE_DAYS`·`fmtKorMoney` 등 UI 헬퍼)
+- **TenantClient 3268 → 3073 (−195줄)**
+  · 요청·컴플레인 탭 state, AI 분석 state, 상태 전환 미니폼 state
+  · 핸들러: `transitionsFor()`, `startTransitionAction`, `runTransition`, `submitTransition`, `handleChangeDueDayAction`
+  · 상태 전환 미니폼 JSX 블록
+  · 미사용 imports(`analyzeTenantWithGemini`·`applyStatusTransition`·`*TenantRequest` 등)
+- **RoomManageClient 1297 → 1289 (−8줄)** — 잔여 주석·미사용 imports(`Loading`/`Badge`/`kstMonthStr`/`withSave`)
+
+**KEEP**: 페이지 자체 카드/필터/정렬/검색·편집 폼·일괄 편집·새 등록 모달.
+
+### S. NotificationBell 청소 (2026-05-30, 37ee518)
+- **메모 기록상**: 종 본문·딥링크 미구현. 실제 코드 점검 결과 `NotificationBell` 은 이미 완성됨(`computeAlerts()` 단일 소스, dropdown, 점 색, 딥링크, 읽음 처리 localStorage, "모두 확인", "대시보드에서 보기").
+- **잔재만 청소**: 딥링크 URL 의 옛 `&tab=info` 파라미터 제거. Phase 2.3c 후 탭 시스템 사라져서 무용. 셸 진입 정상.
+
+### T. B 잔여 — 푸시 발송 내역 히스토리 (2026-05-30, 18f451c)
+- **신규 model `PushHistory`** — `userId`·`source`('cron-daily'|'test')·`title`·`body`·`url`·`badge`·`tag`·`endpointCount`·`successCount`·`sentAt`. 인덱스 `(userId, sentAt DESC)`.
+- **`migrate_push_history.sql`** — 테이블 + 인덱스 + FK(`auth.users` cascade) + RLS.
+- **cron `/api/cron/push-alerts`** — webpush 발송 후 `prisma.pushHistory.create({source:'cron-daily', endpointCount, successCount})`. 실패해도 푸시 자체엔 영향 X.
+- **`sendTestPush`** — 동일하게 `source: 'test'` 로 row 적재.
+- **server action `getMyPushHistory(limit=20)`** — 본인 앞 발송 row.
+- **신규 `PushHistoryList`** 컴포넌트 — 펼침/접힘, 소스 라벨링(매일 알림/테스트), 상대시간(`방금/분/시간/일 전`), 성공/시도 카운트. 설정 페이지의 `PushToggle` 안에 통합.
+- ⚠️ **푸시 전 SQL 적용 필요**: `migrate_push_history.sql`.
+
+### U. #18 후속 — 안드로이드 뒤로가기 google.com/accounts 노출 회귀 (2026-05-30, 2ed5529)
+- **증상**: 로그인 후 안드로이드 시스템 백 누르면 google.com/accounts 가 노출됨. 이전 fix(`acb593e`)는 `/callback` 재진입만 막았고 Google OAuth 페이지 자체가 히스토리에 남는 건 그대로였음.
+- **수정 2단계**:
+  1. `LoginButton` — `skipBrowserRedirect: true` + `window.location.replace(data.url)` 로 Google 이동 → `/login` 이 history 에서 제거.
+  2. `/callback` 의 redirect URL 에 `?_fa=1` 부착 → 신규 `AuthBackTrap` 컴포넌트가 첫 popstate 1회 만 소비(`replaceState` 로 `_fa` 제거 + `pushState` 더미 + `popstate` 핸들러 1회 후 해제).
+- **마운트**: `AuthBackTrap` 을 root `app/layout.tsx` 에 단일 마운트. `_fa=1` 없으면 no-op 이라 다른 페이지 영향 0.
+
+### V. OCR 트랙 — "찍어 올리기" 패러다임 (2026-05-30~05-31)
+
+**V-1. OCR MVP** (2026-05-30, a2253ba)
+- **사용자 비전**: 영수증/물품 사진 찍어 올리면 앱이 분류·요약하고 사용자 검토 후 승인. 직접 입력 패러다임의 대안.
+- **신규 model `PendingReceipt`** — `propertyId`·`uploaderId`·`imageUrl`·`driveFileId`·`status`(pending/approved/rejected)·`inferredKind`/`Vendor`/`Date`/`Amount`/`Category`·`parsedJson`·`linkedExpenseId`·`createdAt`·`reviewedAt`.
+- **`migrate_pending_receipts.sql`** — 테이블·인덱스·FK·RLS.
+- **server actions `app/(app)/dashboard/pendingReceipt.ts`**:
+  · `uploadPendingReceipt` — Drive 업로드 + Gemini 2.5-flash 분류('expense'/'inventory'/'unknown') + 필드 추출. AI 실패해도 row 적재(수동 처리 가능).
+  · `getPendingReceipts` — 현재 영업장 pending 리스트.
+  · `approvePendingReceipt(id, final)` — Expense 생성 + `status='approved'` + `linkedExpenseId`.
+  · `rejectPendingReceipt(id)` — `status='rejected'`.
+- **`PendingReceiptSection`** — 📸 사진 올리기(camera capture) + 대기 카드 리스트(썸네일·AI 분류 뱃지·요약·등록/거절). 등록 시 인라인 폼(날짜·금액·카테고리·상호·메모) 프리필 후 확인.
+- 마운트: `DashboardClient` 의 `AlertsStrip` 다음 행.
+- ⚠️ **푸시 전 SQL 적용 필요**: `migrate_pending_receipts.sql`.
+
+**V-2. 재고 분류 케이스 처리** (2026-05-30, f334bef)
+- 이전엔 `'inventory'` 분류된 사진은 거절 후 재고 페이지 수동 이동만 가능.
+- **AI 프롬프트 확장** — `itemLabel`·`specValue/Unit`·`qtyValue/Unit` 도 추출 ('신라면', '300ml', '6봉지').
+- **`approvePendingReceipt` 시그니처 확장** — optional `itemLabel`·`spec*`·`qty*`. 그대로 Expense row 에 저장 → 재고 모듈이 `TRACKED_CATEGORIES`(부식비/소모품비/폐기물 처리비) + `itemLabel` 패턴으로 자동 인식. `revalidatePath('/inventory')` 추가.
+- **UI 분기** — 카드에 [지출 등록] + [재고 등록] + [거절] 3액션. AI 추론에 맞춰 강조 색(지출=coral, 재고=green). `editingMode = 'expense' | 'inventory'`. 재고 모드면 폼에 품목명·규격·수량 필드 + 카테고리는 추적 가능 3개로 제한.
+
+**V-3. 영수증 모서리 돋보기 + 계약서/신분증 OCR** (2026-05-31, 14ec148)
+
+1. **CornerLoupe (영수증 모서리 확대경)** — `FinanceClient` 의 `ReceiptScanModal`:
+   - 드래그 시작 시 활성 코너 위(공간 부족 시 아래) 120px 원형 확대경 표시.
+   - 원본 비트맵에서 코너 중심 영역 잘라 2.8× 확대 + 십자선·중심점.
+   - 손가락이 코너 가려도 픽셀 단위 정밀 조정 — 모바일 필수 UX.
+   - `CornerHandle` 에 `onStart`/`onEnd` 콜백 추가, `activeCorner` state 로 토글.
+
+2. **계약서 OCR — `analyzeContractWithGemini`** (tenants/actions):
+   - 추출 필드: 이름·영문이름·성별·국적·생년월일·직업·주연락처·비상연락처·관계·호실·월세·보증금·청소비·납부일·입주일·계약만료.
+
+3. **신분증/외국인등록증 OCR — `analyzeIdCardWithGemini`** (tenants/actions):
+   - 추출: 이름·영문이름·성별·생년월일·국적.
+   - 주민번호 앞 7번째 숫자로 19YY/20YY 변환 가이드(내·외국인 5/6/7/8 포함).
+
+4. **`OcrToolbar`** — 입주자 등록·편집 폼 최상단 마운트:
+   - 버튼 [📄 계약서] / [🪪 신분증] + camera capture.
+   - controlled state(`rentAmount`/`depositAmountVal`/`cleaningFeeVal`/`selectedRoomId`/`applyDueDay`)는 직접 setter.
+   - uncontrolled `<input name="X">` 들은 React 네이티브 value setter 트릭(`Object.getOwnPropertyDescriptor(...).set.call(el, value)` + `input`/`change` 이벤트 dispatch)으로 채워서 onChange 가 정상 트리거.
+   - 호실은 `roomNo` 정규화 매칭으로 select 옵션 자동 선택.
+- ⚠️ **사용자 안내**: 추출 결과 자동 입력. 한글 이름이 영문 칸에 들어가거나 호실 매칭 실패 등 오인 가능 → 반드시 확인 후 저장.
+
+### W. 남은 트랙 (다음 세션)
+- **OCR 후속**: 보증금 반환·수익 분류 케이스, 더 다양한 분류(예: 임대료 영수증)
+- **공실 안내 페이지 2단계** — 인앱 편집기 (큰)
+- **Brand Guide v1.2 잔여 점검** — 상태색·radius 누락 부위 훑기 (작)
+- **국가 서류 (H)** — 외국인 입주자 신고·신원 서류 (큰)
+- **Phase 2.5 — 편집 모드 위젯화** — 호실/고객 편집 폼 → 셸에서 in-place 편집 (큰)
+- **납입일 변경 인라인 폼** — Tenant 계약 정보 안 dueDay 변경 위젯 (작)
+
+### W-검증. 사용자가 직접 돌려야 할 회귀 (2026-05-31 기준 미완료)
+- **결제 정확성 회귀** — Phase 2.4 의 9개 시나리오(FIFO·할인·임시조정·영구변경·양도인정산·보증금분리·내역편집·삭제·납부).
+- **OCR MVP 검증** — SQL 적용 후 영수증/물품/계약서/신분증 사진 올려서 분류·등록 흐름.
+- **#18 뒤로가기 fix 검증** — 안드로이드에서 로그인 후 시스템 백 → google.com/accounts 안 뜨는지.
+
 ---
 
 ## 참고 / 주의사항
