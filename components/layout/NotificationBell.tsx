@@ -33,9 +33,10 @@ function saveReadMap(m: Record<string, string>) {
   try { localStorage.setItem(READ_KEY, JSON.stringify(m)) } catch { /* ignore */ }
 }
 
-// 알림 항목 → 상세 딥링크 URL
+// 알림 항목 → 상세 딥링크 URL.
+// tenantId 있으면 /tenants 의 URL 핸들러가 Prism 셸을 자동으로 띄움(Phase 2.3c).
 function hrefOf(a: AlertItem): string | null {
-  if (a.tenantId) return `/tenants?tenantId=${a.tenantId}&tab=info`
+  if (a.tenantId) return `/tenants?tenantId=${a.tenantId}`
   return a.href ?? null
 }
 
