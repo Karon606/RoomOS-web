@@ -1,24 +1,12 @@
 'use client'
 
-import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
-import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride, getTargetMonthOptions, savePrevOwnerSettle, getPrevOwnerSettleState, setPrevOwnerSettleMenu, getRentDiscounts, addRentDiscount, deleteRentDiscount, type TargetMonthOption, type RentDiscountRow } from './actions'
-import { discountLabel } from '@/lib/rentDiscount'
-import { changeDueDay } from '@/app/(app)/tenants/actions'
-import { calcProRata, PRORATE_BASE_DAYS } from '@/lib/prorate'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { fmtKorMoney } from '@/lib/fmtMoney'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
-import { MoneyInput } from '@/components/ui/MoneyInput'
-import { DatePicker } from '@/components/ui/DatePicker'
-import { Btn } from '@/components/ui/Btn'
-import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
-import { Loading } from '@/components/ui/Loading'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { formatPhone } from '@/lib/formatPhone'
-import { kstYmdStr } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
-import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SortSelect } from '@/components/ui/SortSelect'
 import { RoomCard } from '@/components/ui/RoomCard'
@@ -65,19 +53,6 @@ type RoomStatus = {
   nextDueDate: string | null
   nextDueAmount: number
   expectedMoveOut: string | null
-}
-
-type PaymentRecord = {
-  id: string
-  seqNo: number
-  payDate: Date
-  targetMonth: string
-  actualAmount: number
-  payMethod: string | null
-  memo: string | null
-  isPaid: boolean
-  isDeposit: boolean
-  isPrevOwner: boolean
 }
 
 // ── 열 설정 ──────────────────────────────────────────────────────
@@ -229,61 +204,14 @@ function getSortValue(room: RoomStatus, key: SortKey, targetMonth: string): stri
 // ── 컴포넌트 ─────────────────────────────────────────────────────
 
 export default function RoomsClient({
-  roomStatus, targetMonth, myRole
+  roomStatus, targetMonth,
 }: {
   roomStatus: RoomStatus[]
   targetMonth: string
   myRole: string
 }) {
-  const canEdit = myRole === 'OWNER' || myRole === 'MANAGER'
-  const router = useRouter()
   const searchParams = useSearchParams()
   const entityModal = useEntityModal()
-  const [selectedRoom, setSelectedRoom] = useState<RoomStatus | null>(null)
-  const [paymentHistory, setPaymentHistory] = useState<PaymentRecord[]>([])
-  const [payAcquisitionDate, setPayAcquisitionDate] = useState<Date | null>(null)
-  // #14 월세 할인 — 현재 lease의 할인 목록 + 추가 폼
-  const [payDiscounts, setPayDiscounts] = useState<RentDiscountRow[]>([])
-  const [showDiscForm, setShowDiscForm] = useState(false)
-  const [discType, setDiscType]   = useState<'amount' | 'percent'>('amount')
-  const [discValue, setDiscValue] = useState(0)
-  const [discScope, setDiscScope] = useState<'permanent' | 'temporary'>('permanent')
-  const [discStart, setDiscStart] = useState('')   // 'YYYY-MM'
-  const [discEnd, setDiscEnd]     = useState('')
-  const [prevOwnerCanSettle, setPrevOwnerCanSettle] = useState(false)  // 양도인 정산 메뉴 노출
-  const [prevOwnerMenuMode, setPrevOwnerMenuMode] = useState<string>('auto')  // auto|show|hide
-  const [showPayModal, setShowPayModal] = useState(false)
-  const [showPayForm, setShowPayForm] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
-
-  // viewMonth 변경 시 stale modal 자동 닫기
-  useEffect(() => {
-    setShowPayModal(false)
-    setShowPayForm(false)
-    setSelectedRoom(null)
-    setPaymentHistory([])
-  }, [targetMonth])
-
-  // 토스트 자동 사라짐
-  useEffect(() => {
-    if (!toast) return
-    const t = setTimeout(() => setToast(null), 5000)
-    return () => clearTimeout(t)
-  }, [toast])
-
-  // 수납 등록 폼 열릴 때 귀속월 옵션 fetch
-  useEffect(() => {
-    if (!showPayForm || !selectedRoom?.leaseTermId) {
-      setTmOptions([])
-      setForcedTm('auto')
-      return
-    }
-    let cancelled = false
-    getTargetMonthOptions(selectedRoom.leaseTermId, targetMonth).then(opts => {
-      if (!cancelled) setTmOptions(opts)
-    }).catch(() => {})
-    return () => { cancelled = true }
-  }, [showPayForm, selectedRoom?.leaseTermId, targetMonth])
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'checkout' | 'awaiting' | 'paid'>('all')
   const [floorFilter, setFloorFilter] = useState('')
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(DEFAULT_VIS)
@@ -295,34 +223,6 @@ export default function RoomsClient({
   const [sortKey, setSortKey] = useState<SortKey>('status')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [search, setSearch] = useUrlState('q', '')
-  const [error, setError] = useState('')
-  const [isPending, startTransition] = useTransition()
-  const [showOverrideForm, setShowOverrideForm] = useState(false)
-  const [confirmClearOverride, setConfirmClearOverride] = useState(false)
-  const [overrideDateInput, setOverrideDateInput] = useState('')
-  const [overrideReason, setOverrideReason] = useState('')
-  const [showDueDayChange, setShowDueDayChange] = useState(false)
-  const [newDueDayInput, setNewDueDayInput] = useState('')
-  const [payAmount, setPayAmount] = useState(0)
-  const [payDateVal, setPayDateVal] = useState(kstYmdStr())
-  const [isDepositMode, setIsDepositMode] = useState(false)
-  // 직전에 사용한 납부방법 — 연속 수납 입력 시 자동 prefill (대시보드와 localStorage 공유)
-  const [lastPayMethod, setLastPayMethod] = useState(() =>
-    typeof window !== 'undefined' ? (localStorage.getItem('stayeum-last-pay-method') ?? '') : ''
-  )
-  const [isCleaningFeeMode, setIsCleaningFeeMode] = useState(false)
-  // 귀속월 — 'auto' = FIFO 자동, 'YYYY-MM' = 사용자가 명시한 귀속월
-  const [forcedTm, setForcedTm] = useState<'auto' | string>('auto')
-  const [tmOptions, setTmOptions] = useState<TargetMonthOption[]>([])
-  const [loadingHistory, setLoadingHistory] = useState(false)
-  const [editingPayId, setEditingPayId] = useState<string | null>(null)
-  const [editAmount, setEditAmount] = useState(0)
-  const [editDate, setEditDate] = useState('')
-  const [editPayMethod, setEditPayMethod] = useState('')
-  const [editMemo, setEditMemo] = useState('')
-  const [editTargetMonth, setEditTargetMonth] = useState('')
-  const [editingAutoPay, setEditingAutoPay] = useState(false)
-  const [autoPayDate, setAutoPayDate] = useState('')
   const colMenuRef       = useRef<HTMLDivElement>(null)
   const vacantColMenuRef = useRef<HTMLDivElement>(null)
   const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_WIDTHS)
@@ -488,155 +388,6 @@ export default function RoomsClient({
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleUpdatePayment = (p: PaymentRecord) => {
-    setEditingPayId(p.id)
-    setEditAmount(p.actualAmount)
-    setEditDate(kstYmdStr(new Date(p.payDate)))
-    setEditPayMethod(p.payMethod ?? '')
-    setEditMemo(p.memo ?? '')
-    setEditTargetMonth(p.targetMonth)
-    // 편집 시 귀속월 옵션 fetch (보증금이 아닌 경우)
-    if (!p.isDeposit && selectedRoom?.leaseTermId) {
-      getTargetMonthOptions(selectedRoom.leaseTermId, targetMonth).then(setTmOptions).catch(() => {})
-    }
-  }
-
-  const handleSaveEdit = async () => {
-    if (!editingPayId) return
-    startTransition(async () => {
-      const res = await withSave(() => updatePayment(editingPayId, {
-        actualAmount: editAmount,
-        payDate:      editDate,
-        payMethod:    editPayMethod,
-        memo:         editMemo || undefined,
-        targetMonth:  editTargetMonth || undefined,
-      }), { success: '수납 기록 수정됨' })
-      if (!res.ok) { setError(res.error); return }
-      if (selectedRoom?.leaseTermId) {
-        const { records, acquisitionDate } = await getPaymentsByLease(selectedRoom.leaseTermId, targetMonth)
-        setPaymentHistory(records as PaymentRecord[])
-        setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
-      }
-      setEditingPayId(null)
-      router.refresh()
-    })
-  }
-
-  const handleSavePayment = async (e: { preventDefault(): void; currentTarget: HTMLFormElement }) => {
-    e.preventDefault()
-    if (!selectedRoom?.leaseTermId) return
-    setError('')
-    const fd = new FormData(e.currentTarget)
-    const payMethod = fd.get('payMethod') as string
-    const memo = fd.get('memo') as string
-    startTransition(async () => {
-      const release = trackSave()
-      try {
-        if (isDepositMode || isCleaningFeeMode) {
-          await saveDepositPayment({
-            leaseTermId:   selectedRoom.leaseTermId!,
-            tenantId:      selectedRoom.tenantId!,
-            targetMonth,
-            depositAmount: isCleaningFeeMode ? selectedRoom.cleaningFee : selectedRoom.depositAmount,
-            rentAmount:    selectedRoom.expected,
-            totalPaid:     payAmount,
-            payDate:       payDateVal,
-            payMethod,
-            memo:          isCleaningFeeMode ? (memo || '청소비') : (memo || undefined),
-          })
-        } else {
-          const result = await savePayment({
-            leaseTermId:    selectedRoom.leaseTermId!,
-            tenantId:       selectedRoom.tenantId!,
-            targetMonth,
-            expectedAmount: selectedRoom.expected,
-            actualAmount:   payAmount,
-            payDate:        payDateVal,
-            payMethod,
-            memo,
-            forcedTargetMonth: forcedTm === 'auto' ? undefined : forcedTm,
-          })
-          // FIFO 결과를 사용자에게 알림 (다른 월로 분배된 경우)
-          if (result.allocations.length > 0) {
-            const inputMonth = result.inputMonth
-            const otherMonths = result.allocations.filter(a => a.targetMonth !== inputMonth)
-            if (otherMonths.length > 0) {
-              const summary = otherMonths
-                .map(a => `${Number(a.targetMonth.slice(5))}월분 ${a.amount.toLocaleString()}원`)
-                .join(', ')
-              setToast(`자동 분배: ${summary} (미수가 가장 오래된 월부터 충당)`)
-            }
-          }
-        }
-        if (payMethod) {
-          localStorage.setItem('stayeum-last-pay-method', payMethod)
-          setLastPayMethod(payMethod)
-        }
-        setShowPayForm(false)
-        setShowPayModal(false)
-        router.refresh()
-        pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨' : '월세 수납됨')
-      } catch (err: unknown) {
-        const msg = (err as Error).message
-        setError(msg); pushToast('error', msg)
-      } finally { release() }
-    })
-  }
-
-  // #14 할인 추가/삭제
-  const handleAddDiscount = () => {
-    if (!selectedRoom?.leaseTermId) return
-    if (!(discValue > 0)) { setError('할인 값을 입력하세요.'); return }
-    if (discScope === 'temporary' && !discStart) { setError('일시 할인은 시작 월을 선택하세요.'); return }
-    const leaseTermId = selectedRoom.leaseTermId
-    startTransition(async () => {
-      const res = await addRentDiscount({
-        leaseTermId, discountType: discType, value: discValue, scope: discScope,
-        startMonth: discScope === 'temporary' ? discStart : null,
-        endMonth: discScope === 'temporary' ? (discEnd || null) : null,
-      })
-      if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-      setPayDiscounts(await getRentDiscounts(leaseTermId))
-      setShowDiscForm(false); setDiscValue(0); setDiscStart(''); setDiscEnd('')
-      router.refresh()
-      pushToast('success', '할인 적용됨')
-    })
-  }
-  const handleDeleteDiscount = (id: string) => {
-    if (!selectedRoom?.leaseTermId) return
-    const leaseTermId = selectedRoom.leaseTermId
-    startTransition(async () => {
-      const res = await deleteRentDiscount(id)
-      if (!res.ok) { pushToast('error', res.error); return }
-      setPayDiscounts(await getRentDiscounts(leaseTermId))
-      router.refresh()
-      pushToast('success', '할인 삭제됨')
-    })
-  }
-
-  const handleDeletePayment = async (paymentId: string) => {
-    if (!confirm('이 수납 기록을 삭제하시겠습니까?')) return
-    startTransition(async () => {
-      const release = trackSave()
-      try {
-        await deletePayment(paymentId)
-        setShowPayModal(false)
-        router.refresh()
-        pushToast('success', '수납 기록 삭제됨')
-      } catch (err: unknown) {
-        const msg = (err as Error).message
-        setError(msg); pushToast('error', msg)
-      } finally { release() }
-    })
-  }
-
-  function fmtDate(d: Date | string | null | undefined): string {
-    if (!d) return '—'
-    const dt = new Date(d)
-    const DAYS = ['일', '월', '화', '수', '목', '금', '토']
-    return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})`
-  }
-
   // 요약 통계
   const unpaidCount   = occupied.filter(r => !r.isPaid).length
   const checkoutCount = occupied.filter(r => isCheckoutRoom(r)).length
@@ -715,15 +466,6 @@ export default function RoomsClient({
 
   return (
     <div className="space-y-6">
-      {/* 토스트 */}
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-md w-[calc(100%-2rem)] bg-[var(--warm-dark)] text-white text-xs rounded-lg px-4 py-3 shadow-lift flex items-start gap-2">
-          <span className="text-amber-300 shrink-0">✦</span>
-          <span className="flex-1 leading-relaxed">{toast}</span>
-          <button onClick={() => setToast(null)} className="shrink-0 text-white/60 hover:text-white">✕</button>
-        </div>
-      )}
-
       {/* 헤더 — 우측 월 셀렉터(기간) */}
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-bold text-[var(--warm-dark)]">수납 관리</h1>

@@ -2,21 +2,20 @@
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addTenant, updateTenant, deleteTenant, analyzeTenantWithGemini, createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests, changeDueDay, recordDepositReturn,
+import { addTenant, updateTenant, deleteTenant, recordDepositReturn,
   getContractFiles, deleteContractFile, createContractScanUploadSession, finalizeContractScan,
-  batchUpdateTenants, applyStatusTransition,
+  batchUpdateTenants,
   type ContractFileRow,
 } from './actions'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
-import { calcProRata, PRORATE_BASE_DAYS } from '@/lib/prorate'
 import { Btn } from '@/components/ui/Btn'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { PhoneInput } from '@/components/ui/PhoneInput'
-import { IntlPhoneInput, fmtIntlPhone } from '@/components/ui/IntlPhoneInput'
+import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput'
 import { formatPhone } from '@/lib/formatPhone'
 import { CountrySelect, flagByName } from '@/components/ui/CountrySelect'
 import { JobSelect } from '@/components/ui/JobSelect'
@@ -166,48 +165,6 @@ const PAST_FILTERS = [
 ] as const
 type PastFilter = (typeof PAST_FILTERS)[number]['key']
 
-// 상태별 명시적 전환 액션 — "이 사람을 다음 단계로" 버튼.
-// field 있으면 그 값만 묻는 미니폼, 없으면 확인 후 바로 적용.
-type TransitionDef = {
-  key: string
-  label: string
-  toStatus: string
-  field?: 'moveInDate' | 'expectedMoveOut' | 'moveOutDate' | 'rentAmount'
-  fieldLabel?: string
-  withDeposit?: boolean             // 퇴실 처리 — 보증금 환불도 함께
-  tone?: 'primary' | 'secondary' | 'danger'
-  confirm?: string                  // field 없는 전환의 확인 문구
-}
-function transitionsFor(status: string): TransitionDef[] {
-  switch (status) {
-    case 'WAITING_TOUR': return [
-      { key: 'tourDone', label: '투어 완료', toStatus: 'TOUR_DONE', tone: 'secondary', confirm: '투어 완료로 변경할까요?' },
-      { key: 'reserve',  label: '예약 전환', toStatus: 'RESERVED', field: 'moveInDate', fieldLabel: '입주 희망일', tone: 'primary' },
-      { key: 'cancel',   label: '입실 취소', toStatus: 'CANCELLED', tone: 'danger', confirm: '입실 취소로 변경할까요?' },
-    ]
-    case 'TOUR_DONE': return [
-      { key: 'reserve',  label: '예약 전환', toStatus: 'RESERVED', field: 'moveInDate', fieldLabel: '입주 희망일', tone: 'primary' },
-      { key: 'cancel',   label: '입실 취소', toStatus: 'CANCELLED', tone: 'danger', confirm: '입실 취소로 변경할까요?' },
-    ]
-    case 'RESERVED': return [
-      { key: 'moveIn',   label: '입실 처리', toStatus: 'ACTIVE', field: 'moveInDate', fieldLabel: '입주일', tone: 'primary' },
-      { key: 'cancel',   label: '입실 취소', toStatus: 'CANCELLED', tone: 'danger', confirm: '입실 취소로 변경할까요?' },
-    ]
-    case 'ACTIVE': return [
-      { key: 'checkoutPending', label: '퇴실 예정 처리', toStatus: 'CHECKOUT_PENDING', field: 'expectedMoveOut', fieldLabel: '퇴실 예정일', tone: 'primary' },
-      { key: 'nonResident',     label: '비거주 전환',    toStatus: 'NON_RESIDENT', field: 'rentAmount', fieldLabel: '비거주 월 이용료', tone: 'secondary' },
-    ]
-    case 'CHECKOUT_PENDING': return [
-      { key: 'checkout',       label: '퇴실 처리',    toStatus: 'CHECKED_OUT', field: 'moveOutDate', fieldLabel: '퇴실일', withDeposit: true, tone: 'primary' },
-      { key: 'cancelCheckout', label: '퇴실예정 취소', toStatus: 'ACTIVE', tone: 'secondary', confirm: '거주중으로 되돌릴까요?' },
-    ]
-    case 'NON_RESIDENT': return [
-      { key: 'reside', label: '거주 전환', toStatus: 'ACTIVE', field: 'moveInDate', fieldLabel: '입주일', tone: 'primary' },
-    ]
-    default: return []  // CHECKED_OUT, CANCELLED — 전환 버튼 없음
-  }
-}
-
 // ── 헬퍼 ─────────────────────────────────────────────────────────
 
 function toDateInput(d: string | Date | null | undefined): string {
@@ -322,8 +279,6 @@ function getSortValue(t: Tenant, key: SortKey): string | number {
   }
 }
 
-// 납입일 변경 일할 계산(calcProRata)·PRORATE_BASE_DAYS — @/lib/prorate 로 이동 (수납관리와 공용)
-
 function loadColVis(): Record<ColKey, boolean> | null {
   if (typeof window === 'undefined') return null
   try {
@@ -364,18 +319,6 @@ export default function TenantClient({
   const [editTenant, setEditTenant]       = useState<Tenant | null>(null)
   const [detailTenant, setDetailTenant]   = useState<Tenant | null>(null)
   const [detailEditMode, setDetailEditMode] = useState(false)
-  const [detailTab, setDetailTab]         = useState<'info' | 'requests' | 'analysis'>('info')
-
-  // 요청사항 탭 상태
-  const [requests, setRequests]               = useState<Awaited<ReturnType<typeof getTenantRequests>>>([])
-  const [requestsLoading, setRequestsLoading] = useState(false)
-  const [newContent, setNewContent]           = useState('')
-  const [newReqDate, setNewReqDate]           = useState(() => kstYmdStr())
-  const [newTargetDate, setNewTargetDate]     = useState('')
-  const [reqPending, startReqTransition]      = useTransition()
-  const [showHistory, setShowHistory]         = useState(false)
-  const [aiText, setAiText]               = useState('')
-  const [aiLoading, setAiLoading]         = useState(false)
   const [roomDetailId, setRoomDetailId]   = useState<string | null>(null)
   const [error, setError]               = useState('')
   const [deleteTarget, setDeleteTarget]   = useState<{ id: string; name: string } | null>(null)
@@ -383,11 +326,6 @@ export default function TenantClient({
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
   const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
-  // 명시적 상태 전환 미니폼
-  const [transition, setTransition] = useState<{ def: TransitionDef; leaseTermId: string; tenantId: string; tenantName: string; depositAmount: number } | null>(null)
-  const [transDate, setTransDate]   = useState('')
-  const [transRent, setTransRent]   = useState<number | undefined>(undefined)
-  const [transRefund, setTransRefund] = useState<number | undefined>(undefined)
   const [toast, setToast] = useState<string | null>(null)
   const [filter, setFilter]             = useState<'residents' | 'inquiry' | 'past' | 'dropped'>('residents')
   const [residentFilter, setResidentFilter] = useState<ResidentFilter>('all')
@@ -403,10 +341,6 @@ export default function TenantClient({
   const [isPending, startTransition]    = useTransition()
   const [colWidths, setColWidths]       = useState<Record<string, number>>(DEFAULT_WIDTHS)
   const colWidthsRef                    = useRef<Record<string, number>>(DEFAULT_WIDTHS)
-
-  // 납입일 변경
-  const [showDueDayChange, setShowDueDayChange] = useState(false)
-  const [newDueDayInput, setNewDueDayInput]     = useState('')
 
   // 수납 모달
   const [payTarget, setPayTarget]   = useState<{ tenant: Tenant; lease: LeaseTerm } | null>(null)
@@ -461,17 +395,6 @@ export default function TenantClient({
       })
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 요청사항 탭 진입 시 목록 로드
-  useEffect(() => {
-    if (detailTab === 'requests' && detailTenant) {
-      setRequestsLoading(true)
-      getTenantRequests(detailTenant.id).then(r => {
-        setRequests(r)
-        setRequestsLoading(false)
-      })
-    }
-  }, [detailTab, detailTenant?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 열 설정 변경 시 저장
   const updateColVis = (key: ColKey, val: boolean) => {
@@ -696,63 +619,6 @@ export default function TenantClient({
   }
 
 
-  // 명시적 상태 전환 — field 없으면 확인 후 바로 적용, 있으면 미니폼 오픈
-  const startTransitionAction = (def: TransitionDef, lease: LeaseTerm, tenantId: string, tenantName: string) => {
-    if (!def.field) {
-      if (def.confirm && !confirm(`${tenantName}님 — ${def.confirm}`)) return
-      runTransition(def, { leaseTermId: lease.id, tenantId, tenantName, depositAmount: lease.depositAmount })
-      return
-    }
-    setTransDate(
-      def.field === 'expectedMoveOut' ? toDateInput(lease.expectedMoveOut)
-      : def.field === 'moveOutDate'   ? kstYmdStr()
-      : def.field === 'moveInDate'    ? (toDateInput(lease.moveInDate) || kstYmdStr())
-      : '',
-    )
-    setTransRent(def.field === 'rentAmount' ? (lease.rentAmount || undefined) : undefined)
-    setTransRefund(def.withDeposit ? (lease.depositAmount || 0) : undefined)
-    setTransition({ def, leaseTermId: lease.id, tenantId, tenantName, depositAmount: lease.depositAmount })
-  }
-
-  const runTransition = (
-    def: TransitionDef,
-    ctx: { leaseTermId: string; tenantId: string; tenantName: string; depositAmount: number },
-    fields?: { moveInDate?: string; expectedMoveOut?: string; moveOutDate?: string; rentAmount?: number },
-  ) => {
-    startTransition(async () => {
-      const release = trackSave()
-      try {
-        // 퇴실 처리 + 보증금 환불 동시
-        if (def.withDeposit && transRefund != null && transRefund > 0) {
-          const r = await recordDepositReturn({
-            leaseTermId: ctx.leaseTermId, tenantId: ctx.tenantId,
-            depositAmount: ctx.depositAmount, returnedAmount: transRefund,
-            date: fields?.moveOutDate || kstYmdStr(), tenantName: ctx.tenantName,
-          })
-          if (!r.ok) { setError(r.error); pushToast('error', r.error); return }
-        }
-        const res = await applyStatusTransition({
-          leaseTermId: ctx.leaseTermId, tenantId: ctx.tenantId, toStatus: def.toStatus, ...(fields ?? {}),
-        })
-        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-        pushToast('success', `${ctx.tenantName}님 — ${def.label} 완료`)
-        setTransition(null); setDetailTenant(null); refresh()
-      } finally { release() }
-    })
-  }
-
-  const submitTransition = () => {
-    if (!transition) return
-    const { def, leaseTermId, tenantId, tenantName, depositAmount } = transition
-    const fields: { moveInDate?: string; expectedMoveOut?: string; moveOutDate?: string; rentAmount?: number } = {}
-    if (def.field === 'moveInDate')      fields.moveInDate = transDate
-    if (def.field === 'expectedMoveOut') fields.expectedMoveOut = transDate
-    if (def.field === 'moveOutDate')     fields.moveOutDate = transDate
-    if (def.field === 'rentAmount')      fields.rentAmount = transRent ?? 0
-    runTransition(def, { leaseTermId, tenantId, tenantName, depositAmount }, fields)
-  }
-
-
   const handleDepositRefundConfirm = () => {
     if (!depositRefundModal) return
     const { fd, tenantName, depositAmount, fromDetail, leaseTermId, tenantId } = depositRefundModal
@@ -888,26 +754,6 @@ export default function TenantClient({
         setPayAcquisitionDate(acquisitionDate ? new Date(acquisitionDate) : null)
       }
       setEditingPayId(null)
-      refresh()
-    })
-  }
-
-  const handleChangeDueDayAction = async () => {
-    if (!detailTenant || !newDueDayInput.trim()) return
-    const lease = detailTenant.leaseTerms[0]
-    if (!lease) return
-    const calc = calcProRata(lease.rentAmount, lease.dueDay, newDueDayInput, targetMonth)
-    if (!calc || calc.type === 'none') return
-    const adjustAmount = calc.type === 'extra' ? -calc.amount : calc.amount
-    startTransition(async () => {
-      const res = await withSave(
-        () => changeDueDay(lease.id, newDueDayInput.trim(), targetMonth, adjustAmount),
-        { success: '납부일 변경됨' },
-      )
-      if (!res.ok) { setError(res.error); return }
-      setShowDueDayChange(false)
-      setNewDueDayInput('')
-      setDetailTenant(null)
       refresh()
     })
   }
@@ -1184,47 +1030,6 @@ export default function TenantClient({
                 className="flex-1 py-2.5 rounded-xl text-sm bg-red-500 hover:bg-red-600 text-white font-medium transition-colors disabled:opacity-50">
                 {isPending ? '삭제 중...' : '영구 삭제'}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 상태 전환 미니폼 — 전환에 필요한 값만 입력 */}
-      {transition && (
-        <div className="fixed inset-0 bg-black/70 z-[250] flex items-center justify-center p-4"
-          onClick={() => { if (!isPending) setTransition(null) }}>
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col shadow-lift"
-            onClick={e => e.stopPropagation()}>
-            <div className="px-5 py-4 border-b border-[var(--warm-border)]">
-              <h2 className="text-sm font-bold text-[var(--warm-dark)]">{transition.tenantName}님 — {transition.def.label}</h2>
-            </div>
-            <div className="px-5 py-4 space-y-3">
-              {['moveInDate', 'expectedMoveOut', 'moveOutDate'].includes(transition.def.field ?? '') && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">{transition.def.fieldLabel}</label>
-                  <DatePicker value={transDate} onChange={setTransDate}
-                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
-                </div>
-              )}
-              {transition.def.field === 'rentAmount' && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">{transition.def.fieldLabel}</label>
-                  <MoneyInput value={transRent} onChange={setTransRent} placeholder="0원" />
-                </div>
-              )}
-              {transition.def.withDeposit && transition.depositAmount > 0 && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">
-                    보증금 환불액 <span className="text-[var(--warm-muted)] font-normal">(보증금 {transition.depositAmount.toLocaleString()}원)</span>
-                  </label>
-                  <MoneyInput value={transRefund} onChange={setTransRefund} placeholder="0원" />
-                  <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">환불하지 않은 금액은 보증금 수익으로 기록됩니다.</p>
-                </div>
-              )}
-            </div>
-            <div className="px-5 py-3 border-t border-[var(--warm-border)] flex gap-2">
-              <Btn variant="secondary" size="md" onClick={() => setTransition(null)} disabled={isPending} className="flex-1">취소</Btn>
-              <Btn variant="primary" size="md" onClick={submitTransition} disabled={isPending} className="flex-1">{isPending ? '처리 중…' : '확인'}</Btn>
             </div>
           </div>
         </div>

@@ -9,12 +9,9 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
-import { Loading } from '@/components/ui/Loading'
 import { Modal as SharedModal } from '@/components/ui/Modal'
-import { Badge } from '@/components/ui/Badge'
 import { useUrlState } from '@/lib/useUrlState'
-import { kstMonthStr } from '@/lib/kstDate'
-import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
+import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SortSelect } from '@/components/ui/SortSelect'
 import { RoomCard, type CardKind } from '@/components/ui/RoomCard'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
@@ -211,7 +208,6 @@ export default function RoomManageClient({
     else entityModal.open({ kind: 'room', roomId })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, initialRooms])
-  // 라이트박스 (사진 확대 보기)
 
   // 사진
   const [editPhotos, setEditPhotos]           = useState<Photo[]>([])
@@ -237,8 +233,6 @@ export default function RoomManageClient({
   const entityModal = useEntityModal()
   const photoInputRef    = useRef<HTMLInputElement>(null)
   const addPhotoInputRef = useRef<HTMLInputElement>(null)
-
-  // handleApplyScheduledNow 는 Prism 셸 (EntityModal) 이 자체 처리. 페이지 레벨에서 제거.
 
   const currentTenant = (room: Room) => room.leaseTerms[0]?.tenant?.name ?? null
 
@@ -379,8 +373,6 @@ export default function RoomManageClient({
       } finally { release() }
     })
   }
-
-  // handleDelete 는 Prism 셸(EntityModal)이 자체 처리.
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!editRoom || !e.target.files?.length) return
