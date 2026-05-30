@@ -846,6 +846,34 @@ model PushSubscription {
   @@map("push_subscriptions")
 }
 
+// "찍어 올리고 분류는 AI 가" — 사용자가 영수증/관련 사진을 찍어 업로드하면 OCR + 분류 추론을 거쳐
+// 등록 대기 큐에 적재. 사용자가 검토 후 승인하면 해당 도메인(지출/재고)에 정식 등록.
+model PendingReceipt {
+  id              String   @id @default(uuid()) @db.Uuid
+  propertyId      String   @db.Uuid
+  uploaderId      String   @db.Uuid
+  imageUrl        String                            // Drive 썸네일 URL (즉시 표시용)
+  driveFileId     String?                           // Drive 영구 저장 id
+  status          String   @default("pending")      // 'pending' | 'approved' | 'rejected'
+
+  // OCR · 분류 추론 (Gemini)
+  inferredKind    String?                           // 'expense' | 'inventory' | 'unknown'
+  inferredVendor  String?
+  inferredDate    String?                           // YYYY-MM-DD
+  inferredAmount  Int?
+  inferredCategory String?
+  parsedJson      Json?                             // 원본 분석 JSON (편집/디버그용)
+
+  // 처리 결과
+  linkedExpenseId String?  @db.Uuid                 // 승인 시 생성된 expense id (있으면)
+
+  createdAt       DateTime @default(now())
+  reviewedAt      DateTime?
+
+  @@index([propertyId, status, createdAt])
+  @@map("pending_receipts")
+}
+
 // 푸시 발송 내역 — 사용자별 1행 per 발송 이벤트(기기당 아니라 발송 단위).
 // cron 매일 알림 / 테스트 / 추후 카테고리들이 남는다. 설정 페이지에서 최근 N건 표시.
 model PushHistory {

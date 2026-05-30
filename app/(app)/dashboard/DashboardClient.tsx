@@ -10,6 +10,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { getTrendData, type TrendRange, type TrendPoint } from './actions'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
+import { PendingReceiptSection } from '@/components/dashboard/PendingReceiptSection'
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -1924,6 +1925,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
 
       {/* ── Row 1: 알림 ─────────────────────────────────────────── */}
       <AlertsStrip alerts={data.alerts} onOpenAlert={setSelectedAlert} />
+
+      {/* ── 찍어 올리기 + 등록 대기 (영수증/물품 AI 분류) ─────────────────────────── */}
+      <PendingReceiptSection />
 
       {/* ── KPI 카드 (2×3 grid) ──────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3.5">
