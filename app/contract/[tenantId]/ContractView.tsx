@@ -649,9 +649,9 @@ export default function ContractView({ data }: { data: ContractData }) {
           justify-content: flex-end;
           align-items: center;
           gap: 5px;
-          /* SVG 워드마크 안 ink/persimmon CSS var는 약간 톤 다운해 이스터에그 톤 유지 */
+          /* 'stay' 글자만 톤 다운한 회색으로 — 'eum'·Arch 는 브랜드 Terracotta 그대로 유지.
+             (이전엔 --persimmon 도 다른 주황(#e84a1a)으로 덮어써 브랜드 색이 어긋났음) */
           --ink: #4a4a4a;
-          --persimmon: #e84a1a;
         }
         .made-with-prefix {
           font-family: 'DM Mono', 'Pretendard', monospace;
