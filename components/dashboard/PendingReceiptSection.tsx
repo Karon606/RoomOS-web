@@ -2,9 +2,9 @@
 
 // 대시보드 — '찍어 올리기' 입력 + AI 분류된 등록 대기 큐.
 // 사용자 흐름:
-//   1) 📸 사진 올리기 버튼 → 카메라/갤러리 → 업로드(progress)
+//   1) 📸 사진 올리기 → 카메라/갤러리 → 업로드
 //   2) AI 가 영수증/재고/기타 분류 + 추출값 표시
-//   3) 사용자가 검토 후 [등록] 또는 [거절]
+//   3) 사용자가 검토 후 [지출 등록] 또는 [재고 등록] 또는 [거절]
 
 import { useEffect, useRef, useState, useTransition } from 'react'
 import {
@@ -16,10 +16,13 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { pushToast } from '@/lib/saveStatus'
 
+// 영수증 카테고리 — 영수증/재고 공통
 const EXPENSE_CATEGORIES = [
   '부식비', '소모품비', '폐기물 처리비', '수선유지비', '공과금', '마케팅/광고비',
   '인건비', '청소용역비', '관리비', '임대료', '통신/렌탈/보험료', '세금/수수료',
 ]
+// 재고 추적 대상 카테고리 (이 안에 있으면 재고 모듈이 자동 인식)
+const INVENTORY_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비']
 
 const KIND_LABEL: Record<string, { label: string; color: string }> = {
   expense:   { label: '지출(영수증)', color: 'var(--coral)' },
@@ -37,12 +40,14 @@ function fmtAgo(d: Date | string): string {
   return `${Math.floor(hour / 24)}일 전`
 }
 
+type EditMode = 'expense' | 'inventory'
+
 export function PendingReceiptSection() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [rows, setRows] = useState<PendingReceiptRow[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editing, setEditing] = useState<{ id: string; mode: EditMode } | null>(null)
   const [, startTransition] = useTransition()
 
   const reload = async () => {
@@ -89,10 +94,11 @@ export function PendingReceiptSection() {
 
       <div className="space-y-2">
         {rows.map(r => (
-          <PendingCard key={r.id} row={r} editing={editingId === r.id}
-            onStartEdit={() => setEditingId(r.id)}
-            onCancelEdit={() => setEditingId(null)}
-            onApproved={async () => { setEditingId(null); await reload() }}
+          <PendingCard key={r.id} row={r}
+            editingMode={editing?.id === r.id ? editing.mode : null}
+            onStartEdit={(mode) => setEditing({ id: r.id, mode })}
+            onCancelEdit={() => setEditing(null)}
+            onApproved={async () => { setEditing(null); await reload() }}
             onRejected={() => startTransition(async () => {
               const res = await rejectPendingReceipt(r.id)
               if (res.ok) { pushToast('success', '거절됨'); await reload() }
@@ -105,28 +111,62 @@ export function PendingReceiptSection() {
   )
 }
 
-function PendingCard({ row, editing, onStartEdit, onCancelEdit, onApproved, onRejected }: {
+function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, onRejected }: {
   row: PendingReceiptRow
-  editing: boolean
-  onStartEdit: () => void
+  editingMode: EditMode | null
+  onStartEdit: (mode: EditMode) => void
   onCancelEdit: () => void
   onApproved: () => void
   onRejected: () => void
 }) {
   const kindInfo = KIND_LABEL[row.inferredKind ?? 'unknown'] ?? KIND_LABEL.unknown
+  const isInventory = editingMode === 'inventory'
+  const aiSuggestsInventory = row.inferredKind === 'inventory'
+
   const [pending, startTransition] = useTransition()
   const [date, setDate] = useState(row.inferredDate ?? new Date().toISOString().slice(0, 10))
   const [amount, setAmount] = useState<number>(row.inferredAmount ?? 0)
-  const [category, setCategory] = useState(row.inferredCategory ?? '')
+  const [category, setCategory] = useState(() => {
+    // 재고 모드면 추적 카테고리 중 첫 매치 또는 기본 '부식비'
+    if (aiSuggestsInventory) {
+      if (row.inferredCategory && INVENTORY_CATEGORIES.includes(row.inferredCategory)) return row.inferredCategory
+      return '부식비'
+    }
+    return row.inferredCategory ?? ''
+  })
   const [vendor, setVendor] = useState(row.inferredVendor ?? '')
   const [memo, setMemo] = useState(row.notes ?? '')
+  // 재고 전용
+  const [itemLabel, setItemLabel] = useState(row.itemLabel ?? '')
+  const [specValue, setSpecValue] = useState(row.specValue ?? '')
+  const [specUnit, setSpecUnit] = useState(row.specUnit ?? '')
+  const [qtyValue, setQtyValue] = useState(row.qtyValue ?? '')
+  const [qtyUnit, setQtyUnit] = useState(row.qtyUnit ?? '개')
 
   const handleApprove = () => {
     if (!category) { pushToast('error', '카테고리를 선택하세요'); return }
-    if (!(amount > 0)) { pushToast('error', '금액을 입력하세요'); return }
+    if (isInventory) {
+      if (!itemLabel.trim()) { pushToast('error', '품목명을 입력하세요'); return }
+      if (!INVENTORY_CATEGORIES.includes(category)) { pushToast('error', '재고는 부식비/소모품비/폐기물 처리비 중에서 선택해야 추적됩니다.'); return }
+    } else {
+      if (!(amount > 0)) { pushToast('error', '금액을 입력하세요'); return }
+    }
     startTransition(async () => {
-      const res = await approvePendingReceipt(row.id, { date, amount, category, vendor: vendor || undefined, memo: memo || undefined })
-      if (res.ok) { pushToast('success', '지출로 등록됨'); onApproved() }
+      const res = await approvePendingReceipt(row.id, {
+        date,
+        amount: amount || 0,
+        category,
+        vendor: vendor || undefined,
+        memo: memo || undefined,
+        ...(isInventory ? {
+          itemLabel: itemLabel.trim(),
+          specValue: specValue || undefined,
+          specUnit:  specUnit  || undefined,
+          qtyValue:  qtyValue  || undefined,
+          qtyUnit:   qtyUnit   || undefined,
+        } : {}),
+      })
+      if (res.ok) { pushToast('success', isInventory ? '재고 보충으로 등록됨' : '지출로 등록됨'); onApproved() }
       else pushToast('error', res.error)
     })
   }
@@ -143,24 +183,47 @@ function PendingCard({ row, editing, onStartEdit, onCancelEdit, onApproved, onRe
             style={{ background: 'var(--cream)', color: kindInfo.color, border: `1px solid ${kindInfo.color}40` }}>
             {kindInfo.label}
           </span>
+          {editingMode && (
+            <span className="text-[0.625rem] font-semibold px-1.5 py-0.5 rounded"
+              style={{ background: isInventory ? '#16a34a20' : 'var(--coral)20', color: isInventory ? '#16a34a' : 'var(--coral)' }}>
+              {isInventory ? '재고 등록 중' : '지출 등록 중'}
+            </span>
+          )}
           <span className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>{fmtAgo(row.createdAt)}</span>
         </div>
 
-        {!editing && (
+        {!editingMode && (
           <>
             <p className="text-sm" style={{ color: 'var(--warm-dark)' }}>
-              {row.notes ?? row.inferredVendor ?? '(AI 분류 정보 없음)'}
+              {row.itemLabel ?? row.notes ?? row.inferredVendor ?? '(AI 분류 정보 없음)'}
             </p>
             <p className="text-xs" style={{ color: 'var(--warm-mid)' }}>
               {row.inferredDate ?? '—'}
               {row.inferredAmount != null && <> · <span className="font-semibold">{row.inferredAmount.toLocaleString()}원</span></>}
               {row.inferredCategory && <> · {row.inferredCategory}</>}
+              {row.qtyValue && <> · {row.qtyValue}{row.qtyUnit ?? '개'}</>}
+              {row.specValue && <> · {row.specValue}{row.specUnit ?? ''}</>}
             </p>
-            <div className="flex gap-1.5 pt-1">
-              <button onClick={onStartEdit} disabled={pending}
+            <div className="flex gap-1.5 pt-1 flex-wrap">
+              {/* 지출 등록 — expense 추론이면 기본, inventory 면 보조 */}
+              <button onClick={() => onStartEdit('expense')} disabled={pending}
                 className="text-[0.6875rem] px-2 py-1 rounded-lg font-medium"
-                style={{ background: 'var(--coral)', color: '#fff' }}>
-                등록
+                style={{
+                  background: aiSuggestsInventory ? 'var(--cream)' : 'var(--coral)',
+                  color: aiSuggestsInventory ? 'var(--warm-dark)' : '#fff',
+                  border: aiSuggestsInventory ? '1px solid var(--warm-border)' : 'none',
+                }}>
+                지출 등록
+              </button>
+              {/* 재고 등록 — inventory 추론이면 기본, expense 면 보조 */}
+              <button onClick={() => onStartEdit('inventory')} disabled={pending}
+                className="text-[0.6875rem] px-2 py-1 rounded-lg font-medium"
+                style={{
+                  background: aiSuggestsInventory ? '#16a34a' : 'var(--cream)',
+                  color: aiSuggestsInventory ? '#fff' : 'var(--warm-dark)',
+                  border: aiSuggestsInventory ? 'none' : '1px solid var(--warm-border)',
+                }}>
+                재고 등록
               </button>
               <button onClick={onRejected} disabled={pending}
                 className="text-[0.6875rem] px-2 py-1 rounded-lg border border-red-200 text-red-500 font-medium">
@@ -170,26 +233,66 @@ function PendingCard({ row, editing, onStartEdit, onCancelEdit, onApproved, onRe
           </>
         )}
 
-        {editing && (
+        {editingMode && (
           <div className="space-y-1.5 pt-1">
+            {/* 재고 모드만 — 품목명·규격·수량 */}
+            {isInventory && (
+              <>
+                <div>
+                  <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>품목명 *</label>
+                  <input type="text" placeholder="예: 신라면, 두루마리 휴지"
+                    value={itemLabel} onChange={e => setItemLabel(e.target.value)}
+                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div>
+                    <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>규격 (선택)</label>
+                    <div className="flex gap-1">
+                      <input type="text" placeholder="300" value={specValue} onChange={e => setSpecValue(e.target.value)}
+                        className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                      <input type="text" placeholder="ml" value={specUnit} onChange={e => setSpecUnit(e.target.value)}
+                        className="w-12 bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-1.5 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>수량 *</label>
+                    <div className="flex gap-1">
+                      <input type="text" placeholder="6" value={qtyValue} onChange={e => setQtyValue(e.target.value)}
+                        className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                      <input type="text" placeholder="개" value={qtyUnit} onChange={e => setQtyUnit(e.target.value)}
+                        className="w-12 bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-1.5 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* 공통: 날짜·금액·카테고리·상호·메모 */}
             <div className="grid grid-cols-2 gap-1.5">
               <div>
-                <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>날짜</label>
+                <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>날짜 *</label>
                 <DatePicker value={date} onChange={setDate}
                   className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-xs text-[var(--warm-dark)]" />
               </div>
               <div>
-                <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>금액</label>
+                <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>
+                  금액 {isInventory ? '(영수증·구매가)' : '*'}
+                </label>
                 <MoneyInput value={amount} onChange={setAmount} placeholder="0원" />
               </div>
             </div>
             <div>
-              <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>카테고리</label>
+              <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>카테고리 *</label>
               <select value={category} onChange={e => setCategory(e.target.value)}
                 className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-xs text-[var(--warm-dark)] outline-none">
                 <option value="">선택</option>
-                {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                {(isInventory ? INVENTORY_CATEGORIES : EXPENSE_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
               </select>
+              {isInventory && (
+                <p className="text-[0.5625rem] mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+                  ※ 재고 추적은 부식비/소모품비/폐기물 처리비만
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               <input type="text" placeholder="상호명 (선택)" value={vendor} onChange={e => setVendor(e.target.value)}
@@ -200,19 +303,14 @@ function PendingCard({ row, editing, onStartEdit, onCancelEdit, onApproved, onRe
             <div className="flex gap-1.5 pt-1">
               <button onClick={handleApprove} disabled={pending}
                 className="flex-1 text-[0.6875rem] py-1.5 rounded-lg font-medium"
-                style={{ background: 'var(--coral)', color: '#fff' }}>
-                {pending ? '저장 중...' : '지출 등록'}
+                style={{ background: isInventory ? '#16a34a' : 'var(--coral)', color: '#fff' }}>
+                {pending ? '저장 중...' : (isInventory ? '재고 보충 등록' : '지출 등록')}
               </button>
               <button onClick={onCancelEdit} disabled={pending}
                 className="text-[0.6875rem] px-2 py-1.5 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)]">
                 취소
               </button>
             </div>
-            {row.inferredKind === 'inventory' && (
-              <p className="text-[0.5625rem]" style={{ color: 'var(--warm-muted)' }}>
-                ※ AI 는 재고로 추정. 지출로 등록하지 않을 거면 거절 후 재고 페이지에서 수동 입력.
-              </p>
-            )}
           </div>
         )}
       </div>

@@ -35,6 +35,12 @@ type GeminiResult = {
   amount?: number
   category?: string
   notes?: string
+  // 재고용 필드 (kind='inventory' 일 때 유의미)
+  itemLabel?: string
+  specValue?: string
+  specUnit?: string
+  qtyValue?: string
+  qtyUnit?: string
 }
 
 async function analyzeImage(imageBase64: string, mimeType: string): Promise<GeminiResult> {
@@ -54,8 +60,15 @@ JSON 스키마:
   "vendor": "상호명 또는 브랜드 (있으면)",
   "date": "YYYY-MM-DD (영수증 결제일, 있으면)",
   "amount": 12345,                            // 정수 원 (영수증 합계, 있으면)
-  "category": "부식비|소모품비|폐기물 처리비|수선유지비|공과금|마케팅/광고비|인건비|청소용역비|관리비|임대료|통신/렌탈/보험료|세금/수수료",  // 영수증인 경우 가장 적합한 1개
-  "notes": "한 줄 요약 (예: '롯데마트 라면+세제 32,500원' 또는 '4층 주방 라면 6봉지')"
+  "category": "부식비|소모품비|폐기물 처리비|수선유지비|공과금|마케팅/광고비|인건비|청소용역비|관리비|임대료|통신/렌탈/보험료|세금/수수료",  // 영수증·재고 모두 적합한 1개
+  "notes": "한 줄 요약 (예: '롯데마트 라면+세제 32,500원' 또는 '4층 주방 라면 6봉지')",
+
+  // ↓ kind='inventory' 일 때만 채움 (영수증이어도 단일 품목이면 채워도 OK)
+  "itemLabel": "품목명 (예: '신라면', '세탁세제', '두루마리 휴지')",
+  "specValue": "300",                         // 용량/규격 숫자 (선택)
+  "specUnit":  "ml",                          // 용량 단위 (ml/L/g/kg/장/매 등, 선택)
+  "qtyValue":  "6",                           // 개수 (선택)
+  "qtyUnit":   "봉지"                          // 개수 단위 (봉지/개/팩/박스 등, 선택)
 }
 
 응답은 순수 JSON 만. 마크다운·코드블록 X.`
@@ -89,6 +102,11 @@ JSON 스키마:
     amount: typeof parsed.amount === 'number' ? Math.round(parsed.amount) : undefined,
     category: typeof parsed.category === 'string' ? parsed.category : undefined,
     notes: typeof parsed.notes === 'string' ? parsed.notes : undefined,
+    itemLabel: typeof parsed.itemLabel === 'string' ? parsed.itemLabel : undefined,
+    specValue: parsed.specValue != null ? String(parsed.specValue) : undefined,
+    specUnit:  typeof parsed.specUnit  === 'string' ? parsed.specUnit  : undefined,
+    qtyValue:  parsed.qtyValue != null ? String(parsed.qtyValue) : undefined,
+    qtyUnit:   typeof parsed.qtyUnit   === 'string' ? parsed.qtyUnit   : undefined,
   }
 }
 
@@ -150,6 +168,11 @@ export type PendingReceiptRow = {
   inferredAmount: number | null
   inferredCategory: string | null
   notes: string | null
+  itemLabel: string | null
+  specValue: string | null
+  specUnit:  string | null
+  qtyValue:  string | null
+  qtyUnit:   string | null
   createdAt: Date
 }
 export async function getPendingReceipts(limit = 20): Promise<PendingReceiptRow[]> {
@@ -167,7 +190,7 @@ export async function getPendingReceipts(limit = 20): Promise<PendingReceiptRow[
       },
     })
     return rows.map(r => {
-      const parsed = (r.parsedJson as { notes?: string } | null) ?? null
+      const parsed = (r.parsedJson as { notes?: string; itemLabel?: string; specValue?: string; specUnit?: string; qtyValue?: string; qtyUnit?: string } | null) ?? null
       return {
         id: r.id,
         imageUrl: r.imageUrl,
@@ -177,6 +200,11 @@ export async function getPendingReceipts(limit = 20): Promise<PendingReceiptRow[
         inferredAmount: r.inferredAmount,
         inferredCategory: r.inferredCategory,
         notes: parsed?.notes ?? null,
+        itemLabel: parsed?.itemLabel ?? null,
+        specValue: parsed?.specValue ?? null,
+        specUnit:  parsed?.specUnit  ?? null,
+        qtyValue:  parsed?.qtyValue  ?? null,
+        qtyUnit:   parsed?.qtyUnit   ?? null,
         createdAt: r.createdAt,
       }
     })
@@ -185,15 +213,23 @@ export async function getPendingReceipts(limit = 20): Promise<PendingReceiptRow[
   }
 }
 
-// 승인 → Expense 등록. 사용자가 폼에서 최종값 보내면 그걸로, 아니면 추론값 그대로.
+// 승인 → Expense 등록. final 에 itemLabel·spec·qty 포함되면 그 expense 가 곧 재고 보충 이벤트가 됨
+// (재고 모듈이 TRACKED_CATEGORIES + itemLabel 이 있는 expense 를 자동 인식).
 export async function approvePendingReceipt(
   id: string,
-  final: { date: string; amount: number; category: string; vendor?: string; memo?: string },
+  final: {
+    date: string; amount: number; category: string
+    vendor?: string; memo?: string
+    // 재고용 — 있으면 inventory 보충으로도 잡힘
+    itemLabel?: string
+    specValue?: string; specUnit?: string
+    qtyValue?: string;  qtyUnit?: string
+  },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await getUserId()
     const propertyId = await getPropertyId()
-    if (!final.date || !final.amount || !final.category) {
+    if (!final.date || final.amount == null || !final.category) {
       return { ok: false, error: '날짜·금액·카테고리는 필수입니다.' }
     }
     const row = await prisma.pendingReceipt.findFirst({
@@ -213,6 +249,11 @@ export async function approvePendingReceipt(
         payMethod: '계좌이체',
         receiptUrl: row.imageUrl,
         settleStatus: 'SETTLED',
+        itemLabel: final.itemLabel || null,
+        specUnit:  final.specUnit  || null,
+        qtyUnit:   final.qtyUnit   || null,
+        specValue: final.specValue ? parseFloat(final.specValue) : null,
+        qtyValue:  final.qtyValue  ? parseFloat(final.qtyValue)  : null,
       },
       select: { id: true },
     })
@@ -222,6 +263,7 @@ export async function approvePendingReceipt(
     })
     revalidatePath('/dashboard')
     revalidatePath('/finance')
+    revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
