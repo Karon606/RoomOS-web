@@ -846,6 +846,25 @@ model PushSubscription {
   @@map("push_subscriptions")
 }
 
+// 푸시 발송 내역 — 사용자별 1행 per 발송 이벤트(기기당 아니라 발송 단위).
+// cron 매일 알림 / 테스트 / 추후 카테고리들이 남는다. 설정 페이지에서 최근 N건 표시.
+model PushHistory {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  source        String   // 'cron-daily' | 'test'
+  title         String
+  body          String
+  url           String?
+  badge         Int?
+  tag           String?
+  endpointCount Int      @default(0)  // 시도한 기기 수
+  successCount  Int      @default(0)  // 성공한 기기 수
+  sentAt        DateTime @default(now())
+
+  @@index([userId, sentAt])
+  @@map("push_history")
+}
+
 // 보관 위치 — 창고 / 4층 주방 / 손님실 선반 등 property-level 마스터
 model StorageLocation {
   id         String   @id @default(uuid()) @db.Uuid

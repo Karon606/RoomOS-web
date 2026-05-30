@@ -20,6 +20,31 @@ async function getUserId(): Promise<string> {
   return data.claims.sub as string
 }
 
+// 사용자의 최근 푸시 발송 내역 — 설정 페이지 표시용. 최신 N건.
+export type PushHistoryRow = {
+  id: string
+  source: string
+  title: string
+  body: string
+  endpointCount: number
+  successCount: number
+  sentAt: Date
+}
+export async function getMyPushHistory(limit = 20): Promise<PushHistoryRow[]> {
+  try {
+    const userId = await getUserId()
+    const rows = await prisma.pushHistory.findMany({
+      where: { userId },
+      orderBy: { sentAt: 'desc' },
+      take: Math.min(100, Math.max(1, limit)),
+      select: { id: true, source: true, title: true, body: true, endpointCount: true, successCount: true, sentAt: true },
+    })
+    return rows
+  } catch {
+    return []
+  }
+}
+
 // 기기 구독 저장 (endpoint 당 1행 upsert)
 export async function savePushSubscription(sub: {
   endpoint: string; keys: { p256dh: string; auth: string }; userAgent?: string
@@ -74,6 +99,22 @@ export async function sendTestPush(): Promise<{ ok: true; sent: number } | { ok:
         }
       }
     }))
+    // 발송 내역 기록 — 시도/성공 카운트
+    try {
+      await prisma.pushHistory.create({
+        data: {
+          userId,
+          source: 'test',
+          title: '스테이음 알림 테스트',
+          body: '푸시 알림이 정상 동작합니다 🎉',
+          url: '/dashboard',
+          badge: 1,
+          tag: 'stayeum-test',
+          endpointCount: subs.length,
+          successCount: sent,
+        },
+      })
+    } catch { /* 히스토리 실패해도 푸시 자체 영향 X */ }
     return { ok: true, sent }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err

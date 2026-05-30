@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { savePushSubscription, deletePushSubscription, sendTestPush } from './pushActions'
+import { PushHistoryList } from './PushHistoryList'
 
 function urlB64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -102,6 +103,7 @@ export function PushToggle() {
         납부 예정·퇴실 예정·재고 소진 등 대시보드 알림을 이 기기로 받습니다.
         iPhone은 <strong>홈 화면에 추가</strong>한 상태에서만 동작합니다 (iOS 16.4+).
       </p>
+      <PushHistoryList />
     </div>
   )
 }

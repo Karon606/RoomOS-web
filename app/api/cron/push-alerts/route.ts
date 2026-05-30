@@ -66,16 +66,34 @@ export async function GET(req: Request) {
     })
 
     let userSent = false
+    let userSuccess = 0
     await Promise.all(userSubs.map(async (s) => {
       try {
         await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload)
-        sent++; userSent = true
+        sent++; userSent = true; userSuccess++
       } catch (e: unknown) {
         const code = (e as { statusCode?: number })?.statusCode
         if (code === 410 || code === 404) await prisma.pushSubscription.deleteMany({ where: { endpoint: s.endpoint } })
       }
     }))
     if (userSent) usersNotified++
+
+    // 발송 내역 기록 — 시도/성공 카운트와 함께
+    try {
+      await prisma.pushHistory.create({
+        data: {
+          userId,
+          source: 'cron-daily',
+          title: `스테이음 — 오늘 챙길 일 ${total}건`,
+          body: parts.join(' · '),
+          url: '/dashboard',
+          badge: total,
+          tag: 'stayeum-daily',
+          endpointCount: userSubs.length,
+          successCount: userSuccess,
+        },
+      })
+    } catch { /* 히스토리 실패해도 푸시 자체 영향 X */ }
   }
 
   return NextResponse.json({ ok: true, usersNotified, sent })
