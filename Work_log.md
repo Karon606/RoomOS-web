@@ -615,7 +615,41 @@
 - **남은 격차 (Phase 2.4c)**: RoomsClient 자체 모달을 셸로 마이그레이션 → 2중 스택 완전 제거.
 - **검증**: `npx tsc --noEmit` 통과.
 
-### N-5. Prism Phase 2.4b — 수납 위젯화 2차 (예정, 고위험)
+### N-4b. Prism Phase 2.4b — 수납 위젯화 2차: 고위험 4개 + temp adjust wiring (2026-05-30)
+
+- **목표**: 셸의 [수납] 면 full 모드에서 **모든 수납 기능**을 in-place 처리. "수납 관리 페이지로 이동" 딥링크 제거.
+- **확인**: `getLeaseSettlementInfo` 가 반환하는 RoomRow 에 이미 `overrideDueDay/Month/Reason`·`depositAmount`·`cleaningFee`·`moveInDate`·`tenantId` 가 다 있음 → 추가 fetch 불필요.
+- **신규 위젯 (고위험 3개)**:
+  · `PaymentEntryForm` — 일반 수납 등록 (FIFO 자동 충당) + 보증금/청소비 분리 모드 통합. RoomsClient `handleSavePayment` 그대로 이주(savePayment·saveDepositPayment 호출, allocations 결과 토스트, lastPayMethod localStorage). 폼 자체는 위젯 안에서 관리, 저장 후 onSaved 콜백.
+  · `PaymentRecordList` — 납부 내역 + 편집 + 삭제. 자체 fetch (getPaymentsByLease). 편집 가능: 금액·납부일·납부방법·메모·**귀속월**(보증금 제외). updatePayment/deletePayment 호출 후 자체 reload + onChange 콜백. 양도인 record 색·뱃지 그대로.
+  · `PrevOwnerSettleWidget` — 양도인 메뉴(auto/show/hide) + 양도인 정산 버튼. getPrevOwnerSettleState 로딩 후 canSettle 시에만 버튼 표시. savePrevOwnerSettle 은 한 번만 호출(서버에서 중복 체크), confirm 다이얼로그.
+- **DueDayTempAdjustWidget wiring** — Phase 2.4a 에서 만들었지만 안 박았던 위젯을 PaymentBody full 모드에 추가. settlement 의 override 정보 사용.
+- **PaymentBody full 모드 확장**:
+  · PaymentRecordList
+  · "+ 수납 등록" 버튼(접힘) → 클릭 시 PaymentEntryForm 펼침 → 저장 후 자동 접힘 + refresh
+  · DiscountWidget · DueDayTempAdjustWidget · DueDayPermanentChangeWidget · PrevOwnerSettleWidget
+  · **"수납 관리 페이지에서" 딥링크 완전 제거** — 모든 기능 in-place
+- **결제 정확성 보호**:
+  · 추출은 UI/state 만 이동, 서버액션은 그대로 호출 (FIFO·일할·정산 알고리즘 변경 X)
+  · 각 위젯이 `onChange` 콜백으로 부모(PaymentBody)의 settlement 재fetch 트리거 → 카드/잔액 즉시 갱신
+  · confirm 다이얼로그 그대로 (삭제·양도인 정산)
+- **검증**: `npx tsc --noEmit` 통과.
+- **남은 격차 (Phase 2.4c)**:
+  · RoomsClient 자체 수납 모달은 그대로 (페이지 진입 + 풀 CRUD 양쪽 가능)
+  · RoomsClient 의 자체 수납 모달도 PaymentBody 위젯들 사용하도록 마이그레이션하면 코드 중복 제거 + 2중 스택 완전 종료
+  · 이번 세션은 셸에 풀 기능 추가까지만 (RoomsClient 통합은 별도 세션)
+- **회귀 시나리오 (사용자가 프로덕션에서 확인해야 할 것)**:
+  · 셸 → [수납] → "수납 관리에서 자세히 ▼" → full 모드 진입 → 카드 + 위젯 다 보임
+  · 일반 수납 등록 (예: 미수 있는 월에 2만 입력) → FIFO 자동 분배 토스트
+  · 보증금 + 이용료 동시 입력 → 분리 저장
+  · 납부 내역 → 수정 → 금액 변경 → 저장 → 카드 재계산
+  · 납부 내역 → 귀속월 변경 → 저장 → 미납 상태 재산정
+  · 할인 추가 → 잔액 변경 반영
+  · 임시 조정 → 그 달만 적용 / 해제
+  · 영구 변경 → 일할 정산 → 다음달부터 적용
+  · 양도인 정산 → confirm → 미납 집계에서 제외 / 한 번만 가능
+
+### N-5. Prism Phase 2.4c — RoomsClient 자체 모달을 PaymentBody 위젯으로 통합 (예정)
 - TenantClient 상세 팝업 ~510줄. 탭 3개(상세/요청·컴플레인/AI), 편집 모드, 퇴실예정·비거주 전환 액션.
 - RoomDetailBody 패턴 그대로 — TenantDetailBody에 fetch+탭+읽기 표시. 편집은 callback prop.
 - 위험: 폼 상태 동기화, 회귀 가능. 데이터는 안 깨짐.

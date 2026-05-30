@@ -9,11 +9,13 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import { getLeaseSettlementInfo, getPaymentsByLease } from '@/app/(app)/rooms/actions'
-import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { PaymentSummaryCards } from '../widgets/PaymentSummaryCards'
 import { DiscountWidget } from '../widgets/DiscountWidget'
 import { DueDayTempAdjustWidget } from '../widgets/DueDayTempAdjustWidget'
 import { DueDayPermanentChangeWidget } from '../widgets/DueDayPermanentChangeWidget'
+import { PaymentRecordList } from '../widgets/PaymentRecordList'
+import { PaymentEntryForm } from '../widgets/PaymentEntryForm'
+import { PrevOwnerSettleWidget } from '../widgets/PrevOwnerSettleWidget'
 
 type Settlement = NonNullable<Awaited<ReturnType<typeof getLeaseSettlementInfo>>>
 type Records = Awaited<ReturnType<typeof getPaymentsByLease>>['records']
@@ -30,6 +32,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo }: {
   const [settlement, setSettlement] = useState<Settlement | null>(null)
   const [records, setRecords] = useState<Records | null>(null)
   const [mode, setMode] = useState<'summary' | 'full'>('summary')
+  const [showEntryForm, setShowEntryForm] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [, startTransition] = useTransition()
 
@@ -96,12 +99,48 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo }: {
             요약으로 돌아가기 ▲
           </button>
 
+          {/* 납부 내역 — 편집·삭제 */}
+          <PaymentRecordList leaseTermId={leaseTermId} targetMonth={month} canEdit={canEdit} onChange={refresh} />
+
+          {/* 새 수납 등록 (접힘/펼침) */}
+          {canEdit && settlement.leaseTermId && settlement.tenantId && (
+            !showEntryForm ? (
+              <button type="button" onClick={() => setShowEntryForm(true)}
+                className="w-full py-2 text-sm font-semibold rounded-lg bg-[var(--coral)] text-white hover:opacity-90 transition-opacity">
+                + 수납 등록
+              </button>
+            ) : (
+              <PaymentEntryForm
+                room={{
+                  leaseTermId: settlement.leaseTermId,
+                  tenantId: settlement.tenantId,
+                  expected: settlement.expected,
+                  depositAmount: settlement.depositAmount,
+                  cleaningFee: settlement.cleaningFee,
+                  moveInDate: settlement.moveInDate,
+                }}
+                targetMonth={month}
+                onSaved={() => { setShowEntryForm(false); refresh() }}
+                onCancel={() => setShowEntryForm(false)}
+              />
+            )
+          )}
+
           <DiscountWidget leaseTermId={leaseTermId} onChange={refresh} />
 
-          {/* 임시 조정 + 영구 변경은 selectedRoom 의 override/dueDay/expected 가 필요한데,
-              shell 에선 getLeaseSettlementInfo 가 dueDay·expected 만 제공.
-              override 정보는 별도 server fetch 필요 — 단순화를 위해 임시 조정은
-              레거시 수납 관리 페이지로 위임(아래 딥링크). 영구 변경은 expected+dueDay 충분. */}
+          <DueDayTempAdjustWidget
+            leaseTermId={leaseTermId}
+            targetMonth={month}
+            room={{
+              overrideDueDay: settlement.overrideDueDay,
+              overrideDueDayMonth: settlement.overrideDueDayMonth,
+              overrideDueDayReason: settlement.overrideDueDayReason,
+              dueDay: settlement.dueDay,
+            }}
+            canEdit={canEdit}
+            onChange={refresh}
+          />
+
           <DueDayPermanentChangeWidget
             leaseTermId={leaseTermId}
             targetMonth={month}
@@ -110,13 +149,12 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo }: {
             onChange={refresh}
           />
 
-          {/* 고위험·미추출 기능(수납 등록·내역 편집·양도인 정산·보증금 분리·임시 조정)은 수납 관리 페이지로 */}
-          {roomNo && (
-            <a href={`/rooms?month=${month}&roomNo=${roomNo}`}
-              className="block text-center text-xs font-medium text-[var(--coral)] hover:underline py-2">
-              수납 등록·내역 편집·양도인 정산·임시 조정 → 수납 관리에서
-            </a>
-          )}
+          <PrevOwnerSettleWidget
+            leaseTermId={leaseTermId}
+            targetMonth={month}
+            canEdit={canEdit}
+            onChange={refresh}
+          />
         </>
       )}
     </div>
