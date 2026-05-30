@@ -11,6 +11,7 @@ import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { Btn } from '@/components/ui/Btn'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
+import { OcrToolbar, setInputByName } from './OcrToolbar'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -2458,6 +2459,41 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
 
   return (
     <>
+      <OcrToolbar
+        onContract={data => {
+          // controlled state
+          if (data.rentAmount != null) setRentAmount(data.rentAmount)
+          if (data.depositAmount != null) setDepositAmountVal(data.depositAmount)
+          if (data.cleaningFee != null) setCleaningFeeVal(data.cleaningFee)
+          if (data.roomNo) {
+            // '402호' → '402' 매칭
+            const norm = (s: string) => s.replace(/[^0-9가-힣A-Za-z]/g, '')
+            const target = norm(data.roomNo)
+            const m = rooms.find(r => norm(r.roomNo) === target || r.roomNo === data.roomNo)
+            if (m) setSelectedRoomId(m.id)
+          }
+          if (data.dueDay) applyDueDay(data.dueDay)
+          if (data.moveInDate) setInputByName('moveInDate', data.moveInDate)
+          // uncontrolled
+          setInputByName('name', data.name)
+          setInputByName('englishName', data.englishName)
+          setInputByName('gender', data.gender)
+          setInputByName('nationality', data.nationality)
+          setInputByName('birthdate', data.birthdate)
+          setInputByName('job', data.job)
+          setInputByName('contactValue', data.contactPhone)
+          setInputByName('emergencyContact', data.emergencyPhone)
+          setInputByName('emergencyRelation', data.emergencyRelation)
+        }}
+        onIdCard={data => {
+          setInputByName('name', data.name)
+          setInputByName('englishName', data.englishName)
+          setInputByName('gender', data.gender)
+          setInputByName('nationality', data.nationality)
+          setInputByName('birthdate', data.birthdate)
+        }}
+      />
+
       <FormSection title="기본 정보">
         <div className="grid grid-cols-2 gap-3">
           <Field label="이름 *" name="name" defaultValue={tenant?.name} placeholder="홍길동" />

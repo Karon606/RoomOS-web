@@ -729,10 +729,12 @@ function dataUrlToFile(dataUrl: string, name: string): File {
 
 // ─── ReceiptScanModal ─────────────────────────────────────────────────────
 
-function CornerHandle({ cx, cy, containerRef, onMove }: {
+function CornerHandle({ cx, cy, containerRef, onMove, onStart, onEnd }: {
   cx: number; cy: number
   containerRef: React.RefObject<HTMLDivElement | null>
   onMove: (x: number, y: number) => void
+  onStart?: () => void
+  onEnd?: () => void
 }) {
   const SIZE = 28
   return (
@@ -743,14 +745,80 @@ function CornerHandle({ cx, cy, containerRef, onMove }: {
         background: 'var(--coral)', border: '3px solid white',
         cursor: 'grab', touchAction: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.5)', zIndex: 2,
       }}
-      onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId) }}
+      onPointerDown={e => {
+        e.preventDefault()
+        e.currentTarget.setPointerCapture(e.pointerId)
+        onStart?.()
+      }}
       onPointerMove={e => {
         if (!(e.buttons & 1)) return
         const rect = containerRef.current?.getBoundingClientRect()
         if (!rect) return
         onMove(Math.max(0, Math.min(rect.width, e.clientX - rect.left)), Math.max(0, Math.min(rect.height, e.clientY - rect.top)))
       }}
+      onPointerUp={() => onEnd?.()}
+      onPointerCancel={() => onEnd?.()}
     />
+  )
+}
+
+// 모서리 드래그 중 원본 해상도에서 잘라낸 작은 영역을 확대해 표시.
+// 손가락이 코너를 가려도 화면 위의 확대경으로 정확히 픽셀 단위 조정 가능.
+function CornerLoupe({ bitmap, cornerX, cornerY, dW, dH }: {
+  bitmap: ImageBitmap
+  cornerX: number; cornerY: number
+  dW: number; dH: number
+}) {
+  const SIZE = 120
+  const MAG = 2.8
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  // 원본 비트맵에서 잘라낼 영역 (코너 중심으로)
+  const sourceX = (cornerX / dW) * bitmap.width
+  const sourceY = (cornerY / dH) * bitmap.height
+  const srcW = SIZE / MAG / (dW / bitmap.width)
+  const srcH = SIZE / MAG / (dH / bitmap.height)
+  const sx = sourceX - srcW / 2
+  const sy = sourceY - srcH / 2
+
+  useEffect(() => {
+    const c = canvasRef.current; if (!c) return
+    const ctx = c.getContext('2d'); if (!ctx) return
+    ctx.clearRect(0, 0, SIZE, SIZE)
+    // 비트맵을 그리기 전에 원형 클립
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2, 0, Math.PI * 2)
+    ctx.clip()
+    // 비어보일 수 있는 가장자리 흰색으로 채워두기
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'
+    ctx.fillRect(0, 0, SIZE, SIZE)
+    ctx.drawImage(bitmap, sx, sy, srcW, srcH, 0, 0, SIZE, SIZE)
+    ctx.restore()
+  }, [sx, sy, srcW, srcH, bitmap])
+
+  // 위치: 기본은 코너 위로 18px, 화면 위로 넘어가면 아래로 fallback.
+  // 가로는 코너 중심으로 두되 컨테이너 안에서 클램프.
+  const aboveY = cornerY - SIZE - 22
+  const useAbove = aboveY > 4
+  const top = useAbove ? aboveY : cornerY + 28
+  const left = Math.max(4, Math.min(dW - SIZE - 4, cornerX - SIZE / 2))
+
+  return (
+    <div
+      style={{
+        position: 'absolute', left, top, width: SIZE, height: SIZE,
+        borderRadius: '50%', border: '3px solid white',
+        boxShadow: '0 6px 16px rgba(0,0,0,0.55)', pointerEvents: 'none',
+        zIndex: 3, overflow: 'hidden',
+      }}
+      aria-hidden="true"
+    >
+      <canvas ref={canvasRef} width={SIZE} height={SIZE} />
+      {/* 십자선 — 정확한 픽셀 위치 표시 */}
+      <div style={{ position: 'absolute', top: '50%', left: 0, width: '100%', height: 1, background: 'var(--coral)', opacity: 0.85 }} />
+      <div style={{ position: 'absolute', left: '50%', top: 0, height: '100%', width: 1, background: 'var(--coral)', opacity: 0.85 }} />
+      <div style={{ position: 'absolute', top: '50%', left: '50%', width: 6, height: 6, marginTop: -3, marginLeft: -3, borderRadius: '50%', border: '1.5px solid white', background: 'transparent' }} />
+    </div>
   )
 }
 
@@ -764,6 +832,7 @@ function ReceiptScanModal({ bitmap, onConfirm, onCancel }: {
   const dW = Math.round(bitmap.width * sc), dH = Math.round(bitmap.height * sc)
   const [corners, setCorners] = useState<CropCorners>(() => detectDocumentCorners(bitmap))
   const [processing, setProcessing] = useState(false)
+  const [activeCorner, setActiveCorner] = useState<keyof CropCorners | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -810,8 +879,20 @@ function ReceiptScanModal({ bitmap, onConfirm, onCancel }: {
         </svg>
         {(['tl', 'tr', 'br', 'bl'] as const).map(key => (
           <CornerHandle key={key} cx={corners[key].x * dW} cy={corners[key].y * dH}
-            containerRef={containerRef} onMove={(x, y) => moveCorner(key, x, y)} />
+            containerRef={containerRef}
+            onMove={(x, y) => moveCorner(key, x, y)}
+            onStart={() => setActiveCorner(key)}
+            onEnd={() => setActiveCorner(null)}
+          />
         ))}
+        {activeCorner && (
+          <CornerLoupe
+            bitmap={bitmap}
+            cornerX={corners[activeCorner].x * dW}
+            cornerY={corners[activeCorner].y * dH}
+            dW={dW} dH={dH}
+          />
+        )}
       </div>
       <div className="flex gap-3 mt-6">
         <button type="button" onClick={onCancel}

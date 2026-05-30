@@ -921,6 +921,197 @@ ${paymentLines || '  수납 기록 없음'}
   return json.candidates?.[0]?.content?.parts?.[0]?.text ?? 'AI 분석 결과를 가져올 수 없습니다.'
 }
 
+// ── 계약서 OCR (Gemini Vision) ────────────────────────────────────
+// 계약서 사진/스캔에서 입주자 등록에 필요한 핵심 필드를 추출.
+// 화면/PDF/사진 어떤 형태든 시도. 추출 못 한 필드는 undefined.
+export type ContractOcrResult = {
+  name?: string
+  englishName?: string
+  gender?: 'MALE' | 'FEMALE' | 'OTHER'
+  nationality?: string
+  birthdate?: string         // YYYY-MM-DD
+  job?: string
+  contactPhone?: string      // 주 연락처
+  emergencyName?: string
+  emergencyPhone?: string
+  emergencyRelation?: string
+  roomNo?: string            // '402호' 형태
+  rentAmount?: number
+  depositAmount?: number
+  cleaningFee?: number
+  dueDay?: string            // '25' | '말일'
+  moveInDate?: string        // YYYY-MM-DD
+  contractEnd?: string       // YYYY-MM-DD
+}
+
+export async function analyzeContractWithGemini(imageBase64: string, mimeType: string): Promise<{ ok: true; data: ContractOcrResult } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    await getPropertyId()
+    if (!imageBase64) return { ok: false, error: '이미지 데이터가 비어있습니다.' }
+    const apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
+
+    const prompt = `이 계약서/임대차 계약 문서를 분석하고 입주자 정보를 JSON 으로만 응답하세요. 다른 설명·마크다운·코드블록 없이 순수 JSON.
+
+JSON 스키마 (모든 필드 선택. 추출 못 한 건 생략):
+{
+  "name": "한글 이름",
+  "englishName": "영문 이름 (외국인이거나 별도 표기 있을 때)",
+  "gender": "MALE" | "FEMALE" | "OTHER",
+  "nationality": "대한민국 | 베트남 | 우즈베키스탄 ...",
+  "birthdate": "YYYY-MM-DD",
+  "job": "직업",
+  "contactPhone": "010-1234-5678 (주 연락처)",
+  "emergencyName": "비상연락처 본인 이름",
+  "emergencyPhone": "010-...",
+  "emergencyRelation": "부/모/형제/친구 등",
+  "roomNo": "402호 (호실 번호)",
+  "rentAmount": 370000,       // 정수 원 (월세/월 이용료)
+  "depositAmount": 1000000,   // 정수 원 (보증금)
+  "cleaningFee": 50000,       // 정수 원 (청소비)
+  "dueDay": "25" | "말일",    // 납부일
+  "moveInDate": "YYYY-MM-DD", // 입주일
+  "contractEnd": "YYYY-MM-DD" // 계약 만료일
+}
+
+규칙:
+- 숫자는 콤마 제거 후 정수만
+- 한국어 계약서 우선. 영어 표기도 인식 가능
+- 호실은 "402호" 또는 "402" 형태 그대로
+- 계약서로 보이지 않는 이미지: {} 빈 객체 반환`
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: mimeType || 'image/jpeg', data: imageBase64 } },
+            ],
+          }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 1200, responseMimeType: 'application/json' },
+        }),
+      }
+    )
+    if (!res.ok) return { ok: false, error: `Gemini API 오류 (${res.status})` }
+    const json = await res.json()
+    const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    if (!text) return { ok: false, error: 'AI 응답이 비어있습니다.' }
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
+    let parsed: Record<string, unknown>
+    try { parsed = JSON.parse(cleaned) }
+    catch { return { ok: false, error: 'AI 응답을 JSON으로 해석하지 못했습니다.' } }
+
+    const str = (k: string) => typeof parsed[k] === 'string' && parsed[k] ? (parsed[k] as string).trim() : undefined
+    const num = (k: string) => typeof parsed[k] === 'number' ? Math.round(parsed[k] as number) : undefined
+    const gender = parsed.gender === 'MALE' || parsed.gender === 'FEMALE' || parsed.gender === 'OTHER' ? parsed.gender : undefined
+
+    return {
+      ok: true,
+      data: {
+        name: str('name'),
+        englishName: str('englishName'),
+        gender,
+        nationality: str('nationality'),
+        birthdate: str('birthdate'),
+        job: str('job'),
+        contactPhone: str('contactPhone'),
+        emergencyName: str('emergencyName'),
+        emergencyPhone: str('emergencyPhone'),
+        emergencyRelation: str('emergencyRelation'),
+        roomNo: str('roomNo'),
+        rentAmount: num('rentAmount'),
+        depositAmount: num('depositAmount'),
+        cleaningFee: num('cleaningFee'),
+        dueDay: str('dueDay'),
+        moveInDate: str('moveInDate'),
+        contractEnd: str('contractEnd'),
+      },
+    }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// ── 신분증/외국인등록증 OCR (Gemini Vision) ────────────────────────
+export type IdCardOcrResult = {
+  name?: string             // 한글 이름
+  englishName?: string      // 외국인등록증 영문 이름
+  gender?: 'MALE' | 'FEMALE' | 'OTHER'
+  birthdate?: string        // YYYY-MM-DD
+  nationality?: string      // '대한민국' | 'VIETNAM' 등 (가능하면 한글)
+}
+
+export async function analyzeIdCardWithGemini(imageBase64: string, mimeType: string): Promise<{ ok: true; data: IdCardOcrResult } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    await getPropertyId()
+    if (!imageBase64) return { ok: false, error: '이미지 데이터가 비어있습니다.' }
+    const apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
+
+    const prompt = `이 사진이 한국 주민등록증·운전면허증·외국인등록증 중 하나라고 보고 다음 필드를 추출. 순수 JSON 만 응답. 마크다운·코드블록 X.
+
+JSON 스키마 (모든 필드 선택, 추출 못 한 건 생략):
+{
+  "name": "한글 이름",                  // 외국인등록증은 한글 표기 또는 없음
+  "englishName": "ROMAN/ENGLISH NAME",  // 외국인등록증·여권형
+  "gender": "MALE" | "FEMALE" | "OTHER",
+  "birthdate": "YYYY-MM-DD",            // 주민번호 앞 6자리 또는 별도 표기
+  "nationality": "대한민국 | 베트남 | 우즈베키스탄 ..."
+}
+
+규칙:
+- 한국 주민번호 앞 6자리(YYMMDD)를 봤다면, 7번째 숫자가 1·2 → 19YY, 3·4 → 20YY, 5·6 → 19YY(외국인), 7·8 → 20YY(외국인)
+- 외국인등록증의 영문 이름은 ROMAN 으로 정확히 (성/이름 그대로)
+- 신분증으로 보이지 않으면 {} 빈 객체`
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: mimeType || 'image/jpeg', data: imageBase64 } },
+            ],
+          }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 600, responseMimeType: 'application/json' },
+        }),
+      }
+    )
+    if (!res.ok) return { ok: false, error: `Gemini API 오류 (${res.status})` }
+    const json = await res.json()
+    const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    if (!text) return { ok: false, error: 'AI 응답이 비어있습니다.' }
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
+    let parsed: Record<string, unknown>
+    try { parsed = JSON.parse(cleaned) }
+    catch { return { ok: false, error: 'AI 응답을 JSON으로 해석하지 못했습니다.' } }
+
+    const str = (k: string) => typeof parsed[k] === 'string' && parsed[k] ? (parsed[k] as string).trim() : undefined
+    const gender = parsed.gender === 'MALE' || parsed.gender === 'FEMALE' || parsed.gender === 'OTHER' ? parsed.gender : undefined
+    return {
+      ok: true,
+      data: {
+        name: str('name'),
+        englishName: str('englishName'),
+        gender,
+        birthdate: str('birthdate'),
+        nationality: str('nationality'),
+      },
+    }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // 입주자 삭제
 export async function deleteTenant(tenantId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
