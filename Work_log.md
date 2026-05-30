@@ -649,7 +649,14 @@
   · 영구 변경 → 일할 정산 → 다음달부터 적용
   · 양도인 정산 → confirm → 미납 집계에서 제외 / 한 번만 가능
 
-### N-5. Prism Phase 2.4c — RoomsClient 자체 모달을 PaymentBody 위젯으로 통합 (예정)
+### N-4c. Prism Phase 2.4c — RoomsClient 셸 마이그레이션 (2026-05-30)
+
+- **카드 클릭 / URL ?roomNo=X 진입** → `entityModal.open({kind:'payment', leaseTermId, roomId, tenantId})` → 전역 셸(PaymentBody)이 모든 수납 기능 in-place 처리.
+- **자체 인라인 수납 모달 JSX 통째 제거** (~810줄): 헤더·요약·납부 내역·할인·임시 조정·영구 변경·양도인 정산·수납 등록 폼 — 전부 PaymentBody 위젯들이 대체.
+- **2중 스택 완전 종료**: 어디서 들어오든 셸 한 컨테이너만 뜸 (대시보드·고객 페이지에서 [수납] 전환·수납 관리 페이지 카드 클릭 모두 동일).
+- **결제 정확성 불변**: 서버액션(savePayment·saveDepositPayment·updatePayment·deletePayment·addRentDiscount·deleteRentDiscount·setDueDayOverride·clearDueDayOverride·changeDueDay·setPrevOwnerSettleMenu·savePrevOwnerSettle) 그대로. UI/state 만 셸로 이동.
+- **TS 통과**. RoomsClient 1903 → 1216 줄(-687).
+- **후속 청소**: RoomsClient 안에 dead state·핸들러(handleSavePayment 등) + 사용 안 되는 import 잔존 — 기능 영향 0, 별도 정리 세션에서 제거 가능.
 - TenantClient 상세 팝업 ~510줄. 탭 3개(상세/요청·컴플레인/AI), 편집 모드, 퇴실예정·비거주 전환 액션.
 - RoomDetailBody 패턴 그대로 — TenantDetailBody에 fetch+탭+읽기 표시. 편집은 callback prop.
 - 위험: 폼 상태 동기화, 회귀 가능. 데이터는 안 깨짐.
