@@ -15,17 +15,21 @@ import { TenantContactInfo } from '../widgets/TenantContactInfo'
 import { TenantContractInfo } from '../widgets/TenantContractInfo'
 import { TenantAdditionalInfo } from '../widgets/TenantAdditionalInfo'
 import { ContractFilesPanel } from '../widgets/ContractFilesPanel'
+import { TenantStatusTransitions } from '../widgets/TenantStatusTransitions'
+import { TenantRequestsTab } from '../widgets/TenantRequestsTab'
 import { Section } from '../widgets/Section'
 
 type TenantDetail = NonNullable<Awaited<ReturnType<typeof getTenantDetail>>>
 
 export function TenantBody({ tenantId }: { tenantId: string }) {
   const [tenant, setTenant] = useState<TenantDetail | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
   useEffect(() => {
     let active = true
     getTenantDetail(tenantId).then(d => { if (active && d) setTenant(d as TenantDetail) })
     return () => { active = false }
-  }, [tenantId])
+  }, [tenantId, reloadKey])
+  const refresh = () => setReloadKey(k => k + 1)
 
   if (!tenant) return <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
 
@@ -36,6 +40,19 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
     <div className="space-y-5">
       {/* 상태 칩 — 헤더 제목 옆에 두지 않고 본문 최상단에 (셸 제목은 호실·이름) */}
       {status && <StatusInline status={status} />}
+
+      {/* 상태 전환 (다음 단계 버튼) — 가능한 전환이 없으면 자동 숨김 */}
+      {lease && (
+        <TenantStatusTransitions
+          lease={{
+            id: lease.id, status: lease.status, depositAmount: lease.depositAmount,
+            moveInDate: lease.moveInDate, expectedMoveOut: lease.expectedMoveOut, rentAmount: lease.rentAmount,
+          }}
+          tenantId={tenant.id}
+          tenantName={tenant.name}
+          onChange={refresh}
+        />
+      )}
 
       <TenantBasicInfo tenant={tenant} />
       <TenantContactInfo contacts={tenant.contacts} />
@@ -52,15 +69,11 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
         <ContractFilesPanel tenantId={tenant.id} tenantName={tenant.name} />
       </Section>
 
+      <TenantRequestsTab tenantId={tenant.id} />
+
       {lease && lease.paymentRecords.length > 0 && (
         <PaymentSummaryWithAI tenantId={tenant.id} lease={lease} />
       )}
-
-      {/* 상태 전환·납입일 변경·요청 등 페이지 기능 진입 */}
-      <a href={`/tenants?tenantId=${tenant.id}`}
-        className="block text-center text-xs font-medium text-[var(--coral)] hover:underline py-2">
-        고객 관리에서 더 보기 (상태 전환·요청·편집) →
-      </a>
     </div>
   )
 }

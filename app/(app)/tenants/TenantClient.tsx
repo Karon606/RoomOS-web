@@ -441,18 +441,24 @@ export default function TenantClient({
   // colWidths 변경 시 ref 동기화
   useEffect(() => { colWidthsRef.current = colWidths }, [colWidths])
 
-  // URL 파라미터로 특정 입주자 팝업 열기 (/tenants?tenantId=xxx&tab=requests&edit=1)
+  // URL 파라미터 — /tenants?tenantId=xxx → 셸 열기, &edit=1 → 자체 편집 폼(페이지 종속) 열기.
+  // Phase 2.3c (2026-05-30): 상세 팝업은 전역 Prism 셸로 마이그레이션. 편집 폼만 페이지에 잔존.
   useEffect(() => {
     const tenantId = searchParams.get('tenantId')
-    const tab = searchParams.get('tab')
     const edit = searchParams.get('edit')
-    if (tenantId) {
-      const found = initialTenants.find(t => t.id === tenantId)
-      if (found) {
-        setDetailTenant(found)
-        setDetailTab(tab === 'requests' ? 'requests' : tab === 'analysis' ? 'analysis' : 'info')
-        if (edit === '1') setDetailEditMode(true)
-      }
+    if (!tenantId) return
+    const found = initialTenants.find(t => t.id === tenantId)
+    if (!found) return
+    if (edit === '1') {
+      // 편집 모드만 페이지에서 처리 — 셸의 [수정] 버튼이 ?edit=1 push 함
+      setDetailTenant(found); setDetailEditMode(true)
+    } else {
+      entityModal.open({
+        kind: 'tenant',
+        tenantId: found.id,
+        leaseTermId: found.leaseTerms[0]?.id ?? undefined,
+        roomId: found.leaseTerms[0]?.room?.id ?? undefined,
+      })
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1369,7 +1375,7 @@ export default function TenantClient({
                 tipColor={tipTone ? statusTipColor(tipTone) : undefined}
                 tipBg={tipTone ? statusRowTint(tipTone) : undefined}
                 selected={selectMode && selectedIds.has(tenant.id)}
-                onClick={() => selectMode ? toggleSelectTenant(tenant.id) : (setDetailTenant(tenant), setDetailTab('info'))}
+                onClick={() => selectMode ? toggleSelectTenant(tenant.id) : entityModal.open({ kind: 'tenant', tenantId: tenant.id, leaseTermId: tenant.leaseTerms[0]?.id ?? undefined, roomId: tenant.leaseTerms[0]?.room?.id ?? undefined })}
                 className="p-4"
               >
                 {/* 첫 줄: 호실(또는 희망 조건/미배정) + 이름 + 상태 */}
@@ -1528,7 +1534,7 @@ export default function TenantClient({
 
                 return (
                   <tr key={tenant.id}
-                    onClick={() => selectMode ? toggleSelectTenant(tenant.id) : (setDetailTenant(tenant), setDetailTab('info'))}
+                    onClick={() => selectMode ? toggleSelectTenant(tenant.id) : entityModal.open({ kind: 'tenant', tenantId: tenant.id, leaseTermId: tenant.leaseTerms[0]?.id ?? undefined, roomId: tenant.leaseTerms[0]?.room?.id ?? undefined })}
                     className={`border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:opacity-80 transition-colors cursor-pointer ${selectMode && selectedIds.has(tenant.id) ? 'bg-[var(--coral)]/5 ring-inset ring-1 ring-[var(--coral)]/30' : ''}`}
                   >
                     {/* sticky — 호실 (클릭 시 호실 관리 페이지로) */}
@@ -1614,586 +1620,37 @@ export default function TenantClient({
         </div>
       )}
 
-      {/* ── 상세 팝업 ──────────────────────────────────────────────── */}
-      {detailTenant && (() => {
-        const t       = detailTenant
-        const lease   = t.leaseTerms[0]
-        const primary   = t.contacts.find(c => c.isPrimary)
-        const emergency = t.contacts.find(c => c.isEmergency)
-        const status    = lease?.status ?? ''
-        const sched     = getScheduledDate(lease)
-        const natFlag   = flagByName(t.nationality)
-
-        const closeDetail = () => {
-          setDetailTenant(null); setDetailEditMode(false); setError('')
-          setAiText(''); setAiLoading(false)
-          setShowDueDayChange(false); setNewDueDayInput('')
-        }
-
-        const handleAiAnalyze = async () => {
-          setAiLoading(true); setAiText('')
-          try {
-            const result = await analyzeTenantWithGemini(t.id)
-            setAiText(result)
-          } catch (e) {
-            setAiText('분석 중 오류가 발생했습니다.')
-          } finally {
-            setAiLoading(false)
-          }
-        }
-
-        const payments      = lease?.paymentRecords ?? []
-        const totalExpected = payments.reduce((s, p) => s + p.expectedAmount, 0)
-        const totalPaid     = payments.reduce((s, p) => s + p.actualAmount, 0)
-        const unpaid        = totalExpected - totalPaid
-        const paidMonths    = payments.filter(p => p.isPaid).length
-
+      {/* 편집 폼 모달 — 페이지 종속 (상세 팝업은 전역 Prism 셸이 담당, Phase 2.3c) */}
+      {detailTenant && detailEditMode && (() => {
+        const t = detailTenant
+        const closeEdit = () => { setDetailEditMode(false); setDetailTenant(null); setError('') }
         return (
-          <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
-            onClick={closeDetail}>
+          <div className="fixed inset-0 bg-black/70 z-[260] flex items-center justify-center p-4"
+            onClick={closeEdit}>
             <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[88vh]"
               onClick={e => e.stopPropagation()}>
-
-              {/* 팝업 헤더 */}
-              <div className="flex flex-col gap-2 px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <h2 className="text-base font-bold text-[var(--warm-dark)]">
-                      {detailEditMode ? '고객 정보 수정' : '고객 상세정보'}
-                    </h2>
-                    {!detailEditMode && (
-                      <StatusChip status={status} />
-                    )}
-                    {!detailEditMode && lease?.isShortTerm && (
-                      <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">
-                        단기
-                      </span>
-                    )}
-                    {!detailEditMode && sched && (() => {
-                      const dd = fmtDDay(sched.date)
-                      if (!dd) return null
-                      const color = sched.label === '입실' ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'
-                      return <span className={`text-xs font-bold ${color}`}>{dd}</span>
-                    })()}
-                  </div>
-                  <div className="flex items-center gap-2 ml-4 shrink-0">
-                    <button onClick={closeDetail} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
-                  </div>
-                </div>
-                {!detailEditMode && ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(status) && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-[0.6875rem] text-amber-700 leading-relaxed">
-                    아직 입주가 확정되지 않은 <span className="font-semibold">{STATUS_LABEL[status] ?? status} 단계</span>입니다. 아래 <span className="font-semibold">상태 전환 버튼</span>으로 다음 단계로 진행하세요.
-                  </div>
-                )}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+                <h2 className="text-base font-bold text-[var(--warm-dark)]">고객 정보 수정 — {t.name}</h2>
+                <button onClick={closeEdit} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none">✕</button>
               </div>
-
-              {/* ── 읽기 전용 모드 ── */}
-              {!detailEditMode && (
-                <>
-                    {/* 상태 전환 액션 바 — 현재 상태 기준 "다음 단계로" 버튼 */}
-                    {lease && transitionsFor(status).length > 0 && (
-                      <div className="flex flex-wrap gap-2 px-6 py-3 border-b border-[var(--warm-border)] shrink-0">
-                        {transitionsFor(status).map(def => {
-                          const cls = def.tone === 'primary'
-                            ? 'bg-[var(--coral)] text-white hover:opacity-90'
-                            : def.tone === 'danger'
-                            ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
-                            : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'
-                          return (
-                            <button key={def.key} type="button" disabled={isPending}
-                              onClick={() => startTransitionAction(def, lease, t.id, t.name)}
-                              className={`px-3 py-2 text-xs font-semibold rounded-lg transition-colors disabled:opacity-40 ${cls}`}>
-                              {def.label}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
-                    {/* 탭 헤더 */}
-                    <div className="flex border-b border-[var(--warm-border)] px-6 shrink-0">
-                      {([
-                        { key: 'info',     label: '상세 정보' },
-                        { key: 'requests', label: '요청·컴플레인' },
-                        { key: 'analysis', label: '수납 분석' },
-                      ] as const).map(t => (
-                        <button key={t.key} onClick={() => setDetailTab(t.key)}
-                          className={`py-2.5 px-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                            detailTab === t.key
-                              ? 'border-[var(--coral)] text-[var(--coral)]'
-                              : 'border-transparent text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'
-                          }`}>
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* 팝업 바디 */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-5">
-                      {detailTab === 'info' && (
-                        <>
-                          <InfoSection title="기본 정보">
-                            <InfoGrid>
-                              <InfoItem label="이름"       value={<span className="font-semibold text-[var(--warm-dark)]">{t.name}</span>} />
-                              <InfoItem label="호실"       value={fmtRoomNo(lease?.room?.roomNo)} />
-                              {t.englishName && <InfoItem label="영어이름" value={t.englishName} />}
-                              <InfoItem label="성별"       value={GENDER_LABEL[t.gender] ?? t.gender} />
-                              <InfoItem label="국적"       value={t.nationality ? `${natFlag} ${t.nationality}` : '—'} />
-                              <InfoItem label="직업"       value={t.job ?? '—'} />
-                              <InfoItem label="생년월일"   value={fmtDate(t.birthdate)} />
-                              <InfoItem label="기초수급자" value={t.isBasicRecipient ? '예/대상자' : '아니오/해당없음'} />
-                            </InfoGrid>
-                          </InfoSection>
-
-                          <InfoSection title="연락처">
-                            <InfoGrid>
-                              <InfoItem label="주 연락처" value={primary?.contactValue ? formatPhone(primary.contactValue) : '—'} />
-                              {emergency && <>
-                                <InfoItem label="비상 관계"   value={emergency.emergencyRelation ?? '—'} />
-                                <InfoItem label="비상 연락처" value={formatPhone(emergency.contactValue)} />
-                              </>}
-                              {(() => {
-                                const home = t.contacts.find(c => c.isHomeCountry)
-                                if (!home) return null
-                                return <InfoItem label="본국 연락처" value={fmtIntlPhone(home.contactValue, home.countryCode ?? undefined) || home.contactValue} />
-                              })()}
-                            </InfoGrid>
-                          </InfoSection>
-
-                          {lease && (
-                            <InfoSection title="계약 정보">
-                              <InfoGrid>
-                                <InfoItem label="월 이용료"  value={<MoneyDisplay amount={lease.rentAmount} />} />
-                                <InfoItem label="보증금"     value={<MoneyDisplay amount={lease.depositAmount} />} />
-                                <InfoItem label="청소비"     value={<MoneyDisplay amount={lease.cleaningFee} />} />
-                                <InfoItem label="납부일" value={
-                                  <span className="flex items-center gap-2">
-                                    <span>{fmtDueDay(lease.dueDay)}</span>
-                                    {canEdit && (
-                                      <button
-                                        onClick={() => { setShowDueDayChange(v => !v); setNewDueDayInput('') }}
-                                        className="text-[0.625rem] px-1.5 py-0.5 rounded transition-colors"
-                                        style={{ color: 'var(--coral)', border: '1px solid rgba(244,98,58,0.35)' }}>
-                                        납입일 변경
-                                      </button>
-                                    )}
-                                  </span>
-                                } />
-                                <InfoItem label="납부방식"   value={PT_LABEL[lease.paymentTiming] ?? lease.paymentTiming} />
-                                <InfoItem
-                                  label={['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status) ? '입주 희망일' : '입주일'}
-                                  value={fmtDate(lease.moveInDate)}
-                                />
-                                {!['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(lease.status) && lease.inquiryAt && (
-                                  <InfoItem label="입실 문의 일시" value={fmtDateTime(lease.inquiryAt)} />
-                                )}
-                                {!['RESERVED', 'WAITING_TOUR', 'TOUR_DONE', 'CANCELLED'].includes(lease.status) && (
-                                  <InfoItem label="거주기간" value={calcStayPeriod(lease.moveInDate, lease.moveOutDate ?? undefined)} />
-                                )}
-                                {lease.expectedMoveOut && <InfoItem label="퇴실 예정일" value={fmtDate(lease.expectedMoveOut)} />}
-                                {lease.moveOutDate && <InfoItem label="퇴실일" value={fmtDate(lease.moveOutDate)} />}
-                              </InfoGrid>
-
-                              {/* 납입일 변경 인라인 폼 */}
-                              {showDueDayChange && (() => {
-                                const calc = newDueDayInput.trim()
-                                  ? calcProRata(lease.rentAmount, lease.dueDay, newDueDayInput, targetMonth)
-                                  : null
-                                const canApply = !!calc && calc.type !== 'none'
-                                return (
-                                  <div className="mt-3 p-3 rounded-xl space-y-3"
-                                    style={{ background: 'var(--canvas)', border: '1px solid rgba(244,98,58,0.25)' }}>
-                                    <p className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>
-                                      납입일 변경 — {targetMonth} 기준 일할 계산
-                                    </p>
-                                    <div className="flex items-end gap-3">
-                                      <div className="flex-1 space-y-1">
-                                        <label className="text-xs text-[var(--warm-muted)]">새 납입일</label>
-                                        <input
-                                          type="text"
-                                          value={newDueDayInput}
-                                          onChange={e => setNewDueDayInput(e.target.value)}
-                                          placeholder="예: 25, 말일"
-                                          className="w-full rounded-lg px-2.5 py-1.5 text-sm outline-none"
-                                          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
-                                        />
-                                      </div>
-                                      <div className="text-xs pb-1.5" style={{ color: 'var(--warm-muted)' }}>
-                                        현재 {fmtDueDay(lease.dueDay)}
-                                      </div>
-                                    </div>
-
-                                    {calc && calc.type !== 'none' && (
-                                      <div className="rounded-lg px-3 py-2 text-xs font-medium"
-                                        style={{
-                                          background: calc.type === 'extra' ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
-                                          color: calc.type === 'extra' ? '#ef4444' : '#16a34a',
-                                          border: `1px solid ${calc.type === 'extra' ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)'}`,
-                                        }}>
-                                        {calc.type === 'extra'
-                                          ? `납입일 ${calc.days}일 늦어짐 → 추가납부 ${calc.amount.toLocaleString()}원 발생`
-                                          : `납입일 ${calc.days}일 빨라짐 → 과입금 ${calc.amount.toLocaleString()}원 환급`}
-                                        <span className="block mt-0.5 font-normal" style={{ color: 'var(--warm-muted)' }}>
-                                          월 {lease.rentAmount.toLocaleString()}원 ÷ {PRORATE_BASE_DAYS}일 × {calc.days}일
-                                        </span>
-                                      </div>
-                                    )}
-                                    {calc && calc.type === 'none' && (
-                                      <p className="text-xs" style={{ color: 'var(--warm-muted)' }}>기존 납입일과 동일합니다.</p>
-                                    )}
-                                    {newDueDayInput.trim() && !calc && (
-                                      <p className="text-xs text-red-400">유효한 날짜를 입력하세요 (1~31 또는 말일)</p>
-                                    )}
-
-                                    <div className="flex gap-2">
-                                      <Btn type="button" variant="secondary" size="sm"
-                                        onClick={() => { setShowDueDayChange(false); setNewDueDayInput('') }}
-                                        className="flex-1">
-                                        취소
-                                      </Btn>
-                                      <Btn type="button" variant="primary" size="sm"
-                                        disabled={isPending || !canApply}
-                                        onClick={handleChangeDueDayAction}
-                                        className="flex-1 font-semibold">
-                                        {isPending ? '처리 중...' : '변경 적용'}
-                                      </Btn>
-                                    </div>
-                                  </div>
-                                )
-                              })()}
-                            </InfoSection>
-                          )}
-
-                          {lease && (
-                            <InfoSection title="추가 정보">
-                              <InfoGrid>
-                                <InfoItem label="전입신고"       value={REG_LABEL[lease.registrationStatus] ?? lease.registrationStatus} />
-                                <InfoItem label="결제 수단"      value={lease.payMethod ?? '—'} />
-                                <InfoItem label="현금영수증"     value={lease.cashReceipt ?? '—'} />
-                                <InfoItem label="방문 경로"      value={lease.visitRoute ?? '—'} />
-                                <InfoItem label="희망 이동 호실" value={(() => {
-                                  if (lease.wishRooms) return lease.wishRooms
-                                  const cond = parseWishConditions(lease.wishConditions)
-                                  const parts: string[] = []
-                                  if (cond.floor) parts.push(`${cond.floor}층`)
-                                  if (cond.windowType) parts.push(WISH_WINDOW_LABEL[cond.windowType] ?? cond.windowType)
-                                  if (cond.type) parts.push(cond.type)
-                                  if (cond.direction) parts.push(WISH_DIR_LABEL[cond.direction] ?? cond.direction)
-                                  const minR = cond.minRent ?? 0
-                                  const maxR = cond.maxRent ?? 400000
-                                  if (minR !== 0 || maxR !== 400000) parts.push(`${(minR/10000).toFixed(0)}~${(maxR/10000).toFixed(0)}만원`)
-                                  return parts.length > 0 ? `조건: ${parts.join(' · ')}` : '—'
-                                })()} />
-                                {lease.contractUrl && (
-                                  <InfoItem label="계약서" value={
-                                    <a href={lease.contractUrl} target="_blank" rel="noopener noreferrer"
-                                      className="text-[var(--coral)] hover:text-[var(--coral)] text-xs">링크 열기 ↗</a>
-                                  } />
-                                )}
-                              </InfoGrid>
-                            </InfoSection>
-                          )}
-
-                          {t.memo && (
-                            <InfoSection title="메모">
-                              <p className="text-sm text-[var(--warm-dark)] leading-relaxed whitespace-pre-wrap">{t.memo}</p>
-                            </InfoSection>
-                          )}
-
-                          <InfoSection title="계약서 파일">
-                            <ContractFilesPanel tenantId={t.id} tenantName={t.name} />
-                          </InfoSection>
-                        </>
-                      )}
-
-                      {detailTab === 'requests' && (() => {
-                        const unresolved = requests.filter(r => !r.resolvedAt)
-                        const resolved   = requests.filter(r =>  r.resolvedAt)
-                        const fmtDate = (d: string | Date | null) => d ? new Date(d).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }) : '—'
-
-                        const handleCreate = () => {
-                          if (!newContent.trim()) return
-                          startReqTransition(async () => {
-                            await createTenantRequest({
-                              tenantId:    detailTenant!.id,
-                              content:     newContent,
-                              requestDate: newReqDate,
-                              targetDate:  newTargetDate || null,
-                            })
-                            setNewContent(''); setNewTargetDate('')
-                            setNewReqDate(kstYmdStr())
-                            const updated = await getTenantRequests(detailTenant!.id)
-                            setRequests(updated)
-                          })
-                        }
-
-                        const handleResolve = (id: string) => {
-                          startReqTransition(async () => {
-                            await resolveTenantRequest(id)
-                            const updated = await getTenantRequests(detailTenant!.id)
-                            setRequests(updated)
-                          })
-                        }
-
-                        const handleDelete = (id: string) => {
-                          if (!confirm('이 요청을 삭제하시겠습니까? 복구할 수 없습니다.')) return
-                          startReqTransition(async () => {
-                            await deleteTenantRequest(id)
-                            const updated = await getTenantRequests(detailTenant!.id)
-                            setRequests(updated)
-                          })
-                        }
-
-                        return (
-                          <div className="space-y-4">
-                            {/* 새 요청 등록 */}
-                            <div className="rounded-xl p-4 space-y-3" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
-                              <p className="text-xs font-semibold" style={{ color: 'var(--warm-mid)' }}>새 요청 등록</p>
-                              <textarea
-                                value={newContent}
-                                onChange={e => setNewContent(e.target.value)}
-                                rows={3}
-                                placeholder="요청 내용을 입력하세요"
-                                className="w-full text-sm rounded-lg px-3 py-2 resize-none"
-                                style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)', outline: 'none' }}
-                              />
-                              <div className="flex flex-col xs:grid xs:grid-cols-2 gap-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
-                                <div className="min-w-0">
-                                  <label className="block text-[0.625rem] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>요청 날짜</label>
-                                  <DatePicker value={newReqDate} onChange={setNewReqDate}
-                                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-2 text-[0.6875rem] text-[var(--warm-dark)] min-w-0" />
-                                </div>
-                                <div className="min-w-0">
-                                  <label className="block text-[0.625rem] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>처리 목표일 (선택)</label>
-                                  <DatePicker value={newTargetDate} onChange={setNewTargetDate}
-                                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-2 text-[0.6875rem] text-[var(--warm-dark)] min-w-0" />
-                                </div>
-                              </div>
-                              <Btn onClick={handleCreate} disabled={reqPending || !newContent.trim()}
-                                variant="primary" size="md" fullWidth>
-                                {reqPending ? '등록 중...' : '등록'}
-                              </Btn>
-                            </div>
-
-                            {/* 미처리 요청 목록 */}
-                            {requestsLoading ? (
-                              <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>불러오는 중...</p>
-                            ) : unresolved.length === 0 ? (
-                              <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>미처리 요청 없음</p>
-                            ) : (
-                              <div className="space-y-2">
-                                {unresolved.map(r => (
-                                  <div key={r.id} className="rounded-xl p-4 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div className="flex items-center gap-2 text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>
-                                        <span>요청 {fmtDate(r.requestDate)}</span>
-                                        {r.targetDate && <span className="font-medium" style={{ color: '#f97316' }}>목표 {fmtDate(r.targetDate)}</span>}
-                                      </div>
-                                      {/* 삭제 버튼 */}
-                                      <button onClick={() => handleDelete(r.id)} disabled={reqPending}
-                                        className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md transition-colors disabled:opacity-40"
-                                        style={{ color: 'var(--warm-muted)' }}
-                                        title="삭제">
-                                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                                          <path d="M1 3h12M4 3V2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M5.5 6v5M8.5 6v5M2 3l.8 9a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L12 3"/>
-                                        </svg>
-                                      </button>
-                                    </div>
-                                    <p className="text-sm leading-snug" style={{ color: 'var(--warm-dark)' }}>{r.content}</p>
-                                    {/* 완료 처리 CTA */}
-                                    <button onClick={() => handleResolve(r.id)} disabled={reqPending}
-                                      className="w-full py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
-                                      style={{ background: 'rgba(34,197,94,0.12)', color: '#16a34a', border: '1.5px solid rgba(34,197,94,0.35)' }}>
-                                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M2 6l3 3 5-5"/>
-                                      </svg>
-                                      완료로 처리하기
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {/* 처리 이력 */}
-                            {resolved.length > 0 && (
-                              <div>
-                                <button onClick={() => setShowHistory(v => !v)}
-                                  className="text-xs font-medium flex items-center gap-1"
-                                  style={{ color: 'var(--warm-muted)' }}>
-                                  처리된 이력 {resolved.length}건 {showHistory ? '▲' : '▼'}
-                                </button>
-                                {showHistory && (
-                                  <div className="mt-2 space-y-2">
-                                    {resolved.map(r => (
-                                      <div key={r.id} className="rounded-xl p-3 opacity-60" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
-                                        <div className="flex items-start justify-between gap-1 mb-1">
-                                          <div className="flex items-center gap-2 text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>
-                                            <span className="font-medium text-green-500">완료</span>
-                                            <span>{fmtDate(r.resolvedAt)}</span>
-                                            <span>·</span>
-                                            <span>요청 {fmtDate(r.requestDate)}</span>
-                                          </div>
-                                          <button onClick={() => handleDelete(r.id)} disabled={reqPending}
-                                            className="shrink-0 w-5 h-5 flex items-center justify-center rounded transition-colors disabled:opacity-40"
-                                            style={{ color: 'var(--warm-muted)' }} title="삭제">
-                                            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                                              <path d="M1 3h12M4 3V2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M5.5 6v5M8.5 6v5M2 3l.8 9a1 1 0 0 0 1 .9h6.4a1 1 0 0 0 1-.9L12 3"/>
-                                            </svg>
-                                          </button>
-                                        </div>
-                                        <p className="text-xs" style={{ color: 'var(--warm-mid)' }}>{r.content}</p>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })()}
-
-                      {detailTab === 'analysis' && (
-                        <>
-                          <div className="grid grid-cols-3 gap-3">
-                            <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-                              <p className="text-xs text-[var(--warm-muted)] mb-1">납부월</p>
-                              <p className="text-lg font-bold text-green-400">{paidMonths}개월</p>
-                            </div>
-                            <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-                              <p className="text-xs text-[var(--warm-muted)] mb-1">총 납부액</p>
-                              <p className="text-lg font-bold text-[var(--warm-dark)]"><MoneyDisplay amount={totalPaid} /></p>
-                            </div>
-                            <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-                              <p className="text-xs text-[var(--warm-muted)] mb-1">미납액</p>
-                              <p className={`text-lg font-bold ${unpaid > 0 ? 'text-red-400' : 'text-[var(--warm-mid)]'}`}>
-                                <MoneyDisplay amount={Math.max(0, unpaid)} />
-                              </p>
-                            </div>
-                          </div>
-                          <InfoSection title="최근 수납 내역 (최대 12개월)">
-                            {payments.length === 0 ? (
-                              <p className="text-sm text-[var(--warm-muted)] text-center py-4">수납 기록이 없습니다.</p>
-                            ) : (
-                              <div className="space-y-2">
-                                {payments.map(p => (
-                                  <div key={p.id} className="flex items-center justify-between py-2 border-b border-[var(--warm-border)]/50 last:border-0">
-                                    <div className="flex items-center gap-2">
-                                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${p.isPaid ? 'bg-green-400' : 'bg-red-400'}`} />
-                                      <span className="text-sm text-[var(--warm-dark)]">{p.targetMonth}</span>
-                                      {p.payMethod && <span className="text-xs text-[var(--warm-muted)]">{p.payMethod}</span>}
-                                    </div>
-                                    <div className="text-right">
-                                      <span className={`text-sm font-medium ${p.isPaid ? 'text-green-300' : 'text-red-400'}`}>
-                                        <MoneyDisplay amount={p.actualAmount} />
-                                      </span>
-                                      {p.expectedAmount !== p.actualAmount && (
-                                        <span className="text-xs text-[var(--warm-muted)] ml-1">/ <MoneyDisplay amount={p.expectedAmount} /></span>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </InfoSection>
-
-                          {/* Gemini AI 분석 */}
-                          <div className="rounded-xl border border-[var(--coral)]/20 bg-[var(--coral)]/5 p-4 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-semibold text-[var(--coral)]">Gemini AI 수납 진단</span>
-                              </div>
-                              <Btn variant="primary" size="sm"
-                                onClick={handleAiAnalyze}
-                                disabled={aiLoading}>
-                                {aiLoading ? '분석 중...' : aiText ? '다시 분석' : '분석하기'}
-                              </Btn>
-                            </div>
-                            {aiLoading && (
-                              <div className="flex items-center gap-2 text-xs text-[var(--coral)] animate-pulse">
-                                <span className="w-1.5 h-1.5 rounded-full bg-[var(--coral)] animate-bounce" />
-                                AI가 수납 패턴을 분석하고 있습니다...
-                              </div>
-                            )}
-                            {aiText && !aiLoading && (
-                              <p className="text-sm text-[var(--warm-dark)] leading-relaxed whitespace-pre-wrap">{aiText}</p>
-                            )}
-                            {!aiText && !aiLoading && (
-                              <p className="text-xs text-[var(--warm-muted)]">'분석하기'를 눌러 이 고객의 수납 건전성을 AI로 진단하세요.</p>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-
-                    {/* 읽기 전용 푸터 — Prism: 액션 행 + 공통 네비 행 */}
-                    <div className="border-t border-[var(--warm-border)] px-6 py-3 shrink-0 space-y-2">
-                      <div className="flex gap-2 flex-wrap items-center">
-                        <button
-                          onClick={() => handleDelete(t.id, t.name)}
-                          disabled={isPending}
-                          className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
-                          삭제
-                        </button>
-                        <a
-                          href={`/contract/${t.id}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                          계약서 출력
-                        </a>
-                        <div className="flex-1" />
-                        <Btn variant="primary" size="md"
-                          onClick={() => { setDetailEditMode(true); setDetailTab('info'); setError('') }}>
-                          수정
-                        </Btn>
-                      </div>
-                      <PrismNavBar
-                        current="tenant"
-                        links={{
-                          roomId: lease?.room?.id ?? null,
-                          tenantId: t.id,
-                          leaseTermId: lease?.id ?? null,
-                        }}
-                        /* 2중 스택 회피 — 호실/수납 면으로 갈 때 자기 팝업을 먼저 닫고 셸을 연다. */
-                        onSelect={kind => {
-                          if (kind === 'tenant') return
-                          closeDetail()
-                          if (kind === 'room' && lease?.room?.id) {
-                            entityModal.open({ kind: 'room', roomId: lease.room.id })
-                          } else if (kind === 'payment' && lease?.id) {
-                            entityModal.open({ kind: 'payment', leaseTermId: lease.id })
-                          }
-                        }}
-                      />
-                    </div>
-                  </>
-              )}
-
-              {/* ── 편집 모드 ── */}
-              {detailEditMode && (
-                <form key={t.id} onSubmit={handleUpdateFromDetail} className="flex flex-col flex-1 overflow-hidden">
-                  <input type="hidden" name="tenantId"    value={t.id} />
-                  <input type="hidden" name="leaseTermId" value={t.leaseTerms[0]?.id ?? ''} />
-                  <div className="overflow-y-auto p-6 space-y-4 flex-1">
-                    <TenantForm rooms={rooms} tenant={t} error={error} />
-                  </div>
-                  <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                    <Btn type="button" variant="secondary" size="md"
-                      onClick={() => { setDetailEditMode(false); setError('') }}
-                      className="flex-1">
-                      취소
-                    </Btn>
-                    <Btn type="submit" variant="primary" size="md" disabled={isPending}
-                      className="flex-1">
-                      {isPending ? '저장 중...' : '저장'}
-                    </Btn>
-                  </div>
-                </form>
-              )}
-
+              <form key={t.id} onSubmit={handleUpdateFromDetail} className="flex flex-col flex-1 overflow-hidden">
+                <input type="hidden" name="tenantId"    value={t.id} />
+                <input type="hidden" name="leaseTermId" value={t.leaseTerms[0]?.id ?? ''} />
+                <div className="overflow-y-auto p-6 space-y-4 flex-1">
+                  <TenantForm rooms={rooms} tenant={t} error={error} />
+                </div>
+                <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
+                  <Btn type="button" variant="secondary" size="md" onClick={closeEdit} className="flex-1">취소</Btn>
+                  <Btn type="submit" variant="primary" size="md" disabled={isPending} className="flex-1">
+                    {isPending ? '저장 중...' : '저장'}
+                  </Btn>
+                </div>
+              </form>
             </div>
           </div>
         )
       })()}
+
 
       {/* ── 배치 편집 모달 ─────────────────────────────────────────── */}
       {showBatchEdit && (

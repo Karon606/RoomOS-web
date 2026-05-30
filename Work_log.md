@@ -649,6 +649,21 @@
   · 영구 변경 → 일할 정산 → 다음달부터 적용
   · 양도인 정산 → confirm → 미납 집계에서 제외 / 한 번만 가능
 
+### N-3c. Prism Phase 2.3c — TenantClient 셸 마이그레이션 (2026-05-30)
+
+- **고객 관리 페이지 카드 클릭 / URL `?tenantId=X`** → 전역 셸(`TenantBody`) 직행. 자체 인라인 상세 모달 통째 제거.
+- **편집 모드만 페이지에 잔존**: 셸 [수정] 버튼이 `?tenantId=X&edit=1` push → TenantClient 가 편집 폼 모달만 띄움. 편집 폼 자체 위젯화는 Phase 2.5 (장기).
+- **신규 위젯**:
+  · `TenantStatusTransitions` — 상태 전환 버튼(투어/예약/입실/퇴실 예정/비거주/거주 등) + 미니폼 모달 (z=300, 셸 위). transitionsFor() 정의 그대로 이주. applyStatusTransition·recordDepositReturn 호출.
+  · `TenantRequestsTab` — 요청·컴플레인 CRUD. 자체 fetch (getTenantRequests). 생성·완료·삭제 + 처리 이력 펼침.
+- **TenantBody 확장**: 상태 칩 → 상태 전환 행 → BasicInfo/Contact/Contract/Additional/Memo/ContractFiles → TenantRequestsTab → 수납 분석+AI. reloadKey 패턴으로 status transition 후 재fetch.
+- **TenantClient 인라인 상세 팝업 삭제** (~580줄). 편집 모달만 z=260 으로 잔존 (셸 z=280 보다 위).
+- **TS 통과**. TenantClient 3817 → 3268 줄(-549).
+- **남은 격차**:
+  · 납입일 변경 인라인 폼 (계약정보 안) — 셸엔 X, 편집 모드 사용해야
+  · 편집 폼 자체 위젯화 — 페이지 종속 잔존 (Phase 2.5)
+- **2중 스택 완전 종료**: 호실·고객·수납 세 페이지 모두 셸 진입. 어디서 들어오든 같은 컨테이너.
+
 ### N-4c. Prism Phase 2.4c — RoomsClient 셸 마이그레이션 (2026-05-30)
 
 - **카드 클릭 / URL ?roomNo=X 진입** → `entityModal.open({kind:'payment', leaseTermId, roomId, tenantId})` → 전역 셸(PaymentBody)이 모든 수납 기능 in-place 처리.
