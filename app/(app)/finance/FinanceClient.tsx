@@ -2720,8 +2720,7 @@ export default function FinanceClient({
                           className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none">✕</button>
                       </div>
                     ) : (
-                      <label className="flex items-center justify-center gap-1.5 w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2.5 cursor-pointer hover:border-[var(--coral)] transition-colors">
-                        <span className="text-lg">📷</span>
+                      <label className="flex items-center justify-center w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2.5 cursor-pointer hover:border-[var(--coral)] transition-colors">
                         <span className="text-xs text-[var(--warm-muted)]">{receiptUploading ? '업로드 중…' : '영수증 첨부'}</span>
                         <input type="file" accept="image/*,application/pdf" className="hidden" disabled={receiptUploading}
                           onChange={async e => { const f = e.target.files?.[0]; if (f) { await handleOpenScan(f, 'edit'); e.target.value = '' } }} />
@@ -3009,8 +3008,7 @@ export default function FinanceClient({
                         className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none">✕</button>
                     </div>
                   ) : (
-                    <label className="flex items-center justify-center gap-1.5 w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2.5 cursor-pointer hover:border-[var(--coral)] transition-colors">
-                      <span className="text-lg">📷</span>
+                    <label className="flex items-center justify-center w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2.5 cursor-pointer hover:border-[var(--coral)] transition-colors">
                       <span className="text-xs text-[var(--warm-muted)]">{receiptUploading ? '업로드 중…' : '영수증 첨부 · 자동 입력'}</span>
                       <input type="file" accept="image/*,application/pdf" className="hidden" disabled={receiptUploading}
                         onChange={async e => { const f = e.target.files?.[0]; if (f) { await handleOpenScan(f, 'add'); e.target.value = '' } }} />

@@ -83,15 +83,15 @@ export function OcrToolbar({ onContract, onIdCard }: {
     <div className="rounded-xl p-3 mb-3 flex items-center gap-2 flex-wrap"
       style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
       <p className="text-[0.6875rem] font-medium mr-1" style={{ color: 'var(--warm-mid)' }}>
-        📷 사진으로 자동 채우기
+        사진으로 자동 채우기
       </p>
       <Btn variant="secondary" size="sm" disabled={busy !== null}
         onClick={() => contractRef.current?.click()}>
-        {busy === 'contract' ? '분석 중...' : '📄 계약서'}
+        {busy === 'contract' ? '분석 중...' : '계약서'}
       </Btn>
       <Btn variant="secondary" size="sm" disabled={busy !== null}
         onClick={() => idRef.current?.click()}>
-        {busy === 'id' ? '분석 중...' : '🪪 신분증'}
+        {busy === 'id' ? '분석 중...' : '신분증'}
       </Btn>
       <input ref={contractRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleContract} />
       <input ref={idRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleId} />

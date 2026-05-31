@@ -405,17 +405,19 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
             return (
               <div className="flex items-end gap-1 h-8">
                 {row.monthlyConsumption.map(m => {
-                  const h = m.qty > 0 ? Math.max(8, Math.round((m.qty / max) * 100)) : 0
+                  // 0 인 달도 시각적으로 자리를 차지하도록 최소 높이 3px (12%) placeholder.
+                  // 사용자 피드백 2026-05-31: 0kg 막대가 안 보여서 그 달 자체가 빠진 줄 오해.
+                  const h = m.qty > 0 ? Math.max(12, Math.round((m.qty / max) * 100)) : 12
                   const monthNum = Number(m.month.slice(5))
                   return (
                     <div key={m.month} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
                       <div className="w-full flex items-end" style={{ height: '24px' }}>
                         <div className="w-full rounded-sm transition-all"
-                          title={`${monthNum}월: ${m.qty > 0 ? fmtQty(m.qty, stockUnit) : '0'}`}
+                          title={`${monthNum}월: ${m.qty > 0 ? fmtQty(m.qty, stockUnit) : '기록 없음'}`}
                           style={{
                             height: `${h}%`,
                             background: m.qty > 0 ? 'var(--coral)' : 'var(--warm-border)',
-                            opacity: m.qty > 0 ? 0.75 : 0.4,
+                            opacity: m.qty > 0 ? 0.75 : 0.5,
                           }} />
                       </div>
                       <span className="text-[0.5rem] text-[var(--warm-muted)] leading-none">{monthNum}</span>

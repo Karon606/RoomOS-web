@@ -76,11 +76,11 @@ export function PendingReceiptSection() {
     <section className="space-y-3 rounded-xl p-4" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-bold" style={{ color: 'var(--warm-dark)' }}>📸 찍어 올리기 · 등록 대기</h2>
+          <h2 className="text-sm font-bold" style={{ color: 'var(--warm-dark)' }}>찍어 올리기 · 등록 대기</h2>
           <p className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>영수증/물품 사진을 올리면 AI 가 분류하고, 검토 후 등록</p>
         </div>
         <Btn variant="primary" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
-          {uploading ? '업로드 중...' : '📸 사진 올리기'}
+          {uploading ? '업로드 중...' : '사진 올리기'}
         </Btn>
         <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
       </header>
