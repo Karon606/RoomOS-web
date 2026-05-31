@@ -533,7 +533,7 @@ export default function RoomsClient({
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl transition-colors
               ${showVacantColMenu ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
           >
-            <span>⚙</span> 공실 표시
+            공실 표시
           </button>
           {showVacantColMenu && (
             <div className="absolute right-0 top-full mt-1.5 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-3 z-50 shadow-lift min-w-[160px] space-y-2">
@@ -555,7 +555,7 @@ export default function RoomsClient({
             onClick={() => setShowColMenu(v => !v)}
             className="px-3 py-1.5 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] text-xs font-medium rounded-xl transition-colors"
           >
-            ⚙ 열 설정
+            열 설정
           </button>
           {showColMenu && (
             <>
