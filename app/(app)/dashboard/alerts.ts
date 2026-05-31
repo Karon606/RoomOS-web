@@ -24,6 +24,11 @@ export type AlertItem = {
   tenantId?: string     // 있으면 클릭 시 EntityModal(고객 뷰) 열기
   href?: string         // tenantId 없으면 이 경로로 이동 (재고·수령)
   urgency: number       // 정렬용 (높을수록 급함)
+  // Prism 수납 face 진입용 — '수납 관리 보기' 버튼이 사용. lease 알림에는 항상 채움.
+  leaseTermId?: string
+  roomId?: string | null
+  roomNo?: string
+  tenantName?: string
 }
 
 const CATEGORY_LABEL: Record<AlertCategory, string> = {
@@ -47,15 +52,15 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     computeInventoryOverview(propertyId),
     prisma.leaseTerm.findMany({
       where: { propertyId, status: 'CHECKOUT_PENDING', expectedMoveOut: { gte: today, lt: tomorrow } },
-      select: { id: true, room: { select: { roomNo: true } }, tenant: { select: { id: true, name: true } } },
+      select: { id: true, room: { select: { id: true, roomNo: true } }, tenant: { select: { id: true, name: true } } },
     }),
     prisma.leaseTerm.findMany({
       where: { propertyId, status: 'WAITING_TOUR', tourDate: { gte: today, lt: tomorrow } },
-      select: { id: true, room: { select: { roomNo: true } }, tenant: { select: { id: true, name: true } } },
+      select: { id: true, room: { select: { id: true, roomNo: true } }, tenant: { select: { id: true, name: true } } },
     }),
     prisma.leaseTerm.findMany({
       where: { propertyId, status: 'RESERVED', moveInDate: { gte: today, lt: tomorrow } },
-      select: { id: true, room: { select: { roomNo: true } }, tenant: { select: { id: true, name: true } } },
+      select: { id: true, room: { select: { id: true, roomNo: true } }, tenant: { select: { id: true, name: true } } },
     }),
     prisma.expense.findMany({
       where: { propertyId, category: { in: TRACKED_CATEGORIES as unknown as string[] }, itemLabel: { not: null }, receivedAt: null, excludeFromInventory: false },
@@ -79,6 +84,10 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       title: roomName(l.roomNo, l.tenantName),
       subtitle: [`월세 ${fmtMoney(l.unpaidAmount)}원 미납`, overdueLabel].filter(Boolean).join(' · '),
       tenantId: l.tenantId,
+      leaseTermId: l.leaseId,
+      roomId: l.roomId,
+      roomNo: l.roomNo,
+      tenantName: l.tenantName,
       urgency: 1000 + Math.max(0, l.daysOverdue ?? 0),
     })
   }
@@ -88,7 +97,9 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     items.push({
       id: `checkout-${l.id}`, category: 'checkout',
       title: roomName(l.room?.roomNo, l.tenant.name), subtitle: '오늘 퇴실 예정',
-      tenantId: l.tenant.id, urgency: 800,
+      tenantId: l.tenant.id, leaseTermId: l.id,
+      roomId: l.room?.id ?? null, roomNo: l.room?.roomNo, tenantName: l.tenant.name,
+      urgency: 800,
     })
   }
   // 오늘 입주
@@ -96,7 +107,9 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     items.push({
       id: `movein-${l.id}`, category: 'movein',
       title: roomName(l.room?.roomNo, l.tenant.name), subtitle: '오늘 입주 예정',
-      tenantId: l.tenant.id, urgency: 700,
+      tenantId: l.tenant.id, leaseTermId: l.id,
+      roomId: l.room?.id ?? null, roomNo: l.room?.roomNo, tenantName: l.tenant.name,
+      urgency: 700,
     })
   }
   // 오늘 투어
@@ -104,7 +117,9 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     items.push({
       id: `tour-${l.id}`, category: 'tour',
       title: roomName(l.room?.roomNo, l.tenant.name), subtitle: '오늘 투어 예정',
-      tenantId: l.tenant.id, urgency: 600,
+      tenantId: l.tenant.id, leaseTermId: l.id,
+      roomId: l.room?.id ?? null, roomNo: l.room?.roomNo, tenantName: l.tenant.name,
+      urgency: 600,
     })
   }
 

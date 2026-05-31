@@ -63,7 +63,7 @@ export type DashboardData = {
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { id: string; roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; nonResidentName: string | null; nonResidentId: string | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
   nonResidentItems:  { roomNo: string; tenantId: string; tenantName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid' }[]
-  alerts:            { category?: 'unpaid' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string; sortKey?: number }[]
+  alerts:            { category?: 'unpaid' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
@@ -220,7 +220,7 @@ function CheckoutRefundModal({
 function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   alert: AlertItem
   onClose: () => void
-  onOpenPayment: (id: string) => void
+  onOpenPayment: (alert: AlertItem) => void
   onStartRecord: (alert: AlertItem) => void
 }) {
   const router = useRouter()
@@ -367,7 +367,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
           )}
           {alert.tenantId && !isRecurring && !reservationDueLeaseId && !moveOutLeaseId && (
             <Btn
-              onClick={() => { onOpenPayment(alert.tenantId!); onClose() }}
+              onClick={() => { onOpenPayment(alert); onClose() }}
               variant="primary" size="md" fullWidth>
               수납 관리 보기
             </Btn>
@@ -2581,7 +2581,22 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         <AlertDetailModal
           alert={selectedAlert}
           onClose={() => setSelectedAlert(null)}
-          onOpenPayment={id => { setSelectedAlert(null); setDashTenantId(id) }}
+          onOpenPayment={a => {
+            setSelectedAlert(null)
+            // 알림에서 '수납 관리 보기' → Prism 수납 face 로 통일 (Tenant·Payment 모달과 동일 셸).
+            // roomNo·tenantName 은 셸이 내부에서 fetch 해 채운다.
+            if (a.leaseTermId) {
+              entityModal.open({
+                kind: 'payment',
+                leaseTermId: a.leaseTermId,
+                tenantId: a.tenantId ?? null,
+                roomId: a.roomId ?? null,
+              })
+            } else if (a.tenantId) {
+              // 안전망 — leaseTermId 가 없는 알림은 기존 DashboardTenantModal 로 fallback
+              setDashTenantId(a.tenantId)
+            }
+          }}
           onStartRecord={alert => { setSelectedAlert(null); setRecordingAlert(alert) }}
         />
       )}

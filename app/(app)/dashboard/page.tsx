@@ -302,7 +302,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         overrideDueDayMonth: true,
         // #14 월세 할인 — 발생주의 미수 계산에 월별 할인 반영
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-        room: { select: { roomNo: true } },
+        room: { select: { id: true, roomNo: true } },
         tenant: { select: { id: true, name: true } },
       },
     }),
@@ -936,6 +936,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       const upcomingPortion = upcomingByLease[l.id] ?? 0
       return {
         roomNo:        l.room?.roomNo ?? '?',
+        roomId:        l.room?.id ?? null,
         tenantName:    l.tenant.name,
         tenantId:      l.tenant.id,
         leaseId:       l.id,
@@ -1154,10 +1155,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       alertItems.push({
         category:  'unpaid',
         text:      `${l.tenantName}님 ${l.roomNo}호 미납 ${days}일 경과`,
-        link:      `/tenants?tenantId=${l.tenantId}&tab=info`,
+        link:      `/tenants?tenantId=${l.tenantId}`,
         dotColor:  '#dc2626',
         timeLabel: `${days}일 경과`,
         tenantId:  l.tenantId,
+        leaseTermId: l.leaseId,
+        roomId:    l.roomId,
         detail:    `미수금 ${l.overduePortion.toLocaleString()}원이 ${days}일 동안 회수되지 않고 있습니다.`,
         sortKey:   -days,
       })
@@ -1170,10 +1173,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       alertItems.push({
         category:  'upcoming',
         text:      `${l.tenantName}님 ${l.roomNo}호 납부 예정`,
-        link:      `/tenants?tenantId=${l.tenantId}&tab=info`,
+        link:      `/tenants?tenantId=${l.tenantId}`,
         dotColor:  '#d4a847',
         timeLabel,
         tenantId:  l.tenantId,
+        leaseTermId: l.leaseId,
+        roomId:    l.roomId,
         detail:    `청구 예정액 ${l.upcomingPortion.toLocaleString()}원${daysLeft === 0 ? ' — 오늘이 납부일입니다.' : ` — ${daysLeft}일 후 납부 예정.`}`,
         exactDate: fmtShortDate(dueDate),
         sortKey:   Math.abs(days),
@@ -1183,10 +1188,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       alertItems.push({
         category:  'unpaid',
         text:      `${l.tenantName}님 ${l.roomNo}호 오늘 납부일`,
-        link:      `/tenants?tenantId=${l.tenantId}&tab=info`,
+        link:      `/tenants?tenantId=${l.tenantId}`,
         dotColor:  '#dc2626',
         timeLabel: '오늘',
         tenantId:  l.tenantId,
+        leaseTermId: l.leaseId,
+        roomId:    l.roomId,
         detail:    `미수금 ${l.overduePortion.toLocaleString()}원이 오늘 도래입니다.`,
         sortKey:   0,
       })

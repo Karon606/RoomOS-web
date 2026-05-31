@@ -27,6 +27,7 @@ function monthRange(startMonth: string, endMonth: string): string[] {
 
 export type UnpaidLease = {
   roomNo: string
+  roomId: string | null
   tenantName: string
   tenantId: string
   leaseId: string
@@ -68,7 +69,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
         overrideDueDayMonth: true,
         // #14 월세 할인 — 미수 계산에 월별 할인 반영(대시보드 발생주의 블록과 동일)
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-        room: { select: { roomNo: true } },
+        room: { select: { id: true, roomNo: true } },
         tenant: { select: { id: true, name: true } },
       },
     }),
@@ -275,6 +276,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
       const monthsOverdue = l.rentAmount > 0 ? Math.ceil((unpaidMap[l.id] ?? 0) / l.rentAmount) : 0
       return {
         roomNo: l.room?.roomNo ?? '?',
+        roomId: l.room?.id ?? null,
         tenantName: l.tenant.name,
         tenantId: l.tenant.id,
         leaseId: l.id,
