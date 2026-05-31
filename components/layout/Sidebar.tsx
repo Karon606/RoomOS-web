@@ -72,7 +72,7 @@ const NAV_GROUPS = [
   {
     label: '메인',
     items: [
-      { href: '/dashboard',   label: '대시보드',    Icon: IcoDashboard },
+      { href: '/dashboard',   label: '홈',          Icon: IcoDashboard },
       { href: '/room-manage',  label: '호실 관리',   Icon: IcoRooms },
       { href: '/tenants',      label: '고객 관리',   Icon: IcoTenants },
     ],

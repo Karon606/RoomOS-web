@@ -33,6 +33,9 @@ export type DashboardData = {
   totalRevenue:      number
   paidRevenue:       number
   extraRevenue:      number
+  projectedRevenue:  number     // 이번 달 입주자 모두 납부 완료 가정 (CHECKOUT_PENDING 제외)
+  projectedRecurringExpense: number  // 이번 달 미발생 고정지출 합
+  projectedNetProfit: number    // 예상 매출 - totalExpense - 예상 고정지출
   totalExpense:      number
   netProfit:         number
   totalDeposit:      number
@@ -1932,7 +1935,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
       {/* ── KPI 카드 (2×3 grid) ──────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3.5">
 
-        {/* Row 2 Left: 당월 매출 */}
+        {/* Row 2 Left: 당월 매출 (당월 매출 + 예상 매출 작게 함께) */}
         <div className="rounded-xl" style={{ background: 'var(--coral)', padding: '18px 20px' }}>
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,252,247,0.55)', marginBottom: 8 }}>
             당월 매출
@@ -1947,6 +1950,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             {revChange != null && (
               <em style={{ fontStyle: 'normal', color: '#fbbf24', marginLeft: 6 }}>{revChange >= 0 ? '+' : ''}{revChange}%</em>
             )}
+          </p>
+          <p style={{ fontSize: '0.625rem', color: 'rgba(255,252,247,0.65)', marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(255,252,247,0.18)' }}>
+            예상 <span className="mono tnum" style={{ fontWeight: 600, color: '#fff' }}>{data.projectedRevenue.toLocaleString()}</span>원
           </p>
         </div>
 
@@ -1970,6 +1976,17 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                   예비비 −{data.reserveAccrualFromThisMonth.toLocaleString()}원 이체 · 운영 가용 <span style={{ color: '#5eead4', fontWeight: 600 }}>{data.operatingCashAvailable.toLocaleString()}원</span>
                 </p>
               )}
+              {/* 예상 순이익 — 입주자 모두 납부 + 미발생 고정지출 모두 처리 가정 */}
+              <p style={{ fontSize: '0.625rem', color: 'rgba(180,210,240,0.55)', marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(180,210,240,0.15)' }}>
+                예상 <span className="mono tnum" style={{ fontWeight: 600, color: data.projectedNetProfit >= 0 ? '#4ade80' : '#f87171' }}>
+                  {data.projectedNetProfit >= 0 ? '+' : ''}{data.projectedNetProfit.toLocaleString()}
+                </span>원
+                {data.projectedRecurringExpense > 0 && (
+                  <span style={{ color: 'rgba(180,210,240,0.4)', marginLeft: 4 }}>
+                    (고정지출 −{data.projectedRecurringExpense.toLocaleString()} 반영)
+                  </span>
+                )}
+              </p>
             </div>
           )
         })()}

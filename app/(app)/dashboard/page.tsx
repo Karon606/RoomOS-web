@@ -123,7 +123,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       // RESERVED는 아직 입주 안 한 상태 → 미수 합산 대상에서 제외
       where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
       // #14 월세 할인 — 수납현황 위젯(완료 건수·예상 수입)에 할인 반영
-      select: { id: true, rentAmount: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
+      select: { id: true, status: true, rentAmount: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
     }),
     prisma.paymentRecord.findMany({
       where: {
@@ -376,6 +376,23 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const totalRevenue = paidRevenue + extraRevenue
   const totalExpense = expenses.reduce((s, e) => s + e.amount, 0)
   const totalDeposit = depositAgg._sum.depositAmount ?? 0
+
+  // ── 예상 매출/순이익 (2026-05-31) ─────────────────────────────────
+  // 사용자 정의:
+  //   예상 매출 = '현재 입주자들'(ACTIVE + NON_RESIDENT)의 rentAmount 합 + 이미 발생한 기타수익
+  //              · CHECKOUT_PENDING 은 제외 (지난 달 마지막 납부 끝났다고 간주)
+  //              · RESERVED 는 미입주이므로 제외
+  //   예상 순이익 = 예상 매출 - 이미 발생한 지출(totalExpense) - 이번 달 미발생 고정지출(예상)
+  const projectedRentRevenue = activeLeases
+    .filter(l => l.status === 'ACTIVE' || l.status === 'NON_RESIDENT')
+    .reduce((s, l) => s + l.rentAmount, 0)
+  const projectedRevenue = projectedRentRevenue + extraRevenue
+
+  const recurringDoneIds = new Set(recurringExpensesThisMonth.map(r => r.recurringExpenseId))
+  const projectedRecurringExpense = recurringExpenses
+    .filter(r => !recurringDoneIds.has(r.id))
+    .reduce((s, r) => s + (r.pendingAmount ?? r.amount), 0)
+  const projectedNetProfit = projectedRevenue - totalExpense - projectedRecurringExpense
 
   // ── 예비비 잔고 + 이달 적립/사용 ─────────────────────────────────
   const reserveTxns = reserveTxnsRaw
@@ -1335,6 +1352,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     totalRevenue,
     paidRevenue,
     extraRevenue,
+    projectedRevenue,
+    projectedRecurringExpense,
+    projectedNetProfit,
     totalExpense,
     netProfit: totalRevenue - totalExpense,
     totalDeposit,
