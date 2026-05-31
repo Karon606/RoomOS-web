@@ -598,10 +598,11 @@ function StackedBar({
 
 // 영수증 사진을 OCR 전송용으로 압축 — Server Action 페이로드 한도(10MB) 회피
 // HEIC/HEIF는 createImageBitmap이 처리 가능 (iOS Safari 17+).
+// EXIF orientation 적용 — Safari/Chrome 기본값 차이 회피 (모바일 카메라 사진 일관성).
 async function compressImageForOcr(
   file: File, maxDim: number, quality: number,
 ): Promise<{ base64: string; dataUrl: string }> {
-  const bitmap = await createImageBitmap(file)
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
   const w = bitmap.width
   const h = bitmap.height
   const scale = Math.min(1, maxDim / Math.max(w, h))
@@ -1102,7 +1103,11 @@ export default function FinanceClient({
       await handleReceiptUpload(file, setter)
       return
     }
-    const bitmap = await createImageBitmap(file)
+    // iOS/Android 카메라 사진은 EXIF orientation 으로 회전 정보를 가지는데, createImageBitmap
+    // 기본값은 브라우저별로 다르다(Safari 적용 / Chrome 미적용). 'from-image' 로 명시적으로
+    // EXIF 적용된 픽셀 데이터를 받아 화면 표시 ↔ bitmap 좌표 변환을 일관되게 한다.
+    // 이 옵션이 없으면 핸들 좌표 → bitmap 좌표 매핑이 어긋나 확대경이 엉뚱한 영역을 보여줌.
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
     scanTargetRef.current = target
     setScanCropped(null)
     setScanOcrError('')

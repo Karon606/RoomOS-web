@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 
-const COOKIE_PROPERTY = 'current_property_id'
+const COOKIE_PROPERTY = 'selected_property_id'
 
 async function getUserId(): Promise<string> {
   const supabase = await createClient()
