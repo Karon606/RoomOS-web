@@ -529,14 +529,14 @@ export default function RoomsClient({
             잘리던 문제 해결, 사용자 피드백 2026-06-01) */}
         <div className="ml-auto flex gap-2 items-center">
 
-        {/* 공실 표시 설정 — 항상 노출 (공실 0실에도). 카드 칩 ON/OFF */}
+        {/* 공실 카드 항목 설정 — 항상 노출 (공실 0실에도). 카드 칩 ON/OFF */}
         <div className="relative" ref={vacantColMenuRef}>
           <button
             onClick={() => setShowVacantColMenu(v => !v)}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl transition-colors
               ${showVacantColMenu ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
           >
-            공실 표시
+            공실 카드 항목
           </button>
           {showVacantColMenu && (
             <div className="absolute right-0 top-full mt-1.5 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-3 z-50 shadow-lift min-w-[160px] space-y-2">
@@ -552,18 +552,23 @@ export default function RoomsClient({
           )}
         </div>
 
-        {/* 열 설정 드롭다운 — 데스크탑만 (메인 표 컬럼) */}
-        <div className="hidden sm:block relative" ref={colMenuRef}>
+        {/* 표 항목 드롭다운 — 데스크탑 메인 표 컬럼 ON/OFF.
+            모바일은 카드형이라 실제 컬럼이 안 보이지만, 사용자 피드백 (2026-06-01)
+            "보이게 해달라" 에 따라 노출 + 안내 텍스트 추가. */}
+        <div className="relative" ref={colMenuRef}>
           <button
             onClick={() => setShowColMenu(v => !v)}
             className="px-3 py-1.5 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] text-xs font-medium rounded-xl transition-colors"
           >
-            열 설정
+            표 항목
           </button>
           {showColMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowColMenu(false)} />
-              <div className="absolute right-0 mt-2 z-50 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift p-3 space-y-2 min-w-[140px]">
+              <div className="absolute right-0 mt-2 z-50 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift p-3 space-y-2 min-w-[160px]">
+                <p className="text-[0.625rem] text-[var(--warm-muted)] sm:hidden -mb-1">
+                  데스크탑 표 컬럼 설정 (모바일은 카드형)
+                </p>
                 {COL_DEFS.map(col => (
                   <label key={col.key} className="flex items-center gap-2.5 cursor-pointer">
                     <input
