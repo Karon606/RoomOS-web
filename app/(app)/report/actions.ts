@@ -5,6 +5,8 @@ import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { kstMonthStr } from '@/lib/kstDate'
+import { discountedRent } from '@/lib/rentDiscount'
+import { BILLABLE_STATUSES, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -312,19 +314,19 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
     cmn++; if (cmn > 12) { cmn = 1; cy++ }
   }
 
-  // 1) 호실별 baseRent + scheduledRent + 적용 예정일
-  const [rooms, property] = await Promise.all([
-    prisma.room.findMany({
-      where: { propertyId },
+  // 1) lease 단위 발생주의 매출 (dashboard 와 통일 정책, 2026-06-01)
+  //    - BILLABLE_STATUSES (ACTIVE/CHECKOUT_PENDING/NON_RESIDENT) 중 그 달 활성인 lease 의
+  //      청구액(할인 반영) 을 합산
+  //    - CHECKED_OUT 의 그 달 귀속 paymentRecord 합은 별도로 추가 인식 (단기·중도퇴실)
+  //    이전 정책(호실 단위 baseRent)은 단기 입주(파트쿨리나 422호) / NON_RESIDENT(사무실호)
+  //    / 호실 baseRent ≠ lease.rentAmount 차이 등 dashboard 와 불일치 케이스가 있었음.
+  const [billableLeases, property] = await Promise.all([
+    prisma.leaseTerm.findMany({
+      where: { propertyId, status: { in: BILLABLE_STATUSES }, rentAmount: { gt: 0 } },
       select: {
-        id: true, baseRent: true, scheduledRent: true, rentUpdateDate: true,
-        leaseTerms: {
-          where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
-          select: {
-            id: true, status: true, rentAmount: true,
-            moveInDate: true, expectedMoveOut: true, moveOutDate: true,
-          },
-        },
+        id: true, status: true, rentAmount: true,
+        moveInDate: true, expectedMoveOut: true, moveOutDate: true,
+        discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       },
     }),
     prisma.property.findUnique({
@@ -404,41 +406,50 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
   const isPrevYearAvailable = (m: string) =>
     !acquisitionMonthStr || m >= acquisitionMonthStr
 
-  // 3) 월별 예상 매출 — 호실별 점유 여부 + 임대료 변동 반영
-  const rows: ForecastRow[] = months.map(month => {
+  // 호실 점유 수 카운트용 — UI 표시에만 사용. 매출 계산은 lease 기반(아래).
+  const allRoomsForCount = await prisma.room.findMany({
+    where: { propertyId },
+    select: {
+      id: true,
+      leaseTerms: {
+        where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } },
+        select: { moveInDate: true, expectedMoveOut: true, moveOutDate: true },
+      },
+    },
+  })
+
+  // 3) 월별 예상 매출 — lease 단위 발생주의 (dashboard 와 통일 정책)
+  //    매출 = Σ 그 달 활성 billable lease 의 청구액(할인 반영) + CHECKED_OUT 의 그 달 귀속 paymentRecord 합
+  const rowsAsync = months.map(async month => {
     const [my, mm] = month.split('-').map(Number)
     const monthStart = new Date(my, mm - 1, 1)
     const monthEnd = new Date(my, mm, 0); monthEnd.setHours(23, 59, 59, 999)
 
     let revenue = 0
+    for (const lease of billableLeases) {
+      const moveIn = lease.moveInDate ? new Date(lease.moveInDate) : null
+      const moveOut = lease.expectedMoveOut ? new Date(lease.expectedMoveOut)
+        : (lease.moveOutDate ? new Date(lease.moveOutDate) : null)
+      if (moveIn && moveIn > monthEnd) continue        // 아직 미입주
+      if (moveOut && moveOut < monthStart) continue     // 이미 퇴실
+      revenue += discountedRent(lease.discounts, month, lease.rentAmount)
+    }
+    // CHECKED_OUT 단기·중도퇴실 lease 의 그 달 귀속 paymentRecord 합 추가
+    revenue += await getCheckedOutRecognizedRevenue(prisma, propertyId, month)
+
+    // 호실 점유 수 — UI 표시용
     let occupied = 0
     let vacant = 0
-    for (const r of rooms) {
-      // 임대료: scheduledRent 적용 예정일이 이 월 이전이면 scheduledRent, 아니면 baseRent
-      let rent = r.baseRent
-      if (r.scheduledRent != null && r.rentUpdateDate) {
-        const updateDate = new Date(r.rentUpdateDate)
-        if (updateDate <= monthEnd) rent = r.scheduledRent
-      }
-      // 그 월에 점유될 lease가 하나라도 있는지
-      const occLease = r.leaseTerms.find(l => {
+    for (const room of allRoomsForCount) {
+      const has = room.leaseTerms.some(l => {
         const moveIn = l.moveInDate ? new Date(l.moveInDate) : null
         const moveOut = l.expectedMoveOut ? new Date(l.expectedMoveOut)
           : (l.moveOutDate ? new Date(l.moveOutDate) : null)
-        // 입주 전이면 X
         if (moveIn && moveIn > monthEnd) return false
-        // 퇴실 후면 X
         if (moveOut && moveOut < monthStart) return false
         return true
       })
-      if (occLease) {
-        // 가격 인상 예정(scheduledRent + rentUpdateDate)이 있으면 그 월의 호실 임대료(rent) 사용.
-        // lease.rentAmount는 계약 시점 금액이라 미래 인상이 반영 안 되어 있음 — 무시.
-        revenue += rent
-        occupied++
-      } else {
-        vacant++
-      }
+      if (has) occupied++; else vacant++
     }
 
     // 지출: 전년 동월(인수월 이후만 신뢰) → 없으면 인수 후 최근 3개월 평균
@@ -460,6 +471,7 @@ export async function getForecastReport(monthsAhead = 6): Promise<ForecastSummar
       vacantRooms: vacant,
     }
   })
+  const rows: ForecastRow[] = await Promise.all(rowsAsync)
 
   return {
     rows,
