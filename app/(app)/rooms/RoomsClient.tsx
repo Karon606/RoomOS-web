@@ -59,8 +59,10 @@ type RoomStatus = {
 
 type ColKey = 'type' | 'windowType' | 'contact' | 'depositAmount' | 'expected' | 'totalPaid' | 'balance' | 'dueDay' | 'status'
 
+// defaultOn — 데스크탑 표 + 모바일 카드 공통 정책. 모바일 카드에서 항상 보이던 '타입'을
+// colVis 토글 대상에 편입하면서 default true 로 변경 (회귀 방지, 2026-06-01).
 const COL_DEFS: { key: ColKey; label: string; defaultOn: boolean }[] = [
-  { key: 'type',          label: '타입',     defaultOn: false },
+  { key: 'type',          label: '타입',     defaultOn: true  },
   { key: 'windowType',    label: '창문',     defaultOn: false },
   { key: 'contact',       label: '연락처',   defaultOn: true  },
   { key: 'depositAmount', label: '보증금',   defaultOn: false },
@@ -552,22 +554,20 @@ export default function RoomsClient({
           )}
         </div>
 
-        {/* 표 항목 드롭다운 — 데스크탑 메인 표 컬럼 ON/OFF.
-            모바일은 카드형이라 실제 컬럼이 안 보이지만, 사용자 피드백 (2026-06-01)
-            "보이게 해달라" 에 따라 노출 + 안내 텍스트 추가. */}
+        {/* 표시 항목 드롭다운 — 데스크탑 표 컬럼 + 모바일 카드 정보를 통합 토글. */}
         <div className="relative" ref={colMenuRef}>
           <button
             onClick={() => setShowColMenu(v => !v)}
             className="px-3 py-1.5 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] text-xs font-medium rounded-xl transition-colors"
           >
-            표 항목
+            표시 항목
           </button>
           {showColMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowColMenu(false)} />
-              <div className="absolute right-0 mt-2 z-50 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift p-3 space-y-2 min-w-[160px]">
-                <p className="text-[0.625rem] text-[var(--warm-muted)] sm:hidden -mb-1">
-                  데스크탑 표 컬럼 설정 (모바일은 카드형)
+              <div className="absolute right-0 mt-2 z-50 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift p-3 space-y-2 min-w-[180px]">
+                <p className="text-[0.625rem] text-[var(--warm-muted)] -mb-1">
+                  이 화면에 보일 정보 선택
                 </p>
                 {COL_DEFS.map(col => (
                   <label key={col.key} className="flex items-center gap-2.5 cursor-pointer">
@@ -623,11 +623,11 @@ export default function RoomsClient({
               tipBg={statusRowTint(tone)}
               onClick={room.isFutureMonth ? undefined : () => openPayModal(room)}
               className={`px-4 py-3.5 ${room.isFutureMonth ? 'opacity-50' : ''}`}>
-              {/* 첫 줄: 호실 + 수납상태 */}
+              {/* 첫 줄: 호실 + 수납상태. 표시 항목 메뉴(colVis)로 타입 ON/OFF. */}
               <div className="flex items-start justify-between">
                 <div className="flex items-baseline gap-1.5">
                   <span className="text-base font-bold text-[var(--coral)]">{fmtRoomNo(room.roomNo)}</span>
-                  {room.type && <span className="text-xs text-[var(--warm-muted)]">{room.type}</span>}
+                  {colVis.type && room.type && <span className="text-xs text-[var(--warm-muted)]">{room.type}</span>}
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   {room.status === 'NON_RESIDENT' && <StatusBadge tone="info">비거주</StatusBadge>}
@@ -675,40 +675,48 @@ export default function RoomsClient({
                   })()}
                 </div>
               </div>
-              {/* 둘째 줄: 입주자 */}
-              <p className="text-sm font-medium text-[var(--warm-dark)] mt-1">{room.tenantName}</p>
-              {/* 셋째 줄: 월이용료 · 잔액/예정 · 납부일 */}
+              {/* 둘째 줄: 입주자 + 연락처(colVis.contact) */}
+              <div className="flex items-baseline gap-2 mt-1 flex-wrap">
+                <p className="text-sm font-medium text-[var(--warm-dark)]">{room.tenantName}</p>
+                {colVis.contact && room.contact && (
+                  <span className="text-[0.6875rem] text-[var(--warm-muted)]">{room.contact}</span>
+                )}
+              </div>
+              {/* 셋째 줄: 월이용료 · 잔액/예정 · 납부일 · 보증금 · 총납부액 (colVis 토글) */}
               <div className="flex items-center gap-2.5 mt-2 text-xs text-[var(--warm-mid)] flex-wrap">
-                <span className="font-medium text-[var(--warm-dark)]"><MoneyDisplay amount={room.expected} /></span>
-                {/* 진짜 미수 = 이월 미수 + (이번 달 도래 후 미회수). 도래 전 청구는 미수 아님.
-                   carryOver < 0이면 이월 미수, balance < 0이면 viewMonth 정산 부족.
-                   단, viewMonth가 도래 전이면 balance는 미수 아닌 '예정 잔액'이므로
-                   nextDueDate가 있을 때(도래 전 + 이월 없음)는 carryOver만 카운트. */}
-                {(() => {
-                  const carryUnpaid    = room.carryOver < 0 ? -room.carryOver : 0
-                  // viewMonth 도래 전이면(=nextDueDate 있음) balance는 미수 아님.
-                  // nextDueDate가 null인 케이스: (a) 도래 후 미회수 (b) 이월 있어 nextDue 미표시.
-                  // (b)일 때 balance는 5월 단일 청구액으로 잡혀 있어 미수에 합산하면 과대 계산.
-                  // → balance는 carryOver==0이고 nextDueDate==null일 때만 미수에 합산.
-                  const viewUnpaid     = (!room.isPaid && room.carryOver === 0 && !room.nextDueDate && room.balance < 0)
-                                          ? -room.balance : 0
-                  const totalUnpaid    = carryUnpaid + viewUnpaid
+                {colVis.expected && (
+                  <span className="font-medium text-[var(--warm-dark)]"><MoneyDisplay amount={room.expected} /></span>
+                )}
+                {/* 미수/선납/예정 — '잔액' 컬럼 토글로 묶음. balance 의 의미 분기는 기존 로직 그대로. */}
+                {colVis.balance && (() => {
+                  const carryUnpaid = room.carryOver < 0 ? -room.carryOver : 0
+                  const viewUnpaid  = (!room.isPaid && room.carryOver === 0 && !room.nextDueDate && room.balance < 0)
+                                       ? -room.balance : 0
+                  const totalUnpaid = carryUnpaid + viewUnpaid
                   if (totalUnpaid > 0) {
                     return <span className="font-medium text-[var(--coral)]">미수 -<MoneyDisplay amount={totalUnpaid} /></span>
                   }
                   if (room.balance > 0) {
                     return <span className="text-[var(--warm-mid)]">선납 +<MoneyDisplay amount={room.balance} /></span>
                   }
+                  if (room.isPaid && room.nextDueDate && room.nextDueAmount > 0) {
+                    return <span className="text-[var(--warm-mid)]">예정 <MoneyDisplay amount={room.nextDueAmount} /></span>
+                  }
                   return null
                 })()}
-                {room.isPaid && room.nextDueDate && room.nextDueAmount > 0 && (
-                  <span className="text-[var(--warm-mid)]">
-                    예정 <MoneyDisplay amount={room.nextDueAmount} />
-                  </span>
-                )}
-                {room.dueDay && (
+                {colVis.dueDay && room.dueDay && (
                   <span className="text-[var(--warm-muted)]">
                     {room.dueDay === '말일' ? '매월 말일' : `매월 ${room.dueDay}일`}
+                  </span>
+                )}
+                {colVis.depositAmount && room.depositAmount > 0 && (
+                  <span className="text-[var(--warm-muted)]">
+                    보증금 <MoneyDisplay amount={room.depositAmount} />
+                  </span>
+                )}
+                {colVis.totalPaid && (
+                  <span className="text-[var(--warm-muted)]">
+                    총납부 <MoneyDisplay amount={room.totalPaid} />
                   </span>
                 )}
               </div>
