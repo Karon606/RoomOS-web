@@ -440,14 +440,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
 
   const hasExpenseHistory = (nonRecurringPast._sum.amount ?? 0) > 0
-  let expectedExpense = 0
-  for (const re of recurringExpenses) {
-    const activeSince = (re as any).activeSince as Date | null
-    if (activeSince && new Date(activeSince) > endDate) continue  // 이달 미활성
-    const isVar = (re as any).isVariable as boolean
-    expectedExpense += (isVar && variableAvgMap[re.id] !== undefined) ? variableAvgMap[re.id] : re.amount
-  }
-  expectedExpense += Math.round((nonRecurringPast._sum.amount ?? 0) / 3)
+  // 예상 지출 — 사용자 정의(2026-05-31): 실제 발생 지출 + 이번 달 미발생 고정지출.
+  // 이 값은 page 후반(loop 뒤)에 totalExpense 와 projectedRecurringExpense 가 준비된 후 계산.
+  let expectedExpense = 0  // placeholder, 아래에서 다시 채움
 
   // 완납 여부 판단 — viewMonth(targetMonth) 기준 그 월의 납부 이력으로 평가
   const paymentByLeaseForStatus = allMonthPayments.reduce((acc, p) => {
@@ -814,7 +809,6 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const firstUnpaidByLease: Record<string, string | null> = {}
   const overdueByLease: Record<string, number> = {}
   const upcomingByLease: Record<string, number> = {}
-  const projectedThisMonthByLease: Record<string, number> = {}  // 이번 달 청구액 (할인·override 반영, billable 조건 통과)
   for (const l of unpaidLeasesRaw) {
     const lMoveIn = l.moveInDate ? new Date(l.moveInDate) : null
     const leaseStartMonth = lMoveIn
@@ -862,10 +856,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const totalExpected = billableMonthList.reduce((s, mon) => s + billForMonth(mon), 0)
     const totalReceived = accrualByLeaseForView[l.id] ?? 0
     unpaidMap[l.id] = Math.max(0, totalExpected - totalReceived)
-    // 이번 달 청구액 — billableMonthList 에 targetMonth 가 있으면 그 월 청구액, 없으면 0.
-    // CHECKOUT_PENDING 이라도 이번 달 청구 도래(예: 5/31 퇴실 5월 납부 도래)면 매출 인식.
-    // 자동 양도인 처리/양도인 정산/퇴실 후 월 등은 billableMonthList 가 이미 제외함.
-    projectedThisMonthByLease[l.id] = billableMonthList.includes(targetMonth) ? billForMonth(targetMonth) : 0
+    // 이번 달 청구액 — totalExpected 가 별도 계산 (line 586). 통일 위해 그쪽 사용.
 
     // 첫 미수월 추적 — 받은 돈을 청구 가능 월에 차례로 배분, 부족한 첫 월
     let allocated = 0
@@ -901,17 +892,18 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const overdueAmount = Object.values(overdueByLease).reduce((s, v) => s + v, 0)
   const upcomingAmount = Object.values(upcomingByLease).reduce((s, v) => s + v, 0)
 
-  // ── 예상 매출/순이익 (2026-05-31, billable 기반) ────────────────
-  //   예상 매출 = 이번 달 청구 도래된 lease 청구액 합(할인·override 반영) + 기타수익
-  //   예상 순이익 = 예상 매출 - 발생 지출 - 이번 달 미발생 고정지출
-  const projectedThisMonthBilling = Object.values(projectedThisMonthByLease).reduce((s, v) => s + v, 0)
-  const projectedRevenue = projectedThisMonthBilling + extraRevenue
-
+  // ── 예상 매출/지출/순이익 (2026-05-31, KPI 카드와 손익 현황 통일) ────────
+  //   예상 매출 = 이번 달 청구액(할인·override 반영) + 발생 기타수익
+  //              · totalExpected 는 page 앞쪽에서 billableLeases 기반 계산됨 (양도인 제외)
+  //   예상 지출 = 발생 지출 + 이번 달 미발생 고정지출 (사용자 정의: 검증식 totalExpense+projectedRecurring)
+  //   예상 순이익 = 예상 매출 - 예상 지출
   const recurringDoneIds = new Set(recurringExpensesThisMonth.map(r => r.recurringExpenseId))
   const projectedRecurringExpense = recurringExpenses
     .filter(r => !recurringDoneIds.has(r.id))
     .reduce((s, r) => s + (r.pendingAmount ?? r.amount), 0)
-  const projectedNetProfit = projectedRevenue - totalExpense - projectedRecurringExpense
+  const projectedRevenue = totalExpected + extraRevenue
+  expectedExpense = totalExpense + projectedRecurringExpense
+  const projectedNetProfit = projectedRevenue - expectedExpense
   // 미수납 후보 — 이후 daysOverdue 기반으로 위젯·알림 분기
   const unpaidCandidates = unpaidLeasesRaw
     .filter(l => (unpaidMap[l.id] ?? 0) > 0)

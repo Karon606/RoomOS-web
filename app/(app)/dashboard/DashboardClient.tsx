@@ -2309,17 +2309,17 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                       <Link href={`/rooms?month=${targetMonth}`} style={{ fontSize: '0.6875rem', color: 'var(--coral)' }}>수납 관리 →</Link>
                     </div>
 
-                    {/* ── 매출 섹션 ── */}
+                    {/* ── 매출 섹션 — 위 KPI 카드 '당월 매출' 의 예상치와 같은 값(월세+기타수익) ── */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between mb-1">
                         <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--ink-2)' }}>예상 매출</span>
                         <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--ink-2)' }}>
-                          {fmtKorMoney(data.totalExpected)}
+                          {fmtKorMoney(data.projectedRevenue)}
                         </span>
                       </div>
                       <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(200,160,120,0.15)' }}>
                         <div className="h-full rounded-full transition-all duration-700"
-                          style={{ width: `${data.totalExpected > 0 ? Math.min(100, Math.round((data.paidRevenue / data.totalExpected) * 100)) : 0}%`, background: 'var(--sun)' }} />
+                          style={{ width: `${data.projectedRevenue > 0 ? Math.min(100, Math.round((data.totalRevenue / data.projectedRevenue) * 100)) : 0}%`, background: 'var(--sun)' }} />
                       </div>
                       <div className="space-y-1.5 pt-0.5">
                         <div className="flex items-center justify-between">
