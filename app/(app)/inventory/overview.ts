@@ -73,6 +73,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     where: { propertyId, isArchived: false },
     orderBy: [{ category: 'asc' }, { label: 'asc' }],
     include: {
+      // take:2 = 최신/직전 — daysUntilEmpty 계산용
       stockChecks: {
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
         take: 2,
@@ -84,6 +85,17 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         },
       },
     },
+  })
+
+  // 월별 사용량 계산용 — 최근 7개월(현재 포함) 의 모든 점검 기록 일괄 fetch.
+  // 연속 두 점검 사이의 소모량을 늦은 쪽 월에 귀속 (단순화).
+  const monthsAgo7 = new Date()
+  monthsAgo7.setMonth(monthsAgo7.getMonth() - 7)
+  monthsAgo7.setDate(1); monthsAgo7.setHours(0, 0, 0, 0)
+  const allChecksForUsage = await prisma.stockCheck.findMany({
+    where: { trackedItemId: { in: items.map(i => i.id) }, date: { gte: monthsAgo7 } },
+    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    select: { id: true, trackedItemId: true, date: true, createdAt: true, remainingQty: true },
   })
 
   const today = new Date()
@@ -210,6 +222,28 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       lastUnitPrice = lastBase > 0 ? last.amount / lastBase : null
     }
 
+    // 월별 사용량 — 최근 6개월. 연속 점검 사이 소모량을 늦은 쪽 월에 귀속.
+    // 6개월 슬롯 미리 생성(0 으로) → 실제 데이터 있는 월만 덮어쓰기 → UI 가 막대 그릴 때 빈 월도 표시.
+    const monthlyMap: Record<string, number> = {}
+    const now = new Date()
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      monthlyMap[key] = 0
+    }
+    const itemChecks = allChecksForUsage.filter(c => c.trackedItemId === it.id)
+    for (let i = 1; i < itemChecks.length; i++) {
+      const prev = itemChecks[i - 1]
+      const curr = itemChecks[i]
+      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, prev.createdAt, curr.createdAt, useSpec)
+      const additions = await sumAdditions(it.id, prev.date, curr.date)
+      const consumed = (prev.remainingQty + purchases + additions) - curr.remainingQty
+      if (consumed <= 0) continue
+      const key = `${curr.date.getFullYear()}-${String(curr.date.getMonth() + 1).padStart(2, '0')}`
+      if (key in monthlyMap) monthlyMap[key] += consumed
+    }
+    const monthlyConsumption = Object.entries(monthlyMap).map(([month, qty]) => ({ month, qty }))
+
     const locations: StorageLocationItem[] = allItemLocations
       .filter(l => l.trackedItemId === it.id)
       .map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder, isHub: l.storageLocation.isHub }))
@@ -263,6 +297,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         locationName: lb.storageLocation.name,
         qty: lb.remainingQty,
       })) satisfies LocationQtyEntry[],
+      monthlyConsumption,
     })
   }
   return rows

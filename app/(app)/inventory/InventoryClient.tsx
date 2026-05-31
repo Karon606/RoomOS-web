@@ -119,6 +119,9 @@ export default function InventoryClient({ initialRows, targetMonth }: { initialR
     if (m === 'location') exitSelectMode()
   }
   const [showExcluded, setShowExcluded]     = useState(false)
+  const [archivedCount, setArchivedCount]   = useState<number>(0)
+  const refreshArchivedCount = () => getArchivedTrackedItems().then(d => setArchivedCount(d.length)).catch(() => {})
+  useEffect(() => { refreshArchivedCount() }, [])
 
   // 점검 임시저장(드래프트)이 걸린 품목 id — 카드 '점검 중' 배지용
   const [draftIds, setDraftIds] = useState<Set<string>>(new Set())
@@ -191,7 +194,9 @@ export default function InventoryClient({ initialRows, targetMonth }: { initialR
               {selectMode ? `선택 취소${selected.size > 0 ? ` (${selected.size})` : ''}` : '선택'}
             </Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowLocations(true)}>위치 관리</Btn>
-            <Btn variant="secondary" size="sm" onClick={() => setShowExcluded(true)}>제외 항목 복구</Btn>
+            <Btn variant="secondary" size="sm" onClick={() => setShowExcluded(true)}>
+              숨김 품목{archivedCount > 0 ? ` (${archivedCount})` : ''}
+            </Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowMergeRules(true)}>병합 규칙</Btn>
             <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
             <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
@@ -225,6 +230,12 @@ export default function InventoryClient({ initialRows, targetMonth }: { initialR
                   isSelected={selected.has(r.id)}
                   hasDraft={draftIds.has(r.id)}
                   onOpen={() => selectMode ? toggleSelect(r.id) : setDetailId(r.id)}
+                  onArchive={async () => {
+                    if (!confirm(`'${r.label}' 을(를) 숨길까요?\n\n· 카드 목록에서 사라집니다.\n· 점검·구매·지출 기록은 모두 보존됩니다.\n· 헤더 "숨김 품목"에서 언제든 복구할 수 있습니다.`)) return
+                    const res = await archiveTrackedItem(r.id)
+                    if (res.ok) { refreshArchivedCount(); router.refresh(); pushToast('success', '품목 숨김 처리됨') }
+                    else { pushToast('error', res.error) }
+                  }}
                 />
               ))}
             </div>
@@ -232,7 +243,7 @@ export default function InventoryClient({ initialRows, targetMonth }: { initialR
         ))
       )}
 
-      {showExcluded  && <ExcludedItemsModal onClose={() => { setShowExcluded(false); router.refresh() }} />}
+      {showExcluded  && <ExcludedItemsModal onClose={() => { setShowExcluded(false); refreshArchivedCount(); router.refresh() }} />}
       {showLocations && <LocationSettingsModal onClose={() => { setShowLocations(false); router.refresh() }} />}
       {mergeDecisions.length > 0 && (
         <MergeDecisionModal
@@ -279,9 +290,11 @@ export default function InventoryClient({ initialRows, targetMonth }: { initialR
   )
 }
 
-function InventoryCard({ row, onOpen, selectMode, isSelected, hasDraft }: { row: InventoryRow; onOpen: () => void; selectMode?: boolean; isSelected?: boolean; hasDraft?: boolean }) {
+function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraft }: { row: InventoryRow; onOpen: () => void; onArchive?: () => void; selectMode?: boolean; isSelected?: boolean; hasDraft?: boolean }) {
   const tint = CATEGORY_TINT[row.category]
   const lowStock = row.daysUntilEmpty != null && row.daysUntilEmpty <= row.alertThresholdDays
+  // 당분간 사용 안 함 후보: 현재 잔량 0 + 수령 대기 0 + 점검 기록 있음(신규는 제외)
+  const suggestHide = !selectMode && row.currentStock === 0 && row.pendingPurchases.length === 0 && row.lastCheckDate != null
   // trackUnit='qty' (폐기물 봉투 등): 매 단위 그대로. 'spec': specUnit 우선
   const stockUnit = row.trackUnit === 'qty' ? row.qtyUnit : (row.specUnit ?? row.qtyUnit)
   const priceUnit = row.trackUnit === 'qty' ? row.qtyUnit : (row.specUnit ?? row.qtyUnit)
@@ -377,6 +390,55 @@ function InventoryCard({ row, onOpen, selectMode, isSelected, hasDraft }: { row:
         <p className="text-[0.625rem] text-[var(--warm-muted)] pt-1.5 border-t border-[var(--warm-border)]/60">
           최근 {row.lastPeriodDays}일 동안 {fmtQty(row.lastPeriodConsumption, stockUnit)} 소모 · 최근 점검 {fmtDate(row.lastCheckDate)}
         </p>
+      )}
+      {/* 월별 사용량 — 최근 6개월 막대 (사용량 0인 달은 빈 막대로 표시) */}
+      {row.monthlyConsumption && row.monthlyConsumption.some(m => m.qty > 0) && (
+        <div className="pt-1.5 border-t border-[var(--warm-border)]/60">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[0.625rem] text-[var(--warm-muted)]">월별 사용량 (최근 6개월)</span>
+            <span className="text-[0.625rem] text-[var(--warm-mid)] font-medium">
+              합계 {fmtQty(row.monthlyConsumption.reduce((s, m) => s + m.qty, 0), stockUnit)}
+            </span>
+          </div>
+          {(() => {
+            const max = Math.max(...row.monthlyConsumption.map(m => m.qty), 1)
+            return (
+              <div className="flex items-end gap-1 h-8">
+                {row.monthlyConsumption.map(m => {
+                  const h = m.qty > 0 ? Math.max(8, Math.round((m.qty / max) * 100)) : 0
+                  const monthNum = Number(m.month.slice(5))
+                  return (
+                    <div key={m.month} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
+                      <div className="w-full flex items-end" style={{ height: '24px' }}>
+                        <div className="w-full rounded-sm transition-all"
+                          title={`${monthNum}월: ${m.qty > 0 ? fmtQty(m.qty, stockUnit) : '0'}`}
+                          style={{
+                            height: `${h}%`,
+                            background: m.qty > 0 ? 'var(--coral)' : 'var(--warm-border)',
+                            opacity: m.qty > 0 ? 0.75 : 0.4,
+                          }} />
+                      </div>
+                      <span className="text-[0.5rem] text-[var(--warm-muted)] leading-none">{monthNum}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
+        </div>
+      )}
+      {suggestHide && onArchive && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={e => { e.stopPropagation(); onArchive() }}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); onArchive() } }}
+          className="mt-1 flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg bg-[var(--coral)]/5 border border-[var(--coral)]/30 hover:bg-[var(--coral)]/10 cursor-pointer transition-colors">
+          <span className="text-[0.6875rem] text-[var(--coral)] leading-snug">
+            잔량 0 · 수령 대기 없음 — 당분간 안 쓰면 숨길까요?
+          </span>
+          <span className="text-[0.6875rem] font-semibold text-[var(--coral)] whitespace-nowrap">숨기기 →</span>
+        </div>
       )}
     </button>
   )
@@ -479,12 +541,12 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
   useEffect(() => { reload() }, [trackedItemId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleArchive = () => {
-    if (!confirm('이 품목을 삭제하시겠습니까?\n\n· 재고 추적 카드와 점검·무상입수 기록이 사라집니다.\n· 지출 내역(영수증·금액)은 그대로 유지됩니다.')) return
+    if (!confirm('이 품목을 숨길까요?\n\n· 재고 카드 목록에서 사라집니다 (당분간 사용하지 않을 품목용).\n· 점검·무상입수·지출 기록은 모두 보존됩니다.\n· 헤더의 "숨김 품목" 메뉴에서 언제든 복구할 수 있습니다.')) return
     startTransition(async () => {
       const release = trackSave()
       try {
         const res = await archiveTrackedItem(trackedItemId)
-        if (res.ok) { onChange(); onClose(); pushToast('success', '품목 삭제됨') }
+        if (res.ok) { onChange(); onClose(); pushToast('success', '품목 숨김 처리됨') }
         else { setError(res.error); pushToast('error', res.error) }
       } finally { release() }
     })
@@ -531,7 +593,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       subtitle={data?.item.category ?? row.category}
       footer={isViewMode ? (
         <div className="flex items-center gap-2 flex-wrap">
-          <Btn variant="danger" size="sm" onClick={handleArchive} disabled={pending}>삭제</Btn>
+          <Btn variant="secondary" size="sm" onClick={handleArchive} disabled={pending}>숨김</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setMode('settings')}>설정</Btn>
           <div className="flex-1" />
           <Btn variant="secondary" size="sm" onClick={() => setMode('addition')}>+ 무상 입수</Btn>
@@ -2388,8 +2450,8 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-// ── 제외 항목 복구 모달 ─────────────────────────────────────
-// 병합·삭제로 재고 추적에서 빠진 품목을 다시 활성화합니다.
+// ── 숨김 품목 모달 ─────────────────────────────────────
+// 당분간 사용하지 않거나 병합으로 빠진 품목을 다시 활성화합니다.
 function ExcludedItemsModal({ onClose }: { onClose: () => void }) {
   type ArchivedItem = { id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; expenseCount: number }
   const [items, setItems]   = useState<ArchivedItem[]>([])
@@ -2410,11 +2472,11 @@ function ExcludedItemsModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal open onClose={onClose} title="제외 항목 복구" subtitle="삭제·병합으로 재고 추적에서 제외된 품목을 다시 활성화합니다." width="sm">
+    <Modal open onClose={onClose} title="숨김 품목" subtitle="당분간 사용 안 함으로 숨긴 품목, 또는 병합으로 빠진 품목을 다시 활성화합니다." width="sm">
       {loading ? (
         <Loading />
       ) : items.length === 0 ? (
-        <p className="text-sm text-[var(--warm-muted)] text-center py-8">제외된 품목이 없습니다.</p>
+        <p className="text-sm text-[var(--warm-muted)] text-center py-8">숨겨진 품목이 없습니다.</p>
       ) : (
         <div className="space-y-2 max-h-96 overflow-y-auto">
           {items.map(it => (

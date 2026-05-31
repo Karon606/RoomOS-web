@@ -494,6 +494,9 @@ model Expense {
 
   reserveSettlements   ReserveTransaction[] @relation("ExpenseReserveSettlement")
 
+  // confirmReceipt가 자동 생성한 점검들 (수령일 수정 시 동기화 대상)
+  autoStockChecks      StockCheck[]
+
   @@index([propertyId, date])
   @@map("expenses")
 }
@@ -787,10 +790,15 @@ model StockCheck {
   remainingQty   Float       // 전체 잔량 합계 (위치별 합산 or 단일 입력)
   memo           String?
   createdAt      DateTime    @default(now())
+  // confirmReceipt가 자동 생성한 점검이면 원본 지출(=구매)에 연결.
+  // 사용자가 receivedAt을 수정하면 이 link로 자동 점검의 date를 동기화하고, receivedAt이 null이 되면 자동 점검을 삭제한다.
+  sourceExpenseId String?    @db.Uuid
+  sourceExpense   Expense?   @relation(fields: [sourceExpenseId], references: [id], onDelete: SetNull)
 
   locationBreakdown StockCheckLocation[]
 
   @@index([trackedItemId, date])
+  @@index([sourceExpenseId])
   @@map("stock_checks")
 }
 

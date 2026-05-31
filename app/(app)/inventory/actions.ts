@@ -833,6 +833,9 @@ export async function updateExpenseFromInventory(id: string, data: {
     const propertyId = await getPropertyId()
     const e = await prisma.expense.findUnique({ where: { id } })
     if (!e || e.propertyId !== propertyId) return { ok: false, error: '구매 기록을 찾을 수 없습니다.' }
+    const newReceivedAt = data.receivedAt !== undefined
+      ? (data.receivedAt ? new Date(data.receivedAt) : null)
+      : undefined
     await prisma.expense.update({
       where: { id },
       data: {
@@ -840,9 +843,23 @@ export async function updateExpenseFromInventory(id: string, data: {
         ...(data.amount !== undefined ? { amount: data.amount } : {}),
         ...(data.vendor !== undefined ? { vendor: data.vendor || null } : {}),
         ...(data.memo !== undefined ? { memo: data.memo || null } : {}),
-        ...(data.receivedAt !== undefined ? { receivedAt: data.receivedAt ? new Date(data.receivedAt) : null } : {}),
+        ...(newReceivedAt !== undefined ? { receivedAt: newReceivedAt } : {}),
       },
     })
+
+    // 수령일이 바뀌었으면 confirmReceipt가 만든 자동 점검의 date도 동기화 / null로 가면 삭제.
+    if (newReceivedAt !== undefined) {
+      if (newReceivedAt === null) {
+        // 수령 대기로 되돌림 → 자동 점검 제거 (잔량 계산에서 이 수령분이 빠지도록)
+        await prisma.stockCheck.deleteMany({ where: { sourceExpenseId: id } })
+      } else {
+        await prisma.stockCheck.updateMany({
+          where: { sourceExpenseId: id },
+          data: { date: newReceivedAt },
+        })
+      }
+    }
+
     revalidatePath('/inventory')
     revalidatePath('/expenses')
     return { ok: true }
@@ -1311,9 +1328,10 @@ export async function confirmReceipt(expenseId: string, locationId?: string): Pr
     const expense = await prisma.expense.findFirst({ where: { id: expenseId, propertyId } })
     if (!expense) return { ok: false, error: '구매 내역을 찾을 수 없습니다.' }
 
+    const receivedAt = new Date()
     await prisma.expense.update({
       where: { id: expenseId },
-      data: { receivedAt: new Date(), ...(locationId ? { receivedLocationId: locationId } : {}) },
+      data: { receivedAt, ...(locationId ? { receivedLocationId: locationId } : {}) },
     })
 
     // 위치 지정 + 수량 정보 있을 때만 자동 점검 생성
@@ -1355,9 +1373,12 @@ export async function confirmReceipt(expenseId: string, locationId?: string): Pr
           await prisma.stockCheck.create({
             data: {
               trackedItemId: item.id,
-              date: new Date(),
+              // 자동 점검의 date는 receivedAt(=현재 시각) 기준 — 사용자가 나중에 수령일을 수정하면
+              // updateExpenseFromInventory에서 sourceExpenseId로 찾아 동기화한다.
+              date: receivedAt,
               remainingQty: totalQty,
               memo: `[수령 자동] +${receivedQty}${unit}`,
+              sourceExpenseId: expenseId,
               locationBreakdown: {
                 create: allLocs.filter(l => l.qty > 0).map(l => ({
                   storageLocationId: l.storageLocationId,
