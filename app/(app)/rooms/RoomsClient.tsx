@@ -524,7 +524,10 @@ export default function RoomsClient({
           </select>
         )}
 
-        <div className="flex-1" />
+        {/* 공실 표시 · 열 설정 — flex-wrap 새 줄로 떨어져도 항상 우측 정렬되도록 ml-auto 그룹.
+            (모바일에서 새 줄에 떨어졌을 때 부모가 좌측 끝에 정렬되어 드롭다운이 화면 왼쪽으로
+            잘리던 문제 해결, 사용자 피드백 2026-06-01) */}
+        <div className="ml-auto flex gap-2 items-center">
 
         {/* 공실 표시 설정 — 항상 노출 (공실 0실에도). 카드 칩 ON/OFF */}
         <div className="relative" ref={vacantColMenuRef}>
@@ -576,6 +579,7 @@ export default function RoomsClient({
             </>
           )}
         </div>
+        </div> {/* /ml-auto group */}
       </div>
 
       {/* 모바일 정렬 */}
