@@ -1741,8 +1741,11 @@ export default function FinanceClient({
             )}
             <button onClick={() => setExpFilter({ method: 'all', category: 'all', finance: 'all' })}
               className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2">초기화</button>
-            <span className="ml-auto text-sm font-bold text-red-400 font-mono">
-              합계: <MoneyDisplay amount={totalExp} />
+            <span className="ml-auto flex flex-col items-end">
+              <span className="text-[0.6875rem] text-[var(--warm-muted)] leading-none">실제 지출 합계 <span className="text-[0.5625rem]">(예정 제외)</span></span>
+              <span className="text-sm font-bold text-red-400 font-mono mt-0.5">
+                <MoneyDisplay amount={totalExp} />
+              </span>
             </span>
             <Btn variant="secondary" size="md" onClick={openRecMgmt}>
               고정 지출 관리
