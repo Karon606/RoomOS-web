@@ -510,24 +510,46 @@ export default function SettingsForm({
     }
     if (!data.title || !data.amount) return
     startRecTransition(async () => {
-      if (editingRec) {
-        await updateRecurringExpense(editingRec.id, data)
-      } else {
-        await addRecurringExpense(data)
+      // 결과 체크 + try/catch 없이는 silent fail 가능 — 폼은 닫혔는데 리스트 안 바뀌고
+      // 사용자가 다시 저장 → 중복 입력 가능 (사용자 피드백 2026-06-01).
+      try {
+        const res = editingRec
+          ? await updateRecurringExpense(editingRec.id, data)
+          : await addRecurringExpense(data)
+        if (!res.ok) {
+          showToast(`저장 실패: ${res.error}`)
+          return  // 폼 유지 — 재시도 가능
+        }
+        // 세부항목 파생(금액·변동·항목 id·정렬)을 정확히 반영하려면 서버 재조회가 안전.
+        setRecurringList(await getRecurringExpenses())
+        setShowRecForm(false)
+        showToast(editingRec ? '고정 지출 수정됨' : '고정 지출 추가됨')
+        router.refresh()  // 대시보드 등 다른 페이지의 캐시된 데이터도 갱신
+      } catch (e) {
+        showToast(`저장 실패: ${(e as Error).message}`)
       }
-      // 세부항목 파생(금액·변동·항목 id·정렬)을 정확히 반영하려면 서버 재조회가 안전.
-      setRecurringList(await getRecurringExpenses())
-      setShowRecForm(false)
     })
   }
   const handleDeleteRec = async (id: string, title: string) => {
     if (!confirm(`'${title}' 고정 지출을 삭제할까요?`)) return
-    await deleteRecurringExpense(id)
-    setRecurringList(prev => prev.filter(r => r.id !== id))
+    try {
+      const res = await deleteRecurringExpense(id)
+      if (!res.ok) { showToast(`삭제 실패: ${res.error}`); return }
+      setRecurringList(prev => prev.filter(r => r.id !== id))
+      router.refresh()
+    } catch (e) {
+      showToast(`삭제 실패: ${(e as Error).message}`)
+    }
   }
   const handleToggleRec = async (r: RecurringExpenseRow) => {
-    await updateRecurringExpense(r.id, { isActive: !r.isActive })
-    setRecurringList(prev => prev.map(x => x.id === r.id ? { ...x, isActive: !x.isActive } : x))
+    try {
+      const res = await updateRecurringExpense(r.id, { isActive: !r.isActive })
+      if (!res.ok) { showToast(`변경 실패: ${res.error}`); return }
+      setRecurringList(prev => prev.map(x => x.id === r.id ? { ...x, isActive: !x.isActive } : x))
+      router.refresh()
+    } catch (e) {
+      showToast(`변경 실패: ${(e as Error).message}`)
+    }
   }
 
   return (
