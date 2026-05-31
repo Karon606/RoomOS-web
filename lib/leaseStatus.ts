@@ -1,0 +1,83 @@
+// LeaseStatus 의미 분류 + 매출 인식 헬퍼.
+//
+// 배경 (2026-05-31):
+//   status 필터링이 50+ 곳에 산재해, 같은 의도("매출 인식 대상")인데 곳마다 다른 status
+//   조합을 쓰던 패턴 버그가 두 번 발생했음 (totalExpected / totalRevenue 가 CHECKED_OUT
+//   단기·중도퇴실 lease 의 그 달 매출을 놓침). 이 모듈은 의미별로 status 조합을 상수화
+//   하고, 매출 인식 lease 추출을 한 곳에서 처리하기 위한 단일 진실 출처.
+//
+// 적용 정책:
+//   1) 매출/청구 인식 = BILLABLE_STATUSES (ACTIVE/CHECKOUT_PENDING/NON_RESIDENT)
+//      + CHECKED_OUT 중 targetMonth 귀속 paymentRecord 가 있는 lease (단기·중도퇴실)
+//   2) "현재 거주" = CURRENT_OCCUPANCY_STATUSES (ACTIVE/CHECKOUT_PENDING) — 호실 점유 의미
+//   3) "고객 관리 표시 대상" = TENANT_LIST_STATUSES — 투어·예약·비거주 포함 전 단계
+//
+// 점진적 마이그레이션을 가정: 신규 코드는 이 모듈을 쓰고, 기존 코드는 같은 정책이 필요
+// 한 곳부터 차차 교체. 사이드이펙트 위험 때문에 일괄 교체는 하지 않음.
+
+import type { LeaseStatus, PrismaClient } from '@prisma/client'
+
+/**
+ * 매출/청구 인식 대상 lease.
+ * 정상 거주 + 퇴실 예정 (그 달은 청구) + 비거주(호실 안 살지만 임대료 계약 유지).
+ * CHECKED_OUT 단기·중도퇴실의 매출은 별도로 paymentRecord 기반 추가 인식.
+ */
+export const BILLABLE_STATUSES: LeaseStatus[] = ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT']
+
+/**
+ * "현재 그 호실에 거주 중" — 호실 점유율, 공실 카운터 등에 사용.
+ * NON_RESIDENT 는 본인 호실 거주 안 함, RESERVED 는 아직 입주 안 함.
+ */
+export const CURRENT_OCCUPANCY_STATUSES: LeaseStatus[] = ['ACTIVE', 'CHECKOUT_PENDING']
+
+/**
+ * 고객 관리 목록 표시 대상 — 투어 단계부터 비거주까지 진행 중인 모든 단계.
+ * 퇴실(CHECKED_OUT) · 취소(CANCELLED) 만 제외.
+ */
+export const TENANT_LIST_STATUSES: LeaseStatus[] = [
+  'WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT',
+]
+
+/**
+ * 종료된 lease — 공실 방의 직전 입주자 표시, 평균 거주기간 통계 등.
+ */
+export const CLOSED_STATUSES: LeaseStatus[] = ['CHECKED_OUT', 'CANCELLED']
+
+/**
+ * CHECKED_OUT lease 중 그 달 귀속 paymentRecord 가 있는 lease 목록.
+ * 단기 입주 후 퇴실, 거주 중 중도퇴실 등 — 그 달 매출 인식이 필요한 케이스.
+ * rentAmount 와 함께 반환되어 호출 측에서 Math.min(paid, rent) 과납 처리에 사용 가능.
+ */
+export async function getCheckedOutLeasesWithRevenue(
+  prisma: PrismaClient,
+  propertyId: string,
+  targetMonth: string,
+): Promise<{ id: string; rentAmount: number }[]> {
+  return prisma.leaseTerm.findMany({
+    where: {
+      propertyId, status: 'CHECKED_OUT', rentAmount: { gt: 0 },
+      paymentRecords: { some: { targetMonth, isDeposit: false, isPrevOwner: false } },
+    },
+    select: { id: true, rentAmount: true },
+  })
+}
+
+/**
+ * CHECKED_OUT lease 의 그 달 귀속 paymentRecord 합계.
+ * totalExpected (발생주의 청구) 의 단기·중도퇴실 보정 — rentAmount 전체가 아닌
+ * 실제 정산된 금액(일할 등)이 paymentRecord 에 들어 있으므로 그대로 사용.
+ */
+export async function getCheckedOutRecognizedRevenue(
+  prisma: PrismaClient,
+  propertyId: string,
+  targetMonth: string,
+): Promise<number> {
+  const agg = await prisma.paymentRecord.aggregate({
+    where: {
+      propertyId, targetMonth, isDeposit: false, isPrevOwner: false,
+      leaseTerm: { status: 'CHECKED_OUT' },
+    },
+    _sum: { actualAmount: true },
+  })
+  return agg._sum.actualAmount ?? 0
+}

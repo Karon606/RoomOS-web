@@ -779,6 +779,28 @@ Phase 2.4c 와 2.3c 의 셸 마이그레이션 후 잔존한 페이지 내 잡�
    - 호실은 `roomNo` 정규화 매칭으로 select 옵션 자동 선택.
 - ⚠️ **사용자 안내**: 추출 결과 자동 입력. 한글 이름이 영문 칸에 들어가거나 호실 매칭 실패 등 오인 가능 → 반드시 확인 후 저장.
 
+### V-2 (2026-05-31, W 전). 매출 인식 일관성 + 단기·중도퇴실 lease 매출 누락 fix
+
+**버그**: dashboard `totalExpected` / `totalRevenue` 가 ACTIVE/CHECKOUT_PENDING/NON_RESIDENT lease 만 합산. CHECKED_OUT 단기 입주(예: 422호 파트쿨리나 5월 262,500) + 거주 중 중도퇴실(예: 507호 정종학 5/1 5월 귀속 370,000) 매출이 KPI 카드·손익 현황에서 누락.
+
+**원인**: status 필터링이 50+ 곳에 산재. 같은 "매출 인식 대상" 의도인데 곳마다 다른 status 조합. 새 케이스 추가 시 모든 곳을 수동 업데이트 필요.
+
+**조치**:
+- `app/(app)/dashboard/page.tsx` totalExpected 에 CHECKED_OUT 의 그 달 귀속 paymentRecord 합 추가 (`a25d6c9`)
+- 같은 정책으로 totalRevenue 에도 CHECKED_OUT 입금 인식 (`e0c7cb3`)
+- 회귀 방지: `lib/leaseStatus.ts` 신설 — `BILLABLE_STATUSES`, `CURRENT_OCCUPANCY_STATUSES`, `TENANT_LIST_STATUSES`, `CLOSED_STATUSES` 상수화 + `getCheckedOutLeasesWithRevenue()`, `getCheckedOutRecognizedRevenue()` 헬퍼. dashboard 인라인 쿼리 2곳 → 헬퍼 호출로 교체.
+
+**확인된 안전 지점**: dashboard 6개월 trend 는 paymentRecord 기반이라 영향 없음.
+**아직 미정정 (영향 작음)**: report 결산 보고서의 미수·임대료 분포 — ACTIVE/CHECKOUT_PENDING 만 기준이지만 통계 용도라 단기 미수 사례에서만 의미 있음. 필요 시 별도 작업.
+
+### V-3 (2026-05-31). 그 외 작업
+- /tenants 퇴실자 클릭 → Prism 수납 face (getLeaseSettlementInfo fallback) — `c5019f4`
+- Prism [수정] 클릭 시 편집 폼 안 열리는 버그 (useEffect deps 비어있음) — `a1c266a`
+- 수납 관리 필터 '임시 조정' 탭 추가 — `976c092`
+- PaymentRecordList 회차 표시: DB seqNo(귀속월 기준) → 화면 순(payDate asc index) — `c5019f4`
+- StatusBadge sub 가독성: badge-bg(옅음) → badge-fg(진함) — `c5019f4`
+- 재고 월별 사용량 막대 + 숨김 UX + 김치 수령일 자동 동기화 (StockCheck.sourceExpenseId) — `5853921`
+
 ### W. 남은 트랙 (다음 세션)
 - **OCR 후속**: 보증금 반환·수익 분류 케이스, 더 다양한 분류(예: 임대료 영수증)
 - **공실 안내 페이지 2단계** — 인앱 편집기 (큰)

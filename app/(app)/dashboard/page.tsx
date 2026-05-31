@@ -7,6 +7,7 @@ import { kstMonthStr, kstYmd } from '@/lib/kstDate'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
 import { discountedRent } from '@/lib/rentDiscount'
+import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
 
@@ -362,16 +363,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const activeLeaseIds  = new Set(activeLeases.map(l => l.id))
   const leaseRentMap    = new Map(activeLeases.map(l => [l.id, l.rentAmount]))
 
-  // CHECKED_OUT lease 도 그 달 귀속 입금이 있으면 매출 인식 (2026-05-31, totalExpected 와 동일 정책).
-  // 단기 입주 후 퇴실한 lease 의 그 달 입금(예: 422호 파트쿨리나 5월 262,500) + 거주 중 중도퇴실
-  // (예: 507호 정종학 5/1 5월 귀속) 이 totalRevenue 에서 누락되던 문제 수정.
-  const checkedOutLeasesForRev = await prisma.leaseTerm.findMany({
-    where: {
-      propertyId, status: 'CHECKED_OUT', rentAmount: { gt: 0 },
-      paymentRecords: { some: { targetMonth, isDeposit: false, isPrevOwner: false } },
-    },
-    select: { id: true, rentAmount: true },
-  })
+  // CHECKED_OUT lease 도 그 달 귀속 입금이 있으면 매출 인식 (totalExpected/Revenue 통일 정책).
+  // 단기 입주 후 퇴실(예: 5월 단기 정산) + 거주 중 중도퇴실(예: 월초 입금 후 퇴실).
+  // 헬퍼: lib/leaseStatus.ts — 같은 의도의 다른 페이지도 이 헬퍼 사용.
+  const checkedOutLeasesForRev = await getCheckedOutLeasesWithRevenue(prisma, propertyId, targetMonth)
   for (const l of checkedOutLeasesForRev) {
     activeLeaseIds.add(l.id)
     leaseRentMap.set(l.id, l.rentAmount)
@@ -593,19 +588,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     discountedRent(l.discounts, targetMonth, l.rentAmount)
   const paidCount      = billableLeases.filter(l => (paymentByLeaseForStatus[l.id] ?? 0) >= billThisMonth(l)).length
 
-  // ── 단기 입주 후 퇴실한 lease 의 매출 추가 인식 (2026-05-31)
-  // ACTIVE/CHECKOUT_PENDING/NON_RESIDENT 만 보던 기존 로직은 단기 거주 후 CHECKED_OUT 된
-  // lease 의 그 달 매출(예: 422호 파트쿨리나 5월 단기 262,500원)을 놓쳤음.
-  // 일할 정산되는 짧은 거주를 과다 인식하지 않도록, rentAmount 전체가 아닌 그 달 귀속
-  // paymentRecord 의 합계만 추가 인식한다 (실제로 정산된 금액).
-  const checkedOutPaymentsAgg = await prisma.paymentRecord.aggregate({
-    where: {
-      propertyId, targetMonth, isDeposit: false, isPrevOwner: false,
-      leaseTerm: { status: 'CHECKED_OUT' },
-    },
-    _sum: { actualAmount: true },
-  })
-  const checkedOutRecognized = checkedOutPaymentsAgg._sum.actualAmount ?? 0
+  // ── 단기 입주·중도퇴실 lease 의 매출 추가 인식 (lib/leaseStatus.ts 정책)
+  // 일할 정산되는 짧은 거주를 과다 인식하지 않도록 rentAmount 전체가 아닌
+  // 그 달 귀속 paymentRecord 합계만 인식. paidRevenue 의 CHECKED_OUT 포함 정책과 통일.
+  const checkedOutRecognized = await getCheckedOutRecognizedRevenue(prisma, propertyId, targetMonth)
 
   // 양도인 몫 제외 — 수납완료 + 미수납과 합산이 맞도록
   const totalExpected  = billableLeases
