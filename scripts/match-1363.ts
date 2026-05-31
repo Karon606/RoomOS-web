@@ -13,7 +13,11 @@ async function main() {
   if (!property) return
   const active = await prisma.leaseTerm.findMany({
     where: { propertyId: property.id, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] }, rentAmount: { gt: 0 } },
-    include: { tenant: { select: { name: true } }, room: { select: { roomNo: true } } },
+    include: {
+      tenant: { select: { name: true } },
+      room: { select: { roomNo: true } },
+      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+    },
   })
   // 청구액 기준 정렬
   const list = active.map(l => ({

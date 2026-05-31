@@ -47,7 +47,7 @@ async function main() {
   })
   console.log(`\n=== 최근 24시간 내 추가/변경된 할인 (${recentDiscounts.length}건) ===`)
   for (const d of recentDiscounts) {
-    console.log(`  ${d.leaseTerm.room?.roomNo}호 ${d.leaseTerm.tenant.name}: ${d.discountType}=${d.value} scope=${d.scope} ${d.startMonth ?? '?'}~${d.endMonth ?? '?'} | created=${d.createdAt.toISOString()} updated=${d.updatedAt.toISOString()}`)
+    console.log(`  ${d.leaseTerm.room?.roomNo}호 ${d.leaseTerm.tenant.name}: ${d.discountType}=${d.value} scope=${d.scope} ${d.startMonth ?? '?'}~${d.endMonth ?? '?'} | created=${d.createdAt.toISOString()}`)
   }
 
   // 4) ExtraIncome 음수 또는 큰 record?
