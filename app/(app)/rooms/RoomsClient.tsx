@@ -212,7 +212,7 @@ export default function RoomsClient({
 }) {
   const searchParams = useSearchParams()
   const entityModal = useEntityModal()
-  const [filter, setFilter] = useState<'all' | 'unpaid' | 'checkout' | 'awaiting' | 'paid'>('all')
+  const [filter, setFilter] = useState<'all' | 'unpaid' | 'checkout' | 'awaiting' | 'paid' | 'adjusted'>('all')
   const [floorFilter, setFloorFilter] = useState('')
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(DEFAULT_VIS)
   const [showColMenu, setShowColMenu] = useState(false)
@@ -318,12 +318,16 @@ export default function RoomsClient({
     const ck = r.expectedMoveOut?.slice(0, 7) ?? null
     return r.status === 'CHECKOUT_PENDING' && r.isPaid && !!ck && ck <= targetMonth
   }
+  // 이 달(targetMonth)에 납부일 임시 조정이 적용된 호실
+  const isAdjustedRoom = (r: RoomStatus) =>
+    !!r.overrideDueDay && r.overrideDueDayMonth === targetMonth
   const filtered = occupied.filter(r => {
     if (floorFilter && getRoomFloor(r) !== floorFilter) return false
     if (filter === 'unpaid')   return !r.isPaid
     if (filter === 'checkout') return isCheckoutRoom(r)
     if (filter === 'awaiting') return isAwaitingRoom(r) && !isCheckoutRoom(r)
     if (filter === 'paid')     return r.isPaid && !isAwaitingRoom(r) && !isCheckoutRoom(r)
+    if (filter === 'adjusted') return isAdjustedRoom(r)
     return true
   })
 
@@ -393,6 +397,7 @@ export default function RoomsClient({
   const checkoutCount = occupied.filter(r => isCheckoutRoom(r)).length
   const awaitingCount = occupied.filter(r => isAwaitingRoom(r) && !isCheckoutRoom(r)).length
   const paidCount     = occupied.filter(r => r.isPaid && !isAwaitingRoom(r) && !isCheckoutRoom(r)).length
+  const adjustedCount = occupied.filter(r => isAdjustedRoom(r)).length
 
   const thCls = 'text-left text-xs text-[var(--warm-muted)] font-medium px-4 py-3'
 
@@ -502,6 +507,7 @@ export default function RoomsClient({
             { value: 'checkout', label: `퇴실 예정 ${checkoutCount}실` },
             { value: 'awaiting', label: `납부 예정 ${awaitingCount}실` },
             { value: 'paid',     label: `완납 ${paidCount}실` },
+            { value: 'adjusted', label: `임시 조정 ${adjustedCount}실` },
           ]}
         />
         {allFloors.length > 1 && (
