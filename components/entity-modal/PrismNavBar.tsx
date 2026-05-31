@@ -31,10 +31,11 @@ export function PrismNavBar({ current, links, onSelect }: {
     else                          entityModal.open({ kind: 'payment', leaseTermId: links.leaseTermId ?? undefined })
   }
 
+  // '정보' 접미 — 액션 버튼이 아니라 '다른 면 보기' 라는 점을 명확히 (사용자 피드백 2026-05-31).
   const items: { kind: PrismCurrent; label: string; enabled: boolean }[] = [
-    { kind: 'room',    label: '호실', enabled: !!links.roomId },
-    { kind: 'tenant',  label: '고객', enabled: !!links.tenantId },
-    { kind: 'payment', label: '수납', enabled: !!links.leaseTermId },
+    { kind: 'room',    label: '호실 정보', enabled: !!links.roomId },
+    { kind: 'tenant',  label: '고객 정보', enabled: !!links.tenantId },
+    { kind: 'payment', label: '수납 정보', enabled: !!links.leaseTermId },
   ]
 
   return (
@@ -48,12 +49,13 @@ export function PrismNavBar({ current, links, onSelect }: {
             disabled={!it.enabled || isCurrent}
             onClick={() => handle(it.kind)}
             aria-current={isCurrent ? 'page' : undefined}
-            className={`flex-1 px-3 py-2 text-xs font-semibold rounded-lg transition-colors disabled:cursor-default ${
+            className={`flex-1 px-3 py-2 text-xs font-semibold rounded-lg transition-colors disabled:cursor-default border ${
               isCurrent
-                ? 'bg-[var(--coral)] text-white'
+                // 현재 면 — 옅은 톤 + 코랄 텍스트 + 코랄 border (탭 selected 처럼). 액션 버튼 같은 솔리드 X.
+                ? 'bg-[var(--coral-pale)] text-[var(--coral)] border-[var(--coral)]/40'
                 : it.enabled
-                ? 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'
-                : 'bg-[var(--canvas)] text-[var(--warm-muted)] opacity-40'
+                ? 'bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'
+                : 'bg-[var(--canvas)] text-[var(--warm-muted)] opacity-40 border-transparent'
             }`}
           >
             {it.label}

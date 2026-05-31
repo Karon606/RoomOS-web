@@ -8,6 +8,7 @@
 // 은 Phase 2.4b 에서.
 
 import { useEffect, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { getLeaseSettlementInfo, getPaymentsByLease } from '@/app/(app)/rooms/actions'
 import { PaymentSummaryCards } from '../widgets/PaymentSummaryCards'
 import { DiscountWidget } from '../widgets/DiscountWidget'
@@ -29,6 +30,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo }: {
   /** 'XX호' — full 모드에서 "수납 관리에서 열기" 딥링크용. */
   roomNo?: string | null
 }) {
+  const router = useRouter()
   const [settlement, setSettlement] = useState<Settlement | null>(null)
   const [records, setRecords] = useState<Records | null>(null)
   const [mode, setMode] = useState<'summary' | 'full'>('summary')
@@ -43,7 +45,9 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo }: {
     return () => { active = false }
   }, [leaseTermId, month, reloadKey])
 
-  const refresh = () => startTransition(() => setReloadKey(k => k + 1))
+  // 셸 내부 settlement/records 재fetch + 페이지(서버 렌더링된 카드 리스트) 무효화.
+  // router.refresh() 가 없으면 셸 닫고 페이지로 돌아갔을 때 카드가 여전히 미납으로 보임.
+  const refresh = () => startTransition(() => { setReloadKey(k => k + 1); router.refresh() })
 
   if (!settlement) return <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
 
@@ -58,7 +62,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo }: {
 
       {mode === 'summary' && (
         <>
-          {/* 이번 달 납부 내역 — 읽기. 편집은 full 모드 또는 수납 관리에서. */}
+          {/* 이번 달 납부 내역 — 읽기. 편집은 full 모드. */}
           <div className="space-y-1">
             <p className="text-xs font-semibold text-[var(--warm-mid)]">이번 달 납부 내역</p>
             {records === null ? (
@@ -85,10 +89,44 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo }: {
             )}
           </div>
 
-          <button type="button" onClick={() => setMode('full')}
-            className="w-full py-2 text-xs font-semibold rounded-lg bg-[var(--coral)] text-white hover:opacity-90 transition-opacity">
-            수납 관리에서 자세히 ▼ (할인·납부일 조정 등)
-          </button>
+          {/* 수납 등록은 summary 에서도 직접 — 가장 잦은 작업이라 1탭으로. */}
+          {canEdit && settlement.leaseTermId && settlement.tenantId && (
+            showEntryForm ? (
+              <PaymentEntryForm
+                room={{
+                  leaseTermId: settlement.leaseTermId,
+                  tenantId: settlement.tenantId,
+                  expected: settlement.expected,
+                  balance: settlement.balance,
+                  depositAmount: settlement.depositAmount,
+                  cleaningFee: settlement.cleaningFee,
+                  moveInDate: settlement.moveInDate,
+                }}
+                targetMonth={month}
+                onSaved={() => { setShowEntryForm(false); refresh() }}
+                onCancel={() => setShowEntryForm(false)}
+              />
+            ) : (
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setShowEntryForm(true)}
+                  className="flex-1 py-2 text-sm font-semibold rounded-lg bg-[var(--coral)] text-white hover:opacity-90 transition-opacity">
+                  + 수납 등록
+                </button>
+                <button type="button" onClick={() => setMode('full')}
+                  className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)] transition-colors">
+                  더 보기 ▾
+                </button>
+              </div>
+            )
+          )}
+
+          {/* 권한 없는 사용자엔 '더 보기'만 */}
+          {!canEdit && (
+            <button type="button" onClick={() => setMode('full')}
+              className="w-full py-1.5 text-[0.6875rem] font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)] transition-colors">
+              더 보기 ▾
+            </button>
+          )}
         </>
       )}
 
