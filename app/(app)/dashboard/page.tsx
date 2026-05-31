@@ -577,10 +577,26 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const billThisMonth  = (l: { rentAmount: number; discounts?: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[] }) =>
     discountedRent(l.discounts, targetMonth, l.rentAmount)
   const paidCount      = billableLeases.filter(l => (paymentByLeaseForStatus[l.id] ?? 0) >= billThisMonth(l)).length
+
+  // ── 단기 입주 후 퇴실한 lease 의 매출 추가 인식 (2026-05-31)
+  // ACTIVE/CHECKOUT_PENDING/NON_RESIDENT 만 보던 기존 로직은 단기 거주 후 CHECKED_OUT 된
+  // lease 의 그 달 매출(예: 422호 파트쿨리나 5월 단기 262,500원)을 놓쳤음.
+  // 일할 정산되는 짧은 거주를 과다 인식하지 않도록, rentAmount 전체가 아닌 그 달 귀속
+  // paymentRecord 의 합계만 추가 인식한다 (실제로 정산된 금액).
+  const checkedOutPaymentsAgg = await prisma.paymentRecord.aggregate({
+    where: {
+      propertyId, targetMonth, isDeposit: false, isPrevOwner: false,
+      leaseTerm: { status: 'CHECKED_OUT' },
+    },
+    _sum: { actualAmount: true },
+  })
+  const checkedOutRecognized = checkedOutPaymentsAgg._sum.actualAmount ?? 0
+
   // 양도인 몫 제외 — 수납완료 + 미수납과 합산이 맞도록
   const totalExpected  = billableLeases
     .filter(l => !prevOwnerLeaseIds.has(l.id))
     .reduce((s, l) => s + billThisMonth(l), 0)
+    + checkedOutRecognized
 
   const categoryBreakdown = expByCategory.map(c => ({
     category: c.category,
