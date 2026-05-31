@@ -793,7 +793,26 @@ function CornerLoupe({ bitmap, cornerX, cornerY, dW, dH }: {
     // 비어보일 수 있는 가장자리 흰색으로 채워두기
     ctx.fillStyle = 'rgba(255,255,255,0.6)'
     ctx.fillRect(0, 0, SIZE, SIZE)
-    ctx.drawImage(bitmap, sx, sy, srcW, srcH, 0, 0, SIZE, SIZE)
+    // 코너가 이미지 가장자리에 있을 때(예: 우측 하단 모서리) sx/sy 가 음수이거나
+    // sx+srcW 가 bitmap.width 를 넘어서 source 사각형의 일부가 bitmap 밖으로 벗어남.
+    // 단순 drawImage 는 그 잘려나간 만큼 destination 의 (0,0) 부터 그리기 때문에
+    // 결과적으로 십자선이 가리키는 위치가 어긋남 (사용자 진단 2026-06-01).
+    // 해결: bitmap 영역 안으로 잘린 source 만 그리되, destination 위치도 같은 비율로
+    // 이동시켜 핸들 위치(sourceX,sourceY) 가 캔버스 중앙(SIZE/2,SIZE/2) 에 오게 유지한다.
+    let drawSx = sx, drawSy = sy
+    let drawSw = srcW, drawSh = srcH
+    let drawDx = 0, drawDy = 0
+    const pxPerSrcX = SIZE / srcW
+    const pxPerSrcY = SIZE / srcH
+    if (drawSx < 0) { drawDx = -drawSx * pxPerSrcX; drawSw = srcW + drawSx; drawSx = 0 }
+    if (drawSy < 0) { drawDy = -drawSy * pxPerSrcY; drawSh = srcH + drawSy; drawSy = 0 }
+    if (drawSx + drawSw > bitmap.width)  drawSw = bitmap.width  - drawSx
+    if (drawSy + drawSh > bitmap.height) drawSh = bitmap.height - drawSy
+    if (drawSw > 0 && drawSh > 0) {
+      const drawDw = drawSw * pxPerSrcX
+      const drawDh = drawSh * pxPerSrcY
+      ctx.drawImage(bitmap, drawSx, drawSy, drawSw, drawSh, drawDx, drawDy, drawDw, drawDh)
+    }
     ctx.restore()
   }, [sx, sy, srcW, srcH, bitmap])
 

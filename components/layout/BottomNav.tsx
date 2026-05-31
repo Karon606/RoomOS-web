@@ -1,7 +1,8 @@
 'use client'
 
+import { useState, useTransition, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 const ico = {
   viewBox: '0 0 24 24',
@@ -53,10 +54,25 @@ const PRIMARY_HREFS = new Set(NAV_ITEMS.map(i => i.href))
 
 export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
   const pathname = usePathname()
+  const router = useRouter()
   const searchParams = useSearchParams()
   const month = searchParams.get('month')
   // 현재 경로가 핵심 4개가 아니면 '전체'를 활성 표시 (해당 메뉴가 전체 안에 있으므로)
   const menuActive = !PRIMARY_HREFS.has(pathname)
+  // 클릭 즉시 시각 피드백 — Next.js 라우팅이 비동기라 사용자가 누른 직후 아무 반응이 없어
+  // 여러 번 누르게 되는 문제 해결 (사용자 피드백 2026-06-01).
+  const [pendingHref, setPendingHref] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
+  // 라우팅 완료(또는 pathname 변경) 시 pending 해제
+  useEffect(() => { setPendingHref(null) }, [pathname])
+
+  const handleNavClick = (href: string) => (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (pathname === href) return
+    setPendingHref(href)
+    const linkHref = month ? `${href}?month=${month}` : href
+    startTransition(() => { router.push(linkHref) })
+  }
 
   return (
     /* HIG: 탭 바는 화면 하단 고정, safe area 위에 콘텐츠 배치 */
@@ -66,14 +82,21 @@ export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
     >
       {NAV_ITEMS.map(({ href, label, Icon }) => {
         const isActive = pathname === href
+        const isPending = pendingHref === href
+        const showHighlight = isActive || isPending
         const linkHref = month ? `${href}?month=${month}` : href
         return (
           <Link
             key={href}
             href={linkHref}
+            onClick={handleNavClick(href)}
             /* HIG: 탭 아이템 최소 높이 49pt, 아이콘+레이블 수직 중앙 */
-            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset"
-            style={{ color: isActive ? 'var(--coral)' : 'var(--warm-muted)', minHeight: 49 }}
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30 focus-visible:ring-inset active:bg-[var(--coral)]/10"
+            style={{
+              color: showHighlight ? 'var(--coral)' : 'var(--warm-muted)',
+              background: isPending ? 'var(--coral-pale, rgba(184,80,66,0.08))' : undefined,
+              minHeight: 49,
+            }}
           >
             <Icon />
             <span className="text-[0.625rem] font-medium leading-none">{label}</span>
