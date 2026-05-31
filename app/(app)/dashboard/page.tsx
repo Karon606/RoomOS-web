@@ -377,15 +377,16 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const totalExpense = expenses.reduce((s, e) => s + e.amount, 0)
   const totalDeposit = depositAgg._sum.depositAmount ?? 0
 
-  // ── 예상 매출/순이익 (2026-05-31) ─────────────────────────────────
+  // ── 예상 매출/순이익 (2026-05-31, 사용자 회귀 후 수정) ───────────────
   // 사용자 정의:
-  //   예상 매출 = '현재 입주자들'(ACTIVE + NON_RESIDENT)의 rentAmount 합 + 이미 발생한 기타수익
-  //              · CHECKOUT_PENDING 은 제외 (지난 달 마지막 납부 끝났다고 간주)
-  //              · RESERVED 는 미입주이므로 제외
+  //   예상 매출 = 이번 달 모든 lease 의 청구액(할인 반영) + 이미 발생한 기타수익
+  //              · CHECKOUT_PENDING 제외 (지난 달 마지막 납부 끝났다고 간주, 신규 입주자 있으면 그 lease 가 별도 합산)
+  //              · 할인·overrideDueDay 무관 — '이번 달 청구 도래액' 자체.
+  //              · 임시조정으로 납부일이 다음달이 된 lease 도 rentAmount 는 이번 달 매출에 포함 (사용자 명시).
   //   예상 순이익 = 예상 매출 - 이미 발생한 지출(totalExpense) - 이번 달 미발생 고정지출(예상)
   const projectedRentRevenue = activeLeases
-    .filter(l => l.status === 'ACTIVE' || l.status === 'NON_RESIDENT')
-    .reduce((s, l) => s + l.rentAmount, 0)
+    .filter(l => l.status !== 'CHECKOUT_PENDING')
+    .reduce((s, l) => s + discountedRent(l.discounts, targetMonth, l.rentAmount), 0)
   const projectedRevenue = projectedRentRevenue + extraRevenue
 
   const recurringDoneIds = new Set(recurringExpensesThisMonth.map(r => r.recurringExpenseId))
