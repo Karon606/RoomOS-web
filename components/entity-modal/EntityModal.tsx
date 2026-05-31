@@ -133,8 +133,10 @@ function PrismShellView({ kind, links, setKind, onClose }: {
     router.push(`/tenants?tenantId=${links.tenantId}&edit=1`)
     onClose()
   }
-  // 계약서 출력 — 스캔본이 있으면 어떤 걸 출력할지 묻는다 (사용자 피드백 2026-06-01).
+  // 계약서 출력 — 스캔본이 있으면 어떤 걸 출력할지 묻는다 (3-옵션 커스텀 모달).
+  // confirm 다이얼로그를 쓰면 '취소' = 시스템 계약서로 오인되므로 명시적 3-버튼 UI 필요.
   // 없으면 바로 시스템 계약서로 (기존 동작 유지).
+  const [printChoice, setPrintChoice] = useState<{ scanUrl: string; fileName: string } | null>(null)
   const handlePrintContract = async () => {
     if (!links?.tenantId) return
     const systemUrl = `/contract/${links.tenantId}`
@@ -144,20 +146,16 @@ function PrismShellView({ kind, links, setKind, onClose }: {
       window.open(systemUrl, '_blank')
       return
     }
-    // 가장 최근 스캔본 (목록의 첫 번째 — 액션이 createdAt desc 로 정렬)
+    // 가장 최근 스캔본 (목록의 첫 번째 — 액션이 signedAt desc 로 정렬)
     const latest = files[0]
-    const useScan = confirm(
-      `어떤 계약서를 출력할까요?\n\n` +
-      `[확인] 스캔본 출력 — ${latest.fileName ?? '첨부된 스캔본'}\n` +
-      `[취소] 시스템 계약서 새로 출력 (서명 받기 포함)`
-    )
-    window.open(useScan ? latest.viewUrl : systemUrl, '_blank')
+    setPrintChoice({ scanUrl: latest.viewUrl, fileName: latest.fileName ?? '스캔본' })
   }
 
   // Phase 2.4a (2026-05-30): kind='payment' 의 '수납 관리에서 열기' 딥링크 제거.
   // PaymentBody 내부 summary→full 모드 토글이 in-place 전환 (배경 안 바뀜) — 사용자 비전.
 
   return (
+    <>
     <Modal
       open onClose={onClose} width="sm" title={title} z={280}
       footer={
@@ -213,6 +211,44 @@ function PrismShellView({ kind, links, setKind, onClose }: {
         {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={links!.leaseTermId!} month={month} canEdit roomNo={links?.roomNo ?? null} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
       </div>
     </Modal>
+    {/* 계약서 출력 선택 모달 — 스캔본 vs 시스템 계약서 3-옵션 (confirm 다이얼로그의
+        [확인]/[취소] 패턴이 사용자 의도와 안 맞아 분리, 2026-06-01 피드백) */}
+    {printChoice && (
+      <div className="fixed inset-0 z-[290] flex items-center justify-center bg-black/70 p-4"
+        onClick={() => setPrintChoice(null)}>
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-xs"
+          onClick={e => e.stopPropagation()}>
+          <div className="px-5 py-4 border-b border-[var(--warm-border)]">
+            <h2 className="text-sm font-bold text-[var(--warm-dark)]">어떤 계약서를 출력할까요?</h2>
+          </div>
+          <div className="space-y-3 px-5 py-4">
+            <div>
+              <Btn fullWidth variant="primary"
+                onClick={() => { window.open(printChoice.scanUrl, '_blank'); setPrintChoice(null) }}>
+                스캔본 출력
+              </Btn>
+              <p className="text-[0.6875rem] text-center text-[var(--warm-muted)] mt-1 truncate" title={printChoice.fileName}>
+                {printChoice.fileName}
+              </p>
+            </div>
+            <div>
+              <Btn fullWidth variant="secondary"
+                onClick={() => { window.open(`/contract/${links?.tenantId}`, '_blank'); setPrintChoice(null) }}>
+                시스템 계약서 새로 출력
+              </Btn>
+              <p className="text-[0.6875rem] text-center text-[var(--warm-muted)] mt-1">
+                표준 양식 — 서명 받기 포함
+              </p>
+            </div>
+            <button type="button" onClick={() => setPrintChoice(null)}
+              className="w-full pt-2 pb-1 text-xs font-medium text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">
+              취소
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
 
