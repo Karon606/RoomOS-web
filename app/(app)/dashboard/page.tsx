@@ -362,6 +362,21 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const activeLeaseIds  = new Set(activeLeases.map(l => l.id))
   const leaseRentMap    = new Map(activeLeases.map(l => [l.id, l.rentAmount]))
 
+  // CHECKED_OUT lease 도 그 달 귀속 입금이 있으면 매출 인식 (2026-05-31, totalExpected 와 동일 정책).
+  // 단기 입주 후 퇴실한 lease 의 그 달 입금(예: 422호 파트쿨리나 5월 262,500) + 거주 중 중도퇴실
+  // (예: 507호 정종학 5/1 5월 귀속) 이 totalRevenue 에서 누락되던 문제 수정.
+  const checkedOutLeasesForRev = await prisma.leaseTerm.findMany({
+    where: {
+      propertyId, status: 'CHECKED_OUT', rentAmount: { gt: 0 },
+      paymentRecords: { some: { targetMonth, isDeposit: false, isPrevOwner: false } },
+    },
+    select: { id: true, rentAmount: true },
+  })
+  for (const l of checkedOutLeasesForRev) {
+    activeLeaseIds.add(l.id)
+    leaseRentMap.set(l.id, l.rentAmount)
+  }
+
   // 계약당 이달 납부 합계 → 이용료 상한 적용 (과납분은 다음달 수입)
   const paidByLease: Record<string, number> = {}
   for (const p of payments) {
