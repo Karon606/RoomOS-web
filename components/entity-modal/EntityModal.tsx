@@ -7,14 +7,14 @@
 // Phase 2.2 (2026-05-30): kind='room' body 를 RoomBody 위젯 조합으로. 액션 행([삭제][수정])을 셸이 직접 처리.
 // Phase 2.3 = kind='tenant' 위젯화 (TenantView 미니 잔존), Phase 2.4 = kind='payment' 요약 위젯화.
 
-import { createContext, useContext, useEffect, useState, useCallback, useTransition } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, useRef, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Btn } from '@/components/ui/Btn'
 import { Modal } from '@/components/ui/Modal'
 import { kstMonthStr } from '@/lib/kstDate'
 import { getEntityLinks } from '@/app/(app)/rooms/actions'
 import { deleteRoom, applyScheduledRentNow } from '@/app/(app)/room-manage/actions'
-import { deleteTenant } from '@/app/(app)/tenants/actions'
+import { deleteTenant, getContractFiles } from '@/app/(app)/tenants/actions'
 import { withSave } from '@/lib/saveStatus'
 import { PrismNavBar } from './PrismNavBar'
 import { RoomBody } from './bodies/RoomBody'
@@ -38,8 +38,22 @@ const fmtRoomNo = (no?: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` :
 
 export function EntityModalProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<{ kind: EntityKind; seed: Seed; links: Links } | null>(null)
-  const open = useCallback((seed: Seed) => setState({ kind: seed.kind, seed, links: null }), [])
-  const close = useCallback(() => setState(null), [])
+  // 모달 열기 직전의 페이지 스크롤 위치 — 닫을 때 그 위치로 복원 (router.refresh() 가
+  // 페이지 상단으로 리셋시키는 문제 해결, 사용자 피드백 2026-06-01).
+  const scrollYRef = useRef<number>(0)
+  const open = useCallback((seed: Seed) => {
+    if (typeof window !== 'undefined') scrollYRef.current = window.scrollY
+    setState({ kind: seed.kind, seed, links: null })
+  }, [])
+  const close = useCallback(() => {
+    setState(null)
+    if (typeof window !== 'undefined') {
+      const y = scrollYRef.current
+      // router.refresh 가 redraw 후 0,0 로 리셋할 수 있어 두 번 시도 (RAF + 150ms 후)
+      requestAnimationFrame(() => window.scrollTo(0, y))
+      setTimeout(() => window.scrollTo(0, y), 150)
+    }
+  }, [])
 
   // seed 의 id 로 연결된 호실/고객/lease id 해소 (네비 가용성·제목용)
   useEffect(() => {
@@ -119,6 +133,26 @@ function PrismShellView({ kind, links, setKind, onClose }: {
     router.push(`/tenants?tenantId=${links.tenantId}&edit=1`)
     onClose()
   }
+  // 계약서 출력 — 스캔본이 있으면 어떤 걸 출력할지 묻는다 (사용자 피드백 2026-06-01).
+  // 없으면 바로 시스템 계약서로 (기존 동작 유지).
+  const handlePrintContract = async () => {
+    if (!links?.tenantId) return
+    const systemUrl = `/contract/${links.tenantId}`
+    let files: Awaited<ReturnType<typeof getContractFiles>> = []
+    try { files = await getContractFiles(links.tenantId) } catch { /* 실패 시 시스템 계약서로 폴백 */ }
+    if (files.length === 0) {
+      window.open(systemUrl, '_blank')
+      return
+    }
+    // 가장 최근 스캔본 (목록의 첫 번째 — 액션이 createdAt desc 로 정렬)
+    const latest = files[0]
+    const useScan = confirm(
+      `어떤 계약서를 출력할까요?\n\n` +
+      `[확인] 스캔본 출력 — ${latest.fileName ?? '첨부된 스캔본'}\n` +
+      `[취소] 시스템 계약서 새로 출력 (서명 받기 포함)`
+    )
+    window.open(useScan ? latest.viewUrl : systemUrl, '_blank')
+  }
 
   // Phase 2.4a (2026-05-30): kind='payment' 의 '수납 관리에서 열기' 딥링크 제거.
   // PaymentBody 내부 summary→full 모드 토글이 in-place 전환 (배경 안 바뀜) — 사용자 비전.
@@ -148,10 +182,10 @@ function PrismShellView({ kind, links, setKind, onClose }: {
                 삭제
               </button>
               {links?.tenantId && (
-                <a href={`/contract/${links.tenantId}`} target="_blank" rel="noreferrer"
+                <button type="button" onClick={handlePrintContract}
                   className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
                   계약서 출력
-                </a>
+                </button>
               )}
               <div className="flex-1" />
               <Btn variant="primary" size="md" onClick={handleEditTenant} disabled={isPending}>

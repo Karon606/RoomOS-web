@@ -79,25 +79,38 @@ export function OcrToolbar({ onContract, onIdCard }: {
     } finally { setBusy(null) }
   }
 
+  // 토글로 접고 펴기 — 신분증 사진 강요하는 느낌 완화 (사용자 피드백 2026-06-01)
+  const [open, setOpen] = useState(false)
+
   return (
-    <div className="rounded-xl p-3 mb-3 flex items-center gap-2 flex-wrap"
+    <div className="rounded-xl mb-3"
       style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
-      <p className="text-[0.6875rem] font-medium mr-1" style={{ color: 'var(--warm-mid)' }}>
-        사진으로 자동 채우기
-      </p>
-      <Btn variant="secondary" size="sm" disabled={busy !== null}
-        onClick={() => contractRef.current?.click()}>
-        {busy === 'contract' ? '분석 중...' : '계약서'}
-      </Btn>
-      <Btn variant="secondary" size="sm" disabled={busy !== null}
-        onClick={() => idRef.current?.click()}>
-        {busy === 'id' ? '분석 중...' : '신분증'}
-      </Btn>
-      <input ref={contractRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleContract} />
-      <input ref={idRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleId} />
-      <p className="text-[0.5625rem] basis-full mt-0.5" style={{ color: 'var(--warm-muted)' }}>
-        ※ 추출 결과는 자동으로 들어가니 반드시 확인 후 저장하세요.
-      </p>
+      <button type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-3 py-2"
+        aria-expanded={open}>
+        <span className="text-[0.6875rem] font-medium" style={{ color: 'var(--warm-mid)' }}>
+          사진으로 자동 채우기 (선택)
+        </span>
+        <span className="text-[0.6875rem]" style={{ color: 'var(--warm-muted)' }}>{open ? '접기 ▴' : '펼치기 ▾'}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 flex items-center gap-2 flex-wrap">
+          <Btn variant="secondary" size="sm" disabled={busy !== null}
+            onClick={() => contractRef.current?.click()}>
+            {busy === 'contract' ? '분석 중...' : '계약서'}
+          </Btn>
+          <Btn variant="secondary" size="sm" disabled={busy !== null}
+            onClick={() => idRef.current?.click()}>
+            {busy === 'id' ? '분석 중...' : '신분증'}
+          </Btn>
+          <input ref={contractRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleContract} />
+          <input ref={idRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleId} />
+          <p className="text-[0.5625rem] basis-full mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+            ※ 추출 결과는 자동으로 들어가니 반드시 확인 후 저장하세요.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

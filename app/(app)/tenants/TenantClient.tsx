@@ -2875,7 +2875,15 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           allowConditions={true}
           isMove={statusVal === 'ACTIVE' || statusVal === 'NON_RESIDENT'}
         />
-        <Field label="계약서 링크" name="contractUrl" type="url" defaultValue={lease?.contractUrl ?? ''} placeholder="https://..." />
+        {/* 계약서 파일 — 기존 입주자 수정 시에만 표시. Prism 뷰어와 동일한 ContractFilesPanel.
+            (사용자 피드백 2026-06-01: 뷰어에는 첨부 UI 있지만 수정 폼에는 없어 헷갈림) */}
+        {tenant && (
+          <div className="space-y-1.5">
+            <label className="text-[0.6875rem] font-medium" style={{ color: 'var(--warm-mid)' }}>계약서 파일</label>
+            <ContractFilesPanel tenantId={tenant.id} tenantName={tenant.name} />
+          </div>
+        )}
+        <Field label="외부 계약서 링크 (Google Drive·Dropbox 등, 선택)" name="contractUrl" type="url" defaultValue={lease?.contractUrl ?? ''} placeholder="https://..." />
       </FormSection>
 
       <FormSection title="메모">
