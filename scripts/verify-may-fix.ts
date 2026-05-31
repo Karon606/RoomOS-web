@@ -28,7 +28,11 @@ async function main() {
         { paymentRecords: { some: { targetMonth: TARGET_MONTH, isDeposit: false } } },
       ],
     },
-    include: { tenant: { select: { name: true } }, room: { select: { roomNo: true } } },
+    include: {
+      tenant: { select: { name: true } },
+      room: { select: { roomNo: true } },
+      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+    },
   })
 
   console.log(`기존 active billable: ${totalActive.toLocaleString()}원`)
