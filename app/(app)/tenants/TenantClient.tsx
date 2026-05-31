@@ -399,14 +399,20 @@ export default function TenantClient({
 
   // URL 파라미터 — /tenants?tenantId=xxx → 셸 열기, &edit=1 → 자체 편집 폼(페이지 종속) 열기.
   // Phase 2.3c (2026-05-30): 상세 팝업은 전역 Prism 셸로 마이그레이션. 편집 폼만 페이지에 잔존.
+  //
+  // 최초 mount 시(예: /tenants?tenantId=X 딥링크) Prism 자동 오픈은 1회만.
+  // Prism 셸의 [수정] 버튼이 ?edit=1 을 추가로 push 하므로, 편집 폼 분기는 별도 useEffect 로 항상 감지.
+  // (이전엔 deps=[] 라 mount 후 URL 변화를 못 잡아 [수정] 누르면 Prism 만 닫히고 폼 안 열리는 버그가 있었음 — 2026-05-31)
+  const initialOpenRef = useRef(false)
   useEffect(() => {
+    if (initialOpenRef.current) return
     const tenantId = searchParams.get('tenantId')
     const edit = searchParams.get('edit')
     if (!tenantId) return
     const found = initialTenants.find(t => t.id === tenantId)
     if (!found) return
+    initialOpenRef.current = true
     if (edit === '1') {
-      // 편집 모드만 페이지에서 처리 — 셸의 [수정] 버튼이 ?edit=1 push 함
       setDetailTenant(found); setDetailEditMode(true)
     } else {
       entityModal.open({
@@ -417,6 +423,17 @@ export default function TenantClient({
       })
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ?edit=1 변화 감지 — Prism [수정] 버튼 클릭 시 호출됨.
+  useEffect(() => {
+    const tenantId = searchParams.get('tenantId')
+    const edit = searchParams.get('edit')
+    if (edit !== '1' || !tenantId) return
+    if (detailEditMode && detailTenant?.id === tenantId) return
+    const found = initialTenants.find(t => t.id === tenantId)
+    if (!found) return
+    setDetailTenant(found); setDetailEditMode(true)
+  }, [searchParams, initialTenants, detailEditMode, detailTenant?.id])
 
   // 열 설정 변경 시 저장
   const updateColVis = (key: ColKey, val: boolean) => {
@@ -1450,7 +1467,16 @@ export default function TenantClient({
       {/* 편집 폼 모달 — 페이지 종속 (상세 팝업은 전역 Prism 셸이 담당, Phase 2.3c) */}
       {detailTenant && detailEditMode && (() => {
         const t = detailTenant
-        const closeEdit = () => { setDetailEditMode(false); setDetailTenant(null); setError('') }
+        const closeEdit = () => {
+          setDetailEditMode(false); setDetailTenant(null); setError('')
+          // URL ?edit=1 정리 — 안 그러면 새로고침/뒤로가기 시 폼이 다시 열림.
+          if (searchParams.get('edit') === '1' || searchParams.get('tenantId')) {
+            const params = new URLSearchParams(searchParams.toString())
+            params.delete('edit'); params.delete('tenantId')
+            const qs = params.toString()
+            router.replace(qs ? `?${qs}` : '?', { scroll: false })
+          }
+        }
         return (
           <div className="fixed inset-0 bg-black/70 z-[260] flex items-center justify-center p-4"
             onClick={closeEdit}>
