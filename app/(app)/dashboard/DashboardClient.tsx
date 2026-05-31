@@ -1951,9 +1951,6 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
               <em style={{ fontStyle: 'normal', color: '#fbbf24', marginLeft: 6 }}>{revChange >= 0 ? '+' : ''}{revChange}%</em>
             )}
           </p>
-          <p style={{ fontSize: '0.625rem', color: 'rgba(255,252,247,0.65)', marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(255,252,247,0.18)' }}>
-            예상 <span className="mono tnum" style={{ fontWeight: 600, color: '#fff' }}>{data.projectedRevenue.toLocaleString()}</span>원
-          </p>
         </div>
 
         {/* Row 2 Right: 현재 순이익 — 전문적 다크. 예비비 이체분이 있으면 운영 가용 자금 보조 표시 */}
@@ -1976,17 +1973,6 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                   예비비 −{data.reserveAccrualFromThisMonth.toLocaleString()}원 이체 · 운영 가용 <span style={{ color: '#5eead4', fontWeight: 600 }}>{data.operatingCashAvailable.toLocaleString()}원</span>
                 </p>
               )}
-              {/* 예상 순이익 — 입주자 모두 납부 + 미발생 고정지출 모두 처리 가정 */}
-              <p style={{ fontSize: '0.625rem', color: 'rgba(180,210,240,0.55)', marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(180,210,240,0.15)' }}>
-                예상 <span className="mono tnum" style={{ fontWeight: 600, color: data.projectedNetProfit >= 0 ? '#4ade80' : '#f87171' }}>
-                  {data.projectedNetProfit >= 0 ? '+' : ''}{data.projectedNetProfit.toLocaleString()}
-                </span>원
-                {data.projectedRecurringExpense > 0 && (
-                  <span style={{ color: 'rgba(180,210,240,0.4)', marginLeft: 4 }}>
-                    (고정지출 −{data.projectedRecurringExpense.toLocaleString()} 반영)
-                  </span>
-                )}
-              </p>
             </div>
           )
         })()}
@@ -2379,16 +2365,34 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                             {fmtKorMoney(data.totalExpense)}
                           </span>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span style={{ fontSize: '0.6875rem', color: 'var(--warm-muted)' }}>
-                            {data.totalExpense <= data.expectedExpense ? '절감 예상' : '초과'}
-                          </span>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: data.totalExpense <= data.expectedExpense ? 'var(--warm-mid)' : 'var(--coral)' }}>
-                            {data.expectedExpense > 0
-                              ? `${data.totalExpense <= data.expectedExpense ? '-' : '+'}${fmtKorMoney(Math.abs(data.expectedExpense - data.totalExpense))}`
-                              : '—'}
-                          </span>
-                        </div>
+                        {data.projectedRecurringExpense > 0 && (
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'rgba(180,180,180,0.5)' }} />
+                              <span style={{ fontSize: '0.6875rem', color: 'var(--warm-muted)' }}>예정 고정지출</span>
+                            </div>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--warm-muted)' }}>
+                              +{fmtKorMoney(data.projectedRecurringExpense)}
+                            </span>
+                          </div>
+                        )}
+                        {/* 지난달 대비 — 같은 베이스(예상 지출 전체) 비교 */}
+                        {(() => {
+                          const curIdx = data.trend.findIndex(t => t.month === targetMonth)
+                          const lastMonthExpense = curIdx > 0 ? data.trend[curIdx - 1].expense : 0
+                          if (lastMonthExpense === 0) return null
+                          const diff = data.expectedExpense - lastMonthExpense
+                          const pct = Math.round((diff / lastMonthExpense) * 100)
+                          const up = diff > 0
+                          return (
+                            <div className="flex items-center justify-between">
+                              <span style={{ fontSize: '0.6875rem', color: 'var(--warm-muted)' }}>지난달 대비</span>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: up ? 'var(--coral)' : '#16a34a' }}>
+                                {up ? '+' : ''}{fmtKorMoney(diff)} ({up ? '+' : ''}{pct}%)
+                              </span>
+                            </div>
+                          )
+                        })()}
                       </div>
                     </div>
 
