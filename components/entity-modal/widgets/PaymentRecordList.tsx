@@ -100,8 +100,11 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange 
   return (
     <div className="space-y-1.5">
       <p className="text-xs font-semibold text-[var(--warm-mid)]">납부 내역 (편집·삭제)</p>
-      {records.map(p => {
+      {records.map((p, idx) => {
         const prevOwner = !p.isDeposit && (isPreAcq(p) || p.isPrevOwner)
+        // 화면에 표시되는 "회차"는 viewMonth 안에서 payDate 시간 순. records가 이미 payDate asc 정렬돼 옴.
+        // DB seqNo는 귀속월 별로 매겨져서 사용자가 보는 시간 순서와 안 맞을 수 있음 (사용자 피드백 2026-05-31).
+        const displaySeq = idx + 1
         if (editingId === p.id) {
           return (
             <div key={p.id} className="rounded-xl border border-[var(--coral)] bg-[var(--canvas)] px-3 py-2.5 space-y-2">
@@ -174,7 +177,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange 
             {/* 줄1: 회차·날짜·방법 + 금액(우측, 안 줄임) */}
             <div className="flex items-baseline justify-between gap-2">
               <p className={`text-xs ${p.isDeposit ? 'text-purple-600' : prevOwner ? 'text-amber-600' : 'text-[var(--warm-mid)]'}`}>
-                {p.seqNo}회차 · {fmtDate(p.payDate)} · {p.payMethod ?? '—'}
+                {displaySeq}회차 · {fmtDate(p.payDate)} · {p.payMethod ?? '—'}
               </p>
               <span className={`text-sm font-semibold whitespace-nowrap ${p.isDeposit ? 'text-purple-700' : prevOwner ? 'text-amber-700' : 'text-[var(--warm-dark)]'}`}>
                 {p.actualAmount.toLocaleString()}원

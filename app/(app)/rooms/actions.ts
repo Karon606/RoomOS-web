@@ -1153,9 +1153,66 @@ export async function getTenantQuickInfo(tenantId: string) {
 }
 
 // 단일 lease의 그 달 RoomRow (수납 상태) — 입주자 페이지에서 인라인 표시용
-export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: string) {
+export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: string): Promise<RoomRow | null> {
   const allRows = await getRoomPaymentStatus(targetMonth)
-  return allRows.find(r => r.leaseTermId === leaseTermId) ?? null
+  const found = allRows.find(r => r.leaseTermId === leaseTermId)
+  if (found) return found
+
+  // 활성 lease가 아니면 (CHECKED_OUT / CANCELLED) — 퇴실자의 과거 수납 내역 조회용 fallback.
+  // getRoomPaymentStatus는 활성 lease만 가져오므로 여기서 직접 lease 정보를 구성한다.
+  // 입력·할인·납부일 위젯이 의존하는 필드는 모두 채우되, 새로운 수납이 의미 없는 상태이므로
+  // expected/balance/firstUnpaidMonth 등은 0/false/null로 둔다.
+  const propertyId = await getPropertyId()
+  const lease = await prisma.leaseTerm.findFirst({
+    where: { id: leaseTermId, propertyId },
+    include: {
+      tenant: { include: { contacts: { where: { isPrimary: true }, take: 1 } } },
+      room: true,
+      discounts: true,
+    },
+  })
+  if (!lease) return null
+  if (!['CHECKED_OUT', 'CANCELLED'].includes(lease.status)) return null
+
+  return {
+    roomId: lease.roomId ?? '',
+    roomNo: lease.room?.roomNo ?? '',
+    type: lease.room?.type ?? null,
+    floor: lease.room?.floor ?? null,
+    windowType: lease.room?.windowType ?? null,
+    direction: lease.room?.direction ?? null,
+    isVacant: false,
+    tenantId: lease.tenant.id,
+    tenantName: lease.tenant.name,
+    contact: lease.tenant.contacts[0]?.contactValue ?? null,
+    status: lease.status,
+    expected: 0,
+    dueDay: lease.dueDay,
+    currentPaid: 0,
+    carryOver: 0,
+    totalPaid: 0,
+    balance: 0,
+    isPaid: true,
+    leaseTermId: lease.id,
+    depositAmount: lease.depositAmount,
+    cleaningFee: lease.cleaningFee ?? 0,
+    accumulatedUnpaid: 0,
+    isFutureMonth: false,
+    baseRent: lease.room?.baseRent ?? lease.rentAmount,
+    prevTenantName: null,
+    prevContact: null,
+    overrideDueDay: null,
+    overrideDueDayMonth: null,
+    overrideDueDayReason: null,
+    moveInDate: lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null,
+    prevPaidThisMonth: false,
+    firstUnpaidMonth: null,
+    isReservationConfirmed: false,
+    latePaidAt: null,
+    nextDueDate: null,
+    nextDueAmount: 0,
+    expectedMoveOut: lease.moveOutDate ? new Date(lease.moveOutDate).toISOString().slice(0, 10) : null,
+  }
 }
 
 export async function getRoomQuickInfo(roomId: string) {

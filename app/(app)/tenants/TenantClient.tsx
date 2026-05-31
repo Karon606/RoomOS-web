@@ -305,6 +305,27 @@ export default function TenantClient({
   const searchParams = useSearchParams()
   const entityModal = useEntityModal()
 
+  // 퇴실자 클릭 시 Prism의 month를 퇴실월로 자동 세팅 (수납 내역이 그 월 안에 있어야 보임).
+  // 일반 입주자는 현재 month 유지.
+  const openTenantPrism = (tenant: Tenant) => {
+    const lease = tenant.leaseTerms[0]
+    if (lease && ['CHECKED_OUT', 'CANCELLED'].includes(lease.status) && lease.moveOutDate) {
+      const d = new Date(lease.moveOutDate)
+      const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (searchParams.get('month') !== month) {
+        const params = new URLSearchParams(searchParams.toString())
+        params.set('month', month)
+        router.replace(`?${params.toString()}`, { scroll: false })
+      }
+    }
+    entityModal.open({
+      kind: 'tenant',
+      tenantId: tenant.id,
+      leaseTermId: lease?.id ?? undefined,
+      roomId: lease?.room?.id ?? undefined,
+    })
+  }
+
   const initColVis = Object.fromEntries(
     COL_DEFS.map(c => [c.key, c.defaultOn])
   ) as Record<ColKey, boolean>
@@ -1181,7 +1202,7 @@ export default function TenantClient({
                 tipColor={tipTone ? statusTipColor(tipTone) : undefined}
                 tipBg={tipTone ? statusRowTint(tipTone) : undefined}
                 selected={selectMode && selectedIds.has(tenant.id)}
-                onClick={() => selectMode ? toggleSelectTenant(tenant.id) : entityModal.open({ kind: 'tenant', tenantId: tenant.id, leaseTermId: tenant.leaseTerms[0]?.id ?? undefined, roomId: tenant.leaseTerms[0]?.room?.id ?? undefined })}
+                onClick={() => selectMode ? toggleSelectTenant(tenant.id) : openTenantPrism(tenant)}
                 className="p-4"
               >
                 {/* 첫 줄: 호실(또는 희망 조건/미배정) + 이름 + 상태 */}
@@ -1340,7 +1361,7 @@ export default function TenantClient({
 
                 return (
                   <tr key={tenant.id}
-                    onClick={() => selectMode ? toggleSelectTenant(tenant.id) : entityModal.open({ kind: 'tenant', tenantId: tenant.id, leaseTermId: tenant.leaseTerms[0]?.id ?? undefined, roomId: tenant.leaseTerms[0]?.room?.id ?? undefined })}
+                    onClick={() => selectMode ? toggleSelectTenant(tenant.id) : openTenantPrism(tenant)}
                     className={`border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:opacity-80 transition-colors cursor-pointer ${selectMode && selectedIds.has(tenant.id) ? 'bg-[var(--coral)]/5 ring-inset ring-1 ring-[var(--coral)]/30' : ''}`}
                   >
                     {/* sticky — 호실 (클릭 시 호실 관리 페이지로) */}
