@@ -145,6 +145,44 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
     return l.dueDay
   }
 
+  // 납부일 임시조정(override)을 절대 날짜로 해석. 유예 적용 기준.
+  // overrideDueDay 가 'YYYY-MM-DD' 면 그대로, 'N'·'말' 이면 overrideDueDayMonth 의 그 날.
+  function overrideAbsDate(
+    l: { overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+  ): Date | null {
+    if (!l.overrideDueDay || !l.overrideDueDayMonth) return null
+    if (l.overrideDueDay.includes('-')) {
+      const [y, m, d] = l.overrideDueDay.split('-').map(Number)
+      return new Date(y, m - 1, d)
+    }
+    const [y, m] = l.overrideDueDayMonth.split('-').map(Number)
+    const day = l.overrideDueDay.includes('말') ? new Date(y, m, 0).getDate() : parseInt(l.overrideDueDay, 10)
+    if (isNaN(day) || day < 1) return null
+    return new Date(y, m - 1, day)
+  }
+
+  // 특정 미납 월의 경과일 — 납부일 유예 반영.
+  // override 가 이 월(또는 이후 월)에 걸려 있고, 그 유예 날짜가 이 월 원래 납부일보다 늦으면
+  // (= 미납 채무를 뒤로 미룬 경우) 유예 날짜 기준으로 경과일을 계산한다.
+  // 2026-06-02 사용자 보고: 5월 미납을 6/1로 유예했는데 19일 경과로 잡히던 문제.
+  function daysOverdueForMonth(
+    l: { dueDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+    monthStr: string,
+  ): number | null {
+    if (l.overrideDueDay && l.overrideDueDayMonth && l.overrideDueDayMonth >= monthStr) {
+      const abs = overrideAbsDate(l)
+      const orig = calcDaysOverdueForMonth(l.dueDay, monthStr)
+      if (abs) {
+        const { year: ty, month: tm, day: td } = kstYmd()
+        const today = new Date(ty, tm - 1, td)
+        const days = Math.round((today.getTime() - abs.getTime()) / 86400000)
+        // 유예는 '뒤로 미루기'만 — 유예 경과일이 원래보다 작을 때만 적용(채무를 더 급하게 만들지 않음).
+        if (orig == null || days <= orig) return days
+      }
+    }
+    return calcDaysOverdueForMonth(effectiveDueDayForMonth(l, monthStr), monthStr)
+  }
+
   // 특정 월의 dueDay 기준 today와의 일수 차이 (KST 기준)
   function calcDaysOverdueForMonth(dueDay: string | null, monthStr: string): number | null {
     if (!dueDay) return null
@@ -255,8 +293,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
       received -= allocThis
       const monthUnpaid = monthBill - allocThis
       if (monthUnpaid <= 0) continue
-      const dueDayStr = effectiveDueDayForMonth(l, mon)
-      const days = dueDayStr ? calcDaysOverdueForMonth(dueDayStr, mon) : null
+      const days = daysOverdueForMonth(l, mon)
       // days >= 0 (도래) 또는 알 수 없음 → 미수(미납), days < 0 (미도래) → 납부 예정
       if (days == null || days >= 0) leaseOverdue += monthUnpaid
     }
@@ -269,10 +306,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
     .map(l => {
       const overduePortion = overdueByLease[l.id] ?? 0
       const firstUnpaid = firstUnpaidByLease[l.id] ?? null
-      const dueDayForFirst = firstUnpaid ? effectiveDueDayForMonth(l, firstUnpaid) : null
-      const daysOverdue = firstUnpaid && dueDayForFirst
-        ? calcDaysOverdueForMonth(dueDayForFirst, firstUnpaid)
-        : null
+      const daysOverdue = firstUnpaid ? daysOverdueForMonth(l, firstUnpaid) : null
       const monthsOverdue = l.rentAmount > 0 ? Math.ceil((unpaidMap[l.id] ?? 0) / l.rentAmount) : 0
       return {
         roomNo: l.room?.roomNo ?? '?',

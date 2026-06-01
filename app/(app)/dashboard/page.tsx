@@ -577,6 +577,40 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     return Math.round((todayCopy.getTime() - dueDate.getTime()) / 86400000)
   }
 
+  // 납부일 임시조정(override)을 절대 날짜로 해석 (unpaid.ts 와 동기화 — 한쪽 수정 시 양쪽).
+  function overrideAbsDate(
+    l: { overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+  ): Date | null {
+    if (!l.overrideDueDay || !l.overrideDueDayMonth) return null
+    if (l.overrideDueDay.includes('-')) {
+      const [yy, mm, dd] = l.overrideDueDay.split('-').map(Number)
+      return new Date(yy, mm - 1, dd)
+    }
+    const [yy, mm] = l.overrideDueDayMonth.split('-').map(Number)
+    const day = l.overrideDueDay.includes('말') ? new Date(yy, mm, 0).getDate() : parseInt(l.overrideDueDay, 10)
+    if (isNaN(day) || day < 1) return null
+    return new Date(yy, mm - 1, day)
+  }
+
+  // 특정 미납 월의 경과일 — 납부일 유예 반영 (unpaid.ts daysOverdueForMonth 와 동일 규칙).
+  // override 가 이 월(또는 이후)에 걸려 있고 유예 날짜가 원래 납부일보다 늦으면 유예 날짜 기준.
+  function daysOverdueForMonth(
+    l: { dueDay: string | null; overrideDueDay?: string | null; overrideDueDayMonth?: string | null },
+    monthStr: string,
+  ): number | null {
+    if (l.overrideDueDay && l.overrideDueDayMonth && l.overrideDueDayMonth >= monthStr) {
+      const abs = overrideAbsDate(l)
+      const orig = calcDaysOverdueForMonth(l.dueDay, monthStr)
+      if (abs) {
+        const { year: ty, month: tm, day: td } = kstYmd()
+        const today = new Date(ty, tm - 1, td)
+        const days = Math.round((today.getTime() - abs.getTime()) / 86400000)
+        if (orig == null || days <= orig) return days
+      }
+    }
+    return calcDaysOverdueForMonth(effectiveDueDayForMonth(l, monthStr), monthStr)
+  }
+
   const paymentByLease = payments.reduce((acc, p) => {
     acc[p.leaseTermId] = (acc[p.leaseTermId] ?? 0) + p.actualAmount
     return acc
@@ -894,8 +928,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       received -= allocThis
       const monthUnpaid = monthBill - allocThis
       if (monthUnpaid <= 0) continue
-      const dueDayStr = effectiveDueDayForMonth(l, mon)
-      const days = dueDayStr ? calcDaysOverdueForMonth(dueDayStr, mon) : null
+      const days = daysOverdueForMonth(l, mon)
       // days >= 0 (도래) 또는 알 수 없음 → 미수, days < 0 (미도래) → 납부 예정
       if (days == null || days >= 0) leaseOverdue += monthUnpaid
       else leaseUpcoming += monthUnpaid
@@ -928,10 +961,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       const unpaid = unpaidMap[l.id]!
       const monthsOverdue = l.rentAmount > 0 ? Math.ceil(unpaid / l.rentAmount) : 0
       const firstUnpaid = firstUnpaidByLease[l.id] ?? null
-      const dueDayForFirst = firstUnpaid ? effectiveDueDayForMonth(l, firstUnpaid) : null
-      const daysOverdue = firstUnpaid && dueDayForFirst
-        ? calcDaysOverdueForMonth(dueDayForFirst, firstUnpaid)
-        : null
+      const daysOverdue = firstUnpaid ? daysOverdueForMonth(l, firstUnpaid) : null
       const overduePortion = overdueByLease[l.id] ?? 0
       const upcomingPortion = upcomingByLease[l.id] ?? 0
       return {

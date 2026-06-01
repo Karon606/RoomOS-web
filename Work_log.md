@@ -5,6 +5,14 @@
 
 ## 완료된 것
 
+### 2026-06-02 세션 7부 — 납부일 임시조정으로 미납 유예 시 경과일 계산 (배포)
+사용자 보고: 최명윤 517호 "미납 19일 경과"로 뜨는데, 5월 미납분을 6/1로 납부일 임시변경(유예)했으니 19일 경과가 아님.
+- **원인**: 임시조정 위젯이 override를 '보고 있던 월(targetMonth)'에 붙임([DueDayTempAdjustWidget.tsx:103](components/entity-modal/widgets/DueDayTempAdjustWidget.tsx#L103) `setDueDayOverride(leaseTermId, targetMonth, ...)`). 오늘이 6월이라 override가 **2026-06**(day 3)에 붙음. 그런데 미납 채무는 **2026-05** → `overrideDueDayMonth===monthStr` 정확 매칭만 보던 경과일 계산이 5월엔 원래 납부일(14일) 적용 → 5/14 기준 19일.
+- **수정(유예날짜 기준 — 사용자 선택)**: override 가 미납 월과 같거나 **이후** 월에 걸려 있고 그 유예 날짜가 원래 납부일보다 **늦으면**(=채무를 뒤로 미룬 것) 유예 절대날짜 기준으로 경과일 계산. `overrideAbsDate`(override를 절대 Date로 해석) + `daysOverdueForMonth` 헬퍼.
+  · [unpaid.ts](app/(app)/dashboard/unpaid.ts)(🔔알림·푸시 — computeUnpaidStatus) · [dashboard/page.tsx](app/(app)/dashboard/page.tsx)(대시보드 미수 위젯) · [rooms/actions.ts](app/(app)/rooms/actions.ts) getRoomPaymentStatus effDueDateForMonth(수납 페이지) **3곳 동기화**. 정확-월 override 는 무조건 적용(기존 동작 보존), 교차-월은 '뒤로 미루기'만(`>= origDate` 가드).
+- **검증**: computeUnpaidStatus 실데이터 — 최명윤이 미납(긴급) 목록에서 빠지고(6/3 유예 < 오늘 6/2 → 미도래=납부예정), 타 미납자(이재인 2일 등) 영향 없음. tsc·build 통과. SQL 불필요.
+- ⚠️ 수납 페이지는 쿠키/인증 게이트라 스크립트 런타임검증 불가 → 사용자 화면 최종 확인 권장(unpaid.ts와 동일 규칙).
+
 ### 2026-06-02 세션 6부 — 재고 보정 후속(사용자 피드백 4건)
 1. **수세미 사용량 0 안 됨 → effTime 도입(overview.ts)**: 수령 즉시 자동 생성되는 점검(sourceExpenseId)이 그 구매를 이미 반영하는데, 구매를 점검 date(자정) 기준 귀속하면 같은 날 자동점검이 baseline 인데도 구매가 다음 구간에 또 입고로 더해져 사용량 부풀림(수세미: 사서 분산만 했는데 10 소모). 입고/소모 구간 경계를 date→**effTime**(입력 당일이면 createdAt, 백필이면 date — 타임라인과 동일 규칙)으로 변경. 검증: 수세미 5월 10→**0**, currentStock 10 유지. 라면 6월 26→66(6/1 입고 +40 이 자정경계로 누락됐다가 정상 계산된 것 — 개선).
 2. **벌크 모달 배경 투명 → 통일(#1)**: `--surface` 미정의(투명)였음 → 다른 모달과 동일하게 `bg-[var(--cream)] border shadow-lift`.

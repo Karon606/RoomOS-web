@@ -251,21 +251,32 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       (acqMonthDueBeforeCutoff && acqMonthCurrentOpRecords === 0)
 
     // 그 월의 effectiveDueDay를 실제 Date로 환산 (override · 말일 · 'YYYY-MM-DD' 모두 처리)
-    const effDueDateForMonth = (monthStr: string): Date | null => {
-      const [my, mn] = monthStr.split('-').map(Number)
-      const lastDayOfMon = new Date(my, mn, 0).getDate()
-      let raw: string | null = null
-      if (l.overrideDueDay && l.overrideDueDayMonth === monthStr) raw = l.overrideDueDay
-      else raw = lease.dueDay
+    const resolveDueRaw = (raw: string | null, ry: number, rm: number): Date | null => {
       if (!raw) return null
       if (raw.includes('-')) {
         const [fy, fm, fd] = raw.split('-').map(Number)
         return new Date(fy, fm - 1, fd, 23, 59, 59, 999)
       }
+      const last = new Date(ry, rm, 0).getDate()
       let day: number
-      if (raw.includes('말')) day = lastDayOfMon
-      else { day = parseInt(raw, 10); if (isNaN(day)) return null; day = Math.min(day, lastDayOfMon) }
-      return new Date(my, mn - 1, day, 23, 59, 59, 999)
+      if (raw.includes('말')) day = last
+      else { day = parseInt(raw, 10); if (isNaN(day)) return null; day = Math.min(day, last) }
+      return new Date(ry, rm - 1, day, 23, 59, 59, 999)
+    }
+    const effDueDateForMonth = (monthStr: string): Date | null => {
+      const [my, mn] = monthStr.split('-').map(Number)
+      // 그 월에 직접 지정된 override — 무조건 적용 (기존 동작)
+      if (l.overrideDueDay && l.overrideDueDayMonth === monthStr) return resolveDueRaw(l.overrideDueDay, my, mn)
+      // 납부일 유예: override 가 이 월보다 이후 월에 걸려 있고 그 유예 날짜가 원래 납부일보다 늦으면
+      // (= 이 미납 채무를 뒤로 미룬 것) 유예 날짜를 적용 (2026-06-02 사용자 보고: 5월 미납 6/1 유예).
+      // unpaid.ts / dashboard page.tsx 의 daysOverdueForMonth 와 동일 규칙 — 한쪽 수정 시 동기화.
+      if (l.overrideDueDay && l.overrideDueDayMonth && l.overrideDueDayMonth > monthStr) {
+        const [oy, om] = l.overrideDueDayMonth.split('-').map(Number)
+        const overrideDate = resolveDueRaw(l.overrideDueDay, oy, om)
+        const origDate = resolveDueRaw(lease.dueDay, my, mn)
+        if (overrideDate && (!origDate || overrideDate.getTime() >= origDate.getTime())) return overrideDate
+      }
+      return resolveDueRaw(lease.dueDay, my, mn)
     }
     const todayKstEnd = new Date(kst.year, kst.month - 1, kst.day, 23, 59, 59, 999)
 
