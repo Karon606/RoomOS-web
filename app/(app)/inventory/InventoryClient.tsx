@@ -394,30 +394,42 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
       {/* 월별 사용량 — 최근 6개월 막대 (사용량 0인 달은 빈 막대로 표시) */}
       {row.monthlyConsumption && row.monthlyConsumption.some(m => m.qty > 0) && (
         <div className="pt-1.5 border-t border-[var(--warm-border)]/60">
-          <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center justify-between mb-1.5">
             <span className="text-[0.625rem] text-[var(--warm-muted)]">월별 사용량 (최근 6개월)</span>
-            <span className="text-[0.625rem] text-[var(--warm-mid)] font-medium">
+            <span className="text-[0.5625rem] text-[var(--warm-muted)]">
               합계 {fmtQty(row.monthlyConsumption.reduce((s, m) => s + m.qty, 0), stockUnit)}
             </span>
           </div>
           {(() => {
             const max = Math.max(...row.monthlyConsumption.map(m => m.qty), 1)
+            // 사용자 피드백 2026-06-01: '월별' 인데 합계만 보이면 의미 없음 → 각 월 숫자 노출.
+            const fmtBarQty = (q: number): string => {
+              if (q === 0) return ''
+              // 1000 이상이면 'k' 축약 (예: 6270 → 6.3k)
+              if (q >= 1000) return (q / 1000).toFixed(q >= 10000 ? 0 : 1) + 'k'
+              if (q >= 100) return Math.round(q).toString()
+              return q % 1 === 0 ? q.toString() : q.toFixed(1)
+            }
             return (
-              <div className="flex items-end gap-1 h-8">
+              <div className="flex items-end gap-1">
                 {row.monthlyConsumption.map(m => {
-                  // 0 인 달도 시각적으로 자리를 차지하도록 최소 높이 3px (12%) placeholder.
-                  // 사용자 피드백 2026-05-31: 0kg 막대가 안 보여서 그 달 자체가 빠진 줄 오해.
+                  // 0 인 달도 시각적으로 자리를 차지하도록 최소 높이 12% placeholder.
                   const h = m.qty > 0 ? Math.max(12, Math.round((m.qty / max) * 100)) : 12
                   const monthNum = Number(m.month.slice(5))
                   return (
                     <div key={m.month} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
+                      {/* 막대 위 숫자 — 0 이면 '·' 로 시각적 placeholder */}
+                      <span className="text-[0.5625rem] font-medium leading-none tabular-nums"
+                        style={{ color: m.qty > 0 ? 'var(--coral)' : 'var(--warm-muted)' }}>
+                        {m.qty > 0 ? fmtBarQty(m.qty) : '·'}
+                      </span>
                       <div className="w-full flex items-end" style={{ height: '24px' }}>
                         <div className="w-full rounded-sm transition-all"
                           title={`${monthNum}월: ${m.qty > 0 ? fmtQty(m.qty, stockUnit) : '기록 없음'}`}
                           style={{
                             height: `${h}%`,
                             background: m.qty > 0 ? 'var(--coral)' : 'var(--warm-border)',
-                            opacity: m.qty > 0 ? 0.75 : 0.5,
+                            opacity: m.qty > 0 ? 0.75 : 0.4,
                           }} />
                       </div>
                       <span className="text-[0.5rem] text-[var(--warm-muted)] leading-none">{monthNum}</span>
