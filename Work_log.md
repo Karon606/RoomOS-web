@@ -5,6 +5,13 @@
 
 ## 완료된 것
 
+### 2026-06-02 세션 6부 — 재고 보정 후속(사용자 피드백 4건)
+1. **수세미 사용량 0 안 됨 → effTime 도입(overview.ts)**: 수령 즉시 자동 생성되는 점검(sourceExpenseId)이 그 구매를 이미 반영하는데, 구매를 점검 date(자정) 기준 귀속하면 같은 날 자동점검이 baseline 인데도 구매가 다음 구간에 또 입고로 더해져 사용량 부풀림(수세미: 사서 분산만 했는데 10 소모). 입고/소모 구간 경계를 date→**effTime**(입력 당일이면 createdAt, 백필이면 date — 타임라인과 동일 규칙)으로 변경. 검증: 수세미 5월 10→**0**, currentStock 10 유지. 라면 6월 26→66(6/1 입고 +40 이 자정경계로 누락됐다가 정상 계산된 것 — 개선).
+2. **벌크 모달 배경 투명 → 통일(#1)**: `--surface` 미정의(투명)였음 → 다른 모달과 동일하게 `bg-[var(--cream)] border shadow-lift`.
+3. **문구(#2)**: '세면'(세면대 연상) 제거 → "보충이 끝나기 전(입주자가 아직 쓰는 중)에 점검하면 …".
+4. **아이템별 보정(#3)**: 한번에 전체보정은 임시저장 안 되고 미입력 픽스 우려 → **CheckForm(품목별 점검 폼)에 '전체 보정으로 기록' 체크 토글** 추가(createStockCheck isReconcile 파라미터). 품목별 점검은 드래프트 지원 → 임시저장 가능. 벌크 모달도 유지(차이 있는 품목만 저장 = 미입력 픽스 안 됨).
+- tsc·build 통과.
+
 ### 2026-06-01 세션 5부 — 전체 재고 보정(총점검) 기능 구현 [SQL 적용됨, 코드 배포 대기]
 [[project_inventory_full_reconcile]] 설계대로 v1 구현. 계산/입력 오차로 실제 수량과 차이 날 때 전 품목을 한 번에 보정.
 - **스키마**: `StockCheck.isReconcile Boolean @default(false)` + `migrate_stock_check_reconcile.sql`(추가전용). **프로덕션 적용 완료**(idempotent ALTER), prisma generate 완료.

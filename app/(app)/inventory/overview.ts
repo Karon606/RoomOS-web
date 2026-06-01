@@ -104,6 +104,16 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     )
   }
 
+  // 점검의 '실제 발생 시각' — 입고/구매 구간 귀속 기준. 타임라인 정렬과 동일 규칙.
+  //  · 입력 당일(KST) 점검이면 createdAt(실제 점검 시각), 과거 보정 입력(백필)이면 date.
+  // 이유: 수령 즉시 자동 생성되는 점검(sourceExpenseId)은 그 구매를 이미 잔량에 반영한다.
+  //  구매를 점검 date(자정) 기준으로 귀속하면, 같은 날 자동점검이 baseline 인데도 구매가
+  //  '그 다음 구간'에 입고로 또 더해져 사용량이 부풀려졌음 (수세미: 사서 분산만 했는데 10 소모로 둔갑).
+  //  effTime 기준으로 비교하면 수령 시각과 같은(또는 이전) 점검 baseline 에 흡수되어 중복 안 됨.
+  const kstDay = (d: Date) => new Date(d.getTime() + 9 * 3600000).toISOString().slice(0, 10)
+  const effTime = (c: { date: Date; createdAt: Date }): Date =>
+    kstDay(c.createdAt) === kstDay(c.date) ? c.createdAt : c.date
+
   // 월별 사용량 계산용 — 최근 7개월(현재 포함) 의 모든 점검 기록 일괄 fetch.
   // 연속 두 점검 사이의 소모량을 늦은 쪽 월에 귀속 (단순화).
   const monthsAgo7 = new Date()
@@ -167,8 +177,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       //   사용자가 과거 점검을 나중에 보정 입력하면 createdAt 이 며칠~몇 주 뒤로 밀려,
       //   createdAt 기준 구간이 인접 구간과 겹쳐 같은 구매를 두 번(또는 엉뚱한 달에) 세는
       //   버그가 있었음 (2026-06-01 사용자 보고). additions 와 동일하게 date 기준으로 통일.
-      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, prev.date, last.date, useSpec)
-      const additions = await sumAdditions(it.id, prev.date, last.date)
+      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(last), useSpec)
+      const additions = await sumAdditions(it.id, effTime(prev), effTime(last))
       lastPeriodConsumption = (prev.remainingQty + purchases + additions) - last.remainingQty
       lastPeriodDays = Math.max(1, Math.round((last.date.getTime() - prev.date.getTime()) / 86400000))
     } else if (last && !prev) {
@@ -269,9 +279,10 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       // 전체 재고 보정 점검은 '실측 리셋' — 직전 구간의 차이(분실·오차)를 소모량으로 잡지 않는다.
       // curr 는 다음 구간의 기준선(prev)으로는 그대로 쓰임.
       if (curr.isReconcile) continue
-      // 입고 구간은 date 기준(createdAt 은 보정 입력 시 어긋나 인접 구간과 겹쳐 중복 계산됨).
-      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, prev.date, curr.date, useSpec)
-      const additions = await sumAdditions(it.id, prev.date, curr.date)
+      // 입고 구간은 effTime(실제 발생 시각) 기준 — 수령 즉시 생성된 자동점검이 baseline 일 때
+      // 그 구매가 다음 구간에 중복 입고로 더해지는 것을 방지(수세미 케이스).
+      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(curr), useSpec)
+      const additions = await sumAdditions(it.id, effTime(prev), effTime(curr))
       const consumed = (prev.remainingQty + purchases + additions) - curr.remainingQty
       const key = `${curr.date.getFullYear()}-${String(curr.date.getMonth() + 1).padStart(2, '0')}`
       if (key in monthlyMap) monthlyMap[key] += consumed

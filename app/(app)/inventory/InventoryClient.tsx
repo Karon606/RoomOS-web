@@ -1327,7 +1327,7 @@ function FullReconcileModal({ rows, onClose, onDone }: {
 
   return (
     <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={onClose}>
-      <div className="bg-[var(--surface)] w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] shadow-lift w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--warm-border)]">
           <div>
             <h2 className="text-base font-bold text-[var(--warm-dark)]">전체 재고 보정</h2>
@@ -1347,7 +1347,7 @@ function FullReconcileModal({ rows, onClose, onDone }: {
             <input type="checkbox" checked={restockDone} onChange={e => setRestockDone(e.target.checked)} className="mt-0.5 accent-[var(--coral)]" />
             <span className="text-[0.6875rem] text-[var(--warm-mid)] leading-snug">
               <strong className="text-[var(--warm-dark)]">창고 → 방 보충을 모두 마쳤습니다.</strong><br />
-              보충 전(입주자 사용 중)에 세면 사용분이 분실로 잡힐 수 있어, 보충 완료 후에만 실측을 권장합니다.
+              보충이 끝나기 전(입주자가 아직 쓰는 중)에 점검하면 사용분이 분실로 잡힐 수 있어, 보충 완료 후 점검을 권장합니다.
             </span>
           </label>
         </div>
@@ -1827,6 +1827,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
 
   const [qty, setQty]   = useState('')
   const [memo, setMemo] = useState('')
+  const [reconcileMode, setReconcileMode] = useState(false)
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
 
@@ -1976,6 +1977,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
       startTransition(async () => {
         const res = await createStockCheck({
           trackedItemId: item.id, date, remainingQty: n, memo: memo || undefined,
+          isReconcile: reconcileMode,
         })
         if (!res.ok) { setError(res.error); return }
         await deleteItemDrafts(item.id)
@@ -1996,6 +1998,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
         // 위치 일부만 입력해도 나머지 위치는 직전 점검에서 자동 보존
         // (2026-06-01 사용량 왜곡 버그 fix).
         carryOverFromLastCheck: true,
+        isReconcile: reconcileMode,
       })
       if (!res.ok) { setError(res.error); return }
       await deleteItemDrafts(item.id)
@@ -2157,6 +2160,13 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
       </div>
+      <label className={`flex items-start gap-2 cursor-pointer select-none rounded-lg border px-2.5 py-2 transition-colors ${reconcileMode ? 'bg-[var(--honey)]/10 border-[var(--honey)]/40' : 'bg-[var(--canvas)] border-[var(--warm-border)]'}`}>
+        <input type="checkbox" checked={reconcileMode} onChange={e => setReconcileMode(e.target.checked)} className="mt-0.5 accent-[var(--coral)]" />
+        <span className="text-[0.625rem] text-[var(--warm-mid)] leading-snug">
+          <strong className="text-[var(--warm-dark)]">전체 보정으로 기록</strong> — 실제 수량과 차이를 사용량으로 잡지 않습니다.<br />
+          계산 오차·분실 등으로 어긋난 재고를 실측값으로 다시 맞출 때 사용. (보충 완료 후 점검 권장)
+        </span>
+      </label>
       {draftSavedAt && (
         <div className="flex items-center justify-between gap-2 text-[0.625rem] text-[var(--coral)] bg-[var(--coral)]/5 rounded-lg px-2.5 py-1.5">
           <span>이어서 점검 중 · 임시저장 {fmtTime(new Date(draftSavedAt))}</span>

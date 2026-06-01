@@ -503,6 +503,8 @@ export async function createStockCheck(data: {
   // 직전 점검에서 자동 보존. 안 하면 입력 안 한 위치가 0 으로 처리되어 다음 점검과의
   // 차이가 큰 "소모"로 잘못 계산 (라면 187 / 쌀 159 / 주방세제 6330 등 사용량 왜곡).
   carryOverFromLastCheck?: boolean
+  // 이 점검을 '전체 보정'으로 표시 — 직전 구간의 차이를 사용량으로 잡지 않음(분실·오차 흡수).
+  isReconcile?: boolean
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -545,6 +547,7 @@ export async function createStockCheck(data: {
         date: new Date(data.date),
         remainingQty: total,
         memo: data.memo || null,
+        ...(data.isReconcile ? { isReconcile: true } : {}),
         ...(adjusted ? {
           locationBreakdown: {
             create: adjusted.map(lq => ({
