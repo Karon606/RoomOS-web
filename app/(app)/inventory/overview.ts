@@ -160,9 +160,12 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     let lastPeriodConsumption: number | null = null
     let lastPeriodDays: number | null = null
     if (last && prev) {
-      // 소모량: prevCheck 기록 후~lastCheck 기록 시점 사이에 승인된 구매만
-      // → 이 구간 밖에서 승인된 구매가 소모량 계산을 왜곡하지 않도록
-      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, prev.createdAt, last.createdAt, useSpec)
+      // 소모량: 두 점검 사이(점검 날짜 기준)에 입고된 구매만 가산.
+      // ⚠️ 입고 구간을 createdAt(입력 시각) 이 아닌 date(점검 실제 날짜) 로 잡는다.
+      //   사용자가 과거 점검을 나중에 보정 입력하면 createdAt 이 며칠~몇 주 뒤로 밀려,
+      //   createdAt 기준 구간이 인접 구간과 겹쳐 같은 구매를 두 번(또는 엉뚱한 달에) 세는
+      //   버그가 있었음 (2026-06-01 사용자 보고). additions 와 동일하게 date 기준으로 통일.
+      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, prev.date, last.date, useSpec)
       const additions = await sumAdditions(it.id, prev.date, last.date)
       lastPeriodConsumption = (prev.remainingQty + purchases + additions) - last.remainingQty
       lastPeriodDays = Math.max(1, Math.round((last.date.getTime() - prev.date.getTime()) / 86400000))
@@ -252,17 +255,24 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     }
     // 같은 날 dedup — 같은 날 두 점검 사이의 큰 잔량 jump 가 가짜 소모로 누적되던 문제 fix.
     const itemChecks = dedupSameDay(allChecksForUsage.filter(c => c.trackedItemId === it.id))
+    // ⚠️ 구간별 consumed 를 '음수면 건너뛰기' 하지 않고 부호 그대로 월별 합산(telescoping).
+    //   입고(구매 receivedAt / 무상입수)로 재고가 점프한 구간은 음수(−)가 되는데, 그 입고분이
+    //   타이밍 차로 인접 구간에 +로 더해짐. 음수 구간을 건너뛰면 입고분이 상쇄되지 않아
+    //   '입고 = 가짜 사용량' 으로 부풀려졌음 (예: 주방세제 5월 6270→9740, 라면 입고 160 이 165 소모로 둔갑).
+    //   부호 그대로 합산하면 같은 입고의 +/− 가 같은 달 안에서 상쇄되어 물리적 정답(시작잔량+입고−월말잔량)에 수렴.
+    //   부수효과: 백필된 잘못된 점검값도 인접 두 구간에서 +/− 로 상쇄되어 면역 (2026-06-01 사용자 보고).
     for (let i = 1; i < itemChecks.length; i++) {
       const prev = itemChecks[i - 1]
       const curr = itemChecks[i]
-      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, prev.createdAt, curr.createdAt, useSpec)
+      // 입고 구간은 date 기준(createdAt 은 보정 입력 시 어긋나 인접 구간과 겹쳐 중복 계산됨).
+      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, prev.date, curr.date, useSpec)
       const additions = await sumAdditions(it.id, prev.date, curr.date)
       const consumed = (prev.remainingQty + purchases + additions) - curr.remainingQty
-      if (consumed <= 0) continue
       const key = `${curr.date.getFullYear()}-${String(curr.date.getMonth() + 1).padStart(2, '0')}`
       if (key in monthlyMap) monthlyMap[key] += consumed
     }
-    const monthlyConsumption = Object.entries(monthlyMap).map(([month, qty]) => ({ month, qty }))
+    // 월 단위 음수(그 달 입고가 사용량보다 많아 순증한 경우)는 사용량 0 으로 클램프 — '사용량' 은 음수일 수 없음.
+    const monthlyConsumption = Object.entries(monthlyMap).map(([month, qty]) => ({ month, qty: qty > 0 ? qty : 0 }))
 
     const locations: StorageLocationItem[] = allItemLocations
       .filter(l => l.trackedItemId === it.id)
