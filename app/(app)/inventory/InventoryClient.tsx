@@ -27,6 +27,7 @@ import {
   createStockAddition,
   updateStockCheck,
   saveFullReconcile,
+  getStockAsOf,
   deleteStockCheck,
   deleteStockAddition,
   updateStockAddition,
@@ -567,7 +568,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
   const [data, setData] = useState<Awaited<ReturnType<typeof getInventoryDetail>>>(null)
   const [priceHistory, setPriceHistory] = useState<PricePoint[]>([])
   const [monthlyInflow, setMonthlyInflow] = useState<MonthlyInflowRow[]>([])
-  const [mode, setMode] = useState<'view' | 'check' | 'addition' | 'settings'>('view')
+  const [mode, setMode] = useState<'view' | 'check' | 'addition' | 'settings' | 'reconcile'>('view')
   const [tab, setTab]   = useState<'timeline' | 'monthly' | 'price'>('timeline')
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
@@ -636,6 +637,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
           <Btn variant="secondary" size="sm" onClick={handleArchive} disabled={pending}>숨김</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setMode('settings')}>설정</Btn>
           <div className="flex-1" />
+          <Btn variant="secondary" size="sm" onClick={() => setMode('reconcile')}>보정 끼워넣기</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setMode('addition')}>+ 무상 입수</Btn>
           <Btn variant="primary" size="sm" onClick={() => setMode('check')}>재고 점검</Btn>
         </div>
@@ -645,6 +647,8 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
         <Loading />
       ) : mode === 'check' ? (
         <CheckForm item={data.item} lastCheckBreakdown={row.lastCheckLocationBreakdown} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} onDraftChange={onDraftChange} />
+      ) : mode === 'reconcile' ? (
+        <TimelineReconcileForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : mode === 'addition' ? (
         <AdditionForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : mode === 'settings' ? (
@@ -1281,6 +1285,134 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
 // ── 재고 점검 인라인 편집 폼
 // ── 전체 재고 보정(총점검) — 보충 완료 후, 전 품목 실측을 한 번에 기준선으로 박는다.
 //    차이는 사용량으로 잡지 않음(isReconcile). 위치별 예상치 프리필 → 사용자가 실제 센 값만 고침.
+// ── 타임라인 보정 끼워넣기 (v2) — 품목 상세에서 특정 과거/현재 시점에 보정 점검 삽입.
+//    날짜를 고르면 그 시점 '예상 재고'(직전 점검+그 사이 입고)를 위치별로 보여주고, 실측 입력 → 차이 표시.
+//    isReconcile 점검으로 저장(saveFullReconcile 단일 품목) → 그 구간 차이는 사용량에 안 잡힘.
+function TimelineReconcileForm({ item, onCancel, onDone }: {
+  item: { id: string; label: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
+  onCancel: () => void
+  onDone: () => void
+}) {
+  const NO_LOC = '__total__'
+  const r2 = (x: number) => Math.round(x * 100) / 100
+  const todayKst = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)
+  const hasLoc = item.locations.length > 0
+  const unit = item.trackUnit === 'qty' ? item.qtyUnit : (item.specUnit ?? item.qtyUnit)
+  const [date, setDate] = useState(todayKst)
+  const [memo, setMemo] = useState('')
+  const [expected, setExpected] = useState<{ total: number; byLoc: Record<string, number> } | null>(null)
+  const [actuals, setActuals] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(true)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    getStockAsOf(item.id, date).then(res => {
+      if (!active || !res) { if (active) setLoading(false); return }
+      if (hasLoc) {
+        const byLoc: Record<string, number> = {}
+        for (const l of res.byLoc) byLoc[l.locationId] = l.qty
+        setExpected({ total: res.total, byLoc })
+        setActuals(Object.fromEntries(item.locations.map(l => [l.id, String(byLoc[l.id] ?? 0)])))
+      } else {
+        setExpected({ total: res.total, byLoc: {} })
+        setActuals({ [NO_LOC]: String(res.total) })
+      }
+      setLoading(false)
+    }).catch(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [date, item.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const actualTotal = hasLoc
+    ? item.locations.reduce((s, l) => s + Number(actuals[l.id] || '0'), 0)
+    : Number(actuals[NO_LOC] || '0')
+  const expectedTotal = expected?.total ?? 0
+  const diff = r2(actualTotal - expectedTotal)
+  const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+
+  const handleSave = async () => {
+    setPending(true); setError('')
+    const items = hasLoc
+      ? [{ trackedItemId: item.id, locationQtys: item.locations.map(l => ({ storageLocationId: l.id, qty: Number(actuals[l.id] || '0') })), memo: memo || undefined }]
+      : [{ trackedItemId: item.id, remainingQty: Number(actuals[NO_LOC] || '0'), memo: memo || undefined }]
+    const res = await saveFullReconcile({ date, items })
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    onDone()
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-xs font-medium text-[var(--warm-mid)]">보정 끼워넣기</p>
+        <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">고른 날짜 시점의 실제 수량으로 기준선을 보정합니다. 차이는 사용량으로 잡히지 않습니다.</p>
+      </div>
+      {error && <p className="text-xs text-red-500">{error}</p>}
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">보정 시점(날짜)</label>
+        <DatePicker value={date} onChange={setDate} />
+      </div>
+
+      {loading ? (
+        <p className="text-xs text-[var(--warm-muted)] py-3 text-center">그 시점 예상 재고 불러오는 중…</p>
+      ) : (
+        <>
+          <div className="flex items-center justify-between text-[0.6875rem]">
+            <span className="text-[var(--warm-muted)]">이 시점 예상 재고</span>
+            <span className="text-[var(--warm-mid)]">{r2(expectedTotal)}{unit ?? ''}</span>
+          </div>
+          {hasLoc ? (
+            <div className="grid grid-cols-2 gap-1.5">
+              {item.locations.map(l => (
+                <div key={l.id}>
+                  <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5 truncate">
+                    {l.name}{l.isHub ? ' (창고)' : ''} <span className="text-[var(--warm-border)]">· 예상 {r2(expected?.byLoc[l.id] ?? 0)}</span>
+                  </p>
+                  <input type="text" inputMode="decimal" value={actuals[l.id] ?? ''}
+                    onChange={e => setActuals(p => ({ ...p, [l.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                    className={`w-full ${inputCls}`} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[var(--warm-mid)]">실측 잔량</span>
+              <input type="text" inputMode="decimal" value={actuals[NO_LOC] ?? ''}
+                onChange={e => setActuals(p => ({ ...p, [NO_LOC]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                className={`flex-1 ${inputCls}`} />
+              <span className="text-xs text-[var(--warm-muted)]">{unit ?? ''}</span>
+            </div>
+          )}
+          <div className="flex justify-end">
+            {Math.abs(diff) > 0.001 ? (
+              <span className="text-[0.6875rem] font-medium" style={{ color: diff < 0 ? 'var(--coral)' : 'var(--honey)' }}>
+                실측 {r2(actualTotal)}{unit ?? ''} · 차이 {diff > 0 ? '+' : ''}{diff}{unit ?? ''}
+              </span>
+            ) : (
+              <span className="text-[0.6875rem] text-[var(--warm-muted)]">예상과 동일 (차이 없음)</span>
+            )}
+          </div>
+        </>
+      )}
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--warm-mid)]">사유 (선택)</label>
+        <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="예: 분실·파손·계산 오차"
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
+      </div>
+
+      <div className="pt-1 flex gap-2">
+        <Btn type="button" variant="secondary" onClick={onCancel}>취소</Btn>
+        <Btn type="button" variant="primary" onClick={handleSave} disabled={pending || loading} fullWidth>
+          {pending ? '저장 중...' : '이 시점에 보정 저장'}
+        </Btn>
+      </div>
+    </div>
+  )
+}
+
 // ── 재고관리 카테고리 설정 — 어떤 지출 카테고리를 재고로 추적할지 + 표시명(별칭) 편집·순서.
 function InventoryCategorySettingsModal({ categories, allExpenseCategories, onClose, onDone }: {
   categories: InventoryCategory[]

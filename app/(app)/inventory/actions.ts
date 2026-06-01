@@ -1572,3 +1572,61 @@ export async function setInventoryCategories(
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
+
+// ── 타임라인 보정 끼워넣기용 — 특정 날짜 시점의 예상 재고(위치별) 계산.
+//    직전(<=date) 점검 잔량 + 그 사이 입고(구매 receivedAt·무상)를 합쳐 추정. 허브에 증감 귀속.
+export async function getStockAsOf(trackedItemId: string, dateStr: string): Promise<{
+  total: number
+  byLoc: { locationId: string; locationName: string; isHub: boolean; qty: number }[]
+} | null> {
+  const propertyId = await getPropertyId()
+  const it = await prisma.trackedItem.findFirst({
+    where: { id: trackedItemId, propertyId },
+    select: { id: true, category: true, label: true, qtyUnit: true, specUnit: true, trackUnit: true },
+  })
+  if (!it) return null
+  const locs = await prisma.trackedItemLocation.findMany({
+    where: { trackedItemId },
+    include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true } } },
+    orderBy: { storageLocation: { sortOrder: 'asc' } },
+  })
+  const asOf = new Date(dateStr); asOf.setHours(23, 59, 59, 999)
+  const useSpec = it.trackUnit !== 'qty' && !!(it.specUnit && it.specUnit.trim())
+
+  const baseline = await prisma.stockCheck.findFirst({
+    where: { trackedItemId, date: { lte: asOf } },
+    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+    include: { locationBreakdown: { select: { storageLocationId: true, remainingQty: true } } },
+  })
+  const baseDate = baseline?.date ?? null
+  const baseTotal = baseline?.remainingQty ?? 0
+
+  const purchases = await prisma.expense.findMany({
+    where: {
+      propertyId, category: it.category, itemLabel: it.label,
+      ...(it.qtyUnit ? { qtyUnit: it.qtyUnit } : {}),
+      receivedAt: { not: null, ...(baseDate ? { gt: baseDate } : {}), lte: asOf },
+      excludeFromInventory: false,
+    },
+    select: { qtyValue: true, specValue: true },
+  })
+  const purchaseTotal = purchases.reduce((s, p) => {
+    const q = p.qtyValue ?? 0
+    return s + (useSpec && p.specValue && p.specValue > 0 ? q * p.specValue : q)
+  }, 0)
+  const addAgg = await prisma.stockAddition.aggregate({
+    where: { trackedItemId, date: { ...(baseDate ? { gt: baseDate } : {}), lte: asOf } },
+    _sum: { addedQty: true },
+  })
+  const expectedTotal = baseTotal + purchaseTotal + (addAgg._sum.addedQty ?? 0)
+
+  const baseByLoc = new Map((baseline?.locationBreakdown ?? []).map(lb => [lb.storageLocationId, lb.remainingQty]))
+  const hub = locs.find(l => l.storageLocation.isHub) ?? locs[0]
+  const sinceDelta = expectedTotal - baseTotal
+  const byLoc = locs.map(l => {
+    let qty = baseByLoc.get(l.storageLocation.id) ?? 0
+    if (hub && l.storageLocation.id === hub.storageLocation.id) qty = Math.max(0, qty + sinceDelta)
+    return { locationId: l.storageLocation.id, locationName: l.storageLocation.name, isHub: l.storageLocation.isHub, qty: Math.round(qty * 100) / 100 }
+  })
+  return { total: Math.round(expectedTotal * 100) / 100, byLoc }
+}
