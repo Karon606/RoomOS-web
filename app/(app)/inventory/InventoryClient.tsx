@@ -1344,7 +1344,7 @@ function TimelineReconcileForm({ item, onCancel, onDone }: {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
       <div>
         <p className="text-xs font-medium text-[var(--warm-mid)]">보정 끼워넣기</p>
         <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">고른 날짜 시점의 실제 수량으로 기준선을 보정합니다. 차이는 사용량으로 잡히지 않습니다.</p>
