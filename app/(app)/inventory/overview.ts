@@ -73,10 +73,12 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     where: { propertyId, isArchived: false },
     orderBy: [{ category: 'asc' }, { label: 'asc' }],
     include: {
-      // take:2 = 최신/직전 — daysUntilEmpty 계산용
+      // 같은 날 여러 번 점검한 경우 dedup 을 위해 take 를 늘려 가져온다 (가장 늦은 점검만 유효).
+      // dedup 후 last/prev 추출 — 라면 5/12 같이 같은 날 두 번 점검이 큰 사용량 jump 로
+      // 잘못 인식되던 문제 fix (사용자 피드백 2026-06-01).
       stockChecks: {
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-        take: 2,
+        take: 10,
         include: {
           locationBreakdown: {
             include: { storageLocation: { select: { id: true, name: true } } },
@@ -86,6 +88,21 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       },
     },
   })
+
+  // 같은 날 여러 점검 dedup — 가장 늦은 createdAt 만 유효한 점검으로 간주.
+  // 사용자가 같은 날 임시 점검 후 확정 점검을 다시 하는 패턴 + 그 사이 큰 잔량 jump 가
+  // 가짜 소모로 누적되던 문제 (라면 187 / 쌀 159) 해결.
+  function dedupSameDay<T extends { date: Date; createdAt: Date }>(arr: T[]): T[] {
+    const map = new Map<string, T>()
+    for (const c of arr) {
+      const day = `${c.date.getUTCFullYear()}-${c.date.getUTCMonth()}-${c.date.getUTCDate()}`
+      const existing = map.get(day)
+      if (!existing || c.createdAt > existing.createdAt) map.set(day, c)
+    }
+    return Array.from(map.values()).sort((a, b) =>
+      a.date.getTime() - b.date.getTime() || a.createdAt.getTime() - b.createdAt.getTime()
+    )
+  }
 
   // 월별 사용량 계산용 — 최근 7개월(현재 포함) 의 모든 점검 기록 일괄 fetch.
   // 연속 두 점검 사이의 소모량을 늦은 쪽 월에 귀속 (단순화).
@@ -123,8 +140,10 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
 
   const rows: InventoryRow[] = []
   for (const it of items) {
-    const last = it.stockChecks[0] ?? null
-    const prev = it.stockChecks[1] ?? null
+    // 같은 날 dedup 후 가장 최신 / 그 직전 점검 추출
+    const dedupedRecentChecks = dedupSameDay([...it.stockChecks]).reverse()  // 최신 우선
+    const last = dedupedRecentChecks[0] ?? null
+    const prev = dedupedRecentChecks[1] ?? null
     // trackUnit='spec' (default): 규격 환산 (qtyValue × specValue, unit=specUnit)
     // trackUnit='qty':            수량 그대로 (qtyValue, unit=qtyUnit) — 폐기물 봉투 등
     const useSpec = it.trackUnit !== 'qty' && !!(it.specUnit && it.specUnit.trim())
@@ -231,7 +250,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       monthlyMap[key] = 0
     }
-    const itemChecks = allChecksForUsage.filter(c => c.trackedItemId === it.id)
+    // 같은 날 dedup — 같은 날 두 점검 사이의 큰 잔량 jump 가 가짜 소모로 누적되던 문제 fix.
+    const itemChecks = dedupSameDay(allChecksForUsage.filter(c => c.trackedItemId === it.id))
     for (let i = 1; i < itemChecks.length; i++) {
       const prev = itemChecks[i - 1]
       const curr = itemChecks[i]
