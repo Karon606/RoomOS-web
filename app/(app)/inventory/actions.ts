@@ -481,6 +481,10 @@ export async function createStockCheck(data: {
   locationQtys?: LocQty[]
   // #3 위치별 점검 — 서버가 직전 점검(carry-over) 기준으로 허브 차감·이월을 계산(stale 방지).
   locationPatch?: LocCheckPatch
+  // #4 (2026-06-01): 품목별 점검 폼에서 위치 일부만 입력했을 때 나머지 위치의 잔량을
+  // 직전 점검에서 자동 보존. 안 하면 입력 안 한 위치가 0 으로 처리되어 다음 점검과의
+  // 차이가 큰 "소모"로 잘못 계산 (라면 187 / 쌀 159 / 주방세제 6330 등 사용량 왜곡).
+  carryOverFromLastCheck?: boolean
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -498,7 +502,22 @@ export async function createStockCheck(data: {
       const base = (lastCheck?.locationBreakdown ?? []).map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty }))
       patchedQtys = applyLocationCheck(base, data.locationPatch)
     }
-    const effectiveLocationQtys = patchedQtys ?? data.locationQtys
+    let effectiveLocationQtys = patchedQtys ?? data.locationQtys
+    // #4 carryOver — locationQtys 가 일부 위치만 담고 있으면 나머지는 직전 점검에서 보존.
+    if (data.carryOverFromLastCheck && effectiveLocationQtys && effectiveLocationQtys.length > 0) {
+      const lastCheck = await prisma.stockCheck.findFirst({
+        where: { trackedItemId: data.trackedItemId },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        include: { locationBreakdown: true },
+      })
+      if (lastCheck?.locationBreakdown && lastCheck.locationBreakdown.length > 0) {
+        const inputLocIds = new Set(effectiveLocationQtys.map(lq => lq.storageLocationId))
+        const carryOver = lastCheck.locationBreakdown
+          .filter(lb => !inputLocIds.has(lb.storageLocationId))
+          .map(lb => ({ storageLocationId: lb.storageLocationId, qty: lb.remainingQty }))
+        effectiveLocationQtys = [...effectiveLocationQtys, ...carryOver]
+      }
+    }
     const adjusted = effectiveLocationQtys && effectiveLocationQtys.length > 0 ? applyTransfers(effectiveLocationQtys) : null
     const total = adjusted ? adjusted.reduce((s, l) => s + l.qty, 0) : data.remainingQty
     if (total < 0) return { ok: false, error: '잔량은 0 이상이어야 합니다.' }

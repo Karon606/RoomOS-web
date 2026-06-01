@@ -1804,6 +1804,9 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
       const res = await createStockCheck({
         trackedItemId: item.id, date, remainingQty: total, memo: memo || undefined,
         locationQtys: locationData,
+        // 위치 일부만 입력해도 나머지 위치는 직전 점검에서 자동 보존
+        // (2026-06-01 사용량 왜곡 버그 fix).
+        carryOverFromLastCheck: true,
       })
       if (!res.ok) { setError(res.error); return }
       await deleteItemDrafts(item.id)
