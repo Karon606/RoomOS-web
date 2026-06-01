@@ -1,7 +1,10 @@
 'use client'
 
-// 납부일 임시 조정 — 그 달만. 셸의 수납 full 모드와 RoomsClient 양쪽에서 재사용.
-// 입력 변환 로직(같은 월 = 숫자/말일, 다른 월 = full date) 그대로 이주.
+// 납부일 임시 조정 — 특정 청구 월의 납부일을 일시적으로 바꾼다.
+// 기본 대상 = 가장 오래된 미납월(firstUnpaidMonth) → "밀린 N월분을 며칠 뒤로 미루기".
+//   (미납분을 미루는 게 대부분의 의도. override 가 미납월에 정확히 붙어야 경과일이 맞게 계산됨.)
+// 별도 옵션 = 다른(보통 미래) 달의 납부일 변경 — 이전이 완납된 상태에서 일시 조정용.
+// 셸의 수납 full 모드(PaymentBody)에서 재사용.
 
 import { useState, useTransition } from 'react'
 import { setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
@@ -21,10 +24,18 @@ const fmtOvr = (v: string | null | undefined) => {
   if (v.includes('-')) { const d = new Date(v + 'T00:00:00'); return `${d.getMonth() + 1}월 ${d.getDate()}일` }
   return v.includes('말') ? '말일' : `${v}일`
 }
+const monthLabel = (m: string) => `${Number(m.split('-')[1])}월`
+const addMonth = (m: string, n: number) => {
+  const [y, mm] = m.split('-').map(Number)
+  const d = new Date(y, mm - 1 + n, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
 
-export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, room, canEdit, onChange }: {
+export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMonth, room, canEdit, onChange }: {
   leaseTermId: string
   targetMonth: string
+  /** 가장 오래된 미납월 — 기본 조정 대상. 없으면 보고 있는 달(targetMonth). */
+  firstUnpaidMonth?: string | null
   room: Override
   canEdit: boolean
   /** 변경/해제 후 부모가 selectedRoom 을 재조회하도록. */
@@ -35,34 +46,49 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, room, canEdit
   const [confirmClear, setConfirmClear] = useState(false)
   const [dateInput, setDateInput] = useState('')
   const [reason, setReason] = useState('')
+  // 조정 대상 청구 월 (기본 = 미납월 ?? 보는 달). 별도 옵션에서 변경 가능.
+  const defaultMonth = firstUnpaidMonth ?? targetMonth
+  const [overrideMonth, setOverrideMonth] = useState(defaultMonth)
+  const [showMonthOpt, setShowMonthOpt] = useState(false)
 
-  const isActive = room.overrideDueDayMonth === targetMonth && !!room.overrideDueDay
+  const isActive = !!room.overrideDueDay && !!room.overrideDueDayMonth
   const overrideLabel = fmtOvr(room.overrideDueDay)
+
+  // 대상 월 선택지 — 미납월·보는 달·향후 2개월 (중복 제거·정렬)
+  const monthOptions = Array.from(new Set([
+    firstUnpaidMonth ?? undefined,
+    targetMonth,
+    addMonth(targetMonth, 1),
+    addMonth(targetMonth, 2),
+  ].filter(Boolean) as string[])).sort()
 
   const handleOpenForm = () => {
     const opening = !showForm
     setShowForm(opening)
     setConfirmClear(false)
     if (opening) {
+      const startMonth = isActive && room.overrideDueDayMonth ? room.overrideDueDayMonth : defaultMonth
+      setOverrideMonth(startMonth)
+      setShowMonthOpt(false)
       const existing = isActive ? room.overrideDueDay : null
       let initDate = ''
       if (existing) {
         if (existing.includes('-')) initDate = existing
         else if (existing.includes('말')) {
-          const [y, m] = targetMonth.split('-').map(Number)
-          initDate = `${targetMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+          const [y, m] = startMonth.split('-').map(Number)
+          initDate = `${startMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
         } else {
           const n = parseInt(existing)
-          if (!isNaN(n)) initDate = `${targetMonth}-${String(n).padStart(2, '0')}`
+          if (!isNaN(n)) initDate = `${startMonth}-${String(n).padStart(2, '0')}`
         }
       } else {
         const baseDay = room.dueDay
         if (baseDay?.includes('말')) {
-          const [y, m] = targetMonth.split('-').map(Number)
-          initDate = `${targetMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+          const [y, m] = startMonth.split('-').map(Number)
+          initDate = `${startMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
         } else if (baseDay) {
           const n = parseInt(baseDay)
-          if (!isNaN(n)) initDate = `${targetMonth}-${String(n).padStart(2, '0')}`
+          if (!isNaN(n)) initDate = `${startMonth}-${String(n).padStart(2, '0')}`
         }
       }
       setDateInput(initDate || kstYmdStr())
@@ -76,7 +102,7 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, room, canEdit
       const release = trackSave()
       try {
         await clearDueDayOverride(leaseTermId)
-        pushToast('success', '이번 달 납부일 임시 변경 해제됨')
+        pushToast('success', '납부일 임시 변경 해제됨')
         onChange?.()
       } catch (e) {
         pushToast('error', (e as Error).message ?? '해제 실패')
@@ -87,8 +113,9 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, room, canEdit
   const handleSave = () => {
     if (!dateInput) return
     const selectedMonth = dateInput.slice(0, 7)
+    // 선택 날짜가 대상 월과 같으면 일/말일, 다른 달이면 완전한 날짜로 저장.
     let val: string
-    if (selectedMonth === targetMonth) {
+    if (selectedMonth === overrideMonth) {
       const d = new Date(dateInput + 'T00:00:00')
       const dayNum = d.getDate()
       const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
@@ -100,14 +127,16 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, room, canEdit
     startTransition(async () => {
       const release = trackSave()
       try {
-        await setDueDayOverride(leaseTermId, targetMonth, val, reason.trim() || undefined)
-        pushToast('success', '이번 달 납부일 임시 변경됨')
+        await setDueDayOverride(leaseTermId, overrideMonth, val, reason.trim() || undefined)
+        pushToast('success', `${monthLabel(overrideMonth)}분 납부일 임시 변경됨`)
         onChange?.()
       } catch (e) {
         pushToast('error', (e as Error).message ?? '변경 실패')
       } finally { release() }
     })
   }
+
+  const deferToUnpaid = !!firstUnpaidMonth && overrideMonth === firstUnpaidMonth
 
   return (
     <div className="border-t border-amber-200 px-6 py-3 shrink-0 bg-amber-50">
@@ -116,11 +145,11 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, room, canEdit
           <p className="text-xs font-medium text-amber-400">납부일 임시 조정</p>
           {isActive ? (
             <p className="text-xs text-amber-700 mt-0.5">
-              이번 달 납부일: <span className="font-bold">{overrideLabel}</span>
+              {room.overrideDueDayMonth && `${monthLabel(room.overrideDueDayMonth)}분 `}납부일: <span className="font-bold">{overrideLabel}</span>
               {room.overrideDueDayReason && ` (${room.overrideDueDayReason})`}
             </p>
           ) : (
-            <p className="text-xs text-[var(--warm-muted)] mt-0.5">이번 달 임시 조정 없음</p>
+            <p className="text-xs text-[var(--warm-muted)] mt-0.5">임시 조정 없음</p>
           )}
         </div>
         <div className="flex items-center gap-1.5">
@@ -148,10 +177,32 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, room, canEdit
       </div>
       {showForm && (
         <div className="mt-3 space-y-2">
+          {/* 대상 청구 월 — 기본은 미납월. '다른 달' 옵션으로 변경 */}
+          <div className="text-xs text-amber-700">
+            {deferToUnpaid
+              ? <>밀린 <span className="font-bold">{monthLabel(overrideMonth)}분</span>을 미루는 중</>
+              : <><span className="font-bold">{monthLabel(overrideMonth)}분</span> 납부일 조정 중</>}
+            {monthOptions.length > 1 && (
+              <button type="button" onClick={() => setShowMonthOpt(v => !v)}
+                className="ml-2 text-amber-600 underline hover:text-amber-700">{showMonthOpt ? '닫기' : '다른 달'}</button>
+            )}
+          </div>
+          {showMonthOpt && (
+            <div className="flex flex-wrap gap-1.5">
+              {monthOptions.map(m => (
+                <button key={m} type="button" onClick={() => setOverrideMonth(m)}
+                  className={`text-xs px-2 py-1 rounded-lg border transition-colors ${overrideMonth === m
+                    ? 'bg-amber-500 text-white border-amber-500'
+                    : 'bg-[var(--canvas)] text-amber-700 border-amber-200 hover:border-amber-400'}`}>
+                  {monthLabel(m)}{firstUnpaidMonth === m ? ' (미납)' : ''}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex gap-2">
             <div className="flex-1 space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">조정 납부일</label>
-              <DatePicker value={dateInput} onChange={setDateInput} minDate={`${targetMonth}-01`}
+              <DatePicker value={dateInput} onChange={setDateInput} minDate={`${overrideMonth}-01`}
                 className="bg-[var(--canvas)] border border-amber-200 rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] focus:border-amber-500" />
             </div>
             <div className="flex-1 space-y-1">
@@ -164,15 +215,9 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, room, canEdit
             className="w-full py-2 bg-amber-500 active:bg-amber-600 hover:bg-amber-400 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors">
             {pending ? '저장 중...' : (() => {
               if (!dateInput) return '날짜를 선택하세요'
-              const selectedMonth = dateInput.slice(0, 7)
-              if (selectedMonth !== targetMonth) {
-                const d = new Date(dateInput + 'T00:00:00')
-                return `${targetMonth} 납부일을 ${d.getMonth() + 1}월 ${d.getDate()}일로 조정`
-              }
               const d = new Date(dateInput + 'T00:00:00')
-              const dayNum = d.getDate()
-              const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
-              return `${targetMonth} 납부일을 ${dayNum >= lastDay ? '말일' : `${dayNum}일`}로 조정`
+              const dateStr = `${d.getMonth() + 1}월 ${d.getDate()}일`
+              return `${monthLabel(overrideMonth)}분 납부일을 ${dateStr}로 ${deferToUnpaid ? '미루기' : '조정'}`
             })()}
           </button>
         </div>

@@ -5,7 +5,14 @@
 
 ## 완료된 것
 
-### 2026-06-02 세션 7부 — 납부일 임시조정으로 미납 유예 시 경과일 계산 (배포)
+### 2026-06-02 세션 8부 — 납부일 임시조정 UI: 기본 대상=미납월 (근본 해결)
+7부는 잘못 태깅된 override를 '유예'로 해석하는 보정. 8부는 **애초에 올바른 월에 태깅**하도록 UI 개선(근본).
+- **원인(근본)**: `DueDayTempAdjustWidget`이 override를 항상 '보고 있던 달(targetMonth)'에 태깅 → 미납월과 어긋남.
+- **수정**: 위젯이 `firstUnpaidMonth`(이미 RoomRow/settlement에 있음, PaymentBody가 전달)를 받아 **기본 조정 대상 = 미납월**. "밀린 N월분을 [날짜]로 미루기"로 표시. **'다른 달' 옵션**(월 칩 선택: 미납월·보는 달·향후 2개월)으로 완납 상태에서 미래 달 조정도 가능. 저장 시 override를 그 대상 월에 태깅(다음 달로 미루면 완전한 날짜로 저장) → 기존 정확-월 매칭이 그대로 경과일 정확.
+- isActive 판정을 targetMonth 종속 → override 존재 여부로 일반화. 표시에 "[N월]분" 명시. setDueDayOverride(lease, overrideMonth, val).
+- 7부 유예 보정 로직은 과거 잘못 태깅 데이터 + 안전망으로 유지. 결제 금액 영향 없음(태깅 월만 개선). tsc·build 통과.
+
+### 2026-06-02 세션 7부 — 납부일 임시조정으로 미납 유예 시 경과일 계산 (배포 `167c2d6`)
 사용자 보고: 최명윤 517호 "미납 19일 경과"로 뜨는데, 5월 미납분을 6/1로 납부일 임시변경(유예)했으니 19일 경과가 아님.
 - **원인**: 임시조정 위젯이 override를 '보고 있던 월(targetMonth)'에 붙임([DueDayTempAdjustWidget.tsx:103](components/entity-modal/widgets/DueDayTempAdjustWidget.tsx#L103) `setDueDayOverride(leaseTermId, targetMonth, ...)`). 오늘이 6월이라 override가 **2026-06**(day 3)에 붙음. 그런데 미납 채무는 **2026-05** → `overrideDueDayMonth===monthStr` 정확 매칭만 보던 경과일 계산이 5월엔 원래 납부일(14일) 적용 → 5/14 기준 19일.
 - **수정(유예날짜 기준 — 사용자 선택)**: override 가 미납 월과 같거나 **이후** 월에 걸려 있고 그 유예 날짜가 원래 납부일보다 **늦으면**(=채무를 뒤로 미룬 것) 유예 절대날짜 기준으로 경과일 계산. `overrideAbsDate`(override를 절대 Date로 해석) + `daysOverdueForMonth` 헬퍼.

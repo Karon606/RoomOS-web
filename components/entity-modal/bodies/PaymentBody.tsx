@@ -170,6 +170,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo }: {
           <DueDayTempAdjustWidget
             leaseTermId={leaseTermId}
             targetMonth={month}
+            firstUnpaidMonth={settlement.firstUnpaidMonth}
             room={{
               overrideDueDay: settlement.overrideDueDay,
               overrideDueDayMonth: settlement.overrideDueDayMonth,
