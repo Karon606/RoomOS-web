@@ -5,7 +5,17 @@
 
 ## 완료된 것
 
-### 2026-06-01 세션 4부 — 재고 점검 '수정' 폼에서 보충 전 사라지고 창고 과차감되던 버그 (배포)
+### 2026-06-01 세션 5부 — 전체 재고 보정(총점검) 기능 구현 [SQL 적용됨, 코드 배포 대기]
+[[project_inventory_full_reconcile]] 설계대로 v1 구현. 계산/입력 오차로 실제 수량과 차이 날 때 전 품목을 한 번에 보정.
+- **스키마**: `StockCheck.isReconcile Boolean @default(false)` + `migrate_stock_check_reconcile.sql`(추가전용). **프로덕션 적용 완료**(idempotent ALTER), prisma generate 완료.
+- **보정 점검 = 실측 리셋, 차이는 사용량 아님**: [overview.ts](app/(app)/inventory/overview.ts) 월별 사용량 루프에서 `curr.isReconcile`면 그 구간 소모 합산 skip(차이=분실·오차, 소모 아님). curr 는 다음 구간 기준선으론 그대로. lastPeriodConsumption(평균소모율)도 보정이면 제외. allChecksForUsage select 에 isReconcile 추가.
+- **서버액션** [actions.ts](app/(app)/inventory/actions.ts) `saveFullReconcile({date, items[]})`: 차이 0 아닌 품목만 isReconcile 점검 생성(위치 있으면 위치별, 없으면 총량). 트랜잭션·소유권 검증. 읽기는 기존 rows 재사용(별도 액션 X).
+- **타임라인**: getItemTimeline 에 isReconcile 전파 + TimelineEntry 타입 + 점검 렌더에 '보정' 뱃지/'전체 보정' 라벨.
+- **UI** [InventoryClient.tsx](app/(app)/inventory/InventoryClient.tsx) `FullReconcileModal`: 헤더 '전체 재고 보정' 버튼 → 모달(날짜 DatePicker + **'창고→방 보충 완료' 체크 게이트**(통과해야 입력 활성) + 카테고리별 전 품목 위치별 실측 입력(예상치 프리필: 직전점검 위치별+현재고차이를 허브 가산) + 품목별 '예상/실측/차이' 표시 + 차이 있는 N품목만 저장).
+- **E2E 검증(실데이터, 생성→측정→삭제)**: 수세미에 차이 −3 보정 점검 → isReconcile=true 면 6월 사용량 0 유지·currentStock 7 리셋 / 대조(false)면 6월 +3 소모로 잡힘. 정확히 동작. tsc·build 통과.
+- **참고/한계**: 과거 달(예: 5월) 오염은 그 시점 백필 데이터 정리 or **과거 날짜로 보정 점검**(DatePicker 로 backdate 가능)해야 교정됨. 완전 2단계 '플로팅 후 끼워넣기'는 v2.
+
+### 2026-06-01 세션 4부 — 재고 점검 '수정' 폼에서 보충 전 사라지고 창고 과차감되던 버그 (배포 `63eb124`)
 사용자 보고: 수정 폼 열면 4층 주방 보충 전이 0 으로 뜸("분명 2개 입력했는데"). "이런 식으로 보충 전이 계속 사라지는 거 아냐?"
 - **원인([InventoryClient.tsx](app/(app)/inventory/InventoryClient.tsx) CheckEditForm 보충 전 역산)**: `before = restocked > 0 ? qty - restocked : 0`. **보충(창고→이동) 없이 그냥 센 위치는 restockedQty=0** 이라 보충 전이 0 으로 복원됨(=사라진 것처럼). 그 상태로 저장하면 `restock = 보충후 − 0 = 보충후 전체` → 창고(허브)가 그만큼 또 차감 → 열고 저장할 때마다 누적 드리프트(자기강화 버그).
 - **수정**: 조건 제거하고 항상 `before = max(0, 보충후 − restocked)` 로 역산 → 보충 없는 위치는 보충 전=보충 후 → 재저장 시 restock 0 (과차감 없음).

@@ -26,6 +26,7 @@ import {
   createStockCheck,
   createStockAddition,
   updateStockCheck,
+  saveFullReconcile,
   deleteStockCheck,
   deleteStockAddition,
   updateStockAddition,
@@ -131,6 +132,7 @@ export default function InventoryClient({ initialRows, targetMonth }: { initialR
   // 병합 확인 — 자동등록 후 후보가 있는 항목들 / 병합 규칙 관리 모달
   const [mergeDecisions, setMergeDecisions] = useState<MergeDecision[]>([])
   const [showMergeRules, setShowMergeRules] = useState(false)
+  const [showReconcile, setShowReconcile]   = useState(false)
 
   const toggleSelect = (id: string) => setSelected(prev => {
     const next = new Set(prev)
@@ -198,6 +200,7 @@ export default function InventoryClient({ initialRows, targetMonth }: { initialR
               숨김 품목{archivedCount > 0 ? ` (${archivedCount})` : ''}
             </Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowMergeRules(true)}>병합 규칙</Btn>
+            <Btn variant="secondary" size="sm" onClick={() => setShowReconcile(true)}>전체 재고 보정</Btn>
             <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
             <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
           </div>
@@ -253,6 +256,7 @@ export default function InventoryClient({ initialRows, targetMonth }: { initialR
         />
       )}
       {showMergeRules && <MergeRulesModal onClose={() => { setShowMergeRules(false); router.refresh() }} />}
+      {showReconcile && <FullReconcileModal rows={rows} onClose={() => setShowReconcile(false)} onDone={() => { setShowReconcile(false); pushToast('success', '전체 재고 보정 완료'); router.refresh() }} />}
       {showAdd && <AddItemModal onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); router.refresh() }} />}
       {showBatchLoc && (
         <BatchLocationModal
@@ -1059,7 +1063,10 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
         <div className="min-w-0 flex items-center gap-2">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
           <div className="min-w-0">
-            <p className="text-xs text-[var(--warm-muted)]">{fmtDate(entry.date)} · 점검 · <span className="tabular-nums">{fmtTime(entry.createdAt)}</span></p>
+            <p className="text-xs text-[var(--warm-muted)]">
+              {fmtDate(entry.date)} · {entry.isReconcile ? '전체 보정' : '점검'} · <span className="tabular-nums">{fmtTime(entry.createdAt)}</span>
+              {entry.isReconcile && <span className="ml-1 text-[0.5625rem] bg-[var(--honey)]/15 text-[var(--honey)] border border-[var(--honey)]/40 rounded-full px-1.5 py-0.5">보정</span>}
+            </p>
             <p className="text-sm font-medium text-[var(--warm-dark)]">잔량 {fmtQty(entry.remainingQty, stockUnit)}</p>
             {entry.locationBreakdown.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-1">
@@ -1250,6 +1257,171 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
 }
 
 // ── 재고 점검 인라인 편집 폼
+// ── 전체 재고 보정(총점검) — 보충 완료 후, 전 품목 실측을 한 번에 기준선으로 박는다.
+//    차이는 사용량으로 잡지 않음(isReconcile). 위치별 예상치 프리필 → 사용자가 실제 센 값만 고침.
+function FullReconcileModal({ rows, onClose, onDone }: {
+  rows: InventoryRow[]
+  onClose: () => void
+  onDone: () => void
+}) {
+  const NO_LOC = '__total__'
+  const r2 = (x: number) => Math.round(x * 100) / 100
+  const todayKst = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)
+  const [date, setDate] = useState(todayKst)
+  const [restockDone, setRestockDone] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+
+  const unitOf = (r: InventoryRow) => (r.trackUnit === 'qty' ? r.qtyUnit : (r.specUnit ?? r.qtyUnit))
+
+  // 예상 재고 — 위치별 프리필: 직전 점검 위치별 + (현재고 − 직전총합)을 허브에 가산해 합계가 현재고와 일치.
+  const expectedFor = (r: InventoryRow): { byLoc: Record<string, number>; total: number } => {
+    const total = r.currentStock ?? r.lastRemainingQty ?? 0
+    if (r.locations.length === 0) return { byLoc: {}, total }
+    const byLoc: Record<string, number> = {}
+    for (const l of r.locations) byLoc[l.id] = r.lastCheckLocationBreakdown.find(b => b.locationId === l.id)?.qty ?? 0
+    const lastSum = Object.values(byLoc).reduce((s, v) => s + v, 0)
+    const sinceDelta = total - lastSum
+    if (Math.abs(sinceDelta) > 0.001) {
+      const hub = r.locations.find(l => l.isHub) ?? r.locations[0]
+      byLoc[hub.id] = Math.max(0, (byLoc[hub.id] ?? 0) + sinceDelta)
+    }
+    return { byLoc, total }
+  }
+
+  const [actuals, setActuals] = useState<Record<string, Record<string, string>>>(() => {
+    const init: Record<string, Record<string, string>> = {}
+    for (const r of rows) {
+      const exp = expectedFor(r)
+      init[r.id] = r.locations.length === 0
+        ? { [NO_LOC]: String(r2(exp.total)) }
+        : Object.fromEntries(r.locations.map(l => [l.id, String(r2(exp.byLoc[l.id] ?? 0))]))
+    }
+    return init
+  })
+
+  const setVal = (itemId: string, locKey: string, v: string) =>
+    setActuals(prev => ({ ...prev, [itemId]: { ...prev[itemId], [locKey]: v.replace(/[^0-9.]/g, '') } }))
+
+  const actualTotalOf = (r: InventoryRow) =>
+    r.locations.length === 0
+      ? Number(actuals[r.id]?.[NO_LOC] || '0')
+      : r.locations.reduce((s, l) => s + Number(actuals[r.id]?.[l.id] || '0'), 0)
+
+  // 차이 있는 품목만 저장 대상
+  const changed = rows.filter(r => Math.abs(actualTotalOf(r) - (r.currentStock ?? r.lastRemainingQty ?? 0)) > 0.001)
+
+  const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] disabled:opacity-40'
+
+  const handleSave = async () => {
+    if (!changed.length) { setError('변경된(차이 있는) 품목이 없습니다.'); return }
+    setPending(true); setError('')
+    const items = changed.map(r => r.locations.length === 0
+      ? { trackedItemId: r.id, remainingQty: Number(actuals[r.id]?.[NO_LOC] || '0') }
+      : { trackedItemId: r.id, locationQtys: r.locations.map(l => ({ storageLocationId: l.id, qty: Number(actuals[r.id]?.[l.id] || '0') })) })
+    const res = await saveFullReconcile({ date, items })
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    onDone()
+  }
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-[var(--surface)] w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--warm-border)]">
+          <div>
+            <h2 className="text-base font-bold text-[var(--warm-dark)]">전체 재고 보정</h2>
+            <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">실제 남은 수량을 세어 기준선을 다시 맞춥니다. 차이는 사용량으로 잡히지 않습니다.</p>
+          </div>
+          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] p-1" aria-label="닫기">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        <div className="px-4 py-3 border-b border-[var(--warm-border)] space-y-2.5">
+          <div className="flex items-center gap-2">
+            <span className="text-[0.6875rem] text-[var(--warm-muted)] shrink-0">보정 날짜</span>
+            <div className="w-44"><DatePicker value={date} onChange={setDate} /></div>
+          </div>
+          <label className="flex items-start gap-2 cursor-pointer select-none rounded-lg bg-[var(--honey)]/5 border border-[var(--honey)]/30 px-2.5 py-2">
+            <input type="checkbox" checked={restockDone} onChange={e => setRestockDone(e.target.checked)} className="mt-0.5 accent-[var(--coral)]" />
+            <span className="text-[0.6875rem] text-[var(--warm-mid)] leading-snug">
+              <strong className="text-[var(--warm-dark)]">창고 → 방 보충을 모두 마쳤습니다.</strong><br />
+              보충 전(입주자 사용 중)에 세면 사용분이 분실로 잡힐 수 있어, 보충 완료 후에만 실측을 권장합니다.
+            </span>
+          </label>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+          {TRACKED_CATEGORIES.map(cat => {
+            const catRows = rows.filter(r => r.category === cat)
+            if (!catRows.length) return null
+            return (
+              <section key={cat} className="space-y-2">
+                <h3 className="text-xs font-semibold text-[var(--warm-dark)]">{cat}</h3>
+                {catRows.map(r => {
+                  const unit = unitOf(r)
+                  const expected = r.currentStock ?? r.lastRemainingQty ?? 0
+                  const actual = actualTotalOf(r)
+                  const diff = r2(actual - expected)
+                  return (
+                    <div key={r.id} className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-2.5">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-sm font-medium text-[var(--warm-dark)] truncate">{r.label}</span>
+                        <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">예상 {r2(expected)}{unit ?? ''}</span>
+                      </div>
+                      {r.locations.length === 0 ? (
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">실측</span>
+                          <input type="text" inputMode="decimal" disabled={!restockDone}
+                            value={actuals[r.id]?.[NO_LOC] ?? ''} onChange={e => setVal(r.id, NO_LOC, e.target.value)}
+                            className={`w-24 ${inputCls}`} />
+                          <span className="text-[0.625rem] text-[var(--warm-muted)]">{unit ?? ''}</span>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mt-1.5">
+                          {r.locations.map(l => (
+                            <div key={l.id}>
+                              <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5 truncate">{l.name}{l.isHub ? ' (창고)' : ''}</p>
+                              <input type="text" inputMode="decimal" disabled={!restockDone}
+                                value={actuals[r.id]?.[l.id] ?? ''} onChange={e => setVal(r.id, l.id, e.target.value)}
+                                className={`w-full ${inputCls}`} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex justify-end mt-1.5">
+                        {Math.abs(diff) > 0.001 ? (
+                          <span className="text-[0.625rem] font-medium" style={{ color: diff < 0 ? 'var(--coral)' : 'var(--honey)' }}>
+                            실측 {r2(actual)}{unit ?? ''} · 차이 {diff > 0 ? '+' : ''}{diff}{unit ?? ''}
+                          </span>
+                        ) : (
+                          <span className="text-[0.625rem] text-[var(--warm-muted)]">차이 없음</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </section>
+            )
+          })}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-[var(--warm-border)]">
+          <span className="text-[0.6875rem] text-[var(--warm-muted)]">차이 있는 {changed.length}품목 보정</span>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="text-sm text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-3 py-2">취소</button>
+            <Btn variant="primary" size="sm" onClick={handleSave} disabled={pending || !restockDone || !changed.length}>
+              {pending ? '저장 중...' : `보정 저장 (${changed.length})`}
+            </Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pending, error }: {
   entry: TimelineEntry & { type: 'check' }
   stockUnit: string | null

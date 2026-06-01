@@ -158,7 +158,7 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
   const timeline: TimelineEntry[] = [
     ...checks.map(c => ({
       type: 'check' as const,
-      id: c.id, date: c.date, createdAt: c.createdAt, remainingQty: c.remainingQty, memo: c.memo,
+      id: c.id, date: c.date, createdAt: c.createdAt, remainingQty: c.remainingQty, memo: c.memo, isReconcile: c.isReconcile,
       locationBreakdown: c.locationBreakdown.map(lb => ({
         locationId: lb.storageLocationId,
         locationName: lb.storageLocation.name,
@@ -560,6 +560,65 @@ export async function createStockCheck(data: {
     })
     revalidatePath('/inventory')
     return { ok: true, id: r.id }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 전체 재고 보정(총점검) — 여러 품목의 실측을 한 번에 기준선으로 박는다.
+// 보충(창고→방 이동)이 끝난 상태에서 실제 남은 수량을 세어 입력 → isReconcile 점검 생성.
+// 사용량 계산은 이 점검 직전 구간의 차이(분실·오차)를 소모로 잡지 않는다(overview.ts).
+// 차이가 0 인(실측=예상) 품목은 건너뛴다 — 불필요한 점검 레코드 방지.
+export async function saveFullReconcile(data: {
+  date: string
+  items: {
+    trackedItemId: string
+    // 위치 있는 품목: 위치별 실측. 위치 없는 품목: remainingQty.
+    locationQtys?: { storageLocationId: string; qty: number }[]
+    remainingQty?: number
+    memo?: string | null
+  }[]
+}): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (!data.items.length) return { ok: true, count: 0 }
+    const ids = data.items.map(i => i.trackedItemId)
+    const owned = await prisma.trackedItem.findMany({ where: { id: { in: ids }, propertyId }, select: { id: true } })
+    const ownedSet = new Set(owned.map(o => o.id))
+    const date = new Date(data.date)
+    let count = 0
+    await prisma.$transaction(async tx => {
+      for (const item of data.items) {
+        if (!ownedSet.has(item.trackedItemId)) continue
+        const hasLoc = item.locationQtys && item.locationQtys.length > 0
+        const total = hasLoc
+          ? item.locationQtys!.reduce((s, l) => s + l.qty, 0)
+          : (item.remainingQty ?? 0)
+        if (total < 0) continue
+        await tx.stockCheck.create({
+          data: {
+            trackedItemId: item.trackedItemId,
+            date,
+            remainingQty: total,
+            isReconcile: true,
+            memo: item.memo ?? '전체 재고 보정',
+            ...(hasLoc ? {
+              locationBreakdown: {
+                create: item.locationQtys!.map(l => ({
+                  storageLocationId: l.storageLocationId,
+                  remainingQty: l.qty,
+                })),
+              },
+            } : {}),
+          },
+        })
+        count++
+      }
+    })
+    revalidatePath('/inventory')
+    return { ok: true, count }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

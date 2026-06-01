@@ -790,6 +790,9 @@ model StockCheck {
   remainingQty   Float       // 전체 잔량 합계 (위치별 합산 or 단일 입력)
   memo           String?
   createdAt      DateTime    @default(now())
+  // 전체 재고 보정(총점검)으로 생성된 점검. 실측을 새 기준선으로 박되, 사용량 계산에서는
+  // 이 점검 직전 구간의 차이를 '소모'로 잡지 않는다(보정=리셋, 차이는 분실/오차로 간주).
+  isReconcile    Boolean     @default(false)
   // confirmReceipt가 자동 생성한 점검이면 원본 지출(=구매)에 연결.
   // 사용자가 receivedAt을 수정하면 이 link로 자동 점검의 date를 동기화하고, receivedAt이 null이 되면 자동 점검을 삭제한다.
   sourceExpenseId String?    @db.Uuid

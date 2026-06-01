@@ -94,6 +94,6 @@ export type MergeRuleRow = {
 }
 
 export type TimelineEntry =
-  | { type: 'check';    id: string; date: Date; createdAt: Date; remainingQty: number; memo: string | null; locationBreakdown: LocationQtyEntry[]; isHub?: boolean }
+  | { type: 'check';    id: string; date: Date; createdAt: Date; remainingQty: number; memo: string | null; locationBreakdown: LocationQtyEntry[]; isHub?: boolean; isReconcile?: boolean }
   | { type: 'purchase'; id: string; date: Date; createdAt: Date; qtyValue: number; qtyUnit: string | null; specValue: number | null; specUnit: string | null; amount: number; vendor: string | null; memo: string | null; receivedAt: Date | null; receivedLocationName: string | null }
   | { type: 'addition'; id: string; date: Date; createdAt: Date; addedQty: number; source: string | null; memo: string | null; storageLocationId: string | null; storageLocationName: string | null }

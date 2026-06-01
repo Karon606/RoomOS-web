@@ -112,7 +112,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
   const allChecksForUsage = await prisma.stockCheck.findMany({
     where: { trackedItemId: { in: items.map(i => i.id) }, date: { gte: monthsAgo7 } },
     orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
-    select: { id: true, trackedItemId: true, date: true, createdAt: true, remainingQty: true },
+    select: { id: true, trackedItemId: true, date: true, createdAt: true, remainingQty: true, isReconcile: true },
   })
 
   const today = new Date()
@@ -159,7 +159,9 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
 
     let lastPeriodConsumption: number | null = null
     let lastPeriodDays: number | null = null
-    if (last && prev) {
+    if (last && prev && last.isReconcile) {
+      // 최근 점검이 전체 보정이면 그 구간 차이는 소모가 아니므로 평균 소모율 추정 제외.
+    } else if (last && prev) {
       // 소모량: 두 점검 사이(점검 날짜 기준)에 입고된 구매만 가산.
       // ⚠️ 입고 구간을 createdAt(입력 시각) 이 아닌 date(점검 실제 날짜) 로 잡는다.
       //   사용자가 과거 점검을 나중에 보정 입력하면 createdAt 이 며칠~몇 주 뒤로 밀려,
@@ -264,6 +266,9 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     for (let i = 1; i < itemChecks.length; i++) {
       const prev = itemChecks[i - 1]
       const curr = itemChecks[i]
+      // 전체 재고 보정 점검은 '실측 리셋' — 직전 구간의 차이(분실·오차)를 소모량으로 잡지 않는다.
+      // curr 는 다음 구간의 기준선(prev)으로는 그대로 쓰임.
+      if (curr.isReconcile) continue
       // 입고 구간은 date 기준(createdAt 은 보정 입력 시 어긋나 인접 구간과 겹쳐 중복 계산됨).
       const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, prev.date, curr.date, useSpec)
       const additions = await sumAdditions(it.id, prev.date, curr.date)
