@@ -5,7 +5,15 @@
 
 ## 완료된 것
 
-### 2026-06-02 세션 8부 — 납부일 임시조정 UI: 기본 대상=미납월 (근본 해결)
+### 2026-06-02 세션 9부 — 재고관리 카테고리 커스터마이징 (선택+별칭) [SQL 적용됨, 배포]
+사용자 요청: 재고관리에서 'xx비'(지출 용어)는 안 어울림. ①재고에 보일 카테고리 선택 ②기본 표시명 제안 ③직접 수정. 지출 카테고리/로직은 안 건드리게.
+- **스키마**: `Property.inventoryCategories String?`(JSON `[{cat,alias}]`) + `migrate_inventory_categories.sql`. **프로덕션 적용 완료**, prisma generate.
+- **하드코딩 상수 동적화**: `TRACKED_CATEGORIES`(부식비·소모품비·폐기물 처리비 고정)를 쓰던 **서버 로직 4곳**(overview.ts·alerts.ts·actions.ts seed×2)을 `getTrackedCategories(propertyId)`로 대체 → 영업장별 카테고리(수선유지비 등 추가) 추적 가능. [categoryConfig.ts](app/(app)/inventory/categoryConfig.ts) 신규(parse+default), [constants.ts](app/(app)/inventory/constants.ts) 에 DEFAULT_INVENTORY_CATEGORIES·SUGGESTED_INVENTORY_ALIAS·suggestInventoryAlias(순수, 클라 공유).
+- **표시명(별칭)은 화면 전용** — 부식비→식료품, 소모품비→소모품, 폐기물 처리비→폐기물 처리용품(기본). 지출/장부엔 영향 0.
+- **UI**: page.tsx 가 categories·allExpenseCategories 전달. InventoryClient 그룹화/헤더/AddItemModal/FullReconcileModal 가 별칭 표시(`aliasOf`), 설정 밖 카테고리(과거 등록분)는 뒤에 자체 표시. `tintOf`(미등록 카테고리 폴백 색). 헤더 '카테고리 설정' 버튼 → `InventoryCategorySettingsModal`(선택·순서(▲▼)·별칭 편집·추가/제거). 액션 `getInventoryCategorySettings`/`setInventoryCategories`.
+- **검증**: 설정 null→기본 3개 별칭 정상, trackedCats 정상. tsc·build 통과.
+
+### 2026-06-02 세션 8부 — 납부일 임시조정 UI: 기본 대상=미납월 (근본 해결, 배포 `5427eb1`)
 7부는 잘못 태깅된 override를 '유예'로 해석하는 보정. 8부는 **애초에 올바른 월에 태깅**하도록 UI 개선(근본).
 - **원인(근본)**: `DueDayTempAdjustWidget`이 override를 항상 '보고 있던 달(targetMonth)'에 태깅 → 미납월과 어긋남.
 - **수정**: 위젯이 `firstUnpaidMonth`(이미 RoomRow/settlement에 있음, PaymentBody가 전달)를 받아 **기본 조정 대상 = 미납월**. "밀린 N월분을 [날짜]로 미루기"로 표시. **'다른 달' 옵션**(월 칩 선택: 미납월·보는 달·향후 2개월)으로 완납 상태에서 미래 달 조정도 가능. 저장 시 override를 그 대상 월에 태깅(다음 달로 미루면 완전한 날짜로 저장) → 기존 정확-월 매칭이 그대로 경과일 정확.

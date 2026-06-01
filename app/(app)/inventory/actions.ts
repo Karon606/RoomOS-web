@@ -6,7 +6,8 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
-import { TRACKED_CATEGORIES, type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow } from './constants'
+import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type InventoryCategory, suggestInventoryAlias } from './constants'
+import { getInventoryCategoryConfig, getTrackedCategories } from './categoryConfig'
 import { computeInventoryOverview } from './overview'
 import { applyLocationCheck, type LocCheckPatch } from '@/lib/stockCheckMerge'
 
@@ -1014,10 +1015,11 @@ export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; create
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
+    const trackedCats = await getTrackedCategories(propertyId)
     const rows = await prisma.expense.findMany({
       where: {
         propertyId,
-        category: { in: TRACKED_CATEGORIES as unknown as string[] },
+        category: { in: trackedCats },
         itemLabel: { not: null },
       },
       select: { id: true, category: true, itemLabel: true, specValue: true, specUnit: true, qtyUnit: true },
@@ -1097,7 +1099,7 @@ export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; create
 
     // 병합 후보 매칭 준비 — 활성 카드(정규화 라벨별) + 병합 규칙(LINK 추천 / MUTE 거절)
     const activeItems = await prisma.trackedItem.findMany({
-      where: { propertyId, isArchived: false, category: { in: TRACKED_CATEGORIES as unknown as string[] } },
+      where: { propertyId, isArchived: false, category: { in: trackedCats } },
       select: { id: true, label: true, category: true },
     })
     const itemById = new Map(activeItems.map(it => [it.id, it]))
@@ -1517,6 +1519,54 @@ export async function confirmAllPending(trackedItemId: string): Promise<{ ok: tr
     })
     revalidatePath('/inventory')
     return { ok: true, count: r.count }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// ── 재고관리 카테고리 설정 (추적 대상 + 표시 별칭)
+const DEFAULT_EXPENSE_CATEGORIES_INV = '부식비,소모품비,폐기물 처리비,수선유지비,공과금,마케팅/광고비,인건비,청소용역비,관리비,임대료,통신/렌탈/보험료,세금/수수료,보증금 반환'
+
+// 설정 화면용 — 현재 재고 카테고리 + 선택 가능한 전체 지출 카테고리.
+export async function getInventoryCategorySettings(): Promise<{
+  categories: InventoryCategory[]
+  allExpenseCategories: string[]
+}> {
+  const propertyId = await getPropertyId()
+  const [categories, property] = await Promise.all([
+    getInventoryCategoryConfig(propertyId),
+    prisma.property.findUnique({ where: { id: propertyId }, select: { expenseCategories: true } }),
+  ])
+  const raw = property?.expenseCategories ?? DEFAULT_EXPENSE_CATEGORIES_INV
+  const allExpenseCategories = raw.split(',').map(s => s.trim()).filter(Boolean)
+  return { categories, allExpenseCategories }
+}
+
+// 재고 카테고리 저장 — entries 순서 = 표시 순서. cat 은 지출 카테고리 중, alias 빈 값이면 제안 별칭.
+export async function setInventoryCategories(
+  entries: { cat: string; alias: string }[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    // 정규화 + 중복 cat 제거
+    const seen = new Set<string>()
+    const clean: InventoryCategory[] = []
+    for (const e of entries) {
+      const cat = (e.cat ?? '').trim()
+      if (!cat || seen.has(cat)) continue
+      seen.add(cat)
+      const alias = (e.alias ?? '').trim() || suggestInventoryAlias(cat)
+      clean.push({ cat, alias })
+    }
+    if (clean.length === 0) return { ok: false, error: '최소 1개 카테고리가 필요합니다.' }
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { inventoryCategories: JSON.stringify(clean) },
+    })
+    revalidatePath('/inventory')
+    return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

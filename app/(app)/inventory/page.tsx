@@ -1,4 +1,4 @@
-import { getInventoryOverview } from './actions'
+import { getInventoryOverview, getInventoryCategorySettings } from './actions'
 import InventoryClient from './InventoryClient'
 import { kstMonthStr } from '@/lib/kstDate'
 
@@ -9,6 +9,16 @@ export default async function InventoryPage({
 }) {
   const { month } = await searchParams
   const targetMonth = month ?? kstMonthStr()
-  const rows = await getInventoryOverview()
-  return <InventoryClient initialRows={rows} targetMonth={targetMonth} />
+  const [rows, catSettings] = await Promise.all([
+    getInventoryOverview(),
+    getInventoryCategorySettings(),
+  ])
+  return (
+    <InventoryClient
+      initialRows={rows}
+      targetMonth={targetMonth}
+      categories={catSettings.categories}
+      allExpenseCategories={catSettings.allExpenseCategories}
+    />
+  )
 }

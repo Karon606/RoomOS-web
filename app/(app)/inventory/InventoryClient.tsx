@@ -11,7 +11,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
-import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, TRACKED_CATEGORIES } from './constants'
+import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type InventoryCategory, suggestInventoryAlias } from './constants'
 import {
   getInventoryDetail,
   getPriceHistory,
@@ -51,6 +51,7 @@ import {
   applyMergeDecision,
   getMergeRules,
   deleteMergeRule,
+  setInventoryCategories,
 } from './actions'
 import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow } from './constants'
 
@@ -58,6 +59,19 @@ const CATEGORY_TINT: Record<string, { bg: string; fg: string }> = {
   '부식비':       { bg: 'rgba(232,137,58,0.10)',  fg: '#e8893a' },
   '소모품비':     { bg: 'rgba(244,98,58,0.10)',   fg: 'var(--persimmon)' },
   '폐기물 처리비':{ bg: 'rgba(91,164,184,0.10)',  fg: '#5aa4b8' },
+}
+// 사용자가 추가한 카테고리(수선유지비 등)용 폴백 팔레트 — cat 문자열 해시로 안정 배정.
+const FALLBACK_TINTS: { bg: string; fg: string }[] = [
+  { bg: 'rgba(124,154,90,0.10)',  fg: '#7c9a5a' },
+  { bg: 'rgba(176,122,58,0.10)',  fg: '#b07a3a' },
+  { bg: 'rgba(120,110,180,0.10)', fg: '#786eb4' },
+  { bg: 'rgba(190,90,120,0.10)',  fg: '#be5a78' },
+]
+const tintOf = (cat: string): { bg: string; fg: string } => {
+  if (CATEGORY_TINT[cat]) return CATEGORY_TINT[cat]
+  let h = 0
+  for (let i = 0; i < cat.length; i++) h = (h * 31 + cat.charCodeAt(i)) >>> 0
+  return FALLBACK_TINTS[h % FALLBACK_TINTS.length]
 }
 
 const fmtQty = (val: number | null, unit: string | null) => {
@@ -88,7 +102,10 @@ const isSameKstDay = (a: Date, b: Date) => {
   return toKst(a) === toKst(b)
 }
 
-export default function InventoryClient({ initialRows, targetMonth }: { initialRows: InventoryRow[]; targetMonth: string }) {
+export default function InventoryClient({ initialRows, targetMonth, categories, allExpenseCategories }: { initialRows: InventoryRow[]; targetMonth: string; categories: InventoryCategory[]; allExpenseCategories: string[] }) {
+  // 재고 카테고리(cat) → 표시 별칭(alias) 맵 + 카테고리 cat 목록(순서 보존)
+  const aliasOf = (cat: string) => categories.find(c => c.cat === cat)?.alias ?? cat
+  const trackedCats = categories.map(c => c.cat)
   const router = useRouter()
   const searchParams = useSearchParams()
   const rows = initialRows
@@ -133,6 +150,7 @@ export default function InventoryClient({ initialRows, targetMonth }: { initialR
   const [mergeDecisions, setMergeDecisions] = useState<MergeDecision[]>([])
   const [showMergeRules, setShowMergeRules] = useState(false)
   const [showReconcile, setShowReconcile]   = useState(false)
+  const [showCatSettings, setShowCatSettings] = useState(false)
 
   const toggleSelect = (id: string) => setSelected(prev => {
     const next = new Set(prev)
@@ -164,9 +182,11 @@ export default function InventoryClient({ initialRows, targetMonth }: { initialR
     }
   }
 
-  // 카테고리별 그룹
-  const grouped = TRACKED_CATEGORIES.map(cat => ({
+  // 카테고리별 그룹 — 설정된 카테고리 순서 + 표시 별칭. 설정 밖 카테고리(과거 등록분)는 뒤에 자체 표시.
+  const extraCats = Array.from(new Set(rows.map(r => r.category))).filter(c => !trackedCats.includes(c))
+  const grouped = [...trackedCats, ...extraCats].map(cat => ({
     cat,
+    alias: aliasOf(cat),
     rows: rows.filter(r => r.category === cat),
   }))
 
@@ -201,6 +221,7 @@ export default function InventoryClient({ initialRows, targetMonth }: { initialR
             </Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowMergeRules(true)}>병합 규칙</Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowReconcile(true)}>전체 재고 보정</Btn>
+            <Btn variant="secondary" size="sm" onClick={() => setShowCatSettings(true)}>카테고리 설정</Btn>
             <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
             <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
           </div>
@@ -220,8 +241,8 @@ export default function InventoryClient({ initialRows, targetMonth }: { initialR
         grouped.map(g => g.rows.length > 0 && (
           <section key={g.cat} className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: CATEGORY_TINT[g.cat]?.fg ?? '#999' }} />
-              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">{g.cat}</h2>
+              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: tintOf(g.cat).fg }} />
+              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">{g.alias}</h2>
               <span className="text-[0.6875rem] text-[var(--warm-muted)]">{g.rows.length}품목</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -256,8 +277,9 @@ export default function InventoryClient({ initialRows, targetMonth }: { initialR
         />
       )}
       {showMergeRules && <MergeRulesModal onClose={() => { setShowMergeRules(false); router.refresh() }} />}
-      {showReconcile && <FullReconcileModal rows={rows} onClose={() => setShowReconcile(false)} onDone={() => { setShowReconcile(false); pushToast('success', '전체 재고 보정 완료'); router.refresh() }} />}
-      {showAdd && <AddItemModal onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); router.refresh() }} />}
+      {showReconcile && <FullReconcileModal rows={rows} categories={categories} onClose={() => setShowReconcile(false)} onDone={() => { setShowReconcile(false); pushToast('success', '전체 재고 보정 완료'); router.refresh() }} />}
+      {showAdd && <AddItemModal categories={categories} onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); router.refresh() }} />}
+      {showCatSettings && <InventoryCategorySettingsModal categories={categories} allExpenseCategories={allExpenseCategories} onClose={() => setShowCatSettings(false)} onDone={() => { setShowCatSettings(false); router.refresh() }} />}
       {showBatchLoc && (
         <BatchLocationModal
           selectedIds={Array.from(selected)}
@@ -295,7 +317,7 @@ export default function InventoryClient({ initialRows, targetMonth }: { initialR
 }
 
 function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraft }: { row: InventoryRow; onOpen: () => void; onArchive?: () => void; selectMode?: boolean; isSelected?: boolean; hasDraft?: boolean }) {
-  const tint = CATEGORY_TINT[row.category]
+  const tint = tintOf(row.category)
   const lowStock = row.daysUntilEmpty != null && row.daysUntilEmpty <= row.alertThresholdDays
   // 당분간 사용 안 함 후보: 현재 잔량 0 + 수령 대기 0 + 점검 기록 있음(신규는 제외)
   const suggestHide = !selectMode && row.currentStock === 0 && row.pendingPurchases.length === 0 && row.lastCheckDate != null
@@ -462,8 +484,8 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
   )
 }
 
-function AddItemModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const [category, setCategory] = useState<string>(TRACKED_CATEGORIES[0])
+function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCategory[]; onClose: () => void; onDone: () => void }) {
+  const [category, setCategory] = useState<string>(categories[0]?.cat ?? '부식비')
   const [label, setLabel]       = useState('')
   const [specUnit, setSpecUnit] = useState('')
   const [qtyUnit, setQtyUnit]   = useState('')
@@ -497,7 +519,7 @@ function AddItemModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
           <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
           <select value={category} onChange={e => setCategory(e.target.value)}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none">
-            {TRACKED_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            {categories.map(c => <option key={c.cat} value={c.cat}>{c.alias}</option>)}
           </select>
         </div>
         <div className="space-y-1.5">
@@ -1259,8 +1281,106 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
 // ── 재고 점검 인라인 편집 폼
 // ── 전체 재고 보정(총점검) — 보충 완료 후, 전 품목 실측을 한 번에 기준선으로 박는다.
 //    차이는 사용량으로 잡지 않음(isReconcile). 위치별 예상치 프리필 → 사용자가 실제 센 값만 고침.
-function FullReconcileModal({ rows, onClose, onDone }: {
+// ── 재고관리 카테고리 설정 — 어떤 지출 카테고리를 재고로 추적할지 + 표시명(별칭) 편집·순서.
+function InventoryCategorySettingsModal({ categories, allExpenseCategories, onClose, onDone }: {
+  categories: InventoryCategory[]
+  allExpenseCategories: string[]
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [entries, setEntries] = useState<InventoryCategory[]>(categories.map(c => ({ ...c })))
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+
+  const available = allExpenseCategories.filter(c => !entries.some(e => e.cat === c))
+  const move = (i: number, dir: -1 | 1) => setEntries(prev => {
+    const j = i + dir
+    if (j < 0 || j >= prev.length) return prev
+    const next = [...prev]; [next[i], next[j]] = [next[j], next[i]]; return next
+  })
+  const add = (cat: string) => setEntries(prev => [...prev, { cat, alias: suggestInventoryAlias(cat) }])
+  const remove = (cat: string) => setEntries(prev => prev.filter(e => e.cat !== cat))
+  const setAlias = (cat: string, alias: string) => setEntries(prev => prev.map(e => e.cat === cat ? { ...e, alias } : e))
+
+  const handleSave = async () => {
+    if (!entries.length) { setError('최소 1개 카테고리가 필요합니다.'); return }
+    setPending(true); setError('')
+    const res = await setInventoryCategories(entries.map(e => ({ cat: e.cat, alias: e.alias.trim() })))
+    setPending(false)
+    if (!res.ok) { setError(res.error); return }
+    onDone()
+  }
+
+  const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] shadow-lift w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--warm-border)]">
+          <div>
+            <h2 className="text-base font-bold text-[var(--warm-dark)]">재고 카테고리 설정</h2>
+            <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">재고관리에 표시할 카테고리와 이름을 정합니다. (지출 카테고리는 그대로 유지)</p>
+          </div>
+          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] p-1" aria-label="닫기">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+          <div className="space-y-2">
+            <p className="text-[0.6875rem] font-medium text-[var(--warm-mid)]">표시 중인 카테고리 (위에서부터 표시 순서)</p>
+            {entries.map((e, i) => (
+              <div key={e.cat} className="flex items-center gap-2 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] px-2.5 py-2">
+                <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: tintOf(e.cat).fg }} />
+                <div className="flex flex-col shrink-0 w-20">
+                  <span className="text-[0.5625rem] text-[var(--warm-muted)]">지출명</span>
+                  <span className="text-[0.6875rem] text-[var(--warm-mid)] truncate">{e.cat}</span>
+                </div>
+                <input value={e.alias} onChange={ev => setAlias(e.cat, ev.target.value)} placeholder={suggestInventoryAlias(e.cat)}
+                  className={`flex-1 min-w-0 ${inputCls}`} aria-label={`${e.cat} 표시명`} />
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button type="button" onClick={() => move(i, -1)} disabled={i === 0}
+                    className="p-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-30" aria-label="위로">▲</button>
+                  <button type="button" onClick={() => move(i, 1)} disabled={i === entries.length - 1}
+                    className="p-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-30" aria-label="아래로">▼</button>
+                  <button type="button" onClick={() => remove(e.cat)}
+                    className="p-1 text-red-400 hover:text-red-600 text-xs" aria-label="제거">✕</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {available.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[0.6875rem] font-medium text-[var(--warm-mid)]">추가할 카테고리</p>
+              <div className="flex flex-wrap gap-1.5">
+                {available.map(c => (
+                  <button key={c} type="button" onClick={() => add(c)}
+                    className="text-xs px-2.5 py-1 rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] text-[var(--warm-mid)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors">
+                    + {c}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[0.5625rem] text-[var(--warm-muted)]">예: 수선유지비를 추가하면 수리부품 재고도 추적할 수 있습니다.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[var(--warm-border)]">
+          <button onClick={onClose} className="text-sm text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-3 py-2">취소</button>
+          <Btn variant="primary" size="sm" onClick={handleSave} disabled={pending || !entries.length}>
+            {pending ? '저장 중...' : '저장'}
+          </Btn>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FullReconcileModal({ rows, categories, onClose, onDone }: {
   rows: InventoryRow[]
+  categories: InventoryCategory[]
   onClose: () => void
   onDone: () => void
 }) {
@@ -1354,12 +1474,12 @@ function FullReconcileModal({ rows, onClose, onDone }: {
 
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
           {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
-          {TRACKED_CATEGORIES.map(cat => {
+          {categories.map(({ cat, alias }) => {
             const catRows = rows.filter(r => r.category === cat)
             if (!catRows.length) return null
             return (
               <section key={cat} className="space-y-2">
-                <h3 className="text-xs font-semibold text-[var(--warm-dark)]">{cat}</h3>
+                <h3 className="text-xs font-semibold text-[var(--warm-dark)]">{alias}</h3>
                 {catRows.map(r => {
                   const unit = unitOf(r)
                   const expected = r.currentStock ?? r.lastRemainingQty ?? 0

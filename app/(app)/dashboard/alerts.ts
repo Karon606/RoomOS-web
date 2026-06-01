@@ -10,7 +10,7 @@
 
 import prisma from '@/lib/prisma'
 import { kstYmd } from '@/lib/kstDate'
-import { TRACKED_CATEGORIES } from '@/app/(app)/inventory/constants'
+import { getTrackedCategories } from '@/app/(app)/inventory/categoryConfig'
 import { computeInventoryOverview } from '@/app/(app)/inventory/overview'
 import { computeUnpaidStatus } from '@/app/(app)/dashboard/unpaid'
 
@@ -46,6 +46,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   const k = kstYmd()
   const today = new Date(k.year, k.month - 1, k.day)
   const tomorrow = new Date(today.getTime() + 86400000)
+  const trackedCats = await getTrackedCategories(propertyId)
 
   const [unpaidStatus, inventory, checkoutLeases, tourLeases, moveInLeases, pendingReceipts] = await Promise.all([
     computeUnpaidStatus(propertyId),
@@ -63,7 +64,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       select: { id: true, room: { select: { id: true, roomNo: true } }, tenant: { select: { id: true, name: true } } },
     }),
     prisma.expense.findMany({
-      where: { propertyId, category: { in: TRACKED_CATEGORIES as unknown as string[] }, itemLabel: { not: null }, receivedAt: null, excludeFromInventory: false },
+      where: { propertyId, category: { in: trackedCats }, itemLabel: { not: null }, receivedAt: null, excludeFromInventory: false },
       select: { id: true, itemLabel: true, vendor: true, amount: true, date: true },
       orderBy: { date: 'asc' },
     }),

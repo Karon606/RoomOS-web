@@ -1,5 +1,29 @@
 export const TRACKED_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비'] as const
 
+// 재고관리 카테고리 = 지출 카테고리(cat) + 재고관리 표시명(alias).
+export type InventoryCategory = { cat: string; alias: string }
+
+// 지출 카테고리 → 재고관리 표시명 제안 (사용자가 카테고리를 추가할 때 기본 별칭으로).
+export const SUGGESTED_INVENTORY_ALIAS: Record<string, string> = {
+  '부식비': '식료품',
+  '소모품비': '소모품',
+  '폐기물 처리비': '폐기물 처리용품',
+  '수선유지비': '수리부품',
+  '청소용역비': '청소용품',
+}
+
+// 설정(Property.inventoryCategories) 이 없을 때의 기본 재고 카테고리 + 표시명.
+export const DEFAULT_INVENTORY_CATEGORIES: InventoryCategory[] = [
+  { cat: '부식비', alias: '식료품' },
+  { cat: '소모품비', alias: '소모품' },
+  { cat: '폐기물 처리비', alias: '폐기물 처리용품' },
+]
+
+// 지출 카테고리에 대한 재고 표시명 제안 (없으면 그대로).
+export function suggestInventoryAlias(cat: string): string {
+  return SUGGESTED_INVENTORY_ALIAS[cat] ?? cat
+}
+
 export type PendingPurchase = {
   id: string
   date: Date

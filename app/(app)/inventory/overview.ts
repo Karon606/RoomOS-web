@@ -1,7 +1,8 @@
 // 재고 개요 계산 — 'use server' 아님(클라이언트 비노출). propertyId 명시 호출용.
 // getInventoryOverview(쿠키 기반)와 Cron(스케줄러) 양쪽에서 재사용.
 import prisma from '@/lib/prisma'
-import { TRACKED_CATEGORIES, type InventoryRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry } from './constants'
+import { type InventoryRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry } from './constants'
+import { getTrackedCategories } from './categoryConfig'
 
 // ── 카테고리·라벨 매칭으로 구매량 합계
 // useSpecBase=true 면 qtyValue × specValue (kg, 매 같은 규격 단위) 로 환산
@@ -69,6 +70,7 @@ async function sumAdditions(
 
 // ── 추적 품목 목록 + 계산된 지표
 export async function computeInventoryOverview(propertyId: string): Promise<InventoryRow[]> {
+  const trackedCats = await getTrackedCategories(propertyId)
   const items = await prisma.trackedItem.findMany({
     where: { propertyId, isArchived: false },
     orderBy: [{ category: 'asc' }, { label: 'asc' }],
@@ -138,7 +140,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
   const allPending = await prisma.expense.findMany({
     where: {
       propertyId,
-      category: { in: TRACKED_CATEGORIES as unknown as string[] },
+      category: { in: trackedCats },
       itemLabel: { not: null },
       receivedAt: null,
       excludeFromInventory: false,
