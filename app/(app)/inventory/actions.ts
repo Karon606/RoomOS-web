@@ -181,7 +181,21 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       amount: p.amount, vendor: p.vendor, memo: p.memo, receivedAt: p.receivedAt,
       receivedLocationName: p.receivedLocation?.name ?? null,
     })),
-  ].sort((a, b) => b.date.getTime() - a.date.getTime() || b.createdAt.getTime() - a.createdAt.getTime())
+  ].sort((a, b) => {
+    // 구매 entry 의 시간 기준은 receivedAt (실제 수령 시각). 사용자가 늦게 입력해서
+    // createdAt 이 미래여도 타임라인 위치는 수령 시점에 따라 결정 (2026-06-01 피드백).
+    const sortDateOf = (e: TimelineEntry): Date =>
+      e.type === 'purchase' && e.receivedAt ? e.receivedAt : e.date
+    const sortStampOf = (e: TimelineEntry): Date =>
+      e.type === 'purchase' && e.receivedAt ? e.receivedAt : e.createdAt
+    const ad = sortDateOf(a), bd = sortDateOf(b)
+    if (ad.getTime() !== bd.getTime()) return bd.getTime() - ad.getTime()
+    const as = sortStampOf(a), bs = sortStampOf(b)
+    if (as.getTime() !== bs.getTime()) return bs.getTime() - as.getTime()
+    // 같은 시각 동률 — 점검(자동수령 결과)이 구매(수령) 위에 (수령→점검 순서의 결과를 먼저).
+    const typeRank = (e: TimelineEntry) => e.type === 'check' ? 0 : e.type === 'addition' ? 1 : 2
+    return typeRank(a) - typeRank(b)
+  })
 
   return {
     item: {
