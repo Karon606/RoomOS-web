@@ -182,17 +182,21 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       receivedLocationName: p.receivedLocation?.name ?? null,
     })),
   ].sort((a, b) => {
-    // 구매 entry 의 시간 기준은 receivedAt (실제 수령 시각). 사용자가 늦게 입력해서
-    // createdAt 이 미래여도 타임라인 위치는 수령 시점에 따라 결정 (2026-06-01 피드백).
-    const sortDateOf = (e: TimelineEntry): Date =>
-      e.type === 'purchase' && e.receivedAt ? e.receivedAt : e.date
-    const sortStampOf = (e: TimelineEntry): Date =>
-      e.type === 'purchase' && e.receivedAt ? e.receivedAt : e.createdAt
-    const ad = sortDateOf(a), bd = sortDateOf(b)
-    if (ad.getTime() !== bd.getTime()) return bd.getTime() - ad.getTime()
-    const as = sortStampOf(a), bs = sortStampOf(b)
-    if (as.getTime() !== bs.getTime()) return bs.getTime() - as.getTime()
-    // 같은 시각 동률 — 점검(자동수령 결과)이 구매(수령) 위에 (수령→점검 순서의 결과를 먼저).
+    // 모든 entry 를 '실제 발생 시각'(시:분 포함) 단일 기준으로 정렬한다.
+    //   이전엔 점검은 date(자정), 구매는 receivedAt(시각 포함)으로 해상도가 달라
+    //   같은 날 안에서 수령(15:11)이 그 뒤 점검(16:46)보다 위로 뜨는 등 순서가 어긋났음
+    //   (2026-06-01 사용자 피드백 — 수령 확정 후 점검값이 나오는 흐름이 거꾸로 보임).
+    //   · 구매 = receivedAt(실제 수령 시각) ?? date
+    //   · 점검·입수 = 입력 당일(KST) 점검이면 createdAt(실제 점검 시각), 과거 보정 입력(백필)이면 date.
+    //     createdAt 이 점검일과 다른 날이면 나중에 보정 입력한 것으로 보고 date 를 써서 백필이 순서를 안 깨게 함.
+    const kstDay = (d: Date) => new Date(d.getTime() + 9 * 3600000).toISOString().slice(0, 10)
+    const effTime = (e: TimelineEntry): Date =>
+      e.type === 'purchase'
+        ? (e.receivedAt ?? e.date)
+        : (kstDay(e.createdAt) === kstDay(e.date) ? e.createdAt : e.date)
+    const at = effTime(a).getTime(), bt = effTime(b).getTime()
+    if (at !== bt) return bt - at
+    // 같은 시각 동률 — 점검(수령 자동반영 결과)이 구매(수령) 위에 (수령→점검 순서의 결과를 먼저).
     const typeRank = (e: TimelineEntry) => e.type === 'check' ? 0 : e.type === 'addition' ? 1 : 2
     return typeRank(a) - typeRank(b)
   })
