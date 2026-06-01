@@ -1273,12 +1273,17 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
 
   const hasLocations = locationSources.length > 0
 
-  // 기존 데이터에서 전/후 역산: 전 = qty - restockedQty (restocked > 0일 때만)
+  // 기존 데이터에서 전/후 역산: 보충 전 = 보충 후 − 창고이동(restockedQty).
+  // ⚠️ restocked 가 0(보충 없이 그냥 센 위치)이면 '보충 전 = 보충 후' 여야 한다.
+  //   이전엔 restocked>0 일 때만 보충 전을 채우고 아니면 빈칸(=0)으로 둬서, 수정 폼을 열면
+  //   보충 안 한 위치의 보충 전이 0 으로 보이고(사라진 것처럼) → 그대로 저장하면
+  //   restock = 보충후 − 0 = 보충후 전체로 계산돼 창고가 그만큼 또 차감되는 드리프트 발생
+  //   (2026-06-01 사용자 보고: "보충 전 수량이 계속 사라진다"). 항상 (보충후 − restocked)로 역산.
   const initial = Object.fromEntries(
     entry.locationBreakdown.map(lb => {
       const restocked = lb.restockedQty ?? 0
-      const before = restocked > 0 ? Math.max(0, lb.qty - restocked) : 0
-      return [lb.locationId, { before: restocked > 0 ? String(before) : '', after: String(lb.qty) }]
+      const before = Math.max(0, lb.qty - restocked)
+      return [lb.locationId, { before: String(before), after: String(lb.qty) }]
     })
   )
 
