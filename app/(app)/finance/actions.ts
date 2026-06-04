@@ -148,6 +148,8 @@ type ItemPick = {
   specValue?: string; specUnit?: string
   qtyValue?: string;  qtyUnit?: string
   amount?: number
+  // 방별 분배 (선택) — 있으면 이 품목을 방별 행으로 분할(금액은 수량 비례, 마지막 행이 잔여 흡수)
+  allocations?: { roomId: string; qty: string }[]
 }
 
 // ── 영수증 OCR (Gemini Vision) ────────────────────────────────────
@@ -284,12 +286,16 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
-    // 다중 품목: itemsJson 파싱해 N개 행으로 분할
+    // 다중 품목/방별 분배: itemsJson 파싱해 N개 행으로 분할.
+    // 품목 2개 이상이거나, 한 품목이라도 방별 분배(allocations)가 있으면 분할 경로.
     let multiItems: ItemPick[] | null = null
     if (itemsJsonRaw) {
       try {
         const parsed = JSON.parse(itemsJsonRaw)
-        if (Array.isArray(parsed) && parsed.length >= 2) multiItems = parsed
+        if (Array.isArray(parsed) && parsed.length >= 1) {
+          const hasAlloc = parsed.some((it: ItemPick) => Array.isArray(it.allocations) && it.allocations.length > 0)
+          if (parsed.length >= 2 || hasAlloc) multiItems = parsed
+        }
       } catch { /* fallthrough → 단일 row */ }
     }
 
@@ -312,16 +318,39 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
       // 각 품목 amount 합 = 총 amount 검증 (반올림 1원 허용)
       const sum = multiItems.reduce((s, it) => s + (Number(it.amount) || 0), 0)
       if (Math.abs(sum - amount) > 1) return { ok: false, error: `품목 금액 합계(${sum.toLocaleString()}원)와 총 금액(${amount.toLocaleString()}원)이 일치하지 않습니다.` }
-      await prisma.$transaction(multiItems.map(it => prisma.expense.create({
+
+      // 품목 → 행 확장. 방별 분배(allocations)가 있으면 방별로 쪼개고 금액은 수량 비례(마지막 잔여 흡수).
+      type Row = { it: ItemPick; amount: number; qtyValue: string | undefined; roomId: string | null }
+      const rows: Row[] = []
+      for (const it of multiItems) {
+        const itAmount = Number(it.amount) || 0
+        const allocs = (Array.isArray(it.allocations) ? it.allocations : []).filter(a => a && (a.roomId || a.qty))
+        if (allocs.length > 0) {
+          const totalQty = allocs.reduce((s, a) => s + (Number(a.qty) || 0), 0)
+          let used = 0
+          allocs.forEach((a, i) => {
+            const aq = Number(a.qty) || 0
+            const amt = i === allocs.length - 1
+              ? itAmount - used
+              : (totalQty > 0 ? Math.round(itAmount * (aq / totalQty)) : Math.round(itAmount / allocs.length))
+            used += amt
+            rows.push({ it, amount: amt, qtyValue: a.qty || it.qtyValue, roomId: a.roomId || null })
+          })
+        } else {
+          rows.push({ it, amount: itAmount, qtyValue: it.qtyValue, roomId: roomId || null })
+        }
+      }
+      await prisma.$transaction(rows.map(r => prisma.expense.create({
         data: {
           ...baseRow,
-          amount:    Number(it.amount) || 0,
-          detail:    `[${it.label}]${it.specValue ? ` ${it.specValue}${it.specUnit ?? ''}` : ''}${it.qtyValue ? ` x ${it.qtyValue}${it.qtyUnit ?? ''}` : ''}`,
-          itemLabel: it.label,
-          specUnit:  it.specUnit || null,
-          qtyUnit:   it.qtyUnit  || null,
-          specValue: it.specValue ? parseFloat(it.specValue) : null,
-          qtyValue:  it.qtyValue  ? parseFloat(it.qtyValue)  : null,
+          roomId:    r.roomId,
+          amount:    r.amount,
+          detail:    `[${r.it.label}]${r.it.specValue ? ` ${r.it.specValue}${r.it.specUnit ?? ''}` : ''}${r.qtyValue ? ` x ${r.qtyValue}${r.it.qtyUnit ?? ''}` : ''}`,
+          itemLabel: r.it.label,
+          specUnit:  r.it.specUnit || null,
+          qtyUnit:   r.it.qtyUnit  || null,
+          specValue: r.it.specValue ? parseFloat(r.it.specValue) : null,
+          qtyValue:  r.qtyValue ? parseFloat(r.qtyValue) : null,
         },
       })))
       revalidatePath('/finance')

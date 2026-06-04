@@ -135,7 +135,10 @@ export type ItemPickState = {
   label: string
   specValue: string; specUnit: string
   qtyValue: string; qtyUnit: string
-  amount?: number   // 다중 품목 입력 시: 이 품목에 할당된 금액 (단일 품목일 때는 미사용)
+  amount?: number   // 이 품목에 할당된 총 금액
+  unitPrice?: number  // 단가 — amount 와 수량으로 상호 자동계산(둘 중 하나 입력 시 다른 쪽 계산)
+  // 방별 분배 (선택) — 사용자가 '방별로 나누기'를 켰을 때만. 비면 방 분할 없음(방은 선택사항).
+  allocations?: { roomId: string; qty: string }[]
 }
 
 export function fmtItemDetail(d: ItemPickState): string {
@@ -192,11 +195,12 @@ function UnitCombobox({ value, onChange, options, placeholder }: {
   )
 }
 
-function ItemSelector({ category, value, onChange, allowMulti = true }: {
+function ItemSelector({ category, value, onChange, allowMulti = true, rooms = [] }: {
   category: string
   value: ItemPickState[]
   onChange: (data: ItemPickState[]) => void
   allowMulti?: boolean
+  rooms?: { id: string; roomNo: string }[]   // 방별 분배용 (선택). 없으면 방 분배 UI 미표시.
 }) {
   const presets = ITEM_PRESETS[category]
   const items = value
@@ -242,7 +246,9 @@ function ItemSelector({ category, value, onChange, allowMulti = true }: {
 
   function confirmAdd(label: string) {
     const amount = amountStr ? Number(amountStr.replace(/[^0-9]/g, '')) : undefined
-    const data: ItemPickState = { label, specValue, specUnit, qtyValue, qtyUnit, amount }
+    const q = Number(qtyValue) || 1
+    const unitPrice = amount != null && q > 0 ? Math.round(amount / q) : undefined
+    const data: ItemPickState = { label, specValue, specUnit, qtyValue, qtyUnit, amount, unitPrice }
     onChange([...items, data])
     setActiveLabel(null)
     setSpecValue(''); setQtyValue(''); setAmountStr(''); setCustomLabel('')
@@ -252,9 +258,38 @@ function ItemSelector({ category, value, onChange, allowMulti = true }: {
     onChange(items.filter((_, i) => i !== idx))
   }
 
+  function patchItem(idx: number, patch: Partial<ItemPickState>) {
+    onChange(items.map((it, i) => i === idx ? { ...it, ...patch } : it))
+  }
+  const qtyNumOf = (it: ItemPickState) => Number(it.qtyValue) || 1
+  // 금액 입력 → 단가 자동(금액÷수량)
   function updateItemAmount(idx: number, raw: string) {
     const amount = raw ? Number(raw.replace(/[^0-9]/g, '')) : undefined
-    onChange(items.map((it, i) => i === idx ? { ...it, amount } : it))
+    const q = qtyNumOf(items[idx])
+    patchItem(idx, { amount, unitPrice: amount != null && q > 0 ? Math.round(amount / q) : undefined })
+  }
+  // 단가 입력 → 금액 자동(단가×수량)
+  function updateItemUnit(idx: number, raw: string) {
+    const unitPrice = raw ? Number(raw.replace(/[^0-9]/g, '')) : undefined
+    const q = qtyNumOf(items[idx])
+    patchItem(idx, { unitPrice, amount: unitPrice != null ? Math.round(unitPrice * q) : items[idx].amount })
+  }
+  // 수량 변경 → 단가 우선으로 금액 재계산(단가 없으면 금액→단가)
+  function updateItemQty(idx: number, raw: string) {
+    const qtyValue = raw.replace(/[^0-9.]/g, '')
+    const it = items[idx]
+    const q = Number(qtyValue) || 1
+    if (it.unitPrice != null) patchItem(idx, { qtyValue, amount: Math.round(it.unitPrice * q) })
+    else if (it.amount != null) patchItem(idx, { qtyValue, unitPrice: q > 0 ? Math.round(it.amount / q) : undefined })
+    else patchItem(idx, { qtyValue })
+  }
+  // 방별 분배 — 켜면 한 줄(방 미지정+전체수량) 생성, 끄면 제거(방 분배 없음)
+  function toggleAlloc(idx: number) {
+    const it = items[idx]
+    patchItem(idx, it.allocations ? { allocations: undefined } : { allocations: [{ roomId: '', qty: it.qtyValue || '1' }] })
+  }
+  function setAllocs(idx: number, allocs: { roomId: string; qty: string }[]) {
+    patchItem(idx, { allocations: allocs })
   }
 
   const totalItemAmount = items.reduce((s, it) => s + (it.amount ?? 0), 0)
@@ -307,27 +342,81 @@ function ItemSelector({ category, value, onChange, allowMulti = true }: {
 
   return (
     <div className="space-y-2">
-      {/* 등록된 품목 칩 리스트 */}
+      {/* 등록된 품목 — 수량·단가·금액(자동) + 선택적 방별 분배 */}
       {items.length > 0 && (
         <div className="space-y-1.5">
-          {items.map((it, idx) => (
-            <div key={idx} className="flex items-center gap-2 px-2.5 py-1.5 bg-[var(--coral-pale)] text-[var(--coral)] rounded-xl ring-1 ring-[var(--coral)]/20">
-              <span className="text-xs flex-1 min-w-0 truncate">{fmtItemDetail(it)}</span>
-              {allowMulti && (
-                <div className="flex items-center gap-1 shrink-0">
-                  <input
-                    type="text" inputMode="numeric"
-                    value={it.amount ? it.amount.toLocaleString() : ''}
-                    onChange={e => updateItemAmount(idx, e.target.value)}
-                    placeholder="금액"
-                    className="w-20 bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs text-[var(--warm-dark)] text-right outline-none focus:border-[var(--coral)]"
-                  />
-                  <span className="text-[0.625rem]">원</span>
+          {items.map((it, idx) => {
+            const allocSum = (it.allocations ?? []).reduce((s, a) => s + (Number(a.qty) || 0), 0)
+            const qtyN = Number(it.qtyValue) || 0
+            const allocMismatch = !!it.allocations && qtyN > 0 && Math.abs(allocSum - qtyN) > 0.001
+            const smallNum = 'bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs text-[var(--warm-dark)] text-right outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none'
+            return (
+              <div key={idx} className="px-2.5 py-2 bg-[var(--coral-pale)] rounded-xl ring-1 ring-[var(--coral)]/20 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-[var(--coral)] flex-1 min-w-0 truncate">{fmtItemDetail(it)}</span>
+                  <button type="button" onClick={() => removeItem(idx)} className="text-[var(--coral)] hover:text-red-600 leading-none text-sm shrink-0">×</button>
                 </div>
-              )}
-              <button type="button" onClick={() => removeItem(idx)} className="hover:text-red-600 leading-none text-sm shrink-0">×</button>
-            </div>
-          ))}
+                {allowMulti && (
+                  <div className="flex items-end gap-1.5 flex-wrap">
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-[0.5625rem] text-[var(--warm-muted)]">수량</span>
+                      <input type="text" inputMode="decimal" value={it.qtyValue}
+                        onChange={e => updateItemQty(idx, e.target.value)} placeholder="1"
+                        className={`w-12 ${smallNum}`} />
+                    </label>
+                    <span className="text-[0.625rem] text-[var(--warm-muted)] pb-1">×</span>
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-[0.5625rem] text-[var(--warm-muted)]">단가</span>
+                      <input type="text" inputMode="numeric" value={it.unitPrice ? it.unitPrice.toLocaleString() : ''}
+                        onChange={e => updateItemUnit(idx, e.target.value)} placeholder="0"
+                        className={`w-20 ${smallNum}`} />
+                    </label>
+                    <span className="text-[0.625rem] text-[var(--warm-muted)] pb-1">=</span>
+                    <label className="flex flex-col gap-0.5 flex-1 min-w-[5rem]">
+                      <span className="text-[0.5625rem] text-[var(--warm-muted)]">금액</span>
+                      <input type="text" inputMode="numeric" value={it.amount ? it.amount.toLocaleString() : ''}
+                        onChange={e => updateItemAmount(idx, e.target.value)} placeholder="0"
+                        className={`w-full ${smallNum}`} />
+                    </label>
+                  </div>
+                )}
+                {allowMulti && rooms.length > 0 && (
+                  <div>
+                    <button type="button" onClick={() => toggleAlloc(idx)}
+                      className={`text-[0.625rem] px-1.5 py-0.5 rounded-md border transition-colors ${it.allocations ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--coral)]'}`}>
+                      {it.allocations ? '방별 분배 끄기' : '방별로 나누기 (선택)'}
+                    </button>
+                    {it.allocations && (
+                      <div className="mt-1.5 space-y-1 border-t border-[var(--coral)]/20 pt-1.5">
+                        {it.allocations.map((a, ai) => (
+                          <div key={ai} className="flex items-center gap-1.5">
+                            <select value={a.roomId}
+                              onChange={e => setAllocs(idx, it.allocations!.map((x, i) => i === ai ? { ...x, roomId: e.target.value } : x))}
+                              className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs text-[var(--warm-dark)] outline-none">
+                              <option value="">방 선택…</option>
+                              {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
+                            </select>
+                            <input type="text" inputMode="decimal" value={a.qty} placeholder="수량"
+                              onChange={e => setAllocs(idx, it.allocations!.map((x, i) => i === ai ? { ...x, qty: e.target.value.replace(/[^0-9.]/g, '') } : x))}
+                              className={`w-14 ${smallNum}`} />
+                            <button type="button" onClick={() => setAllocs(idx, it.allocations!.filter((_, i) => i !== ai))}
+                              className="text-[var(--warm-muted)] hover:text-red-600 text-sm shrink-0">×</button>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between">
+                          <button type="button" onClick={() => setAllocs(idx, [...it.allocations!, { roomId: '', qty: '' }])}
+                            className="text-[0.625rem] text-[var(--coral)] hover:underline">+ 방 추가</button>
+                          <span className={`text-[0.5625rem] ${allocMismatch ? 'text-red-500' : 'text-[var(--warm-muted)]'}`}>
+                            분배 합 {allocSum} / 수량 {it.qtyValue || 0}{allocMismatch ? ' ⚠ 불일치' : ''}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
           {allowMulti && items.length > 1 && (
             <p className="text-[0.625rem] text-[var(--warm-muted)] text-right">
               합계 {totalItemAmount.toLocaleString()}원
@@ -2959,7 +3048,7 @@ export default function FinanceClient({
                 {ITEM_PRESETS[addExpCategory] && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택 <span className="text-[var(--warm-muted)] font-normal">(여러 품목 추가 가능)</span></label>
-                    <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} />
+                    <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={rooms} />
                   </div>
                 )}
                 <div className="space-y-1.5">
