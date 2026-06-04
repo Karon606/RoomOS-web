@@ -152,6 +152,41 @@ type ItemPick = {
   allocations?: { roomId: string; qty: string }[]
 }
 
+// 품목 목록 → 실제 지출 행으로 확장. 방별 분배(allocations)가 있으면 방별로 쪼개고,
+// 배정 안 한 나머지 수량은 '방 미지정' 행으로 남긴다(예: 6개 중 2개만 방 배정, 4개 예비).
+// 금액은 수량 비례 배분(반올림 잔여는 마지막 행이 흡수). allocations 없으면 폼 전체 방(formRoomId) 1행.
+type ExpandedRow = { it: ItemPick; amount: number; qtyValue: string | undefined; roomId: string | null }
+function expandExpenseRows(items: ItemPick[], formRoomId: string | null): ExpandedRow[] {
+  const rows: ExpandedRow[] = []
+  for (const it of items) {
+    const itAmount = Number(it.amount) || 0
+    const itemQty = Number(it.qtyValue) || 0
+    const allocs = (Array.isArray(it.allocations) ? it.allocations : []).filter(a => a && (a.roomId || a.qty))
+    if (allocs.length === 0) {
+      rows.push({ it, amount: itAmount, qtyValue: it.qtyValue, roomId: formRoomId })
+      continue
+    }
+    const allocSum = allocs.reduce((s, a) => s + (Number(a.qty) || 0), 0)
+    const denom = Math.max(itemQty, allocSum) || allocs.length
+    let usedAmt = 0
+    for (const a of allocs) {
+      const aq = Number(a.qty) || 0
+      const amt = Math.round(itAmount * (aq / denom))
+      usedAmt += amt
+      rows.push({ it, amount: amt, qtyValue: String(aq), roomId: a.roomId || null })
+    }
+    const remQty = denom - allocSum
+    if (remQty > 0.001) {
+      // 배정 안 한 나머지 — 방 미지정 행
+      rows.push({ it, amount: itAmount - usedAmt, qtyValue: String(Math.round(remQty * 100) / 100), roomId: null })
+    } else if (rows.length > 0) {
+      // 반올림 잔여는 마지막 행에 흡수
+      rows[rows.length - 1].amount += (itAmount - usedAmt)
+    }
+  }
+  return rows
+}
+
 // ── 영수증 OCR (Gemini Vision) ────────────────────────────────────
 export type ReceiptOcrItem = {
   label: string
@@ -319,27 +354,8 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
       const sum = multiItems.reduce((s, it) => s + (Number(it.amount) || 0), 0)
       if (Math.abs(sum - amount) > 1) return { ok: false, error: `품목 금액 합계(${sum.toLocaleString()}원)와 총 금액(${amount.toLocaleString()}원)이 일치하지 않습니다.` }
 
-      // 품목 → 행 확장. 방별 분배(allocations)가 있으면 방별로 쪼개고 금액은 수량 비례(마지막 잔여 흡수).
-      type Row = { it: ItemPick; amount: number; qtyValue: string | undefined; roomId: string | null }
-      const rows: Row[] = []
-      for (const it of multiItems) {
-        const itAmount = Number(it.amount) || 0
-        const allocs = (Array.isArray(it.allocations) ? it.allocations : []).filter(a => a && (a.roomId || a.qty))
-        if (allocs.length > 0) {
-          const totalQty = allocs.reduce((s, a) => s + (Number(a.qty) || 0), 0)
-          let used = 0
-          allocs.forEach((a, i) => {
-            const aq = Number(a.qty) || 0
-            const amt = i === allocs.length - 1
-              ? itAmount - used
-              : (totalQty > 0 ? Math.round(itAmount * (aq / totalQty)) : Math.round(itAmount / allocs.length))
-            used += amt
-            rows.push({ it, amount: amt, qtyValue: a.qty || it.qtyValue, roomId: a.roomId || null })
-          })
-        } else {
-          rows.push({ it, amount: itAmount, qtyValue: it.qtyValue, roomId: roomId || null })
-        }
-      }
+      // 품목 → 행 확장(방별 분배·미지정 나머지 처리).
+      const rows = expandExpenseRows(multiItems, roomId || null)
       await prisma.$transaction(rows.map(r => prisma.expense.create({
         data: {
           ...baseRow,
@@ -404,12 +420,16 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
 
     const baseSettleStatus: SettleStatus = payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED'
 
-    // 다중 품목 편집: 첫 항목은 현재 row 업데이트, 나머지는 sibling row로 새로 만듦
+    // 다중 품목/방별 분배 편집: 품목 2개+ 또는 방별 분배 있으면 분할.
+    // 첫 행은 현재 row 업데이트, 나머지(추가 품목·방별 행·미지정 나머지)는 새 row.
     let multiItems: ItemPick[] | null = null
     if (itemsJsonRaw) {
       try {
         const parsed = JSON.parse(itemsJsonRaw)
-        if (Array.isArray(parsed) && parsed.length >= 2) multiItems = parsed
+        if (Array.isArray(parsed) && parsed.length >= 1) {
+          const hasAlloc = parsed.some((it: ItemPick) => Array.isArray(it.allocations) && it.allocations.length > 0)
+          if (parsed.length >= 2 || hasAlloc) multiItems = parsed
+        }
       } catch { /* fallthrough */ }
     }
 
@@ -417,39 +437,41 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
       const sum = multiItems.reduce((s, it) => s + (Number(it.amount) || 0), 0)
       if (Math.abs(sum - amount) > 1) return { ok: false, error: `품목 금액 합계(${sum.toLocaleString()}원)와 총 금액(${amount.toLocaleString()}원)이 일치하지 않습니다.` }
 
-      const first = multiItems[0]
-      const rest  = multiItems.slice(1)
+      const rows = expandExpenseRows(multiItems, roomId || null)
+      const firstRow = rows[0]
+      const restRows = rows.slice(1)
+      const detailOf = (r: ExpandedRow) => `[${r.it.label}]${r.it.specValue ? ` ${r.it.specValue}${r.it.specUnit ?? ''}` : ''}${r.qtyValue ? ` x ${r.qtyValue}${r.it.qtyUnit ?? ''}` : ''}`
 
       await prisma.$transaction([
         prisma.expense.update({
           where: { id },
           data: {
             date:               new Date(date),
-            amount: Number(first.amount) || 0,
+            amount: firstRow.amount,
             category,
-            detail:    `[${first.label}]${first.specValue ? ` ${first.specValue}${first.specUnit ?? ''}` : ''}${first.qtyValue ? ` x ${first.qtyValue}${first.qtyUnit ?? ''}` : ''}`,
+            detail:    detailOf(firstRow),
             vendor:             vendor || null,
             memo:               memo || null,
             payMethod:          payMethod || '계좌이체',
             financialAccountId: financialAccountId || null,
             financeName:        financeName || null,
             settleStatus:       baseSettleStatus,
-            roomId:             roomId || null,
-            itemLabel: first.label,
-            specUnit:  first.specUnit || null,
-            qtyUnit:   first.qtyUnit  || null,
-            specValue: first.specValue ? parseFloat(first.specValue) : null,
-            qtyValue:  first.qtyValue  ? parseFloat(first.qtyValue)  : null,
+            roomId:             firstRow.roomId,
+            itemLabel: firstRow.it.label,
+            specUnit:  firstRow.it.specUnit || null,
+            qtyUnit:   firstRow.it.qtyUnit  || null,
+            specValue: firstRow.it.specValue ? parseFloat(firstRow.it.specValue) : null,
+            qtyValue:  firstRow.qtyValue  ? parseFloat(firstRow.qtyValue)  : null,
             ...(receiptUrl !== null && receiptUrl !== undefined ? { receiptUrl: receiptUrl || null } : {}),
           },
         }),
-        ...rest.map(it => prisma.expense.create({
+        ...restRows.map(r => prisma.expense.create({
           data: {
             propertyId,
             date:               new Date(date),
-            amount:    Number(it.amount) || 0,
+            amount:    r.amount,
             category,
-            detail:    `[${it.label}]${it.specValue ? ` ${it.specValue}${it.specUnit ?? ''}` : ''}${it.qtyValue ? ` x ${it.qtyValue}${it.qtyUnit ?? ''}` : ''}`,
+            detail:    detailOf(r),
             vendor:             vendor || null,
             memo:               memo || null,
             payMethod:          payMethod || '계좌이체',
@@ -457,12 +479,12 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
             financeName:        financeName || null,
             receiptUrl:         receiptUrl || null,
             settleStatus:       baseSettleStatus,
-            roomId:             roomId || null,
-            itemLabel: it.label,
-            specUnit:  it.specUnit || null,
-            qtyUnit:   it.qtyUnit  || null,
-            specValue: it.specValue ? parseFloat(it.specValue) : null,
-            qtyValue:  it.qtyValue  ? parseFloat(it.qtyValue)  : null,
+            roomId:             r.roomId,
+            itemLabel: r.it.label,
+            specUnit:  r.it.specUnit || null,
+            qtyUnit:   r.it.qtyUnit  || null,
+            specValue: r.it.specValue ? parseFloat(r.it.specValue) : null,
+            qtyValue:  r.qtyValue  ? parseFloat(r.qtyValue)  : null,
           },
         })),
       ])

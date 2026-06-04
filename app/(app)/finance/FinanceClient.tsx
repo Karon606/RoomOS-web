@@ -348,7 +348,8 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
           {items.map((it, idx) => {
             const allocSum = (it.allocations ?? []).reduce((s, a) => s + (Number(a.qty) || 0), 0)
             const qtyN = Number(it.qtyValue) || 0
-            const allocMismatch = !!it.allocations && qtyN > 0 && Math.abs(allocSum - qtyN) > 0.001
+            const allocRemain = Math.round((qtyN - allocSum) * 100) / 100   // 미지정(예비) 나머지
+            const allocOver = !!it.allocations && qtyN > 0 && allocSum - qtyN > 0.001   // 초과 배정만 오류
             const smallNum = 'bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-0.5 text-xs text-[var(--warm-dark)] text-right outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none'
             return (
               <div key={idx} className="px-2.5 py-2 bg-[var(--coral-pale)] rounded-xl ring-1 ring-[var(--coral)]/20 space-y-1.5">
@@ -406,8 +407,9 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                         <div className="flex items-center justify-between">
                           <button type="button" onClick={() => setAllocs(idx, [...it.allocations!, { roomId: '', qty: '' }])}
                             className="text-[0.625rem] text-[var(--coral)] hover:underline">+ 방 추가</button>
-                          <span className={`text-[0.5625rem] ${allocMismatch ? 'text-red-500' : 'text-[var(--warm-muted)]'}`}>
-                            분배 합 {allocSum} / 수량 {it.qtyValue || 0}{allocMismatch ? ' ⚠ 불일치' : ''}
+                          <span className={`text-[0.5625rem] ${allocOver ? 'text-red-500' : 'text-[var(--warm-muted)]'}`}>
+                            방 배정 {allocSum} / 전체 {it.qtyValue || 0}
+                            {allocOver ? ' ⚠ 수량 초과' : allocRemain > 0.001 ? ` · 나머지 ${allocRemain}개 미지정` : ''}
                           </span>
                         </div>
                       </div>
@@ -2845,6 +2847,7 @@ export default function FinanceClient({
                         category={editExpCategory}
                         value={editItems}
                         onChange={setEditItems}
+                        rooms={rooms}
                       />
                     </div>
                   )}
