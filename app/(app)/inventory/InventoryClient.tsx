@@ -41,7 +41,7 @@ import {
   updateStorageLocation,
   deleteStorageLocation,
   toggleStorageLocationHub,
-  setStorageHub,
+  setItemHub,
   setItemLocations,
   batchSetItemLocations,
   saveStockCheckDraft,
@@ -143,21 +143,6 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const refreshArchivedCount = () => getArchivedTrackedItems().then(d => setArchivedCount(d.length)).catch(() => {})
   useEffect(() => { refreshArchivedCount() }, [])
 
-  // 창고(허브) — 메인에서 바로 표시·전환
-  const [hubLocs, setHubLocs] = useState<StorageLocationItem[]>([])
-  const [hubPickerOpen, setHubPickerOpen] = useState(false)
-  const [hubPending, setHubPending] = useState(false)
-  const refreshHub = () => getStorageLocations().then(setHubLocs).catch(() => {})
-  useEffect(() => { refreshHub() }, [])
-  const currentHub = hubLocs.find(l => l.isHub) ?? null
-  const changeHub = async (id: string) => {
-    setHubPending(true)
-    const res = await setStorageHub(id)
-    setHubPending(false)
-    setHubPickerOpen(false)
-    if (res.ok) { refreshHub(); router.refresh(); pushToast('success', '창고(허브) 변경됨') }
-    else pushToast('error', res.error)
-  }
 
   // 점검 임시저장(드래프트)이 걸린 품목 id — 카드 '점검 중' 배지용
   const [draftIds, setDraftIds] = useState<Set<string>>(new Set())
@@ -215,31 +200,6 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
           <div>
             <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리</h1>
             <p className="text-xs text-[var(--warm-muted)] mt-0.5">부식·소모품·폐기물 사용량을 점검 기록 기반으로 추적합니다.</p>
-            {hubLocs.length > 0 && (
-              <div className="relative inline-block mt-1.5">
-                <button type="button" onClick={() => setHubPickerOpen(o => !o)} disabled={hubPending}
-                  className="inline-flex items-center gap-1 text-[0.6875rem] rounded-lg border border-[var(--honey)]/40 bg-[var(--honey)]/10 px-2 py-1 text-[var(--warm-mid)] hover:border-[var(--honey)] transition-colors disabled:opacity-50">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
-                  창고(허브): <strong className="text-[var(--warm-dark)]">{currentHub?.name ?? '미지정'}</strong>
-                  <span className="text-[var(--warm-muted)]">▾</span>
-                </button>
-                {hubPickerOpen && (
-                  <>
-                    <div className="fixed inset-0 z-[60]" onClick={() => setHubPickerOpen(false)} />
-                    <div className="absolute left-0 top-full mt-1 z-[61] min-w-[180px] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] shadow-lift py-1">
-                      <p className="px-3 py-1 text-[0.5625rem] text-[var(--warm-muted)]">창고(허브)로 지정할 위치</p>
-                      {hubLocs.map(l => (
-                        <button key={l.id} type="button" disabled={hubPending} onClick={() => changeHub(l.id)}
-                          className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--cream-soft)] flex items-center justify-between gap-2 ${l.isHub ? 'text-[var(--warm-dark)] font-medium' : 'text-[var(--warm-mid)]'}`}>
-                          {l.name}{l.isHub && <span className="text-[var(--honey)]">✓ 현재</span>}
-                        </button>
-                      ))}
-                      <p className="px-3 pt-1 text-[0.5625rem] text-[var(--warm-muted)] border-t border-[var(--warm-border)]/60 mt-1">위치 추가·이름변경은 '위치 관리'에서</p>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
           </div>
           {/* 점검 진입 방식 토글 — 모드 전환과 무관하게 항상 우측 상단 고정 (위치 점프 방지) */}
           <div className="inline-flex rounded-lg border border-[var(--warm-border)] overflow-hidden text-xs font-medium shrink-0">
@@ -615,6 +575,18 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
   const [error, setError] = useState('')
   const [pending, startTransition] = useTransition()
   const [loadingId, setLoadingId] = useState<string | null>(null)
+  const [hubOpen, setHubOpen] = useState(false)
+  const changeItemHub = (locId: string | null) => {
+    setHubOpen(false)
+    startTransition(async () => {
+      const release = trackSave()
+      try {
+        const res = await setItemHub(trackedItemId, locId)
+        if (res.ok) { reload(); onChange(); pushToast('success', '창고(허브) 변경됨') }
+        else { setError(res.error); pushToast('error', res.error) }
+      } finally { release() }
+    })
+  }
 
   const reload = () => Promise.all([
     getInventoryDetail(trackedItemId).then(setData),
@@ -709,6 +681,37 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                 { value: 'price',    label: '단가 추이' },
               ]}
             />
+            {row.locations.length > 0 && (() => {
+              const itemHub = row.locations.find(l => l.isHub) ?? null
+              return (
+                <div className="relative inline-block mt-2">
+                  <button type="button" onClick={() => setHubOpen(o => !o)} disabled={pending}
+                    className="inline-flex items-center gap-1 text-[0.6875rem] rounded-lg border border-[var(--honey)]/40 bg-[var(--honey)]/10 px-2 py-1 text-[var(--warm-mid)] hover:border-[var(--honey)] transition-colors disabled:opacity-50">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
+                    이 품목 창고(허브): <strong className="text-[var(--warm-dark)]">{itemHub?.name ?? '미지정'}</strong>
+                    <span className="text-[var(--warm-muted)]">▾</span>
+                  </button>
+                  {hubOpen && (
+                    <>
+                      <div className="fixed inset-0 z-[60]" onClick={() => setHubOpen(false)} />
+                      <div className="absolute left-0 top-full mt-1 z-[61] min-w-[200px] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] shadow-lift py-1">
+                        <p className="px-3 py-1 text-[0.5625rem] text-[var(--warm-muted)]">보충 시 차감할 창고(허브) 위치</p>
+                        {row.locations.map(l => (
+                          <button key={l.id} type="button" disabled={pending} onClick={() => changeItemHub(l.id)}
+                            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--cream-soft)] flex items-center justify-between gap-2 ${l.isHub ? 'text-[var(--warm-dark)] font-medium' : 'text-[var(--warm-mid)]'}`}>
+                            {l.name}{l.isHub && <span className="text-[var(--honey)]">✓ 현재</span>}
+                          </button>
+                        ))}
+                        <button type="button" disabled={pending} onClick={() => changeItemHub(null)}
+                          className="w-full text-left px-3 py-1.5 text-[0.625rem] text-[var(--warm-muted)] hover:bg-[var(--cream-soft)] border-t border-[var(--warm-border)]/60 mt-1">
+                          영업장 기본 창고 사용
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )
+            })()}
           </div>
           <div className="px-5 sm:px-6 py-3 space-y-3">
             {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
@@ -2498,7 +2501,6 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
   useEffect(() => { getStorageLocations().then(setLocs) }, [])
 
   const selectedLoc = locs.find(l => l.id === locId) ?? null
-  const isHubLocation = selectedLoc?.isHub ?? false
 
   const locItems = locId
     ? rows.filter(r => !r.isArchived && r.locations.some(l => l.id === locId))
@@ -2662,9 +2664,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
           <div>
             <h2 className="text-sm font-bold text-[var(--warm-dark)]">위치별 점검</h2>
             <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">
-              {isHubLocation
-                ? '창고(허브) 점검 — 현재 잔량만 입력합니다.'
-                : '각 품목의 보충 전·후를 입력하면 늘어난 만큼 창고(허브)에서 옮겨진 것으로 자동 차감됩니다.'}
+              보충 전·후를 입력하면 늘어난 만큼 그 품목의 창고(허브)에서 자동 차감됩니다. (이 위치가 허브인 품목은 현재 잔량만 입력)
             </p>
           </div>
           {!inline && (
@@ -2699,6 +2699,8 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
               const stockUnit = r.trackUnit === 'qty' ? r.qtyUnit : (r.specUnit ?? r.qtyUnit)
               const prev = r.lastCheckLocationBreakdown.find(lb => lb.locationId === locId)
               const { beforeStr, afterStr, restocked } = computeRow(r)
+              // 선택한 위치가 '이 품목'의 허브인지 — 품목마다 허브가 다르므로 행별로 판정.
+              const rowIsHub = r.locations.find(l => l.id === locId)?.isHub ?? false
               return (
                 <div key={r.id} className="space-y-1 border-b border-[var(--warm-border)]/40 pb-2 last:border-0">
                   <div className="flex items-baseline justify-between gap-2">
@@ -2709,7 +2711,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                     <div className="flex items-baseline gap-1.5 shrink-0">
                       <button type="button"
                         onClick={() => {
-                          if (isHubLocation) {
+                          if (rowIsHub) {
                             if (prev != null) setAfterQtys(p => ({ ...p, [r.id]: String(prev.qty) }))
                           } else {
                             const cur = beforeQtys[r.id] ?? ''
@@ -2725,7 +2727,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                         className="text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10">
                         유지
                       </button>
-                      {restocked > 0 && !isHubLocation && (
+                      {restocked > 0 && !rowIsHub && (
                         <span className="text-[0.625rem] text-[var(--coral)]">창고 → +{Math.round(restocked * 100) / 100}</span>
                       )}
                       {prev != null && (
@@ -2733,7 +2735,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                       )}
                     </div>
                   </div>
-                  {isHubLocation ? (
+                  {rowIsHub ? (
                     // 허브 위치 점검 — 잔량 1칸
                     <div className="flex items-center gap-1.5">
                       <p className="text-[0.5625rem] text-[var(--warm-muted)] shrink-0 w-16">잔량</p>
@@ -2769,7 +2771,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
           {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
         </div>
 
-        {locId && locItems.length > 0 && !isHubLocation && totalRestock > 0 && (
+        {locId && locItems.length > 0 && totalRestock > 0 && (
           <div className="border-t border-[var(--coral)]/20 bg-[var(--coral)]/5 px-5 py-2 shrink-0">
             <p className="text-[0.6875rem] text-[var(--warm-mid)]">
               보충한 만큼 각 품목의 창고(허브) 잔량에서 자동 차감됩니다.
@@ -3066,7 +3068,7 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
                   <span className="flex-1 text-sm text-[var(--warm-dark)]">{loc.name}</span>
                   <button
                     type="button"
-                    title={loc.isHub ? '허브(창고) 해제' : '허브(창고)로 지정'}
+                    title={loc.isHub ? '기본 창고 해제' : '기본 창고로 지정 (품목별로 지정 안 한 경우의 기본값)'}
                     onClick={async () => {
                       setPending(true)
                       await toggleStorageLocationHub(loc.id, !loc.isHub)
@@ -3074,7 +3076,7 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
                       setPending(false)
                     }}
                     className={`text-[0.625rem] px-2 py-1 rounded-lg border transition-colors ${loc.isHub ? 'bg-amber-50 border-amber-200 text-amber-700' : 'border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-amber-300 hover:text-amber-600'}`}>
-                    {loc.isHub ? '허브 ✓' : '허브'}
+                    {loc.isHub ? '기본 창고 ✓' : '기본 창고'}
                   </button>
                   <button type="button" onClick={() => { setEditId(loc.id); setEditName(loc.name) }}
                     className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>

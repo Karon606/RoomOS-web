@@ -14,7 +14,16 @@
 
 ## 완료된 것
 
-### 2026-06-02 세션 11부 — 재고 UX 3건 (허브 노출 / 무의미 합계 제거 / 스켈레톤 로더)
+### 2026-06-03 세션 12부 — 품목별 창고(허브) [SQL 적용됨, 배포] · 11부 전역 허브 롤백
+사용자: 일괄(전역) 허브는 무의미 — 김치=5층 김치냉장고, 라면=415호 창고처럼 품목마다 허브가 달라야 함. 11부 전역 허브 칩 롤백 + 품목별 재구성.
+- **스키마**: `TrackedItem.hubLocationId String?` + `migrate_tracked_item_hub.sql`. **프로덕션 적용 완료**, generate.
+- **핵심 통찰**: 허브는 곳곳에서 `item.locations[].isHub`로 결정됨(batch doSave 도 `r.locations.find(l=>l.isHub)`로 이미 품목별). → **locations[].isHub 를 품목 허브로 채우면 51곳 로직이 자동 품목별**. `isHub = hubLocationId ? l.id===hubLocationId : (영업장 기본 허브 폴백)`. overview.ts·getInventoryDetail·getStockAsOf 3곳 적용.
+- **신규 액션** `setItemHub(itemId, locationId|null)` (그 품목 연결 위치만 지정 가능, null=기본 허브 폴백).
+- **UI**: 품목 상세에 "이 품목 창고(허브): [이름] ▾" picker(그 품목 위치 중 선택 + '영업장 기본 창고 사용'). batch modal 전역 `isHubLocation` → 행별 `rowIsHub`(선택 위치가 그 품목 허브인지). 위치관리 토글은 '기본 창고'(폴백)로 라벨 변경.
+- **11부 롤백**: 재고 헤더 전역 허브 칩 + 상태 제거(setStorageHub 액션은 미사용으로 잔존, 무해).
+- **회귀 0**: 모든 hubLocationId=null → 폴백이 기존 전역 허브와 동일. 사용자가 품목별 지정 시 적용. tsc·build 통과.
+
+### 2026-06-02 세션 11부 — 재고 UX 3건 (허브 노출 / 무의미 합계 제거 / 스켈레톤 로더, 배포 `5ca6b21`)
 1. **창고(허브) 메인 노출·전환**: 허브 지정이 '위치 관리' 모달 깊숙이 있어 안 보였음 → 재고 헤더에 "창고(허브): [이름] ▾" 칩 + 드롭다운으로 즉시 전환. 신규 액션 [actions.ts](app/(app)/inventory/actions.ts) `setStorageHub(id)`(트랜잭션 — 선택 위치 허브 ON·나머지 OFF, 단일 허브 보장). InventoryClient 헤더에 getStorageLocations 로드 + 피커.
 2. **위치별 일괄점검 '이동 합계' 제거**: LocationBatchCheckModal 하단 "창고 → 이동 합계 +N"은 여러 품목(단위 제각각) 합이라 무의미 → 숫자 빼고 "보충한 만큼 각 품목의 창고 잔량에서 자동 차감됩니다" 안내만.
 3. **스켈레톤 로더**: 페이지 이동 시 작은 BrandLoader(60vh 중앙)라 안 보여 답답 → [components/ui/Skeleton.tsx](components/ui/Skeleton.tsx) 신규(animate-pulse, cream-3 톤) + [app/(app)/loading.tsx](app/(app)/loading.tsx)를 제목·칩·카드6 스켈레톤 화면으로 교체. (app) 라우트 이동 시 본문이 깜빡이는 placeholder 로. SplashScreen(최초 진입)은 그대로.

@@ -112,7 +112,7 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
 
 // ── 단일 품목 상세 — 점검 + 구매 + 무상 입수 타임라인
 export async function getInventoryDetail(trackedItemId: string): Promise<{
-  item: { id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; memo: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
+  item: { id: string; category: string; label: string; specUnit: string | null; qtyUnit: string | null; memo: string | null; trackUnit: 'spec' | 'qty'; hubLocationId: string | null; locations: StorageLocationItem[] }
   timeline: TimelineEntry[]
 } | null> {
   const propertyId = await getPropertyId()
@@ -207,7 +207,8 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       id: item.id, category: item.category, label: item.label,
       specUnit: item.specUnit, qtyUnit: item.qtyUnit, memo: item.memo,
       trackUnit: (item.trackUnit === 'qty' ? 'qty' : 'spec') as 'spec' | 'qty',
-      locations: item.locations.map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder, isHub: l.storageLocation.isHub })),
+      hubLocationId: item.hubLocationId,
+      locations: item.locations.map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder, isHub: item.hubLocationId ? l.storageLocation.id === item.hubLocationId : l.storageLocation.isHub })),
     },
     timeline,
   }
@@ -1601,7 +1602,7 @@ export async function getStockAsOf(trackedItemId: string, dateStr: string): Prom
   const propertyId = await getPropertyId()
   const it = await prisma.trackedItem.findFirst({
     where: { id: trackedItemId, propertyId },
-    select: { id: true, category: true, label: true, qtyUnit: true, specUnit: true, trackUnit: true },
+    select: { id: true, category: true, label: true, qtyUnit: true, specUnit: true, trackUnit: true, hubLocationId: true },
   })
   if (!it) return null
   const locs = await prisma.trackedItemLocation.findMany({
@@ -1640,12 +1641,35 @@ export async function getStockAsOf(trackedItemId: string, dateStr: string): Prom
   const expectedTotal = baseTotal + purchaseTotal + (addAgg._sum.addedQty ?? 0)
 
   const baseByLoc = new Map((baseline?.locationBreakdown ?? []).map(lb => [lb.storageLocationId, lb.remainingQty]))
-  const hub = locs.find(l => l.storageLocation.isHub) ?? locs[0]
+  // 품목별 허브 — hubLocationId 가 있으면 그 위치, 없으면 영업장 기본 허브(폴백).
+  const isItemHub = (locId: string, globalHub: boolean) => it.hubLocationId ? locId === it.hubLocationId : globalHub
+  const hub = locs.find(l => isItemHub(l.storageLocation.id, l.storageLocation.isHub)) ?? locs[0]
   const sinceDelta = expectedTotal - baseTotal
   const byLoc = locs.map(l => {
     let qty = baseByLoc.get(l.storageLocation.id) ?? 0
     if (hub && l.storageLocation.id === hub.storageLocation.id) qty = Math.max(0, qty + sinceDelta)
-    return { locationId: l.storageLocation.id, locationName: l.storageLocation.name, isHub: l.storageLocation.isHub, qty: Math.round(qty * 100) / 100 }
+    return { locationId: l.storageLocation.id, locationName: l.storageLocation.name, isHub: isItemHub(l.storageLocation.id, l.storageLocation.isHub), qty: Math.round(qty * 100) / 100 }
   })
   return { total: Math.round(expectedTotal * 100) / 100, byLoc }
+}
+
+// ── 품목별 창고(허브) 지정 — locationId=null 이면 영업장 기본 허브로 폴백.
+export async function setItemHub(trackedItemId: string, locationId: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId }, select: { id: true } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    if (locationId) {
+      // 이 품목에 연결된 위치만 허브로 지정 가능
+      const link = await prisma.trackedItemLocation.findFirst({ where: { trackedItemId, storageLocationId: locationId } })
+      if (!link) return { ok: false, error: '이 품목의 보관 위치 중에서만 창고를 지정할 수 있습니다.' }
+    }
+    await prisma.trackedItem.update({ where: { id: trackedItemId }, data: { hubLocationId: locationId } })
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }

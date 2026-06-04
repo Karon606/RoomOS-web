@@ -292,9 +292,10 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     // 월 단위 음수(그 달 입고가 사용량보다 많아 순증한 경우)는 사용량 0 으로 클램프 — '사용량' 은 음수일 수 없음.
     const monthlyConsumption = Object.entries(monthlyMap).map(([month, qty]) => ({ month, qty: qty > 0 ? qty : 0 }))
 
+    // isHub 는 '이 품목의 허브' — hubLocationId 가 있으면 그 위치, 없으면 영업장 기본 허브(폴백).
     const locations: StorageLocationItem[] = allItemLocations
       .filter(l => l.trackedItemId === it.id)
-      .map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder, isHub: l.storageLocation.isHub }))
+      .map(l => ({ id: l.storageLocation.id, name: l.storageLocation.name, sortOrder: l.storageLocation.sortOrder, isHub: it.hubLocationId ? l.storageLocation.id === it.hubLocationId : l.storageLocation.isHub }))
       .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
 
     const pendingPurchases: PendingPurchase[] = allPending
