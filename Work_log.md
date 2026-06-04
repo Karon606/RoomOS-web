@@ -14,7 +14,13 @@
 
 ## 완료된 것
 
-### 2026-06-02 세션 10부 — 전체 재고 보정 v2: 타임라인 보정 끼워넣기 (SQL 불필요)
+### 2026-06-02 세션 11부 — 재고 UX 3건 (허브 노출 / 무의미 합계 제거 / 스켈레톤 로더)
+1. **창고(허브) 메인 노출·전환**: 허브 지정이 '위치 관리' 모달 깊숙이 있어 안 보였음 → 재고 헤더에 "창고(허브): [이름] ▾" 칩 + 드롭다운으로 즉시 전환. 신규 액션 [actions.ts](app/(app)/inventory/actions.ts) `setStorageHub(id)`(트랜잭션 — 선택 위치 허브 ON·나머지 OFF, 단일 허브 보장). InventoryClient 헤더에 getStorageLocations 로드 + 피커.
+2. **위치별 일괄점검 '이동 합계' 제거**: LocationBatchCheckModal 하단 "창고 → 이동 합계 +N"은 여러 품목(단위 제각각) 합이라 무의미 → 숫자 빼고 "보충한 만큼 각 품목의 창고 잔량에서 자동 차감됩니다" 안내만.
+3. **스켈레톤 로더**: 페이지 이동 시 작은 BrandLoader(60vh 중앙)라 안 보여 답답 → [components/ui/Skeleton.tsx](components/ui/Skeleton.tsx) 신규(animate-pulse, cream-3 톤) + [app/(app)/loading.tsx](app/(app)/loading.tsx)를 제목·칩·카드6 스켈레톤 화면으로 교체. (app) 라우트 이동 시 본문이 깜빡이는 placeholder 로. SplashScreen(최초 진입)은 그대로.
+- tsc·build 통과. SQL 불필요.
+
+### 2026-06-02 세션 10부 — 전체 재고 보정 v2: 타임라인 보정 끼워넣기 (배포 `5de0617`·`7ae3738`)
 v1은 과거 날짜 보정 가능했으나 발견·UX가 약함. v2 = 품목 상세 타임라인에서 특정 시점에 보정을 끼워넣고, 그 시점 예상 재고를 미리 보여줌. 사용자 선택(타임라인 끼워넣기).
 - **신규 서버액션** [actions.ts](app/(app)/inventory/actions.ts) `getStockAsOf(trackedItemId, date)`: 그 날짜 시점 예상 재고(직전 ≤date 점검 잔량 + 그 사이 입고[구매 receivedAt·무상] 합산, 허브에 증감 귀속) → {total, byLoc}. 저장은 `saveFullReconcile` 단일 품목 재사용(carryOver 없는 plain isReconcile 생성 — createStockCheck 의 carryOver 는 '최신 점검'에서 채워 과거 삽입 시 미래값 끌어올 위험이라 회피).
 - **UI** DetailModal: mode 에 'reconcile' 추가, 푸터 '보정 끼워넣기' 버튼 → 신규 `TimelineReconcileForm`(날짜 피커 → getStockAsOf 로 위치별 예상 프리필 → 실측 입력 → 차이 표시 → 사유 → 저장). 위치 없는 품목은 총량 입력.

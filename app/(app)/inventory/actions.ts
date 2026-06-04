@@ -1300,6 +1300,25 @@ export async function getStorageLocations(): Promise<StorageLocationItem[]> {
   return locs
 }
 
+// 허브(창고) 단일 전환 — 선택한 위치를 허브로, 나머지는 모두 해제 (한 영업장 1개 허브 보장).
+export async function setStorageHub(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const loc = await prisma.storageLocation.findFirst({ where: { id, propertyId } })
+    if (!loc) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+    await prisma.$transaction([
+      prisma.storageLocation.updateMany({ where: { propertyId, isHub: true, NOT: { id } }, data: { isHub: false } }),
+      prisma.storageLocation.update({ where: { id }, data: { isHub: true } }),
+    ])
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 export async function toggleStorageLocationHub(id: string, isHub: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
