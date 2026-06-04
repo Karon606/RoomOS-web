@@ -2804,7 +2804,7 @@ export default function FinanceClient({
                 <input type="hidden" name="id" value={detailExp.id} />
                 <input type="hidden" name="financialAccountId" value={editExpAccId} />
                 <input type="hidden" name="financeName" value={editExpAccName} />
-                <input type="hidden" name="roomId" value={editExpRoomId} />
+                <input type="hidden" name="roomId" value={editItems.some(it => (it.allocations?.length ?? 0) > 0) ? '' : editExpRoomId} />
                 <div className="flex-1 overflow-y-auto p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
@@ -2914,14 +2914,18 @@ export default function FinanceClient({
                     </div>
                   )}
                   {rooms.length > 0 && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-[var(--warm-mid)]">대상 호실 (선택)</label>
-                      <select value={editExpRoomId} onChange={e => setEditExpRoomId(e.target.value)}
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                        <option value="">선택 안함</option>
-                        {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
-                      </select>
-                    </div>
+                    editItems.some(it => (it.allocations?.length ?? 0) > 0) ? (
+                      <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">대상 호실은 품목별 <strong className="text-[var(--warm-mid)]">'방별로 나누기'</strong>로 지정됩니다.</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-[var(--warm-mid)]">대상 호실 (선택)</label>
+                        <select value={editExpRoomId} onChange={e => setEditExpRoomId(e.target.value)}
+                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                          <option value="">선택 안함</option>
+                          {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
+                        </select>
+                      </div>
+                    )
                   )}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
@@ -3092,7 +3096,7 @@ export default function FinanceClient({
             <form onSubmit={handleAddExp} className="flex flex-col flex-1 overflow-hidden">
               <input type="hidden" name="financialAccountId" value={addExpAccId} />
               <input type="hidden" name="financeName" value={addExpAccName} />
-              <input type="hidden" name="roomId" value={addExpRoomId} />
+              <input type="hidden" name="roomId" value={addItems.some(it => (it.allocations?.length ?? 0) > 0) ? '' : addExpRoomId} />
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -3197,14 +3201,18 @@ export default function FinanceClient({
                   </div>
                 )}
                 {rooms.length > 0 && (
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">대상 호실 (선택)</label>
-                    <select value={addExpRoomId} onChange={e => setAddExpRoomId(e.target.value)}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                      <option value="">선택 안함</option>
-                      {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
-                    </select>
-                  </div>
+                  addItems.some(it => (it.allocations?.length ?? 0) > 0) ? (
+                    <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">대상 호실은 품목별 <strong className="text-[var(--warm-mid)]">'방별로 나누기'</strong>로 지정됩니다.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-[var(--warm-mid)]">대상 호실 (선택)</label>
+                      <select value={addExpRoomId} onChange={e => setAddExpRoomId(e.target.value)}
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                        <option value="">선택 안함</option>
+                        {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
+                      </select>
+                    </div>
+                  )
                 )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
