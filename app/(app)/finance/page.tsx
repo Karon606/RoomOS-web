@@ -1,4 +1,4 @@
-import { getExpenses, getExtraIncomes, getFinancialAccounts, getUnsettledExpenses, getSettledCardExpenses, getRecurringExpensesWithStatus, getRoomList, getExpenseCategoryTotals, getExpenseDetailSuggestions, getReserveBalance, getReserveMonthlySummary, getReserveTransactions, getSettleableExpenses, getDepositSummaryByTenant, getDepositLedger } from './actions'
+import { getExpenses, getExtraIncomes, getFinancialAccounts, getUnsettledExpenses, getSettledCardExpenses, getRecurringExpensesWithStatus, getRoomList, getExpenseCategoryTotals, getExpenseDetailSuggestions, getExpenseVendorSuggestions, getReserveBalance, getReserveMonthlySummary, getReserveTransactions, getSettleableExpenses, getDepositSummaryByTenant, getDepositLedger } from './actions'
 import { getIncomeCategories, getExpenseCategories, getPaymentMethods, getPropertySettings } from '@/app/(app)/settings/actions'
 import FinanceClient from './FinanceClient'
 
@@ -23,7 +23,7 @@ export default async function FinancePage({
   const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`
   const lastYearMonth = `${y - 1}-${String(m).padStart(2, '0')}`
 
-  const [expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus, rooms, prevMonthTotals, lastYearTotals, propertySettings, detailSuggestions, reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, depositSummary, depositLedger] = await Promise.all([
+  const [expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus, rooms, prevMonthTotals, lastYearTotals, propertySettings, detailSuggestions, vendorSuggestions, reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, depositSummary, depositLedger] = await Promise.all([
     getExpenses(targetMonth),
     getExtraIncomes(targetMonth),
     getFinancialAccounts(),
@@ -38,6 +38,7 @@ export default async function FinancePage({
     getExpenseCategoryTotals(lastYearMonth),
     getPropertySettings(),
     getExpenseDetailSuggestions(),
+    getExpenseVendorSuggestions(),
     getReserveBalance(),
     getReserveMonthlySummary(targetMonth),
     getReserveTransactions(targetMonth),
@@ -69,6 +70,7 @@ export default async function FinancePage({
       lastYearTotals={lastYearTotals}
       acquisitionDate={acquisitionDate}
       detailSuggestions={detailSuggestions}
+      vendorSuggestions={vendorSuggestions}
       reserveBalance={reserveBalance}
       reserveMonthly={reserveMonthly}
       reserveTxns={reserveTxns}

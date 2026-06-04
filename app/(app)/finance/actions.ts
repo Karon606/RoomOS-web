@@ -1354,3 +1354,21 @@ export async function getSettleableExpenses(targetMonth: string): Promise<{ id: 
     }))
     .filter(e => e.remaining > 0)
 }
+
+// 구매처(vendor) 자동완성 — 과거 입력한 구매처 중복 제거(최근순). datalist 제안용.
+export async function getExpenseVendorSuggestions(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const rows = await prisma.expense.findMany({
+    where: { propertyId, vendor: { not: null } },
+    select: { vendor: true },
+    orderBy: { createdAt: 'desc' },
+    take: 400,
+  })
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const r of rows) {
+    const v = r.vendor?.trim()
+    if (v && !seen.has(v)) { seen.add(v); result.push(v) }
+  }
+  return result
+}

@@ -202,7 +202,8 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   allowMulti?: boolean
   rooms?: { id: string; roomNo: string }[]   // 방별 분배용 (선택). 없으면 방 분배 UI 미표시.
 }) {
-  const presets = ITEM_PRESETS[category]
+  // 프리셋이 없는 카테고리도 '직접 입력'으로 품목·수량 추가 가능(옵션). 카테고리 커스터마이징 대응.
+  const presets = ITEM_PRESETS[category] ?? []
   const items = value
   const [activeLabel, setActiveLabel] = useState<string | null>(null)
   const [specValue, setSpecValue]     = useState('')
@@ -220,8 +221,6 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     setSpecValue(''); setSpecUnit(''); setQtyValue(''); setQtyUnit('')
     setAmountStr(''); setCustomLabel(''); setPrevUnits(null)
   }, [category])
-
-  if (!presets) return null
 
   const numCls  = 'w-16 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
   const amtCls  = 'flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
@@ -1116,7 +1115,7 @@ type DepositLedgerEntry = {
 type CategoryTotal = { category: string; total: number }
 
 export default function FinanceClient({
-  expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions,
+  expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions, vendorSuggestions,
   reserveBalance, reserveMonthly, reserveTxns, settleableExpenses,
   depositSummary, depositLedger,
   initialTab,
@@ -1138,6 +1137,7 @@ export default function FinanceClient({
   lastYearTotals: CategoryTotal[]
   acquisitionDate: string | null
   detailSuggestions: string[]
+  vendorSuggestions: string[]
   reserveBalance: number
   reserveMonthly: { deposit: number; withdraw: number; depositFromThisMonthRevenue: number }
   reserveTxns: ReserveTxn[]
@@ -2767,10 +2767,11 @@ export default function FinanceClient({
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>
-                    <input type="text" name="vendor" defaultValue={detailExp.vendor ?? ''} placeholder="예: 쿠팡, 다이소"
+                    <input type="text" name="vendor" defaultValue={detailExp.vendor ?? ''} placeholder="예: 쿠팡, 다이소" list="edit-exp-vendors"
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                    <datalist id="edit-exp-vendors">{vendorSuggestions.map(v => <option key={v} value={v} />)}</datalist>
                   </div>
-                  {ITEM_PRESETS[editExpCategory] && (
+                  {(
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택 <span className="text-[var(--warm-muted)] font-normal">(여러 품목 추가 가능)</span></label>
                       <ItemSelector
@@ -3053,10 +3054,11 @@ export default function FinanceClient({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>
-                  <input type="text" name="vendor" value={addExpVendor} onChange={e => setAddExpVendor(e.target.value)} placeholder="예: 쿠팡, 다이소"
+                  <input type="text" name="vendor" value={addExpVendor} onChange={e => setAddExpVendor(e.target.value)} placeholder="예: 쿠팡, 다이소" list="add-exp-vendors"
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                  <datalist id="add-exp-vendors">{vendorSuggestions.map(v => <option key={v} value={v} />)}</datalist>
                 </div>
-                {ITEM_PRESETS[addExpCategory] && (
+                {(
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택 <span className="text-[var(--warm-muted)] font-normal">(여러 품목 추가 가능)</span></label>
                     <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={rooms} />
