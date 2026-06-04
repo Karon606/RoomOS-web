@@ -1868,13 +1868,13 @@ export default function FinanceClient({
             </Btn>
           </div>
 
-          {/* 방별 지출 (이번 달) — '대상 호실' 배정된 지출을 방별로 합산 */}
+          {/* 방별 지출 (이번 달) — '대상 호실' 배정된 지출을 방별로 합산 + 방별 항목 펼치기 */}
           {(() => {
-            const byRoom = new Map<string, { roomNo: string; total: number; count: number }>()
+            const byRoom = new Map<string, { roomNo: string; total: number; items: Expense[] }>()
             for (const e of expenses) {
               if (!e.room) continue
-              const cur = byRoom.get(e.room.id) ?? { roomNo: e.room.roomNo, total: 0, count: 0 }
-              cur.total += e.amount; cur.count++
+              const cur = byRoom.get(e.room.id) ?? { roomNo: e.room.roomNo, total: 0, items: [] }
+              cur.total += e.amount; cur.items.push(e)
               byRoom.set(e.room.id, cur)
             }
             const groups = [...byRoom.values()].sort((a, b) => b.total - a.total)
@@ -1886,14 +1886,25 @@ export default function FinanceClient({
                   <span>방별 지출 (이번 달)</span>
                   <span className="text-[var(--warm-muted)] font-normal">{groups.length}개 방 · <MoneyDisplay amount={roomTotal} /></span>
                 </summary>
-                <ul className="mt-2 space-y-1 border-t border-[var(--warm-border)]/60 pt-2">
+                <div className="mt-2 space-y-1 border-t border-[var(--warm-border)]/60 pt-2">
                   {groups.map(g => (
-                    <li key={g.roomNo} className="flex items-center justify-between gap-2 text-[0.6875rem]">
-                      <span className="text-[var(--warm-mid)]">{g.roomNo}호 <span className="text-[var(--warm-muted)]">· {g.count}건</span></span>
-                      <span className="tabular-nums text-[var(--warm-dark)]"><MoneyDisplay amount={g.total} /></span>
-                    </li>
+                    <details key={g.roomNo} className="rounded-lg bg-[var(--canvas)] px-2 py-1">
+                      <summary className="cursor-pointer flex items-center justify-between gap-2 text-[0.6875rem]">
+                        <span className="text-[var(--warm-mid)]">{g.roomNo}호 <span className="text-[var(--warm-muted)]">· {g.items.length}건</span></span>
+                        <span className="tabular-nums text-[var(--warm-dark)]"><MoneyDisplay amount={g.total} /></span>
+                      </summary>
+                      <ul className="mt-1.5 space-y-1 border-t border-[var(--warm-border)]/50 pt-1.5">
+                        {g.items.map(it => (
+                          <li key={it.id} className="flex items-baseline justify-between gap-2 text-[0.625rem]">
+                            <span className="text-[var(--warm-muted)] shrink-0 tabular-nums">{kstYmdStr(new Date(it.date)).slice(5)}</span>
+                            <span className="flex-1 min-w-0 truncate text-[var(--warm-mid)]">{it.detail || it.category}{it.vendor ? ` · ${it.vendor}` : ''}</span>
+                            <span className="shrink-0 tabular-nums text-[var(--warm-dark)]"><MoneyDisplay amount={it.amount} /></span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
                   ))}
-                </ul>
+                </div>
               </details>
             )
           })()}
