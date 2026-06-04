@@ -1779,6 +1779,36 @@ export default function FinanceClient({
             </Btn>
           </div>
 
+          {/* 방별 지출 (이번 달) — '대상 호실' 배정된 지출을 방별로 합산 */}
+          {(() => {
+            const byRoom = new Map<string, { roomNo: string; total: number; count: number }>()
+            for (const e of expenses) {
+              if (!e.room) continue
+              const cur = byRoom.get(e.room.id) ?? { roomNo: e.room.roomNo, total: 0, count: 0 }
+              cur.total += e.amount; cur.count++
+              byRoom.set(e.room.id, cur)
+            }
+            const groups = [...byRoom.values()].sort((a, b) => b.total - a.total)
+            if (groups.length === 0) return null
+            const roomTotal = groups.reduce((s, g) => s + g.total, 0)
+            return (
+              <details className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] px-3 py-2">
+                <summary className="cursor-pointer text-xs font-semibold text-[var(--warm-dark)] flex items-center justify-between gap-2">
+                  <span>방별 지출 (이번 달)</span>
+                  <span className="text-[var(--warm-muted)] font-normal">{groups.length}개 방 · <MoneyDisplay amount={roomTotal} /></span>
+                </summary>
+                <ul className="mt-2 space-y-1 border-t border-[var(--warm-border)]/60 pt-2">
+                  {groups.map(g => (
+                    <li key={g.roomNo} className="flex items-center justify-between gap-2 text-[0.6875rem]">
+                      <span className="text-[var(--warm-mid)]">{g.roomNo}호 <span className="text-[var(--warm-muted)]">· {g.count}건</span></span>
+                      <span className="tabular-nums text-[var(--warm-dark)]"><MoneyDisplay amount={g.total} /></span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )
+          })()}
+
           {(() => {
             // 미확인 고정 지출 — 필터 적용 후 납부일 기준 날짜 부여
             const unconfirmedRecsFiltered = activeRecs.filter(r =>

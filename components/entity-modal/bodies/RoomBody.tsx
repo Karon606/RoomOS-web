@@ -10,6 +10,7 @@ import { PhotoStrip } from '../widgets/PhotoStrip'
 import { RoomBasicInfo } from '../widgets/RoomBasicInfo'
 import { RoomSpatialInfo } from '../widgets/RoomSpatialInfo'
 import { MemoSection } from '../widgets/MemoSection'
+import { RoomExpenses } from '../widgets/RoomExpenses'
 
 type RoomDetail = NonNullable<Awaited<ReturnType<typeof getRoomDetail>>>
 
@@ -35,6 +36,8 @@ export function RoomBody({ roomId, onApplyScheduledNow }: {
       <RoomSpatialInfo room={room} />
       <div className="mt-2.5" />
       <MemoSection memo={room.memo} />
+      <div className="mt-2.5" />
+      <RoomExpenses roomId={roomId} />
     </>
   )
 }

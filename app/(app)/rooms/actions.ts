@@ -1426,3 +1426,19 @@ export async function deleteRentDiscount(id: string): Promise<{ ok: true } | { o
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
+// 이 방에 배정된 지출(누적) — 방 상세 'ㅇ방 지출' 섹션용.
+export async function getRoomExpenses(roomId: string): Promise<{
+  total: number
+  items: { id: string; date: string; category: string; amount: number; vendor: string | null; memo: string | null }[]
+}> {
+  const propertyId = await getPropertyId()
+  const rows = await prisma.expense.findMany({
+    where: { propertyId, roomId },
+    orderBy: { date: 'desc' },
+    select: { id: true, date: true, category: true, amount: true, vendor: true, memo: true },
+  })
+  return {
+    total: rows.reduce((s, r) => s + r.amount, 0),
+    items: rows.map(r => ({ id: r.id, date: r.date.toISOString().slice(0, 10), category: r.category, amount: r.amount, vendor: r.vendor, memo: r.memo })),
+  }
+}

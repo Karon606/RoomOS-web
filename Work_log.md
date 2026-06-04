@@ -14,7 +14,13 @@
 
 ## 완료된 것
 
-### 2026-06-03 세션 12부 — 품목별 창고(허브) [SQL 적용됨, 배포] · 11부 전역 허브 롤백
+### 2026-06-03 세션 13부 — 방별 지출 보기 (방 상세 + 지출 페이지) [SQL 불필요]
+사용자: 지출에 '대상 호실' 배정한 게 각 지출 상세에만 보여 — 어떤 방에 총 얼마 들어갔는지 모아 볼 곳이 없음. 두 곳에 추가.
+- **방 상세(Prism)**: 신규 위젯 [RoomExpenses.tsx](components/entity-modal/widgets/RoomExpenses.tsx) — 그 방 누적 지출(전체 기간) 합계 + 접이식 내역. 신규 액션 [rooms/actions.ts](app/(app)/rooms/actions.ts) `getRoomExpenses(roomId)`(Expense.roomId 기준). RoomBody 에 추가.
+- **지출 페이지(finance)**: 지출 탭에 '방별 지출 (이번 달)' `<details>` 섹션 — 로드된 expenses(이번 달, room 포함)를 방별 합산·정렬. 상태 없이 native details.
+- tsc·build 통과. SQL 불필요(Expense.roomId 기존 필드).
+
+### 2026-06-03 세션 12부 — 품목별 창고(허브) [SQL 적용됨, 배포 `5fa7a2c`] · 11부 전역 허브 롤백
 사용자: 일괄(전역) 허브는 무의미 — 김치=5층 김치냉장고, 라면=415호 창고처럼 품목마다 허브가 달라야 함. 11부 전역 허브 칩 롤백 + 품목별 재구성.
 - **스키마**: `TrackedItem.hubLocationId String?` + `migrate_tracked_item_hub.sql`. **프로덕션 적용 완료**, generate.
 - **핵심 통찰**: 허브는 곳곳에서 `item.locations[].isHub`로 결정됨(batch doSave 도 `r.locations.find(l=>l.isHub)`로 이미 품목별). → **locations[].isHub 를 품목 허브로 채우면 51곳 로직이 자동 품목별**. `isHub = hubLocationId ? l.id===hubLocationId : (영업장 기본 허브 폴백)`. overview.ts·getInventoryDetail·getStockAsOf 3곳 적용.
