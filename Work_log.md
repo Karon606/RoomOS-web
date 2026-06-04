@@ -14,7 +14,13 @@
 
 ## 완료된 것
 
-### 2026-06-03 세션 15부 — 품목/수량 전 카테고리 허용 + 방별지출 드릴다운 + 구매처 자동완성
+### 2026-06-05 세션 16부 — 구매처 관리 + 단가 0원 복원 버그 fix
+- **구매처 관리(정리)**: 이력 자동완성(B)에 쌓인 오타·중복 정돈. 지출 탭 '구매처 관리' 버튼 → VendorManageModal(구매처 목록+사용건수, 이름변경=일괄 변경/같은이름이면 합치기/비우면 제거). 신규 액션 `getVendorUsage`(groupBy vendor), `renameVendor`(updateMany).
+- **단가 0원 버그 fix**: 품목 지출 저장 후 수정 들어가면 단가가 0 으로 뜸(저장엔 단가 없음, editItems 복원 시 unitPrice 미설정). → `unitPrice = round(amount / (qty||1))` 로 복원(편집 init + OCR/드래프트 addItems 매핑 양쪽).
+- tsc·build 통과. SQL 불필요.
+- **남은 논의(미구현)**: '대상 호실'을 수량만큼 멀티 선택 — 현재 방별 분배는 등록(ADD) 폼 옵트인만. 수정 폼·대상호실 멀티는 별도 설계 필요(수정=1행 분할 이슈).
+
+### 2026-06-03 세션 15부 — 품목/수량 전 카테고리 허용 + 방별지출 드릴다운 + 구매처 자동완성 (배포 `5255596`)
 - **방별 지출 드릴다운**: 지출 페이지 '방별 지출'이 방별 합계만 보여 항목 확인 불가 → 방 행을 펼치면(nested details) 그 방 지출 내역(날짜·세부·금액) 표시. (방 상세 위젯은 원래 펼침 내역 있음)
 - **품목/수량 전 카테고리 허용**: ITEM_PRESETS 있는 3개 카테고리에만 품목 UI 떴음 → 사용자 요청(품목·수량은 옵션이고 카테고리 커스터마이징되니 다 있어야). ItemSelector `if(!presets) return null` 제거 + `presets ?? []`, add/edit 폼의 `{ITEM_PRESETS[cat] && ...}` 게이트 제거 → 모든 카테고리에서 '직접 입력'으로 품목·수량·단가·금액·(add는 방분배) 추가 가능.
 - **구매처(vendor) 자동완성**: 과거 입력한 구매처를 datalist 로 타이핑 자동완성. 신규 `getExpenseVendorSuggestions()`(distinct vendor 최근순 400) → page.tsx 전달 → add/edit 구매처 input 에 `list=`+datalist. 별도 관리 불필요(이력 기반).

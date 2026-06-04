@@ -10,6 +10,7 @@ import {
   analyzeReceiptWithGemini,
   addReserveDeposit, addReserveWithdrawDirect, settleReserveFromExpense, deleteReserveTransaction,
   setRecurringPendingAmount, clearRecurringPendingAmount,
+  getVendorUsage, renameVendor,
   type RecurringExpenseWithStatus,
 } from './actions'
 import {
@@ -475,6 +476,66 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   )
 }
 
+
+// 구매처 정리 — 이력 기반 자동완성(B)에 쌓인 구매처의 오타·중복을 이름변경/합치기/비우기로 정돈.
+function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
+  const [rows, setRows] = useState<{ vendor: string; count: number }[] | null>(null)
+  const [edits, setEdits] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState<string | null>(null)
+  const load = () => getVendorUsage().then(setRows)
+  useEffect(() => { load() }, [])
+
+  const apply = async (oldName: string, rawNew: string) => {
+    const newName = rawNew.trim()
+    if (newName === oldName) return
+    if (newName === '' && !confirm(`'${oldName}' 구매처를 비울까요?\n해당 지출들의 구매처 표시가 사라집니다(지출 자체는 유지).`)) return
+    setBusy(oldName)
+    const release = trackSave()
+    try {
+      const res = await renameVendor(oldName, newName)
+      if (res.ok) {
+        pushToast('success', newName ? `'${oldName}' → '${newName}' (${res.updated}건 반영)` : `'${oldName}' 구매처 비움 (${res.updated}건)`)
+        setEdits(p => { const n = { ...p }; delete n[oldName]; return n })
+        await load(); onChanged()
+      } else pushToast('error', res.error)
+    } finally { release(); setBusy(null) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70" onClick={onClose}>
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] shadow-lift w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
+          <div>
+            <h2 className="text-sm font-bold text-[var(--warm-dark)]">구매처 관리</h2>
+            <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">오타·중복 정리. 같은 이름으로 바꾸면 합쳐지고, 비우면 그 지출들의 구매처가 제거됩니다.</p>
+          </div>
+          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] w-9 h-9 flex items-center justify-center" aria-label="닫기">✕</button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1.5">
+          {rows === null ? (
+            <p className="text-xs text-[var(--warm-muted)] text-center py-6">불러오는 중…</p>
+          ) : rows.length === 0 ? (
+            <p className="text-xs text-[var(--warm-muted)] text-center py-6">등록된 구매처가 없습니다.</p>
+          ) : rows.map(r => {
+            const val = edits[r.vendor] ?? r.vendor
+            const changed = val.trim() !== r.vendor
+            return (
+              <div key={r.vendor} className="flex items-center gap-1.5">
+                <input type="text" value={val} onChange={e => setEdits(p => ({ ...p, [r.vendor]: e.target.value }))}
+                  className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0 w-9 text-right">{r.count}건</span>
+                <button type="button" disabled={busy === r.vendor || !changed} onClick={() => apply(r.vendor, val)}
+                  className="text-xs px-2 py-1 rounded-lg bg-[var(--coral)] text-white disabled:opacity-30 shrink-0">저장</button>
+                <button type="button" disabled={busy === r.vendor} onClick={() => apply(r.vendor, '')}
+                  className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 px-1.5 py-1 shrink-0" title="구매처 비우기">비움</button>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const PAY_METHODS_EXP    = ['계좌이체', '신용카드', '체크카드', '현금', '기타']
 // 부가 수익 전용 입금수단 — '보유 보증금'은 보증금 카테고리에서 선택 가능 (다른 카테고리/모달엔 노출 X)
@@ -1253,7 +1314,7 @@ export default function FinanceClient({
         if (d.vendor) setAddExpVendor(d.vendor)
         if (d.category && EXPENSE_CATEGORIES.includes(d.category)) setAddExpCategory(d.category)
         if (d.items.length > 0 && ITEM_PRESETS[d.category ?? '']) {
-          setAddItems(d.items.map(it => ({ label: it.label, specValue: it.specValue ?? '', specUnit: it.specUnit ?? '', qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '', amount: it.amount })))
+          setAddItems(d.items.map(it => ({ label: it.label, specValue: it.specValue ?? '', specUnit: it.specUnit ?? '', qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '', amount: it.amount, unitPrice: it.amount != null ? Math.round(it.amount / (Number(it.qtyValue) || 1)) : undefined })))
           setAddExpAmount(d.items.reduce((s, it) => s + it.amount, 0))
         } else {
           setAddItems([])
@@ -1288,6 +1349,7 @@ export default function FinanceClient({
   const [recRecAccId, setRecRecAccId]   = useState('')
   const [recError, setRecError]         = useState('')
 
+  const [showVendorMgmt, setShowVendorMgmt] = useState(false)
   // ── 고정 지출 관리 모달 상태 ─────────────────────────────────
   const [showRecMgmt, setShowRecMgmt]   = useState(false)
   const [recMgmtList, setRecMgmtList]   = useState<RecurringExpenseRow[]>([])
@@ -1862,6 +1924,9 @@ export default function FinanceClient({
             </span>
             <Btn variant="secondary" size="md" onClick={openRecMgmt}>
               고정 지출 관리
+            </Btn>
+            <Btn variant="secondary" size="md" onClick={() => setShowVendorMgmt(true)}>
+              구매처 관리
             </Btn>
             <Btn variant="primary" size="md" onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
               + 지출 등록
@@ -2725,6 +2790,8 @@ export default function FinanceClient({
                       qtyValue:  detailExp.qtyValue?.toString() ?? '',
                       qtyUnit:   detailExp.qtyUnit ?? '',
                       amount:    detailExp.amount,
+                      // 단가 복원 — 금액÷수량(저장엔 단가 없음). 안 채우면 수정 시 단가 0 으로 보임.
+                      unitPrice: detailExp.amount != null ? Math.round(detailExp.amount / (Number(detailExp.qtyValue) || 1)) : undefined,
                     }] : [])
                     setError('')
                   }}>수정</Btn>
@@ -3251,6 +3318,8 @@ export default function FinanceClient({
       )}
 
     </div>
+
+    {showVendorMgmt && <VendorManageModal onClose={() => setShowVendorMgmt(false)} onChanged={() => router.refresh()} />}
 
     {/* ── 고정 지출 관리 모달 ────────────────────────────────────── */}
 

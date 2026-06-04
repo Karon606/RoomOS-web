@@ -1372,3 +1372,38 @@ export async function getExpenseVendorSuggestions(): Promise<string[]> {
   }
   return result
 }
+
+// 구매처 정리 — 사용 중인 구매처 목록(사용 건수). 오타·중복 정돈용.
+export async function getVendorUsage(): Promise<{ vendor: string; count: number }[]> {
+  const propertyId = await getPropertyId()
+  const rows = await prisma.expense.groupBy({
+    by: ['vendor'],
+    where: { propertyId, vendor: { not: null } },
+    _count: { _all: true },
+  })
+  return rows
+    .map(r => ({ vendor: (r.vendor ?? '').trim(), count: r._count._all }))
+    .filter(r => r.vendor)
+    .sort((a, b) => b.count - a.count || a.vendor.localeCompare(b.vendor))
+}
+
+// 구매처 이름 변경/합치기/비우기 — 해당 구매처의 모든 지출을 일괄 변경.
+// newName 이 기존 구매처와 같으면 자연히 합쳐짐. 빈 값이면 구매처 제거(null).
+export async function renameVendor(oldName: string, newName: string): Promise<{ ok: true; updated: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const target = newName.trim()
+    if (!oldName) return { ok: false, error: '대상 구매처가 없습니다.' }
+    if (target === oldName) return { ok: true, updated: 0 }
+    const res = await prisma.expense.updateMany({
+      where: { propertyId, vendor: oldName },
+      data: { vendor: target || null },
+    })
+    revalidatePath('/finance')
+    return { ok: true, updated: res.count }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
