@@ -14,7 +14,16 @@
 
 ## 완료된 것
 
-### 2026-06-05 세션 19부 — 고객 정보 수정 저장 후 폼 깜빡임·2중·옛내용 버그 fix (2단계)
+### 2026-06-05 세션 20부 — 운영 피드백 5건(#1·#2·#5a·#5b 배포 / #3·#4 정보대기)
+- **#2 만실 방 맞바꾸기(`fbb2fb2`)**: 예약확정 입주예정도 '수정' 시 호실 비우기 허용(서버 검증·폼 required 완화, RESERVED 한정). 둘이 잠시 미지정으로 파킹→재지정. 신규등록은 호실 필수 유지.
+- **#5a 보증금 수납 노출(`fbb2fb2`)**: PaymentEntryForm의 작은 텍스트 토글 → 또렷한 '보증금 수납하기' 버튼.
+- **#1 수납 최근 납부일(`4e90823`)**: getRoomPaymentStatus lastPayDate(현 원장 최신 payDate) → 수납 표 총납부액 셀(데스크탑·모바일)에 '납부 MM/DD'.
+- **#5b 보유 보증금(`fcb03d4`)**: 계약 보증금액을 ACTIVE·**RESERVED**·CHECKOUT_PENDING 합산 → 입실 전 예약확정 보증금까지 잡힘. ACTIVE·CHECKOUT_PENDING(거주중)만 합산으로 수정(입주하면 자동 포함).
+- **#5 남은 것(사용자 답 기반 후속)**: ①RESERVED 입주자 보증금 '실수납 완료' 기록 수단(현재 active만 가능) ②보유 보증금 '실수납 + 미수납(계약상)' 별도 표시(전 원장 보증금 누락 방지). 큰 작업, 별도 진행.
+- **#3 계약서 출력 잘림(대기)**: ContractView 인쇄 CSS는 1장 기준+page-break avoid. 잘림은 브라우저/내용길이별 → 출력 PDF·브라우저 정보 필요.
+- **#4 비거주→거주→비거주 이월 미납(대기)**: NON_RESIDENT 인데 이월액이 거주자 rentAmount 기준 미납으로 계산됨(추정: 청구가 월별 당시 status 무시하고 현 rentAmount·기간으로 계산). 재현할 호실 정보 필요.
+
+### 2026-06-05 세션 19부 — 고객 정보 수정 저장 후 폼 깜빡임·2중·옛내용 버그 fix (2단계, 배포 `f2c2243`)
 사용자: 저장하면 팝업이 깜빡이며 유지, 2개 겹친 느낌, 수정 전 내용이 보이다가 다 끄면 반영됨.
 - **1차(`8123a40`)**: 저장 시 URL `?edit=1`·`?tenantId` 미정리 → 재오픈. `clearTenantUrlParams()` 헬퍼로 저장 경로(일반·보증금환불)·closeEdit 정리. (부분 효과)
 - **2차(진짜 원인)**: edit=1 감지 useEffect 가 deps 에 `detailEditMode` 포함 → 저장 시 detailEditMode=false 되는 순간 재실행되는데, URL replace 가 아직 반영 안 돼 edit=1 잔존 → 폼을 **옛 데이터로 재오픈**(레이스). 깜빡·2중·수정전 내용의 정체. → `handledEditRef` 로 **한 edit 요청당 1회만** 오픈, edit 사라지면 리셋. deps 에서 detailEditMode/detailTenant.id 제거.
