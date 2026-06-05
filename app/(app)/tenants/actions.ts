@@ -276,7 +276,8 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
   const isReservedConfirmed = status === 'RESERVED' && reservationConfirmed
   if (!name?.trim()) return { ok: false, error: '이름은 필수입니다.' }
   if (isReservedConfirmed) {
-    if (!roomId) return { ok: false, error: '예약 확정 시 호실은 필수입니다.' }
+    // 호실은 '수정' 시엔 비워둘 수 있게 허용 — 만실에서 입실예정 둘이 방을 맞바꿀 때
+    // 잠시 '미지정'으로 파킹했다가 서로의 방으로 재지정하기 위함(새 기능 없이). 신규 등록(addTenant)은 그대로 필수.
     if (!rentAmount) return { ok: false, error: '예약 확정 시 월 이용료는 필수입니다.' }
     if (!moveInDate) return { ok: false, error: '예약 확정 시 입주 희망일은 필수입니다.' }
   }

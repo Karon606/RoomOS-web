@@ -156,11 +156,12 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
           <MoneyInput value={payAmount} onChange={setPayAmount} placeholder="0원" />
         </div>
       </div>
-      {/* 보증금/청소비 분리 모드 — 기본 숨김. 입주 첫 달에만 주로 쓰이므로. */}
+      {/* 보증금/청소비 수납 — 발견성 위해 또렷한 버튼으로. (입주 첫 달 주로 사용) */}
       {(room.depositAmount > 0 || room.cleaningFee > 0) && !showSpecialModes && !isDepositMode && !isCleaningFeeMode && (
         <button type="button" onClick={() => setShowSpecialModes(true)}
-          className="text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">
-          보증금·청소비 함께 수납 ▾
+          className="w-full text-xs font-medium text-[var(--coral)] border border-[var(--coral)]/35 bg-[var(--coral)]/5 rounded-lg px-3 py-2 hover:bg-[var(--coral)]/10 transition-colors">
+          + {room.depositAmount > 0 ? '보증금' : ''}{room.depositAmount > 0 && room.cleaningFee > 0 ? '·' : ''}{room.cleaningFee > 0 ? '청소비' : ''} 수납하기
+          {room.depositAmount > 0 && <span className="text-[var(--warm-muted)] font-normal"> · 보증금 {fmtKorMoney(room.depositAmount)}</span>}
         </button>
       )}
       {room.depositAmount > 0 && (showSpecialModes || isDepositMode) && (

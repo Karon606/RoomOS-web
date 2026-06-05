@@ -2455,6 +2455,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
 
   // WAITING_TOUR/TOUR_DONE/RESERVED는 호실 필수 아님 (단, 예약 확정 시 RESERVED는 호실 필수)
   const roomIsOptional = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'].includes(statusVal) && !(statusVal === 'RESERVED' && reservationConfirmed)
+  // 호실 입력 강제 여부 — 예약확정이라도 RESERVED 면 '미지정' 허용(만실 맞바꾸기 임시 파킹용). 라벨·날짜 로직은 roomIsOptional 그대로.
+  const roomCanBeEmpty = roomIsOptional || statusVal === 'RESERVED'
   // ACTIVE, CHECKOUT_PENDING + 예약 확정 → 입주중/퇴실예정 방만 비활성화 (공실 + 퇴실예정만 선택 가능)
   const activeOnlyStatus = ['ACTIVE', 'CHECKOUT_PENDING'].includes(statusVal) || (statusVal === 'RESERVED' && reservationConfirmed)
   const isWaitingTourStatus = statusVal === 'WAITING_TOUR' || (statusVal === 'RESERVED' && reservationConfirmed)
@@ -2737,12 +2739,13 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
         {/* 호실 — 상태에 따라 선택 규칙 다름 */}
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">
-            호실{roomIsOptional ? '' : ' *'}
+            호실{roomCanBeEmpty ? '' : ' *'}
+            {!roomIsOptional && statusVal === 'RESERVED' && <span className="ml-1 text-[0.625rem] text-[var(--warm-muted)] font-normal">(맞바꿈 시 잠시 비워둘 수 있음)</span>}
           </label>
-          <select name="roomId" value={selectedRoomId} onChange={handleRoomChange} required={!roomIsOptional}
+          <select name="roomId" value={selectedRoomId} onChange={handleRoomChange} required={!roomCanBeEmpty}
             onWheel={e => e.stopPropagation()}
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-            <option value="">{roomIsOptional ? '호실 선택 (선택사항)' : '호실 선택'}</option>
+            <option value="">{roomCanBeEmpty ? '호실 선택 (선택사항)' : '호실 선택'}</option>
             {rooms.map(r => {
               const isCurrentRoom = r.id === lease?.room?.id
               const isCheckoutPending = r.currentLeaseStatus === 'CHECKOUT_PENDING'
