@@ -903,8 +903,10 @@ export default function ContractView({ data }: { data: ContractData }) {
             min-height: 0 !important;
             padding: 0 !important;
             margin: 0 !important;
-            page-break-after: avoid;
-            page-break-inside: avoid;
+            /* 루트 인쇄 요소엔 page-break-inside/after: avoid 를 걸지 않는다.
+               내용이 1장을 넘으면 일부 브라우저(Safari)가 넘치는 부분을 '상단부터'
+               잘라내 제목이 사라짐(507·509호 등 내용 긴 계약). 페이지 분할은
+               아래 내부 블록(.section·.info-table·.oath 등)의 avoid 로만 제어한다. */
             font-size: 8pt;
             line-height: 1.32;
           }
