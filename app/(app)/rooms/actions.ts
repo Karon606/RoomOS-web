@@ -34,6 +34,8 @@ type RoomRow = {
   isReservationConfirmed: boolean   // RESERVED + reservationConfirmedAt != null
   // 지연납부 — 이 viewMonth 귀속분이 모두 dueDay 이후에 입금된 경우 가장 늦은 payDate ('YYYY-MM-DD')
   latePaidAt: string | null
+  // 실제 가장 최근 납부일 — 수납 표에 '언제 냈는지' 표시용 ('YYYY-MM-DD' or null)
+  lastPayDate: string | null
   // 다음 청구 도래일 (오늘 이후 가장 가까운 dueDay, override·말일 등 반영). 'YYYY-MM-DD'
   nextDueDate: string | null
   // 다음 청구 도래 시 받아야 할 추가 금액 (월 청구액 - 누적 선납 잔액)
@@ -168,6 +170,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         firstUnpaidMonth: null,
         isReservationConfirmed: !!lease.reservationConfirmedAt,
         latePaidAt: null,
+        lastPayDate: null,
         nextDueDate: null,
         nextDueAmount: 0,
         expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
@@ -194,6 +197,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         firstUnpaidMonth: null,
         isReservationConfirmed: false,
         latePaidAt: null,
+        lastPayDate: null,
         nextDueDate: null,
         nextDueAmount: 0,
         expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
@@ -394,6 +398,13 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       }
     }
 
+    // 실제 최근 납부일 — 현 원장(postCutoff) record 중 가장 늦은 payDate
+    const lastPayDate: string | null = (() => {
+      if (postCutoffRecords.length === 0) return null
+      const latest = new Date(Math.max(...postCutoffRecords.map(p => new Date(p.payDate).getTime())))
+      return `${latest.getFullYear()}-${String(latest.getMonth() + 1).padStart(2, '0')}-${String(latest.getDate()).padStart(2, '0')}`
+    })()
+
     // 다음 청구 도래일 — viewMonth 안에서만 (그 달 dueDay가 미도래이고 아직 받지 못한 금액이 있을 때)
     // 4월 페이지에서 5월/6월 dueDay를 표시하지 않음 — 그건 5월/6월 페이지에서 다룬다
     // 이월 미수가 있으면 '납부 예정'이 아니라 '미납' 우선이라 nextDue 표시 안 함
@@ -426,6 +437,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         firstUnpaidMonth,
         isReservationConfirmed: false,
         latePaidAt,
+        lastPayDate,
         nextDueDate,
         nextDueAmount,
         expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
@@ -451,6 +463,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       firstUnpaidMonth,
       isReservationConfirmed: false,
       latePaidAt,
+      lastPayDate,
       nextDueDate,
       nextDueAmount,
       expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
@@ -480,6 +493,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         firstUnpaidMonth: null,
         isReservationConfirmed: false,
         latePaidAt: null,
+        lastPayDate: null,
         nextDueDate: null,
         nextDueAmount: 0,
         expectedMoveOut: null,
@@ -1220,6 +1234,7 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     firstUnpaidMonth: null,
     isReservationConfirmed: false,
     latePaidAt: null,
+    lastPayDate: null,
     nextDueDate: null,
     nextDueAmount: 0,
     expectedMoveOut: lease.moveOutDate ? new Date(lease.moveOutDate).toISOString().slice(0, 10) : null,

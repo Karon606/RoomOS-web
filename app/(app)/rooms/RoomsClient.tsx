@@ -50,6 +50,7 @@ type RoomStatus = {
   firstUnpaidMonth: string | null
   isReservationConfirmed: boolean
   latePaidAt: string | null
+  lastPayDate: string | null
   nextDueDate: string | null
   nextDueAmount: number
   expectedMoveOut: string | null
@@ -717,6 +718,7 @@ export default function RoomsClient({
                 {colVis.totalPaid && (
                   <span className="text-[var(--warm-muted)]">
                     총납부 <MoneyDisplay amount={room.totalPaid} />
+                    {room.lastPayDate && <span className="text-[var(--warm-muted)]"> · 납부 {room.lastPayDate.slice(5).replace('-', '/')}</span>}
                   </span>
                 )}
               </div>
@@ -805,6 +807,9 @@ export default function RoomsClient({
                       <span className="text-[var(--warm-dark)]"><MoneyDisplay amount={room.totalPaid} /></span>
                       {room.carryOver > 0 && (
                         <span className="text-xs text-[var(--coral)] ml-1">(+이월액 <MoneyDisplay amount={room.carryOver} />)</span>
+                      )}
+                      {room.lastPayDate && (
+                        <span className="block text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">납부 {room.lastPayDate.slice(5).replace('-', '/')}</span>
                       )}
                     </td>
                   )}
