@@ -142,7 +142,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     prisma.room.count({ where: { propertyId } }),
     prisma.room.count({ where: { propertyId, isVacant: true } }),
     prisma.leaseTerm.aggregate({
-      where: { propertyId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+      // 보유 보증금 = 실제 거주 중(입주 완료)인 계약만. RESERVED(입실 전)는 보증금 입력만 했을 뿐
+      // 아직 받은 게 아니므로 제외(입주하면 ACTIVE 로 바뀌며 자동 포함). 사용자 보고 2026-06-05.
+      where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } },
       _sum: { depositAmount: true },
     }),
     prisma.expense.groupBy({
