@@ -17,6 +17,12 @@
 - 수정: `pendingRevenue = max(0, projectedRevenue − totalRevenue)` 신설 → 수납예정으로 표기. 이제 **예상매출=수납완료+수납예정**, **예상순이익=현재순이익+수납예정−예정고정지출** 정확히 성립. 위젯은 `+{pendingRevenue}`(중립색)로 표시. (`page.tsx` 반환 + `DashboardClient.tsx` 타입·표기)
 - 검증 권장: 화면에서 예상매출=수납완료+수납예정, 예상순이익=현재순이익+수납예정 맞는지.
 
+**신규(추가) — 예상매출 과대계상: 다음달 입주자가 이번달 매출에 잡힘**
+- 사용자 직감("미납 그렇게 크지 않을텐데")이 정확. 5월 gap 1,230,000 까보니 507(먀 야다나 모에)·509(탄 타르 누 아예)가 **입주일 2026-06-05인데 ACTIVE**라 5월 예상매출에 470k씩(합 940k) 잘못 포함. 실제 5월 미납은 조원섭25만+이종현1만+이원빈3만=**약 29만**.
+- 원인: `dashboard/page.tsx` totalExpected(=billableLeases)가 status·rentAmount만 보고 **moveInDate/expectedMoveOut 미확인**. (수납페이지·unpaid.ts·unpaidMap은 이미 입주월>대상월 제외 → 대시보드 totalExpected만 누락)
+- 수정: activeLeases select에 moveInDate·expectedMoveOut 추가, `billableInTargetMonth(l)`(입주월≤대상월≤퇴실월) 필터를 billableLeases에 적용. paidCount·totalExpected·projectedRevenue·pendingRevenue 모두 자동 교정.
+- 검증: 5월 totalExpected 15,910,000→14,970,000, 수납예정 290,000(=실제미납)로 일치. 예상순이익 ~94만 하향(820만→~726만, 상단 자막 723만과 부합).
+
 ## ⏳ 사용자 화면 검증 대기 (2026-06-02 작업, 전부 main 배포·SQL 적용 완료)
 오늘 재고·수납 9건 배포(커밋 `0a3ea71`~`eb1a717`). 실데이터 스크립트론 검증했고, 아래는 **실기기/프로덕션 화면 최종 확인**만 남음:
 - **재고 월별 사용량 그래프** — 수세미 5월 0, 라면 5월 115·6월 66, 주방세제 6270 등 현실적 수치로 뜨는지. (입고가 사용량으로 둔갑하던 버그·실제 시각 정렬·effTime 적용)

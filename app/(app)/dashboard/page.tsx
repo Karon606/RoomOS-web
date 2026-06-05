@@ -124,7 +124,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       // RESERVED는 아직 입주 안 한 상태 → 미수 합산 대상에서 제외
       where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
       // #14 월세 할인 — 수납현황 위젯(완료 건수·예상 수입)에 할인 반영
-      select: { id: true, status: true, rentAmount: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
+      // moveInDate·expectedMoveOut — 이번달 청구 대상 여부 판정(다음달 입주자가 이번달 매출에 잡히는 버그 방지)
+      select: { id: true, status: true, rentAmount: true, moveInDate: true, expectedMoveOut: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
     }),
     prisma.paymentRecord.findMany({
       where: {
@@ -618,7 +619,21 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     return acc
   }, {} as Record<string, number>)
 
-  const billableLeases = activeLeases.filter(l => l.rentAmount > 0)
+  // 이번달(targetMonth) 청구 대상 여부 — 입주월 ≤ 대상월 ≤ 퇴실월.
+  // (다음달 입주 예정인 ACTIVE 계약이 이번달 예상매출에 잡히던 버그 방지: 507·509호 사례)
+  const monthOfDate = (d: Date | string | null): string | null => {
+    if (!d) return null
+    const dt = new Date(d)
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+  }
+  const billableInTargetMonth = (l: { moveInDate?: Date | string | null; expectedMoveOut?: Date | string | null }): boolean => {
+    const mi = monthOfDate(l.moveInDate ?? null)
+    if (mi && mi > targetMonth) return false   // 아직 입주 전
+    const mo = monthOfDate(l.expectedMoveOut ?? null)
+    if (mo && mo < targetMonth) return false   // 이미 퇴실
+    return true
+  }
+  const billableLeases = activeLeases.filter(l => l.rentAmount > 0 && billableInTargetMonth(l))
   // #14 월세 할인 — 이달(targetMonth) 청구액은 할인 반영. 완납 판정·예상 수입 모두 할인가 기준.
   const billThisMonth  = (l: { rentAmount: number; discounts?: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[] }) =>
     discountedRent(l.discounts, targetMonth, l.rentAmount)
