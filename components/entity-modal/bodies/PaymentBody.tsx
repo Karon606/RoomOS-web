@@ -138,7 +138,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo }: {
           </button>
 
           {/* 납부 내역 — 편집·삭제 */}
-          <PaymentRecordList leaseTermId={leaseTermId} targetMonth={month} canEdit={canEdit} onChange={refresh} />
+          <PaymentRecordList leaseTermId={leaseTermId} targetMonth={month} canEdit={canEdit} onChange={refresh} reloadSignal={reloadKey} />
 
           {/* 새 수납 등록 (접힘/펼침) */}
           {canEdit && settlement.leaseTermId && settlement.tenantId && (

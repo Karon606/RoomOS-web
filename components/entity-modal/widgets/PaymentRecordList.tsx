@@ -21,12 +21,14 @@ const fmtDate = (d: Date | string) => {
   return `${dt.getFullYear()}.${String(dt.getMonth() + 1).padStart(2, '0')}.${String(dt.getDate()).padStart(2, '0')}`
 }
 
-export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange }: {
+export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange, reloadSignal }: {
   leaseTermId: string
   targetMonth: string
   canEdit: boolean
   /** 편집·삭제 후 부모가 settlement 재조회. */
   onChange?: () => void
+  /** 부모(PaymentBody)에서 수납 등록 등으로 값이 바뀌면 증가 → 리스트 재fetch 트리거. */
+  reloadSignal?: number
 }) {
   const [records, setRecords] = useState<Record[] | null>(null)
   const [acqDate, setAcqDate] = useState<Date | null>(null)
@@ -46,7 +48,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange 
     setRecords(records)
     setAcqDate(acquisitionDate ? new Date(acquisitionDate) : null)
   }
-  useEffect(() => { reload() /* eslint-disable-next-line */ }, [leaseTermId, targetMonth])
+  useEffect(() => { reload() /* eslint-disable-next-line */ }, [leaseTermId, targetMonth, reloadSignal])
 
   const isPreAcq = (p: Record) => !!(acqDate && new Date(p.payDate) < acqDate)
 
