@@ -185,7 +185,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
               {stats.trend.map((d, i) => {
                 const h = (d.views / trendMax) * 100
                 return (
-                  <div key={i} className="flex-1 flex flex-col justify-end items-center"
+                  <div key={i} className="flex-1 h-full flex flex-col justify-end items-center"
                     title={`${d.label}: ${d.views}뷰 · ${d.visitors}명`}>
                     <div className="w-full rounded-t-sm"
                       style={{ height: `${Math.max(2, h)}%`, background: 'var(--persimmon)' }} />
@@ -364,7 +364,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
           {stats.hourly.map((h, i) => {
             const height = (h.count / hourMax) * 100
             return (
-              <div key={i} className="flex-1 flex flex-col justify-end" title={`${h.hour}시: ${h.count}뷰`}>
+              <div key={i} className="flex-1 h-full flex flex-col justify-end" title={`${h.hour}시: ${h.count}뷰`}>
                 <div className="w-full rounded-t-sm"
                   style={{ height: `${Math.max(2, height)}%`, background: 'var(--camel)' }} />
               </div>
