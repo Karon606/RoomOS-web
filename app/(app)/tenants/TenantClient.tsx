@@ -617,6 +617,16 @@ export default function TenantClient({
     return true
   }
 
+  // URL ?edit=1·?tenantId 정리 — 안 지우면 저장/새로고침 후 edit 감지 useEffect 가 폼을 다시 염(깜빡·유지 버그).
+  const clearTenantUrlParams = () => {
+    if (searchParams.get('edit') === '1' || searchParams.get('tenantId')) {
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete('edit'); params.delete('tenantId')
+      const qs = params.toString()
+      router.replace(qs ? `?${qs}` : '?', { scroll: false })
+    }
+  }
+
   // 보증금 환불 또는 즉시 업데이트로 진행 (가격 모달 처리 이후 호출)
   const proceedAfterRentDecision = (fd: FormData, fromDetail: boolean) => {
     const status        = fd.get('status') as string
@@ -628,7 +638,7 @@ export default function TenantClient({
     startTransition(async () => {
       const res = await withSave(() => updateTenant(fd), { success: '입주자 정보 수정됨' })
       if (!res.ok) { setError(res.error); return }
-      if (fromDetail) { setDetailTenant(null); setDetailEditMode(false) }
+      if (fromDetail) { setDetailTenant(null); setDetailEditMode(false); clearTenantUrlParams() }
       else setEditTenant(null)
       refresh()
     })
@@ -676,7 +686,7 @@ export default function TenantClient({
         const updateRes = await updateTenant(fd)
         if (!updateRes.ok) { setError(updateRes.error); pushToast('error', updateRes.error); return }
         setDepositRefundModal(null)
-        if (fromDetail) { setDetailTenant(null); setDetailEditMode(false) }
+        if (fromDetail) { setDetailTenant(null); setDetailEditMode(false); clearTenantUrlParams() }
         else setEditTenant(null)
         refresh()
         pushToast('success', '보증금 환불 + 퇴실 처리됨')
@@ -1469,13 +1479,7 @@ export default function TenantClient({
         const t = detailTenant
         const closeEdit = () => {
           setDetailEditMode(false); setDetailTenant(null); setError('')
-          // URL ?edit=1 정리 — 안 그러면 새로고침/뒤로가기 시 폼이 다시 열림.
-          if (searchParams.get('edit') === '1' || searchParams.get('tenantId')) {
-            const params = new URLSearchParams(searchParams.toString())
-            params.delete('edit'); params.delete('tenantId')
-            const qs = params.toString()
-            router.replace(qs ? `?${qs}` : '?', { scroll: false })
-          }
+          clearTenantUrlParams()
         }
         return (
           <div className="fixed inset-0 bg-black/70 z-[260] flex items-center justify-center p-4"
