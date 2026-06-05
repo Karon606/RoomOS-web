@@ -425,15 +425,21 @@ export default function TenantClient({
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ?edit=1 변화 감지 — Prism [수정] 버튼 클릭 시 호출됨.
+  // ⚠️ 한 edit 요청(tenantId+edit=1)당 폼을 '한 번만' 연다(handledEditRef). 안 그러면 저장 후
+  //   detailEditMode 가 false 로 바뀌는 순간 useEffect 가 재실행돼(아직 URL 에 edit=1 잔존) 폼을
+  //   옛 데이터로 다시 여는 레이스 발생 → 깜빡임·2중 팝업·수정 전 내용 표시 (2026-06-05 사용자 보고).
+  //   edit 가 사라지면 ref 를 리셋해 다음 [수정] 요청은 정상 처리.
+  const handledEditRef = useRef<string | null>(null)
   useEffect(() => {
     const tenantId = searchParams.get('tenantId')
     const edit = searchParams.get('edit')
-    if (edit !== '1' || !tenantId) return
-    if (detailEditMode && detailTenant?.id === tenantId) return
+    if (edit !== '1' || !tenantId) { handledEditRef.current = null; return }
+    if (handledEditRef.current === tenantId) return
     const found = initialTenants.find(t => t.id === tenantId)
     if (!found) return
+    handledEditRef.current = tenantId
     setDetailTenant(found); setDetailEditMode(true)
-  }, [searchParams, initialTenants, detailEditMode, detailTenant?.id])
+  }, [searchParams, initialTenants])
 
   // 열 설정 변경 시 저장
   const updateColVis = (key: ColKey, val: boolean) => {

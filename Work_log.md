@@ -14,10 +14,11 @@
 
 ## 완료된 것
 
-### 2026-06-05 세션 19부 — 고객 정보 수정 저장 후 폼이 안 닫히고 깜빡이던 버그 fix
-사용자: 고객 정보 수정 저장하면 팝업이 닫혀야 하는데 깜빡이고 유지됨 → 저장 안 된 줄 알고 여러 번 누름.
-- **원인**: 저장 성공 시 `setDetailTenant(null)`로 닫지만 URL의 `?edit=1`·`?tenantId` 를 안 지움. `refresh()` 후 'edit=1 감지' useEffect(detailEditMode 가드가 풀려) 가 편집 폼을 다시 염 → 닫힘→재오픈 깜빡. (취소 핸들러는 URL 정리하나 저장 경로는 누락)
-- **수정**: `clearTenantUrlParams()` 헬퍼 추출 → 저장 성공(proceedAfterRentDecision·보증금환불 경로)에서 fromDetail 시 호출. closeEdit 도 동일 헬퍼로 통일.
+### 2026-06-05 세션 19부 — 고객 정보 수정 저장 후 폼 깜빡임·2중·옛내용 버그 fix (2단계)
+사용자: 저장하면 팝업이 깜빡이며 유지, 2개 겹친 느낌, 수정 전 내용이 보이다가 다 끄면 반영됨.
+- **1차(`8123a40`)**: 저장 시 URL `?edit=1`·`?tenantId` 미정리 → 재오픈. `clearTenantUrlParams()` 헬퍼로 저장 경로(일반·보증금환불)·closeEdit 정리. (부분 효과)
+- **2차(진짜 원인)**: edit=1 감지 useEffect 가 deps 에 `detailEditMode` 포함 → 저장 시 detailEditMode=false 되는 순간 재실행되는데, URL replace 가 아직 반영 안 돼 edit=1 잔존 → 폼을 **옛 데이터로 재오픈**(레이스). 깜빡·2중·수정전 내용의 정체. → `handledEditRef` 로 **한 edit 요청당 1회만** 오픈, edit 사라지면 리셋. deps 에서 detailEditMode/detailTenant.id 제거.
+- 셸(entityModal)은 순수 state라 [수정] 시 close()로 닫힘 — 2중의 원인 아님(편집폼 재오픈이 원인).
 - tsc·build 통과. SQL 불필요.
 
 ### 2026-06-05 세션 18부 — 지출 총액 자동합산(수정 단일품목) + 방별분배 시 대상호실 숨김 (배포 `3448240`)
