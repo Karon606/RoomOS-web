@@ -2796,6 +2796,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             onChange={setDepositAmountVal}
             placeholder="0원"
           />
+          {(depositAmountVal ?? 0) > 0 && (
+            <label className="flex items-center gap-1.5 text-[0.6875rem] text-[var(--warm-mid)] cursor-pointer pt-0.5">
+              <input type="checkbox" name="depositReceived" value="1" className="w-3.5 h-3.5 accent-[var(--coral)]" />
+              보증금 실제로 받음 — 실수납으로 기록 (이미 기록됐으면 자동 무시)
+            </label>
+          )}
         </div>
         {/* 청소비 | 입주일 — 입주일은 거주 단계(roomIsOptional=false)만. 예약/투어는 위 상태 클러스터의 입주 희망일 사용 */}
         <div className="grid grid-cols-2 gap-3">

@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { LeaseStatus, ContactType, Gender, PaymentTiming, RegistrationStatus } from '@prisma/client'
 import { requireEdit } from '@/lib/role'
+import { recordDepositReceived } from '@/app/(app)/rooms/actions'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -111,6 +112,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const inquiryAt           = formData.get('inquiryAt') as string
   const reservationConfirmed = formData.get('reservationConfirmed') === 'true'
   const isShortTerm          = formData.get('isShortTerm') === 'true'
+  const depositReceived      = formData.get('depositReceived') === '1'
 
   const isReservedConfirmed = status === 'RESERVED' && reservationConfirmed
   const roomOptionalStatuses = ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'] as string[]
@@ -214,6 +216,14 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
     data: { tenantId: tenant.id, fromStatus: 'RESERVED', toStatus: status, propertyId },
   })
 
+  // 보증금 '받음' 체크 시 실수납 record 생성 (예약 확정·신규 입주 시 보증금 수납 기록)
+  if (depositReceived && depositAmount > 0) {
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { tenantId: tenant.id }, orderBy: { createdAt: 'desc' }, select: { id: true },
+    })
+    if (lease) { try { await recordDepositReceived(lease.id) } catch { /* 이미 기록됨 등은 무시 */ } }
+  }
+
   revalidatePath('/tenants')
   return { ok: true }
   } catch (err) {
@@ -271,6 +281,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
   const inquiryAt          = formData.get('inquiryAt') as string
   const reservationConfirmed = formData.get('reservationConfirmed') === 'true'
   const isShortTerm          = formData.get('isShortTerm') === 'true'
+  const depositReceived      = formData.get('depositReceived') === '1'
   const applyScheduledRent = formData.get('applyScheduledRent') as string  // '1' = 즉시 적용, '0' = 보류, 비어있음 = 처리 안함
 
   const isReservedConfirmed = status === 'RESERVED' && reservationConfirmed
@@ -477,6 +488,11 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
         changedById: user.sub,
       },
     })
+  }
+
+  // 보증금 '받음' 체크 시 실수납 record 생성 (미기록분만 채움 — 이미 기록됐으면 무시)
+  if (depositReceived && depositAmount > 0) {
+    try { await recordDepositReceived(leaseTermId) } catch { /* 이미 기록됨 등은 무시 */ }
   }
 
   revalidatePath('/tenants')

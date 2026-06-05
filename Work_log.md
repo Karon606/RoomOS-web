@@ -23,6 +23,15 @@
 - 수정: activeLeases select에 moveInDate·expectedMoveOut 추가, `billableInTargetMonth(l)`(입주월≤대상월≤퇴실월) 필터를 billableLeases에 적용. paidCount·totalExpected·projectedRevenue·pendingRevenue 모두 자동 교정.
 - 검증: 5월 totalExpected 15,910,000→14,970,000, 수납예정 290,000(=실제미납)로 일치. 예상순이익 ~94만 하향(820만→~726만, 상단 자막 723만과 부합).
 
+## 2026-06-06 (이어서) — #5 보증금 실수납 기록 + 보유보증금 분해 (main 배포)
+사용자 방향 확정: (1) 보유 보증금 = 총액 유지 + 실수납/미기록 분해, (2) 받음 기록 진입점 둘 다.
+- **대시보드 '보유 보증금'**: 계약 기준 총액 유지 + 아래 '실수납 X · 미기록 Y(전 원장)' 분해. page.tsx에 depositRecorded(active 리스 isDeposit 합)·depositUnrecorded(=총액−실수납) 추가, DashboardClient KPI 카드 sub-line.
+- **recordDepositReceived 액션**(rooms/actions.ts): 전 원장 등으로 받았으나 기록 없는 보증금을 계약액 기준 실수납 record(isDeposit)로 백필. 미기록분(계약−기존입금)만 채움. targetMonth=입주월. requireEdit + revalidate(finance/rooms/dashboard/).
+- **finance 보증금 요약**: '입금 거래 기록 없음' 항목에 '받음으로 기록' 버튼(DepositTab). 클릭→백필→refresh.
+- **입주자/예약 폼**: 보증금>0이면 '보증금 실제로 받음' 체크박스(TenantClient FormFields). addTenant/updateTenant가 depositReceived 읽어 recordDepositReceived 호출(이미 기록됐으면 무시).
+- 안전성: 백필은 effectiveIn 폴백(계약액)을 실제 기록으로 전환 → 총액·잔고 불변, 미기록→실수납 이동만. 커밋 8ef9b0a(1·2) + 후속(3).
+- 검증 권장: finance에서 '받음으로 기록' 누른 뒤 대시보드 분해(실수납↑·미기록↓) 반영, 예약 확정 시 체크박스로 보증금 기록 생성 확인.
+
 ## ⏳ 사용자 화면 검증 대기 (2026-06-02 작업, 전부 main 배포·SQL 적용 완료)
 오늘 재고·수납 9건 배포(커밋 `0a3ea71`~`eb1a717`). 실데이터 스크립트론 검증했고, 아래는 **실기기/프로덕션 화면 최종 확인**만 남음:
 - **재고 월별 사용량 그래프** — 수세미 5월 0, 라면 5월 115·6월 66, 주방세제 6270 등 현실적 수치로 뜨는지. (입고가 사용량으로 둔갑하던 버그·실제 시각 정렬·effTime 적용)
