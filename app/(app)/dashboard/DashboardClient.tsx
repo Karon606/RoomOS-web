@@ -39,6 +39,8 @@ export type DashboardData = {
   totalExpense:      number
   netProfit:         number
   totalDeposit:      number
+  depositRecorded:   number     // 보유 보증금 중 실수납(입금기록 있음)
+  depositUnrecorded: number     // 보유 보증금 중 미기록(전 원장 등 계약상만)
   reserveBalance:    number
   reserveMonthly:    { deposit: number; withdraw: number }
   operatingCashAvailable: number  // = netProfit - 이 달 매출에서 적립된 예비비
@@ -836,13 +838,15 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
           className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5"
           style={{ borderColor: 'var(--warm-border)', background: 'var(--cream)' }}
         >
-          {[
+          {([
             { label: '수납액 (귀속)', value: data.paidRevenue,  color: 'var(--coral)' },
             { label: '기타수익', value: data.extraRevenue, color: '#f97316' },
             { label: '지출',     value: data.totalExpense, color: '#ef4444' },
             { label: '순수익',   value: data.netProfit,    color: data.netProfit >= 0 ? '#22c55e' : '#ef4444' },
-            { label: '보유 보증금', value: data.totalDeposit, color: '#a855f7' },
-          ].map((item, i) => (
+            // 보유 보증금 = 계약 기준 총액(유지). 아래 분해로 실수납/미기록(전 원장) 표시.
+            { label: '보유 보증금', value: data.totalDeposit, color: '#a855f7',
+              sub: `실수납 ${fmtKorMoney(data.depositRecorded)} · 미기록 ${fmtKorMoney(data.depositUnrecorded)}` },
+          ] as { label: string; value: number; color: string; sub?: string }[]).map((item, i) => (
             <div
               key={i}
               className="px-3 py-3 text-center min-w-0"
@@ -852,6 +856,9 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               <p className="text-[13px] font-bold leading-tight break-all" style={{ color: item.color }}>
                 <MoneyDisplay amount={Math.abs(item.value)} prefix={item.value < 0 ? '-' : ''} />
               </p>
+              {item.sub && (
+                <p className="text-[8.5px] mt-0.5 leading-tight" style={{ color: 'var(--warm-muted)' }}>{item.sub}</p>
+              )}
             </div>
           ))}
         </div>

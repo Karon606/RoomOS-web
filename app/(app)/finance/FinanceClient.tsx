@@ -18,6 +18,7 @@ import {
   type RecurringExpenseRow,
 } from '@/app/(app)/settings/actions'
 import { useRouter } from 'next/navigation'
+import { recordDepositReceived } from '@/app/(app)/rooms/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { Btn } from '@/components/ui/Btn'
 import { Loading } from '@/components/ui/Loading'
@@ -3769,6 +3770,23 @@ function DepositTab({ summary, ledger, totalBalance }: {
 }) {
   type SubTab = 'tenant' | 'ledger'
   const [sub, setSub] = useState<SubTab>('tenant')
+  const router = useRouter()
+  const [recPending, startRec] = useTransition()
+
+  // 전 원장 등으로 받았으나 입금기록 없는 보증금 → '받음(실수납)'으로 기록.
+  const handleRecordReceived = (leaseTermId: string, name: string, amount: number) => {
+    if (!confirm(`${name} 보증금을 '받음(실수납)'으로 기록할까요?\n계약상 금액(${amount.toLocaleString()}원)으로 입금 기록이 생성됩니다.`)) return
+    startRec(async () => {
+      const release = trackSave()
+      try {
+        await recordDepositReceived(leaseTermId)
+        pushToast('success', '보증금 받음으로 기록됨')
+        router.refresh()
+      } catch (e) {
+        pushToast('error', (e as Error).message ?? '기록 실패')
+      } finally { release() }
+    })
+  }
 
   const totalIn       = summary.reduce((s, d) => s + d.totalIn, 0)
   const totalReturned = summary.reduce((s, d) => s + d.totalReturned, 0)
@@ -3853,6 +3871,12 @@ function DepositTab({ summary, ledger, totalBalance }: {
                       {d.balance.toLocaleString()}원
                     </p>
                     <p className="text-[0.625rem] text-[var(--warm-muted)]">현재 잔고</p>
+                    {d.hasNoInRecord && d.status !== 'CHECKED_OUT' && d.contractDeposit > 0 && (
+                      <button onClick={() => handleRecordReceived(d.leaseTermId, d.tenantName, d.contractDeposit)} disabled={recPending}
+                        className="mt-1.5 text-[0.625rem] font-medium px-2 py-1 rounded-lg ring-1 ring-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 whitespace-nowrap">
+                        받음으로 기록
+                      </button>
+                    )}
                   </div>
                 </li>
               ))}

@@ -389,6 +389,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const totalRevenue = paidRevenue + extraRevenue
   const totalExpense = expenses.reduce((s, e) => s + e.amount, 0)
   const totalDeposit = depositAgg._sum.depositAmount ?? 0
+  // 보유 보증금 분해 — 실수납(보증금 입금기록 있음) vs 미기록(전 원장 등 기록 없이 계약상만).
+  // 총액(totalDeposit, 계약 기준)은 유지하고 아래에 분해만 표기 → 전 원장 보증금 누락 위험 없음.
+  const depositRecordedAgg = await prisma.paymentRecord.aggregate({
+    where: { propertyId, isDeposit: true, leaseTerm: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } } },
+    _sum: { actualAmount: true },
+  })
+  const depositRecorded = depositRecordedAgg._sum.actualAmount ?? 0
+  const depositUnrecorded = Math.max(0, totalDeposit - depositRecorded)
 
   // 예상 매출/순이익은 unpaidLeasesRaw 루프(line ~832) 안에서 projectedThisMonthByLease
   // 가 채워진 뒤 계산해야 함 → 아래 unpaidAmount 계산 직후로 이동.
@@ -1444,6 +1452,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     totalExpense,
     netProfit: totalRevenue - totalExpense,
     totalDeposit,
+    depositRecorded,
+    depositUnrecorded,
     reserveBalance,
     reserveMonthly,
     operatingCashAvailable: (totalRevenue - totalExpense) - reserveAccrualFromThisMonth,

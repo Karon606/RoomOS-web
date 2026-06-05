@@ -918,6 +918,51 @@ export async function saveDepositPayment(data: {
   await recalculatePayments(data.leaseTermId, data.targetMonth, data.rentAmount)
 }
 
+// 보증금 '받음(실수납)' 기록 — 전 원장 등으로 이미 받았으나 입금기록이 없는 보증금을
+// 계약상 금액 기준으로 실수납 record(isDeposit=true)로 남긴다.
+// finance 보증금 요약의 '받음으로 기록' 버튼, 입주자/예약 폼의 '수납 완료' 체크에서 호출.
+// 이미 기록된 보증금이 있으면 미기록분(계약액 − 기존 입금)만 채운다.
+export async function recordDepositReceived(leaseTermId: string, opts?: {
+  payDate?: string
+  payMethod?: string
+  memo?: string
+  amount?: number
+}) {
+  await requireEdit()
+  const propertyId = await getPropertyId()
+  const lease = await prisma.leaseTerm.findUnique({
+    where: { id: leaseTermId },
+    select: { id: true, tenantId: true, depositAmount: true, moveInDate: true },
+  })
+  if (!lease) throw new Error('계약을 찾을 수 없습니다.')
+
+  const existing = await prisma.paymentRecord.aggregate({
+    where: { leaseTermId, isDeposit: true },
+    _sum: { actualAmount: true },
+  })
+  const already = existing._sum.actualAmount ?? 0
+  const remaining = opts?.amount ?? Math.max(0, lease.depositAmount - already)
+  if (remaining <= 0) throw new Error('이미 보증금 수납이 기록되어 있습니다.')
+
+  const kst = kstYmd()
+  const targetMonth = lease.moveInDate
+    ? `${new Date(lease.moveInDate).getFullYear()}-${String(new Date(lease.moveInDate).getMonth() + 1).padStart(2, '0')}`
+    : `${kst.year}-${String(kst.month).padStart(2, '0')}`
+  const payDate = opts?.payDate ? new Date(opts.payDate) : new Date(kst.year, kst.month - 1, kst.day)
+
+  const existingCount = await prisma.paymentRecord.count({ where: { leaseTermId, targetMonth } })
+  await prisma.paymentRecord.create({
+    data: {
+      leaseTermId, tenantId: lease.tenantId, propertyId,
+      targetMonth, expectedAmount: lease.depositAmount, actualAmount: remaining,
+      payDate, payMethod: opts?.payMethod ?? '기타',
+      memo: opts?.memo ?? '보증금 수납(받음 기록)',
+      seqNo: existingCount + 1, isPaid: false, isDeposit: true, carryOver: 0,
+    },
+  })
+  revalidatePath('/finance'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/')
+}
+
 // 수납 재계산 — GAS의 recalculatePayments 이관
 async function recalculatePayments(
   leaseTermId: string,
