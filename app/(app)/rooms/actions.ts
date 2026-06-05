@@ -239,6 +239,21 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     // 양도인 몫 (payDate < cutoffDate) + 양도인 정산 record — 현 원장 계산에서 제외
     const postCutoffRecords = allLeaseRecords.filter(p => !p.isPrevOwner && (!cutoffDate || new Date(p.payDate) >= cutoffDate))
 
+    // [저장 청구액 우선] 과거월 청구는 그 달 record에 락인된 expectedAmount를 사용.
+    // 월세가 바뀌어도(거주→비거주 등) 과거가 현재 요율로 소급 재계산되지 않게 함.
+    // 같은 달 여러 record면 정규 월 청구(최대 expectedAmount)를 그 달 청구액으로 본다
+    // (일할·부분납 record는 더 작으므로 무시됨). record 없는 달만 현재 월세(할인 반영)로 fallback.
+    const lockedExpectedByMonth = new Map<string, number>()
+    for (const p of postCutoffRecords) {
+      if (p.isDeposit) continue
+      const cur = lockedExpectedByMonth.get(p.targetMonth) ?? 0
+      if (p.expectedAmount > cur) lockedExpectedByMonth.set(p.targetMonth, p.expectedAmount)
+    }
+    const billForMonth = (ms: string): number => {
+      const locked = lockedExpectedByMonth.get(ms)
+      return locked && locked > 0 ? locked : discountedRent(leaseDiscounts, ms, lease.rentAmount)
+    }
+
     // 인수월에 양도인이 받은 금액 / 사용자가 받은 금액 (acqMonthPrePaid 판정용)
     const acqMonthPaidToPrev = cutoffDate
       ? allLeaseRecords
@@ -299,7 +314,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     for (let cy = loopStartYyyy, cmn = loopStartMm; cy < yyyy || (cy === yyyy && cmn < mm); ) {
       const ms = `${cy}-${String(cmn).padStart(2, '0')}`
       const skip = (ms === acqMonthStr && acqMonthPrePaid) || prevOwnerMonths.has(ms)
-      if (!skip) { pastBillable++; billedBeforeSum += discountedRent(leaseDiscounts, ms, lease.rentAmount) }
+      if (!skip) { pastBillable++; billedBeforeSum += billForMonth(ms) }
       cmn++; if (cmn > 12) { cmn = 1; cy++ }
     }
 
@@ -374,7 +389,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
           const isMsPast = ms < targetMonth
           const billedThisStep = isMsPast || (dueDate && dueDate <= todayKstEnd)
           if (billedThisStep) {
-            cumExpected += discountedRent(leaseDiscounts, ms, lease.rentAmount)   // #14 월별 할인 반영
+            cumExpected += billForMonth(ms)   // [저장 청구액 우선] + #14 월별 할인 반영(fallback)
             if (totalReceivedAll < cumExpected) { firstUnpaidMonth = ms; break }
           }
         }

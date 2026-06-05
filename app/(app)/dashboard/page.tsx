@@ -349,7 +349,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         isDeposit: false,
         targetMonth: { lte: realTodayMonthStr },
       },
-      select: { leaseTermId: true, targetMonth: true, actualAmount: true, payDate: true, memo: true, isPrevOwner: true },
+      select: { leaseTermId: true, targetMonth: true, actualAmount: true, expectedAmount: true, payDate: true, memo: true, isPrevOwner: true },
     }),
     prisma.reserveTransaction.findMany({
       where: { propertyId },
@@ -830,6 +830,17 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     ;(prevOwnerMonthsByLease[p.leaseTermId] ??= new Set()).add(p.targetMonth)
   }
 
+  // [저장 청구액 우선] (lease, month)별 락인된 청구액 — 월세 변경의 과거 소급 방지.
+  // 같은 달 여러 record면 정규 월 청구(최대 expectedAmount) 채택. record 없는 달은 현재 월세 fallback.
+  // rooms/actions.ts · unpaid.ts 와 동일 정책 — 한쪽 수정 시 동기화.
+  const lockedExpectedByLeaseMonth: Record<string, Map<string, number>> = {}
+  for (const p of allHistoricalPayments) {
+    if (p.isPrevOwner) continue
+    const m = (lockedExpectedByLeaseMonth[p.leaseTermId] ??= new Map())
+    const cur = m.get(p.targetMonth) ?? 0
+    if (p.expectedAmount > cur) m.set(p.targetMonth, p.expectedAmount)
+  }
+
   const accrualByLease: Record<string, number> = {}
   for (const p of allHistoricalPayments) {
     // cutoff 이전 (양도인) 제외 + 양도인 정산 record 제외
@@ -904,8 +915,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       if (moveOutMonth && mon > moveOutMonth) continue
       billableMonthList.push(mon)
     }
-    // #14 월세 할인 — 각 월 청구액은 할인 반영(수납 페이지 getRoomPaymentStatus와 동일 헬퍼)
-    const billForMonth = (mon: string) => discountedRent(l.discounts, mon, l.rentAmount)
+    // [저장 청구액 우선] 그 달 record의 락인 청구액 우선, 없으면 현재 월세(#14 할인 반영) fallback
+    const lockedMap = lockedExpectedByLeaseMonth[l.id]
+    const billForMonth = (mon: string) => {
+      const locked = lockedMap?.get(mon)
+      return locked && locked > 0 ? locked : discountedRent(l.discounts, mon, l.rentAmount)
+    }
     const totalExpected = billableMonthList.reduce((s, mon) => s + billForMonth(mon), 0)
     const totalReceived = accrualByLeaseForView[l.id] ?? 0
     unpaidMap[l.id] = Math.max(0, totalExpected - totalReceived)
@@ -956,6 +971,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const projectedRevenue = totalExpected + extraRevenue
   expectedExpense = totalExpense + projectedRecurringExpense
   const projectedNetProfit = projectedRevenue - expectedExpense
+  // 수납 예정 = 이번 달 청구 중 아직 안 들어온 매출 = 예상 매출 − 수납완료(귀속).
+  // 이렇게 정의해야 손익 패널이 정합: 예상매출 = 수납완료 + 수납예정,
+  // 예상순이익 = 현재순이익 + 수납예정 − 예정고정지출.
+  // (기존엔 accrual-net 미납액만 표기해 도래 전 청구·선납분이 빠져 합산이 안 맞았음)
+  const pendingRevenue = Math.max(0, projectedRevenue - totalRevenue)
   // 미수납 후보 — 이후 daysOverdue 기반으로 위젯·알림 분기
   const unpaidCandidates = unpaidLeasesRaw
     .filter(l => (unpaidMap[l.id] ?? 0) > 0)
@@ -1417,6 +1437,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     unpaidCount,
     upcomingCount,
     pendingCount,
+    pendingRevenue,
     unpaidAmount,
     overdueAmount,
     upcomingAmount,

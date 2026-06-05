@@ -80,9 +80,20 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
         isDeposit: false,
         targetMonth: { lte: realTodayMonthStr },
       },
-      select: { leaseTermId: true, targetMonth: true, actualAmount: true, payDate: true, memo: true, isPrevOwner: true },
+      select: { leaseTermId: true, targetMonth: true, actualAmount: true, expectedAmount: true, payDate: true, memo: true, isPrevOwner: true },
     }),
   ])
+
+  // [저장 청구액 우선] (lease, month)별 락인된 청구액 — 월세 변경의 과거 소급 방지.
+  // 같은 달 여러 record면 정규 월 청구(최대 expectedAmount)를 채택. record 없는 달은 현재 월세로 fallback.
+  // rooms/actions.ts getRoomPaymentStatus 와 동일 정책 — 한쪽 수정 시 동기화.
+  const lockedExpectedByLeaseMonth: Record<string, Map<string, number>> = {}
+  for (const p of allHistoricalPayments) {
+    if (p.isPrevOwner) continue
+    const m = (lockedExpectedByLeaseMonth[p.leaseTermId] ??= new Map())
+    const cur = m.get(p.targetMonth) ?? 0
+    if (p.expectedAmount > cur) m.set(p.targetMonth, p.expectedAmount)
+  }
 
   const acquisitionDate = property?.prevOwnerCutoffDate
     ? new Date(property.prevOwnerCutoffDate)
@@ -270,8 +281,12 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
       if (moveOutMonth && mon > moveOutMonth) continue
       billableMonthList.push(mon)
     }
-    // #14 월세 할인 — 각 월 청구액은 할인 반영(수납 페이지·대시보드 발생주의와 동일 헬퍼)
-    const billForMonth = (mon: string) => discountedRent(l.discounts, mon, l.rentAmount)
+    // [저장 청구액 우선] 그 달 record의 락인 청구액 우선, 없으면 현재 월세(#14 할인 반영) fallback
+    const lockedMap = lockedExpectedByLeaseMonth[l.id]
+    const billForMonth = (mon: string) => {
+      const locked = lockedMap?.get(mon)
+      return locked && locked > 0 ? locked : discountedRent(l.discounts, mon, l.rentAmount)
+    }
     const totalExpected = billableMonthList.reduce((s, mon) => s + billForMonth(mon), 0)
     const totalReceived = accrualByLeaseForView[l.id] ?? 0
     unpaidMap[l.id] = Math.max(0, totalExpected - totalReceived)

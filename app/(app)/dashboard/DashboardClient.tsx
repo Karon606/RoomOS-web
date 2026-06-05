@@ -47,6 +47,7 @@ export type DashboardData = {
   unpaidCount:       number
   upcomingCount:     number
   pendingCount:      number
+  pendingRevenue:    number     // 수납 예정 = 예상매출 − 수납완료 (손익 정합용)
   unpaidAmount:      number
   overdueAmount:     number
   upcomingAmount:    number
@@ -2328,8 +2329,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               </span>
                             )}
                           </div>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: data.unpaidCount > 0 ? '#ef4444' : 'var(--warm-mid)' }}>
-                            {data.unpaidAmount > 0 ? `-${fmtKorMoney(data.unpaidAmount )}` : '—'}
+                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--warm-mid)' }}>
+                            {data.pendingRevenue > 0 ? `+${fmtKorMoney(data.pendingRevenue)}` : '—'}
                           </span>
                         </div>
                       </div>
