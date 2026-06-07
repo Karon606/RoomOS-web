@@ -116,6 +116,14 @@ export type MergeRuleRow = {
   targetItemId: string
   targetLabel: string | null   // 대상 카드가 삭제됐으면 null
 }
+// 되돌릴 수 있는 병합 (병합 해제 UI용)
+export type MergeUndoRow = {
+  id: string
+  label: string                // "원라벨 → 대상라벨"
+  targetLabel: string | null
+  kind: 'IMPORT' | 'CARD'
+  createdAt: string            // ISO
+}
 
 export type TimelineEntry =
   | { type: 'check';    id: string; date: Date; createdAt: Date; remainingQty: number; memo: string | null; locationBreakdown: LocationQtyEntry[]; isHub?: boolean; isReconcile?: boolean }

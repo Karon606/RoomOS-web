@@ -53,9 +53,11 @@ import {
   applyMergeDecision,
   getMergeRules,
   deleteMergeRule,
+  getMergeUndos,
+  unmergeTrackedItem,
   setInventoryCategories,
 } from './actions'
-import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow } from './constants'
+import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow } from './constants'
 
 const CATEGORY_TINT: Record<string, { bg: string; fg: string }> = {
   '부식비':       { bg: 'rgba(232,137,58,0.10)',  fg: '#e8893a' },
@@ -222,7 +224,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             <Btn variant="secondary" size="sm" onClick={() => setShowExcluded(true)}>
               숨김 품목{archivedCount > 0 ? ` (${archivedCount})` : ''}
             </Btn>
-            <Btn variant="secondary" size="sm" onClick={() => setShowMergeRules(true)}>병합 규칙</Btn>
+            <Btn variant="secondary" size="sm" onClick={() => setShowMergeRules(true)}>병합 해제·규칙</Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowReconcile(true)}>전체 재고 보정</Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowCatSettings(true)}>카테고리 설정</Btn>
             <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
@@ -2886,9 +2888,10 @@ function MergeDecisionModal({ decisions, onClose, onDone }: {
 // 자동등록 추천(LINK) / 거절(MUTE) 기록 관리. 거절은 '다시 추천 받기'로 되돌릴 수 있음.
 function MergeRulesModal({ onClose }: { onClose: () => void }) {
   const [rules, setRules] = useState<MergeRuleRow[]>([])
+  const [undos, setUndos] = useState<MergeUndoRow[]>([])
   const [loading, setLoading] = useState(true)
   const [pendingId, setPendingId] = useState<string | null>(null)
-  const load = () => getMergeRules().then(r => { setRules(r); setLoading(false) })
+  const load = () => Promise.all([getMergeRules(), getMergeUndos()]).then(([r, u]) => { setRules(r); setUndos(u); setLoading(false) })
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const remove = (id: string) => {
@@ -2901,18 +2904,42 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
     })
   }
 
+  const undo = (id: string) => {
+    if (!confirm('이 병합을 해제할까요?\n\n· 합쳐졌던 지출·점검이 원래 품목으로 분리됩니다.\n· 원래 품목 카드가 다시 생깁니다.')) return
+    setPendingId(id)
+    unmergeTrackedItem(id).then(res => {
+      setPendingId(null)
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', '병합 해제됨')
+      load()
+    })
+  }
+
   const links = rules.filter(r => r.kind === 'LINK')
   const mutes = rules.filter(r => r.kind === 'MUTE')
+  const isEmpty = rules.length === 0 && undos.length === 0
 
   return (
-    <Modal open onClose={onClose} width="md" title="병합 규칙"
-      subtitle="자동등록 시 추천(연결)·거절(다시 안 물어봄) 기록">
+    <Modal open onClose={onClose} width="md" title="병합 해제·규칙"
+      subtitle="잘못 합친 품목 되돌리기 · 자동등록 추천(연결)·거절(다시 안 물어봄) 관리">
       <div className="px-5 sm:px-6 py-4 space-y-4">
-        {loading ? <Loading /> : rules.length === 0 ? (
-          <EmptyState title="병합 규칙이 없습니다"
-            description="품목을 병합하거나, 자동등록 확인에서 '새 품목으로'를 고르면 여기에 규칙이 쌓입니다." />
+        {loading ? <Loading /> : isEmpty ? (
+          <EmptyState title="병합 기록이 없습니다"
+            description="품목을 병합하거나, 자동등록 확인에서 '새 품목으로'를 고르면 여기에 기록이 쌓입니다." />
         ) : (
           <>
+            {undos.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-[var(--warm-mid)]">되돌릴 수 있는 병합 — 합친 걸 원래대로 분리</p>
+                {undos.map(u => (
+                  <div key={u.id} className="flex items-center gap-2 text-sm bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">
+                    <span className="min-w-0 flex-1 truncate text-[var(--warm-dark)]">{u.label}</span>
+                    <button type="button" onClick={() => undo(u.id)} disabled={pendingId === u.id}
+                      className="text-[0.6875rem] font-medium text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50 disabled:opacity-40 shrink-0 px-2 py-1 rounded-lg">병합 해제</button>
+                  </div>
+                ))}
+              </div>
+            )}
             {links.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-[var(--warm-mid)]">연결 — 이 라벨은 해당 카드로 추천</p>

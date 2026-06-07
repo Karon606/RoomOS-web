@@ -6,7 +6,7 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
-import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type InventoryCategory, suggestInventoryAlias } from './constants'
+import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, suggestInventoryAlias } from './constants'
 import { getInventoryCategoryConfig, getTrackedCategories } from './categoryConfig'
 import { computeInventoryOverview } from './overview'
 import { applyLocationCheck, type LocCheckPatch } from '@/lib/stockCheckMerge'
@@ -355,6 +355,12 @@ export async function mergeTrackedItems(
       propertyId, category: source.category, itemLabel: source.label,
     }
     if (source.qtyUnit) matchSourceExpenses.qtyUnit = source.qtyUnit
+    // 되돌리기용 — 이전 대상이 될 id들을 변경 전에 캡처
+    const movedExpenseIds = (await prisma.expense.findMany({ where: matchSourceExpenses, select: { id: true } })).map(e => e.id)
+    const movedCheckIds   = (await prisma.stockCheck.findMany({ where: { trackedItemId: sourceId }, select: { id: true } })).map(c => c.id)
+    const movedAdditionIds = (await prisma.stockAddition.findMany({ where: { trackedItemId: sourceId }, select: { id: true } })).map(a => a.id)
+    const targetQtyUnitBefore = target.qtyUnit
+
     const expRes = await prisma.expense.updateMany({
       where: matchSourceExpenses,
       data: { itemLabel: target.label },
@@ -400,6 +406,27 @@ export async function mergeTrackedItems(
       update: { kind: 'LINK', sourceLabel: source.label },
       create: { propertyId, category: cat, sourceLabel: source.label, normLabel: normalizeLabel(source.label), targetItemId, kind: 'LINK' },
     })
+
+    // 3.6) 되돌리기(병합 해제) 복원 정보 기록 — source 카드 스냅샷 + 이전된 id들
+    //      (테이블 미생성 등으로 실패해도 병합 자체는 진행 — SQL 미적용 환경 방어)
+    try {
+      await prisma.trackedItemMergeUndo.create({
+        data: {
+          propertyId, targetItemId: targetId,
+          label: `${source.label} → ${target.label}`,
+          payload: {
+            kind: 'CARD',
+            source: {
+              label: source.label, category: source.category, specUnit: source.specUnit,
+              qtyUnit: source.qtyUnit, trackUnit: source.trackUnit, hubLocationId: source.hubLocationId,
+              alertThresholdDays: source.alertThresholdDays, reorderMemo: source.reorderMemo,
+              purchaseUrl: source.purchaseUrl, memo: source.memo,
+            },
+            movedExpenseIds, movedCheckIds, movedAdditionIds, targetQtyUnitBefore,
+          },
+        },
+      })
+    } catch { /* 복원정보 테이블 미적용 — 병합은 계속 */ }
 
     // 4) source 삭제
     await prisma.trackedItem.delete({ where: { id: sourceId } })
@@ -1221,6 +1248,22 @@ export async function applyMergeDecision(input: {
         update: { kind: 'LINK', sourceLabel: newLabel },
         create: { propertyId, category, sourceLabel: newLabel, normLabel: nrm, targetItemId: target.id, kind: 'LINK' },
       })
+      // 되돌리기(병합 해제) 복원 정보 — 지출을 원래 라벨로 분리할 수 있게 기록
+      if (expenseIds.length > 0) {
+        try {
+          await prisma.trackedItemMergeUndo.create({
+            data: {
+              propertyId, targetItemId: target.id,
+              label: `${newLabel} → ${target.label}`,
+              payload: {
+                kind: 'IMPORT', origLabel: newLabel, category,
+                specUnit: input.specUnit ?? null, qtyUnit: input.qtyUnit ?? null,
+                expenseIds,
+              },
+            },
+          })
+        } catch { /* 복원정보 테이블 미적용 — 병합은 계속 */ }
+      }
     } else {
       const existing = await prisma.trackedItem.findUnique({
         where: { propertyId_category_label: { propertyId, category, label: newLabel } },
@@ -1283,6 +1326,116 @@ export async function deleteMergeRule(id: string): Promise<{ ok: true } | { ok: 
     const propertyId = await getPropertyId()
     await prisma.trackedItemMergeRule.deleteMany({ where: { id, propertyId } })
     revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// ── 병합 해제(되돌리기) ──────────────────────────────────────
+// 되돌릴 수 있는 병합 목록 — 최근 것부터.
+export async function getMergeUndos(): Promise<MergeUndoRow[]> {
+  const propertyId = await getPropertyId()
+  let undos: Awaited<ReturnType<typeof prisma.trackedItemMergeUndo.findMany>> = []
+  try {
+    undos = await prisma.trackedItemMergeUndo.findMany({
+      where: { propertyId }, orderBy: { createdAt: 'desc' },
+    })
+  } catch { return [] }  // 복원정보 테이블 미적용 환경 방어
+  const targetIds = Array.from(new Set(undos.map(u => u.targetItemId)))
+  const targets = targetIds.length > 0
+    ? await prisma.trackedItem.findMany({ where: { id: { in: targetIds } }, select: { id: true, label: true } })
+    : []
+  const labelById = new Map(targets.map(t => [t.id, t.label]))
+  return undos.map(u => ({
+    id: u.id,
+    label: u.label,
+    targetLabel: labelById.get(u.targetItemId) ?? null,
+    kind: ((u.payload as any)?.kind === 'CARD' ? 'CARD' : 'IMPORT') as 'IMPORT' | 'CARD',
+    createdAt: u.createdAt.toISOString(),
+  }))
+}
+
+// 병합 해제 — payload 로 지출·점검·카드를 원상복구하고 LINK 규칙·복원정보를 제거.
+export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const undo = await prisma.trackedItemMergeUndo.findFirst({ where: { id: undoId, propertyId } })
+    if (!undo) return { ok: false, error: '되돌릴 병합 정보를 찾을 수 없습니다.' }
+    const p = undo.payload as any
+
+    if (p?.kind === 'IMPORT') {
+      const { origLabel, category, specUnit, qtyUnit, expenseIds } = p
+      // 1) 원래 라벨 카드 보장 (없으면 생성, 숨김이면 복구)
+      const existing = await prisma.trackedItem.findUnique({
+        where: { propertyId_category_label: { propertyId, category, label: origLabel } },
+        select: { id: true, isArchived: true },
+      })
+      if (!existing) {
+        await prisma.trackedItem.create({
+          data: { propertyId, category, label: origLabel, specUnit: specUnit ?? null, qtyUnit: qtyUnit ?? null,
+                  trackUnit: category === '폐기물 처리비' ? 'qty' : 'spec' },
+        })
+      } else if (existing.isArchived) {
+        await prisma.trackedItem.update({ where: { id: existing.id }, data: { isArchived: false } })
+      }
+      // 2) 지출 라벨 원복
+      if (Array.isArray(expenseIds) && expenseIds.length > 0) {
+        await prisma.expense.updateMany({ where: { id: { in: expenseIds }, propertyId }, data: { itemLabel: origLabel } })
+      }
+      // 3) LINK 규칙 제거 (다시 자동 흡수 안 되게)
+      await prisma.trackedItemMergeRule.deleteMany({
+        where: { propertyId, category, normLabel: normalizeLabel(origLabel), targetItemId: undo.targetItemId, kind: 'LINK' },
+      })
+    } else {
+      // kind === 'CARD'
+      const s = p.source ?? {}
+      // 1) source 카드 재생성(또는 숨김 복구)
+      let sourceId: string
+      const existing = await prisma.trackedItem.findUnique({
+        where: { propertyId_category_label: { propertyId, category: s.category, label: s.label } },
+        select: { id: true, isArchived: true },
+      })
+      if (existing) {
+        sourceId = existing.id
+        if (existing.isArchived) await prisma.trackedItem.update({ where: { id: existing.id }, data: { isArchived: false } })
+      } else {
+        const created = await prisma.trackedItem.create({
+          data: {
+            propertyId, category: s.category, label: s.label, specUnit: s.specUnit ?? null, qtyUnit: s.qtyUnit ?? null,
+            trackUnit: s.trackUnit ?? 'spec', hubLocationId: s.hubLocationId ?? null,
+            alertThresholdDays: s.alertThresholdDays ?? 3, reorderMemo: s.reorderMemo ?? null,
+            purchaseUrl: s.purchaseUrl ?? null, memo: s.memo ?? null,
+          },
+          select: { id: true },
+        })
+        sourceId = created.id
+      }
+      // 2) 지출 라벨 원복 + 점검·입수 이전 원복
+      if (Array.isArray(p.movedExpenseIds) && p.movedExpenseIds.length > 0) {
+        await prisma.expense.updateMany({ where: { id: { in: p.movedExpenseIds }, propertyId }, data: { itemLabel: s.label } })
+      }
+      if (Array.isArray(p.movedCheckIds) && p.movedCheckIds.length > 0) {
+        await prisma.stockCheck.updateMany({ where: { id: { in: p.movedCheckIds } }, data: { trackedItemId: sourceId } })
+      }
+      if (Array.isArray(p.movedAdditionIds) && p.movedAdditionIds.length > 0) {
+        await prisma.stockAddition.updateMany({ where: { id: { in: p.movedAdditionIds } }, data: { trackedItemId: sourceId } })
+      }
+      // 3) 대상 카드 qtyUnit 원복 (looseMatch 로 null 됐던 경우)
+      if (p.targetQtyUnitBefore != null) {
+        await prisma.trackedItem.updateMany({ where: { id: undo.targetItemId, propertyId }, data: { qtyUnit: p.targetQtyUnitBefore } })
+      }
+      // 4) LINK 규칙 제거
+      await prisma.trackedItemMergeRule.deleteMany({
+        where: { propertyId, normLabel: normalizeLabel(s.label), targetItemId: undo.targetItemId, kind: 'LINK' },
+      })
+    }
+
+    await prisma.trackedItemMergeUndo.delete({ where: { id: undo.id } }).catch(() => {})
+    revalidatePath('/inventory')
+    revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err

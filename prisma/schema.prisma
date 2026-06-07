@@ -848,6 +848,20 @@ model TrackedItemMergeRule {
   @@map("tracked_item_merge_rules")
 }
 
+// 병합 되돌리기용 복원 정보 — 병합 시 1행 기록. '병합 해제'가 payload로 원상복구.
+// payload.kind = 'IMPORT'(자동등록 병합: 지출 라벨만 이전) | 'CARD'(두 카드 병합: source 카드 삭제)
+model TrackedItemMergeUndo {
+  id           String   @id @default(uuid()) @db.Uuid
+  propertyId   String   @db.Uuid
+  targetItemId String   @db.Uuid   // 병합된 대상(흡수한) 카드
+  label        String                // 표시용 "원라벨 → 대상라벨"
+  payload      Json                  // 복원 데이터 (kind별 상이)
+  createdAt    DateTime @default(now())
+
+  @@index([propertyId])
+  @@map("tracked_item_merge_undos")
+}
+
 // 웹 푸시(PWA) 구독 — 기기별 1행. 대시보드 알림을 폰으로 푸시.
 // FK(userId→users)는 SQL 마이그레이션에서 ON DELETE CASCADE 로 부여(스키마는 스칼라만).
 model PushSubscription {
