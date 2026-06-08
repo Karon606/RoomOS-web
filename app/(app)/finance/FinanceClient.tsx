@@ -3154,18 +3154,6 @@ export default function FinanceClient({
                     })()}
                   </div>
                 </div>
-                {/* 배송비 — 기본 무료, 체크 시 금액 입력. 총액에 합산되고 세부항목에 표기됨 */}
-                <div className="space-y-1.5">
-                  <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--warm-mid)] cursor-pointer">
-                    <input type="checkbox" checked={addHasShipping}
-                      onChange={e => { setAddHasShipping(e.target.checked); if (!e.target.checked) setAddShipping(undefined) }}
-                      className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                    배송비 포함 <span className="text-[var(--warm-muted)] font-normal">(기본: 무료)</span>
-                  </label>
-                  {addHasShipping && (
-                    <MoneyInput value={addShipping} onChange={setAddShipping} placeholder="배송비 0원" />
-                  )}
-                </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                   <select name="category" value={addExpCategory}
@@ -3186,6 +3174,21 @@ export default function FinanceClient({
                     <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={rooms} />
                   </div>
                 )}
+                {/* 배송비 — 기본 무료. 품목 단가에 포함되지 않고 총액에만 합산(합배송 시 단가 왜곡 방지). 세부항목에 표기됨 */}
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--warm-mid)] cursor-pointer">
+                    <input type="checkbox" checked={addHasShipping}
+                      onChange={e => { setAddHasShipping(e.target.checked); if (!e.target.checked) setAddShipping(undefined) }}
+                      className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                    배송비 포함 <span className="text-[var(--warm-muted)] font-normal">(기본: 무료)</span>
+                  </label>
+                  {addHasShipping && (
+                    <>
+                      <MoneyInput value={addShipping} onChange={setAddShipping} placeholder="배송비 0원" />
+                      <p className="text-[0.625rem] text-[var(--warm-muted)]">단가에 포함되지 않고 총액에만 더해집니다 (합배송이어도 단가 정확).</p>
+                    </>
+                  )}
+                </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                   {addItems.length > 0
