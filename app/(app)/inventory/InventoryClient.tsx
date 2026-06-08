@@ -1733,14 +1733,17 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
   const [date, setDate] = useState(entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10))
   const [memo, setMemo] = useState(entry.memo ?? '')
 
-  // 위치 source — 기존 breakdown이 있으면 우선, 없으면 아이템 locations 목록
-  const locationSources: { id: string; name: string; isHub: boolean }[] =
-    entry.locationBreakdown.length > 0
-      ? entry.locationBreakdown.map(lb => ({
-          id: lb.locationId, name: lb.locationName,
-          isHub: itemLocations.find(l => l.id === lb.locationId)?.isHub ?? false,
-        }))
-      : itemLocations.map(l => ({ id: l.id, name: l.name, isHub: l.isHub }))
+  // 위치 source — 항상 아이템의 현재 연결된 전체 위치를 표시(union).
+  //   기존엔 그 점검의 breakdown 위치만 렌더해서, 나중에 추가된 위치(예: 5층/4층 화장실)를
+  //   과거 점검 수정 시 입력할 수 없었음(2026-06-09 사용자 보고). 이제 전체 위치 + 점검에만
+  //   있고 현재 미연결된 위치(orphan)까지 합쳐 보여준다. 값은 아래 initial 로 프리필.
+  const locationSources: { id: string; name: string; isHub: boolean }[] = (() => {
+    const base = itemLocations.map(l => ({ id: l.id, name: l.name, isHub: l.isHub }))
+    const orphan = entry.locationBreakdown
+      .filter(lb => !base.some(b => b.id === lb.locationId))
+      .map(lb => ({ id: lb.locationId, name: lb.locationName, isHub: false }))
+    return [...base, ...orphan]
+  })()
 
   const hasLocations = locationSources.length > 0
 
@@ -1796,16 +1799,22 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
     if (hasLocations) {
       onSave({
         date, memo: memo || null,
-        locationQtys: locationSources.map(l => {
-          if (l.isHub) return { storageLocationId: l.id, qty: hubFinal }
-          const before = Number(beforeQtys[l.id] || '0')
-          const after = Number(afterQtys[l.id] || '0')
-          const restocked = after > before ? after - before : 0
-          return {
-            storageLocationId: l.id, qty: after,
-            ...(restocked > 0 ? { restockedQty: restocked } : {}),
-          }
-        }),
+        locationQtys: locationSources
+          // 허브 + 원래 점검에 있던 위치 + 사용자가 값을 입력한 위치만 저장.
+          // (새로 표시된 위치를 안 건드렸으면 0으로 끼워넣지 않음 — breakdown 오염 방지)
+          .filter(l => l.isHub
+            || entry.locationBreakdown.some(lb => lb.locationId === l.id)
+            || (afterQtys[l.id] ?? '') !== '' || (beforeQtys[l.id] ?? '') !== '')
+          .map(l => {
+            if (l.isHub) return { storageLocationId: l.id, qty: hubFinal }
+            const before = Number(beforeQtys[l.id] || '0')
+            const after = Number(afterQtys[l.id] || '0')
+            const restocked = after > before ? after - before : 0
+            return {
+              storageLocationId: l.id, qty: after,
+              ...(restocked > 0 ? { restockedQty: restocked } : {}),
+            }
+          }),
       })
     } else {
       onSave({ date, memo: memo || null, remainingQty: Number(qty) })
