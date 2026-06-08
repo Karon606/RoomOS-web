@@ -112,9 +112,17 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
   //  구매를 점검 date(자정) 기준으로 귀속하면, 같은 날 자동점검이 baseline 인데도 구매가
   //  '그 다음 구간'에 입고로 또 더해져 사용량이 부풀려졌음 (수세미: 사서 분산만 했는데 10 소모로 둔갑).
   //  effTime 기준으로 비교하면 수령 시각과 같은(또는 이전) 점검 baseline 에 흡수되어 중복 안 됨.
-  const kstDay = (d: Date) => new Date(d.getTime() + 9 * 3600000).toISOString().slice(0, 10)
+  const KST = 9 * 3600000
+  const kstDay = (d: Date) => new Date(d.getTime() + KST).toISOString().slice(0, 10)
+  // 백필(나중 입력) 점검 — 그 날짜의 KST 자정 + 입력시각(createdAt)의 하루중 경과시간.
+  //   타임라인 표시 정렬(actions.ts getInventoryItemDetail)과 동일 규칙으로 통일(2026-06-09).
+  //   같은 날 입력 점검(자동수령 등)은 createdAt 그대로 → 기존 보호 로직(중복 입고 방지) 영향 없음.
+  const kstMidnightMs = (d: Date) => Math.floor((d.getTime() + KST) / 86400000) * 86400000 - KST
+  const kstTodMs = (d: Date) => (d.getTime() + KST) % 86400000
   const effTime = (c: { date: Date; createdAt: Date }): Date =>
-    kstDay(c.createdAt) === kstDay(c.date) ? c.createdAt : c.date
+    kstDay(c.createdAt) === kstDay(c.date)
+      ? c.createdAt
+      : new Date(kstMidnightMs(c.date) + kstTodMs(c.createdAt))
 
   // 월별 사용량 계산용 — 최근 7개월(현재 포함) 의 모든 점검 기록 일괄 fetch.
   // 연속 두 점검 사이의 소모량을 늦은 쪽 월에 귀속 (단순화).

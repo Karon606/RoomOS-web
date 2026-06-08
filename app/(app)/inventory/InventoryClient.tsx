@@ -664,7 +664,11 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       ) : mode === 'check' ? (
         <CheckForm item={data.item} lastCheckBreakdown={row.lastCheckLocationBreakdown} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} onDraftChange={onDraftChange} />
       ) : mode === 'reconcile' ? (
-        <TimelineReconcileForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
+        <TimelineReconcileForm
+          item={data.item}
+          existingCheckDays={Array.from(new Set(data.timeline.filter(e => e.type === 'check').map(e => new Date(new Date(e.date).getTime() + 9 * 3600000).toISOString().slice(0, 10))))}
+          onCancel={() => setMode('view')}
+          onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : mode === 'addition' ? (
         <AdditionForm item={data.item} onCancel={() => setMode('view')} onDone={() => { setMode('view'); reload(); onChange() }} />
       ) : mode === 'settings' ? (
@@ -1335,8 +1339,9 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
 // ── 타임라인 보정 끼워넣기 (v2) — 품목 상세에서 특정 과거/현재 시점에 보정 점검 삽입.
 //    날짜를 고르면 그 시점 '예상 재고'(직전 점검+그 사이 입고)를 위치별로 보여주고, 실측 입력 → 차이 표시.
 //    isReconcile 점검으로 저장(saveFullReconcile 단일 품목) → 그 구간 차이는 사용량에 안 잡힘.
-function TimelineReconcileForm({ item, onCancel, onDone }: {
+function TimelineReconcileForm({ item, existingCheckDays = [], onCancel, onDone }: {
   item: { id: string; label: string; specUnit: string | null; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; locations: StorageLocationItem[] }
+  existingCheckDays?: string[]   // 이미 점검이 있는 날짜(KST, YYYY-MM-DD) — 같은 날 중복 보정 가드용
   onCancel: () => void
   onDone: () => void
 }) {
@@ -1379,7 +1384,14 @@ function TimelineReconcileForm({ item, onCancel, onDone }: {
   const diff = r2(actualTotal - expectedTotal)
   const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
+  const dateHasCheck = existingCheckDays.includes(date)
+
   const handleSave = async () => {
+    // 같은 날 이미 점검이 있으면 — 새 보정을 또 만들면 타임라인이 중복돼 헷갈림.
+    // 그 점검을 수정하는 게 정확. 한 번 더 확인받고 진행.
+    if (dateHasCheck && !confirm(`${date}에 이미 점검 기록이 있어요.\n\n새 보정을 또 추가하면 같은 날 항목이 둘이 돼 헷갈릴 수 있어요. 보통은 '취소'를 누르고 그 점검의 [수정]에서 고치는 게 정확합니다.\n\n그래도 새 보정을 추가할까요?`)) {
+      return
+    }
     setPending(true); setError('')
     const items = hasLoc
       ? [{ trackedItemId: item.id, locationQtys: item.locations.map(l => ({ storageLocationId: l.id, qty: Number(actuals[l.id] || '0') })), memo: memo || undefined }]
@@ -1400,6 +1412,11 @@ function TimelineReconcileForm({ item, onCancel, onDone }: {
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">보정 시점(날짜)</label>
         <DatePicker value={date} onChange={setDate} />
+        {dateHasCheck && (
+          <p className="text-[0.6875rem] text-[var(--honey)] bg-[var(--honey)]/10 border border-[var(--honey)]/30 rounded-lg px-2.5 py-1.5">
+            이 날짜엔 이미 점검 기록이 있어요. 보통은 새 보정을 만들기보다 <strong>그 점검의 [수정]</strong>에서 고치는 게 정확합니다 (같은 날 중복 방지).
+          </p>
+        )}
       </div>
 
       {loading ? (

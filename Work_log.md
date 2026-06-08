@@ -50,6 +50,13 @@
 - **스캔 후 자동 분석 팝업**: handleScanConfirm 에서 지출 폼(add) 대상이면 '분석할까요?' confirm → 예: OCR 자동입력+첨부 / 아니오: 첨부만. (핸들러를 uploadCropped/ocrCropped 코어 + 버튼 래퍼로 리팩터. 편집 폼은 기존 수동 버튼 유지)
 - 파일: app/(app)/finance/FinanceClient.tsx 단일. tsc 통과.
 
+## 2026-06-09 — 재고 타임라인 정렬·보정 끼워넣기 가드 (main 배포)
+- **점검 수정 폼에 전체 위치 표시**: CheckEditForm locationSources = 아이템 현재 위치 union(+orphan). 나중에 추가된 위치도 과거 점검 수정에서 입력 가능(기존 보유분 보정). handleSave는 허브·원래있던·값입력 위치만 저장(0오염 방지).
+- **백필 타임라인 정렬**: getInventoryItemDetail effTime — 백필(createdAt일≠date일)을 date자정 대신 'date KST자정 + createdAt 하루중경과시간'으로 → 표시 시각과 정렬 위치 일치(6/1 20:10 보정이 15:30 위로).
+- **사용량 계산 정렬 동기화**: overview.ts effTime 도 동일 규칙으로 통일. 같은날 자동수령 점검(createdAt일==date일)은 createdAt 그대로 → 중복입고 방지 보호 로직 영향 없음. 오히려 백필 보정 이전 같은날 수령의 중복가산 여지 감소.
+- **보정 끼워넣기 가드**: TimelineReconcileForm 에 existingCheckDays prop. 고른 날짜에 이미 점검 있으면 인라인 경고 배너 + 저장 시 confirm("그 점검 [수정]이 정확, 그래도 추가?"). 같은 날 중복 보정 방지.
+- 전부 tsc 통과. 사용량 숫자 변동은 백필 항목 한정이라 일반 케이스 영향 미미하나, 화면 수치 한번 확인 권장.
+
 ## ⏳ 사용자 화면 검증 대기 (2026-06-02 작업, 전부 main 배포·SQL 적용 완료)
 오늘 재고·수납 9건 배포(커밋 `0a3ea71`~`eb1a717`). 실데이터 스크립트론 검증했고, 아래는 **실기기/프로덕션 화면 최종 확인**만 남음:
 - **재고 월별 사용량 그래프** — 수세미 5월 0, 라면 5월 115·6월 66, 주방세제 6270 등 현실적 수치로 뜨는지. (입고가 사용량으로 둔갑하던 버그·실제 시각 정렬·effTime 적용)
