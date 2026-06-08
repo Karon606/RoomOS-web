@@ -190,11 +190,19 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
     //   · 구매 = receivedAt(실제 수령 시각) ?? date
     //   · 점검·입수 = 입력 당일(KST) 점검이면 createdAt(실제 점검 시각), 과거 보정 입력(백필)이면 date.
     //     createdAt 이 점검일과 다른 날이면 나중에 보정 입력한 것으로 보고 date 를 써서 백필이 순서를 안 깨게 함.
-    const kstDay = (d: Date) => new Date(d.getTime() + 9 * 3600000).toISOString().slice(0, 10)
+    const KST = 9 * 3600000
+    const kstDay = (d: Date) => new Date(d.getTime() + KST).toISOString().slice(0, 10)
+    // 백필(나중 입력) 항목 — 그 날짜(date)의 KST 자정 + 입력시각(createdAt)의 KST 하루중 경과시간.
+    //   이러면 화면에 보이는 시각(createdAt 의 시:분)과 정렬 위치가 일치해, 같은 날 안에서
+    //   백필 보정이 자정으로 밀려 맨 아래 깔리던 문제 해소(2026-06-09 사용자 보고).
+    const kstMidnightMs = (d: Date) => Math.floor((d.getTime() + KST) / 86400000) * 86400000 - KST
+    const kstTodMs = (d: Date) => (d.getTime() + KST) % 86400000
     const effTime = (e: TimelineEntry): Date =>
       e.type === 'purchase'
         ? (e.receivedAt ?? e.date)
-        : (kstDay(e.createdAt) === kstDay(e.date) ? e.createdAt : e.date)
+        : (kstDay(e.createdAt) === kstDay(e.date)
+            ? e.createdAt
+            : new Date(kstMidnightMs(e.date) + kstTodMs(e.createdAt)))
     const at = effTime(a).getTime(), bt = effTime(b).getTime()
     if (at !== bt) return bt - at
     // 같은 시각 동률 — 점검(수령 자동반영 결과)이 구매(수령) 위에 (수령→점검 순서의 결과를 먼저).
