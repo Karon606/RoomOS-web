@@ -1279,6 +1279,10 @@ export default function FinanceClient({
   const [editExpCategory, setEditExpCategory] = useState('')
   const [addItems, setAddItems]   = useState<ItemPickState[]>([])
   const [editItems, setEditItems] = useState<ItemPickState[]>([])
+  const [editExpAmount, setEditExpAmount]     = useState<number | undefined>(undefined)  // 품목 없을 때 controlled 금액
+  const [editExpDetail, setEditExpDetail]     = useState('')
+  const [editHasShipping, setEditHasShipping] = useState(false)
+  const [editShipping, setEditShipping]       = useState<number | undefined>(undefined)
 
   // 파일 선택 → 이미지면 스캔 모달, PDF면 바로 업로드
   const handleOpenScan = async (file: File, target: 'add' | 'edit') => {
@@ -2819,6 +2823,7 @@ export default function FinanceClient({
                       // 단가 복원 — 금액÷수량(저장엔 단가 없음). 안 채우면 수정 시 단가 0 으로 보임.
                       unitPrice: detailExp.amount != null ? Math.round(detailExp.amount / (Number(detailExp.qtyValue) || 1)) : undefined,
                     }] : [])
+                    setEditExpAmount(detailExp.amount); setEditExpDetail(detailExp.detail ?? ''); setEditHasShipping(false); setEditShipping(undefined)
                     setError('')
                   }}>수정</Btn>
                 </div>
@@ -2839,15 +2844,26 @@ export default function FinanceClient({
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">
                         금액 *{editItems.length >= 1 && <span className="text-[0.625rem] text-[var(--warm-muted)] font-normal ml-1">(품목 합계 자동)</span>}
+                        {editHasShipping && (editShipping ?? 0) > 0 && <span className="text-[0.625rem] text-[var(--warm-muted)] font-normal ml-1">(+배송비 포함)</span>}
                       </label>
-                      {editItems.length >= 1 ? (
-                        <div className="relative">
-                          <input type="hidden" name="amount" value={editItems.reduce((s, it) => s + (it.amount ?? 0), 0)} />
-                          <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
-                            {editItems.reduce((s, it) => s + (it.amount ?? 0), 0).toLocaleString()}원
-                          </div>
-                        </div>
-                      ) : <MoneyInput name="amount" defaultValue={detailExp.amount} placeholder="0원" />}
+                      {(() => {
+                        const base = editItems.length >= 1 ? editItems.reduce((s, it) => s + (it.amount ?? 0), 0) : (editExpAmount ?? 0)
+                        const ship = editHasShipping ? (editShipping ?? 0) : 0
+                        const total = base + ship
+                        return (
+                          <>
+                            <input type="hidden" name="amount" value={total} />
+                            {editItems.length >= 1 ? (
+                              <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
+                                {total.toLocaleString()}원
+                                {ship > 0 && <span className="text-[0.625rem] text-[var(--warm-muted)] ml-1">(품목 {base.toLocaleString()} + 배송 {ship.toLocaleString()})</span>}
+                              </div>
+                            ) : (
+                              <MoneyInput value={editExpAmount} onChange={setEditExpAmount} placeholder="0원" />
+                            )}
+                          </>
+                        )
+                      })()}
                     </div>
                   </div>
                   <div className="space-y-1.5">
@@ -2875,14 +2891,31 @@ export default function FinanceClient({
                       />
                     </div>
                   )}
+                  {/* 배송비 — 기본 무료. 품목 단가에 미포함, 총액에만 합산(합배송 시 단가 왜곡 방지) */}
+                  <div className="space-y-1.5">
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--warm-mid)] cursor-pointer">
+                      <input type="checkbox" checked={editHasShipping}
+                        onChange={e => { setEditHasShipping(e.target.checked); if (!e.target.checked) setEditShipping(undefined) }}
+                        className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                      배송비 포함 <span className="text-[var(--warm-muted)] font-normal">(기본: 무료)</span>
+                    </label>
+                    {editHasShipping && (
+                      <>
+                        <MoneyInput value={editShipping} onChange={setEditShipping} placeholder="배송비 0원" />
+                        <p className="text-[0.625rem] text-[var(--warm-muted)]">단가에 포함되지 않고 총액에만 더해집니다 (합배송이어도 단가 정확).</p>
+                      </>
+                    )}
+                  </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                     {editItems.length > 0
-                      ? <input type="text" name="detail" value={fmtItemListDetail(editItems)} readOnly
+                      ? <input type="text" value={fmtItemListDetail(editItems)} readOnly
                           className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
-                      : <input type="text" name="detail" defaultValue={detailExp.detail ?? ''} placeholder="세부 내용"
+                      : <input type="text" value={editExpDetail} onChange={e => setEditExpDetail(e.target.value)} placeholder="세부 내용"
                           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                     }
+                    {/* 제출 detail = 표시 내용 + 배송비 표기(있으면) */}
+                    <input type="hidden" name="detail" value={`${editItems.length > 0 ? fmtItemListDetail(editItems) : editExpDetail}${editHasShipping && (editShipping ?? 0) > 0 ? `${(editItems.length > 0 || editExpDetail) ? ' · ' : ''}배송비 ${(editShipping ?? 0).toLocaleString()}원` : ''}`} />
                     {editItems.length > 0 && <>
                       <input type="hidden" name="itemsJson" value={JSON.stringify(editItems)} />
                       {editItems.length === 1 && (
