@@ -216,12 +216,13 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   const [customLabel, setCustomLabel] = useState('')
   const [fetching, setFetching]       = useState(false)
   const [prevUnits, setPrevUnits]     = useState<{ specUnit: string | null; qtyUnit: string | null } | null>(null)
+  const [noSpec, setNoSpec]           = useState(false)   // 규격 없음(수량만) — 켜면 규격 입력 숨김
 
   // category 변경 시 active picker 입력만 초기화 (items는 부모가 관리)
   useEffect(() => {
     setActiveLabel(null)
     setSpecValue(''); setSpecUnit(''); setQtyValue(''); setQtyUnit('')
-    setAmountStr(''); setCustomLabel(''); setPrevUnits(null)
+    setAmountStr(''); setCustomLabel(''); setPrevUnits(null); setNoSpec(false)
   }, [category])
 
   const numCls  = 'w-16 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
@@ -230,7 +231,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
 
   async function openPreset(label: string) {
     setActiveLabel(label)
-    setSpecValue(''); setQtyValue(''); setAmountStr('')
+    setSpecValue(''); setQtyValue(''); setAmountStr(''); setNoSpec(false)
     const def = ITEM_DEFAULTS[label]
     setSpecUnit(def?.specUnit ?? ''); setQtyUnit(def?.qtyUnit ?? '')
     setPrevUnits(null)
@@ -305,7 +306,15 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
           {prevUnits.qtyUnit && <span className="text-[var(--warm-mid)]">수량 {prevUnits.qtyUnit}</span>}
         </p>
       )}
-      <div className="grid grid-cols-2 gap-2">
+      {/* 규격 없음(수량만) — 켜면 규격 입력을 숨겨 빈 칸 혼동을 없앤다 */}
+      <label className="flex items-center gap-1.5 text-[0.625rem] text-[var(--warm-muted)] cursor-pointer">
+        <input type="checkbox" checked={noSpec}
+          onChange={e => { setNoSpec(e.target.checked); if (e.target.checked) { setSpecValue(''); setSpecUnit('') } }}
+          className="w-3 h-3 accent-[var(--coral)]" />
+        규격 없음 (수량만 입력)
+      </label>
+      <div className={`grid ${noSpec ? 'grid-cols-1' : 'grid-cols-2'} gap-2`}>
+        {!noSpec && (
         <div className="space-y-1">
           <label className="text-[0.625rem] text-[var(--warm-muted)]">규격</label>
           <div className="flex gap-1">
@@ -315,6 +324,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
               options={SPEC_UNITS} placeholder="단위" />
           </div>
         </div>
+        )}
         <div className="space-y-1">
           <label className="text-[0.625rem] text-[var(--warm-muted)]">수량</label>
           <div className="flex gap-1">
@@ -1259,6 +1269,8 @@ export default function FinanceClient({
   const [addExpVendor, setAddExpVendor]       = useState('')
   const [addExpAmount, setAddExpAmount]       = useState<number | undefined>(undefined)
   const [addExpDetail, setAddExpDetail]       = useState('')
+  const [addHasShipping, setAddHasShipping]   = useState(false)              // 배송비 포함 여부 (기본 무료)
+  const [addShipping, setAddShipping]         = useState<number | undefined>(undefined)
   const [scanBitmap, setScanBitmap]           = useState<ImageBitmap | null>(null)
   const [scanCropped, setScanCropped]         = useState<{ dataUrl: string; base64: string } | null>(null)
   const [scanOcrPending, setScanOcrPending]   = useState(false)
@@ -1286,30 +1298,19 @@ export default function FinanceClient({
     setScanBitmap(bitmap)
   }
 
-  const handleScanConfirm = (result: { dataUrl: string; base64: string }) => {
-    setScanBitmap(prev => { prev?.close?.(); return null })
-    setScanCropped(result)
-  }
-
-  const handleScanCancel = () => {
-    setScanBitmap(prev => { prev?.close?.(); return null })
-  }
-
-  // 크롭 결과를 스토리지에 업로드
-  const handleScanUpload = async () => {
-    if (!scanCropped) return
+  // 크롭 결과를 스토리지에 업로드 (코어 — cropped 직접 받음)
+  const uploadCropped = async (cropped: { dataUrl: string; base64: string }) => {
     const setter = scanTargetRef.current === 'add' ? setAddReceiptUrl : setEditReceiptUrl
-    await handleReceiptUpload(dataUrlToFile(scanCropped.dataUrl, 'receipt.jpg'), setter)
+    await handleReceiptUpload(dataUrlToFile(cropped.dataUrl, 'receipt.jpg'), setter)
     setScanCropped(null)
   }
 
-  // OCR 채우기 + 첨부 (지출 등록 폼 전용)
-  const handleScanAndOcr = async () => {
-    if (!scanCropped) return
+  // OCR 채우기 + 첨부 (코어 — cropped 직접 받음, 지출 등록 폼 전용)
+  const ocrCropped = async (cropped: { dataUrl: string; base64: string }) => {
     setScanOcrPending(true)
     setScanOcrError('')
     try {
-      const res = await analyzeReceiptWithGemini(scanCropped.base64, 'image/jpeg')
+      const res = await analyzeReceiptWithGemini(cropped.base64, 'image/jpeg')
       if (!res.ok) { setScanOcrError(res.error) }
       else {
         const d = res.data
@@ -1325,9 +1326,31 @@ export default function FinanceClient({
           if (d.items.length > 0) setAddExpDetail(d.items.map(it => `[${it.label}] ${it.amount.toLocaleString()}원`).join(', '))
         }
       }
-      await handleScanUpload()
+      await uploadCropped(cropped)
     } finally { setScanOcrPending(false) }
   }
+
+  // 스캔(크롭) 완료 → 지출 등록 폼이면 '분석할까요?' 팝업으로 자동 분석/첨부 분기.
+  // 편집 폼은 기존대로 미리보기 + 수동 버튼 유지.
+  const handleScanConfirm = (result: { dataUrl: string; base64: string }) => {
+    setScanBitmap(prev => { prev?.close?.(); return null })
+    setScanCropped(result)
+    if (scanTargetRef.current === 'add') {
+      if (confirm('영수증을 분석해서 날짜·금액·품목을 자동 입력할까요?\n\n· 예: 자동 분석 후 첨부\n· 아니오: 영수증만 첨부')) {
+        void ocrCropped(result)
+      } else {
+        void uploadCropped(result)
+      }
+    }
+  }
+
+  const handleScanCancel = () => {
+    setScanBitmap(prev => { prev?.close?.(); return null })
+  }
+
+  // 버튼용 래퍼 (state 의 현재 cropped 사용) — 편집 폼 수동 버튼 등
+  const handleScanUpload = async () => { if (scanCropped) await uploadCropped(scanCropped) }
+  const handleScanAndOcr = async () => { if (scanCropped) await ocrCropped(scanCropped) }
 
   // ── 수익 탭 상태 ─────────────────────────────────────────────
   const [incFilter, setIncFilter] = useState({ method: 'all', category: 'all' })
@@ -1584,7 +1607,7 @@ export default function FinanceClient({
       try {
         const res = await addExpense(fd)
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-        setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); router.refresh()
+        setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddHasShipping(false); setAddShipping(undefined); router.refresh()
         pushToast('success', '지출 등록됨')
       } finally { release() }
     })
@@ -1931,7 +1954,7 @@ export default function FinanceClient({
             <Btn variant="secondary" size="md" onClick={() => setShowVendorMgmt(true)}>
               구매처 관리
             </Btn>
-            <Btn variant="primary" size="md" onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
+            <Btn variant="primary" size="md" onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setScanCropped(null); setScanOcrError(''); setError('') }}>
               + 지출 등록
             </Btn>
           </div>
@@ -3108,21 +3131,45 @@ export default function FinanceClient({
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">
                       금액 *{addItems.length >= 1 && <span className="text-[0.625rem] text-[var(--warm-muted)] font-normal ml-1">(품목 합계 자동)</span>}
+                      {addHasShipping && (addShipping ?? 0) > 0 && <span className="text-[0.625rem] text-[var(--warm-muted)] font-normal ml-1">(+배송비 포함)</span>}
                     </label>
-                    {addItems.length >= 1 ? (
-                      <div className="relative">
-                        <input type="hidden" name="amount" value={addItems.reduce((s, it) => s + (it.amount ?? 0), 0)} />
-                        <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
-                          {addItems.reduce((s, it) => s + (it.amount ?? 0), 0).toLocaleString()}원
-                        </div>
-                      </div>
-                    ) : <MoneyInput name="amount" value={addExpAmount} onChange={setAddExpAmount} placeholder="0원" />}
+                    {/* 제출 금액 = 품목합계(또는 입력금액) + 배송비. name=amount 는 항상 이 합계로 단일 제출 */}
+                    {(() => {
+                      const base = addItems.length >= 1 ? addItems.reduce((s, it) => s + (it.amount ?? 0), 0) : (addExpAmount ?? 0)
+                      const ship = addHasShipping ? (addShipping ?? 0) : 0
+                      const total = base + ship
+                      return (
+                        <>
+                          <input type="hidden" name="amount" value={total} />
+                          {addItems.length >= 1 ? (
+                            <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
+                              {total.toLocaleString()}원
+                              {ship > 0 && <span className="text-[0.625rem] text-[var(--warm-muted)] ml-1">(품목 {base.toLocaleString()} + 배송 {ship.toLocaleString()})</span>}
+                            </div>
+                          ) : (
+                            <MoneyInput value={addExpAmount} onChange={setAddExpAmount} placeholder="0원" />
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
+                </div>
+                {/* 배송비 — 기본 무료, 체크 시 금액 입력. 총액에 합산되고 세부항목에 표기됨 */}
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--warm-mid)] cursor-pointer">
+                    <input type="checkbox" checked={addHasShipping}
+                      onChange={e => { setAddHasShipping(e.target.checked); if (!e.target.checked) setAddShipping(undefined) }}
+                      className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                    배송비 포함 <span className="text-[var(--warm-muted)] font-normal">(기본: 무료)</span>
+                  </label>
+                  {addHasShipping && (
+                    <MoneyInput value={addShipping} onChange={setAddShipping} placeholder="배송비 0원" />
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                   <select name="category" value={addExpCategory}
-                    onChange={e => { setAddExpCategory(e.target.value); setAddItems([]) }}
+                    onChange={e => setAddExpCategory(e.target.value)}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
@@ -3142,11 +3189,13 @@ export default function FinanceClient({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                   {addItems.length > 0
-                    ? <input type="text" name="detail" value={fmtItemListDetail(addItems)} readOnly
+                    ? <input type="text" value={fmtItemListDetail(addItems)} readOnly
                         className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
-                    : <input type="text" name="detail" value={addExpDetail} onChange={e => setAddExpDetail(e.target.value)} placeholder="세부 내용"
+                    : <input type="text" value={addExpDetail} onChange={e => setAddExpDetail(e.target.value)} placeholder="세부 내용"
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   }
+                  {/* 제출 detail = 표시 내용 + 배송비 표기(있으면) */}
+                  <input type="hidden" name="detail" value={`${addItems.length > 0 ? fmtItemListDetail(addItems) : addExpDetail}${addHasShipping && (addShipping ?? 0) > 0 ? `${(addItems.length > 0 || addExpDetail) ? ' · ' : ''}배송비 ${(addShipping ?? 0).toLocaleString()}원` : ''}`} />
                   {addItems.length > 0 && <>
                     <input type="hidden" name="itemsJson" value={JSON.stringify(addItems)} />
                     {addItems.length === 1 && (
