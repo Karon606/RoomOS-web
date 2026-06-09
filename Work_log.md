@@ -3,7 +3,14 @@
 마지막 업데이트: 2026-06-09
 브랜치: main
 
-## 2026-06-09 (이어서) — 지출 합배송/주문묶음 Phase 1 [코드 완료, ⚠️SQL 선적용 후 배포]
+## 2026-06-09 (이어서) — 합배송 Phase 2: 기존 지출에 배송비 묶기 [배포, SQL 불필요]
+사용자 사례: 6/8 이미 등록한 의자 3개에 착불 배송비 8000원을 사후에 묶어야 함 → 등록시점 묶기(Phase 1)만으론 불가.
+- **신규 액션 `attachShippingToOrder({expenseIds, amount, shippingType, shippingMemo})`** (finance/actions.ts): 기존 주문 있으면 재사용(메타 갱신)·없으면 새로 생성(genOrderCode), 지출들을 orderId로 연결, 배송비 별도 라인 생성(주문에 이미 있으면 갱신). 신용=미정산. 배송 라인 category·date·vendor는 대표(최대금액) 지출 기준.
+- **UI(FinanceClient 상세 모달)**: 지출 상세에 '주문 묶음' 행(라벨·결제구분·코드) + '+ 배송비 묶기(합배송)' 인라인 폼(금액·선불/착불/신용·메모). 이미 묶였으면 '배송비 수정·다시 묶기'. 배송비 라인 자체엔 폼 미노출. 상세 열기/닫기 시 폼 리셋.
+- Phase 1 스키마 그대로 사용 → **SQL 불필요, 바로 배포**. tsc·build 통과.
+- 남은 것: 여러 기존 지출 동시 선택 묶기(현재 1건씩), 배송비 라인 결제구분 단독 인라인 편집.
+
+## 2026-06-09 (이어서) — 지출 합배송/주문묶음 Phase 1 [코드 완료, ⚠️SQL 선적용 후 배포 → 적용·배포 완료]
 [[project_expense_order_grouping]] 설계대로 구현. 여러 지출이 한 주문번호로 묶이고 배송비는 별도 지출(선불/착불/신용)로.
 - **⚠️ 배포 전 필수**: `prisma/migrate_expense_order.sql` 을 **Supabase SQL Editor 에서 먼저 실행**. 안 하면 getExpenses 의 `order` 관계 조회가 런타임 에러(테이블/컬럼 없음). 단위작업과 달리 SQL 선적용 필수.
 - **스키마**: 신규 `ExpenseOrder`(code 자동 'YYMMDD-NNN', shippingType, shippingMemo) + `Expense.orderId`(FK, onDelete SetNull) + `Expense.isShipping`. prisma generate 완료.

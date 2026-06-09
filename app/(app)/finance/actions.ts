@@ -591,6 +591,97 @@ export async function deleteExpense(id: string) {
   revalidatePath('/finance')
 }
 
+// ── 합배송 Phase 2: 기존 지출(들)에 배송비를 묶기 ──
+//  주문(ExpenseOrder)을 만들거나 기존 주문을 재사용해 expenseIds 를 묶고,
+//  배송비 별도 지출 라인을 생성(또는 그 주문에 이미 있으면 갱신).
+export async function attachShippingToOrder(input: {
+  expenseIds: string[]
+  amount: number
+  shippingType: '선불' | '착불' | '신용' | null
+  shippingMemo?: string | null
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const ids = (input.expenseIds ?? []).filter(Boolean)
+    if (ids.length === 0) return { ok: false, error: '묶을 지출을 선택해주세요.' }
+    if (!input.amount || input.amount <= 0) return { ok: false, error: '배송비 금액을 입력해주세요.' }
+    const shipType = input.shippingType && (SHIPPING_TYPES as readonly string[]).includes(input.shippingType)
+      ? input.shippingType : null
+
+    const expenses = await prisma.expense.findMany({
+      where: { id: { in: ids }, propertyId, isShipping: false },
+      orderBy: { amount: 'desc' },
+    })
+    if (expenses.length === 0) return { ok: false, error: '지출을 찾을 수 없습니다.' }
+
+    // 기존 주문 재사용(이미 묶인 게 있으면) 또는 새 주문 생성
+    const existingOrderId = expenses.find(e => e.orderId)?.orderId ?? null
+    let orderId: string
+    if (existingOrderId) {
+      orderId = existingOrderId
+      await prisma.expenseOrder.update({
+        where: { id: orderId },
+        data: { shippingType: shipType, shippingMemo: input.shippingMemo || null },
+      })
+    } else {
+      const order = await prisma.expenseOrder.create({
+        data: { propertyId, code: await genOrderCode(propertyId), shippingType: shipType, shippingMemo: input.shippingMemo || null },
+      })
+      orderId = order.id
+    }
+
+    // 선택된 지출들을 주문에 연결(아직 연결 안 된 것만)
+    await prisma.expense.updateMany({
+      where: { id: { in: expenses.map(e => e.id) }, propertyId, orderId: null },
+      data: { orderId },
+    })
+
+    // 대표(최대 금액) 지출 기준으로 배송비 라인 메타 결정
+    const rep = expenses[0]
+    const shipData = {
+      amount:             Math.round(input.amount),
+      detail:             `배송비${shipType ? ` (${shipType})` : ''}`,
+      settleStatus:       (shipType === '신용' ? 'UNSETTLED' : 'SETTLED') as SettleStatus,
+      shippingMemo:       input.shippingMemo || null,
+    }
+
+    // 주문에 이미 배송비 라인이 있으면 갱신, 없으면 생성
+    const existingShip = await prisma.expense.findFirst({ where: { orderId, isShipping: true, propertyId } })
+    if (existingShip) {
+      await prisma.expense.update({
+        where: { id: existingShip.id },
+        data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipData.settleStatus, memo: shipData.shippingMemo, category: rep.category, date: rep.date },
+      })
+    } else {
+      await prisma.expense.create({
+        data: {
+          propertyId,
+          date:               rep.date,
+          category:           rep.category,
+          amount:             shipData.amount,
+          detail:             shipData.detail,
+          vendor:             rep.vendor,
+          memo:               shipData.shippingMemo,
+          payMethod:          rep.payMethod || '계좌이체',
+          financialAccountId: rep.financialAccountId,
+          financeName:        rep.financeName,
+          settleStatus:       shipData.settleStatus,
+          orderId,
+          isShipping:         true,
+          excludeFromInventory: true,
+        },
+      })
+    }
+
+    revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 export async function getExpenseDetailSuggestions(): Promise<string[]> {
   const propertyId = await getPropertyId()
   const rows = await prisma.expense.findMany({
