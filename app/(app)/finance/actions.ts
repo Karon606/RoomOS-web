@@ -639,6 +639,11 @@ export async function attachShippingToOrder(input: {
 
     // 대표(최대 금액) 지출 기준으로 배송비 라인 메타 결정
     const rep = expenses[0]
+    // 배송비 라인을 주문 항목 '바로 위'에 정렬되도록 — 목록은 date desc, createdAt desc 순.
+    //   사후 묶기는 배송비 createdAt 이 '지금'이라 목록 맨 위로 떠버림 → 주문 항목들의
+    //   최신 createdAt 보다 1초 뒤로 맞춰 그 주문 묶음 바로 위에 붙게 한다(2026-06-10 사용자 보고).
+    const anchorMs = expenses.reduce((m, e) => Math.max(m, new Date(e.createdAt).getTime()), 0)
+    const shipCreatedAt = new Date(anchorMs + 1000)
     const shipData = {
       amount:             Math.round(input.amount),
       detail:             `배송비${shipType ? ` (${shipType})` : ''}`,
@@ -651,7 +656,7 @@ export async function attachShippingToOrder(input: {
     if (existingShip) {
       await prisma.expense.update({
         where: { id: existingShip.id },
-        data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipData.settleStatus, memo: shipData.shippingMemo, category: rep.category, date: rep.date },
+        data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipData.settleStatus, memo: shipData.shippingMemo, category: rep.category, date: rep.date, createdAt: shipCreatedAt },
       })
     } else {
       await prisma.expense.create({
@@ -670,6 +675,7 @@ export async function attachShippingToOrder(input: {
           orderId,
           isShipping:         true,
           excludeFromInventory: true,
+          createdAt:          shipCreatedAt,
         },
       })
     }
