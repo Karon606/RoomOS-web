@@ -1,7 +1,16 @@
 # 스테이음 작업 로그
 
-마지막 업데이트: 2026-06-02
+마지막 업데이트: 2026-06-09
 브랜치: main
+
+## 2026-06-09 (이어서) — 재고 단위 자동 환산 (L↔ml·kg↔g 등) [코드 완료, 배포 대기]
+사용자: 주방세제 단위가 ml인데 새 영수증은 L 표기. OCR로 지출등록→재고 병합했더니 L/ml 구분 못함. 같은 차원(부피·무게·길이) 다른 표기는 자동 환산, 나중에 원하는 단위로 변경(예: 핸드워시 L→ml)도 가능하게.
+- **신규 [lib/units.ts](lib/units.ts)** — 단위 변환 코어. 3차원: 부피(ml·cc·L·oz) / 무게(mg·g·kg·t·oz) / 길이(mm·cm·m·km·inch·ft). 한글·영문·기호 별칭 정규화(리터·밀리리터·인치·"·피트 등). `convertUnit`·`unitFactor`·`areUnitsCompatible`·`isConvertibleUnit`·`convertSpecValue`(계산 폴백)·`listCompatibleUnits`. **oz는 부피(29.57ml)·무게(28.35g) 양쪽 — 대상 단위 차원 보고 자동 선택**. 단위 12케이스 자동 테스트 통과.
+- **A. 계산 시점 환산(핵심)** — 구매 영수증 specUnit이 품목 specUnit과 다르면 품목 단위로 환산 후 합산. 단위 비었/비호환이면 원값 유지(회귀 0). 적용: overview.ts(`sumPurchases`+itemUnit 인자, 단가루프), actions.ts(getMonthlyInflow·getPriceHistory·getStockAsOf·confirmReceipt 자동점검), InventoryClient.tsx(carryover·타임라인 입고표시는 환산값+원포장 병기). **→ 이미 병합된 주방세제 케이스는 재병합 없이 이 변경만으로 교정됨**(L 영수증이 ml로 자동환산).
+- **B. 병합 시 자동 환산** — `mergeTrackedItems`: source·target 둘 다 규격추적+호환단위면 이전된 점검·위치잔량·입수량에 배율 적용(`scaleStockValues`). **차원 다르면(kg↔L) 병합 차단+안내**. 병합해제(undo) payload에 `unitFactor` 기록 → `unmergeTrackedItem`이 역배율(1/f)로 원복.
+- **C. 단위 변경 옵션** — 신규 액션 `changeTrackedItemUnit(id, newUnit)`: 같은 차원 호환단위만, 저장된 점검·위치·입수값 배율 환산 후 specUnit 갱신(영수증은 그대로—계산서 자동환산). SettingsForm(품목 편집)에 '표시 단위 변환' 섹션(규격추적+환산가능 단위일 때만 노출): 현재단위 → select(호환단위) → 변환 버튼 + 배율 미리보기 + confirm.
+- **스키마 변경 없음. tsc·build·units 테스트 통과.** ⚠️ 배포 후 검증 권장: 주방세제 현재고/사용량이 ml 기준으로 정상인지, L 영수증 입고 표시, 단위 변경 동작, 비호환 병합 차단.
+- **📌 큐(다음)**: 지출 배송비 — 합배송(여러 품목 묶음배송) 처리 방법 + 수정 시 처리 방법 고민 필요(사용자 요청, 미착수).
 
 ## 2026-06-06 — 금융 청구 정확성 2건 (main 배포, 사용자 화면 검증 권장)
 **#4 비거주(이원빈) 이월액 거주자요율 소급 버그 — [저장 청구액 우선]으로 수정**

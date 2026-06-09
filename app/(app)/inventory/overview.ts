@@ -3,9 +3,12 @@
 import prisma from '@/lib/prisma'
 import { type InventoryRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry } from './constants'
 import { getTrackedCategories } from './categoryConfig'
+import { convertSpecValue } from '@/lib/units'
 
 // ── 카테고리·라벨 매칭으로 구매량 합계
 // useSpecBase=true 면 qtyValue × specValue (kg, 매 같은 규격 단위) 로 환산
+//   itemUnit(품목 규격 단위)이 주어지면, 각 영수증의 specUnit 을 품목 단위로 환산해서 합산한다.
+//   (예: 품목 ml 인데 영수증이 L 이면 1L=1000ml. 단위 비었거나 호환 안 되면 원값 유지 → 회귀 0)
 //
 // 재고 반입 시점은 구매일(date)이 아닌 승인일(receivedAt)을 기준으로 한다.
 // → 구매는 과거에 했어도 승인(수령 확인)한 날짜가 실질적 재고 증가 시점이기 때문.
@@ -15,6 +18,7 @@ async function sumPurchases(
   afterReceivedAt: Date | null,
   beforeReceivedAt: Date | null,
   useSpecBase: boolean,
+  itemUnit: string | null = null,
 ): Promise<number> {
   const conditions: any[] = [
     { propertyId },
@@ -33,11 +37,14 @@ async function sumPurchases(
     const r = await prisma.expense.aggregate({ where, _sum: { qtyValue: true } })
     return r._sum.qtyValue ?? 0
   }
-  // 규격 환산: qtyValue × specValue. specValue 없으면 qtyValue 그대로
-  const rows = await prisma.expense.findMany({ where, select: { qtyValue: true, specValue: true } })
+  // 규격 환산: qtyValue × specValue. specValue 없으면 qtyValue 그대로.
+  //   specUnit≠품목단위면 품목 단위로 환산(L→ml 등).
+  const rows = await prisma.expense.findMany({ where, select: { qtyValue: true, specValue: true, specUnit: true } })
   return rows.reduce((s, r) => {
     const q = r.qtyValue ?? 0
-    return s + (r.specValue && r.specValue > 0 ? q * r.specValue : q)
+    if (!(r.specValue && r.specValue > 0)) return s + q
+    const spec = convertSpecValue(r.specValue, r.specUnit, itemUnit) ?? r.specValue
+    return s + q * spec
   }, 0)
 }
 
@@ -172,7 +179,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     if (last) {
       // 승인일(receivedAt) 기준: 점검 기록이 생성된 이후 승인된 구매만 반영
       // → 구매일이 과거여도 승인 전에 실사한 재고 수량이 currentStock에 포함되지 않도록 방지
-      const incomingPurchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, last.createdAt, null, useSpec)
+      const incomingPurchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, last.createdAt, null, useSpec, it.specUnit)
       const incomingAdditions = await sumAdditions(it.id, last.date, today, last.createdAt)
       currentStock = last.remainingQty + incomingPurchases + incomingAdditions
     }
@@ -187,7 +194,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       //   사용자가 과거 점검을 나중에 보정 입력하면 createdAt 이 며칠~몇 주 뒤로 밀려,
       //   createdAt 기준 구간이 인접 구간과 겹쳐 같은 구매를 두 번(또는 엉뚱한 달에) 세는
       //   버그가 있었음 (2026-06-01 사용자 보고). additions 와 동일하게 date 기준으로 통일.
-      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(last), useSpec)
+      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(last), useSpec, it.specUnit)
       const additions = await sumAdditions(it.id, effTime(prev), effTime(last))
       lastPeriodConsumption = (prev.remainingQty + purchases + additions) - last.remainingQty
       lastPeriodDays = Math.max(1, Math.round((last.date.getTime() - prev.date.getTime()) / 86400000))
@@ -205,7 +212,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       })
       if (firstPurchase?.receivedAt) {
         // 최초 구매 승인 ~ 실사 사이의 총 입수량
-        const totalPurchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, null, last.createdAt, useSpec)
+        const totalPurchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, null, last.createdAt, useSpec, it.specUnit)
         const totalAdditions = await sumAdditions(it.id, null, last.date)
         const consumed = totalPurchases + totalAdditions - last.remainingQty
         const days = Math.max(1, Math.round((last.date.getTime() - firstPurchase.receivedAt.getTime()) / 86400000))
@@ -249,11 +256,16 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     if (recentPurchases.length > 0) {
       // useSpec=true (쌀): base = qtyValue × specValue → 원/kg
       // useSpec=false (폐기물 봉투): base = qtyValue → 원/매
+      // specUnit≠품목단위면 품목 단위로 환산해 단가 기준(base)을 통일(L→ml 등)
+      const specBase = (p: { qtyValue: number | null; specValue: number | null; specUnit: string | null }) => {
+        const qty = p.qtyValue ?? 0
+        if (!(useSpec && p.specValue && p.specValue > 0)) return qty
+        return qty * (convertSpecValue(p.specValue, p.specUnit, it.specUnit) ?? p.specValue)
+      }
       let totalAmt = 0
       let totalBase = 0
       for (const p of recentPurchases) {
-        const qty = p.qtyValue ?? 0
-        const base = useSpec && p.specValue && p.specValue > 0 ? qty * p.specValue : qty
+        const base = specBase(p)
         if (base > 0) {
           totalAmt  += p.amount
           totalBase += base
@@ -261,8 +273,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       }
       avgUnitPrice = totalBase > 0 ? totalAmt / totalBase : null
       const last = recentPurchases[0]
-      const lastQty = last.qtyValue ?? 0
-      const lastBase = useSpec && last.specValue && last.specValue > 0 ? lastQty * last.specValue : lastQty
+      const lastBase = specBase(last)
       lastUnitPrice = lastBase > 0 ? last.amount / lastBase : null
     }
 
@@ -291,7 +302,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       if (curr.isReconcile) continue
       // 입고 구간은 effTime(실제 발생 시각) 기준 — 수령 즉시 생성된 자동점검이 baseline 일 때
       // 그 구매가 다음 구간에 중복 입고로 더해지는 것을 방지(수세미 케이스).
-      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(curr), useSpec)
+      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(curr), useSpec, it.specUnit)
       const additions = await sumAdditions(it.id, effTime(prev), effTime(curr))
       const consumed = (prev.remainingQty + purchases + additions) - curr.remainingQty
       const key = `${curr.date.getFullYear()}-${String(curr.date.getMonth() + 1).padStart(2, '0')}`

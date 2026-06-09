@@ -10,6 +10,7 @@ import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInf
 import { getInventoryCategoryConfig, getTrackedCategories } from './categoryConfig'
 import { computeInventoryOverview } from './overview'
 import { applyLocationCheck, type LocCheckPatch } from '@/lib/stockCheckMerge'
+import { convertSpecValue, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -44,7 +45,7 @@ export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyIn
         receivedAt: { not: null },
         excludeFromInventory: false,
       },
-      select: { date: true, qtyValue: true, specValue: true, amount: true },
+      select: { date: true, qtyValue: true, specValue: true, specUnit: true, amount: true },
     }),
     prisma.stockAddition.findMany({
       where: { trackedItemId },
@@ -62,7 +63,9 @@ export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyIn
     const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     const r = upsert(m)
     const q = p.qtyValue ?? 0
-    const contrib = useSpec && p.specValue && p.specValue > 0 ? q * p.specValue : q
+    const spec = useSpec && p.specValue && p.specValue > 0
+      ? (convertSpecValue(p.specValue, p.specUnit, item.specUnit) ?? p.specValue) : null
+    const contrib = spec != null ? q * spec : q
     r.purchaseQty    += contrib
     r.purchaseAmount += p.amount
   }
@@ -92,7 +95,7 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
       receivedAt: { not: null },
       excludeFromInventory: false,
     },
-    select: { date: true, amount: true, qtyValue: true, specValue: true },
+    select: { date: true, amount: true, qtyValue: true, specValue: true, specUnit: true },
     orderBy: { date: 'asc' },
   })
   const useSpec = item.trackUnit !== 'qty' && !!(item.specUnit && item.specUnit.trim())
@@ -100,7 +103,9 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
     .filter(r => r.qtyValue && r.qtyValue > 0)
     .map(r => {
       const qty = r.qtyValue ?? 0
-      const base = useSpec && r.specValue && r.specValue > 0 ? qty * r.specValue : qty
+      const spec = useSpec && r.specValue && r.specValue > 0
+        ? (convertSpecValue(r.specValue, r.specUnit, item.specUnit) ?? r.specValue) : null
+      const base = spec != null ? qty * spec : qty
       return {
         date: r.date,
         qty,
@@ -322,6 +327,47 @@ export async function updateTrackedItem(id: string, data: {
   }
 }
 
+// 품목의 규격 단위를 같은 차원의 다른 단위로 변경(L→ml 등).
+//  저장된 점검 잔량·위치별 잔량·무상입수량을 배율로 환산하고 specUnit 을 갱신한다.
+//  구매 영수증(Expense)은 각자 단위 유지 — 계산 시점에 새 단위로 자동 환산되므로 건드리지 않는다.
+export async function changeTrackedItemUnit(id: string, newUnit: string): Promise<
+  { ok: true; factor: number; convertedChecks: number } | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id, propertyId } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+
+    const target = newUnit.trim()
+    if (!target) return { ok: false, error: '바꿀 단위를 입력해주세요.' }
+    if (it.trackUnit === 'qty') return { ok: false, error: '수량(개·매) 추적 품목은 단위 변환 대상이 아닙니다.' }
+    if (!it.specUnit?.trim()) return { ok: false, error: '규격 단위가 없는 품목입니다. 품목 편집에서 단위를 먼저 지정해주세요.' }
+    if (canonicalUnit(it.specUnit) === canonicalUnit(target)) {
+      return { ok: false, error: '현재 단위와 같습니다.' }
+    }
+    if (!isConvertibleUnit(it.specUnit) || !isConvertibleUnit(target)) {
+      return { ok: false, error: '자동 변환을 지원하는 단위가 아닙니다 (부피·무게·길이만 가능).' }
+    }
+    const factor = unitFactor(it.specUnit, target)
+    if (factor == null) {
+      return { ok: false, error: `단위 차원이 달라 변환할 수 없습니다 (${it.specUnit} ↔ ${target}).` }
+    }
+
+    const checkIds = (await prisma.stockCheck.findMany({ where: { trackedItemId: id }, select: { id: true } })).map(c => c.id)
+    const additionIds = (await prisma.stockAddition.findMany({ where: { trackedItemId: id }, select: { id: true } })).map(a => a.id)
+    await scaleStockValues(checkIds, additionIds, factor)
+    await prisma.trackedItem.update({ where: { id }, data: { specUnit: canonicalUnit(target) ?? target } })
+
+    revalidatePath('/inventory')
+    revalidatePath('/finance')
+    return { ok: true, factor, convertedChecks: checkIds.length }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // 같은 카테고리 안의 다른 활성 품목들 — 병합 대상 후보
 export async function getSameCategoryItems(excludeId: string): Promise<{ id: string; label: string }[]> {
   const propertyId = await getPropertyId()
@@ -340,9 +386,42 @@ export async function getSameCategoryItems(excludeId: string): Promise<{ id: str
   return list
 }
 
+// 저장된 점검 잔량·위치별 잔량·무상입수량에 배율(factor)을 곱한다.
+//  단위 변경(L→ml) 또는 단위 다른 품목 병합 시, 품목 단위로 통일하기 위해 사용.
+//  checkIds/additionIds 로 범위를 한정(병합 시 '이전된 것만' 환산, target 기존값 보호).
+async function scaleStockValues(checkIds: string[], additionIds: string[], factor: number): Promise<void> {
+  if (factor === 1 || !isFinite(factor) || factor <= 0) return
+  for (const id of checkIds) {
+    const c = await prisma.stockCheck.findUnique({ where: { id }, select: { remainingQty: true } })
+    if (c) await prisma.stockCheck.update({ where: { id }, data: { remainingQty: c.remainingQty * factor } })
+  }
+  if (checkIds.length > 0) {
+    const locs = await prisma.stockCheckLocation.findMany({
+      where: { stockCheckId: { in: checkIds } },
+      select: { id: true, remainingQty: true, restockedQty: true, fromHubQty: true },
+    })
+    for (const l of locs) {
+      await prisma.stockCheckLocation.update({
+        where: { id: l.id },
+        data: {
+          remainingQty: l.remainingQty * factor,
+          ...(l.restockedQty != null ? { restockedQty: l.restockedQty * factor } : {}),
+          ...(l.fromHubQty != null ? { fromHubQty: l.fromHubQty * factor } : {}),
+        },
+      })
+    }
+  }
+  for (const id of additionIds) {
+    const a = await prisma.stockAddition.findUnique({ where: { id }, select: { addedQty: true } })
+    if (a) await prisma.stockAddition.update({ where: { id }, data: { addedQty: a.addedQty * factor } })
+  }
+}
+
 // 두 추적 품목을 병합. source의 expense·stockCheck·stockAddition을 target으로 이전.
 // 라면처럼 사이즈가 다양해도 전체 합산하고 싶을 때 사용.
 // looseMatch=true 면 target.qtyUnit 을 null로 만들어 sumPurchases가 qtyUnit 무시하고 매칭.
+// 단위 자동 환산: source·target 둘 다 규격 추적 + 호환 단위면(L↔ml 등) 이전된 점검·입수값을
+//   target 단위로 환산. 차원이 다르면(kg↔L) 병합 차단.
 export async function mergeTrackedItems(
   sourceId: string, targetId: string, looseMatch = true,
 ): Promise<{ ok: true; movedExpenses: number; movedChecks: number; movedAdditions: number } | { ok: false; error: string }> {
@@ -356,6 +435,21 @@ export async function mergeTrackedItems(
     ])
     if (!source || !target) return { ok: false, error: '품목을 찾을 수 없습니다.' }
     if (source.category !== target.category) return { ok: false, error: '같은 카테고리 안에서만 병합할 수 있습니다.' }
+
+    // 0) 단위 환산 배율 — source·target 둘 다 규격 추적 + 단위 둘 다 환산 가능할 때만.
+    //    같은 차원의 다른 단위(L↔ml)면 factor 로 환산. 다른 차원(kg↔L)이면 차단.
+    //    한쪽이라도 비물리 단위('개' 등)거나 규격 추적 아니면 환산 없이 기존대로 합산.
+    let mergeFactor = 1
+    const bothSpec = source.trackUnit !== 'qty' && target.trackUnit !== 'qty'
+      && !!source.specUnit?.trim() && !!target.specUnit?.trim()
+    if (bothSpec && canonicalUnit(source.specUnit) !== canonicalUnit(target.specUnit)
+      && isConvertibleUnit(source.specUnit) && isConvertibleUnit(target.specUnit)) {
+      const f = unitFactor(source.specUnit, target.specUnit)
+      if (f == null) {
+        return { ok: false, error: `단위가 호환되지 않아 병합할 수 없습니다 (${source.specUnit} ↔ ${target.specUnit}). 단위를 먼저 맞춰주세요.` }
+      }
+      mergeFactor = f
+    }
 
     // 1) source 매칭 expense들의 itemLabel을 target.label로 변경
     //    (qtyUnit/specUnit은 expense 그대로 유지 — 사이즈 정보 보존)
@@ -385,6 +479,11 @@ export async function mergeTrackedItems(
         data: { trackedItemId: targetId },
       }),
     ])
+
+    // 2.5) 단위가 다른 품목 병합이면 이전된 점검·입수값을 target 단위로 환산(L→ml 등)
+    if (mergeFactor !== 1) {
+      await scaleStockValues(movedCheckIds, movedAdditionIds, mergeFactor)
+    }
 
     // 3) target 옵션 보정 — looseMatch면 qtyUnit null로 (다양한 포장 합산용)
     if (looseMatch && target.qtyUnit) {
@@ -431,6 +530,7 @@ export async function mergeTrackedItems(
               purchaseUrl: source.purchaseUrl, memo: source.memo,
             },
             movedExpenseIds, movedCheckIds, movedAdditionIds, targetQtyUnitBefore,
+            unitFactor: mergeFactor,
           },
         },
       })
@@ -1425,6 +1525,15 @@ export async function unmergeTrackedItem(undoId: string): Promise<{ ok: true } |
       if (Array.isArray(p.movedExpenseIds) && p.movedExpenseIds.length > 0) {
         await prisma.expense.updateMany({ where: { id: { in: p.movedExpenseIds }, propertyId }, data: { itemLabel: s.label } })
       }
+      // 병합 때 단위 환산했으면(unitFactor≠1) 원복하며 역배율로 되돌림
+      const mf = typeof p.unitFactor === 'number' && p.unitFactor > 0 ? p.unitFactor : 1
+      if (mf !== 1) {
+        await scaleStockValues(
+          Array.isArray(p.movedCheckIds) ? p.movedCheckIds : [],
+          Array.isArray(p.movedAdditionIds) ? p.movedAdditionIds : [],
+          1 / mf,
+        )
+      }
       if (Array.isArray(p.movedCheckIds) && p.movedCheckIds.length > 0) {
         await prisma.stockCheck.updateMany({ where: { id: { in: p.movedCheckIds } }, data: { trackedItemId: sourceId } })
       }
@@ -1628,8 +1737,12 @@ export async function confirmReceipt(expenseId: string, locationId?: string): Pr
       })
 
       if (item) {
-        const receivedQty = item.trackUnit === 'spec' && expense.specValue
-          ? expense.qtyValue * expense.specValue
+        // 규격 추적이면 영수증 규격값을 품목 단위로 환산(L→ml 등) 후 입수량 산출
+        const spec = item.trackUnit === 'spec' && expense.specValue
+          ? (convertSpecValue(expense.specValue, expense.specUnit, item.specUnit) ?? expense.specValue)
+          : null
+        const receivedQty = spec != null
+          ? expense.qtyValue * spec
           : expense.qtyValue
 
         if (receivedQty > 0) {
@@ -1789,11 +1902,12 @@ export async function getStockAsOf(trackedItemId: string, dateStr: string): Prom
       receivedAt: { not: null, ...(baseDate ? { gt: baseDate } : {}), lte: asOf },
       excludeFromInventory: false,
     },
-    select: { qtyValue: true, specValue: true },
+    select: { qtyValue: true, specValue: true, specUnit: true },
   })
   const purchaseTotal = purchases.reduce((s, p) => {
     const q = p.qtyValue ?? 0
-    return s + (useSpec && p.specValue && p.specValue > 0 ? q * p.specValue : q)
+    if (!(useSpec && p.specValue && p.specValue > 0)) return s + q
+    return s + q * (convertSpecValue(p.specValue, p.specUnit, it.specUnit) ?? p.specValue)
   }, 0)
   const addAgg = await prisma.stockAddition.aggregate({
     where: { trackedItemId, date: { ...(baseDate ? { gt: baseDate } : {}), lte: asOf } },

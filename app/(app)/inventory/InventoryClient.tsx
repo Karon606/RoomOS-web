@@ -9,6 +9,7 @@ import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
+import { convertSpecValue, listCompatibleUnits, unitFactor } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type InventoryCategory, suggestInventoryAlias } from './constants'
@@ -19,6 +20,7 @@ import {
   getSameCategoryItems,
   createTrackedItem,
   updateTrackedItem,
+  changeTrackedItemUnit,
   archiveTrackedItem,
   getArchivedTrackedItems,
   unarchiveTrackedItem,
@@ -746,8 +748,11 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                     if (entryMonth(e) >= targetMonth) return s
                     if (e.type === 'addition')
                       return new Date(e.date) > new Date(carry.date) ? s + e.addedQty : s
-                    if (e.type === 'purchase' && e.receivedAt && new Date(e.receivedAt) > new Date(carry.date))
-                      return s + ((carryUseSpec && e.specValue && e.specValue > 0) ? e.qtyValue * e.specValue : e.qtyValue)
+                    if (e.type === 'purchase' && e.receivedAt && new Date(e.receivedAt) > new Date(carry.date)) {
+                      const spec = (carryUseSpec && e.specValue && e.specValue > 0)
+                        ? (convertSpecValue(e.specValue, e.specUnit, data.item.specUnit) ?? e.specValue) : null
+                      return s + (spec != null ? e.qtyValue * spec : e.qtyValue)
+                    }
                     return s
                   }, 0)
                 : 0
@@ -921,6 +926,26 @@ function SettingsForm({ row, onCancel, onDone }: {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
 
+  // 단위 변환(L→ml 등) — 규격 추적 + 환산 가능한 단위일 때만 노출
+  const compatUnits = trackUnit === 'spec' && row.specUnit ? listCompatibleUnits(row.specUnit) : []
+  const [newUnit, setNewUnit] = useState('')
+  const [unitPending, setUnitPending] = useState(false)
+  const [unitMsg, setUnitMsg] = useState('')
+  const handleChangeUnit = async () => {
+    const target = newUnit.trim()
+    if (!target) return
+    const f = unitFactor(row.specUnit, target)
+    if (f == null) { setUnitMsg(`${row.specUnit} → ${target} 는 변환할 수 없는 단위입니다.`); return }
+    const ex = f >= 1 ? `1${row.specUnit} = ${f}${target}` : `${1 / f}${row.specUnit} = 1${target}`
+    if (!confirm(`단위를 ${row.specUnit} → ${target} 로 바꿉니다.\n저장된 모든 점검·입수 기록이 환산됩니다 (${ex}).\n계속할까요?`)) return
+    setUnitPending(true); setUnitMsg('')
+    const res = await changeTrackedItemUnit(row.id, target)
+    setUnitPending(false)
+    if (!res.ok) { setUnitMsg(res.error); return }
+    pushToast('success', `단위를 ${target}로 변경했습니다 (점검 ${res.convertedChecks}건 환산).`)
+    onDone()
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -978,6 +1003,31 @@ function SettingsForm({ row, onCancel, onDone }: {
           수량 단위: 종량제봉투 50L짜리 30매처럼 매(개) 단위로만 추적 (사이즈는 라벨에 적기).
         </p>
       </div>
+      {compatUnits.length > 0 && (
+        <div className="space-y-1.5 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)] px-3 py-2.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">표시 단위 변환</label>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-[var(--warm-dark)] font-medium shrink-0">{row.specUnit}</span>
+            <span className="text-[var(--warm-muted)]">→</span>
+            <select value={newUnit} onChange={e => { setNewUnit(e.target.value); setUnitMsg('') }}
+              className="bg-white border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+              <option value="">단위 선택…</option>
+              {compatUnits.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+            <button type="button" onClick={handleChangeUnit} disabled={!newUnit || unitPending}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--warm-dark)] text-white disabled:opacity-40 active:scale-95 transition">
+              {unitPending ? '변환 중…' : '변환'}
+            </button>
+          </div>
+          {newUnit && unitFactor(row.specUnit, newUnit) != null && (
+            <p className="text-[0.625rem] text-[var(--warm-muted)]">
+              {(() => { const f = unitFactor(row.specUnit, newUnit)!; return f >= 1 ? `1${row.specUnit} = ${f}${newUnit}` : `${Math.round((1 / f) * 1e6) / 1e6}${row.specUnit} = 1${newUnit}` })()}
+              {' '}· 저장된 점검·입수 기록이 함께 환산됩니다. 영수증은 그대로 두어도 자동 환산됩니다.
+            </p>
+          )}
+          {unitMsg && <p className="text-[0.625rem] text-red-500">{unitMsg}</p>}
+        </div>
+      )}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">재고 파악 기준 메모</label>
         <textarea value={memo} onChange={e => setMemo(e.target.value)}
@@ -1197,8 +1247,10 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
     const isPendingReceipt = entry.receivedAt === null
     const hasSpec = entry.specValue != null && entry.specValue > 0 && entry.specUnit
     const useSpec = trackUnit !== 'qty' && hasSpec
-    const baseQty = useSpec ? entry.qtyValue * (entry.specValue ?? 0) : entry.qtyValue
-    const baseUnit = useSpec ? entry.specUnit : entry.qtyUnit
+    // 영수증 규격단위(entry.specUnit)가 품목 단위(stockUnit)와 다르면 품목 단위로 환산해 입고량 표시(L→ml 등)
+    const convSpec = useSpec ? (convertSpecValue(entry.specValue ?? 0, entry.specUnit, stockUnit) ?? (entry.specValue ?? 0)) : 0
+    const baseQty = useSpec ? entry.qtyValue * convSpec : entry.qtyValue
+    const baseUnit = useSpec ? stockUnit : entry.qtyUnit
     const packLabel = hasSpec ? `${entry.specValue}${entry.specUnit} × ${fmtQty(entry.qtyValue, entry.qtyUnit)}` : null
 
     if (editing) {
