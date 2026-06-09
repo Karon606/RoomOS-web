@@ -1259,6 +1259,7 @@ export default function FinanceClient({
   const [attachShipAmount, setAttachShipAmount] = useState<number | undefined>(undefined)
   const [attachShipType, setAttachShipType] = useState<'선불' | '착불' | '신용'>('착불')
   const [attachShipMemo, setAttachShipMemo] = useState('')
+  const [attachShipSiblings, setAttachShipSiblings] = useState<string[]>([])  // 함께 묶을 다른 지출 id
   const [addExpMethod, setAddExpMethod]   = useState('계좌이체')
   const [addExpAccId, setAddExpAccId]     = useState('')
   const [addExpAccName, setAddExpAccName] = useState('')
@@ -1696,9 +1697,9 @@ export default function FinanceClient({
     startTransition(async () => {
       const release = trackSave()
       try {
-        const res = await attachShippingToOrder({ expenseIds: [exp.id], amount: attachShipAmount, shippingType: attachShipType, shippingMemo: attachShipMemo || null })
+        const res = await attachShippingToOrder({ expenseIds: [exp.id, ...attachShipSiblings], amount: attachShipAmount, shippingType: attachShipType, shippingMemo: attachShipMemo || null })
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-        setShowAttachShip(false); setAttachShipAmount(undefined); setAttachShipMemo(''); setDetailExp(null); router.refresh()
+        setShowAttachShip(false); setAttachShipAmount(undefined); setAttachShipMemo(''); setAttachShipSiblings([]); setDetailExp(null); router.refresh()
         pushToast('success', '배송비가 주문으로 묶였습니다')
       } finally { release() }
     })
@@ -2151,7 +2152,7 @@ export default function FinanceClient({
                         const meta = [e.payMethod, e.financialAccount ? accName(e.financialAccount) : null].filter(Boolean).join(' · ')
                         return (
                           <div key={e.id}
-                            onClick={() => { setDetailExp(e); setDetailExpEdit(false); setShowAttachShip(false); setError('') }}
+                            onClick={() => { setDetailExp(e); setDetailExpEdit(false); setShowAttachShip(false); setAttachShipSiblings([]); setError('') }}
                             className={`bg-[var(--cream)] border rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity ${isUnsettled ? 'border-red-200/60' : 'border-[var(--warm-border)]'}`}>
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
@@ -2235,7 +2236,7 @@ export default function FinanceClient({
                             const e = item.exp
                             return (
                               <tr key={e.id}
-                                onClick={() => { setDetailExp(e); setDetailExpEdit(false); setShowAttachShip(false); setError('') }}
+                                onClick={() => { setDetailExp(e); setDetailExpEdit(false); setShowAttachShip(false); setAttachShipSiblings([]); setError('') }}
                                 className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer">
                                 <td className="px-4 py-3 text-xs text-[var(--warm-mid)] overflow-hidden"><span className="truncate block">{fmtDate(e.date)}</span></td>
                                 <td className="px-4 py-3 overflow-hidden">
@@ -2872,7 +2873,7 @@ export default function FinanceClient({
                   {!detailExp.isShipping && (
                     <div className="pt-2 border-t border-[var(--warm-border)]/50">
                       {!showAttachShip ? (
-                        <button type="button" onClick={() => { setShowAttachShip(true); setAttachShipMemo(detailExp.order?.shippingMemo ?? ''); setError('') }}
+                        <button type="button" onClick={() => { setShowAttachShip(true); setAttachShipSiblings([]); setAttachShipMemo(detailExp.order?.shippingMemo ?? ''); setError('') }}
                           className="text-xs font-medium text-[var(--coral)] hover:underline">
                           {detailExp.order ? '배송비 수정·다시 묶기' : '+ 배송비 묶기 (합배송)'}
                         </button>
@@ -2891,11 +2892,36 @@ export default function FinanceClient({
                           <input type="text" value={attachShipMemo} onChange={e => setAttachShipMemo(e.target.value)}
                             placeholder="배송 메모 (선택)"
                             className="w-full bg-white border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-500 outline-none focus:border-[var(--coral)]" />
+                          {/* 같은 날짜의 다른 지출도 함께 묶기 (의자 3개를 각각 등록한 경우 등) */}
+                          {(() => {
+                            const sibs = expenses.filter(e =>
+                              e.id !== detailExp.id && !e.isShipping &&
+                              kstYmdStr(new Date(e.date)) === kstYmdStr(new Date(detailExp.date)) &&
+                              (!e.orderId || e.orderId === detailExp.orderId)
+                            )
+                            if (sibs.length === 0) return null
+                            const toggle = (id: string) => setAttachShipSiblings(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+                            return (
+                              <div className="space-y-1 pt-1">
+                                <p className="text-[0.625rem] font-medium text-[var(--warm-mid)]">같은 날 다른 지출도 함께 묶기 (선택)</p>
+                                <div className="space-y-1 max-h-32 overflow-auto">
+                                  {sibs.map(s => (
+                                    <label key={s.id} className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer px-1.5 py-1 rounded-md hover:bg-white">
+                                      <input type="checkbox" checked={attachShipSiblings.includes(s.id)} onChange={() => toggle(s.id)}
+                                        className="w-3.5 h-3.5 accent-[var(--coral)] shrink-0" />
+                                      <span className="truncate flex-1">{[s.vendor, s.detail].filter(Boolean).join(' · ') || s.category}</span>
+                                      <span className="text-[var(--warm-muted)] shrink-0">{s.amount.toLocaleString()}원</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            )
+                          })()}
                           <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
-                            배송비가 별도 지출로 기록되고 이 지출과 같은 주문번호로 묶입니다. 신용(후불)은 미정산으로 기록됩니다.
+                            배송비가 별도 지출로 기록되고 선택한 지출들과 같은 주문번호로 묶입니다. 신용(후불)은 미정산으로 기록됩니다.
                           </p>
                           <div className="flex gap-2">
-                            <button type="button" onClick={() => { setShowAttachShip(false); setError('') }}
+                            <button type="button" onClick={() => { setShowAttachShip(false); setAttachShipSiblings([]); setError('') }}
                               className="flex-1 px-3 py-2 text-xs rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>
                             <button type="button" onClick={() => handleAttachShip(detailExp)} disabled={isPending}
                               className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-[var(--coral)] text-white disabled:opacity-40">묶기</button>
