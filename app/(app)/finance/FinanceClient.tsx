@@ -1254,8 +1254,7 @@ export default function FinanceClient({
   const [addExpDate, setAddExpDate]       = useState(() => kstYmdStr())
   const [detailExp, setDetailExp]         = useState<Expense | null>(null)
   const [detailExpEdit, setDetailExpEdit] = useState(false)
-  // 합배송 배송비 묶기(기존 지출에 추가) — 상세 모달 인라인 폼
-  const [showAttachShip, setShowAttachShip] = useState(false)
+  // 합배송 배송비 — 수정 폼의 '별도 지출로 묶기' 입력값
   const [attachShipAmount, setAttachShipAmount] = useState<number | undefined>(undefined)
   const [attachShipType, setAttachShipType] = useState<'선불' | '착불' | '신용'>('착불')
   const [attachShipMemo, setAttachShipMemo] = useState('')
@@ -1294,8 +1293,9 @@ export default function FinanceClient({
   const [editItems, setEditItems] = useState<ItemPickState[]>([])
   const [editExpAmount, setEditExpAmount]     = useState<number | undefined>(undefined)  // 품목 없을 때 controlled 금액
   const [editExpDetail, setEditExpDetail]     = useState('')
-  const [editHasShipping, setEditHasShipping] = useState(false)
+  const [editHasShipping, setEditHasShipping] = useState(false)   // 배송비를 이 지출 금액에 합산
   const [editShipping, setEditShipping]       = useState<number | undefined>(undefined)
+  const [editShipSeparate, setEditShipSeparate] = useState(false) // 배송비를 별도 지출(합배송)로 묶기
 
   // 파일 선택 → 이미지면 스캔 모달, PDF면 바로 업로드
   const handleOpenScan = async (file: File, target: 'add' | 'edit') => {
@@ -1670,7 +1670,12 @@ export default function FinanceClient({
       try {
         const res = await updateExpense(fd)
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-        setDetailExp(null); setDetailExpEdit(false); router.refresh()
+        // 배송비 '별도 지출로 묶기(합배송)' 선택 시 — 수정 저장 후 주문 묶기 처리
+        if (editShipSeparate && detailExp && (attachShipAmount ?? 0) > 0) {
+          const sres = await attachShippingToOrder({ expenseIds: [detailExp.id, ...attachShipSiblings], amount: attachShipAmount!, shippingType: attachShipType, shippingMemo: attachShipMemo || null })
+          if (!sres.ok) { setError(sres.error); pushToast('error', sres.error); return }
+        }
+        setDetailExp(null); setDetailExpEdit(false); setEditShipSeparate(false); router.refresh()
         pushToast('success', '지출 수정됨')
       } finally { release() }
     })
@@ -1688,19 +1693,6 @@ export default function FinanceClient({
       try {
         await deleteExpense(exp.id); setDetailExp(null); router.refresh()
         pushToast('success', isFixed ? '이번 달 기록이 취소되었습니다' : '삭제됨')
-      } finally { release() }
-    })
-  }
-
-  const handleAttachShip = (exp: Expense) => {
-    if (!attachShipAmount || attachShipAmount <= 0) { setError('배송비 금액을 입력해주세요.'); return }
-    startTransition(async () => {
-      const release = trackSave()
-      try {
-        const res = await attachShippingToOrder({ expenseIds: [exp.id, ...attachShipSiblings], amount: attachShipAmount, shippingType: attachShipType, shippingMemo: attachShipMemo || null })
-        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-        setShowAttachShip(false); setAttachShipAmount(undefined); setAttachShipMemo(''); setAttachShipSiblings([]); setDetailExp(null); router.refresh()
-        pushToast('success', '배송비가 주문으로 묶였습니다')
       } finally { release() }
     })
   }
@@ -2152,7 +2144,7 @@ export default function FinanceClient({
                         const meta = [e.payMethod, e.financialAccount ? accName(e.financialAccount) : null].filter(Boolean).join(' · ')
                         return (
                           <div key={e.id}
-                            onClick={() => { setDetailExp(e); setDetailExpEdit(false); setShowAttachShip(false); setAttachShipSiblings([]); setError('') }}
+                            onClick={() => { setDetailExp(e); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }}
                             className={`bg-[var(--cream)] border rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity ${isUnsettled ? 'border-red-200/60' : 'border-[var(--warm-border)]'}`}>
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
@@ -2236,7 +2228,7 @@ export default function FinanceClient({
                             const e = item.exp
                             return (
                               <tr key={e.id}
-                                onClick={() => { setDetailExp(e); setDetailExpEdit(false); setShowAttachShip(false); setAttachShipSiblings([]); setError('') }}
+                                onClick={() => { setDetailExp(e); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }}
                                 className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer">
                                 <td className="px-4 py-3 text-xs text-[var(--warm-mid)] overflow-hidden"><span className="truncate block">{fmtDate(e.date)}</span></td>
                                 <td className="px-4 py-3 overflow-hidden">
@@ -2869,66 +2861,11 @@ export default function FinanceClient({
                       </a>
                     </div>
                   )}
-                  {/* 합배송 — 기존 지출에 배송비 묶기 (배송비 라인 자체엔 안 보임) */}
+                  {/* 배송비(합배송 등) 관리는 [수정]에서 일괄 — 안내만 */}
                   {!detailExp.isShipping && (
-                    <div className="pt-2 border-t border-[var(--warm-border)]/50">
-                      {!showAttachShip ? (
-                        <button type="button" onClick={() => { setShowAttachShip(true); setAttachShipSiblings([]); setAttachShipMemo(detailExp.order?.shippingMemo ?? ''); setError('') }}
-                          className="text-xs font-medium text-[var(--coral)] hover:underline">
-                          {detailExp.order ? '배송비 수정·다시 묶기' : '+ 배송비 묶기 (합배송)'}
-                        </button>
-                      ) : (
-                        <div className="space-y-2 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)] px-3 py-2.5">
-                          <p className="text-xs font-medium text-[var(--warm-mid)]">이 지출에 배송비를 별도 지출로 묶기</p>
-                          <MoneyInput value={attachShipAmount} onChange={setAttachShipAmount} placeholder="배송비 0원" />
-                          <div className="flex items-center gap-1.5">
-                            {(['선불', '착불', '신용'] as const).map(t => (
-                              <button key={t} type="button" onClick={() => setAttachShipType(t)}
-                                className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${attachShipType === t ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-white text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
-                                {t}
-                              </button>
-                            ))}
-                          </div>
-                          <input type="text" value={attachShipMemo} onChange={e => setAttachShipMemo(e.target.value)}
-                            placeholder="배송 메모 (선택)"
-                            className="w-full bg-white border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-500 outline-none focus:border-[var(--coral)]" />
-                          {/* 같은 날짜의 다른 지출도 함께 묶기 (의자 3개를 각각 등록한 경우 등) */}
-                          {(() => {
-                            const sibs = expenses.filter(e =>
-                              e.id !== detailExp.id && !e.isShipping &&
-                              kstYmdStr(new Date(e.date)) === kstYmdStr(new Date(detailExp.date)) &&
-                              (!e.orderId || e.orderId === detailExp.orderId)
-                            )
-                            if (sibs.length === 0) return null
-                            const toggle = (id: string) => setAttachShipSiblings(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
-                            return (
-                              <div className="space-y-1 pt-1">
-                                <p className="text-[0.625rem] font-medium text-[var(--warm-mid)]">같은 날 다른 지출도 함께 묶기 (선택)</p>
-                                <div className="space-y-1 max-h-32 overflow-auto">
-                                  {sibs.map(s => (
-                                    <label key={s.id} className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer px-1.5 py-1 rounded-md hover:bg-white">
-                                      <input type="checkbox" checked={attachShipSiblings.includes(s.id)} onChange={() => toggle(s.id)}
-                                        className="w-3.5 h-3.5 accent-[var(--coral)] shrink-0" />
-                                      <span className="truncate flex-1">{[s.vendor, s.detail].filter(Boolean).join(' · ') || s.category}</span>
-                                      <span className="text-[var(--warm-muted)] shrink-0">{s.amount.toLocaleString()}원</span>
-                                    </label>
-                                  ))}
-                                </div>
-                              </div>
-                            )
-                          })()}
-                          <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
-                            배송비가 별도 지출로 기록되고 선택한 지출들과 같은 주문번호로 묶입니다. 신용(후불)은 미정산으로 기록됩니다.
-                          </p>
-                          <div className="flex gap-2">
-                            <button type="button" onClick={() => { setShowAttachShip(false); setAttachShipSiblings([]); setError('') }}
-                              className="flex-1 px-3 py-2 text-xs rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>
-                            <button type="button" onClick={() => handleAttachShip(detailExp)} disabled={isPending}
-                              className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-[var(--coral)] text-white disabled:opacity-40">묶기</button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    <p className="pt-2 border-t border-[var(--warm-border)]/50 text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
+                      배송비(이 금액에 합산 / 별도 지출로 묶기)는 아래 <strong>[수정]</strong> 에서 관리합니다.
+                    </p>
                   )}
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
@@ -2963,6 +2900,17 @@ export default function FinanceClient({
                       unitPrice: detailExp.amount != null ? Math.round(detailExp.amount / (Number(detailExp.qtyValue) || 1)) : undefined,
                     }] : [])
                     setEditExpAmount(detailExp.amount); setEditExpDetail(detailExp.detail ?? ''); setEditHasShipping(false); setEditShipping(undefined)
+                    // 이미 합배송 주문에 묶여 있으면 '별도 묶기' 모드로 프리필
+                    if (detailExp.order) {
+                      const shipRow = expenses.find(x => x.orderId === detailExp.order!.id && x.isShipping)
+                      setEditShipSeparate(true)
+                      setAttachShipAmount(shipRow?.amount)
+                      setAttachShipType((detailExp.order.shippingType as '선불' | '착불' | '신용') ?? '착불')
+                      setAttachShipMemo(detailExp.order.shippingMemo ?? '')
+                      setAttachShipSiblings([])
+                    } else {
+                      setEditShipSeparate(false); setAttachShipAmount(undefined); setAttachShipMemo(''); setAttachShipSiblings([])
+                    }
                     setError('')
                   }}>수정</Btn>
                 </div>
@@ -3030,19 +2978,67 @@ export default function FinanceClient({
                       />
                     </div>
                   )}
-                  {/* 배송비 — 기본 무료. 품목 단가에 미포함, 총액에만 합산(합배송 시 단가 왜곡 방지) */}
-                  <div className="space-y-1.5">
-                    <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--warm-mid)] cursor-pointer">
+                  {/* 배송비 — 두 방식(합산 / 별도 묶기)을 한 곳에 모아 명확히 구분 */}
+                  <div className="space-y-2 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)]/40 px-3 py-2.5">
+                    <p className="text-xs font-semibold text-[var(--warm-mid)]">배송비 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></p>
+                    <label className="flex items-center gap-1.5 text-xs text-[var(--warm-dark)] cursor-pointer">
                       <input type="checkbox" checked={editHasShipping}
-                        onChange={e => { setEditHasShipping(e.target.checked); if (!e.target.checked) setEditShipping(undefined) }}
+                        onChange={e => { setEditHasShipping(e.target.checked); if (e.target.checked) setEditShipSeparate(false); else setEditShipping(undefined) }}
                         className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                      배송비 포함 <span className="text-[var(--warm-muted)] font-normal">(기본: 무료)</span>
+                      <span><strong>이 지출 금액에 합산</strong> · 별도 줄 없이 총액에만 더함</span>
                     </label>
                     {editHasShipping && (
-                      <>
+                      <div className="pl-5">
                         <MoneyInput value={editShipping} onChange={setEditShipping} placeholder="배송비 0원" />
-                        <p className="text-[0.625rem] text-[var(--warm-muted)]">단가에 포함되지 않고 총액에만 더해집니다 (합배송이어도 단가 정확).</p>
-                      </>
+                        <p className="text-[0.625rem] text-[var(--warm-muted)] mt-1">품목 단가엔 미포함, 총액에만 더해집니다.</p>
+                      </div>
+                    )}
+                    <label className="flex items-center gap-1.5 text-xs text-[var(--warm-dark)] cursor-pointer">
+                      <input type="checkbox" checked={editShipSeparate}
+                        onChange={e => { setEditShipSeparate(e.target.checked); if (e.target.checked) { setEditHasShipping(false); setEditShipping(undefined) } }}
+                        className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                      <span><strong>별도 지출로 묶기 (합배송)</strong> · 배송비 1건 + 주문번호로 묶음</span>
+                    </label>
+                    {editShipSeparate && detailExp && (
+                      <div className="pl-5 space-y-2">
+                        <MoneyInput value={attachShipAmount} onChange={setAttachShipAmount} placeholder="배송비 0원" />
+                        <div className="flex items-center gap-1.5">
+                          {(['선불', '착불', '신용'] as const).map(t => (
+                            <button key={t} type="button" onClick={() => setAttachShipType(t)}
+                              className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${attachShipType === t ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-white text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                        <input type="text" value={attachShipMemo} onChange={e => setAttachShipMemo(e.target.value)}
+                          placeholder="배송 메모 (선택)"
+                          className="w-full bg-white border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-500 outline-none focus:border-[var(--coral)]" />
+                        {(() => {
+                          const sibs = expenses.filter(e =>
+                            e.id !== detailExp.id && !e.isShipping &&
+                            kstYmdStr(new Date(e.date)) === kstYmdStr(new Date(detailExp.date)) &&
+                            (!e.orderId || e.orderId === detailExp.orderId)
+                          )
+                          if (sibs.length === 0) return null
+                          const toggle = (id: string) => setAttachShipSiblings(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+                          return (
+                            <div className="space-y-1">
+                              <p className="text-[0.625rem] font-medium text-[var(--warm-mid)]">같은 날 다른 지출도 함께 묶기 (선택)</p>
+                              <div className="space-y-1 max-h-28 overflow-auto">
+                                {sibs.map(s => (
+                                  <label key={s.id} className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer px-1.5 py-1 rounded-md hover:bg-white">
+                                    <input type="checkbox" checked={attachShipSiblings.includes(s.id)} onChange={() => toggle(s.id)}
+                                      className="w-3.5 h-3.5 accent-[var(--coral)] shrink-0" />
+                                    <span className="truncate flex-1">{[s.vendor, s.detail].filter(Boolean).join(' · ') || s.category}</span>
+                                    <span className="text-[var(--warm-muted)] shrink-0">{s.amount.toLocaleString()}원</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })()}
+                        <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">저장하면 배송비가 별도 지출로 기록되고 같은 주문번호로 묶입니다. 신용(후불)은 미정산.</p>
+                      </div>
                     )}
                   </div>
                   <div className="space-y-1.5">
