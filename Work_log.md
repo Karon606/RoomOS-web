@@ -3,7 +3,16 @@
 마지막 업데이트: 2026-06-09
 브랜치: main
 
-## 2026-06-09 (이어서) — 재고 단위 자동 환산 (L↔ml·kg↔g 등) [코드 완료, 배포 대기]
+## 2026-06-09 (이어서) — 지출 합배송/주문묶음 Phase 1 [코드 완료, ⚠️SQL 선적용 후 배포]
+[[project_expense_order_grouping]] 설계대로 구현. 여러 지출이 한 주문번호로 묶이고 배송비는 별도 지출(선불/착불/신용)로.
+- **⚠️ 배포 전 필수**: `prisma/migrate_expense_order.sql` 을 **Supabase SQL Editor 에서 먼저 실행**. 안 하면 getExpenses 의 `order` 관계 조회가 런타임 에러(테이블/컬럼 없음). 단위작업과 달리 SQL 선적용 필수.
+- **스키마**: 신규 `ExpenseOrder`(code 자동 'YYMMDD-NNN', shippingType, shippingMemo) + `Expense.orderId`(FK, onDelete SetNull) + `Expense.isShipping`. prisma generate 완료.
+- **등록(addExpense)**: 합배송 필드(orderShipping·Type·Memo) 받으면 주문 생성→모든 품목 라인에 orderId 부여 + 배송비 별도 라인(isShipping, excludeFromInventory, 신용=미정산) 생성. 전부 한 트랜잭션. amount=품목합(배송 미포함). 품목합 검증을 주문생성 전으로(고아 주문 방지). `genOrderCode`(propertyId·일자별 순번).
+- **표시(FinanceClient)**: getExpenses 에 order include. 주문별 요약(대표=비배송 최대금액 라인, "○○ 외 N건")·결제구분 칩을 모바일 카드+데스크톱 표 행에 표시. title 에 주문코드·메모.
+- **폼 UI**: 추가 지출 폼에 '합배송(배송비 별도)' 토글 — 금액+결제구분(선불/착불/신용 버튼)+메모. 기존 '배송비 포함'(합산형)과 상호 배타. 리셋 처리 추가.
+- tsc·build 통과. **남은 것(Phase 2)**: 기존 지출 사후 묶기(소급)·일괄 편집/삭제, 배송비 결제구분 인라인 편집, 주문 상세 그룹뷰.
+
+## 2026-06-09 (이어서) — 재고 단위 자동 환산 (L↔ml·kg↔g 등) [main 배포 완료 e910722]
 사용자: 주방세제 단위가 ml인데 새 영수증은 L 표기. OCR로 지출등록→재고 병합했더니 L/ml 구분 못함. 같은 차원(부피·무게·길이) 다른 표기는 자동 환산, 나중에 원하는 단위로 변경(예: 핸드워시 L→ml)도 가능하게.
 - **신규 [lib/units.ts](lib/units.ts)** — 단위 변환 코어. 3차원: 부피(ml·cc·L·oz) / 무게(mg·g·kg·t·oz) / 길이(mm·cm·m·km·inch·ft). 한글·영문·기호 별칭 정규화(리터·밀리리터·인치·"·피트 등). `convertUnit`·`unitFactor`·`areUnitsCompatible`·`isConvertibleUnit`·`convertSpecValue`(계산 폴백)·`listCompatibleUnits`. **oz는 부피(29.57ml)·무게(28.35g) 양쪽 — 대상 단위 차원 보고 자동 선택**. 단위 12케이스 자동 테스트 통과.
 - **A. 계산 시점 환산(핵심)** — 구매 영수증 specUnit이 품목 specUnit과 다르면 품목 단위로 환산 후 합산. 단위 비었/비호환이면 원값 유지(회귀 0). 적용: overview.ts(`sumPurchases`+itemUnit 인자, 단가루프), actions.ts(getMonthlyInflow·getPriceHistory·getStockAsOf·confirmReceipt 자동점검), InventoryClient.tsx(carryover·타임라인 입고표시는 환산값+원포장 병기). **→ 이미 병합된 주방세제 케이스는 재병합 없이 이 변경만으로 교정됨**(L 영수증이 ml로 자동환산).

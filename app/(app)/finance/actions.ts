@@ -63,6 +63,7 @@ export async function getExpenses(targetMonth: string) {
       financialAccount: { select: { brand: true, alias: true } },
       room: { select: { id: true, roomNo: true } },
       recurringExpense: { select: { isVariable: true } },
+      order: { select: { id: true, code: true, shippingType: true, shippingMemo: true } },
     },
   })
 }
@@ -185,6 +186,19 @@ function expandExpenseRows(items: ItemPick[], formRoomId: string | null): Expand
     }
   }
   return rows
+}
+
+// ── 합배송 주문번호 자동 생성 'YYMMDD-NNN' (propertyId·일자별 순번) ──
+const SHIPPING_TYPES = ['선불', '착불', '신용'] as const
+async function genOrderCode(propertyId: string): Promise<string> {
+  // KST 기준 오늘 날짜로 prefix. 같은 prefix 개수 +1 = 순번.
+  const now = new Date(Date.now() + 9 * 3600000)
+  const yy = String(now.getUTCFullYear()).slice(2)
+  const mm = String(now.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(now.getUTCDate()).padStart(2, '0')
+  const prefix = `${yy}${mm}${dd}`
+  const used = await prisma.expenseOrder.count({ where: { propertyId, code: { startsWith: prefix } } })
+  return `${prefix}-${String(used + 1).padStart(3, '0')}`
 }
 
 // ── 영수증 OCR (Gemini Vision) ────────────────────────────────────
@@ -318,6 +332,11 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const specValueRaw = formData.get('specValue') as string
     const qtyValueRaw  = formData.get('qtyValue') as string
     const itemsJsonRaw = formData.get('itemsJson') as string
+    // 합배송(주문 묶음 + 배송비 별도 지출) 필드
+    const orderShipping     = parseAmount(formData.get('orderShipping'))
+    const orderShippingType = (formData.get('orderShippingType') as string) || null
+    const orderShippingMemo = (formData.get('orderShippingMemo') as string) || null
+    const isOrderMode       = !!orderShipping && orderShipping > 0
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
@@ -335,6 +354,24 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     }
 
     const baseSettleStatus: SettleStatus = payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED'
+
+    // 품목 합계 검증을 주문 생성보다 먼저 — 실패 시 고아 주문 방지
+    if (multiItems) {
+      const sum = multiItems.reduce((s, it) => s + (Number(it.amount) || 0), 0)
+      if (Math.abs(sum - amount) > 1) return { ok: false, error: `품목 금액 합계(${sum.toLocaleString()}원)와 총 금액(${amount.toLocaleString()}원)이 일치하지 않습니다.` }
+    }
+
+    // 합배송이면 주문(ExpenseOrder)을 먼저 만들어 모든 라인에 orderId 부여
+    let orderId: string | null = null
+    if (isOrderMode) {
+      const shipType = orderShippingType && (SHIPPING_TYPES as readonly string[]).includes(orderShippingType)
+        ? orderShippingType : null
+      const order = await prisma.expenseOrder.create({
+        data: { propertyId, code: await genOrderCode(propertyId), shippingType: shipType, shippingMemo: orderShippingMemo },
+      })
+      orderId = order.id
+    }
+
     const baseRow = {
       propertyId,
       date:               new Date(date),
@@ -347,16 +384,37 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
       receiptUrl:         receiptUrl || null,
       settleStatus:       baseSettleStatus,
       roomId:             roomId || null,
+      orderId,
     }
 
-    if (multiItems) {
-      // 각 품목 amount 합 = 총 amount 검증 (반올림 1원 허용)
-      const sum = multiItems.reduce((s, it) => s + (Number(it.amount) || 0), 0)
-      if (Math.abs(sum - amount) > 1) return { ok: false, error: `품목 금액 합계(${sum.toLocaleString()}원)와 총 금액(${amount.toLocaleString()}원)이 일치하지 않습니다.` }
+    // 배송비 별도 지출 라인(합배송) — 주문에 연결, 재고 계산 제외.
+    //   결제구분 '신용'(후불)이면 미정산으로.
+    const shippingCreate = isOrderMode
+      ? prisma.expense.create({
+          data: {
+            propertyId,
+            date:               new Date(date),
+            category,
+            amount:             orderShipping,
+            detail:             `배송비${orderShippingType ? ` (${orderShippingType})` : ''}`,
+            vendor:             vendor || null,
+            memo:               orderShippingMemo || null,
+            payMethod:          payMethod || '계좌이체',
+            financialAccountId: financialAccountId || null,
+            financeName:        financeName || null,
+            settleStatus:       orderShippingType === '신용' ? 'UNSETTLED' : 'SETTLED',
+            orderId,
+            isShipping:         true,
+            excludeFromInventory: true,
+          },
+        })
+      : null
 
+    if (multiItems) {
+      // (합배송이어도 amount=품목합. 배송비는 shippingCreate 별도 라인.)
       // 품목 → 행 확장(방별 분배·미지정 나머지 처리).
       const rows = expandExpenseRows(multiItems, roomId || null)
-      await prisma.$transaction(rows.map(r => prisma.expense.create({
+      const itemCreates = rows.map(r => prisma.expense.create({
         data: {
           ...baseRow,
           roomId:    r.roomId,
@@ -368,12 +426,15 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
           specValue: r.it.specValue ? parseFloat(r.it.specValue) : null,
           qtyValue:  r.qtyValue ? parseFloat(r.qtyValue) : null,
         },
-      })))
+      }))
+      const ops = [...itemCreates]
+      if (shippingCreate) ops.push(shippingCreate)
+      await prisma.$transaction(ops)
       revalidatePath('/finance')
       return { ok: true }
     }
 
-    await prisma.expense.create({
+    const singleCreate = prisma.expense.create({
       data: {
         ...baseRow,
         amount,
@@ -385,6 +446,9 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
         qtyValue:           qtyValueRaw  ? parseFloat(qtyValueRaw)  : null,
       },
     })
+    const ops = [singleCreate]
+    if (shippingCreate) ops.push(shippingCreate)
+    await prisma.$transaction(ops)
     revalidatePath('/finance')
     return { ok: true }
   } catch (err) {

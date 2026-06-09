@@ -166,6 +166,7 @@ model Property {
   financialAccounts FinancialAccount[]
   paymentRecords    PaymentRecord[]
   expenses          Expense[]
+  expenseOrders     ExpenseOrder[]
   extraIncomes      ExtraIncome[]
   statusLogs        TenantStatusLog[]
   tenantRequests    TenantRequest[]
@@ -478,6 +479,10 @@ model Expense {
   qtyUnit      String?
   receivedAt   DateTime?    // null = 수령 대기, not null = 수령 완료 (재고 계산에 반영)
   excludeFromInventory Boolean @default(false) // true면 재고 계산에서 제외 (지출 기록은 유지)
+  // 합배송 주문 묶음: 한 주문(ExpenseOrder)에 속한 여러 지출(품목별·방별 분할 포함)을 묶는다.
+  // isShipping=true 면 이 행이 그 주문의 '배송비' 별도 지출 라인.
+  orderId      String?      @db.Uuid
+  isShipping   Boolean      @default(false)
   createdAt     DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
@@ -493,6 +498,8 @@ model Expense {
   recurringExpenseId   String?            @db.Uuid
   recurringExpense     RecurringExpense?  @relation(fields: [recurringExpenseId], references: [id])
 
+  order                ExpenseOrder?      @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
   receivedLocationId   String?            @db.Uuid
   receivedLocation     StorageLocation?   @relation(fields: [receivedLocationId], references: [id], onDelete: SetNull)
 
@@ -502,7 +509,27 @@ model Expense {
   autoStockChecks      StockCheck[]
 
   @@index([propertyId, date])
+  @@index([orderId])
   @@map("expenses")
+}
+
+// 합배송 주문 묶음 — 한 번 주문이 여러 지출(카테고리·재고·방별 분할)로 쪼개질 때 묶는다.
+// 배송비는 그 주문에 연결된 별도 지출(Expense.isShipping)로 등록.
+// 화면 표시 라벨 "대표품목 외 N건" 은 묶인 라인에서 실시간 계산(저장 안 함).
+model ExpenseOrder {
+  id           String   @id @default(uuid()) @db.Uuid
+  propertyId   String   @db.Uuid
+  property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  code         String   // 자동 생성 'YYMMDD-NNN' (propertyId·일자별 순번)
+  shippingType String?  // 배송비 결제구분: '선불' | '착불' | '신용'
+  shippingMemo String?  // 결제수단·비고 등 자유 메모
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  expenses     Expense[]
+
+  @@index([propertyId, createdAt])
+  @@map("expense_orders")
 }
 
 // ============================================================

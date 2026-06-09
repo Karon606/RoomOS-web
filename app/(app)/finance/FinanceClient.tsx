@@ -52,6 +52,8 @@ type Expense = {
   itemLabel: string | null
   specValue: number | null; specUnit: string | null
   qtyValue: number | null; qtyUnit: string | null
+  orderId: string | null; isShipping: boolean
+  order: { id: string; code: string; shippingType: string | null; shippingMemo: string | null } | null
   createdAt: Date  // 같은 날짜 정렬 보조 (최근 입력 우선)
 }
 
@@ -1269,8 +1271,13 @@ export default function FinanceClient({
   const [addExpVendor, setAddExpVendor]       = useState('')
   const [addExpAmount, setAddExpAmount]       = useState<number | undefined>(undefined)
   const [addExpDetail, setAddExpDetail]       = useState('')
-  const [addHasShipping, setAddHasShipping]   = useState(false)              // 배송비 포함 여부 (기본 무료)
+  const [addHasShipping, setAddHasShipping]   = useState(false)              // 배송비 포함 여부 (기본 무료, 총액 합산형)
   const [addShipping, setAddShipping]         = useState<number | undefined>(undefined)
+  // 합배송 — 배송비를 별도 지출(주문 묶음)로. 위 '배송비 포함'(합산형)과 상호 배타.
+  const [addOrderMode, setAddOrderMode]       = useState(false)
+  const [addOrderShipping, setAddOrderShipping] = useState<number | undefined>(undefined)
+  const [addOrderShipType, setAddOrderShipType] = useState<'선불' | '착불' | '신용'>('선불')
+  const [addOrderShipMemo, setAddOrderShipMemo] = useState('')
   const [scanBitmap, setScanBitmap]           = useState<ImageBitmap | null>(null)
   const [scanCropped, setScanCropped]         = useState<{ dataUrl: string; base64: string } | null>(null)
   const [scanOcrPending, setScanOcrPending]   = useState(false)
@@ -1585,6 +1592,39 @@ export default function FinanceClient({
     return true
   })
 
+  // ── 합배송 주문 요약 — 주문별 대표라벨 "○○ 외 N건" + 배송 결제구분 (행에 칩으로 표시) ──
+  //    이 달에 보이는 지출들로 계산(같은 주문이 여러 행으로 쪼개진 것 모음). 대표=비배송 최대금액 행.
+  type OrderSummary = { code: string; label: string; count: number; shippingType: string | null; shippingMemo: string | null }
+  const orderSummaries = (() => {
+    const byOrder = new Map<string, Expense[]>()
+    for (const e of expenses) {
+      if (!e.orderId) continue
+      if (!byOrder.has(e.orderId)) byOrder.set(e.orderId, [])
+      byOrder.get(e.orderId)!.push(e)
+    }
+    const repLabelOf = (e: Expense) => e.itemLabel || (e.detail ?? '').replace(/^\[|\].*$/g, '').replace(/\s*x\s.*$/, '').trim() || '항목'
+    const out = new Map<string, OrderSummary>()
+    for (const [oid, rows] of byOrder) {
+      const items = rows.filter(r => !r.isShipping)
+      const rep = items.slice().sort((a, b) => b.amount - a.amount)[0] ?? rows[0]
+      const count = items.length
+      const baseLabel = repLabelOf(rep)
+      const label = count > 1 ? `${baseLabel} 외 ${count - 1}건` : baseLabel
+      const ord = rows.find(r => r.order)?.order ?? null
+      out.set(oid, { code: ord?.code ?? '', label, count, shippingType: ord?.shippingType ?? null, shippingMemo: ord?.shippingMemo ?? null })
+    }
+    return out
+  })()
+  const orderChip = (e: Expense): { text: string; title: string } | null => {
+    if (!e.orderId) return null
+    const s = orderSummaries.get(e.orderId)
+    if (!s) return null
+    const text = e.isShipping
+      ? `배송비${s.shippingType ? ` · ${s.shippingType}` : ''} · ${s.label}`
+      : `주문 · ${s.label}`
+    return { text, title: `주문 ${s.code}${s.shippingMemo ? ` · ${s.shippingMemo}` : ''}` }
+  }
+
   const totalExp = filteredExpenses.reduce((s, e) => s + e.amount, 0)
   const totalInc = filteredIncomes.reduce((s, i) => s + i.amount, 0)
   const settleGroups = buildSettleGroups(unsettledExpenses)
@@ -1611,7 +1651,7 @@ export default function FinanceClient({
       try {
         const res = await addExpense(fd)
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-        setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddHasShipping(false); setAddShipping(undefined); router.refresh()
+        setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
         pushToast('success', '지출 등록됨')
       } finally { release() }
     })
@@ -1958,7 +1998,7 @@ export default function FinanceClient({
             <Btn variant="secondary" size="md" onClick={() => setShowVendorMgmt(true)}>
               구매처 관리
             </Btn>
-            <Btn variant="primary" size="md" onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setScanCropped(null); setScanOcrError(''); setError('') }}>
+            <Btn variant="primary" size="md" onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
               + 지출 등록
             </Btn>
           </div>
@@ -2103,6 +2143,11 @@ export default function FinanceClient({
                                   {isUnsettled && <span className="text-[0.625rem] text-red-500 font-medium">· 미정산</span>}
                                 </div>
                                 <p className="text-sm text-[var(--warm-dark)] truncate">{[e.vendor, e.detail].filter(Boolean).join(' · ') || '—'}</p>
+                                {(() => { const c = orderChip(e); return c ? (
+                                  <span title={c.title} className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-md bg-[var(--honey)]/15 border border-[var(--honey)]/40 text-[0.5625rem] text-[var(--warm-dark)] font-medium max-w-full truncate">
+                                    {c.text}
+                                  </span>
+                                ) : null })()}
                                 <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">
                                   {fmtDate(e.date)}{meta ? ` · ${meta}` : ''}
                                   {e.memo ? ` · ${e.memo}` : ''}
@@ -2191,6 +2236,11 @@ export default function FinanceClient({
                                     <span className="truncate">{e.detail ?? '—'}</span>
                                     {e.receiptUrl && <span className="text-[0.5625rem] text-[var(--coral)] shrink-0">영수증</span>}
                                   </div>
+                                  {(() => { const c = orderChip(e); return c ? (
+                                    <span title={c.title} className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-md bg-[var(--honey)]/15 border border-[var(--honey)]/40 text-[0.5625rem] text-[var(--warm-dark)] font-medium max-w-full truncate">
+                                      {c.text}
+                                    </span>
+                                  ) : null })()}
                                 </td>
                                 <td className="px-4 py-3 text-sm font-semibold text-red-500 overflow-hidden"><span className="truncate block"><MoneyDisplay amount={e.amount} prefix="-" /></span></td>
                                 <td className="px-4 py-3 overflow-hidden">
@@ -3211,15 +3261,51 @@ export default function FinanceClient({
                 <div className="space-y-1.5">
                   <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--warm-mid)] cursor-pointer">
                     <input type="checkbox" checked={addHasShipping}
-                      onChange={e => { setAddHasShipping(e.target.checked); if (!e.target.checked) setAddShipping(undefined) }}
+                      onChange={e => { setAddHasShipping(e.target.checked); if (e.target.checked) setAddOrderMode(false); else setAddShipping(undefined) }}
                       className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                    배송비 포함 <span className="text-[var(--warm-muted)] font-normal">(기본: 무료)</span>
+                    배송비 포함 <span className="text-[var(--warm-muted)] font-normal">(이 지출 총액에 합산)</span>
                   </label>
                   {addHasShipping && (
                     <>
                       <MoneyInput value={addShipping} onChange={setAddShipping} placeholder="배송비 0원" />
                       <p className="text-[0.625rem] text-[var(--warm-muted)]">단가에 포함되지 않고 총액에만 더해집니다 (합배송이어도 단가 정확).</p>
                     </>
+                  )}
+                </div>
+                {/* 합배송 — 배송비를 별도 지출(주문 묶음)로. 여러 지출이 한 주문번호로 묶이고 배송비는 따로 기록됨. */}
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--warm-mid)] cursor-pointer">
+                    <input type="checkbox" checked={addOrderMode}
+                      onChange={e => { setAddOrderMode(e.target.checked); if (e.target.checked) { setAddHasShipping(false); setAddShipping(undefined) } else setAddOrderShipping(undefined) }}
+                      className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                    합배송 (배송비 별도) <span className="text-[var(--warm-muted)] font-normal">(주문 묶음으로 기록)</span>
+                  </label>
+                  {addOrderMode && (
+                    <div className="space-y-2 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)] px-3 py-2.5">
+                      <MoneyInput value={addOrderShipping} onChange={setAddOrderShipping} placeholder="배송비 0원" />
+                      <div className="flex items-center gap-1.5">
+                        {(['선불', '착불', '신용'] as const).map(t => (
+                          <button key={t} type="button" onClick={() => setAddOrderShipType(t)}
+                            className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${addOrderShipType === t ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-white text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                      <input type="text" value={addOrderShipMemo} onChange={e => setAddOrderShipMemo(e.target.value)}
+                        placeholder="배송 메모 (결제수단·송장번호 등, 선택)"
+                        className="w-full bg-white border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-500 outline-none focus:border-[var(--coral)]" />
+                      <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
+                        배송비가 <strong>별도 지출 1건</strong>으로 기록되고, 이 주문의 품목들과 같은 주문번호로 묶입니다.
+                        품목·방별로 나뉘어도 한 주문으로 인식돼요. 신용(후불)은 미정산으로 기록됩니다.
+                      </p>
+                      {addOrderMode && (addOrderShipping ?? 0) > 0 && (
+                        <>
+                          <input type="hidden" name="orderShipping" value={addOrderShipping ?? 0} />
+                          <input type="hidden" name="orderShippingType" value={addOrderShipType} />
+                          <input type="hidden" name="orderShippingMemo" value={addOrderShipMemo} />
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div className="space-y-1.5">
