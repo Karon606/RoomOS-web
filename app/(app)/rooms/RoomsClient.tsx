@@ -658,11 +658,12 @@ export default function RoomsClient({
                     // 미납 / 연체 — 7일 초과면 연체(Terracotta 솔리드), 그 외 미납(Amber)
                     if (!room.isPaid) {
                       const overdueSub = dueInfo ? (dueInfo.days === 0 ? '오늘' : `${dueInfo.days}일 초과`) : undefined
-                      // B안: 퇴실 예정자가 미납이면 퇴실 D-day도 보조줄에 함께 표시
+                      // 퇴실 예정자가 미납이면 '퇴실 예정' 뱃지를 나란히 + 퇴실 D-day를 보조줄에 함께
                       const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : null
                       const sub = [overdueSub, exitSub].filter(Boolean).join(' · ') || undefined
                       const isOverdue = !!(dueInfo && dueInfo.days > 7)
-                      return <StatusBadge tone={isOverdue ? 'overdue' : 'unpaid'} sub={sub}>{isOverdue ? '연체' : '미납'}</StatusBadge>
+                      return <StatusBadge tone={isOverdue ? 'overdue' : 'unpaid'} sub={sub}
+                        secondary={exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined}>{isOverdue ? '연체' : '미납'}</StatusBadge>
                     }
                     // 퇴실 예정 — Camel
                     if (showCheckout && room.expectedMoveOut) {
@@ -866,11 +867,12 @@ export default function RoomsClient({
                           if (!room.isPaid) {
                             const info = getEffectiveDueInfo(room, targetMonth)
                             const overdueSub = info ? (info.days === 0 ? '오늘' : `${info.days}일 초과`) : undefined
-                            // B안: 퇴실 예정자가 미납이면 퇴실 D-day도 보조줄에 함께 표시
+                            // 퇴실 예정자가 미납이면 '퇴실 예정' 뱃지를 나란히 + 퇴실 D-day를 보조줄에 함께
                             const exitSub = room.status === 'CHECKOUT_PENDING' ? checkoutSubText(room.expectedMoveOut) : null
                             const sub = [overdueSub, exitSub].filter(Boolean).join(' · ') || undefined
                             const isOverdue = !!(info && info.days > 7)
-                            return <StatusBadge tone={isOverdue ? 'overdue' : 'unpaid'} sub={sub}>{isOverdue ? '연체' : '미납'}</StatusBadge>
+                            return <StatusBadge tone={isOverdue ? 'overdue' : 'unpaid'} sub={sub}
+                              secondary={exitSub ? { tone: 'exit', label: '퇴실 예정' } : undefined}>{isOverdue ? '연체' : '미납'}</StatusBadge>
                           }
                           if (showCheckout && room.expectedMoveOut) {
                             const [, mm, dd] = room.expectedMoveOut.split('-')

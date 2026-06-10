@@ -56,22 +56,35 @@ export function StatusBadge({
   tone,
   children,
   sub,
+  secondary,
   className,
 }: {
   tone: BadgeTone
   children: ReactNode
   /** 뱃지 아래 작은 보조 텍스트 (예: "3일 초과", "D-1 (5/19)") */
   sub?: string
+  /** 같은 줄에 나란히 붙는 보조 뱃지 (예: 미납 + 퇴실 예정). sub는 둘을 합쳐 한 줄로. */
+  secondary?: { tone: BadgeTone; label: ReactNode }
   className?: string
 }) {
   const s = BADGE[tone]
   return (
     <span className={`inline-flex flex-col items-end gap-0.5 ${className ?? ''}`}>
-      <span
-        className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-tight whitespace-nowrap"
-        style={{ background: s.bg, color: s.fg }}
-      >
-        {children}
+      <span className="inline-flex items-center gap-1">
+        <span
+          className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-tight whitespace-nowrap"
+          style={{ background: s.bg, color: s.fg }}
+        >
+          {children}
+        </span>
+        {secondary && (
+          <span
+            className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-tight whitespace-nowrap"
+            style={{ background: BADGE[secondary.tone].bg, color: BADGE[secondary.tone].fg }}
+          >
+            {secondary.label}
+          </span>
+        )}
       </span>
       {sub && (
         <span className="text-[10px] font-semibold whitespace-nowrap" style={{ color: SUB_FG[tone] }}>
