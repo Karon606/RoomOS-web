@@ -41,6 +41,9 @@ type RoomRow = {
   // 다음 청구 도래 시 받아야 할 추가 금액 (월 청구액 - 누적 선납 잔액)
   nextDueAmount: number
   expectedMoveOut: string | null  // CHECKOUT_PENDING 시 'YYYY-MM-DD'
+  // 퇴실 일할 정산 — 설정 시 그 달(checkoutProratedMonth) 청구를 checkoutProratedAmount 로 덮어씀
+  checkoutProratedAmount?: number | null
+  checkoutProratedMonth?: string | null
 }
 
 // 핵심 비즈니스 로직 — GAS의 getRoomPaymentStatus 이관
@@ -127,7 +130,12 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     const l = lease as LeaseWithOverride
     // #14 월세 할인 — 그 달 청구액 = rentAmount - 할인(월별). 단위테스트된 lib/rentDiscount 헬퍼 사용.
     const leaseDiscounts = (lease as { discounts?: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[] }).discounts ?? []
-    const expected = discountedRent(leaseDiscounts, targetMonth, lease.rentAmount)
+    // 퇴실 일할 정산 — 그 달(checkoutProratedMonth)은 저장된 일할액으로 청구를 덮어씀
+    const proratedAmt = l.checkoutProratedAmount
+    const proratedMonth = l.checkoutProratedMonth
+    const expected = (proratedAmt != null && proratedMonth === targetMonth)
+      ? proratedAmt
+      : discountedRent(leaseDiscounts, targetMonth, lease.rentAmount)
     const effectiveDueDay = (l.overrideDueDayMonth === targetMonth && l.overrideDueDay)
       ? l.overrideDueDay
       : lease.dueDay
@@ -250,6 +258,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       if (p.expectedAmount > cur) lockedExpectedByMonth.set(p.targetMonth, p.expectedAmount)
     }
     const billForMonth = (ms: string): number => {
+      // 퇴실 일할 정산이 걸린 달은 저장된 일할액이 최우선 (실제 납부 record의 expectedAmount 무관)
+      if (proratedAmt != null && proratedMonth === ms) return proratedAmt
       const locked = lockedExpectedByMonth.get(ms)
       return locked && locked > 0 ? locked : discountedRent(leaseDiscounts, ms, lease.rentAmount)
     }
@@ -456,6 +466,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         nextDueDate,
         nextDueAmount,
         expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
+        checkoutProratedAmount: proratedAmt ?? null,
+        checkoutProratedMonth: proratedMonth ?? null,
       }
     }
 
@@ -482,6 +494,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       nextDueDate,
       nextDueAmount,
       expectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
+      checkoutProratedAmount: proratedAmt ?? null,
+      checkoutProratedMonth: proratedMonth ?? null,
     }
   }
 

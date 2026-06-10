@@ -67,6 +67,9 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
         dueDay: true,
         overrideDueDay: true,
         overrideDueDayMonth: true,
+        // 퇴실 일할 정산 — 그 달 청구를 저장된 일할액으로 덮어씀(rooms·dashboard page 와 동일)
+        checkoutProratedAmount: true,
+        checkoutProratedMonth: true,
         // #14 월세 할인 — 미수 계산에 월별 할인 반영(대시보드 발생주의 블록과 동일)
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
         room: { select: { id: true, roomNo: true } },
@@ -284,6 +287,8 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
     // [저장 청구액 우선] 그 달 record의 락인 청구액 우선, 없으면 현재 월세(#14 할인 반영) fallback
     const lockedMap = lockedExpectedByLeaseMonth[l.id]
     const billForMonth = (mon: string) => {
+      // 퇴실 일할 정산이 걸린 달은 저장된 일할액 최우선
+      if (l.checkoutProratedAmount != null && l.checkoutProratedMonth === mon) return l.checkoutProratedAmount
       const locked = lockedMap?.get(mon)
       return locked && locked > 0 ? locked : discountedRent(l.discounts, mon, l.rentAmount)
     }

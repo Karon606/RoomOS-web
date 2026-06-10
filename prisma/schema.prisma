@@ -327,6 +327,15 @@ model LeaseTerm {
   overrideDueDay     String?            // 특정 월 임시 납부일
   overrideDueDayMonth String?           // 적용 대상 월 "YYYY-MM"
   overrideDueDayReason String?          // 조정 사유
+  // 퇴실 정산(일할) — 선납 모델에서 퇴실일이 기간 중간이면 마지막 달 청구를 사용 일수만큼만.
+  //   checkoutProratedAmount: 확정된 일할 청구액(원). null이면 일할 미적용(=풀 청구).
+  //   checkoutProratedMonth: 위 금액이 적용되는 퇴실 달 "YYYY-MM". (lib/prorate calcCheckoutProration)
+  // 설정 시 청구 엔진(rooms getRoomPaymentStatus·dashboard unpaid·page)이 그 달 청구를 이 값으로 덮어씀.
+  checkoutProratedAmount Int?
+  checkoutProratedMonth  String?
+  // 퇴실 일할 정산 '적용취소'(롤백)용 — 적용 직전 스냅샷 {prevStatus, prevExpectedMoveOut, prevAmount, prevMonth}.
+  // 적용은 status·expectedMoveOut·일할액을 한 번에 바꾸므로, 단일클릭 복원을 위해 직전값 보관. null이면 되돌릴 정산 없음.
+  checkoutProrationUndo  Json?
   prevOwnerSettleMenu String            @default("auto")  // 양도인 정산 메뉴 노출 — auto|show|hide
   payMethod          String?
   cashReceipt        String?

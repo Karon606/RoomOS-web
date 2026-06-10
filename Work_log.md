@@ -1,7 +1,19 @@
 # 스테이음 작업 로그
 
-마지막 업데이트: 2026-06-09
+마지막 업데이트: 2026-06-10
 브랜치: main
+
+## 2026-06-10 — 퇴실 일할 정산 (퇴실일 세팅 → 마지막 달 청구 일할) [코드 완료, ⚠️SQL 선적용 후 배포]
+사용자 사례: 418호 서민준(납부일 매월 8일, 선납). 6/8 미납 상태에서 6월말 퇴실 통보 → 선납 시스템이라 "퇴실 날짜에 맞춰 일할만 납부"하겠다는 케이스. 6/26 퇴실이면 6/8~6/26 = **19일치**만 청구. 앱엔 납부일 변경(일할)은 있어도 **퇴실일로 인한 청구액 변경**이 없었음.
+- **⚠️ 배포 전 필수**: `prisma/migrate_checkout_proration.sql` 을 **Supabase SQL Editor 에서 먼저 실행**. 안 하면 `checkoutProratedAmount/Month` 컬럼 없어 청구 엔진 select 가 런타임 에러.
+- **스키마**: `LeaseTerm.checkoutProratedAmount Int?`(확정 일할액) + `checkoutProratedMonth String?`('YYYY-MM') + `checkoutProrationUndo Json?`(적용취소 스냅샷). 설정 시 청구 엔진이 그 달 청구를 이 값으로 덮어씀.
+- **일할 헬퍼** [lib/prorate.ts](lib/prorate.ts) `calcCheckoutProration(monthlyRent, dueDay, expectedMoveOut)`: 선납 = dueDay가 기간 시작일. 일수 = 퇴실일 − 납부일 + 1(**양끝 포함**, 1~30 클램프), 금액 = floor(월 × 일수 / 30). 퇴실일 < 납부일이면 null(그 기간 미사용 = 청구 0, rooms `checkoutNoBilling` 영역). 사용자 확정: 19일=양끝포함, ÷30 기준.
+- **서버액션** [tenants/actions.ts](app/(app)/tenants/actions.ts): `previewCheckoutProration`(읽기, 할인 반영 미리보기) · `setCheckoutProration`(확정·기록 lock + status=CHECKOUT_PENDING + expectedMoveOut + 상태로그, **적용 직전 스냅샷 저장**) · `clearCheckoutProration`(**적용취소=완전 롤백**: 스냅샷으로 status·expectedMoveOut·일할액 한 번에 복원, 스냅샷 없으면 일할액만 제거 폴백). `applyStatusTransition`: →ACTIVE(퇴실예정취소) 또는 expectedMoveOut 변경 시 일할 정산+스냅샷 자동 정리.
+- **롤백 보장**(사용자 원칙): 적용은 상태전환+퇴실일+일할 3개를 한 번에 바꾸므로, '적용취소' 1클릭으로 적용 직전(거주중 등) 원상태까지 복원. 재정산 시 최초 스냅샷 유지 → 여러 번 재정산해도 한 번에 거주중으로.
+- **청구 엔진 3곳 동기화**(저장 일할액 최우선): rooms `getRoomPaymentStatus`(expected·billForMonth override + RoomRow 필드), dashboard `unpaid.ts`(billForMonth), dashboard `page.tsx`(billThisMonth·billForMonth). 셋 다 `checkoutProratedMonth===mon`이면 `checkoutProratedAmount` 반환 → 실제 납부 record의 expectedAmount와 무관하게 일할액 고정.
+- **UI 위젯** [CheckoutProrationWidget](components/entity-modal/widgets/CheckoutProrationWidget.tsx): 수납 모달 full 모드(ACTIVE/CHECKOUT_PENDING만). 퇴실일 선택→서버 미리보기(19일치·감액 표시)→'정산 적용'으로 확정. 적용됨 상태 요약 + '해제'/'다시 정산'.
+- 동작 확인(서민준): rent 400k·납부일 8·퇴실 6/26 → 19일치 **253,333원**(감액 146,667). 수납·대시보드·미납 모두 일할액 기준. tsc·build 통과.
+- 설계 결정: **확인 후 적용(정산 위젯)** 방식 — 월세 변경에도 안 흔들리게 절대액 lock(자동 일할 대신). 한계: 퇴실 완료(CHECKED_OUT) 후 매출은 실제 record(actualAmount) 기반이라 lease 필드 불필요(자동 무관).
 
 ## 2026-06-10 — 배송비 입력 UX 통합 (편집 폼 단일 장소) [배포, SQL 불필요]
 사용자 혼란: 배송비 합산형('배송비 포함')은 수정 폼, 합배송 별도묶기는 상세 모달 — 비슷한데 위치가 흩어져 헷갈림. 결정: 두 방식 유지 + 한 곳(수정 폼)에 모아 라벨 명확화.

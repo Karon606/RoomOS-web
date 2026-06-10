@@ -14,6 +14,7 @@ import { PaymentSummaryCards } from '../widgets/PaymentSummaryCards'
 import { DiscountWidget } from '../widgets/DiscountWidget'
 import { DueDayTempAdjustWidget } from '../widgets/DueDayTempAdjustWidget'
 import { DueDayPermanentChangeWidget } from '../widgets/DueDayPermanentChangeWidget'
+import { CheckoutProrationWidget } from '../widgets/CheckoutProrationWidget'
 import { PaymentRecordList } from '../widgets/PaymentRecordList'
 import { PaymentEntryForm } from '../widgets/PaymentEntryForm'
 import { PrevOwnerSettleWidget } from '../widgets/PrevOwnerSettleWidget'
@@ -188,6 +189,18 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo }: {
             currentDueDay={settlement.dueDay}
             onChange={refresh}
           />
+
+          {/* 퇴실 정산(일할) — 거주중·퇴실예정 계약에서만 */}
+          {canEdit && (settlement.status === 'ACTIVE' || settlement.status === 'CHECKOUT_PENDING') && (
+            <CheckoutProrationWidget
+              leaseTermId={leaseTermId}
+              currentDueDay={settlement.dueDay}
+              expectedMoveOut={settlement.expectedMoveOut}
+              checkoutProratedAmount={settlement.checkoutProratedAmount}
+              checkoutProratedMonth={settlement.checkoutProratedMonth}
+              onChange={refresh}
+            />
+          )}
 
           <PrevOwnerSettleWidget
             leaseTermId={leaseTermId}

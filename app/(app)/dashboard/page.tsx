@@ -125,7 +125,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
       // #14 월세 할인 — 수납현황 위젯(완료 건수·예상 수입)에 할인 반영
       // moveInDate·expectedMoveOut — 이번달 청구 대상 여부 판정(다음달 입주자가 이번달 매출에 잡히는 버그 방지)
-      select: { id: true, status: true, rentAmount: true, moveInDate: true, expectedMoveOut: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
+      select: { id: true, status: true, rentAmount: true, moveInDate: true, expectedMoveOut: true, checkoutProratedAmount: true, checkoutProratedMonth: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
     }),
     prisma.paymentRecord.findMany({
       where: {
@@ -303,6 +303,9 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         dueDay: true,
         overrideDueDay: true,
         overrideDueDayMonth: true,
+        // 퇴실 일할 정산 — 그 달 청구를 저장된 일할액으로 덮어씀(rooms·unpaid.ts 와 동일)
+        checkoutProratedAmount: true,
+        checkoutProratedMonth: true,
         // #14 월세 할인 — 발생주의 미수 계산에 월별 할인 반영
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
         room: { select: { id: true, roomNo: true } },
@@ -643,8 +646,10 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
   const billableLeases = activeLeases.filter(l => l.rentAmount > 0 && billableInTargetMonth(l))
   // #14 월세 할인 — 이달(targetMonth) 청구액은 할인 반영. 완납 판정·예상 수입 모두 할인가 기준.
-  const billThisMonth  = (l: { rentAmount: number; discounts?: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[] }) =>
-    discountedRent(l.discounts, targetMonth, l.rentAmount)
+  const billThisMonth  = (l: { rentAmount: number; checkoutProratedAmount?: number | null; checkoutProratedMonth?: string | null; discounts?: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[] }) =>
+    (l.checkoutProratedAmount != null && l.checkoutProratedMonth === targetMonth)
+      ? l.checkoutProratedAmount
+      : discountedRent(l.discounts, targetMonth, l.rentAmount)
   const paidCount      = billableLeases.filter(l => (paymentByLeaseForStatus[l.id] ?? 0) >= billThisMonth(l)).length
 
   // ── 단기 입주·중도퇴실 lease 의 매출 추가 인식 (lib/leaseStatus.ts 정책)
@@ -941,6 +946,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     // [저장 청구액 우선] 그 달 record의 락인 청구액 우선, 없으면 현재 월세(#14 할인 반영) fallback
     const lockedMap = lockedExpectedByLeaseMonth[l.id]
     const billForMonth = (mon: string) => {
+      // 퇴실 일할 정산이 걸린 달은 저장된 일할액 최우선
+      if (l.checkoutProratedAmount != null && l.checkoutProratedMonth === mon) return l.checkoutProratedAmount
       const locked = lockedMap?.get(mon)
       return locked && locked > 0 ? locked : discountedRent(l.discounts, mon, l.rentAmount)
     }
