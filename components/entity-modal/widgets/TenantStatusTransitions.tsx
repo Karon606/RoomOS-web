@@ -11,6 +11,8 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
+import { useEntityModal } from '@/components/entity-modal/EntityModal'
+import { shouldOfferCheckoutProration } from '@/lib/prorate'
 
 type TransitionDef = {
   key: string
@@ -43,6 +45,7 @@ function transitionsFor(status: string): TransitionDef[] {
     ]
     case 'CHECKOUT_PENDING': return [
       { key: 'checkout',       label: '퇴실 처리',    toStatus: 'CHECKED_OUT', field: 'moveOutDate', fieldLabel: '퇴실일', withDeposit: true, tone: 'primary' },
+      { key: 'changeMoveOut',  label: '퇴실일 변경',  toStatus: 'CHECKOUT_PENDING', field: 'expectedMoveOut', fieldLabel: '퇴실 예정일', tone: 'secondary' },
       { key: 'cancelCheckout', label: '퇴실예정 취소', toStatus: 'ACTIVE', tone: 'secondary', confirm: '거주중으로 되돌릴까요?' },
     ]
     case 'NON_RESIDENT': return [
@@ -59,6 +62,7 @@ type Lease = {
   moveInDate: Date | string | null
   expectedMoveOut: Date | string | null
   rentAmount: number
+  dueDay: string | null
 }
 
 type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number } | null
@@ -72,11 +76,14 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
   /** 전환 성공 후 부모가 settlement/tenant 재조회. */
   onChange?: () => void
 }) {
+  const entityModal = useEntityModal()
   const [pending, startTransition] = useTransition()
   const [active, setActive] = useState<ActiveTransition>(null)
   const [transDate, setTransDate] = useState('')
   const [transRent, setTransRent] = useState<number | undefined>()
   const [transRefund, setTransRefund] = useState<number | undefined>()
+  // 퇴실 예정일이 납입일과 가까울 때 '퇴실 정산?' 묻는 팝업 (날짜는 이미 저장된 상태)
+  const [prorateAsk, setProrateAsk] = useState<{ date: string } | null>(null)
 
   const transitions = transitionsFor(lease.status)
   if (transitions.length === 0) return null
@@ -121,6 +128,13 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
         pushToast('success', `${tenantName}님 — ${def.label} 완료`)
         setActive(null)
         onChange?.()
+        // 퇴실 예정일 입력/변경이고 납입일과 가까우면(일할 의미 有) '퇴실 정산?' 팝업.
+        // 정산 자체는 자동 적용 안 함 — 예 선택 시에만 수납 모달의 퇴실 정산 위젯으로 이동.
+        const mo = fields?.expectedMoveOut
+        if (def.field === 'expectedMoveOut' && mo
+            && shouldOfferCheckoutProration(lease.rentAmount, lease.dueDay, mo, kstYmdStr())) {
+          setProrateAsk({ date: mo })
+        }
       } finally { release() }
     })
   }
@@ -190,6 +204,38 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
             <div className="px-5 py-3 border-t border-[var(--warm-border)] flex gap-2">
               <Btn variant="secondary" size="md" onClick={() => setActive(null)} disabled={pending} className="flex-1">취소</Btn>
               <Btn variant="primary" size="md" onClick={submit} disabled={pending} className="flex-1">{pending ? '처리 중…' : '확인'}</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 퇴실 정산 여부 팝업 — 퇴실일이 납입일과 가까울 때만. 날짜는 이미 저장됨. */}
+      {prorateAsk && (
+        <div className="fixed inset-0 bg-black/70 z-[310] flex items-center justify-center p-4"
+          onClick={() => setProrateAsk(null)}>
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col"
+            onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-[var(--warm-border)]">
+              <h2 className="text-sm font-bold text-[var(--warm-dark)]">{tenantName}님 — 퇴실 정산</h2>
+            </div>
+            <div className="px-5 py-4 space-y-2">
+              <p className="text-sm text-[var(--warm-dark)] leading-relaxed">
+                퇴실 예정일이 납입일과 가깝습니다. 선납 기준 <b>일할로 퇴실 정산</b>을 하시겠어요?
+              </p>
+              <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
+                · <b>예</b> — 수납 화면의 퇴실 정산으로 이동해 일수만큼 계산(미납 시 정산 후 입금 / 완납 시 환불).<br />
+                · <b>아니오</b> — 퇴실 예정일만 저장(이번 달 풀 청구 유지).
+              </p>
+            </div>
+            <div className="px-5 py-3 border-t border-[var(--warm-border)] flex gap-2">
+              <Btn variant="secondary" size="md" onClick={() => setProrateAsk(null)} className="flex-1">아니오</Btn>
+              <Btn variant="primary" size="md" className="flex-1"
+                onClick={() => {
+                  setProrateAsk(null)
+                  entityModal.open({ kind: 'payment', leaseTermId: lease.id, tenantId, openCheckoutProration: true })
+                }}>
+                예, 정산하기
+              </Btn>
             </div>
           </div>
         </div>

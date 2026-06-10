@@ -24,17 +24,19 @@ type Records = Awaited<ReturnType<typeof getPaymentsByLease>>['records']
 
 const fmtWon = (n: number) => `${n.toLocaleString()}원`
 
-export function PaymentBody({ leaseTermId, month, canEdit, roomNo }: {
+export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutProration }: {
   leaseTermId: string
   month: string
   canEdit: boolean
   /** 'XX호' — full 모드에서 "수납 관리에서 열기" 딥링크용. */
   roomNo?: string | null
+  /** 고객관리 '퇴실 정산?' 팝업에서 '예' 진입 시 — full 모드로 열고 퇴실 정산 위젯 자동 펼침. */
+  openCheckoutProration?: boolean
 }) {
   const router = useRouter()
   const [settlement, setSettlement] = useState<Settlement | null>(null)
   const [records, setRecords] = useState<Records | null>(null)
-  const [mode, setMode] = useState<'summary' | 'full'>('summary')
+  const [mode, setMode] = useState<'summary' | 'full'>(openCheckoutProration ? 'full' : 'summary')
   const [showEntryForm, setShowEntryForm] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [, startTransition] = useTransition()
@@ -198,6 +200,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo }: {
               expectedMoveOut={settlement.expectedMoveOut}
               checkoutProratedAmount={settlement.checkoutProratedAmount}
               checkoutProratedMonth={settlement.checkoutProratedMonth}
+              autoOpen={openCheckoutProration}
               onChange={refresh}
             />
           )}

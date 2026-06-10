@@ -4,7 +4,7 @@
 // 퇴실일 입력 → 서버 미리보기(previewCheckoutProration)로 19일치 등 일할 금액 확인 → '적용'으로 확정·기록.
 // 확정 시 status=CHECKOUT_PENDING + expectedMoveOut + 일할액 저장. 청구 엔진이 그 달 청구를 이 값으로 덮어씀.
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect, useRef } from 'react'
 import {
   previewCheckoutProration,
   setCheckoutProration,
@@ -20,7 +20,7 @@ const fmtWon = (n: number) => `${n.toLocaleString()}원`
 const fmtMonth = (m: string) => { const [y, mm] = m.split('-'); return `${y}년 ${Number(mm)}월` }
 
 export function CheckoutProrationWidget({
-  leaseTermId, currentDueDay, expectedMoveOut, checkoutProratedAmount, checkoutProratedMonth, onChange,
+  leaseTermId, currentDueDay, expectedMoveOut, checkoutProratedAmount, checkoutProratedMonth, autoOpen, onChange,
 }: {
   leaseTermId: string
   currentDueDay: string | null
@@ -29,6 +29,8 @@ export function CheckoutProrationWidget({
   /** 이미 확정된 일할 청구액 (없으면 null) */
   checkoutProratedAmount?: number | null
   checkoutProratedMonth?: string | null
+  /** 고객관리 '퇴실 정산?' 팝업의 '예'로 진입 — 폼 자동 펼침 + 날짜 프리필 + 미리보기. */
+  autoOpen?: boolean
   /** 적용/해제 후 부모가 재조회. */
   onChange?: () => void
 }) {
@@ -50,6 +52,15 @@ export function CheckoutProrationWidget({
       else { setCalc(null); setCalcErr(res.error) }
     })
   }
+
+  // autoOpen — 진입 직후 1회: 폼 펼치고 저장된 퇴실일로 미리보기 자동 실행
+  const autoOpenedRef = useRef(false)
+  useEffect(() => {
+    if (!autoOpen || autoOpenedRef.current) return
+    autoOpenedRef.current = true
+    setShowForm(true)
+    if (expectedMoveOut) handleDate(expectedMoveOut)
+  }, [autoOpen])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleApply = () => {
     if (!date || !calc) return

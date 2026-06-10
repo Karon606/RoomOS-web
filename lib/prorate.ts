@@ -69,3 +69,23 @@ export function calcCheckoutProration(
   const amount = Math.floor((monthlyRent * daysUsed) / PRORATE_BASE_DAYS)
   return { daysUsed, amount, fullAmount: monthlyRent, reduction: monthlyRent - amount, moveOutMonth }
 }
+
+// 고객관리에서 퇴실 예정일을 입력했을 때 '퇴실 정산?' 팝업을 띄울지 판정.
+// 조건: ① 일할이 실제로 의미 있음(부분 기간 — daysUsed<30, 감액>0) ② 근접(퇴실일이 오늘로부터 약 1달 이내).
+// 선납·완납 후 일찍 나가는(환불) 경우도, 미납 상태로 늦게 정산하는 경우도 모두 ①②로 잡힌다.
+// 정산 자체를 자동 적용하진 않음 — 팝업으로 물어보기만(사용자 정책 2026-06-10).
+export function shouldOfferCheckoutProration(
+  monthlyRent: number,
+  dueDay: string | null,
+  expectedMoveOut: string,   // 'YYYY-MM-DD'
+  todayYmd: string,          // 'YYYY-MM-DD' (KST 오늘)
+): boolean {
+  const calc = calcCheckoutProration(monthlyRent, dueDay, expectedMoveOut)
+  if (!calc || calc.reduction <= 0 || calc.daysUsed >= PRORATE_BASE_DAYS) return false
+  const t = new Date(todayYmd + 'T00:00:00').getTime()
+  const m = new Date(expectedMoveOut + 'T00:00:00').getTime()
+  if (isNaN(t) || isNaN(m)) return false
+  const daysFromToday = Math.round((m - t) / 86400000)
+  // 퇴실일이 오늘로부터 31일 이내(과거 포함 — 늦은 정산 케이스). 그보다 먼 미래면 묻지 않음.
+  return daysFromToday <= 31
+}

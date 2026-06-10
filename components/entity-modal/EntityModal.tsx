@@ -22,7 +22,7 @@ import { TenantBody } from './bodies/TenantBody'
 import { PaymentBody } from './bodies/PaymentBody'
 
 type EntityKind = 'room' | 'tenant' | 'payment'
-type Seed = { kind: EntityKind; roomId?: string | null; tenantId?: string | null; leaseTermId?: string | null }
+type Seed = { kind: EntityKind; roomId?: string | null; tenantId?: string | null; leaseTermId?: string | null; openCheckoutProration?: boolean }
 type Links = Awaited<ReturnType<typeof getEntityLinks>>
 
 type Ctx = { open: (seed: Seed) => void; close: () => void }
@@ -74,6 +74,7 @@ export function EntityModalProvider({ children }: { children: React.ReactNode })
         <PrismShellView
           kind={state.kind}
           links={state.links}
+          openCheckoutProration={state.seed.openCheckoutProration}
           setKind={k => setState(s => (s ? { ...s, kind: k } : s))}
           onClose={close}
         />
@@ -82,8 +83,8 @@ export function EntityModalProvider({ children }: { children: React.ReactNode })
   )
 }
 
-function PrismShellView({ kind, links, setKind, onClose }: {
-  kind: EntityKind; links: Links; setKind: (k: EntityKind) => void; onClose: () => void
+function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }: {
+  kind: EntityKind; links: Links; openCheckoutProration?: boolean; setKind: (k: EntityKind) => void; onClose: () => void
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -208,7 +209,7 @@ function PrismShellView({ kind, links, setKind, onClose }: {
       <div className="px-5 sm:px-6 py-4">
         {kind === 'room'    && (hasRoom   ? <RoomBody roomId={links!.roomId!} onApplyScheduledNow={handleApplyScheduledNow} /> : <Empty label="연결된 호실이 없습니다." />)}
         {kind === 'tenant'  && (hasTenant ? <TenantBody tenantId={links!.tenantId!} /> : <Empty label="연결된 고객이 없습니다." />)}
-        {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={links!.leaseTermId!} month={month} canEdit roomNo={links?.roomNo ?? null} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
+        {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={links!.leaseTermId!} month={month} canEdit roomNo={links?.roomNo ?? null} openCheckoutProration={openCheckoutProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
       </div>
     </Modal>
     {/* 계약서 출력 선택 모달 — 스캔본 vs 시스템 계약서 3-옵션 (confirm 다이얼로그의
