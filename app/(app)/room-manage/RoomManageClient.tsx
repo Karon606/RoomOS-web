@@ -17,15 +17,10 @@ import { RoomCard, type CardKind } from '@/components/ui/RoomCard'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { Panorama360 } from '@/components/Panorama360'
+import { driveImageUrl, looksLike360 } from '@/lib/driveImage'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
-
-// 파일명에 360/파노라마 단서가 있으면 360 사진으로 추정 (lightbox 기본값 — 수동 토글로 보정 가능)
-const looksLike360 = (name: string | null | undefined): boolean => /360|파노라마|pano|equirect/i.test(name ?? '')
-// Drive 고해상도 직접 URL — lh3 는 리디렉트 없이 CORS 허용(WebGL/360 안전). (lib/google-drive buildDriveImageUrl 과 동일,
-// 단 그 파일은 googleapis(서버 전용) import 라 클라이언트에서 못 가져옴 → 여기 인라인)
-const driveImageUrl = (fileId: string, sizePx = 2048) => `https://lh3.googleusercontent.com/d/${fileId}=w${sizePx}`
 
 type Photo = {
   id: string

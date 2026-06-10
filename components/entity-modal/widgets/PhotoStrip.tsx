@@ -4,6 +4,8 @@
 // 어떤 entity (호실·고객 등) 의 사진이든 동일 동작.
 
 import { useEffect, useRef, useState } from 'react'
+import { Panorama360 } from '@/components/Panorama360'
+import { driveImageUrl, looksLike360 } from '@/lib/driveImage'
 
 export type Photo = { id: string; storageUrl: string; fileName: string | null; driveFileId: string | null }
 
@@ -14,9 +16,14 @@ export function PhotoStrip({ photos }: { photos: Photo[] }) {
     <>
       <div className="flex gap-2 overflow-x-auto pb-3 mb-3 border-b border-[var(--warm-border)]" style={{ scrollbarWidth: 'none' }}>
         {photos.map((p, i) => (
-          <img key={p.id} src={p.storageUrl} alt=""
-            onClick={() => setIdx(i)}
-            className="h-44 w-44 object-cover rounded-xl shrink-0 cursor-zoom-in" />
+          <div key={p.id} className="relative shrink-0">
+            <img src={p.storageUrl} alt=""
+              onClick={() => setIdx(i)}
+              className="h-44 w-44 object-cover rounded-xl cursor-zoom-in" />
+            {looksLike360(p.fileName) && (
+              <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-black/65 text-white text-[0.625rem] font-bold pointer-events-none">360°</span>
+            )}
+          </div>
         ))}
       </div>
       {idx != null && (
@@ -40,6 +47,15 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
   const touchStart = useRef<{ x: number; y: number } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  // 360 보기 — 현재 사진이 360(파일명 단서)이고 driveFileId 있으면 기본 ON. 사진 바뀌면 재설정.
+  const cur = photos[index]
+  const can360 = !!cur?.driveFileId
+  const [view360, setView360] = useState(false)
+  useEffect(() => {
+    setView360(can360 && looksLike360(cur?.fileName))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index])
+
   useEffect(() => {
     const t = requestAnimationFrame(() => setMounted(true))
     return () => cancelAnimationFrame(t)
@@ -54,14 +70,15 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose(); return }
+      if (view360) return  // 360 보기 중엔 화살표를 pannellum 시점 이동에 양보
       if (e.key === 'ArrowLeft')  go(-1)
       if (e.key === 'ArrowRight') go(1)
-      if (e.key === 'Escape')     onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, total])
+  }, [index, total, view360])
 
   const onTouchStart = (e: React.TouchEvent) => {
     touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
@@ -117,6 +134,16 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
         {index + 1} / {total}
       </div>
 
+      {/* 360 / 일반 토글 — driveFileId 있을 때만 */}
+      {can360 && (
+        <button
+          onClick={e => { e.stopPropagation(); setView360(v => !v) }}
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-10 text-white text-xs font-semibold px-3 h-10 flex items-center rounded-full bg-black/40 hover:bg-black/60 transition-colors"
+        >
+          {view360 ? '일반 사진으로 보기' : '360°로 보기'}
+        </button>
+      )}
+
       {total > 1 && (
         <button onClick={e => { e.stopPropagation(); go(-1) }}
           className="absolute left-4 top-1/2 -translate-y-1/2 z-10 text-white/80 hover:text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hidden sm:flex"
@@ -132,24 +159,29 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
         ref={containerRef}
         className={`w-full h-full overflow-hidden ${mounted ? 'scale-100' : 'scale-95'} transition-transform duration-200`}
         onClick={e => e.stopPropagation()}
-        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+        {...(view360 ? {} : { onTouchStart, onTouchMove, onTouchEnd })}
       >
-        <div className="flex h-full"
-          style={{
-            transform: trackTransform,
-            transition: animating ? 'transform 320ms cubic-bezier(0.22,1,0.36,1)' : 'none',
-          }}>
-          {photos.map(p => (
-            <div key={p.id} className="w-full h-full shrink-0 flex items-center justify-center px-2">
-              <img
-                src={p.driveFileId ? `https://drive.google.com/thumbnail?id=${p.driveFileId}&sz=w2000` : p.storageUrl}
-                alt={p.fileName ?? ''}
-                className="max-w-[95vw] max-h-[90vh] object-contain pointer-events-none"
-                draggable={false}
-              />
-            </div>
-          ))}
-        </div>
+        {view360 && cur?.driveFileId ? (
+          // 360 뷰어 — 현재 사진만. 드래그/휠은 pannellum 이 처리(스와이프 비활성).
+          <Panorama360 key={cur.id} url={driveImageUrl(cur.driveFileId, 2048)} className="w-full h-full" />
+        ) : (
+          <div className="flex h-full"
+            style={{
+              transform: trackTransform,
+              transition: animating ? 'transform 320ms cubic-bezier(0.22,1,0.36,1)' : 'none',
+            }}>
+            {photos.map(p => (
+              <div key={p.id} className="w-full h-full shrink-0 flex items-center justify-center px-2">
+                <img
+                  src={p.driveFileId ? driveImageUrl(p.driveFileId, 2000) : p.storageUrl}
+                  alt={p.fileName ?? ''}
+                  className="max-w-[95vw] max-h-[90vh] object-contain pointer-events-none"
+                  draggable={false}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

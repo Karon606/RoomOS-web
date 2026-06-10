@@ -17,6 +17,12 @@
 - 동작 확인(서민준): rent 400k·납부일 8·퇴실 6/26 → 19일치 **253,333원**(감액 146,667). 수납·대시보드·미납 모두 일할액 기준. tsc·build 통과.
 - 설계 결정: **확인 후 적용(정산 위젯)** 방식 — 월세 변경에도 안 흔들리게 절대액 lock(자동 일할 대신). 한계: 퇴실 완료(CHECKED_OUT) 후 매출은 실제 record(actualAmount) 기반이라 lease 필드 불필요(자동 무관).
 
+## 2026-06-10 (이어서) — 360 뷰어를 공용 PhotoStrip(호실 상세)에도 적용 [배포]
+1차에서 편집 폼 lightbox에만 360을 붙였더니 사용자가 못 봄 — 실제 사진은 **호실 상세(entity-modal RoomBody → PhotoStrip)** 라이트박스에서 보는데 거기가 평면 img(`drive.google.com/thumbnail&sz=w2000`)였음.
+- **PhotoStrip 라이트박스에 360 적용**: 현재 사진이 360(파일명 단서)+driveFileId면 기본 360 ON. 상단 중앙 '360°로 보기/일반 사진으로 보기' 토글. 360 중엔 스와이프·좌우 화살표 비활성(pannellum 시점이동 양보), Esc는 닫기. 썸네일 스트립에 360° 배지. 평면 img도 lh3(`driveImageUrl`)로 통일.
+- **공용 유틸 [lib/driveImage.ts](lib/driveImage.ts)**: `driveImageUrl`(lh3 고해상·CORS) + `looksLike360`. 클라 안전(googleapis 미의존). RoomManageClient·PhotoStrip 공유.
+- CORS 실측: lh3 `=w2048` 브라우저 유사요청에도 `access-control-allow-origin: *`. CSP 없음(jsdelivr 허용). tsc·build 통과.
+
 ## 2026-06-10 — 호실 관리 360° 사진 뷰어 [배포, SQL 불필요]
 사용자: 408호에 360 이미지(room-360-408.jpg) 업로드했는데 호실관리에선 그냥 넓은 평면 이미지로만 보임. 360으로 보고 싶음.
 - **신규 [components/Panorama360.tsx](components/Panorama360.tsx)**: pannellum@2.5.6 CDN 동적 로드(CSS+JS, idempotent) 래퍼. `pannellum.viewer(el, {type:'equirectangular', autoRotate, crossOrigin:'anonymous', ...})`. 언마운트 시 destroy. (홈페이지 정적 index.html 도 동일 pannellum 사용)
