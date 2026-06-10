@@ -3,32 +3,32 @@
 마지막 업데이트: 2026-06-10
 브랜치: main
 
-## 2026-06-10 — 퇴실 일할 정산 (퇴실일 세팅 → 마지막 달 청구 일할) [코드 완료, ⚠️SQL 선적용 후 배포]
+## 2026-06-10 — 퇴실 일할 정산 (퇴실일 세팅 → 마지막 달 청구 일할) [main 배포·SQL 적용·검증 완료]
+**커밋**: `4ef9676`(코어) · `a727252`(뱃지 B안) · `3dcc2f2`(뱃지 C안) · `4b1d420`(고객관리 팝업) · `46b4186`(팝업 트리거 +1달). 모두 main 푸시·Vercel 배포됨. `migrate_checkout_proration.sql` Supabase 적용 완료(사용자 확인). 서민준 실데이터 검증 완료.
 사용자 사례: 418호 서민준(납부일 매월 8일, 선납). 6/8 미납 상태에서 6월말 퇴실 통보 → 선납 시스템이라 "퇴실 날짜에 맞춰 일할만 납부"하겠다는 케이스. 6/26 퇴실이면 6/8~6/26 = **19일치**만 청구. 앱엔 납부일 변경(일할)은 있어도 **퇴실일로 인한 청구액 변경**이 없었음.
-- **⚠️ 배포 전 필수**: `prisma/migrate_checkout_proration.sql` 을 **Supabase SQL Editor 에서 먼저 실행**. 안 하면 `checkoutProratedAmount/Month` 컬럼 없어 청구 엔진 select 가 런타임 에러.
+- **⚠️ 배포 전 필수(완료됨)**: `prisma/migrate_checkout_proration.sql`(checkoutProratedAmount INT · checkoutProratedMonth TEXT · checkoutProrationUndo JSONB) 을 **Supabase SQL Editor 에서 먼저 실행** — 이미 적용함. 안 하면 청구 엔진 select 가 런타임 에러.
 - **스키마**: `LeaseTerm.checkoutProratedAmount Int?`(확정 일할액) + `checkoutProratedMonth String?`('YYYY-MM') + `checkoutProrationUndo Json?`(적용취소 스냅샷). 설정 시 청구 엔진이 그 달 청구를 이 값으로 덮어씀.
 - **일할 헬퍼** [lib/prorate.ts](lib/prorate.ts) `calcCheckoutProration(monthlyRent, dueDay, expectedMoveOut)`: 선납 = dueDay가 기간 시작일. 일수 = 퇴실일 − 납부일 + 1(**양끝 포함**, 1~30 클램프), 금액 = floor(월 × 일수 / 30). 퇴실일 < 납부일이면 null(그 기간 미사용 = 청구 0, rooms `checkoutNoBilling` 영역). 사용자 확정: 19일=양끝포함, ÷30 기준.
 - **서버액션** [tenants/actions.ts](app/(app)/tenants/actions.ts): `previewCheckoutProration`(읽기, 할인 반영 미리보기) · `setCheckoutProration`(확정·기록 lock + status=CHECKOUT_PENDING + expectedMoveOut + 상태로그, **적용 직전 스냅샷 저장**) · `clearCheckoutProration`(**적용취소=완전 롤백**: 스냅샷으로 status·expectedMoveOut·일할액 한 번에 복원, 스냅샷 없으면 일할액만 제거 폴백). `applyStatusTransition`: →ACTIVE(퇴실예정취소) 또는 expectedMoveOut 변경 시 일할 정산+스냅샷 자동 정리.
 - **롤백 보장**(사용자 원칙): 적용은 상태전환+퇴실일+일할 3개를 한 번에 바꾸므로, '적용취소' 1클릭으로 적용 직전(거주중 등) 원상태까지 복원. 재정산 시 최초 스냅샷 유지 → 여러 번 재정산해도 한 번에 거주중으로.
-- **수납 상태 뱃지(C안)**: 미납인데 퇴실 예정이면 `[미납][퇴실 예정]` 뱃지 나란히 + 보조줄 `N일 초과 · 6/13 퇴실 D-3`. StatusBadge에 `secondary` prop. 완납하면 퇴실예정 단독. (모바일·데스크톱 동일, `checkoutSubText` 헬퍼)
+- **수납 상태 뱃지** (B안→C안 변천): 처음 B안(미납 뱃지 1개 + 보조줄에 퇴실정보 합침) 배포했다가, 사용자가 뱃지 2개를 원해 **C안 확정** — 미납인데 퇴실 예정이면 `[미납][퇴실 예정]` 뱃지 **나란히** + 보조줄 `N일 초과 · 6/13 퇴실 D-3`. [StatusBadge](components/ui/StatusBadge.tsx)에 `secondary` prop 추가, RoomManage/RoomsClient `checkoutSubText` 헬퍼. 완납하면 퇴실예정 단독. (모바일 카드·데스크톱 표 동일)
 - **고객관리 진입 팝업**: 퇴실예정처리/퇴실일변경(신규 전환)으로 expectedMoveOut 입력 시 정산은 자동 적용 안 함. 단 `shouldOfferCheckoutProration`(일할 부분기간 + 퇴실일이 '오늘+1달' 달력 기준 이내 — 6/2입력→7/2까지(6월30일), 5/2입력→6/2까지(5월31일), 고정일수 아님)이면 '퇴실 정산?' 팝업 → 예: `entityModal.open({openCheckoutProration})`로 수납 모달 full+위젯 자동펼침·날짜 프리필·미리보기 / 아니오: 날짜만. (Seed→PrismShellView→PaymentBody→Widget autoOpen 스루) 늦은정산·선납환불 둘 다 커버.
 - **청구 엔진 3곳 동기화**(저장 일할액 최우선): rooms `getRoomPaymentStatus`(expected·billForMonth override + RoomRow 필드), dashboard `unpaid.ts`(billForMonth), dashboard `page.tsx`(billThisMonth·billForMonth). 셋 다 `checkoutProratedMonth===mon`이면 `checkoutProratedAmount` 반환 → 실제 납부 record의 expectedAmount와 무관하게 일할액 고정.
 - **UI 위젯** [CheckoutProrationWidget](components/entity-modal/widgets/CheckoutProrationWidget.tsx): 수납 모달 full 모드(ACTIVE/CHECKOUT_PENDING만). 퇴실일 선택→서버 미리보기(19일치·감액 표시)→'정산 적용'으로 확정. 적용됨 상태 요약 + '해제'/'다시 정산'.
-- 동작 확인(서민준): rent 400k·납부일 8·퇴실 6/26 → 19일치 **253,333원**(감액 146,667). 수납·대시보드·미납 모두 일할액 기준. tsc·build 통과.
+- **검증** [scripts/check-checkout-proration.ts](scripts/check-checkout-proration.ts): 서민준 실데이터 = rent 400,000·납부일 8. 설계 예시(6/26 퇴실)=19일치 **253,333원**(감액 146,667). 실제 적용은 사용자가 퇴실일 **6/13**으로 설정 → 6일치 **80,000원**(화면 월이용료 8만·잔액 -8만 확인). 신규 3컬럼 DB 존재 확인. lib/prorate 단위계산 케이스 7종 통과.
 - 설계 결정: **확인 후 적용(정산 위젯)** 방식 — 월세 변경에도 안 흔들리게 절대액 lock(자동 일할 대신). 한계: 퇴실 완료(CHECKED_OUT) 후 매출은 실제 record(actualAmount) 기반이라 lease 필드 불필요(자동 무관).
+- 팝업 트리거 확정: 고정 31일이 아니라 **'오늘 + 1달'(달력 기준)** — 입력일 6/2면 7/2까지(6월 30일), 5/2면 6/2까지(5월 31일). `shouldOfferCheckoutProration`. 사용자 기준 그대로.
 
-## 2026-06-10 (이어서) — 360 뷰어를 공용 PhotoStrip(호실 상세)에도 적용 [배포]
-1차에서 편집 폼 lightbox에만 360을 붙였더니 사용자가 못 봄 — 실제 사진은 **호실 상세(entity-modal RoomBody → PhotoStrip)** 라이트박스에서 보는데 거기가 평면 img(`drive.google.com/thumbnail&sz=w2000`)였음.
-- **PhotoStrip 라이트박스에 360 적용**: 현재 사진이 360(파일명 단서)+driveFileId면 기본 360 ON. 상단 중앙 '360°로 보기/일반 사진으로 보기' 토글. 360 중엔 스와이프·좌우 화살표 비활성(pannellum 시점이동 양보), Esc는 닫기. 썸네일 스트립에 360° 배지. 평면 img도 lh3(`driveImageUrl`)로 통일.
-- **공용 유틸 [lib/driveImage.ts](lib/driveImage.ts)**: `driveImageUrl`(lh3 고해상·CORS) + `looksLike360`. 클라 안전(googleapis 미의존). RoomManageClient·PhotoStrip 공유.
-- CORS 실측: lh3 `=w2048` 브라우저 유사요청에도 `access-control-allow-origin: *`. CSP 없음(jsdelivr 허용). tsc·build 통과.
-
-## 2026-06-10 — 호실 관리 360° 사진 뷰어 [배포, SQL 불필요]
-사용자: 408호에 360 이미지(room-360-408.jpg) 업로드했는데 호실관리에선 그냥 넓은 평면 이미지로만 보임. 360으로 보고 싶음.
-- **신규 [components/Panorama360.tsx](components/Panorama360.tsx)**: pannellum@2.5.6 CDN 동적 로드(CSS+JS, idempotent) 래퍼. `pannellum.viewer(el, {type:'equirectangular', autoRotate, crossOrigin:'anonymous', ...})`. 언마운트 시 destroy. (홈페이지 정적 index.html 도 동일 pannellum 사용)
-- **이미지 URL**: 저장본은 `buildDriveThumbnailUrl(id,400)`(drive.google.com/thumbnail, 302 리디렉트·저해상)이라 WebGL 부적합. 360/큰사진은 **`https://lh3.googleusercontent.com/d/{fileId}=w2048`** 사용 — 실측 확인: 리디렉트 없이 `access-control-allow-origin: *` (CORS OK) + 고해상. lib에 `buildDriveImageUrl` 추가(서버), 클라(RoomManageClient)는 googleapis import 못해 `driveImageUrl` 인라인.
-- **RoomManageClient lightbox**(`PhotoLightbox`): 편집 폼 사진 썸네일 클릭 → 풀스크린. 360 판정 = ① 파일명 `/360|파노라마|pano|equirect/`(기본·썸네일 배지) ② 평면 로드 시 2:1 종횡비 자동 감지 → 360 전환 ③ **수동 토글**('360°로 보기'/'일반 사진으로 보기')로 언제든 보정. Esc·배경 클릭 닫기.
-- 스키마 변경 없음(파일명+종횡비 자동, DB 플래그 불필요). tsc·build 통과. ⚠️ iCloud 동기화가 `.next/types/* 2.ts` 중복 생성 → tsc 거짓 에러, `find .next -name '* 2.ts' -delete`로 정리.
+## 2026-06-10 — 호실 360° 사진 뷰어 [main 배포, SQL 불필요]
+**커밋**: `722c8fa`(Panorama360 + 편집폼 lightbox) · `f461c97`(공용 PhotoStrip 적용).
+사용자: 408호에 360 이미지(room-360-408.jpg) 업로드했는데 호실관리에선 그냥 넓은 평면 이미지로만 보임 → 360으로 보고 싶음. (홈페이지 정적 index.html 은 이미 pannellum 360 사용 중)
+- **신규 [components/Panorama360.tsx](components/Panorama360.tsx)**: pannellum@2.5.6 CDN 동적 로드(CSS+JS, idempotent) 래퍼. `pannellum.viewer(el, {type:'equirectangular', autoRotate:-2, crossOrigin:'anonymous', showZoom/Fullscreen, ...})`. 언마운트 시 destroy.
+- **이미지 URL(핵심)**: 저장본 storageUrl 은 `buildDriveThumbnailUrl(id,400)`(drive.google.com/thumbnail) — 302 리디렉트 + 저해상이라 WebGL 텍스처(360)에 부적합. 360/큰사진은 **`https://lh3.googleusercontent.com/d/{fileId}=w2048`** 사용. 실측(408 실파일 curl): 리디렉트 없이 `access-control-allow-origin: *` + 고해상. CSP 없음(jsdelivr 허용). 공용 유틸 [lib/driveImage.ts](lib/driveImage.ts) `driveImageUrl`·`looksLike360`(클라 안전, googleapis 미의존). 서버용은 lib/google-drive `buildDriveImageUrl`.
+- **두 군데 적용**:
+  - ① **호실 상세(주 뷰어)** [PhotoStrip](components/entity-modal/widgets/PhotoStrip.tsx) — 호실 카드 클릭 → entity-modal RoomBody → PhotoStrip 라이트박스. **여기가 사용자가 실제 사진 보는 곳**(처음 ② 편집폼에만 붙였다가 못 봐서 추가). 360 사진이면 기본 360 ON, 상단 '360°로 보기/일반' 토글, 360 중 스와이프·화살표 비활성(pannellum 시점이동 양보), Esc 닫기, 썸네일 360° 배지. 평면 img 도 lh3 로 통일.
+  - ② **편집 폼** [RoomManageClient](app/(app)/room-manage/RoomManageClient.tsx) `PhotoLightbox` — 사진 썸네일 클릭 → 풀스크린, 360 토글 + 2:1 종횡비 자동감지.
+- **360 판정**: ① 파일명 `/360|파노라마|pano|equirect/`(기본·배지) ② 2:1 종횡비 자동(편집폼) ③ 수동 토글. 스키마 변경 없음(DB 플래그 불필요).
+- tsc·build 통과. ⚠️ iCloud 동기화가 `.next/types/* 2.ts` 중복 생성 → tsc 거짓 에러, `find .next -name '* 2.ts' -delete`로 정리.
 
 ## 2026-06-10 — 배송비 입력 UX 통합 (편집 폼 단일 장소) [배포, SQL 불필요]
 사용자 혼란: 배송비 합산형('배송비 포함')은 수정 폼, 합배송 별도묶기는 상세 모달 — 비슷한데 위치가 흩어져 헷갈림. 결정: 두 방식 유지 + 한 곳(수정 폼)에 모아 라벨 명확화.
