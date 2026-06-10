@@ -16,9 +16,16 @@ import { SortSelect } from '@/components/ui/SortSelect'
 import { RoomCard, type CardKind } from '@/components/ui/RoomCard'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
+import { Panorama360 } from '@/components/Panorama360'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
+
+// 파일명에 360/파노라마 단서가 있으면 360 사진으로 추정 (lightbox 기본값 — 수동 토글로 보정 가능)
+const looksLike360 = (name: string | null | undefined): boolean => /360|파노라마|pano|equirect/i.test(name ?? '')
+// Drive 고해상도 직접 URL — lh3 는 리디렉트 없이 CORS 허용(WebGL/360 안전). (lib/google-drive buildDriveImageUrl 과 동일,
+// 단 그 파일은 googleapis(서버 전용) import 라 클라이언트에서 못 가져옴 → 여기 인라인)
+const driveImageUrl = (fileId: string, sizePx = 2048) => `https://lh3.googleusercontent.com/d/${fileId}=w${sizePx}`
 
 type Photo = {
   id: string
@@ -211,6 +218,7 @@ export default function RoomManageClient({
 
   // 사진
   const [editPhotos, setEditPhotos]           = useState<Photo[]>([])
+  const [viewPhoto, setViewPhoto]             = useState<Photo | null>(null)  // 큰 사진/360 뷰어 lightbox
   const [addPhotoPreviews, setAddPhotoPreviews] = useState<{ file: File; previewUrl: string }[]>([])
   const [photoUploading, setPhotoUploading]   = useState(false)
   const [photoProgress, setPhotoProgress]     = useState<{ name: string; percent: number; current: number; total: number } | null>(null)
@@ -1021,7 +1029,12 @@ export default function RoomManageClient({
                 <div className="grid grid-cols-3 gap-2">
                   {editPhotos.map(photo => (
                     <div key={photo.id} className="relative aspect-square rounded-lg overflow-hidden bg-[var(--canvas)]">
-                      <img src={photo.storageUrl} alt={photo.fileName ?? ''} className="w-full h-full object-cover" />
+                      <img src={photo.storageUrl} alt={photo.fileName ?? ''}
+                        onClick={() => setViewPhoto(photo)}
+                        className="w-full h-full object-cover cursor-zoom-in" />
+                      {looksLike360(photo.fileName) && (
+                        <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-full bg-black/65 text-white text-[0.5625rem] font-bold pointer-events-none">360°</span>
+                      )}
                       <button type="button" onClick={() => handlePhotoDelete(photo.id)}
                         className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-red-600/80 rounded-full text-[var(--warm-dark)] text-xs transition-colors flex items-center justify-center">
                         ✕
@@ -1068,6 +1081,60 @@ export default function RoomManageClient({
         </Modal>
       )}
 
+      {/* 큰 사진 / 360 뷰어 lightbox */}
+      {viewPhoto && (
+        <PhotoLightbox photo={viewPhoto} onClose={() => setViewPhoto(null)} />
+      )}
+
+    </div>
+  )
+}
+
+// 사진 lightbox — 큰 사진 + 360 뷰어. 360 판정: 파일명 단서(기본) + 2:1 종횡비 자동 감지 + 수동 토글.
+function PhotoLightbox({ photo, onClose }: { photo: Photo; onClose: () => void }) {
+  const hiRes = photo.driveFileId ? driveImageUrl(photo.driveFileId, 2048) : photo.storageUrl
+  const [is360, setIs360] = useState(looksLike360(photo.fileName))
+  const manualRef = useRef(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-[320] bg-black/90 flex flex-col" onClick={onClose}>
+      <div className="flex items-center justify-between gap-2 px-4 py-3 shrink-0" onClick={e => e.stopPropagation()}>
+        <span className="text-white/80 text-sm font-medium truncate">{photo.fileName ?? '사진'}{is360 && ' · 360°'}</span>
+        <div className="flex items-center gap-2 shrink-0">
+          <button type="button" onClick={() => { manualRef.current = true; setIs360(v => !v) }}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/15 text-white hover:bg-white/25 transition-colors">
+            {is360 ? '일반 사진으로 보기' : '360°로 보기'}
+          </button>
+          <button type="button" onClick={onClose}
+            className="w-8 h-8 rounded-full bg-white/15 text-white hover:bg-white/25 transition-colors flex items-center justify-center">✕</button>
+        </div>
+      </div>
+      <div className="flex-1 min-h-0 px-3 pb-2" onClick={e => e.stopPropagation()}>
+        {is360 ? (
+          <Panorama360 url={hiRes} className="w-full h-full rounded-xl overflow-hidden" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={hiRes} alt={photo.fileName ?? ''}
+              onLoad={e => {
+                if (manualRef.current) return
+                const img = e.currentTarget
+                const ratio = img.naturalWidth / img.naturalHeight
+                if (ratio >= 1.9 && ratio <= 2.1) setIs360(true)  // 2:1 equirectangular → 360 자동 전환
+              }}
+              className="max-w-full max-h-full object-contain rounded-xl" />
+          </div>
+        )}
+      </div>
+      <p className="text-center text-white/40 text-[0.625rem] pb-3 shrink-0" onClick={e => e.stopPropagation()}>
+        {is360 ? '드래그해서 둘러보기 · 휠로 확대/축소' : '배경을 누르면 닫힙니다'}
+      </p>
     </div>
   )
 }

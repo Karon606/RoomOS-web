@@ -17,6 +17,13 @@
 - 동작 확인(서민준): rent 400k·납부일 8·퇴실 6/26 → 19일치 **253,333원**(감액 146,667). 수납·대시보드·미납 모두 일할액 기준. tsc·build 통과.
 - 설계 결정: **확인 후 적용(정산 위젯)** 방식 — 월세 변경에도 안 흔들리게 절대액 lock(자동 일할 대신). 한계: 퇴실 완료(CHECKED_OUT) 후 매출은 실제 record(actualAmount) 기반이라 lease 필드 불필요(자동 무관).
 
+## 2026-06-10 — 호실 관리 360° 사진 뷰어 [배포, SQL 불필요]
+사용자: 408호에 360 이미지(room-360-408.jpg) 업로드했는데 호실관리에선 그냥 넓은 평면 이미지로만 보임. 360으로 보고 싶음.
+- **신규 [components/Panorama360.tsx](components/Panorama360.tsx)**: pannellum@2.5.6 CDN 동적 로드(CSS+JS, idempotent) 래퍼. `pannellum.viewer(el, {type:'equirectangular', autoRotate, crossOrigin:'anonymous', ...})`. 언마운트 시 destroy. (홈페이지 정적 index.html 도 동일 pannellum 사용)
+- **이미지 URL**: 저장본은 `buildDriveThumbnailUrl(id,400)`(drive.google.com/thumbnail, 302 리디렉트·저해상)이라 WebGL 부적합. 360/큰사진은 **`https://lh3.googleusercontent.com/d/{fileId}=w2048`** 사용 — 실측 확인: 리디렉트 없이 `access-control-allow-origin: *` (CORS OK) + 고해상. lib에 `buildDriveImageUrl` 추가(서버), 클라(RoomManageClient)는 googleapis import 못해 `driveImageUrl` 인라인.
+- **RoomManageClient lightbox**(`PhotoLightbox`): 편집 폼 사진 썸네일 클릭 → 풀스크린. 360 판정 = ① 파일명 `/360|파노라마|pano|equirect/`(기본·썸네일 배지) ② 평면 로드 시 2:1 종횡비 자동 감지 → 360 전환 ③ **수동 토글**('360°로 보기'/'일반 사진으로 보기')로 언제든 보정. Esc·배경 클릭 닫기.
+- 스키마 변경 없음(파일명+종횡비 자동, DB 플래그 불필요). tsc·build 통과. ⚠️ iCloud 동기화가 `.next/types/* 2.ts` 중복 생성 → tsc 거짓 에러, `find .next -name '* 2.ts' -delete`로 정리.
+
 ## 2026-06-10 — 배송비 입력 UX 통합 (편집 폼 단일 장소) [배포, SQL 불필요]
 사용자 혼란: 배송비 합산형('배송비 포함')은 수정 폼, 합배송 별도묶기는 상세 모달 — 비슷한데 위치가 흩어져 헷갈림. 결정: 두 방식 유지 + 한 곳(수정 폼)에 모아 라벨 명확화.
 - **수정 폼**에 '배송비' 단일 섹션: ① **이 지출 금액에 합산**(기존 editHasShipping) ② **별도 지출로 묶기(합배송)**(amount·선불/착불/신용·메모·같은날 다중선택) 두 체크박스 상호배타. 저장 시 ②면 updateExpense 후 attachShippingToOrder 호출.

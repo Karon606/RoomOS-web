@@ -100,6 +100,13 @@ export function buildDriveThumbnailUrl(fileId: string, sizePx: number): string {
   return `https://drive.google.com/thumbnail?id=${fileId}&sz=w${sizePx}`
 }
 
+// 고해상도 직접 URL — lh3.googleusercontent.com 은 리디렉트 없이 `access-control-allow-origin: *` 를
+// 보내므로 WebGL(360 파노라마/pannellum) 텍스처 로드에 안전. drive.google.com/thumbnail 은 302 리디렉트라
+// crossOrigin 로드가 까다로움. 큰 사진 원본 미리보기·360 뷰어에 사용.
+export function buildDriveImageUrl(fileId: string, sizePx = 2048): string {
+  return `https://lh3.googleusercontent.com/d/${fileId}=w${sizePx}`
+}
+
 export async function deleteFromDrive(fileId: string): Promise<void> {
   const drive = getDriveClient()
   await drive.files.delete({ fileId })
