@@ -1,19 +1,59 @@
-// 스플래시 스크린 — Brand Guide v1.2 (Arch line-draw + 워드마크 EN/KO 교차)
-//
-// 배경: var(--canvas)  → 라이트=Page 톤, 다크=거의 검정 (모드 자동 대응)
-// 모션은 BrandLoader 컴포넌트에 위임 — 3.2s 사이클, ×2 사이클마다 워드마크 교차.
+'use client'
 
+// 콜드 스타트 스플래시 — Brand Guide v1.3 §18.2.
+// 셸이 없는 구간(도메인 콜드 부트·소셜 인증 리디렉트 복귀·로그아웃) 전용.
+// 배경 = --cold-bg(=--page, manifest background 와 동일값 — PWA 3단계 연속성),
+// 로더는 화면 수직 중앙 -8%(시각 중심), 5s 초과 시 느린 연결 캡션, 10s 초과 시 재시도.
+// 300ms 표시 지연(.delayed-fallback)으로 빠른 로드에선 한 프레임도 안 보임(§18.3).
+
+import { useEffect, useState } from 'react'
 import { BrandLoader } from './BrandLoader'
 
 export function SplashScreen() {
+  const [phase, setPhase] = useState<'normal' | 'slow' | 'stalled'>('normal')
+
+  useEffect(() => {
+    const slow = setTimeout(() => setPhase('slow'), 5000)      // --splash-slow
+    const stalled = setTimeout(() => setPhase('stalled'), 10000)
+    return () => { clearTimeout(slow); clearTimeout(stalled) }
+  }, [])
+
   return (
     <div
-      className="fixed inset-0 z-[var(--z-loader)] flex items-center justify-center"
-      style={{ background: 'var(--canvas, #e8ddd0)', color: 'var(--ink, #3d2418)' }}
+      className="fixed inset-0 z-[var(--z-loader)]"
+      style={{ background: 'var(--cold-bg, #E8DDD0)' }}
       aria-busy="true"
       aria-label="스테이음 로딩 중"
     >
-      <BrandLoader size="lg" />
+      {/* 다크모드 배경 — JS 테마 감지 전에도 CSS 미디어쿼리로 즉시 적용 (§18.4) */}
+      <style>{`
+        @media (prefers-color-scheme: dark) {
+          [data-splash-bg] { background: var(--cold-bg-dark, #2A1A10) !important; }
+        }
+        html.dark [data-splash-bg] { background: var(--cold-bg-dark, #2A1A10) !important; }
+        @keyframes splash-caption-in { from { opacity: 0 } to { opacity: 1 } }
+      `}</style>
+      <div data-splash-bg className="absolute inset-0" style={{ background: 'var(--cold-bg, #E8DDD0)' }} />
+      {/* 수직 중앙 -8% (시각 중심) */}
+      <div className="delayed-fallback absolute inset-x-0 flex flex-col items-center"
+        style={{ top: '42%', transform: 'translateY(-50%)', color: 'var(--ink, #3d2418)' }}>
+        <BrandLoader size="lg" />
+        {phase !== 'normal' && (
+          <p className="text-[12.5px]" style={{
+            marginTop: 24, color: 'var(--ink-s, #7A6553)',
+            animation: 'splash-caption-in 400ms ease forwards',
+          }}>
+            연결이 느립니다 — 계속 시도 중입니다
+          </p>
+        )}
+        {phase === 'stalled' && (
+          <button type="button" onClick={() => window.location.reload()}
+            className="mt-3 px-4 h-10 rounded-lg text-sm font-medium border transition-colors"
+            style={{ borderColor: 'var(--border-s, rgba(61,36,24,.18))', color: 'var(--ink, #3d2418)' }}>
+            다시 시도
+          </button>
+        )}
+      </div>
     </div>
   )
 }

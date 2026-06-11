@@ -187,7 +187,26 @@
   /* §16 로딩 */
   --progress-h: 2px;
   --progress-color: var(--tc);
+
+  /* §18 콜드 스타트 로딩 (v1.3.1) */
+  --loader-delay: 300ms;     /* 이보다 빨리 끝나면 로더·스켈레톤 미표시 */
+  --loader-min: 1000ms;      /* 표시되면 최소 유지 — 깜박임 방지 */
+  --splash-fade: 400ms;      /* 스플래시 → 콘텐츠 크로스페이드 */
+  --splash-slow: 5000ms;     /* 초과 시 느린 연결 메시지 */
+  --cold-bg: #E8DDD0;        /* = --page. manifest background 와 동일값 강제(불일치=릴리즈 블로커) */
+  --cold-bg-dark: #2A1A10;   /* 다크모드 첫 페인트 배경 */
 }
+
+/* §18.5 버튼 스피너 회전 (Tailwind v4 기본 keyframes 미보장 — 직접 정의) */
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* §18.3 표시 지연 — 300ms 안에 끝나는 전환에선 로더/스켈레톤이 아예 안 보임.
+   언마운트가 delay 이전이면 사용자는 한 프레임도 못 본다(깜박임 방지). */
+.delayed-fallback {
+  opacity: 0;
+  animation: fallback-in 1ms linear var(--loader-delay) forwards;
+}
+@keyframes fallback-in { to { opacity: 1; } }
 
 @theme inline {
   /* 정식 변수 — Tailwind 클래스명으로도 사용 가능 */

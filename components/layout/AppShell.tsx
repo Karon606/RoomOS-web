@@ -7,18 +7,11 @@ import Header, { type AppUser, type SwitchProperty } from '@/components/layout/H
 import BottomNav from '@/components/layout/BottomNav'
 import SaveFeedback from '@/components/feedback/SaveFeedback'
 import { ConfirmHost } from '@/components/ui/ConfirmDialog'
-import { BrandLoader } from '@/components/brand/BrandLoader'
 import MonthSync from '@/components/layout/MonthSync'
 import { NavigationProvider } from '@/components/layout/NavigationContext'
 
-// 페이지 전환용 경량 로더 — Brand Guide v1.2 의 Arch line-draw 모션 (워드마크 없음)
-function PageLoadingOverlay() {
-  return (
-    <div className="absolute inset-0 flex items-center justify-center z-[60]" style={{ background: 'var(--canvas)' }}>
-      <BrandLoader size="md" />
-    </div>
-  )
-}
+// §18.1 (v1.3.1): 셸이 살아있는 라우트 전환은 본문 스켈레톤만 — 브랜드 로더 오버레이는
+// 스켈레톤과 이중 발동이라 폐지. 브랜드 로더는 셸 없는 구간(콜드 부트·로그아웃)에서만(SplashScreen).
 
 export default function AppShell({
   user,
@@ -36,7 +29,8 @@ export default function AppShell({
   children: React.ReactNode
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [isPending, startNavigation]  = useTransition()
+  // isPending 미사용 — 전환 표시는 라우트 loading.tsx 스켈레톤이 담당(§18.1 ③)
+  const [, startNavigation]  = useTransition()
 
   return (
     <div className="flex h-dvh overflow-hidden" style={{ background: 'var(--canvas)' }}>
@@ -73,13 +67,12 @@ export default function AppShell({
           <MonthSync />
         </Suspense>
 
-        {/* app-main: relative로 로딩 오버레이 containment.
-            NavigationProvider: 페이지 안 MonthSelector가 전환 로딩 오버레이를 공유. */}
+        {/* NavigationProvider: 페이지 안 MonthSelector 등이 전환 transition을 공유.
+            전환 중 표시는 라우트 세그먼트 loading.tsx(본문 스켈레톤)가 담당 — §18.1 ③ */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 app-main relative">
           <NavigationProvider startNavigation={startNavigation}>
             {children}
           </NavigationProvider>
-          {isPending && <PageLoadingOverlay />}
         </main>
       </div>
 

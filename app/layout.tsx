@@ -28,7 +28,11 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#a03c2e',
+  // §18.4 — 첫 페인트 배경과 동일한 theme-color (라이트/다크 분기)
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#E8DDD0' },
+    { media: '(prefers-color-scheme: dark)', color: '#2A1A10' },
+  ],
   viewportFit: 'cover',
 }
 
@@ -55,6 +59,11 @@ export default function RootLayout({
   return (
     <html lang="ko" className={`${dmMono.variable} ${plusJakarta.variable}`} suppressHydrationWarning>
       <head>
+        {/* §18.4 FOUC 방어 — 외부 CSS 로드 전 html 배경을 브랜드 톤으로 (흰 화면 0ms).
+            다크는 CSS 미디어쿼리로 — JS 테마 감지 전 깜박임 원천 차단. */}
+        <style dangerouslySetInnerHTML={{ __html:
+          'html{background:#E8DDD0}@media(prefers-color-scheme:dark){html{background:#2A1A10}}html.dark{background:#2A1A10}',
+        }} />
         {/* 가이드 명시: 한글 본문·디스플레이는 Pretendard. Pretendard는 Google Fonts에 없어 jsdelivr CDN.
             Variable 버전 — 100~900 모든 weight를 한 파일로 안정 로딩. */}
         <link

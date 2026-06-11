@@ -299,8 +299,16 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
         disabled={loading}
         className="font-semibold"
       >
-        {loading
-          ? '처리 중...'
+        {loading ? (
+          /* §18.5 제출 중 — 버튼 내 스피너 14px(0.8s 회전) + 모드별 라벨. fullWidth 라 레이아웃 점프 없음 */
+          <>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"
+              style={{ animation: 'spin 0.8s linear infinite' }}>
+              <path d="M21 12a9 9 0 1 1-6.2-8.56" />
+            </svg>
+            {mode === 'login' ? '로그인 중…' : mode === 'signup' ? '가입 중…' : '보내는 중…'}
+          </>
+        )
           : mode === 'login'  ? '이메일로 로그인'
           : mode === 'signup' ? '회원가입'
           :                     '재설정 메일 보내기'}
