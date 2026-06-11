@@ -1,13 +1,13 @@
 'use client'
 
-// 콜드 스타트 스플래시 — Brand Guide v1.3 §18.2.
-// 셸이 없는 구간(도메인 콜드 부트·소셜 인증 리디렉트 복귀·로그아웃) 전용.
-// 배경 = --cold-bg(=--page, manifest background 와 동일값 — PWA 3단계 연속성),
-// 로더는 화면 수직 중앙 -8%(시각 중심), 5s 초과 시 느린 연결 캡션, 10s 초과 시 재시도.
-// 300ms 표시 지연(.delayed-fallback)으로 빠른 로드에선 한 프레임도 안 보임(§18.3).
+// 일반 모드 스플래시 — 셸 없는 구간(인트로 이후 재발동·소셜 리디렉트·로그아웃) 전용.
+// 비주얼 = 정적 락업(채워진 아치 + 워드마크): 인트로(§3b)의 락업 프레임과 동일해
+// 콜드 부트 전 구간이 한 비주얼로 이어진다. 구형 루프 로더(가는 선 컨투어 드로잉)는
+// 인트로와 톤이 달라 '과거 로고 잔상'으로 보였음(2026-06-12 사용자 보고) — 폐지.
+// 5s 초과 시 느린 연결 캡션, 10s 초과 시 재시도 (§18.2). 표시 타이밍은 SplashHost 가 관리.
 
 import { useEffect, useState } from 'react'
-import { BrandLoader } from './BrandLoader'
+import { ARCH_PATH } from './StayeumWordmark'
 
 export function SplashScreen({ immediate = false }: {
   /** SplashHost 가 자체적으로 300ms 지연을 관리할 때 — 내부 delayed-fallback 생략 */
@@ -35,12 +35,31 @@ export function SplashScreen({ immediate = false }: {
         }
         html.dark [data-splash-bg] { background: var(--cold-bg-dark, #2A1A10) !important; }
         @keyframes splash-caption-in { from { opacity: 0 } to { opacity: 1 } }
+        .sy-splash-lockup { display: flex; align-items: center; gap: 20px; }
+        .sy-splash-mark   { width: 104px; }
+        .sy-splash-wm     { font-size: 44px; }
+        @media (max-width: 639px) {
+          .sy-splash-lockup { flex-direction: column; gap: 14px; }
+          .sy-splash-mark   { width: 88px; }
+          .sy-splash-div    { display: none; }
+          .sy-splash-wm     { font-size: 32px; }
+        }
       `}</style>
       <div data-splash-bg className="absolute inset-0" style={{ background: 'var(--cold-bg, #E8DDD0)' }} />
       {/* 수직 중앙 -8% (시각 중심) */}
       <div className={`${immediate ? '' : 'delayed-fallback '}absolute inset-x-0 flex flex-col items-center`}
         style={{ top: '42%', transform: 'translateY(-50%)', color: 'var(--ink, #3d2418)' }}>
-        <BrandLoader size="lg" />
+        <div className="sy-splash-lockup">
+          <svg viewBox="8 8 113 84" className="sy-splash-mark" style={{ overflow: 'visible', height: 'auto' }} aria-hidden="true">
+            <path d={ARCH_PATH} fill="var(--persimmon, #a03c2e)" />
+          </svg>
+          <div className="sy-splash-div" style={{ width: 1.5, height: 56, background: 'var(--border-s, rgba(61,36,24,.18))' }} />
+          <span className="sy-splash-wm whitespace-nowrap leading-none"
+            style={{ fontFamily: "var(--font-plus-jakarta, 'Plus Jakarta Sans', sans-serif)", letterSpacing: '-0.025em' }}>
+            <span style={{ fontWeight: 300 }}>stay</span>
+            <span style={{ fontWeight: 700, color: 'var(--persimmon, #a03c2e)' }}>eum</span>
+          </span>
+        </div>
         {phase !== 'normal' && (
           <p className="text-[12.5px]" style={{
             marginTop: 24, color: 'var(--ink-s, #7A6553)',
