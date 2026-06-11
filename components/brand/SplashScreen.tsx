@@ -1,12 +1,12 @@
 'use client'
 
 // 일반 모드 스플래시 — 셸 없는 구간(인트로 이후 재발동·소셜 리디렉트·로그아웃) 전용.
-// 비주얼 = 정적 락업(채워진 아치 + 워드마크): 인트로(§3b)의 락업 프레임과 동일해
-// 콜드 부트 전 구간이 한 비주얼로 이어진다. 구형 루프 로더(가는 선 컨투어 드로잉)는
-// 인트로와 톤이 달라 '과거 로고 잔상'으로 보였음(2026-06-12 사용자 보고) — 폐지.
+// 비주얼 = 1회성 드로잉(0–1.0s)→채움(–1.4s)→락업 정지: 인트로(§3b)의 첫 1.4초와 동일 모션.
+// 루프 없음 — '그리다 만' 컨투어 잔상이 안 생기고, 매 표시마다 모션감은 유지.
+// (완전 정적으로 바꿨더니 인트로 외엔 모션이 없다는 피드백 → 1회성 드로잉으로 절충, 2026-06-12)
 // 5s 초과 시 느린 연결 캡션, 10s 초과 시 재시도 (§18.2). 표시 타이밍은 SplashHost 가 관리.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ARCH_PATH } from './StayeumWordmark'
 
 export function SplashScreen({ immediate = false }: {
@@ -14,8 +14,14 @@ export function SplashScreen({ immediate = false }: {
   immediate?: boolean
 }) {
   const [phase, setPhase] = useState<'normal' | 'slow' | 'stalled'>('normal')
+  const pathRef = useRef<SVGPathElement>(null)
+  const [pathLen, setPathLen] = useState(680)
 
   useEffect(() => {
+    if (pathRef.current) {
+      const len = pathRef.current.getTotalLength()
+      if (len > 0) setPathLen(len)
+    }
     const slow = setTimeout(() => setPhase('slow'), 5000)      // --splash-slow
     const stalled = setTimeout(() => setPhase('stalled'), 10000)
     return () => { clearTimeout(slow); clearTimeout(stalled) }
@@ -35,6 +41,26 @@ export function SplashScreen({ immediate = false }: {
         }
         html.dark [data-splash-bg] { background: var(--cold-bg-dark, #2A1A10) !important; }
         @keyframes splash-caption-in { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes sy-splash-arch {
+          0%    { stroke-dashoffset: ${pathLen}; fill-opacity: 0; stroke-opacity: 1; }
+          71.4% { stroke-dashoffset: 0;          fill-opacity: 0; stroke-opacity: 1; }
+          100%  { stroke-dashoffset: 0;          fill-opacity: 1; stroke-opacity: 0; }
+        }
+        .sy-splash-arch {
+          stroke-dasharray: ${pathLen};
+          stroke-dashoffset: ${pathLen};
+          fill-opacity: 0;
+          animation: sy-splash-arch 1400ms cubic-bezier(.65,0,.35,1) forwards;
+        }
+        @keyframes sy-splash-wm-in { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
+        .sy-splash-wm-anim { opacity: 0; animation: sy-splash-wm-in 400ms cubic-bezier(.65,0,.35,1) 1000ms forwards; }
+        @keyframes sy-splash-div-in { from { transform: scaleY(0); opacity: 0; } to { transform: scaleY(1); opacity: 1; } }
+        .sy-splash-div { transform: scaleY(0); opacity: 0; transform-origin: center; animation: sy-splash-div-in 400ms cubic-bezier(.65,0,.35,1) 1000ms forwards; }
+        @media (prefers-reduced-motion: reduce) {
+          .sy-splash-arch { animation: none; stroke-dashoffset: 0; fill-opacity: 1; stroke-opacity: 0; }
+          .sy-splash-wm-anim { animation: none; opacity: 1; }
+          .sy-splash-div { animation: none; transform: scaleY(1); opacity: 1; }
+        }
         .sy-splash-lockup { display: flex; align-items: center; gap: 20px; }
         .sy-splash-mark   { width: 104px; }
         .sy-splash-wm     { font-size: 44px; }
@@ -51,10 +77,12 @@ export function SplashScreen({ immediate = false }: {
         style={{ top: '42%', transform: 'translateY(-50%)', color: 'var(--ink, #3d2418)' }}>
         <div className="sy-splash-lockup">
           <svg viewBox="8 8 113 84" className="sy-splash-mark" style={{ overflow: 'visible', height: 'auto' }} aria-hidden="true">
-            <path d={ARCH_PATH} fill="var(--persimmon, #a03c2e)" />
+            <path ref={pathRef} className="sy-splash-arch" d={ARCH_PATH}
+              fill="var(--persimmon, #a03c2e)" stroke="var(--persimmon, #a03c2e)"
+              strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <div className="sy-splash-div" style={{ width: 1.5, height: 56, background: 'var(--border-s, rgba(61,36,24,.18))' }} />
-          <span className="sy-splash-wm whitespace-nowrap leading-none"
+          <span className="sy-splash-wm-anim sy-splash-wm whitespace-nowrap leading-none"
             style={{ fontFamily: "var(--font-plus-jakarta, 'Plus Jakarta Sans', sans-serif)", letterSpacing: '-0.025em' }}>
             <span style={{ fontWeight: 300 }}>stay</span>
             <span style={{ fontWeight: 700, color: 'var(--persimmon, #a03c2e)' }}>eum</span>
