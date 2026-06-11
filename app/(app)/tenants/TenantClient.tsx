@@ -644,6 +644,7 @@ export default function TenantClient({
     startTransition(async () => {
       const res = await withSave(() => updateTenant(fd), { success: '입주자 정보 수정됨' })
       if (!res.ok) { setError(res.error); return }
+      if (res.notice) pushToast('info', res.notice)
       if (fromDetail) { setDetailTenant(null); setDetailEditMode(false); clearTenantUrlParams() }
       else setEditTenant(null)
       refresh()
@@ -691,6 +692,7 @@ export default function TenantClient({
         if (!refundRes.ok) { setError(refundRes.error); pushToast('error', refundRes.error); return }
         const updateRes = await updateTenant(fd)
         if (!updateRes.ok) { setError(updateRes.error); pushToast('error', updateRes.error); return }
+        if (updateRes.notice) pushToast('info', updateRes.notice)
         setDepositRefundModal(null)
         if (fromDetail) { setDetailTenant(null); setDetailEditMode(false); clearTenantUrlParams() }
         else setEditTenant(null)

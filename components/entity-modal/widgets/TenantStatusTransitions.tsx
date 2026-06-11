@@ -126,6 +126,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
         })
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('success', `${tenantName}님 — ${def.label} 완료`)
+        if (res.notice) pushToast('info', res.notice)
         setActive(null)
         onChange?.()
         // 퇴실 예정일 입력/변경이고 납입일과 가까우면(일할 의미 有) '퇴실 정산?' 팝업.

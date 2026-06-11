@@ -7,7 +7,7 @@ import { useState, useTransition } from 'react'
 import { changeDueDay } from '@/app/(app)/tenants/actions'
 import { calcProRata, PRORATE_BASE_DAYS } from '@/lib/prorate'
 import { Btn } from '@/components/ui/Btn'
-import { withSave } from '@/lib/saveStatus'
+import { withSave, pushToast } from '@/lib/saveStatus'
 
 export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected, currentDueDay, onChange }: {
   leaseTermId: string
@@ -28,7 +28,10 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
     const adjustAmount = calc.type === 'extra' ? -calc.amount : calc.amount
     startTransition(async () => {
       const res = await withSave(() => changeDueDay(leaseTermId, input.trim(), targetMonth, adjustAmount), { success: '납입일 변경됨' })
-      if (res.ok) { setShowForm(false); setInput(''); onChange?.() }
+      if (res.ok) {
+        if (res.notice) pushToast('info', res.notice)
+        setShowForm(false); setInput(''); onChange?.()
+      }
     })
   }
 

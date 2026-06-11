@@ -235,7 +235,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
 }
 
 // 입주자 수정
-export async function updateTenant(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function updateTenant(formData: FormData): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
   try {
   await requireEdit()
   const { propertyId, user } = await getPropertyId()
@@ -297,13 +297,45 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
 
   const currentLease = await prisma.leaseTerm.findUnique({
     where: { id: leaseTermId },
-    select: { roomId: true, status: true, reservationConfirmedAt: true },
+    select: {
+      roomId: true, status: true, reservationConfirmedAt: true,
+      // 퇴실 일할 정산 일관 유지용 — 폼으로 퇴실일/납부일 변경 시 재계산·해제 판단
+      expectedMoveOut: true, dueDay: true,
+      checkoutProratedAmount: true, checkoutProrationUndo: true,
+      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+    },
   })
   if (!currentLease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
   const prevRoomId = currentLease.roomId
   const prevStatus = currentLease.status
   const newRoomId  = roomId || prevRoomId
+
+  // 퇴실 일할 정산 일관 유지 — 편집 폼 경로도 전환 버튼(applyStatusTransition)과 동일 정책.
+  // 정산이 적용된 상태에서 퇴실일만 바꾸면 옛 날짜 기준 일할이 잔존하던 문제의 수정.
+  const prevMoveOutIso = currentLease.expectedMoveOut ? new Date(currentLease.expectedMoveOut).toISOString().slice(0, 10) : null
+  const newMoveOutIso  = expectedMoveOut || null
+  let prorationPatch: Record<string, unknown> = {}
+  let prorationNotice: string | null = null
+  if (currentLease.checkoutProratedAmount != null) {
+    if (status === 'ACTIVE' && prevStatus === 'CHECKOUT_PENDING') {
+      // 거주중 복귀 — 퇴실예정일·정산·스냅샷 정리 (전환 버튼과 동일)
+      prorationPatch = { expectedMoveOut: null, checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull }
+      prorationNotice = '거주중 복귀 — 퇴실 예정일과 적용돼 있던 퇴실 일할 정산을 해제했습니다.'
+    } else if (newMoveOutIso !== prevMoveOutIso || (dueDay || null) !== (currentLease.dueDay ?? null)) {
+      const pr = prorationDataForChange(
+        {
+          rentAmount,
+          checkoutProratedAmount: currentLease.checkoutProratedAmount,
+          checkoutProrationUndo: currentLease.checkoutProrationUndo,
+          discounts: currentLease.discounts,
+        },
+        dueDay || null, newMoveOutIso,
+      )
+      prorationPatch = pr.data
+      prorationNotice = pr.notice
+    }
+  }
 
   // 입주자 정보 수정
   await prisma.tenant.update({
@@ -426,6 +458,8 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
       wishConditions: wishConditions || null,
       keepAlertAfterInquiry,
       visitRoute: visitRoute || null,
+      // 퇴실 일할 정산 패치 — 위 expectedMoveOut 값을 덮어쓸 수 있음(거주중 복귀 시 null 등)
+      ...prorationPatch,
     },
   })
 
@@ -498,7 +532,10 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true } | {
   }
 
   revalidatePath('/tenants')
-  return { ok: true }
+  revalidatePath('/rooms')
+  revalidatePath('/dashboard')
+  revalidatePath('/room-manage')
+  return prorationNotice ? { ok: true, notice: prorationNotice } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -799,13 +836,17 @@ export async function applyStatusTransition(input: {
   moveOutDate?: string | null
   reservationConfirmedAt?: string | null
   rentAmount?: number | null
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId, user } = await getPropertyId()
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: input.leaseTermId },
-      select: { roomId: true, status: true },
+      select: {
+        roomId: true, status: true, dueDay: true, rentAmount: true,
+        checkoutProratedAmount: true, checkoutProrationUndo: true,
+        discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+      },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
@@ -815,18 +856,23 @@ export async function applyStatusTransition(input: {
     if (input.moveOutDate !== undefined)            data.moveOutDate = input.moveOutDate ? new Date(input.moveOutDate) : null
     if (input.reservationConfirmedAt !== undefined) data.reservationConfirmedAt = input.reservationConfirmedAt ? new Date(input.reservationConfirmedAt) : null
     if (input.rentAmount != null)                   data.rentAmount = input.rentAmount
+    let notice: string | null = null
     // 퇴실예정 취소 등으로 거주중 복귀 시 퇴실예정일 + 퇴실 일할 정산(+롤백 스냅샷) 정리
     if (input.toStatus === 'ACTIVE' && input.expectedMoveOut === undefined) {
       data.expectedMoveOut = null
       data.checkoutProratedAmount = null
       data.checkoutProratedMonth = null
       data.checkoutProrationUndo = Prisma.DbNull
-    }
-    // 퇴실 예정일이 바뀌면 기존 일할 정산은 무효(달·일수 달라짐) → 정리 후 위젯에서 재정산
-    if (input.expectedMoveOut !== undefined) {
-      data.checkoutProratedAmount = null
-      data.checkoutProratedMonth = null
-      data.checkoutProrationUndo = Prisma.DbNull
+      if (lease.checkoutProratedAmount != null) notice = '거주중 복귀 — 적용돼 있던 퇴실 일할 정산을 해제했습니다.'
+    } else if (input.expectedMoveOut !== undefined) {
+      // 퇴실 예정일 변경 — 적용된 일할 정산이 있으면 무통보 삭제 대신 새 날짜 기준 재계산
+      // (updateTenant 폼·changeDueDay 와 동일 정책: prorationDataForChange)
+      const pr = prorationDataForChange(
+        { ...lease, rentAmount: input.rentAmount ?? lease.rentAmount },
+        lease.dueDay, input.expectedMoveOut || null,
+      )
+      Object.assign(data, pr.data)
+      notice = pr.notice
     }
 
     await prisma.leaseTerm.update({ where: { id: input.leaseTermId }, data })
@@ -862,7 +908,7 @@ export async function applyStatusTransition(input: {
     revalidatePath('/rooms')
     revalidatePath('/room-manage')
     revalidatePath('/finance')
-    return { ok: true }
+    return notice ? { ok: true, notice } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -1293,20 +1339,32 @@ export async function changeDueDay(
   newDueDay: string,
   targetMonth: string,
   adjustAmount: number, // 양수 = 과입금(환불), 음수 = 추가납부 필요
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
 
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: leaseTermId },
-      select: { dueDay: true, rentAmount: true, tenantId: true },
+      select: {
+        dueDay: true, rentAmount: true, tenantId: true,
+        // 퇴실 일할 정산 재계산용 — 납부일이 바뀌면 일할 기간(납부일~퇴실일)도 달라짐
+        expectedMoveOut: true, checkoutProratedAmount: true, checkoutProrationUndo: true,
+        discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+      },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
+    // 적용된 퇴실 일할 정산이 있으면 새 납부일 기준으로 재계산 (updateTenant·전환 버튼과 동일 정책)
+    const pr = prorationDataForChange(
+      lease,
+      newDueDay.trim() || null,
+      lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
+    )
+
     await prisma.leaseTerm.update({
       where: { id: leaseTermId },
-      data: { dueDay: newDueDay.trim() },
+      data: { dueDay: newDueDay.trim(), ...pr.data },
     })
 
     if (adjustAmount !== 0) {
@@ -1338,7 +1396,7 @@ export async function changeDueDay(
     revalidatePath('/tenants')
     revalidatePath('/rooms')
     revalidatePath('/dashboard')
-    return { ok: true }
+    return pr.notice ? { ok: true, notice: pr.notice } : { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -1372,7 +1430,7 @@ export async function previewCheckoutProration(
     const moveOutMonth = expectedMoveOut.slice(0, 7)
     const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
     const calc = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut)
-    if (!calc) return { ok: false, error: '퇴실일이 납부일 이전이라 일할 청구가 없습니다. (그 기간 미사용)' }
+    if (!calc) return { ok: false, error: '퇴실일이 납부일 이전이라 마지막 기간을 사용하지 않습니다 — 별도 정산 없이 그 달 청구가 자동으로 0원 처리되므로 일할 적용이 필요 없습니다.' }
     return { ok: true, calc, currentDueDay: lease.dueDay }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -1386,6 +1444,53 @@ type CheckoutProrationUndo = {
   prevExpectedMoveOut: string | null   // ISO 'YYYY-MM-DD' or null
   prevAmount: number | null
   prevMonth: string | null
+  // 적용/재계산이 설정한 값 — 적용취소 시 '그 후 수동 수정 여부' 감지용 (구버전 스냅샷엔 없음)
+  appliedMoveOut?: string | null
+  appliedAmount?: number | null
+}
+
+// 적용된 일할 정산의 일관 유지 — 퇴실일/납부일이 바뀌는 모든 경로(고객관리 편집 폼 updateTenant,
+// 전환 버튼 applyStatusTransition, 납입일 영구 변경 changeDueDay)가 이 헬퍼로 같은 결과를 낸다.
+// (경로마다 정산이 잔존/무통보 삭제되던 불일치 해소 — 2026-06-11 점검 후속)
+// 반환: leaseTerm.update 에 합칠 data 조각 + 사용자 안내문.
+function prorationDataForChange(
+  lease: {
+    rentAmount: number
+    checkoutProratedAmount: number | null
+    checkoutProrationUndo: unknown
+    discounts: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[]
+  },
+  newDueDay: string | null,
+  newExpectedMoveOut: string | null,   // 'YYYY-MM-DD' | null
+): { data: Record<string, unknown>; notice: string | null } {
+  if (lease.checkoutProratedAmount == null) return { data: {}, notice: null }   // 정산 미적용
+  if (!newExpectedMoveOut) {
+    return {
+      data: { checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull },
+      notice: '퇴실 예정이 해제되어 적용돼 있던 퇴실 일할 정산도 함께 해제했습니다.',
+    }
+  }
+  const moveOutMonth = newExpectedMoveOut.slice(0, 7)
+  const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
+  const calc = calcCheckoutProration(monthlyRent, newDueDay, newExpectedMoveOut)
+  if (!calc) {
+    return {
+      data: { checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull },
+      notice: '퇴실일이 납부일 이전이 되어 마지막 달 청구가 자동으로 0원 처리됩니다 — 기존 일할 정산은 해제했습니다.',
+    }
+  }
+  const prevUndo = lease.checkoutProrationUndo
+  const undo = prevUndo && typeof prevUndo === 'object'
+    ? { ...(prevUndo as CheckoutProrationUndo), appliedMoveOut: newExpectedMoveOut, appliedAmount: calc.amount }
+    : undefined
+  return {
+    data: {
+      checkoutProratedAmount: calc.amount,
+      checkoutProratedMonth: calc.moveOutMonth,
+      ...(undo ? { checkoutProrationUndo: undo } : {}),
+    },
+    notice: `적용돼 있던 퇴실 일할 정산을 변경된 조건으로 재계산했습니다 — ${calc.daysUsed}일치 ${calc.amount.toLocaleString()}원.`,
+  }
 }
 
 export async function setCheckoutProration(
@@ -1408,16 +1513,18 @@ export async function setCheckoutProration(
     const moveOutMonth = expectedMoveOut.slice(0, 7)
     const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
     const calc = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut)
-    if (!calc) return { ok: false, error: '퇴실일이 납부일 이전이라 일할 청구가 없습니다.' }
+    if (!calc) return { ok: false, error: '퇴실일이 납부일 이전이라 마지막 기간을 사용하지 않습니다 — 별도 정산 없이 그 달 청구가 자동으로 0원 처리되므로 일할 적용이 필요 없습니다.' }
 
     // 적용취소용 직전 스냅샷 — 이미 정산이 적용돼 있으면(재정산) 기존 스냅샷(최초 적용 직전)을 유지해
     // '적용취소' 한 번으로 정산 이전(거주중 등) 원상태까지 되돌아가게 한다.
-    const undo: CheckoutProrationUndo = (lease.checkoutProrationUndo as CheckoutProrationUndo | null) ?? {
+    const undoBase: CheckoutProrationUndo = (lease.checkoutProrationUndo as CheckoutProrationUndo | null) ?? {
       prevStatus: lease.status,
       prevExpectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
       prevAmount: lease.checkoutProratedAmount ?? null,
       prevMonth: lease.checkoutProratedMonth ?? null,
     }
+    // 적용이 설정한 값 기록 — 이후 수동 수정 감지(적용취소가 수동 수정을 덮어쓰지 않게)
+    const undo: CheckoutProrationUndo = { ...undoBase, appliedMoveOut: expectedMoveOut, appliedAmount: calc.amount }
 
     await prisma.leaseTerm.update({
       where: { id: leaseTermId },
@@ -1461,12 +1568,25 @@ export async function clearCheckoutProration(
     const { propertyId, user } = await getPropertyId()
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: leaseTermId },
-      select: { status: true, tenantId: true, checkoutProrationUndo: true },
+      select: {
+        status: true, tenantId: true, checkoutProrationUndo: true,
+        expectedMoveOut: true, checkoutProratedAmount: true,
+      },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
     const undo = lease.checkoutProrationUndo as CheckoutProrationUndo | null
-    if (undo) {
+    // 적용 이후 수동 수정(퇴실일 변경 등) 감지 — 스냅샷 복원이 그 수정을 덮어쓰지 않게,
+    // 수정이 있었으면 일할액만 제거하고 현재 상태·퇴실일은 유지한다.
+    const curMoveOut = lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null
+    const manuallyChanged = !!undo && undo.appliedMoveOut !== undefined
+      && (curMoveOut !== undo.appliedMoveOut || lease.checkoutProratedAmount !== undo.appliedAmount)
+    if (undo && manuallyChanged) {
+      await prisma.leaseTerm.update({
+        where: { id: leaseTermId },
+        data: { checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull },
+      })
+    } else if (undo) {
       // 완전 복원 — 적용 직전 상태로
       await prisma.leaseTerm.update({
         where: { id: leaseTermId },
