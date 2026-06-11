@@ -943,6 +943,9 @@ function SettingsForm({ row, onCancel, onDone }: {
     setUnitPending(false)
     if (!res.ok) { setUnitMsg(res.error); return }
     pushToast('success', `단위를 ${target}로 변경했습니다 (점검 ${res.convertedChecks}건 환산).`)
+    if (res.unitlessReceipts > 0) {
+      pushToast('info', `⚠️ 단위가 비어 있는 과거 영수증 ${res.unitlessReceipts}건은 자동 환산되지 않습니다 — 타임라인에서 해당 구매의 규격 단위를 채워주세요.`)
+    }
     onDone()
   }
 
@@ -1843,10 +1846,15 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
 
   const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
+  // 생성 폼(CheckForm)과 동일한 null-처리 — 빈칸은 0이 아니라 null.
+  // 전·후 모두 입력된 위치만 보충으로 계산해야, '보충 전'을 비워둔 위치가
+  // (후 − 0 = 후 전체)로 잡혀 창고가 전액 차감되는 사고가 없다.
   const restockSum = locationSources.filter(l => !l.isHub).reduce((s, l) => {
-    const b = Number(beforeQtys[l.id] || '0')
-    const a = Number(afterQtys[l.id] || '0')
-    return s + Math.max(0, a - b)
+    const bStr = beforeQtys[l.id] ?? ''
+    const aStr = afterQtys[l.id] ?? ''
+    const b = bStr === '' ? null : Number(bStr)
+    const a = aStr === '' ? null : Number(aStr)
+    return s + ((b !== null && a !== null && a > b) ? a - b : 0)
   }, 0)
 
   // 창고(허브) 행 — '이전 잔량'은 저장된 창고 잔량 + 이 점검의 원래 보충합계로 역산(편집 무관 상수).
@@ -1878,7 +1886,8 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
             if (l.isHub) return { storageLocationId: l.id, qty: hubFinal }
             const before = Number(beforeQtys[l.id] || '0')
             const after = Number(afterQtys[l.id] || '0')
-            const restocked = after > before ? after - before : 0
+            // 보충 전이 빈칸이면 보충 없음(잔량만 기록) — restockSum 과 동일한 null-규칙
+            const restocked = (beforeQtys[l.id] ?? '') !== '' && after > before ? after - before : 0
             return {
               storageLocationId: l.id, qty: after,
               ...(restocked > 0 ? { restockedQty: restocked } : {}),
@@ -2308,15 +2317,18 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
   // 허브의 "보충 후" 자동 계산값 — 사용자가 직접 보정 안 했으면 사용
   const hubAutoAfter = Math.max(0, hubPrev - restockSum)
 
-  // 저장용 위치별 데이터 계산
-  const buildLocationData = (): { storageLocationId: string; qty: number; restockedQty?: number }[] => {
+  // 저장용 위치별 데이터 계산.
+  // entered = 사용자가 실제로 값을 입력한 행 — 0 을 명시 입력해도 저장되게 구분.
+  // (이전엔 qty>0 필터만 있어 명시적 0 이 걸러지고 carryOver 가 이전 잔량으로 되살렸음)
+  const buildLocationData = (): { storageLocationId: string; qty: number; restockedQty?: number; entered: boolean }[] => {
     if (!hasLocations) return []
     if (restockMode) {
       return item.locations.map(l => {
         if (l.isHub) {
           const userVal = afterQtys[l.id]
           const finalQty = (hubTouched && userVal !== undefined && userVal !== '') ? Number(userVal) : hubAutoAfter
-          return { storageLocationId: l.id, qty: finalQty }
+          // 허브는 자동 차감(restockSum>0)이 일어났으면 0 이어도 반드시 저장 — 안 하면 carryOver 가 차감 전 값으로 복원
+          return { storageLocationId: l.id, qty: finalQty, entered: (hubTouched && userVal !== undefined && userVal !== '') || restockSum > 0 }
         }
         const beforeStr = beforeQtys[l.id] ?? ''
         const afterStr  = afterQtys[l.id] ?? ''
@@ -2325,16 +2337,17 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
         // 후만 입력 → 단순 잔량, 보충 없음
         // 전·후 모두 입력 → 보충량 = max(0, 후-전)
         // 전만 입력 → 보충 없이 잔량 = 전
-        // 모두 비움 → qty=0
+        // 모두 비움 → qty=0 (entered=false → 저장 제외, carryOver 보존)
         const finalQty = afterN ?? beforeN ?? 0
         const restocked = (beforeN !== null && afterN !== null && afterN > beforeN) ? afterN - beforeN : undefined
-        return { storageLocationId: l.id, qty: finalQty, restockedQty: restocked }
+        return { storageLocationId: l.id, qty: finalQty, restockedQty: restocked, entered: beforeStr !== '' || afterStr !== '' }
       })
     }
     // 단순 모드 — 첫 점검
     return item.locations.map(l => ({
       storageLocationId: l.id,
       qty: Number(locationQtys[l.id]) || 0,
+      entered: String(locationQtys[l.id] ?? '').trim() !== '',
     }))
   }
 
@@ -2364,7 +2377,10 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
       return
     }
 
-    const locationData = buildLocationData().filter(lq => lq.qty > 0 || lq.restockedQty != null)
+    // 입력된 행(0 포함)·보충 행만 저장 — 빈칸 위치는 제외해 carryOver 가 직전 점검값을 보존
+    const locationData = buildLocationData()
+      .filter(lq => lq.entered || lq.qty > 0 || lq.restockedQty != null)
+      .map(({ entered: _e, ...rest }) => rest)
     const total = locationData.reduce((s, lq) => s + lq.qty, 0)
     if (total < 0) { setError('잔량은 0 이상이어야 합니다.'); return }
 
@@ -2658,10 +2674,13 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
           hubLocationId: hubLoc?.id ?? null,
         }
 
-        // 6h 이내 같은 날 기존 점검 존재 → 자동 머지
+        // 6h 이내 같은 날 기존 점검 존재 → 자동 머지.
+        // 단, 사용자가 점검일을 과거 날짜로 고른 경우(백필)는 머지하지 않음 —
+        // 오늘 점검에 합쳐지면 고른 날짜가 무시되던 문제.
+        const dateIsToday = date === kstYmdStr()
         const sameDay = r.lastCheckId && r.lastCheckCreatedAt && isSameKstDay(new Date(r.lastCheckCreatedAt), new Date())
         const within6h = r.lastCheckCreatedAt && (now - new Date(r.lastCheckCreatedAt).getTime()) < 6 * 3600_000
-        const shouldMerge = forceMerge || (sameDay && within6h)
+        const shouldMerge = dateIsToday && (forceMerge || (sameDay && within6h))
 
         if (shouldMerge && r.lastCheckId) {
           return updateStockCheck(r.lastCheckId, { locationPatch })
@@ -2687,13 +2706,13 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
     const toSave = locItems.filter(isItemDirty)
     if (toSave.length === 0) { setError('저장할 수량이 없습니다.'); return }
 
-    // 같은 날, 6h 초과 → 사용자 확인 필요
+    // 같은 날, 6h 초과 → 사용자 확인 필요 (과거 날짜 백필이면 머지 자체가 없으므로 확인 불필요)
     const now = Date.now()
-    const needsConfirm = toSave.filter(r =>
+    const needsConfirm = date === kstYmdStr() ? toSave.filter(r =>
       r.lastCheckId && r.lastCheckCreatedAt &&
       isSameKstDay(new Date(r.lastCheckCreatedAt), new Date()) &&
       (now - new Date(r.lastCheckCreatedAt).getTime()) >= 6 * 3600_000
-    )
+    ) : []
     if (needsConfirm.length > 0 && mergeChoice === null) {
       setConfirmItems(needsConfirm)
       return
@@ -2983,7 +3002,7 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
   }
 
   const undo = (id: string) => {
-    if (!confirm('이 병합을 해제할까요?\n\n· 합쳐졌던 지출·점검이 원래 품목으로 분리됩니다.\n· 원래 품목 카드가 다시 생깁니다.')) return
+    if (!confirm('이 병합을 해제할까요?\n\n· 합쳐졌던 지출·점검이 원래 품목으로 분리됩니다.\n· 원래 품목 카드가 다시 생깁니다.\n\n⚠️ 카드 병합이었던 경우 위치별 재고 연결·허브(창고) 설정은 복원되지 않아\n해제 후 보관 위치를 다시 지정해야 할 수 있습니다.')) return
     setPendingId(id)
     unmergeTrackedItem(id).then(res => {
       setPendingId(null)

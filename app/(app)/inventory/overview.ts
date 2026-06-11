@@ -101,12 +101,18 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
   // 같은 날 여러 점검 dedup — 가장 늦은 createdAt 만 유효한 점검으로 간주.
   // 사용자가 같은 날 임시 점검 후 확정 점검을 다시 하는 패턴 + 그 사이 큰 잔량 jump 가
   // 가짜 소모로 누적되던 문제 (라면 187 / 쌀 159) 해결.
-  function dedupSameDay<T extends { date: Date; createdAt: Date }>(arr: T[]): T[] {
+  function dedupSameDay<T extends { date: Date; createdAt: Date; isReconcile?: boolean }>(arr: T[]): T[] {
     const map = new Map<string, T>()
     for (const c of arr) {
       const day = `${c.date.getUTCFullYear()}-${c.date.getUTCMonth()}-${c.date.getUTCDate()}`
       const existing = map.get(day)
-      if (!existing || c.createdAt > existing.createdAt) map.set(day, c)
+      if (!existing) { map.set(day, c); continue }
+      const winner = c.createdAt > existing.createdAt ? c : existing
+      // 같은 날에 '전체 보정'이 있었으면 살아남는 점검도 보정으로 취급 —
+      // 보정 후 같은 날 일반/자동수령 점검이 생기면 보정이 통째로 무효화되어
+      // 직전 구간의 분실·오차가 가짜 소모로 잡히던 문제 방지.
+      const hadReconcile = !!existing.isReconcile || !!c.isReconcile
+      map.set(day, hadReconcile && !winner.isReconcile ? { ...winner, isReconcile: true } : winner)
     }
     return Array.from(map.values()).sort((a, b) =>
       a.date.getTime() - b.date.getTime() || a.createdAt.getTime() - b.createdAt.getTime()

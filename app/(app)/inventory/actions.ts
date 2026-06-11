@@ -331,7 +331,7 @@ export async function updateTrackedItem(id: string, data: {
 //  저장된 점검 잔량·위치별 잔량·무상입수량을 배율로 환산하고 specUnit 을 갱신한다.
 //  구매 영수증(Expense)은 각자 단위 유지 — 계산 시점에 새 단위로 자동 환산되므로 건드리지 않는다.
 export async function changeTrackedItemUnit(id: string, newUnit: string): Promise<
-  { ok: true; factor: number; convertedChecks: number } | { ok: false; error: string }
+  { ok: true; factor: number; convertedChecks: number; unitlessReceipts: number } | { ok: false; error: string }
 > {
   try {
     await requireEdit()
@@ -359,9 +359,20 @@ export async function changeTrackedItemUnit(id: string, newUnit: string): Promis
     await scaleStockValues(checkIds, additionIds, factor)
     await prisma.trackedItem.update({ where: { id }, data: { specUnit: canonicalUnit(target) ?? target } })
 
+    // 규격 단위가 비어 있는 과거 영수증 — 계산 시점 자동 환산이 불가능해(어느 단위인지 모름)
+    // 원값 그대로 합산된다. 개수를 알려 사용자가 해당 영수증의 단위를 채우도록 안내.
+    const unitlessReceipts = await prisma.expense.count({
+      where: {
+        propertyId, category: it.category, itemLabel: it.label,
+        ...(it.qtyUnit ? { qtyUnit: it.qtyUnit } : {}),
+        specValue: { not: null },
+        OR: [{ specUnit: null }, { specUnit: '' }],
+      },
+    })
+
     revalidatePath('/inventory')
     revalidatePath('/finance')
-    return { ok: true, factor, convertedChecks: checkIds.length }
+    return { ok: true, factor, convertedChecks: checkIds.length, unitlessReceipts }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -1097,7 +1108,7 @@ export async function updateExpenseFromInventory(id: string, data: {
     }
 
     revalidatePath('/inventory')
-    revalidatePath('/expenses')
+    revalidatePath('/finance')   // 지출 페이지 경로는 /finance ('/expenses' 는 존재하지 않는 경로였음)
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -1106,13 +1117,23 @@ export async function updateExpenseFromInventory(id: string, data: {
 }
 
 export async function excludeExpenseFromInventory(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  return setExpenseInventoryExclusion(id, true)
+}
+
+// 재고 제외 적용취소(다시 포함) — 제외가 일방향이라 실수 시 되돌릴 수 없던 문제의 역방향 액션
+export async function includeExpenseInInventory(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  return setExpenseInventoryExclusion(id, false)
+}
+
+async function setExpenseInventoryExclusion(id: string, exclude: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const e = await prisma.expense.findUnique({ where: { id } })
     if (!e || e.propertyId !== propertyId) return { ok: false, error: '구매 기록을 찾을 수 없습니다.' }
-    await prisma.expense.update({ where: { id }, data: { excludeFromInventory: true } })
+    await prisma.expense.update({ where: { id }, data: { excludeFromInventory: exclude } })
     revalidatePath('/inventory')
+    revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err

@@ -17,6 +17,7 @@ import {
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
   type RecurringExpenseRow,
 } from '@/app/(app)/settings/actions'
+import { includeExpenseInInventory } from '@/app/(app)/inventory/actions'
 import { useRouter } from 'next/navigation'
 import { recordDepositReceived } from '@/app/(app)/rooms/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -53,6 +54,7 @@ type Expense = {
   specValue: number | null; specUnit: string | null
   qtyValue: number | null; qtyUnit: string | null
   orderId: string | null; isShipping: boolean
+  excludeFromInventory: boolean   // 재고 계산 제외 — 상세에서 '다시 포함' 제공
   order: { id: string; code: string; shippingType: string | null; shippingMemo: string | null } | null
   createdAt: Date  // 같은 날짜 정렬 보조 (최근 입력 우선)
 }
@@ -2867,6 +2869,21 @@ export default function FinanceClient({
                       <a href={detailExp.receiptUrl} target="_blank" rel="noopener noreferrer">
                         <img src={detailExp.receiptUrl} className="rounded-xl border border-[var(--warm-border)] w-full max-h-48 object-contain" alt="영수증" />
                       </a>
+                    </div>
+                  )}
+                  {/* 재고 계산 제외 상태 — 적용취소(다시 포함) 제공 */}
+                  {detailExp.excludeFromInventory && !detailExp.isShipping && detailExp.itemLabel && (
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--warm-border)]/50">
+                      <span className="text-[0.625rem] text-[var(--warm-muted)]">이 구매는 재고 계산에서 제외돼 있습니다.</span>
+                      <button onClick={() => startTransition(async () => {
+                        const r = await includeExpenseInInventory(detailExp.id)
+                        if (!r.ok) { pushToast('error', r.error); return }
+                        pushToast('success', '재고 계산에 다시 포함됨'); router.refresh()
+                        setDetailExp({ ...detailExp, excludeFromInventory: false })
+                      })} disabled={isPending}
+                        className="shrink-0 px-2.5 py-1 text-[0.625rem] font-medium rounded-lg border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--canvas)] transition-colors disabled:opacity-40">
+                        다시 포함
+                      </button>
                     </div>
                   )}
                   {/* 배송비(합배송 등) 관리는 [수정]에서 일괄 — 안내만 */}
