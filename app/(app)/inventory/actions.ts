@@ -642,6 +642,43 @@ function applyTransfers(lqs: LocQty[]): LocQty[] {
   return adj
 }
 
+// 직전 점검 이후 들어온 입수(StockAddition, 무상 입수 등)를 위치별로 합산.
+// 위치별/부분 점검의 carry-over 가 직전 점검 값을 그대로 복사하면 그 사이 입수분이
+// 새 기준선에서 증발하고 사용량 계산에선 가짜 소모로 둔갑한다(2026-06-11 쌀 +30kg 사례).
+// 경계는 overview 현재고 계산(sumAdditions(last.date,…,last.createdAt))과 동일 —
+// 화면 잔량과 점검 base 가 같은 입수를 본다. 위치 미지정 입수는 품목 허브(폴백: 영업장 기본 허브)로.
+async function additionsSinceCheckByLocation(
+  trackedItemId: string,
+  last: { date: Date; createdAt: Date } | null,
+  hubLocationId: string | null,
+  propertyId: string,
+): Promise<Map<string, number>> {
+  if (!last) return new Map()
+  const adds = await prisma.stockAddition.findMany({
+    where: {
+      trackedItemId,
+      OR: [
+        { date: { gt: last.date } },
+        { AND: [{ date: { equals: last.date } }, { createdAt: { gt: last.createdAt } }] },
+      ],
+    },
+    select: { addedQty: true, storageLocationId: true },
+  })
+  if (adds.length === 0) return new Map()
+  let hub = hubLocationId
+  if (!hub) {
+    const def = await prisma.storageLocation.findFirst({ where: { propertyId, isHub: true }, select: { id: true } })
+    hub = def?.id ?? null
+  }
+  const map = new Map<string, number>()
+  for (const a of adds) {
+    const loc = a.storageLocationId ?? hub
+    if (!loc) continue
+    map.set(loc, (map.get(loc) ?? 0) + a.addedQty)
+  }
+  return map
+}
+
 export async function createStockCheck(data: {
   trackedItemId: string; date: string; remainingQty: number; memo?: string
   locationQtys?: LocQty[]
@@ -668,6 +705,14 @@ export async function createStockCheck(data: {
         include: { locationBreakdown: true },
       })
       const base = (lastCheck?.locationBreakdown ?? []).map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty }))
+      // 직전 점검 이후 입수분을 base 에 반영 — 실측한 위치(checkedLocationId)는
+      // applyLocationCheck 가 실측값으로 덮어쓰므로 영향 없음(실측 우선)
+      const addMap = await additionsSinceCheckByLocation(data.trackedItemId, lastCheck, it.hubLocationId, propertyId)
+      for (const [loc, q] of addMap) {
+        const row = base.find(b => b.locationId === loc)
+        if (row) row.qty += q
+        else base.push({ locationId: loc, qty: q })
+      }
       patchedQtys = applyLocationCheck(base, data.locationPatch)
     }
     let effectiveLocationQtys = patchedQtys ?? data.locationQtys
@@ -680,9 +725,17 @@ export async function createStockCheck(data: {
       })
       if (lastCheck?.locationBreakdown && lastCheck.locationBreakdown.length > 0) {
         const inputLocIds = new Set(effectiveLocationQtys.map(lq => lq.storageLocationId))
+        // 직전 점검 이후 입수분을 이월값에 반영 — 사용자가 실측한 위치는 제외(실측 우선)
+        const addMap = await additionsSinceCheckByLocation(data.trackedItemId, lastCheck, it.hubLocationId, propertyId)
         const carryOver = lastCheck.locationBreakdown
           .filter(lb => !inputLocIds.has(lb.storageLocationId))
-          .map(lb => ({ storageLocationId: lb.storageLocationId, qty: lb.remainingQty }))
+          .map(lb => ({ storageLocationId: lb.storageLocationId, qty: lb.remainingQty + (addMap.get(lb.storageLocationId) ?? 0) }))
+        // 직전 점검에 없던 위치로 입수가 들어온 경우 — 실측에도 없으면 이월 항목으로 추가
+        for (const [loc, q] of addMap) {
+          if (!inputLocIds.has(loc) && !carryOver.some(co => co.storageLocationId === loc)) {
+            carryOver.push({ storageLocationId: loc, qty: q })
+          }
+        }
         effectiveLocationQtys = [...effectiveLocationQtys, ...carryOver]
       }
     }
@@ -794,6 +847,13 @@ export async function updateStockCheck(id: string, data: {
     let patchedQtys: LocQty[] | null = null
     if (data.locationPatch) {
       const base = c.locationBreakdown.map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty }))
+      // 이 점검 생성 이후 들어온 입수분을 base 에 반영 (createStockCheck 와 동일 규칙)
+      const addMap = await additionsSinceCheckByLocation(c.trackedItemId, c, c.trackedItem.hubLocationId, propertyId)
+      for (const [loc, q] of addMap) {
+        const row = base.find(b => b.locationId === loc)
+        if (row) row.qty += q
+        else base.push({ locationId: loc, qty: q })
+      }
       patchedQtys = applyLocationCheck(base, data.locationPatch)
     }
     const effectiveLocationQtys = patchedQtys ?? data.locationQtys
