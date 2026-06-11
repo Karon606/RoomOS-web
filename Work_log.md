@@ -3,6 +3,10 @@
 마지막 업데이트: 2026-06-11
 브랜치: main
 
+## 2026-06-11 (이어서) — v1.3.1 §18 콜드 스타트 로딩 체계 반영 (`a24f90f`) + 재고 carry-over 입수 증발 버그 (`c79e18c`) [둘 다 배포, SQL 불필요]
+**§18 (Claude Design 추보 수령 → [docs/brand-guide-v1.3.md](docs/brand-guide-v1.3.md)에 §18 추가)**: 판정 기준 "셸이 살아있으면 스켈레톤, 없으면 브랜드 로더 — 동시 금지". ① AppShell 의 라우트 전환 브랜드 로더 오버레이(PageLoadingOverlay) **폐지**(이중 발동 제거) ② 스플래시 §18.2 스펙(배경 --cold-bg=page·다크 #2A1A10·-8% 시각중심·5s 느린연결 캡션·10s 재시도) ③ `.delayed-fallback`(300ms 표시 지연 — 스플래시·스켈레톤) ④ FOUC 인라인 CSS + theme-color 라이트/다크 분기 ⑤ 로그인 버튼 스피너. **보류**: 퇴장 크로스페이드 400ms·최소 유지 1000ms(전환 오케스트레이션 필요), 소셜 리디렉트 스플래시.
+**재고 버그(사용자 발견, 쌀 +30kg 증발)**: 위치별/부분 점검 carry-over 가 미실측 위치를 '직전 점검 값 그대로' 복사 → 그 사이 무상 입수가 새 기준선에서 증발 + 사용량 계산에선 가짜 소모("2일간 37kg"·소진임박 오경보). additionsSinceCheckByLocation 신설(경계=overview 현재고 계산과 동일), createStockCheck 2경로+updateStockCheck 머지에 반영(실측 위치는 실측 우선). 쌀 6/11 점검 교정 적용 완료(창고 43.2→73.2, 총 52.2→82.2, [scripts/fix-rice-0611-check.ts](scripts/fix-rice-0611-check.ts)). 구매는 [수령 자동] 점검이 있어 무관 — 무상 입수만 해당이었음.
+
 ## 2026-06-11 (이어서) — 브랜드가이드 v1.3 (인터랙션 확장판) 1차 반영 [SQL 불필요]
 Claude Design 의뢰([docs/design-brief-v1.3-request.md](docs/design-brief-v1.3-request.md)) → 결과 가이드 [docs/brand-guide-v1.3.md](docs/brand-guide-v1.3.md) 수령·저장. 마이그레이션 우선순위(§9→§12→§11→§13→§14) 1차 반영. tsc·build 통과.
 - **토큰**: globals.css 에 v1.3 전체 토큰 추가 — z 위계 11종(--z-sticky 100~--z-loader 500)·confirm·toast·input·viz-1~8·progress.
