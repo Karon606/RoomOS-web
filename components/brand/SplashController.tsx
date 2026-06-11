@@ -60,6 +60,12 @@ export function SplashHost() {
       typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
     hostListener = (on) => {
+      if (on && introRef.current && phaseRef.current === 'visible') {
+        // 인트로 재생 중 새 로딩 신호 — 인트로 유지, 예약된 자가 퇴장만 취소
+        // (퇴장은 off 신호가 INTRO 완주 기준으로 처리)
+        clear()
+        return
+      }
       clear()
       if (on) {
         if (!introSeen()) {
@@ -88,7 +94,25 @@ export function SplashHost() {
         }, wait))
       }
     }
-    if (lastSignal) hostListener(true)
+    // 콜드 부트 자가 발동 — 서버가 페이지를 suspend 없이 즉시 렌더하면 loading.tsx(Gate)가
+    // 아예 마운트되지 않아 신호만 기다려선 인트로가 영영 안 뜬다. 세션 첫 하이드레이션 시
+    // Host 가 스스로 인트로를 재생하고, 진행 중 로딩(Gate 신호)이 없으면 3200ms 완주 후 퇴장.
+    if (!introSeen()) {
+      markIntroSeen()
+      introRef.current = true; setIntroMode(true)
+      shownAt.current = Date.now()
+      go('visible')
+      if (!lastSignal) {
+        const hold = reducedMotion() ? 0 : INTRO
+        timers.current.push(setTimeout(() => {
+          go('fading')
+          timers.current.push(setTimeout(() => go('off'), FADE))
+        }, hold))
+      }
+      // lastSignal === true 면 Gate 의 off 신호가 INTRO 완주 기준으로 퇴장 처리
+    } else if (lastSignal) {
+      hostListener(true)
+    }
     return () => { hostListener = null; clear() }
   }, [])
 
