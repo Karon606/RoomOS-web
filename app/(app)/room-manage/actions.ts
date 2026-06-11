@@ -179,8 +179,11 @@ export async function updateRoom(formData: FormData) {
   revalidatePath('/tenants')
 }
 
-// 호실 삭제
-export async function deleteRoom(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+// 호실 삭제 — 과거 계약·수납(매출) 기록까지 연쇄 영구 삭제되므로,
+// 이력이 있으면 1차 호출은 건수를 알려주며 거부하고 force 재호출에서만 실제 삭제(정보 동의 단계).
+export async function deleteRoom(id: string, opts?: { force?: boolean }): Promise<
+  { ok: true } | { ok: false; error: string; needsForce?: boolean; leases?: number; payments?: number }
+> {
   try {
   await requireEdit()
 
@@ -191,6 +194,18 @@ export async function deleteRoom(id: string): Promise<{ ok: true } | { ok: false
     },
   })
   if (activeLeases > 0) return { ok: false, error: '거주중인 입주자가 있어 삭제할 수 없습니다.' }
+
+  // 과거 이력 확인 — 복구 불가 삭제임을 건수와 함께 동의받는다
+  const pastLeaseIds = await prisma.leaseTerm
+    .findMany({ where: { roomId: id }, select: { id: true } })
+    .then(ls => ls.map(l => l.id))
+  if (pastLeaseIds.length > 0 && !opts?.force) {
+    const payments = await prisma.paymentRecord.count({ where: { leaseTermId: { in: pastLeaseIds } } })
+    return {
+      ok: false, needsForce: true, leases: pastLeaseIds.length, payments,
+      error: `과거 계약 ${pastLeaseIds.length}건·수납 기록 ${payments}건이 함께 영구 삭제됩니다.`,
+    }
+  }
 
   // Drive 파일 정리
   const photos = await prisma.roomPhoto.findMany({ where: { roomId: id }, select: { driveFileId: true } })
@@ -436,33 +451,48 @@ export async function batchUpdateRooms(
     windowType?: string | null
     direction?: string | null
   },
-): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+): Promise<{ ok: true; count: number; skippedNegotiated?: number } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
     if (roomIds.length === 0) return { ok: false, error: '선택된 호실이 없습니다.' }
     if (Object.keys(data).length === 0) return { ok: false, error: '변경할 항목이 없습니다.' }
 
+    // baseRent 동기화 판정용 — 변경 전 기준가 확보 (updateMany 가 덮어쓰기 전에)
+    const prevRents = data.baseRent != null
+      ? await prisma.room.findMany({ where: { id: { in: roomIds }, propertyId }, select: { id: true, baseRent: true } })
+      : []
+
     const r = await prisma.room.updateMany({
       where: { id: { in: roomIds }, propertyId },
       data,
     })
 
-    // baseRent 변경 시 활성 계약의 rentAmount 동기화
+    // baseRent 변경 시 활성 계약의 rentAmount 동기화 — 단, 계약별 협의 임대료
+    // (방 기준가와 다르게 설정된 rentAmount)는 덮어쓰지 않는다. 일괄 변경이
+    // 개별 협의가를 흔적 없이 지우던 문제 방지.
+    let skippedNegotiated = 0
     if (data.baseRent != null) {
-      await prisma.leaseTerm.updateMany({
-        where: {
-          roomId: { in: roomIds },
-          status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] },
-        },
-        data: { rentAmount: data.baseRent },
-      })
+      for (const room of prevRents) {
+        const synced = await prisma.leaseTerm.updateMany({
+          where: {
+            roomId: room.id,
+            status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] },
+            rentAmount: room.baseRent,   // 기준가 그대로 쓰던 계약만 따라감
+          },
+          data: { rentAmount: data.baseRent },
+        })
+        const total = await prisma.leaseTerm.count({
+          where: { roomId: room.id, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        })
+        skippedNegotiated += total - synced.count
+      }
     }
 
     revalidatePath('/room-manage')
     revalidatePath('/rooms')
     revalidatePath('/tenants')
-    return { ok: true, count: r.count }
+    return { ok: true, count: r.count, skippedNegotiated }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

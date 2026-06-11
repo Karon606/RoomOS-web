@@ -825,6 +825,14 @@ export default function TenantClient({
     setDeleteTarget(null)
     startTransition(async () => {
       const res = await withSave(() => deleteTenant(id), { success: `${name}님 삭제됨` })
+      // 계약·수납 이력이 있으면 건수를 보여주는 2차 동의 후에만 영구 삭제
+      if (!res.ok && res.needsForce) {
+        if (!confirm(`⚠️ ${res.error}\n\n매출 통계·과거 조회에서도 사라지며 복구할 수 없습니다.\n그래도 삭제할까요?`)) return
+        const res2 = await withSave(() => deleteTenant(id, { force: true }), { success: `${name}님 삭제됨` })
+        if (!res2.ok) { setError(res2.error); return }
+        setDetailTenant(null); refresh()
+        return
+      }
       if (!res.ok) { setError(res.error); return }
       setDetailTenant(null); refresh()
     })

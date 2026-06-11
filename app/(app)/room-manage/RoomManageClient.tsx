@@ -68,7 +68,8 @@ function getRoomStatus(r: Room): RoomStatus {
   if (!lease)
     return { label: '공실', kind: 'vacant', badge: null }
   if (lease.status === 'RESERVED')
-    return { label: '예약', kind: 'vacant', badge: { tone: 'movein', label: '입실 예정' } }
+    // 라벨 '예약' 통일 — 수납(rooms)·고객관리·lib/statusColors 와 동일 용어 (화면마다 '입실 예정/예약' 혼용 제거)
+    return { label: '예약', kind: 'vacant', badge: { tone: 'movein', label: '예약' } }
   if (lease.status === 'CHECKOUT_PENDING')
     return { label: '퇴실 예정', kind: 'resident', badge: { tone: 'exit', label: '퇴실 예정' } }
   return { label: '거주중', kind: 'resident', badge: null }
@@ -200,12 +201,18 @@ export default function RoomManageClient({
   const [addNrDateVal, setAddNrDateVal]   = useState('')
 
   // URL ?roomId=xxx 자동 열기 — ?edit=1 면 편집 폼, 아니면 Prism 셸의 호실 면.
+  // handledOpenRef: 같은 요청은 1회만 처리 — initialRooms 갱신(저장 후 refresh)마다
+  // effect 가 재실행되며 닫은 폼이 옛 데이터로 재오픈되던 레이스 방지(고객관리 edit=1 버그와 동일 패턴).
   const searchParams = useSearchParams()
+  const handledOpenRef = useRef<string | null>(null)
   useEffect(() => {
     const roomId = searchParams.get('roomId')
-    if (!roomId) return
+    if (!roomId) { handledOpenRef.current = null; return }
+    const key = `${roomId}:${searchParams.get('edit') ?? ''}`
+    if (handledOpenRef.current === key) return
     const found = initialRooms.find(r => r.id === roomId)
     if (!found) return
+    handledOpenRef.current = key
     if (searchParams.get('edit') === '1') openEdit(found)
     else entityModal.open({ kind: 'room', roomId })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1225,6 +1232,9 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
     setPending(false)
     if (!res.ok) { setError(res.error); return }
     pushToast('success', `${res.count}개 호실 업데이트 완료`)
+    if ((res.skippedNegotiated ?? 0) > 0) {
+      pushToast('info', `협의 임대료(기준가와 다른 금액) 계약 ${res.skippedNegotiated}건은 덮어쓰지 않았습니다 — 필요하면 고객관리에서 개별 변경하세요.`)
+    }
     onDone()
   }
 

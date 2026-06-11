@@ -110,6 +110,13 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
     if (!confirm(`${fmtRoomNo(links.roomNo)} 호실을 삭제할까요? 되돌릴 수 없습니다.`)) return
     startTransition(async () => {
       const res = await withSave(() => deleteRoom(links.roomId!), { success: '삭제됨' })
+      // 과거 계약·수납 이력이 있으면 건수를 보여주는 2차 동의 후에만 영구 삭제
+      if (!res.ok && res.needsForce) {
+        if (!confirm(`⚠️ ${res.error}\n\n매출 통계·과거 조회에서도 사라지며 복구할 수 없습니다.\n그래도 삭제할까요?`)) return
+        const res2 = await withSave(() => deleteRoom(links.roomId!, { force: true }), { success: '삭제됨' })
+        if (res2.ok) { onClose(); router.refresh() }
+        return
+      }
       if (res.ok) { onClose(); router.refresh() }
     })
   }
@@ -126,6 +133,13 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
     if (!confirm(`${links.tenantName ?? '이 고객'}을 삭제할까요? 되돌릴 수 없습니다.`)) return
     startTransition(async () => {
       const res = await withSave(() => deleteTenant(links.tenantId!), { success: '삭제됨' })
+      // 계약·수납 이력이 있으면 건수를 보여주는 2차 동의 후에만 영구 삭제
+      if (!res.ok && res.needsForce) {
+        if (!confirm(`⚠️ ${res.error}\n\n매출 통계·과거 조회에서도 사라지며 복구할 수 없습니다.\n그래도 삭제할까요?`)) return
+        const res2 = await withSave(() => deleteTenant(links.tenantId!, { force: true }), { success: '삭제됨' })
+        if (res2.ok) { onClose(); router.refresh() }
+        return
+      }
       if (res.ok) { onClose(); router.refresh() }
     })
   }

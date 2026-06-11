@@ -104,7 +104,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
           }
         }
         if (payMethod) localStorage.setItem('stayeum-last-pay-method', payMethod)
-        pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨' : '월세 수납됨')
+        pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨' : '월 이용료 수납됨')
         // 폼 리셋
         setPayAmount(0); setForcedTm('auto'); setIsDepositMode(false); setIsCleaningFeeMode(false); setMemo('')
         setPayDateVal(kstYmdStr())

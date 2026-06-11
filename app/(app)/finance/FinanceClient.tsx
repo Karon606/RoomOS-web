@@ -1832,7 +1832,12 @@ export default function FinanceClient({
     const [y, mo] = m.split('-')
     return `${y.slice(2)}년 ${parseInt(mo)}월`
   }
-  const totalDepositBalance = depositSummary.reduce((s, d) => s + d.balance, 0)
+  // 대시보드 '보유 보증금'과 동일 기준(거주중: ACTIVE·CHECKOUT_PENDING)으로 합계 —
+  // RESERVED(입실 전) 잔고까지 합산해 두 화면의 보유 보증금이 다르게 보이던 문제.
+  // 목록에는 전 상태 노출 유지(원장 성격), 합계만 기준 통일.
+  const totalDepositBalance = depositSummary
+    .filter(d => d.status === 'ACTIVE' || d.status === 'CHECKOUT_PENDING')
+    .reduce((s, d) => s + d.balance, 0)
   const TABS: { key: Tab; label: string }[] = [
     { key: 'expense', label: `지출 내역${recUnrecordedCount > 0 ? ` (고정 ${recUnrecordedCount}건 미확인)` : ''}` },
     { key: 'income',  label: '부가 수익' },

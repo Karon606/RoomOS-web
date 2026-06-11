@@ -1188,10 +1188,27 @@ JSON 스키마 (모든 필드 선택, 추출 못 한 건 생략):
   }
 }
 
-// 입주자 삭제
-export async function deleteTenant(tenantId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+// 입주자 삭제 — 계약·수납(매출) 이력까지 연쇄 영구 삭제되므로,
+// 이력이 있으면 1차 호출은 건수를 알려주며 거부하고 force 재호출에서만 실제 삭제(정보 동의 단계).
+export async function deleteTenant(tenantId: string, opts?: { force?: boolean }): Promise<
+  { ok: true } | { ok: false; error: string; needsForce?: boolean; leases?: number; payments?: number }
+> {
   try {
     await requireEdit()
+
+    // 이력 확인 — 복구 불가 삭제임을 건수와 함께 동의받는다
+    if (!opts?.force) {
+      const [leases, payments] = await Promise.all([
+        prisma.leaseTerm.count({ where: { tenantId } }),
+        prisma.paymentRecord.count({ where: { tenantId } }),
+      ])
+      if (payments > 0 || leases > 0) {
+        return {
+          ok: false, needsForce: true, leases, payments,
+          error: `계약 ${leases}건·수납 기록 ${payments}건이 함께 영구 삭제됩니다.`,
+        }
+      }
+    }
 
     // 활성 계약이 있으면 해당 호실을 공실로 전환 (단, 다른 입주자/비거주자가 남아있으면 제외)
     const activeLeases = await prisma.leaseTerm.findMany({

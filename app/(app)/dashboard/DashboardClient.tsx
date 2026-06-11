@@ -82,8 +82,9 @@ const DASH_DIR_LABEL: Record<string, string> = {
   NORTH: '북향', NORTH_EAST: '북동향', EAST: '동향', SOUTH_EAST: '남동향',
   SOUTH: '남향', SOUTH_WEST: '남서향', WEST: '서향', NORTH_WEST: '북서향',
 }
+// RESERVED 라벨 '예약' 통일 — 수납·호실관리·고객관리·lib/statusColors 와 동일 용어
 const DASH_STATUS_LABEL: Record<string, string> = {
-  ACTIVE: '거주중', RESERVED: '입실 예정', CHECKOUT_PENDING: '퇴실 예정',
+  ACTIVE: '거주중', RESERVED: '예약', CHECKOUT_PENDING: '퇴실 예정',
 }
 
 // ── 재무/통계 상수 ───────────────────────────────────────────────
@@ -1008,7 +1009,7 @@ function TenantsTab({ data }: { data: DashboardData }) {
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard label={`전체 입주자 (현재 계약 기준)`} value={`${data.totalTenants}명`} sub="" />
         <StatCard label="거주중"    value={`${data.statusCounts.active}명`}      sub=""  colorStyle={{ color: STATUS_COLORS.active }} />
-        <StatCard label="입실 예정" value={`${data.statusCounts.reserved}명`}    sub=""  colorStyle={{ color: STATUS_COLORS.reserved }} />
+        <StatCard label="예약" value={`${data.statusCounts.reserved}명`}    sub=""  colorStyle={{ color: STATUS_COLORS.reserved }} />
         <StatCard label="퇴실 예정" value={`${data.statusCounts.checkout}명`}    sub=""  colorStyle={{ color: STATUS_COLORS.checkout }} />
         <StatCard label="비거주자"  value={`${data.statusCounts.nonResident}명`} sub=""  colorStyle={{ color: STATUS_COLORS.nonResident }} />
         <StatCard label="투어 대기" value={`${data.statusCounts.waitingTour}명`} sub=""  colorStyle={{ color: '#a855f7' }} />
@@ -1036,7 +1037,7 @@ function TenantsTab({ data }: { data: DashboardData }) {
           <div className="flex items-center gap-4">
             <DonutChart segments={statusSegments} centerLabel={`${statusTotal}명`} centerSub="입주자" />
             <div className="space-y-2.5 flex-1">
-              {[{ label: '거주중', count: data.statusCounts.active, color: STATUS_COLORS.active }, { label: '입실 예정', count: data.statusCounts.reserved, color: STATUS_COLORS.reserved }, { label: '퇴실 예정', count: data.statusCounts.checkout, color: STATUS_COLORS.checkout }].map(s => (
+              {[{ label: '거주중', count: data.statusCounts.active, color: STATUS_COLORS.active }, { label: '예약', count: data.statusCounts.reserved, color: STATUS_COLORS.reserved }, { label: '퇴실 예정', count: data.statusCounts.checkout, color: STATUS_COLORS.checkout }].map(s => (
                 <div key={s.label} className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} />
                   <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{s.label}</span>
@@ -1715,7 +1716,7 @@ type TenantQuickInfo = Awaited<ReturnType<typeof getTenantQuickInfo>>
 
 const GENDER_LABEL_KO: Record<string, string> = { MALE: '남성', FEMALE: '여성', OTHER: '기타', UNKNOWN: '미기재' }
 const CONTACT_LABEL: Record<string, string> = { PHONE: '전화', EMAIL: '이메일', KAKAO: '카카오', OTHER: '기타' }
-const LEASE_STATUS_LABEL: Record<string, string> = { ACTIVE: '거주중', RESERVED: '입실 예정', CHECKOUT_PENDING: '퇴실 예정' }
+const LEASE_STATUS_LABEL: Record<string, string> = { ACTIVE: '거주중', RESERVED: '예약', CHECKOUT_PENDING: '퇴실 예정' }
 
 function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: () => void }) {
   const [info, setInfo] = useState<TenantQuickInfo>(null)
