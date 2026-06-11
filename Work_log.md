@@ -1,7 +1,19 @@
 # 스테이음 작업 로그
 
-마지막 업데이트: 2026-06-10
+마지막 업데이트: 2026-06-11
 브랜치: main
+
+## 2026-06-11 — 전수 점검(43건 확정) 후 충돌·혼란 수정 6단계 일괄 [코드 완료·로컬 커밋, ⚠️미푸시·SQL 불필요]
+**점검**: 멀티에이전트 감사(8개 차원 → 적대적 검증)로 43건 확정 — 전체 상세 [docs/audit-ux-conflicts-2026-06-11.md](docs/audit-ux-conflicts-2026-06-11.md). 재작업 방지 순서(헬퍼 추출→쓰기 측→폼 통합→표시층)로 수정.
+**커밋 6개**: `8ef6705`(청구) `89d5323`(퇴실정산) `c517382`(배송비) `38294ed`(재고) `040fb5b`(삭제안전망·라벨) `e289e69`(모달·네비). 전부 tsc·build 통과. **스키마 변경 없음 — SQL 불필요, 바로 배포 가능.**
+- **청구 코어(`8ef6705`)**: 신규 [lib/billing.ts](lib/billing.ts) — 일할→락인→할인 우선순위·퇴실월 컷·checkoutNoBilling·만기 환산을 단일 헬퍼로. rooms·dashboard page·unpaid.ts 3엔진 + **쓰기 경로**(savePayment가 클라 원금 대신 서버 계산 청구액을 락인 — 할인 입주자 영구 미납 버그 근본 수정) + updatePayment/deletePayment/보증금 초과분 재계산 동일 규칙. 수납 CRUD에 revalidatePath 추가. 시작월 2000-01 폭주 → viewMonth 폴백.
+  ⚠️ **과거 데이터 교정 대기**: [scripts/fix-discount-locked-expected.ts](scripts/fix-discount-locked-expected.ts) 진단 결과 **421호 이종현 4·5월 2건**(락인 43만 vs 할인가 41만, 완납 43만). 교정(--apply) 시 월 2만 선납 크레딧 발생 — 소급 할인 적용 여부는 사용자 판단.
+- **퇴실 정산 일원화(`89d5323`)**: prorationDataForChange 헬퍼 — updateTenant 폼/전환 버튼/changeDueDay 모두 퇴실일·납부일 변경 시 적용된 정산을 **재계산**(불가하면 해제+notice 토스트). 거주중 복귀 시 정리 동일화. 적용취소는 적용 후 수동 수정 감지(undo.applied*) 시 일할만 제거. 교차월 퇴실 오류문구 명확화(그 달 자동 0원).
+- **배송비(`c517382`)**: 신규 폼필드 shippingIncluded — '품목 2개+ + 배송비 포함' 항상 저장 실패 버그 근본 수정(다중 품목은 배송비 별도 행으로 분리 → 단가 왜곡 제거). 수정 프리필이 detail의 '배송비 N원' 복원(이중 합산·표기 소실 해소). isShipping 라인 수정 가드(오류+반쪽 저장·settleStatus 뒤집힘 방지). **신규 detachShippingFromOrder**(묶기 해제=적용취소) + deleteExpense 주문 고아 정리. 등록 폼을 수정 폼과 동일한 단일 배송비 섹션으로 통일(기본 선불).
+- **재고(`38294ed`)**: 점검 폼 명시적 0 입력이 carryOver로 되살아나던 버그(entered 플래그). CheckEditForm 빈 보충전→허브 전액 차감(생성 폼과 null-규칙 통일). dedupSameDay가 같은 날 전체 보정을 무효화(승계). 6h 자동 머지가 과거 점검일(백필) 무시(머지 제외). 단위 변환 시 단위 없는 영수증 경고. 병합 해제 confirm에 위치 유실 경고. **신규 includeExpenseInInventory**(재고 제외 적용취소+버튼). '/expenses' revalidate 오타→'/finance'.
+- **삭제 안전망·라벨(`040fb5b`)**: deleteRoom/deleteTenant — 이력 있으면 계약·수납 건수 보여주는 **2차 동의(force) 후에만** 영구 삭제. batchUpdateRooms가 협의 임대료 덮어쓰지 않음(기준가 동일 계약만 동기화+건너뜀 안내). room-manage edit=1 handledOpenRef 가드(재오픈 레이스). RESERVED 라벨 '예약' 통일(호실관리·대시보드 4곳). finance 보증금 탭 합계를 대시보드 기준(ACTIVE·CHECKOUT_PENDING)으로. '월세 수납됨'→'월 이용료 수납됨'.
+- **모달·네비(`e289e69`)**: 알림벨 같은 페이지 무반응(push+refresh). 페이지 이동 시 전역 모달 정리(뒤로가기 잔존·스크롤 점프). openCheckoutProration 시드 1회성. 공용 Modal Esc 닫기(중첩 시 최상단만). useUrlState 스테일 params 레이스. accrual-check 귀속월 이동 revalidate.
+- **보류(다음 작업 후보)**: ① [미납][퇴실 예정] 2뱃지 C안을 호실관리·대시보드 방현황에 확산(수납 상태 데이터 파이프 필요) ② 대시보드 상태색 hex → StatusBadge 토큰 통일(차트 연동 검토) ③ 이종현 락인 교정 실행 여부 ④ 감사 보고서의 나머지 low 항목.
 
 ## 2026-06-10 — 퇴실 일할 정산 (퇴실일 세팅 → 마지막 달 청구 일할) [main 배포·SQL 적용·검증 완료]
 **커밋**: `4ef9676`(코어) · `a727252`(뱃지 B안) · `3dcc2f2`(뱃지 C안) · `4b1d420`(고객관리 팝업) · `46b4186`(팝업 트리거 +1달). 모두 main 푸시·Vercel 배포됨. `migrate_checkout_proration.sql` Supabase 적용 완료(사용자 확인). 서민준 실데이터 검증 완료.
