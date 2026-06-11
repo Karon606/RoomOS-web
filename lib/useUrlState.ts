@@ -24,7 +24,11 @@ export function useUrlState(
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
-      const sp = new URLSearchParams(params.toString())
+      // 발화 '시점'의 실제 URL 기준으로 재구성 — 캡처해 둔 params 스냅샷이 그 사이
+      // 다른 코드가 세팅한 파라미터(month 등)를 지워버리던 레이스 방지.
+      const sp = new URLSearchParams(window.location.search)
+      const current = sp.get(key) ?? ''
+      if (current === value) return   // 이미 반영됨 — 불필요한 replace 생략
       if (value) sp.set(key, value)
       else sp.delete(key)
       const qs = sp.toString()

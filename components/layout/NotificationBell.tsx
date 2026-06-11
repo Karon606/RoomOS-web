@@ -89,7 +89,12 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
     setOpen(false)
     markRead([a.id])           // 클릭 = 확인 → 오늘 목록에서 제거
     const href = hrefOf(a)
-    if (href) router.push(href)
+    if (href) {
+      router.push(href)
+      // 이미 같은 페이지에 있으면 push 가 화면 변화를 못 만들고 알림만 읽음 처리되던 문제 —
+      // 데이터 새로고침을 함께 트리거해 클릭이 항상 반응하게 한다.
+      router.refresh()
+    }
   }
 
   return (

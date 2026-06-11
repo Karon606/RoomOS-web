@@ -11,6 +11,10 @@ const WIDTH_CLS: Record<Width, string> = {
   lg: 'max-w-lg',
 }
 
+// Esc 처리용 전역 스택 — 모달이 겹쳐 있을 때(z 260/280) Esc 는 최상단(마지막 마운트)만 닫는다.
+let modalSeq = 0
+const escStack: number[] = []
+
 export function Modal({
   open,
   onClose,
@@ -36,6 +40,25 @@ export function Modal({
   bodyClassName?: string
   z?: 200 | 260 | 280                // 다른 모달 위에 겹쳐 띄울 때 (통합 상세 모달 등)
 }) {
+  // Esc 로 닫기 — 배경 클릭과 동일하게 동작(키보드 기대 일관성).
+  // 겹친 모달에서는 최상단 것만 닫히도록 전역 스택으로 판별.
+  React.useEffect(() => {
+    if (!open) return
+    const id = ++modalSeq
+    escStack.push(id)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (escStack[escStack.length - 1] !== id) return
+      onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      const idx = escStack.indexOf(id)
+      if (idx >= 0) escStack.splice(idx, 1)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open, onClose])
+
   if (!open) return null
   const zClass = z === 280 ? 'z-[280]' : z === 260 ? 'z-[260]' : 'z-[200]'
   return (

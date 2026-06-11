@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -205,6 +206,13 @@ export async function moveRecordTargetMonth(
       where: { id: recordId },
       data: { targetMonth: newTargetMonth, seqNo: newSeqNo },
     })
+
+    // 귀속월 이동은 수납·미수·매출 화면 전부에 영향 — 캐시 무효화 없이는
+    // "진단에선 옮겼는데 수납·대시보드는 그대로"로 보이던 문제
+    revalidatePath('/accrual-check')
+    revalidatePath('/rooms')
+    revalidatePath('/dashboard')
+    revalidatePath('/finance')
 
     return { ok: true }
   } catch (err) {

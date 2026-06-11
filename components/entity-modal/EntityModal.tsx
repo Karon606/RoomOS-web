@@ -8,7 +8,7 @@
 // Phase 2.3 = kind='tenant' 위젯화 (TenantView 미니 잔존), Phase 2.4 = kind='payment' 요약 위젯화.
 
 import { createContext, useContext, useEffect, useState, useCallback, useRef, useTransition } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { Btn } from '@/components/ui/Btn'
 import { Modal } from '@/components/ui/Modal'
 import { kstMonthStr } from '@/lib/kstDate'
@@ -41,6 +41,17 @@ export function EntityModalProvider({ children }: { children: React.ReactNode })
   // 모달 열기 직전의 페이지 스크롤 위치 — 닫을 때 그 위치로 복원 (router.refresh() 가
   // 페이지 상단으로 리셋시키는 문제 해결, 사용자 피드백 2026-06-01).
   const scrollYRef = useRef<number>(0)
+
+  // 페이지 이동(브라우저 뒤로가기 포함) 시 전역 모달 정리 — 새 페이지 위에 이전 모달이
+  // 떠 있고, 닫으면 이전 페이지의 스크롤 위치로 점프하던 문제. 스크롤 복원 없이 닫기만.
+  const pathname = usePathname()
+  const pathnameRef = useRef(pathname)
+  useEffect(() => {
+    if (pathnameRef.current !== pathname) {
+      pathnameRef.current = pathname
+      setState(null)
+    }
+  }, [pathname])
   const open = useCallback((seed: Seed) => {
     if (typeof window !== 'undefined') scrollYRef.current = window.scrollY
     setState({ kind: seed.kind, seed, links: null })
@@ -94,6 +105,15 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
   const hasRoom = !!links?.roomId
   const hasTenant = !!links?.tenantId
   const hasPay = !!links?.leaseTermId
+
+  // 퇴실 정산 자동 진입 시드는 1회성 — 수납 면을 떠나면 소진.
+  // 소진하지 않으면 하단 나브바로 수납 면에 재진입할 때마다 정산 폼이 다시 펼쳐진다.
+  const [prorationSeedSpent, setProrationSeedSpent] = useState(false)
+  const effectiveOpenProration = openCheckoutProration && !prorationSeedSpent
+  const handleSelectKind = (k: EntityKind) => {
+    if (kind === 'payment' && k !== 'payment' && openCheckoutProration) setProrationSeedSpent(true)
+    setKind(k)
+  }
   const title = links ? `${fmtRoomNo(links.roomNo)}${links.tenantName ? ` · ${links.tenantName}` : ''}` : '불러오는 중…'
 
   // 호실 액션 — 셸이 직접 처리(데이터 정합).
@@ -210,7 +230,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
           {/* 공통 하단 네비 — onSelect 로 같은 셸 안에서 body 만 교체 (in-place). */}
           <PrismNavBar
             current={kind}
-            onSelect={setKind}
+            onSelect={handleSelectKind}
             links={{
               roomId: links?.roomId ?? null,
               tenantId: links?.tenantId ?? null,
@@ -223,7 +243,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
       <div className="px-5 sm:px-6 py-4">
         {kind === 'room'    && (hasRoom   ? <RoomBody roomId={links!.roomId!} onApplyScheduledNow={handleApplyScheduledNow} /> : <Empty label="연결된 호실이 없습니다." />)}
         {kind === 'tenant'  && (hasTenant ? <TenantBody tenantId={links!.tenantId!} /> : <Empty label="연결된 고객이 없습니다." />)}
-        {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={links!.leaseTermId!} month={month} canEdit roomNo={links?.roomNo ?? null} openCheckoutProration={openCheckoutProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
+        {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={links!.leaseTermId!} month={month} canEdit roomNo={links?.roomNo ?? null} openCheckoutProration={effectiveOpenProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
       </div>
     </Modal>
     {/* 계약서 출력 선택 모달 — 스캔본 vs 시스템 계약서 3-옵션 (confirm 다이얼로그의
