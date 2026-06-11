@@ -19,6 +19,9 @@ const DELAY = 300    // --loader-delay
 const MIN = 1000     // --loader-min
 const INTRO = 3200   // --splash-intro
 const FADE = 400     // --splash-fade
+// 리디렉트 체인(/ → /login → 앱) 사이의 off→on 신호 갭을 '계속 로딩 중'으로 잇는 유예.
+// 없으면 홉마다 인트로가 퇴장하고 일반 스플래시가 재발동해 끝에 루프 로더 잔상이 깜빡인다.
+const OFF_GRACE = 400
 
 const INTRO_SEEN_KEY = 'sy-intro-seen'   // sessionStorage — 새 세션(새 탭·재방문)에선 다시 재생
 
@@ -60,9 +63,9 @@ export function SplashHost() {
       typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
     hostListener = (on) => {
-      if (on && introRef.current && phaseRef.current === 'visible') {
-        // 인트로 재생 중 새 로딩 신호 — 인트로 유지, 예약된 자가 퇴장만 취소
-        // (퇴장은 off 신호가 INTRO 완주 기준으로 처리)
+      if (on && phaseRef.current === 'visible') {
+        // 표시 중(인트로·일반 공통) 새 로딩 신호 — 표시 유지, 예약된 퇴장만 취소.
+        // 리디렉트 갭을 이어 부트 체인 전체를 한 번의 스플래시로 커버한다.
         clear()
         return
       }
@@ -85,9 +88,9 @@ export function SplashHost() {
       } else {
         if (phaseRef.current === 'pending' || phaseRef.current === 'off') { go('off'); return }
         // 인트로: 3200ms 완주 보장 (reduced-motion 은 정적 락업이라 대기 없이 즉시 크로스페이드)
-        // 일반: 최소 유지 1000ms
+        // 일반: 최소 유지 1000ms. + OFF_GRACE — 리디렉트 갭 동안 on 신호가 돌아오면 위 가드가 취소.
         const hold = introRef.current ? (reducedMotion() ? 0 : INTRO) : MIN
-        const wait = Math.max(0, hold - (Date.now() - shownAt.current))
+        const wait = Math.max(OFF_GRACE, hold - (Date.now() - shownAt.current))
         timers.current.push(setTimeout(() => {
           go('fading')
           timers.current.push(setTimeout(() => go('off'), FADE))
