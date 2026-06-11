@@ -6,7 +6,7 @@ import { getPaymentMethods } from '@/app/(app)/settings/actions'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
-import { discountedRent } from '@/lib/rentDiscount'
+import { billForLeaseMonth, isCheckoutNoBillingMonth, resolveDueDateForMonth } from '@/lib/billing'
 import { getCheckedOutLeasesWithRevenue, getCheckedOutRecognizedRevenue } from '@/lib/leaseStatus'
 import { getFloorPlan } from '@/app/(app)/floor-plan/actions'
 import FloorPlanWidget from '@/app/(app)/floor-plan/FloorPlanWidget'
@@ -125,7 +125,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       where: { propertyId, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
       // #14 월세 할인 — 수납현황 위젯(완료 건수·예상 수입)에 할인 반영
       // moveInDate·expectedMoveOut — 이번달 청구 대상 여부 판정(다음달 입주자가 이번달 매출에 잡히는 버그 방지)
-      select: { id: true, status: true, rentAmount: true, moveInDate: true, expectedMoveOut: true, checkoutProratedAmount: true, checkoutProratedMonth: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
+      // dueDay·override — 퇴실월 무청구(checkoutNoBilling) 판정용 (lib/billing 공용 규칙)
+      select: { id: true, status: true, rentAmount: true, moveInDate: true, expectedMoveOut: true, dueDay: true, overrideDueDay: true, overrideDueDayMonth: true, checkoutProratedAmount: true, checkoutProratedMonth: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
     }),
     prisma.paymentRecord.findMany({
       where: {
@@ -645,11 +646,29 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     return true
   }
   const billableLeases = activeLeases.filter(l => l.rentAmount > 0 && billableInTargetMonth(l))
-  // #14 월세 할인 — 이달(targetMonth) 청구액은 할인 반영. 완납 판정·예상 수입 모두 할인가 기준.
-  const billThisMonth  = (l: { rentAmount: number; checkoutProratedAmount?: number | null; checkoutProratedMonth?: string | null; discounts?: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[] }) =>
-    (l.checkoutProratedAmount != null && l.checkoutProratedMonth === targetMonth)
-      ? l.checkoutProratedAmount
-      : discountedRent(l.discounts, targetMonth, l.rentAmount)
+
+  // 양도인 정산(isPrevOwner) record가 있는 (lease, month) — 그 월은 현 원장 청구·매출에서 제외.
+  // [저장 청구액 우선] 락인 맵 — 둘 다 아래 '누적 미납 상세' 블록과 공유 (한 번만 구성).
+  const prevOwnerMonthsByLease: Record<string, Set<string>> = {}
+  const lockedExpectedByLeaseMonth: Record<string, Map<string, number>> = {}
+  for (const p of allHistoricalPayments) {
+    if (p.isPrevOwner) {
+      ;(prevOwnerMonthsByLease[p.leaseTermId] ??= new Set()).add(p.targetMonth)
+      continue
+    }
+    const m = (lockedExpectedByLeaseMonth[p.leaseTermId] ??= new Map())
+    const cur = m.get(p.targetMonth) ?? 0
+    if (p.expectedAmount > cur) m.set(p.targetMonth, p.expectedAmount)
+  }
+
+  // 이달(targetMonth) 청구액 — 일할→락인→할인(lib/billing 공용, rooms·unpaid.ts 와 동일).
+  // 양도인 정산 월·퇴실월 무청구(납부일 이전 퇴실)는 0. 완납 판정·예상 수입 모두 이 값 기준.
+  const billThisMonth  = (l: typeof activeLeases[number]) => {
+    if (prevOwnerMonthsByLease[l.id]?.has(targetMonth)) return 0
+    const dueRaw = (l.overrideDueDayMonth === targetMonth && l.overrideDueDay) ? l.overrideDueDay : l.dueDay
+    if (isCheckoutNoBillingMonth(l.expectedMoveOut, targetMonth, resolveDueDateForMonth(dueRaw, targetMonth))) return 0
+    return billForLeaseMonth(l, targetMonth, lockedExpectedByLeaseMonth[l.id]?.get(targetMonth) ?? null)
+  }
   const paidCount      = billableLeases.filter(l => (paymentByLeaseForStatus[l.id] ?? 0) >= billThisMonth(l)).length
 
   // ── 단기 입주·중도퇴실 lease 의 매출 추가 인식 (lib/leaseStatus.ts 정책)
@@ -850,24 +869,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // ── 누적 미납 상세 — 발생주의(targetMonth 기반) ──────────
   // "오늘 월 이하의 targetMonth로 인식된 매출" vs "청구 가능 월 수 × 임대료"의 차이
   // (allHistoricalPayments는 이미 targetMonth ≤ realTodayMonthStr 필터됨)
-  // 양도인 정산(isPrevOwner) record가 있는 (lease, month) — 그 월은 양도인 몫이므로
-  // 현 원장 청구·매출 인식에서 제외 (수납 페이지 rooms/actions.ts의 prevOwnerMonths와 동일 정책)
-  const prevOwnerMonthsByLease: Record<string, Set<string>> = {}
-  for (const p of allHistoricalPayments) {
-    if (!p.isPrevOwner) continue
-    ;(prevOwnerMonthsByLease[p.leaseTermId] ??= new Set()).add(p.targetMonth)
-  }
-
-  // [저장 청구액 우선] (lease, month)별 락인된 청구액 — 월세 변경의 과거 소급 방지.
-  // 같은 달 여러 record면 정규 월 청구(최대 expectedAmount) 채택. record 없는 달은 현재 월세 fallback.
-  // rooms/actions.ts · unpaid.ts 와 동일 정책 — 한쪽 수정 시 동기화.
-  const lockedExpectedByLeaseMonth: Record<string, Map<string, number>> = {}
-  for (const p of allHistoricalPayments) {
-    if (p.isPrevOwner) continue
-    const m = (lockedExpectedByLeaseMonth[p.leaseTermId] ??= new Map())
-    const cur = m.get(p.targetMonth) ?? 0
-    if (p.expectedAmount > cur) m.set(p.targetMonth, p.expectedAmount)
-  }
+  // prevOwnerMonthsByLease · lockedExpectedByLeaseMonth 는 위쪽(billThisMonth 직전)에서 구성 — 공유.
 
   const accrualByLease: Record<string, number> = {}
   for (const p of allHistoricalPayments) {
@@ -941,16 +943,13 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       // 양도인 정산 처리된 월 — 현 원장 청구 제외
       if (lPrevOwnerMonths?.has(mon)) continue
       if (moveOutMonth && mon > moveOutMonth) continue
+      // 퇴실월 무청구 — 퇴실예정일이 그 월 납부일 이전이면 청구 0 (rooms·unpaid.ts 와 동일, lib/billing 공용)
+      if (isCheckoutNoBillingMonth(l.expectedMoveOut, mon, resolveDueDateForMonth(effectiveDueDayForMonth(l, mon), mon))) continue
       billableMonthList.push(mon)
     }
-    // [저장 청구액 우선] 그 달 record의 락인 청구액 우선, 없으면 현재 월세(#14 할인 반영) fallback
+    // 청구 규칙(일할→락인→할인)은 lib/billing 공용 — rooms·unpaid.ts 와 동일
     const lockedMap = lockedExpectedByLeaseMonth[l.id]
-    const billForMonth = (mon: string) => {
-      // 퇴실 일할 정산이 걸린 달은 저장된 일할액 최우선
-      if (l.checkoutProratedAmount != null && l.checkoutProratedMonth === mon) return l.checkoutProratedAmount
-      const locked = lockedMap?.get(mon)
-      return locked && locked > 0 ? locked : discountedRent(l.discounts, mon, l.rentAmount)
-    }
+    const billForMonth = (mon: string) => billForLeaseMonth(l, mon, lockedMap?.get(mon) ?? null)
     const totalExpected = billableMonthList.reduce((s, mon) => s + billForMonth(mon), 0)
     const totalReceived = accrualByLeaseForView[l.id] ?? 0
     unpaidMap[l.id] = Math.max(0, totalExpected - totalReceived)
