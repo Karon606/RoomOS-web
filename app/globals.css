@@ -191,6 +191,7 @@
   /* §18 콜드 스타트 로딩 (v1.3.1) */
   --loader-delay: 300ms;     /* 이보다 빨리 끝나면 로더·스켈레톤 미표시 */
   --loader-min: 1000ms;      /* 표시되면 최소 유지 — 깜박임 방지 */
+  --splash-intro: 3200ms;    /* §3b 콜드 부트 인트로 총 길이 — 완주 전 중단 금지 */
   --splash-fade: 400ms;      /* 스플래시 → 콘텐츠 크로스페이드 */
   --splash-slow: 5000ms;     /* 초과 시 느린 연결 메시지 */
   --cold-bg: #E8DDD0;        /* = --page. manifest background 와 동일값 강제(불일치=릴리즈 블로커) */
@@ -259,7 +260,9 @@
   --color-warm-muted:   var(--warm-muted);
   /* M7: 한글·Display는 Pretendard, 숫자·코드는 DM Mono */
   --font-sans: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono: var(--font-dm-mono, 'DM Mono'), 'SF Mono', Menlo, monospace;
+  /* v1.3.2 §15 정정 — 제품 UI 에서 DM Mono 제거(사선 0 금지). 숫자는 Pretendard + tnum.
+     잔존 font-mono/mono 사용처가 모노스페이스로 빠지지 않게 본문 폰트로 매핑. */
+  --font-mono: 'Pretendard Variable', Pretendard, sans-serif;
 }
 
 /* ── Base ─────────────────────────────────────────────────────── */
@@ -285,7 +288,10 @@ body {
 }
 
 /* M7: 숫자·KPI·메타용 헬퍼 클래스 */
-.mono { font-family: var(--font-dm-mono, 'DM Mono'), 'SF Mono', Menlo, monospace; font-feature-settings: 'tnum'; }
+/* v1.3.2 §15 — 제품 UI 숫자 표준: 본문 폰트(Pretendard) + tabular numerals.
+   .num 이 정식 명칭, .mono 는 기존 사용처 호환 alias (DM Mono 폐기). */
+.num,
+.mono { font-family: inherit; font-feature-settings: 'tnum'; font-variant-numeric: tabular-nums; }
 .tnum { font-variant-numeric: tabular-nums; }
 
 /* M7 가이드: shadow는 모달·드롭다운·팝오버에만 사용. 단일 shadow-lift 토큰으로 통일.

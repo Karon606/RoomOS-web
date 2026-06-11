@@ -655,7 +655,7 @@ export default function SettingsForm({
                 defaultValue={property?.publicSlug ?? ''}
                 placeholder="예: thestayjegi"
                 autoComplete="off"
-                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] font-mono"
+                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num"
               />
             </div>
             <Btn type="submit" variant="primary" size="md" fullWidth className="mt-2" disabled={isPending}>
@@ -1035,7 +1035,7 @@ export default function SettingsForm({
               <div className="flex items-center gap-2">
                 {joinCode ? (
                   <>
-                    <code className="flex-1 px-3 py-2.5 rounded-xl text-base font-mono font-semibold tracking-[0.25em] text-center"
+                    <code className="flex-1 px-3 py-2.5 rounded-xl text-base num font-semibold tracking-[0.25em] text-center"
                       style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--persimmon-d)' }}>
                       {joinCode}
                     </code>
@@ -1395,7 +1395,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
 
         <div className="rounded-lg px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)' }}>
           본문에서 다음 변수를 사용하면 출력 시 입실자 정보로 자동 치환됩니다:
-          <span className="block mt-1 font-mono text-[0.625rem]">
+          <span className="block mt-1 num text-[0.625rem]">
             {`{{name}} {{phone}} {{birth}} {{job}} {{gender}} {{smoking}} {{deposit}} {{checkInDate}} {{roomNo}} {{checkOutDate}} {{rentFee}} {{emergencyContact}}`}
           </span>
         </div>

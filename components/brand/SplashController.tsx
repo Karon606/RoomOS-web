@@ -1,20 +1,26 @@
 'use client'
 
-// 스플래시 수명주기 컨트롤러 — Brand Guide v1.3 §18.3·18.2 퇴장.
-// Next 의 loading.tsx 는 콘텐츠 준비 즉시 언마운트되어 '최소 유지 1000ms'와
-// '퇴장 크로스페이드 400ms'를 스스로 지킬 수 없다 → 신호(pub/sub)와 표시를 분리:
-//   · SplashGate — 루트 loading.tsx 가 렌더. 마운트=로딩 시작, 언마운트=콘텐츠 준비 신호만 보냄.
-//   · SplashHost — 루트 레이아웃에 상주. 신호를 받아 표시 지연(300ms)·최소 유지(1000ms)·
-//     페이드아웃(400ms)을 관리. 콘텐츠가 아래에 먼저 렌더된 뒤 위에서 사라지므로
-//     빈 화면 프레임 없는 크로스페이드가 된다.
-// 수치는 globals.css 토큰(--loader-delay/--loader-min/--splash-fade)과 동기 — 한쪽 수정 시 함께.
+// 스플래시 수명주기 컨트롤러 — Brand Guide v1.3.1 §3b·§4.
+// Next 의 loading.tsx 는 콘텐츠 준비 즉시 언마운트되어 수명주기를 스스로 못 지킨다 →
+// 신호(pub/sub)와 표시를 분리:
+//   · SplashGate — 루트 loading.tsx 가 렌더. 마운트=로딩 시작, 언마운트=콘텐츠 준비 신호만.
+//   · SplashHost — 루트 레이아웃에 상주. 두 모드:
+//     [인트로 모드] 세션 첫 스플래시(sessionStorage 'sy-intro-seen' 없음) — §3b 1회성 인트로.
+//       즉시 표시(지연 없음), 앱이 먼저 준비돼도 3200ms 완주 보장 후 400ms 크로스페이드.
+//       표시 지연·최소 유지 규칙 미적용(§3b-1, 유일한 예외). reduced-motion 은 완주 대기 없음.
+//     [일반 모드] 같은 세션 재발동 — 표시 지연 300ms → 보였으면 1000ms 유지 → 400ms 페이드.
+// 수치는 globals.css 토큰(--loader-delay/--loader-min/--splash-intro/--splash-fade)과 동기.
 
 import { useEffect, useRef, useState } from 'react'
 import { SplashScreen } from './SplashScreen'
+import { SplashIntro } from './SplashIntro'
 
-const DELAY = 300   // --loader-delay
-const MIN = 1000    // --loader-min
-const FADE = 400    // --splash-fade
+const DELAY = 300    // --loader-delay
+const MIN = 1000     // --loader-min
+const INTRO = 3200   // --splash-intro
+const FADE = 400     // --splash-fade
+
+const INTRO_SEEN_KEY = 'sy-intro-seen'   // sessionStorage — 새 세션(새 탭·재방문)에선 다시 재생
 
 let hostListener: ((on: boolean) => void) | null = null
 let lastSignal = false
@@ -37,27 +43,45 @@ type Phase = 'off' | 'pending' | 'visible' | 'fading'
 
 export function SplashHost() {
   const [phase, setPhase] = useState<Phase>('off')
+  const [introMode, setIntroMode] = useState(false)
   const phaseRef = useRef<Phase>('off')
+  const introRef = useRef(false)
   const shownAt = useRef(0)
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
 
   useEffect(() => {
     const go = (p: Phase) => { phaseRef.current = p; setPhase(p) }
     const clear = () => { timers.current.forEach(clearTimeout); timers.current = [] }
+    const introSeen = () => {
+      try { return !!sessionStorage.getItem(INTRO_SEEN_KEY) } catch { return true }
+    }
+    const markIntroSeen = () => { try { sessionStorage.setItem(INTRO_SEEN_KEY, '1') } catch { /* ignore */ } }
+    const reducedMotion = () =>
+      typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
     hostListener = (on) => {
       clear()
       if (on) {
-        // 표시 지연 — 300ms 안에 끝나는 로딩에선 한 프레임도 안 보임
-        go('pending')
-        timers.current.push(setTimeout(() => {
+        if (!introSeen()) {
+          // §3b 인트로 — 즉시 표시(지연 규칙 미적용), 재생 시작 시점에 세션 게이트 기록
+          markIntroSeen()
+          introRef.current = true; setIntroMode(true)
           shownAt.current = Date.now()
           go('visible')
-        }, DELAY))
+        } else {
+          introRef.current = false; setIntroMode(false)
+          go('pending')
+          timers.current.push(setTimeout(() => {
+            shownAt.current = Date.now()
+            go('visible')
+          }, DELAY))
+        }
       } else {
         if (phaseRef.current === 'pending' || phaseRef.current === 'off') { go('off'); return }
-        // 최소 유지 — 보였으면 1000ms 채운 뒤 400ms 페이드아웃 (사이클 완주는 기다리지 않음)
-        const wait = Math.max(0, MIN - (Date.now() - shownAt.current))
+        // 인트로: 3200ms 완주 보장 (reduced-motion 은 정적 락업이라 대기 없이 즉시 크로스페이드)
+        // 일반: 최소 유지 1000ms
+        const hold = introRef.current ? (reducedMotion() ? 0 : INTRO) : MIN
+        const wait = Math.max(0, hold - (Date.now() - shownAt.current))
         timers.current.push(setTimeout(() => {
           go('fading')
           timers.current.push(setTimeout(() => go('off'), FADE))
@@ -78,7 +102,7 @@ export function SplashHost() {
         pointerEvents: phase === 'fading' ? 'none' : 'auto',
       }}
     >
-      <SplashScreen immediate />
+      {introMode ? <SplashIntro /> : <SplashScreen immediate />}
     </div>
   )
 }

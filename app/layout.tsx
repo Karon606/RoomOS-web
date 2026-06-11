@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { DM_Mono, Plus_Jakarta_Sans } from 'next/font/google'
+import { Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider, themeBootstrapScript } from '@/components/theme/ThemeProvider'
 import { FontSizeProvider, fontSizeBootstrapScript } from '@/components/theme/FontSizeProvider'
@@ -9,12 +9,7 @@ import { SplashHost } from '@/components/brand/SplashController'
 import { Analytics } from '@vercel/analytics/next'
 
 // 가이드 명시: Numbers·Mono·Meta는 DM Mono
-const dmMono = DM_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500'],
-  display: 'swap',
-  variable: '--font-dm-mono',
-})
+// v1.3.2 §15 — DM Mono 웹폰트 제거(제품 UI 사선 0 금지, 번들 절감). 숫자는 Pretendard + tnum(.num).
 
 // 가이드 명시: 로고 워드마크는 Plus Jakarta Sans 300/700
 const plusJakarta = Plus_Jakarta_Sans({
@@ -58,7 +53,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ko" className={`${dmMono.variable} ${plusJakarta.variable}`} suppressHydrationWarning>
+    <html lang="ko" className={plusJakarta.variable} suppressHydrationWarning>
       <head>
         {/* §18.4 FOUC 방어 — 외부 CSS 로드 전 html 배경을 브랜드 톤으로 (흰 화면 0ms).
             다크는 CSS 미디어쿼리로 — JS 테마 감지 전 깜박임 원천 차단. */}

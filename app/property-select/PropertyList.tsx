@@ -84,7 +84,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
         onChange={e => setJoinCode(e.target.value.toUpperCase())}
         placeholder="영업장 운영자에게 받은 6자 코드"
         autoComplete="off"
-        className="w-full rounded-sm px-3 py-2.5 text-sm outline-none font-mono"
+        className="w-full rounded-sm px-3 py-2.5 text-sm outline-none num"
         style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
       />
       <textarea

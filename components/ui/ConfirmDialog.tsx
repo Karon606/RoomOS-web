@@ -118,7 +118,7 @@ export function ConfirmHost() {
               {opts.impact.map((it, i) => (
                 <li key={i} className="text-[12.5px] text-[var(--ink-s)]">
                   · {it.label}{it.count != null && <>
-                    {' '}<span className="font-mono font-semibold" style={{ fontFeatureSettings: "'tnum'" }}>{it.count}</span>건
+                    {' '}<span className="num font-semibold" style={{ fontFeatureSettings: "'tnum'" }}>{it.count}</span>건
                   </>}
                 </li>
               ))}

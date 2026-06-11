@@ -754,7 +754,7 @@ function StackedBar({
           <div className="h-full w-0" />
         )}
       </div>
-      <span className="text-[0.6875rem] font-medium text-[var(--warm-dark)] font-mono w-16 text-right shrink-0">
+      <span className="text-[0.6875rem] font-medium text-[var(--warm-dark)] num w-16 text-right shrink-0">
         {total > 0 ? fmtKorMoney(total) : '—'}
       </span>
     </div>
@@ -1873,13 +1873,13 @@ export default function FinanceClient({
           {/* 전체 예상 지출 */}
           <div className="px-5 py-4 space-y-2">
             <p className="text-xs font-medium text-[var(--warm-muted)]">전체 예상 지출</p>
-            <p className="text-xl font-bold text-[var(--warm-dark)] font-mono">
+            <p className="text-xl font-bold text-[var(--warm-dark)] num">
               <MoneyDisplay amount={totalExpectedExp} prefix="-" />
             </p>
             <div className="space-y-1 pt-1 border-t border-[var(--warm-border)]">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-[var(--warm-muted)]">일반 지출</span>
-                <span className="text-[var(--warm-dark)] font-medium font-mono">
+                <span className="text-[var(--warm-dark)] font-medium num">
                   <MoneyDisplay amount={normalExpTotal} />
                 </span>
               </div>
@@ -1887,7 +1887,7 @@ export default function FinanceClient({
                 <>
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-[var(--warm-muted)]">고정 지출 (기록됨)</span>
-                    <span className="text-[var(--warm-dark)] font-medium font-mono">
+                    <span className="text-[var(--warm-dark)] font-medium num">
                       <MoneyDisplay amount={recRecordedTotal} />
                     </span>
                   </div>
@@ -1900,7 +1900,7 @@ export default function FinanceClient({
                         </span>
                       )}
                     </div>
-                    <span className="text-amber-600 font-medium font-mono">
+                    <span className="text-amber-600 font-medium num">
                       <MoneyDisplay amount={recPendingTotal} />
                     </span>
                   </div>
@@ -1912,7 +1912,7 @@ export default function FinanceClient({
           {/* 부가수익 */}
           <div className="px-5 py-4 space-y-2">
             <p className="text-xs font-medium text-[var(--warm-muted)]">부가 수익 합계</p>
-            <p className="text-xl font-bold text-[var(--warm-dark)] font-mono">
+            <p className="text-xl font-bold text-[var(--warm-dark)] num">
               <MoneyDisplay amount={totalIncomeSum} prefix="+" />
             </p>
             <div className="pt-1 border-t border-[var(--warm-border)]">
@@ -1950,7 +1950,7 @@ export default function FinanceClient({
                   <div key={cat} className="flex items-center gap-1.5">
                     <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: catColorMap[cat] }} />
                     <span className="text-xs text-[var(--warm-muted)] flex-1 truncate min-w-0">{cat}</span>
-                    <span className="text-xs font-medium text-[var(--warm-dark)] font-mono shrink-0">
+                    <span className="text-xs font-medium text-[var(--warm-dark)] num shrink-0">
                       {amt.toLocaleString()}원
                     </span>
                     <span className="text-[0.625rem] text-[var(--warm-muted)] w-6 text-right shrink-0">{pct}%</span>
@@ -2022,7 +2022,7 @@ export default function FinanceClient({
               className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2">초기화</button>
             <span className="ml-auto flex flex-col items-end">
               <span className="text-[0.6875rem] text-[var(--warm-muted)] leading-none">실제 지출 합계 <span className="text-[0.5625rem]">(예정 제외)</span></span>
-              <span className="text-sm font-bold text-red-400 font-mono mt-0.5">
+              <span className="text-sm font-bold text-red-400 num mt-0.5">
                 <MoneyDisplay amount={totalExp} />
               </span>
             </span>
@@ -2147,7 +2147,7 @@ export default function FinanceClient({
                     {recVisibility === 'soon' && hiddenRecs.length > 0 && (
                       <button onClick={() => setRecVisibility('all')}
                         className="text-xs text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
-                        + 임박하지 않은 고정 <span className="text-[var(--warm-dark)] font-semibold">{hiddenRecs.length}건</span> · 합계 <span className="font-mono text-[var(--warm-dark)] font-semibold">{hiddenRecsTotal.toLocaleString()}원</span> 숨김
+                        + 임박하지 않은 고정 <span className="text-[var(--warm-dark)] font-semibold">{hiddenRecs.length}건</span> · 합계 <span className="num text-[var(--warm-dark)] font-semibold">{hiddenRecsTotal.toLocaleString()}원</span> 숨김
                       </button>
                     )}
                   </div>
@@ -2394,7 +2394,7 @@ export default function FinanceClient({
             </select>
             <button onClick={() => setIncFilter({ method: 'all', category: 'all' })}
               className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2">초기화</button>
-            <span className="ml-auto text-sm font-bold text-green-400 font-mono">
+            <span className="ml-auto text-sm font-bold text-green-400 num">
               합계: <MoneyDisplay amount={totalInc} />
             </span>
             <Btn variant="primary" size="md" onClick={() => { setShowAddInc(true); setAddIncMethod('계좌이체'); setAddIncAccId(''); setError('') }}>
@@ -2527,7 +2527,7 @@ export default function FinanceClient({
                       <span className="text-xs text-[var(--warm-mid)] font-medium">
                         {g.billMonth.replace('-', '년 ')}월 청구 총액
                       </span>
-                      <span className="text-xl font-bold text-red-400 font-mono">
+                      <span className="text-xl font-bold text-red-400 num">
                         {g.total.toLocaleString()}원
                       </span>
                     </div>
@@ -2542,7 +2542,7 @@ export default function FinanceClient({
                             <span className="text-[var(--warm-muted)]">{item.category}</span>
                             {item.detail && <span className="text-[var(--warm-muted)]"> · {item.detail}</span>}
                           </span>
-                          <span className="text-[var(--warm-dark)] font-medium font-mono shrink-0">
+                          <span className="text-[var(--warm-dark)] font-medium num shrink-0">
                             {item.amount.toLocaleString()}원
                           </span>
                         </div>
@@ -2852,7 +2852,7 @@ export default function FinanceClient({
                               {it.name}
                               {it.isVariable && <span className="ml-1 text-[0.5625rem] text-amber-600">(변동)</span>}
                             </span>
-                            <span className="font-mono text-[var(--warm-dark)]">{it.amount.toLocaleString()}원</span>
+                            <span className="num text-[var(--warm-dark)]">{it.amount.toLocaleString()}원</span>
                           </div>
                         ))}
                       </div>
@@ -3912,13 +3912,13 @@ export default function FinanceClient({
                           }} placeholder="0원" />
                         </div>
                       ) : (
-                        <span className="text-xs font-mono text-[var(--warm-dark)] w-28 text-right pr-1">{it.amount.toLocaleString()}원</span>
+                        <span className="text-xs num text-[var(--warm-dark)] w-28 text-right pr-1">{it.amount.toLocaleString()}원</span>
                       )}
                     </div>
                   ))}
                   <div className="flex items-center justify-between border-t border-[var(--warm-border)] pt-1.5 mt-1">
                     <span className="text-xs font-semibold text-[var(--warm-dark)]">합계</span>
-                    <span className="text-sm font-bold font-mono text-[var(--coral)]">{recRecAmount.toLocaleString()}원</span>
+                    <span className="text-sm font-bold num text-[var(--coral)]">{recRecAmount.toLocaleString()}원</span>
                   </div>
                 </div>
               </>

@@ -180,7 +180,7 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
                 }}
               >
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono font-semibold" style={{ color: 'var(--ink)' }}>
+                  <span className="num font-semibold" style={{ color: 'var(--ink)' }}>
                     {c.code}
                   </span>
                   {!c.isActive && <Tag bg="var(--cream-3)" fg="var(--ink-3)">비활성</Tag>}

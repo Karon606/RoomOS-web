@@ -329,7 +329,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
             <ul className="space-y-1">
               {stats.languages.map((l, i) => (
                 <li key={i} className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs font-mono" style={{ color: 'var(--warm-dark)' }}>{l.language}</span>
+                  <span className="text-xs num" style={{ color: 'var(--warm-dark)' }}>{l.language}</span>
                   <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(l.count)}건</span>
                 </li>
               ))}
@@ -345,7 +345,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
             <ul className="space-y-1">
               {stats.resolutions.map((r, i) => (
                 <li key={i} className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs font-mono" style={{ color: 'var(--warm-dark)' }}>{r.res}</span>
+                  <span className="text-xs num" style={{ color: 'var(--warm-dark)' }}>{r.res}</span>
                   <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(r.count)}건</span>
                 </li>
               ))}
