@@ -626,13 +626,13 @@ export default function SettingsForm({
               <label className="text-xs font-medium text-[var(--warm-mid)]">인수 날짜</label>
               <p className="text-xs text-[var(--warm-muted)]">실제 영업장을 인수한 날짜입니다.</p>
               <DatePicker name="acquisitionDate" value={acqDateVal} onChange={setAcqDateVal}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">양도인 귀속 기준일</label>
               <p className="text-xs text-[var(--warm-muted)]">이 날짜 이전 수납금은 양도인 귀속으로 처리됩니다. 비워두면 인수 날짜와 동일.</p>
               <DatePicker name="prevOwnerCutoffDate" value={cutoffDateVal} onChange={setCutoffDateVal}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -978,7 +978,7 @@ export default function SettingsForm({
             )}
             <div className="space-y-2">
               {recurringList.map(r => (
-                <div key={r.id} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 ${r.isActive ? 'bg-[var(--canvas)]' : 'bg-[var(--canvas)] opacity-50'}`}
+                <div key={r.id} className={`flex items-center gap-3 rounded-sm px-3 py-2.5 ${r.isActive ? 'bg-[var(--canvas)]' : 'bg-[var(--canvas)] opacity-50'}`}
                   style={{ border: '1px solid var(--warm-border)' }}>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
@@ -1647,7 +1647,7 @@ function OptionSection({
             onChange={e => onNewValueChange(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleAdd()}
             placeholder={placeholder ?? '입력...'}
-            className={`flex-1 bg-[var(--canvas)] border rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none transition-colors ${
+            className={`flex-1 bg-[var(--canvas)] border rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none transition-colors ${
               isDuplicate ? 'border-red-400 focus:border-red-400' : 'border-[var(--warm-border)] focus:border-[var(--coral)]'
             }`} />
           <Btn variant="primary" size="md" className="min-w-[56px]" onClick={handleAdd} disabled={isAdding || !trimmed || isDuplicate}>

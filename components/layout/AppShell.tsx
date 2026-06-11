@@ -6,6 +6,7 @@ import Sidebar from '@/components/layout/Sidebar'
 import Header, { type AppUser, type SwitchProperty } from '@/components/layout/Header'
 import BottomNav from '@/components/layout/BottomNav'
 import SaveFeedback from '@/components/feedback/SaveFeedback'
+import { ConfirmHost } from '@/components/ui/ConfirmDialog'
 import { BrandLoader } from '@/components/brand/BrandLoader'
 import MonthSync from '@/components/layout/MonthSync'
 import { NavigationProvider } from '@/components/layout/NavigationContext'
@@ -85,8 +86,9 @@ export default function AppShell({
       {/* HIG: iPhone에서 1차 내비게이션은 하단 탭바. '전체' 탭이 Sidebar 드로어(전체 메뉴)를 연다. */}
       <BottomNav onMenuOpen={() => setSidebarOpen(true)} />
 
-      {/* 글로벌 저장 진행 표시 + 토스트 */}
+      {/* 글로벌 저장 진행 표시 + 토스트 + 확인 다이얼로그(v1.3 §9) */}
       <SaveFeedback />
+      <ConfirmHost />
     </div>
   )
 }

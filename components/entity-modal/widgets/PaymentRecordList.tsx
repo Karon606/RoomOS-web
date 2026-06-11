@@ -172,7 +172,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
         }
         return (
           <div key={p.id}
-            className={`rounded-xl px-3 py-2.5 space-y-1.5 ${
+            className={`rounded-sm px-3 py-2.5 space-y-1.5 ${
               p.isDeposit ? 'bg-purple-50 border border-purple-200' :
               prevOwner ? 'bg-amber-50 border border-amber-200' : 'bg-[var(--canvas)]'
             }`}>

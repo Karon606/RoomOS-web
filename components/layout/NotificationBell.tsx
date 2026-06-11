@@ -12,12 +12,12 @@ import type { AlertItem, AlertCategory } from '@/app/(app)/dashboard/alerts'
 
 // 카테고리별 점 색 (대시보드 알림 톤과 맞춤)
 const DOT: Record<AlertCategory, string> = {
-  unpaid:   '#dc2626',
-  checkout: '#f59e0b',
-  movein:   '#16a34a',
-  tour:     '#6366f1',
-  lowstock: '#f59e0b',
-  receipt:  '#9ca3af',
+  unpaid:   'var(--tc)',
+  checkout: 'var(--viz-4)',
+  movein:   'var(--success)',
+  tour:     'var(--viz-2)',
+  lowstock: 'var(--viz-4)',
+  receipt:  'var(--ink-m)',
 }
 
 const READ_KEY = 'stayeum_alert_read'
@@ -121,7 +121,7 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
       </button>
 
       {open && (
-        <div className="absolute right-0 top-12 w-80 max-w-[90vw] rounded-xl shadow-lift z-50 overflow-hidden"
+        <div className="absolute right-0 top-12 w-80 max-w-[90vw] rounded-xl shadow-lift z-[var(--z-dropdown)] overflow-hidden"
              style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           <div className="px-3.5 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--warm-border)' }}>
             <span className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>오늘 챙길 일</span>

@@ -8,7 +8,7 @@ import { BrandLoader } from './BrandLoader'
 export function SplashScreen() {
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center"
+      className="fixed inset-0 z-[var(--z-loader)] flex items-center justify-center"
       style={{ background: 'var(--canvas, #e8ddd0)', color: 'var(--ink, #3d2418)' }}
       aria-busy="true"
       aria-label="스테이음 로딩 중"

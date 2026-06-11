@@ -116,9 +116,9 @@ function hexToRgba(hex: string, alpha: number) {
 
 function daysLabel(daysOverdue: number | null): { text: string; color: string } {
   if (daysOverdue == null) return { text: '—', color: 'var(--warm-muted)' }
-  if (daysOverdue > 0)  return { text: `${daysOverdue}일 경과`, color: '#ef4444' }
-  if (daysOverdue === 0) return { text: '오늘 납부일', color: '#f97316' }
-  return { text: `D${daysOverdue} (${Math.abs(daysOverdue)}일 남음)`, color: '#eab308' }
+  if (daysOverdue > 0)  return { text: `${daysOverdue}일 경과`, color: 'var(--tc)' }
+  if (daysOverdue === 0) return { text: '오늘 납부일', color: 'var(--viz-4)' }
+  return { text: `D${daysOverdue} (${Math.abs(daysOverdue)}일 남음)`, color: 'var(--viz-4)' }
 }
 
 // ── 알림 상세 팝업 ───────────────────────────────────────────────
@@ -142,7 +142,7 @@ function CheckoutRefundModal({
   const exceedsMax = refund > maxRefund
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[210] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal-2)] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
         onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b" style={{ borderColor: DIVIDER_COLOR }}>
@@ -160,7 +160,7 @@ function CheckoutRefundModal({
             </div>
             <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
               <p style={{ color: 'var(--warm-muted)' }}>청소비 차감</p>
-              <p className="text-sm font-semibold mt-0.5" style={{ color: cleaningFee > 0 ? '#dc2626' : 'var(--warm-mid)' }}>
+              <p className="text-sm font-semibold mt-0.5" style={{ color: cleaningFee > 0 ? 'var(--tc)' : 'var(--warm-mid)' }}>
                 {cleaningFee > 0 ? `-${cleaningFee.toLocaleString()}원` : '없음'}
               </p>
             </div>
@@ -212,7 +212,7 @@ function CheckoutRefundModal({
             onClick={() => onConfirm(refund)}
             disabled={pending || exceedsMax}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
-            style={{ background: '#eab308', color: 'white' }}>
+            style={{ background: 'var(--viz-4)', color: 'white' }}>
             {pending ? '처리 중...' : '퇴실 처리'}
           </button>
         </div>
@@ -280,7 +280,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
         onClick={e => e.stopPropagation()}>
         {/* 헤더 */}
@@ -317,7 +317,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
                   style={{ borderColor: 'var(--warm-border)' }}
                 >
                   <span className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[0.6875rem] font-bold"
-                    style={{ background: c.rank === 1 ? 'rgba(34,197,94,0.18)' : 'var(--canvas)', color: c.rank === 1 ? '#16a34a' : 'var(--warm-mid)' }}>
+                    style={{ background: c.rank === 1 ? 'rgba(34,197,94,0.18)' : 'var(--canvas)', color: c.rank === 1 ? 'var(--success)' : 'var(--warm-mid)' }}>
                     {c.rank}
                   </span>
                   <div className="flex-1 min-w-0">
@@ -349,7 +349,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               onClick={handleConfirmActive}
               disabled={confirmPending}
               className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-60"
-              style={{ background: '#22c55e', color: 'white' }}>
+              style={{ background: 'var(--success)', color: 'white' }}>
               {confirmPending ? '처리 중...' : '거주중으로 변경'}
             </button>
           )}
@@ -358,7 +358,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               onClick={handleCheckout}
               disabled={confirmPending}
               className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-60"
-              style={{ background: '#eab308', color: 'white' }}>
+              style={{ background: 'var(--viz-4)', color: 'white' }}>
               {confirmPending ? '처리 중...' : '퇴실 처리'}
             </button>
           )}
@@ -435,7 +435,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
         onClick={e => e.stopPropagation()}>
         {/* 헤더 */}
@@ -461,7 +461,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
                 <div className="flex items-center gap-1.5">
                   <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>금액 *</label>
                   {alert.recurringIsVariable && alert.recurringHistoricalAvg && (
-                    <span className="text-[0.625rem] rounded-full px-1.5 py-0.5" style={{ background: 'rgba(99,102,241,0.1)', color: '#6366f1' }}
+                    <span className="text-[0.625rem] rounded-full px-1.5 py-0.5" style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--viz-2)' }}
                       title="과거 동일 항목 결제 기록의 평균">
                       과거 평균 {fmtKorMoney(alert.recurringHistoricalAvg)}
                     </span>
@@ -534,16 +534,16 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
 type AlertCat = 'unpaid' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'other'
 const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'upcoming', 'moveout', 'movein', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
 const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
-  unpaid:    { label: '누적 미수',    color: '#dc2626' },
-  upcoming:  { label: '납부 예정',    color: '#d4a847' },
-  moveout:   { label: '퇴실 예정',    color: '#eab308' },
-  movein:    { label: '입실 희망',    color: '#3b82f6' },
-  tour:      { label: '투어 예정',    color: '#a855f7' },
-  wish:      { label: '희망 호실/조건 매칭', color: '#22c55e' },
+  unpaid:    { label: '누적 미수',    color: 'var(--tc)' },
+  upcoming:  { label: '납부 예정',    color: 'var(--viz-4)' },
+  moveout:   { label: '퇴실 예정',    color: 'var(--viz-4)' },
+  movein:    { label: '입실 희망',    color: 'var(--camel)' },
+  tour:      { label: '투어 예정',    color: 'var(--ink)' },
+  wish:      { label: '희망 호실/조건 매칭', color: 'var(--success)' },
   request:   { label: '요청·컴플레인',color: 'var(--persimmon)' },
-  recurring: { label: '고정 지출',    color: '#6366f1' },
-  inventory: { label: '재고 부족',    color: '#d4a847' },
-  other:     { label: '기타',         color: '#94a3b8' },
+  recurring: { label: '고정 지출',    color: 'var(--viz-2)' },
+  inventory: { label: '재고 부족',    color: 'var(--viz-4)' },
+  other:     { label: '기타',         color: 'var(--ink-m)' },
 }
 const COLLAPSE_THRESHOLD = 3   // (예정 그룹) 이 개수 이하만 기본 펼침
 
@@ -640,8 +640,8 @@ function AlertsStrip({ alerts, onOpenAlert }: {
       {urgent.length > 0 && (
         <div style={{ borderBottom: groups.length > 0 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
           <div className="flex items-center gap-2 px-5 py-2.5" style={{ background: 'rgba(220,38,38,0.06)' }}>
-            <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#dc2626' }} />
-            <span className="text-[0.6875rem] font-bold flex-1 text-left" style={{ color: '#dc2626' }}>긴급</span>
+            <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--tc)' }} />
+            <span className="text-[0.6875rem] font-bold flex-1 text-left" style={{ color: 'var(--tc)' }}>긴급</span>
             <span className="text-[0.625rem] font-medium" style={{ color: 'var(--warm-muted)' }}>{urgent.length}건</span>
           </div>
           <div>
@@ -841,11 +841,11 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
         >
           {([
             { label: '수납액 (귀속)', value: data.paidRevenue,  color: 'var(--coral)' },
-            { label: '기타수익', value: data.extraRevenue, color: '#f97316' },
-            { label: '지출',     value: data.totalExpense, color: '#ef4444' },
-            { label: '순수익',   value: data.netProfit,    color: data.netProfit >= 0 ? '#22c55e' : '#ef4444' },
+            { label: '기타수익', value: data.extraRevenue, color: 'var(--viz-4)' },
+            { label: '지출',     value: data.totalExpense, color: 'var(--tc)' },
+            { label: '순수익',   value: data.netProfit,    color: data.netProfit >= 0 ? 'var(--success)' : 'var(--tc)' },
             // 보유 보증금 = 계약 기준 총액(유지). 아래 분해로 실수납/미기록(전 원장) 표시.
-            { label: '보유 보증금', value: data.totalDeposit, color: '#a855f7',
+            { label: '보유 보증금', value: data.totalDeposit, color: 'var(--ink)',
               sub: `실수납 ${fmtKorMoney(data.depositRecorded)} · 미기록 ${fmtKorMoney(data.depositUnrecorded)}` },
           ] as { label: string; value: number; color: string; sub?: string }[]).map((item, i) => (
             <div
@@ -871,7 +871,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
           <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>추이</h3>
           <div className="flex gap-4 text-xs" style={{ color: 'var(--warm-muted)' }}>
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: 'var(--coral)' }} />수입</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: '#64748b' }} />지출</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: 'var(--ink-m)' }} />지출</span>
           </div>
         </div>
         <div className="flex gap-1 mb-4 flex-wrap">
@@ -904,14 +904,14 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: '0.625rem', fill: '#a89888' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: '0.625rem', fill: '#a89888' }} axisLine={false} tickLine={false} width={52} />
+              <XAxis dataKey="label" tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} width={52} />
               <Tooltip
                 contentStyle={{ background: '#fff', border: '1px solid var(--cream-3)', borderRadius: 8, fontSize: '0.75rem' }}
                 formatter={(v, name) => [`${Number(v).toLocaleString()}만원`, String(name)]}
               />
               <Area type="monotone" dataKey="revenue" name="수입" stroke="var(--coral)" strokeWidth={2} fill="url(#gradRev)" dot={false} activeDot={{ r: 4, fill: 'var(--coral)' }} />
-              <Area type="monotone" dataKey="expense" name="지출" stroke="#64748b" strokeWidth={1.5} strokeDasharray="4 2" fill="url(#gradExp)" dot={false} activeDot={{ r: 4, fill: '#64748b' }} />
+              <Area type="monotone" dataKey="expense" name="지출" stroke="#64748b" strokeWidth={1.5} strokeDasharray="4 2" fill="url(#gradExp)" dot={false} activeDot={{ r: 4, fill: 'var(--ink-m)' }} />
             </AreaChart>
           </ResponsiveContainer>
         ) : (
@@ -919,8 +919,8 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
           <ResponsiveContainer width="100%" height={176}>
             <BarChart data={chartData} margin={{ top: 4, right: 8, left: 4, bottom: 0 }} barCategoryGap="28%">
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: '0.625rem', fill: '#a89888' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: '0.625rem', fill: '#a89888' }} axisLine={false} tickLine={false} width={52} />
+              <XAxis dataKey="label" tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} width={52} />
               <Tooltip
                 contentStyle={{ background: '#fff', border: '1px solid var(--cream-3)', borderRadius: 8, fontSize: '0.75rem' }}
                 formatter={(v, name) => [`${Number(v).toLocaleString()}만원`, String(name)]}
@@ -975,7 +975,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                 </div>
               )}
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: '#c4b5a5' }} />
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: 'var(--ink-m)' }} />
                 <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>미납</span>
                 <span className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>{data.unpaidCount}건</span>
               </div>
@@ -1002,7 +1002,7 @@ function TenantsTab({ data }: { data: DashboardData }) {
     { value: data.statusCounts.checkout,    color: STATUS_COLORS.checkout },
     { value: data.statusCounts.nonResident, color: STATUS_COLORS.nonResident },
   ]
-  const genderSegments = data.genderDist.map(d => ({ value: d.count, color: GENDER_COLORS[d.label] ?? '#a89888' }))
+  const genderSegments = data.genderDist.map(d => ({ value: d.count, color: GENDER_COLORS[d.label] ?? 'var(--ink-m)' }))
 
   return (
     <div className="space-y-5">
@@ -1012,7 +1012,7 @@ function TenantsTab({ data }: { data: DashboardData }) {
         <StatCard label="예약" value={`${data.statusCounts.reserved}명`}    sub=""  colorStyle={{ color: STATUS_COLORS.reserved }} />
         <StatCard label="퇴실 예정" value={`${data.statusCounts.checkout}명`}    sub=""  colorStyle={{ color: STATUS_COLORS.checkout }} />
         <StatCard label="비거주자"  value={`${data.statusCounts.nonResident}명`} sub=""  colorStyle={{ color: STATUS_COLORS.nonResident }} />
-        <StatCard label="투어 대기" value={`${data.statusCounts.waitingTour}명`} sub=""  colorStyle={{ color: '#a855f7' }} />
+        <StatCard label="투어 대기" value={`${data.statusCounts.waitingTour}명`} sub=""  colorStyle={{ color: 'var(--ink)' }} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1055,7 +1055,7 @@ function TenantsTab({ data }: { data: DashboardData }) {
             <div className="space-y-2.5 flex-1">
               {data.genderDist.map((d, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: GENDER_COLORS[d.label] ?? '#a89888' }} />
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: GENDER_COLORS[d.label] ?? 'var(--ink-m)' }} />
                   <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{GENDER_LABEL[d.label] ?? d.label}</span>
                   <span className="text-xs font-semibold" style={{ color: 'var(--warm-dark)' }}>{d.count}명</span>
                 </div>
@@ -1233,7 +1233,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
 
   if (!lease && !loading) {
     return (
-      <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
         <div className="bg-[var(--cream)] rounded-xl p-6 text-center" onClick={e => e.stopPropagation()}>
           <p className="text-sm text-[var(--warm-muted)]">활성 계약을 찾을 수 없습니다.</p>
           <button onClick={onClose} className="mt-3 text-sm font-medium" style={{ color: 'var(--coral)' }}>닫기</button>
@@ -1361,7 +1361,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[88vh]"
         onClick={e => e.stopPropagation()}>
 
@@ -1418,13 +1418,13 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                 const thirdValue = trueUnpaid > 0
                   ? `-${trueUnpaid.toLocaleString()}원`
                   : truePrepaid > 0 ? `+${truePrepaid.toLocaleString()}원` : '0원'
-                const thirdColor = trueUnpaid > 0 ? '#ef4444' : truePrepaid > 0 ? '#16a34a' : 'var(--warm-mid)'
+                const thirdColor = trueUnpaid > 0 ? 'var(--tc)' : truePrepaid > 0 ? 'var(--success)' : 'var(--warm-mid)'
                 return (
                   <>
                     <div className="grid grid-cols-3 gap-2">
                       {[
                         { label: '이달 청구', value: `${lease!.rentAmount.toLocaleString()}원`, color: 'var(--warm-dark)' },
-                        { label: '이달 납부', value: `${regularPaid.toLocaleString()}원`, color: regularPaid >= lease!.rentAmount ? '#16a34a' : 'var(--warm-dark)' },
+                        { label: '이달 납부', value: `${regularPaid.toLocaleString()}원`, color: regularPaid >= lease!.rentAmount ? 'var(--success)' : 'var(--warm-dark)' },
                         { label: thirdLabel, value: thirdValue, color: thirdColor },
                       ].map(item => (
                         <div key={item.label} className="rounded-xl p-3 text-center" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
@@ -1484,7 +1484,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                       })
                     }
                     return editingAutoPay ? (
-                      <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 space-y-2">
+                      <div className="bg-amber-50 border border-amber-200 rounded-sm px-3 py-2.5 space-y-2">
                         <p className="text-xs font-semibold text-amber-700">양도인 수납 — 납부일 직접 입력</p>
                         <div className="flex gap-2 items-center">
                           <div className="flex-1">
@@ -1498,7 +1498,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                      <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-sm px-3 py-2.5">
                         <div>
                           <p className="text-xs font-semibold text-amber-700">양도인 수납</p>
                           <button onClick={() => { setAutoPayDate(getAutoDefault()); setEditingAutoPay(true) }}
@@ -1644,7 +1644,7 @@ function DashPayRow({ p, isPreAcq, onEdit, onDelete, color }: {
   const DAYS = ['일', '월', '화', '수', '목', '금', '토']
   const fmtD = (d: Date | string) => { const dt = new Date(d); return `${dt.getMonth()+1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})` }
   return (
-    <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 ${bg}`}>
+    <div className={`flex items-center justify-between rounded-sm px-3 py-2.5 ${bg}`}>
       <div>
         <p className={`text-xs ${textColor}`}>
           {p.seqNo}회차 · {fmtD(p.payDate)} · {p.payMethod ?? '—'}
@@ -1735,7 +1735,7 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
   const lease = info?.leaseTerms?.[0] ?? null
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
           <span className="text-base font-bold text-[var(--warm-dark)]">
@@ -1957,7 +1957,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: '0.65625rem', color: 'rgba(255,252,247,0.5)', lineHeight: 1.5 }}>
             수납액+기타수익
             {revChange != null && (
-              <em style={{ fontStyle: 'normal', color: '#fbbf24', marginLeft: 6 }}>{revChange >= 0 ? '+' : ''}{revChange}%</em>
+              <em style={{ fontStyle: 'normal', color: 'var(--viz-4)', marginLeft: 6 }}>{revChange >= 0 ? '+' : ''}{revChange}%</em>
             )}
           </p>
         </div>
@@ -1968,18 +1968,18 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           const isPos = net >= 0
           const hasReserveOut = data.reserveAccrualFromThisMonth > 0
           return (
-            <div className="rounded-xl" style={{ background: '#1c2b3a', padding: '18px 20px' }}>
+            <div className="rounded-xl" style={{ background: 'var(--ink)', padding: '18px 20px' }}>
               <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(180,210,240,0.45)', marginBottom: 8 }}>
                 현재 순이익
               </p>
-              <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: isPos ? '#4ade80' : '#f87171' }}>
+              <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: isPos ? 'var(--viz-3)' : 'var(--tc-s)' }}>
                 {isPos ? '+' : ''}{net.toLocaleString()}
                 <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'rgba(180,210,240,0.3)', marginLeft: 2 }}>원</small>
               </p>
               <p style={{ fontSize: '0.65625rem', color: 'rgba(180,210,240,0.4)', marginBottom: hasReserveOut ? 4 : 0 }}>수납 − 실제 지출</p>
               {hasReserveOut && (
                 <p style={{ fontSize: '0.625rem', color: 'rgba(180,210,240,0.55)' }}>
-                  예비비 −{data.reserveAccrualFromThisMonth.toLocaleString()}원 이체 · 운영 가용 <span style={{ color: '#5eead4', fontWeight: 600 }}>{data.operatingCashAvailable.toLocaleString()}원</span>
+                  예비비 −{data.reserveAccrualFromThisMonth.toLocaleString()}원 이체 · 운영 가용 <span style={{ color: 'var(--viz-7)', fontWeight: 600 }}>{data.operatingCashAvailable.toLocaleString()}원</span>
                 </p>
               )}
             </div>
@@ -1991,7 +1991,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             누적 미납
           </p>
-          <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.overdueAmount > 0 ? '#ef4444' : 'var(--ink-2)' }}>
+          <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.overdueAmount > 0 ? 'var(--tc)' : 'var(--ink-2)' }}>
             {data.overdueAmount.toLocaleString()}
             <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
@@ -2041,9 +2041,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)' }}>
             {data.reserveMonthly.deposit > 0 || data.reserveMonthly.withdraw > 0 ? (
               <>
-                이달 <span style={{ color: '#10b981' }}>+{data.reserveMonthly.deposit.toLocaleString()}</span>
+                이달 <span style={{ color: 'var(--success)' }}>+{data.reserveMonthly.deposit.toLocaleString()}</span>
                 {' / '}
-                <span style={{ color: '#f59e0b' }}>−{data.reserveMonthly.withdraw.toLocaleString()}</span>
+                <span style={{ color: 'var(--viz-4)' }}>−{data.reserveMonthly.withdraw.toLocaleString()}</span>
               </>
             ) : '이번 달 거래 없음'}
           </p>
@@ -2332,7 +2332,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'rgba(200,160,120,0.4)' }} />
                             <span style={{ fontSize: '0.6875rem', color: 'var(--warm-muted)' }}>수납 예정</span>
                             {data.pendingCount > 0 && (
-                              <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: '0.5625rem', fontWeight: 600, background: data.unpaidCount > 0 ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.12)', color: data.unpaidCount > 0 ? '#ef4444' : '#1e40af' }}>
+                              <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: '0.5625rem', fontWeight: 600, background: data.unpaidCount > 0 ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.12)', color: data.unpaidCount > 0 ? 'var(--tc)' : '#1e40af' }}>
                                 {data.pendingCount}건{data.unpaidCount > 0 ? ` (미납 ${data.unpaidCount})` : ''}
                               </span>
                             )}
@@ -2396,7 +2396,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                           return (
                             <div className="flex items-center justify-between">
                               <span style={{ fontSize: '0.6875rem', color: 'var(--warm-muted)' }}>지난달 대비</span>
-                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: up ? 'var(--coral)' : '#16a34a' }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: up ? 'var(--coral)' : 'var(--success)' }}>
                                 {up ? '+' : ''}{fmtKorMoney(diff)} ({up ? '+' : ''}{pct}%)
                               </span>
                             </div>
@@ -2431,7 +2431,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--coral)' }} />
                                 <span style={{ fontSize: '0.6875rem', color: 'var(--warm-muted)' }}>현재 순이익</span>
                               </div>
-                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: currentNet >= 0 ? 'var(--coral)' : '#ef4444' }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: currentNet >= 0 ? 'var(--coral)' : 'var(--tc)' }}>
                                 {currentNet >= 0 ? '+' : ''}{fmtKorMoney(currentNet)}
                               </span>
                             </div>
@@ -2487,14 +2487,14 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   <p className="text-xs font-semibold truncate flex items-center gap-1" style={{ color: 'var(--ink-2)' }}>
                                     {fmtRoomNo(l.roomNo)} {l.tenantName}
                                     {l.daysOverdue != null && l.daysOverdue >= 7 && (
-                                      <span className="rounded-full text-[0.5625rem] font-bold px-1.5 py-0.5" style={{ background: '#dc2626', color: '#fff' }}>
+                                      <span className="rounded-full text-[0.5625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--tc)', color: '#fff' }}>
                                         {l.daysOverdue}일 경과
                                       </span>
                                     )}
                                   </p>
                                   <p className="text-[0.625rem] font-medium mt-0.5" style={{ color: dl.color }}>{dl.text}</p>
                                 </div>
-                                <span className="rounded-full shrink-0 text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>
+                                <span className="rounded-full shrink-0 text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--tc)' }}>
                                   {fmtKorMoney(l.unpaidAmount)}
                                 </span>
                               </button>
@@ -2527,7 +2527,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         <span className="rounded-full text-[0.5625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
                       </div>
                       {data.activity.length > 0 && (
-                        <span className="rounded-full text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
+                        <span className="rounded-full text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--success)' }}>
                           {data.activity.length}건
                         </span>
                       )}
@@ -2545,14 +2545,14 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               style={{ borderBottom: i < arr.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}
                             >
                               <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
-                                style={{ background: 'rgba(34,197,94,0.12)', fontSize: '0.6875rem', color: '#16a34a' }}>
+                                style={{ background: 'rgba(34,197,94,0.12)', fontSize: '0.6875rem', color: 'var(--success)' }}>
                                 {item.tenantName.slice(0, 1)}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink-2)' }}>{fmtRoomNo(item.roomNo)} {item.tenantName}</p>
                                 <p className="text-[0.625rem] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</p>
                               </div>
-                              <span className="rounded-full shrink-0 text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
+                              <span className="rounded-full shrink-0 text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--success)' }}>
                                 {fmtKorMoney(item.amount)}
                               </span>
                             </button>
@@ -2566,7 +2566,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                           >
                             {activityExpanded
                               ? <>접기 ↑</>
-                              : <>더보기 <span style={{ color: '#16a34a' }}>+{data.activity.length - ACTIVITY_LIMIT}</span> ↓</>}
+                              : <>더보기 <span style={{ color: 'var(--success)' }}>+{data.activity.length - ACTIVITY_LIMIT}</span> ↓</>}
                           </button>
                         )}
                       </>

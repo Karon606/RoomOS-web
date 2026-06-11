@@ -102,11 +102,11 @@ export function DatePicker({
   // ── 팝업 렌더 ────────────────────────────────────────────────
   const popup = open ? (
     <>
-      {/* 외부 클릭 닫기 backdrop — 모달(z-200~300) 위에 떠야 하므로 z-[400] */}
-      <div className="fixed inset-0 z-[400]" onClick={() => setOpen(false)} />
+      {/* 외부 클릭 닫기 backdrop — 모달(z-200~300) 위에 떠야 하므로 z-[var(--z-lightbox)] */}
+      <div className="fixed inset-0 z-[var(--z-lightbox)]" onClick={() => setOpen(false)} />
 
       <div
-        className="fixed z-[410] rounded-2xl shadow-lift select-none"
+        className="fixed z-[calc(var(--z-lightbox)+1)] rounded-2xl shadow-lift select-none"
         style={{
           top: pos.top, left: pos.left, width: pos.width,
           background: 'var(--cream)',

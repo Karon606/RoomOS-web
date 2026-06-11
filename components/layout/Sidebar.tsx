@@ -314,7 +314,7 @@ function MobileMenu({
   pathname: string; month: string | null; user: AppUser; isSuperAdmin?: boolean; onClose?: () => void
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex flex-col md:hidden safe-b" style={{ background: 'var(--cream)' }}>
+    <div className="fixed inset-0 z-[var(--z-drawer)] flex flex-col md:hidden safe-b" style={{ background: 'var(--cream)' }}>
       {/* 헤더: 로고 + 닫기 */}
       <div className="flex items-center justify-between shrink-0 px-5" style={{ minHeight: 56, borderBottom: '1px solid var(--warm-border)' }}>
         <LogoFull />

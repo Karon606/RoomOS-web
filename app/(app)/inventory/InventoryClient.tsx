@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Loading } from '@/components/ui/Loading'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
@@ -525,7 +526,7 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
           <select value={category} onChange={e => setCategory(e.target.value)}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none">
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none">
             {categories.map(c => <option key={c.cat} value={c.cat}>{c.alias}</option>)}
           </select>
         </div>
@@ -539,18 +540,18 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">용량 단위</label>
             <input type="text" value={specUnit} onChange={e => setSpecUnit(e.target.value)} placeholder="m, L, kg"
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">수량 단위</label>
             <input type="text" value={qtyUnit} onChange={e => setQtyUnit(e.target.value)} placeholder="롤, 매, 포대"
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
           </div>
         </div>
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
           <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="선택"
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
         </div>
         {error && <p className="text-xs text-red-500">{error}</p>}
       </form>
@@ -829,7 +830,7 @@ function MonthlyInflowList({ rows, stockUnit }: { rows: MonthlyInflowRow[]; stoc
           const purchasePct = (r.purchaseQty / maxQty) * 100
           const additionPct = (r.additionQty / maxQty) * 100
           return (
-            <li key={r.month} className="bg-[var(--cream)] border border-[var(--warm-border)]/60 rounded-xl px-3 py-2.5 space-y-1.5">
+            <li key={r.month} className="bg-[var(--cream)] border border-[var(--warm-border)]/60 rounded-sm px-3 py-2.5 space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-[var(--warm-dark)]">{r.month.slice(0, 4)}년 {Number(r.month.slice(5))}월</span>
                 <span className="text-[var(--warm-dark)]">
@@ -1103,7 +1104,7 @@ function MergeSection({ currentId, currentLabel, category, onDone }: {
       <label className="text-xs font-medium text-[var(--warm-mid)]">다른 카드와 병합</label>
       <div className="flex gap-2">
         <select value={targetId} onChange={e => { setTargetId(e.target.value); setReversed(false) }}
-          className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none">
+          className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none">
           <option value="">병합 대상 선택…</option>
           {siblings.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
@@ -1117,7 +1118,7 @@ function MergeSection({ currentId, currentLabel, category, onDone }: {
 
       {/* 병합 방향 확인 모달 */}
       {showConfirm && target && (
-        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={() => setShowConfirm(false)}>
+        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={() => setShowConfirm(false)}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm p-5 space-y-4 shadow-lift" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm font-bold text-[var(--warm-dark)]">병합 방향 확인</h3>
 
@@ -1519,7 +1520,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], onCancel, onDone 
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">사유 (선택)</label>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="예: 분실·파손·계산 오차"
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
       </div>
 
       <div className="pt-1 flex gap-2">
@@ -1565,7 +1566,7 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
   const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[var(--z-modal)] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] shadow-lift w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--warm-border)]">
           <div>
@@ -1697,7 +1698,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
   }
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[var(--z-modal)] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] shadow-lift w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--warm-border)]">
           <div>
@@ -2412,7 +2413,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">점검일 *</label>
         <DatePicker value={date} onChange={setDate}
-          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
       </div>
 
       {hasLocations && restockMode ? (
@@ -2551,7 +2552,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)}
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
       </div>
       <label className={`flex items-start gap-2 cursor-pointer select-none rounded-lg border px-2.5 py-2 transition-colors ${reconcileMode ? 'bg-[var(--honey)]/10 border-[var(--honey)]/40' : 'bg-[var(--canvas)] border-[var(--warm-border)]'}`}>
         <input type="checkbox" checked={reconcileMode} onChange={e => setReconcileMode(e.target.checked)} className="mt-0.5 accent-[var(--coral)]" />
@@ -2751,7 +2752,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
 
   return (
     <div
-      className={inline ? undefined : 'fixed inset-0 bg-black/70 z-[230] flex items-end sm:items-center justify-center'}
+      className={inline ? undefined : 'fixed inset-0 bg-black/70 z-[var(--z-modal-3)] flex items-end sm:items-center justify-center'}
       onClick={inline ? undefined : onClose}
     >
       <div
@@ -3001,13 +3002,18 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
     })
   }
 
-  const undo = (id: string) => {
-    if (!confirm('이 병합을 해제할까요?\n\n· 합쳐졌던 지출·점검이 원래 품목으로 분리됩니다.\n· 원래 품목 카드가 다시 생깁니다.\n\n⚠️ 카드 병합이었던 경우 위치별 재고 연결·허브(창고) 설정은 복원되지 않아\n해제 후 보관 위치를 다시 지정해야 할 수 있습니다.')) return
+  const undo = async (id: string) => {
+    const ok = await confirmDialog({
+      title: '이 병합을 적용취소할까요?',
+      message: '합쳐졌던 지출·점검이 원래 품목으로 분리되고, 원래 품목 카드가 다시 생깁니다.\n카드 병합이었던 경우 위치별 재고 연결·허브(창고) 설정은 복원되지 않아 보관 위치를 다시 지정해야 할 수 있습니다.',
+      level: 'caution', confirmLabel: '적용취소',
+    })
+    if (!ok) return
     setPendingId(id)
     unmergeTrackedItem(id).then(res => {
       setPendingId(null)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', '병합 해제됨')
+      pushToast('success', '병합을 적용취소했습니다')
       load()
     })
   }
@@ -3410,7 +3416,7 @@ function AdditionForm({ item, onCancel, onDone }: {
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">입수일 *</label>
         <DatePicker value={date} onChange={setDate}
-          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
       </div>
       {useSpec ? (
         <>
@@ -3454,7 +3460,7 @@ function AdditionForm({ item, onCancel, onDone }: {
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">출처</label>
         <select value={source} onChange={e => setSource(e.target.value)}
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]">
           <option value="무상">무상 수령</option>
           <option value="기증">기증</option>
           <option value="이월">이월 (인수 전 보유)</option>
@@ -3465,7 +3471,7 @@ function AdditionForm({ item, onCancel, onDone }: {
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">입고 위치</label>
           <select value={storageLocationId} onChange={e => setStorageLocationId(e.target.value)}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]">
             <option value="">위치 없이 기록</option>
             {item.locations.map(loc => (
               <option key={loc.id} value={loc.id}>{loc.name}{loc.isHub ? ' (허브)' : ''}</option>
@@ -3476,7 +3482,7 @@ function AdditionForm({ item, onCancel, onDone }: {
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)}
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
+          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
       </div>
       {error && <p className="text-xs text-red-500">{error}</p>}
       <div className="pt-2 flex gap-2">

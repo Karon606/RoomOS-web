@@ -109,7 +109,7 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
 
   return (
     <div
-      className={`fixed inset-0 z-[300] flex items-center justify-center select-none transition-[opacity,backdrop-filter] duration-200 ${
+      className={`fixed inset-0 z-[var(--z-lightbox)] flex items-center justify-center select-none transition-[opacity,backdrop-filter] duration-200 ${
         mounted ? 'opacity-100' : 'opacity-0'
       }`}
       style={{ background: 'rgba(0,0,0,0.95)' }}

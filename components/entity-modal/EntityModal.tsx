@@ -15,7 +15,8 @@ import { kstMonthStr } from '@/lib/kstDate'
 import { getEntityLinks } from '@/app/(app)/rooms/actions'
 import { deleteRoom, applyScheduledRentNow } from '@/app/(app)/room-manage/actions'
 import { deleteTenant, getContractFiles } from '@/app/(app)/tenants/actions'
-import { withSave } from '@/lib/saveStatus'
+import { withSave, pushToast } from '@/lib/saveStatus'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { PrismNavBar } from './PrismNavBar'
 import { RoomBody } from './bodies/RoomBody'
 import { TenantBody } from './bodies/TenantBody'
@@ -117,27 +118,45 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
   const title = links ? `${fmtRoomNo(links.roomNo)}${links.tenantName ? ` · ${links.tenantName}` : ''}` : '불러오는 중…'
 
   // 호실 액션 — 셸이 직접 처리(데이터 정합).
-  const handleApplyScheduledNow = () => {
+  const handleApplyScheduledNow = async () => {
     if (!links?.roomId) return
-    if (!confirm(`${fmtRoomNo(links.roomNo)} 예정 가격을 즉시 적용할까요?`)) return
+    const ok = await confirmDialog({
+      title: `${fmtRoomNo(links.roomNo)} 예정 가격을 즉시 적용할까요?`,
+      confirmLabel: '적용',
+    })
+    if (!ok) return
     startTransition(async () => {
       const res = await withSave(() => applyScheduledRentNow(links.roomId!), { success: '예정 가격 적용됨' })
       if (res.ok) router.refresh()
     })
   }
-  const handleDeleteRoom = () => {
+  const handleDeleteRoom = async () => {
     if (!links?.roomId) return
-    if (!confirm(`${fmtRoomNo(links.roomNo)} 호실을 삭제할까요? 되돌릴 수 없습니다.`)) return
+    const ok = await confirmDialog({
+      title: `${fmtRoomNo(links.roomNo)} 호실을 삭제할까요?`,
+      level: 'danger', confirmLabel: '삭제',
+    })
+    if (!ok) return
     startTransition(async () => {
-      const res = await withSave(() => deleteRoom(links.roomId!), { success: '삭제됨' })
-      // 과거 계약·수납 이력이 있으면 건수를 보여주는 2차 동의 후에만 영구 삭제
+      const res = await withSave(() => deleteRoom(links.roomId!), { success: '삭제됨', silentError: true })
+      // 과거 계약·수납 이력 — 건수를 보여주는 영향 고지형 다이얼로그(v1.3 §9.3) 동의 후에만 영구 삭제
       if (!res.ok && res.needsForce) {
-        if (!confirm(`⚠️ ${res.error}\n\n매출 통계·과거 조회에서도 사라지며 복구할 수 없습니다.\n그래도 삭제할까요?`)) return
+        const force = await confirmDialog({
+          title: `${fmtRoomNo(links.roomNo)} 기록을 영구 삭제할까요?`,
+          message: '매출 통계·과거 조회에서도 함께 사라집니다.',
+          level: 'danger', confirmLabel: '영구 삭제',
+          impact: [
+            { label: '과거 계약', count: res.leases ?? 0 },
+            { label: '수납 기록', count: res.payments ?? 0 },
+          ],
+        })
+        if (!force) return
         const res2 = await withSave(() => deleteRoom(links.roomId!, { force: true }), { success: '삭제됨' })
         if (res2.ok) { onClose(); router.refresh() }
         return
       }
-      if (res.ok) { onClose(); router.refresh() }
+      if (!res.ok) { pushToast('error', res.error); return }   // needsForce 외 실패(거주중 등)
+      onClose(); router.refresh()
     })
   }
   // 수정은 페이지 종속 편집 폼이 있는 /room-manage 로 위임 (Phase 2.5 에서 위젯 편집 모드로 대체 예정).
@@ -148,19 +167,33 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
   }
 
   // 고객 액션 — 삭제는 셸이 직접, 편집은 페이지로 위임 (탭·상태전환·요청 CRUD 가 페이지 종속).
-  const handleDeleteTenant = () => {
+  const handleDeleteTenant = async () => {
     if (!links?.tenantId) return
-    if (!confirm(`${links.tenantName ?? '이 고객'}을 삭제할까요? 되돌릴 수 없습니다.`)) return
+    const ok = await confirmDialog({
+      title: `${links.tenantName ?? '이 고객'}님을 삭제할까요?`,
+      level: 'danger', confirmLabel: '삭제',
+    })
+    if (!ok) return
     startTransition(async () => {
-      const res = await withSave(() => deleteTenant(links.tenantId!), { success: '삭제됨' })
-      // 계약·수납 이력이 있으면 건수를 보여주는 2차 동의 후에만 영구 삭제
+      const res = await withSave(() => deleteTenant(links.tenantId!), { success: '삭제됨', silentError: true })
+      // 계약·수납 이력 — 건수를 보여주는 영향 고지형 다이얼로그(v1.3 §9.3) 동의 후에만 영구 삭제
       if (!res.ok && res.needsForce) {
-        if (!confirm(`⚠️ ${res.error}\n\n매출 통계·과거 조회에서도 사라지며 복구할 수 없습니다.\n그래도 삭제할까요?`)) return
+        const force = await confirmDialog({
+          title: `${links.tenantName ?? '이 고객'}님 기록을 영구 삭제할까요?`,
+          message: '매출 통계·과거 조회에서도 함께 사라집니다.',
+          level: 'danger', confirmLabel: '영구 삭제',
+          impact: [
+            { label: '계약', count: res.leases ?? 0 },
+            { label: '수납 기록', count: res.payments ?? 0 },
+          ],
+        })
+        if (!force) return
         const res2 = await withSave(() => deleteTenant(links.tenantId!, { force: true }), { success: '삭제됨' })
         if (res2.ok) { onClose(); router.refresh() }
         return
       }
-      if (res.ok) { onClose(); router.refresh() }
+      if (!res.ok) { pushToast('error', res.error); return }
+      onClose(); router.refresh()
     })
   }
   const handleEditTenant = () => {
@@ -249,7 +282,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
     {/* 계약서 출력 선택 모달 — 스캔본 vs 시스템 계약서 3-옵션 (confirm 다이얼로그의
         [확인]/[취소] 패턴이 사용자 의도와 안 맞아 분리, 2026-06-01 피드백) */}
     {printChoice && (
-      <div className="fixed inset-0 z-[290] flex items-center justify-center bg-black/70 p-4"
+      <div className="fixed inset-0 z-[var(--z-confirm)] flex items-center justify-center bg-black/70 p-4"
         onClick={() => setPrintChoice(null)}>
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-xs"
           onClick={e => e.stopPropagation()}>

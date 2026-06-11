@@ -823,7 +823,7 @@ export default function RoomManageClient({
                     setAddRoomNoVal(val)
                     setAddFloorVal(deriveFloor(val))
                   }}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
                 />
               </div>
               <div className="space-y-1.5">
@@ -833,7 +833,7 @@ export default function RoomManageClient({
                   placeholder="자동"
                   value={addFloorVal}
                   onChange={e => setAddFloorVal(e.target.value)}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
                 />
               </div>
             </div>
@@ -872,7 +872,7 @@ export default function RoomManageClient({
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">적용 예정일</label>
                       <DatePicker name="nonResidentRentDate" value={addNrDateVal} onChange={setAddNrDateVal}
-                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                     </div>
                   </div>
                 </div>
@@ -940,7 +940,7 @@ export default function RoomManageClient({
                 <input
                   name="roomNo"
                   defaultValue={editRoom.roomNo}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
                 />
               </div>
               <div className="space-y-1.5">
@@ -950,7 +950,7 @@ export default function RoomManageClient({
                   placeholder="예: 1"
                   value={editFloorVal}
                   onChange={e => setEditFloorVal(e.target.value)}
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:ring-2 focus:ring-[var(--coral)]/30 placeholder:text-[var(--warm-muted)]"
                 />
               </div>
             </div>
@@ -968,7 +968,7 @@ export default function RoomManageClient({
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-[var(--warm-mid)]">적용 예정일</label>
                 <DatePicker name="rentUpdateDate" value={rentUpdateDateVal} onChange={setRentUpdateDateVal}
-                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
               </div>
             </div>
 
@@ -1000,7 +1000,7 @@ export default function RoomManageClient({
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">적용 예정일</label>
                       <DatePicker name="nonResidentRentDate" value={nrDateVal} onChange={setNrDateVal}
-                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                     </div>
                   </div>
                 </div>
@@ -1105,7 +1105,7 @@ function PhotoLightbox({ photo, onClose }: { photo: Photo; onClose: () => void }
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-[320] bg-black/90 flex flex-col" onClick={onClose}>
+    <div className="fixed inset-0 z-[var(--z-lightbox)] bg-black/90 flex flex-col" onClick={onClose}>
       <div className="flex items-center justify-between gap-2 px-4 py-3 shrink-0" onClick={e => e.stopPropagation()}>
         <span className="text-white/80 text-sm font-medium truncate">{photo.fileName ?? '사진'}{is360 && ' · 360°'}</span>
         <div className="flex items-center gap-2 shrink-0">

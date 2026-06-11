@@ -60,7 +60,8 @@ export function Modal({
   }, [open, onClose])
 
   if (!open) return null
-  const zClass = z === 280 ? 'z-[280]' : z === 260 ? 'z-[260]' : 'z-[200]'
+  // v1.3 §12 레이어 토큰 매핑 — 호출부 API(200/260/280)는 유지, 실제 z는 토큰
+  const zClass = z === 280 ? 'z-[var(--z-modal-3)]' : z === 260 ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-modal)]'
   return (
     <div
       className={`fixed inset-0 bg-black/70 ${zClass} flex items-center justify-center`}

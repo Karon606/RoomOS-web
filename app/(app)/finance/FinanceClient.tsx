@@ -22,6 +22,7 @@ import { useRouter } from 'next/navigation'
 import { recordDepositReceived } from '@/app/(app)/rooms/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { Btn } from '@/components/ui/Btn'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Loading } from '@/components/ui/Loading'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { chartColor } from '@/lib/chartColors'
@@ -519,7 +520,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
   }
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70" onClick={onClose}>
+    <div className="fixed inset-0 z-[var(--z-modal)] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] shadow-lift w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
           <div>
@@ -1054,7 +1055,7 @@ function ReceiptScanModal({ bitmap, onConfirm, onCancel }: {
   const pts = `${corners.tl.x*dW},${corners.tl.y*dH} ${corners.tr.x*dW},${corners.tr.y*dH} ${corners.br.x*dW},${corners.br.y*dH} ${corners.bl.x*dW},${corners.bl.y*dH}`
 
   return (
-    <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-black/92">
+    <div className="fixed inset-0 z-[var(--z-modal)] flex flex-col items-center justify-center bg-black/92">
       <p className="text-white text-sm font-medium mb-4 px-4 text-center">모서리를 드래그해서 영수증 테두리를 맞추세요</p>
       <div ref={containerRef} className="relative" style={{ width: dW, height: dH, touchAction: 'none' }}>
         <canvas ref={canvasRef} width={dW} height={dH} className="block rounded-xl" />
@@ -1690,14 +1691,21 @@ export default function FinanceClient({
       } finally { release() }
     })
   }
-  const handleDeleteExp = (exp: Expense) => {
+  const handleDeleteExp = async (exp: Expense) => {
     // #7: 고정지출에서 기록된 건은 '삭제'가 아니라 '이번 달 기록 취소'임을 명확히.
     //     (지출 record만 삭제 — 고정지출 항목/템플릿 자체는 그대로 유지)
     const isFixed = !!exp.recurringExpenseId
-    const msg = isFixed
-      ? '이번 달 고정지출 기록만 취소할까요?\n고정지출 항목 자체는 그대로 남고, 이번 달 기록(정산)만 취소됩니다.'
-      : '삭제하시겠습니까?'
-    if (!confirm(msg)) return
+    const ok = isFixed
+      ? await confirmDialog({
+          title: '이번 달 고정지출 기록만 취소할까요?',
+          message: '고정지출 항목 자체는 그대로 남고, 이번 달 기록(정산)만 취소됩니다.',
+          confirmLabel: '기록 취소',
+        })
+      : await confirmDialog({
+          title: `이 지출(${exp.amount.toLocaleString()}원)을 삭제할까요?`,
+          level: 'danger', confirmLabel: '삭제',
+        })
+    if (!ok) return
     startTransition(async () => {
       const release = trackSave()
       try {
@@ -2810,7 +2818,7 @@ export default function FinanceClient({
           모달: 지출 상세 / 수정
       ══════════════════════════════════════════════════════════ */}
       {detailExp && (
-        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
           onClick={() => { setDetailExp(null); setDetailExpEdit(false) }}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
             onClick={e => e.stopPropagation()}>
@@ -2964,7 +2972,7 @@ export default function FinanceClient({
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                       <DatePicker name="date" value={editExpDate} onChange={setEditExpDate}
-                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">
@@ -2981,7 +2989,7 @@ export default function FinanceClient({
                             {/* 합산형 배송비 — 서버 품목합 검증에서 차감(품목 2개+ 도 저장 가능) */}
                             <input type="hidden" name="shippingIncluded" value={ship} />
                             {editItems.length >= 1 ? (
-                              <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
+                              <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]">
                                 {total.toLocaleString()}원
                                 {ship > 0 && <span className="text-[0.625rem] text-[var(--warm-muted)] ml-1">(품목 {base.toLocaleString()} + 배송 {ship.toLocaleString()})</span>}
                               </div>
@@ -3088,7 +3096,7 @@ export default function FinanceClient({
                     <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                     {editItems.length > 0
                       ? <input type="text" value={fmtItemListDetail(editItems)} readOnly
-                          className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
+                          className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
                       : <input type="text" value={editExpDetail} onChange={e => setEditExpDetail(e.target.value)} placeholder="세부 내용"
                           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                     }
@@ -3184,7 +3192,7 @@ export default function FinanceClient({
                           className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none">✕</button>
                       </div>
                     ) : (
-                      <label className="flex items-center justify-center w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2.5 cursor-pointer hover:border-[var(--coral)] transition-colors">
+                      <label className="flex items-center justify-center w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-sm px-3 py-2.5 cursor-pointer hover:border-[var(--coral)] transition-colors">
                         <span className="text-xs text-[var(--warm-muted)]">{receiptUploading ? '업로드 중…' : '영수증 첨부'}</span>
                         <input type="file" accept="image/*,application/pdf" className="hidden" disabled={receiptUploading}
                           onChange={async e => { const f = e.target.files?.[0]; if (f) { await handleOpenScan(f, 'edit'); e.target.value = '' } }} />
@@ -3225,7 +3233,7 @@ export default function FinanceClient({
           모달: 수익 상세 / 수정
       ══════════════════════════════════════════════════════════ */}
       {detailInc && (
-        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
           onClick={() => { setDetailInc(null); setDetailIncEdit(false) }}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
             onClick={e => e.stopPropagation()}>
@@ -3270,7 +3278,7 @@ export default function FinanceClient({
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                       <DatePicker name="date" value={editIncDate} onChange={setEditIncDate}
-                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
@@ -3320,7 +3328,7 @@ export default function FinanceClient({
           모달: 지출 등록
       ══════════════════════════════════════════════════════════ */}
       {showAddExp && (
-        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
           onClick={() => setShowAddExp(false)}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
             onClick={e => e.stopPropagation()}>
@@ -3337,7 +3345,7 @@ export default function FinanceClient({
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                     <DatePicker name="date" value={addExpDate} onChange={setAddExpDate}
-                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">
@@ -3355,7 +3363,7 @@ export default function FinanceClient({
                           {/* 합산형 배송비 — 서버 품목합 검증에서 차감(품목 2개+ 도 저장 가능) */}
                           <input type="hidden" name="shippingIncluded" value={ship} />
                           {addItems.length >= 1 ? (
-                            <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
+                            <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]">
                               {total.toLocaleString()}원
                               {ship > 0 && <span className="text-[0.625rem] text-[var(--warm-muted)] ml-1">(품목 {base.toLocaleString()} + 배송 {ship.toLocaleString()})</span>}
                             </div>
@@ -3437,7 +3445,7 @@ export default function FinanceClient({
                   <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                   {addItems.length > 0
                     ? <input type="text" value={fmtItemListDetail(addItems)} readOnly
-                        className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
+                        className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
                     : <input type="text" value={addExpDetail} onChange={e => setAddExpDetail(e.target.value)} placeholder="세부 내용"
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   }
@@ -3539,7 +3547,7 @@ export default function FinanceClient({
                         className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none">✕</button>
                     </div>
                   ) : (
-                    <label className="flex items-center justify-center w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-xl px-3 py-2.5 cursor-pointer hover:border-[var(--coral)] transition-colors">
+                    <label className="flex items-center justify-center w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-sm px-3 py-2.5 cursor-pointer hover:border-[var(--coral)] transition-colors">
                       <span className="text-xs text-[var(--warm-muted)]">{receiptUploading ? '업로드 중…' : '영수증 첨부 · 자동 입력'}</span>
                       <input type="file" accept="image/*,application/pdf" className="hidden" disabled={receiptUploading}
                         onChange={async e => { const f = e.target.files?.[0]; if (f) { await handleOpenScan(f, 'add'); e.target.value = '' } }} />
@@ -3563,7 +3571,7 @@ export default function FinanceClient({
           모달: 수익 등록
       ══════════════════════════════════════════════════════════ */}
       {showAddInc && (
-        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
           onClick={() => setShowAddInc(false)}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
             onClick={e => e.stopPropagation()}>
@@ -3578,7 +3586,7 @@ export default function FinanceClient({
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                     <DatePicker name="date" value={addIncDate} onChange={setAddIncDate}
-                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
@@ -3632,7 +3640,7 @@ export default function FinanceClient({
     {/* ── 고정 지출 관리 모달 ────────────────────────────────────── */}
 
     {showRecMgmt && (
-      <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) { setShowRecMgmt(false); setShowRecMgmtForm(false) } }}>
+      <div className="fixed inset-0 z-[var(--z-modal)] flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) { setShowRecMgmt(false); setShowRecMgmtForm(false) } }}>
         <div className="bg-[var(--cream)] rounded-2xl w-full max-w-lg max-h-[90dvh] flex flex-col shadow-lift border border-[var(--warm-border)]">
           {/* 모달 헤더 */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
@@ -3812,7 +3820,7 @@ export default function FinanceClient({
                   return (
                   <div key={r.id}
                     onClick={selectable ? () => toggleGroupSel(r.id) : undefined}
-                    className={`flex items-center gap-3 rounded-xl px-3 py-2.5 border ${recGroupSel.has(r.id) ? 'border-[var(--coral)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] bg-[var(--canvas)]'} ${!r.isActive ? 'opacity-50' : ''} ${selectable ? 'cursor-pointer' : ''}`}>
+                    className={`flex items-center gap-3 rounded-sm px-3 py-2.5 border ${recGroupSel.has(r.id) ? 'border-[var(--coral)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] bg-[var(--canvas)]'} ${!r.isActive ? 'opacity-50' : ''} ${selectable ? 'cursor-pointer' : ''}`}>
                     {recGroupMode && (
                       <input type="checkbox" checked={recGroupSel.has(r.id)} disabled={!r.isActive}
                         onChange={() => toggleGroupSel(r.id)} onClick={e => e.stopPropagation()}
@@ -3861,7 +3869,7 @@ export default function FinanceClient({
     {/* ── 고정 지출 기록 모달 ────────────────────────────────────────── */}
     {recordingRec && (
       <div
-        className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+        className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
         onClick={e => { if (e.target === e.currentTarget) { setRecordingRec(null); setRecError('') } }}>
         <div className="bg-[var(--cream)] rounded-2xl w-full max-w-sm shadow-lift border border-[var(--warm-border)]">
           {/* 헤더 */}
@@ -4410,7 +4418,7 @@ function ReserveTab({
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
                 <DatePicker value={date} onChange={setDate}
-                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
               </div>
               {mode === 'deposit' && (
                 <div className="space-y-1.5">

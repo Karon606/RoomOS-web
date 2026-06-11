@@ -289,7 +289,7 @@ function FormModal({
   const [customMode, setCustomMode] = useState(row ? !PRESETS.some(p => p.days === row.intervalDays) : false)
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
         onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-[var(--warm-border)] flex items-center justify-between">
@@ -411,7 +411,7 @@ function CheckModal({
 }) {
   const [memo, setMemo] = useState('')
   return (
-    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
         onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-[var(--warm-border)] flex items-center justify-between">

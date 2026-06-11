@@ -3,6 +3,16 @@
 마지막 업데이트: 2026-06-11
 브랜치: main
 
+## 2026-06-11 (이어서) — 브랜드가이드 v1.3 (인터랙션 확장판) 1차 반영 [SQL 불필요]
+Claude Design 의뢰([docs/design-brief-v1.3-request.md](docs/design-brief-v1.3-request.md)) → 결과 가이드 [docs/brand-guide-v1.3.md](docs/brand-guide-v1.3.md) 수령·저장. 마이그레이션 우선순위(§9→§12→§11→§13→§14) 1차 반영. tsc·build 통과.
+- **토큰**: globals.css 에 v1.3 전체 토큰 추가 — z 위계 11종(--z-sticky 100~--z-loader 500)·confirm·toast·input·viz-1~8·progress.
+- **§9 ConfirmDialog**: 신규 [components/ui/ConfirmDialog.tsx](components/ui/ConfirmDialog.tsx) — 3단계 위험도(normal/caution/danger)·영향 고지형(impact 목록+건수 DM Mono)·임퍼러티브 `confirmDialog()` Promise API(모듈 pub/sub, Provider 불필요)·Esc=취소·취소 초기포커스·배경클릭은 normal만. ConfirmHost 를 AppShell+admin layout 마운트. **전환 완료 8곳**: 호실 삭제·고객 삭제(영향 고지형, confirm 2연타 폐지)·예정가 적용·지출 삭제/기록취소·병합 적용취소·상태전환 확인. **잔여 confirm() ~60곳은 점진 교체** (API 준비됨 — `if (!(await confirmDialog({...}))) return` 패턴).
+- **§11 토스트 v2**: saveStatus(4종 success/error/info/urgent + detail/action/duration) + SaveFeedback 재작성 — 하단 중앙 스택(최대 3, 最古 퇴장), 동일 메시지 ×N 카운트, hover 타이머 일시정지, error 수동 닫기 상시, 장문 2줄 구조, [적용취소] 액션 버튼 지원(인프라 — 개별 undo 연결은 점진).
+- **§12 z 토큰화**: Modal(200/260/280 prop→토큰 매핑), 수제 모달 z-[200~290] 30+곳, 알림벨 드롭다운(z-50→dropdown), 사이드바 드로어, 라이트박스(room-manage·PhotoStrip), DatePicker(400→lightbox+1), 스플래시(→loader). 페이지 내 z-10~40(표 헤더 등)은 잔존 — DOM 순서 정리 필요해 보류.
+- **§13 입력 radius**: `rounded-xl px-3 py-2.5` 입력 시그니처 54곳 → rounded-sm(6px, Tailwind 테마가 이미 6px 오버라이드) — 총 138곳 단일화. **보류**: §13.2 dirty 폼 배경클릭 무시/닫기 확인 정책(공용 Modal dirty prop 설계 필요), 상호배타 체크박스→세그먼트 전환.
+- **§14 viz 팔레트**: [lib/chartColors.ts](lib/chartColors.ts) 전면 viz 토큰화(CHART/EXPENSE_CATEGORY/GENDER/STATUS), DashboardClient 자체 hex 21종→토큰(red→--tc, amber→--viz-4, green→--success, slate→--ink-m, purple KPI→--ink 등), NotificationBell 카테고리 점 색 토큰화. '#1e40af'(AWAIT 상태값)·'#fff'(흰 텍스트)만 의도적 잔존.
+- **§10 용어**: '병합 해제'→'적용취소' 1곳 적용. **보류 목록**: ① confirm() 잔여 ~60곳 ② 수제 모달 17파일 공용 Modal 흡수 ③ §10 적용취소 토스트 액션 연결·용어 잔여('해제'/'다시 포함') ④ §14.2 대시보드 OVERDUE(7일+) 단계 ⑤ §15 금액 유틸 단일화(인라인 수백 곳) ⑥ §17 카드/표 매핑 ⑦ raw button 439곳 Btn 전환.
+
 ## 2026-06-11 — 전수 점검(43건 확정) 후 충돌·혼란 수정 6단계 일괄 [코드 완료·로컬 커밋, ⚠️미푸시·SQL 불필요]
 **점검**: 멀티에이전트 감사(8개 차원 → 적대적 검증)로 43건 확정 — 전체 상세 [docs/audit-ux-conflicts-2026-06-11.md](docs/audit-ux-conflicts-2026-06-11.md). 재작업 방지 순서(헬퍼 추출→쓰기 측→폼 통합→표시층)로 수정.
 **커밋 6개**: `8ef6705`(청구) `89d5323`(퇴실정산) `c517382`(배송비) `38294ed`(재고) `040fb5b`(삭제안전망·라벨) `e289e69`(모달·네비). 전부 tsc·build 통과. **스키마 변경 없음 — SQL 불필요, 바로 배포 가능.**

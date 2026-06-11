@@ -138,6 +138,55 @@
   --ease-default: ease;
   --ease-in-out:  ease-in-out;
   --ease-sharp:   cubic-bezier(.4, 0, .2, 1);
+
+  /* ── Brand Guide v1.3 토큰 (docs/brand-guide-v1.3.md) ─────────── */
+
+  /* §12 레이어 위계 — 토큰 외 z값 금지 */
+  --z-base: 0;
+  --z-sticky: 100;      /* 헤더, 고정 컬럼, 섹션 sticky */
+  --z-dropdown: 150;    /* 셀렉트, 알림벨 패널, 날짜피커 */
+  --z-drawer: 200;      /* 모바일 사이드바 드로어 */
+  --z-modal: 300;       /* 1차 모달 */
+  --z-modal-2: 310;     /* 모달 위 모달 */
+  --z-modal-3: 320;     /* 3중 모달 (최대 깊이) */
+  --z-confirm: 340;     /* 확인 다이얼로그·액션시트 — 항상 모달 위 */
+  --z-lightbox: 360;    /* 라이트박스, 360뷰어 */
+  --z-toast: 400;
+  --z-loader: 500;      /* 브랜드 로더 — 최상위 */
+
+  /* §9 확인 다이얼로그 */
+  --confirm-w: 360px;
+  --confirm-w-impact: 420px;
+  --confirm-backdrop: rgba(0,0,0,.7);
+
+  /* §11 토스트 */
+  --toast-w-max: 420px;
+  --toast-dur-short: 2400ms;
+  --toast-dur-long: 5200ms;
+  --toast-dur-action: 6000ms;
+  --toast-gap: 8px;
+  --toast-offset-bottom: 24px;   /* + env(safe-area-inset-bottom) */
+
+  /* §13 폼 입력 — radius는 Tailwind rounded-sm(6px)과 동일 값 */
+  --input-radius: 6px;
+  --input-h: 40px;
+  --input-h-touch: 44px;
+  --input-border-focus: var(--tc);
+  --input-ring-focus: 0 0 0 3px rgba(160,60,46,.12);
+
+  /* §14 데이터 시각화 팔레트 — raw Tailwind 팔레트·자체 hex 사용 금지 */
+  --viz-1: #A03C2E;  /* terracotta — 주 시리즈 */
+  --viz-2: #C8A07D;  /* camel */
+  --viz-3: #7A9A52;  /* warm olive */
+  --viz-4: #B47A0A;  /* amber */
+  --viz-5: #7C2D26;  /* deep wine */
+  --viz-6: #C77F6F;  /* dusty rose */
+  --viz-7: #93A77E;  /* sage */
+  --viz-8: #8C7A66;  /* taupe */
+
+  /* §16 로딩 */
+  --progress-h: 2px;
+  --progress-color: var(--tc);
 }
 
 @theme inline {

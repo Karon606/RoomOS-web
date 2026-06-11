@@ -1,8 +1,22 @@
 // 폼 저장 / 리프레시 진행 상태를 전역에서 추적·구독하는 경량 pub/sub.
 // React Context 없이 모듈-스코프 변수로 운영해 어디서든 호출 가능.
 
-export type ToastKind = 'success' | 'error' | 'info'
-export type Toast = { id: number; kind: ToastKind; message: string }
+// Brand Guide v1.3 §11 — 4종(success/error/info/urgent), 장문(detail)·액션(적용취소) 지원
+export type ToastKind = 'success' | 'error' | 'info' | 'urgent'
+export type ToastAction = { label: string; run: () => void }
+export type Toast = {
+  id: number
+  kind: ToastKind
+  message: string         // 1행 — 결과 (13px/600)
+  detail?: string         // 2행 — 부가 설명 (장문형, §11.3)
+  action?: ToastAction    // 우측 텍스트 버튼 (§11.4 — 적용취소 등)
+  duration: number        // ms
+}
+
+// CSS 토큰(--toast-dur-*)과 동기 — 한쪽 수정 시 globals.css 도 함께
+export const TOAST_DUR_SHORT = 2400
+export const TOAST_DUR_LONG = 5200
+export const TOAST_DUR_ACTION = 6000
 
 let pendingCount = 0
 const pendingListeners = new Set<(n: number) => void>()
@@ -27,8 +41,15 @@ export function subscribePending(cb: (n: number) => void): () => void {
   return () => { pendingListeners.delete(cb) }
 }
 
-export function pushToast(kind: ToastKind, message: string) {
-  const t: Toast = { id: ++toastId, kind, message }
+export function pushToast(
+  kind: ToastKind,
+  message: string,
+  opts?: { detail?: string; action?: ToastAction; duration?: number },
+) {
+  // 지속시간 자동 판정 — 액션형 6000 > 장문형 5200 > 1줄형 2400 (§11.3·11.4)
+  const duration = opts?.duration
+    ?? (opts?.action ? TOAST_DUR_ACTION : (opts?.detail || message.length > 40) ? TOAST_DUR_LONG : TOAST_DUR_SHORT)
+  const t: Toast = { id: ++toastId, kind, message, detail: opts?.detail, action: opts?.action, duration }
   toastListeners.forEach(l => l(t))
 }
 

@@ -10,6 +10,7 @@ import { addTenant, updateTenant, deleteTenant, recordDepositReturn,
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { Btn } from '@/components/ui/Btn'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
 import { OcrToolbar, setInputByName } from './OcrToolbar'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -824,16 +825,25 @@ export default function TenantClient({
     const { id, name } = deleteTarget
     setDeleteTarget(null)
     startTransition(async () => {
-      const res = await withSave(() => deleteTenant(id), { success: `${name}님 삭제됨` })
-      // 계약·수납 이력이 있으면 건수를 보여주는 2차 동의 후에만 영구 삭제
+      const res = await withSave(() => deleteTenant(id), { success: `${name}님 삭제됨`, silentError: true })
+      // 계약·수납 이력 — 건수를 보여주는 영향 고지형 다이얼로그(v1.3 §9.3) 동의 후에만 영구 삭제
       if (!res.ok && res.needsForce) {
-        if (!confirm(`⚠️ ${res.error}\n\n매출 통계·과거 조회에서도 사라지며 복구할 수 없습니다.\n그래도 삭제할까요?`)) return
+        const force = await confirmDialog({
+          title: `${name}님 기록을 영구 삭제할까요?`,
+          message: '매출 통계·과거 조회에서도 함께 사라집니다.',
+          level: 'danger', confirmLabel: '영구 삭제',
+          impact: [
+            { label: '계약', count: res.leases ?? 0 },
+            { label: '수납 기록', count: res.payments ?? 0 },
+          ],
+        })
+        if (!force) return
         const res2 = await withSave(() => deleteTenant(id, { force: true }), { success: `${name}님 삭제됨` })
         if (!res2.ok) { setError(res2.error); return }
         setDetailTenant(null); refresh()
         return
       }
-      if (!res.ok) { setError(res.error); return }
+      if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
       setDetailTenant(null); refresh()
     })
   }
@@ -905,7 +915,7 @@ export default function TenantClient({
     <div className="space-y-4">
       {/* 토스트 */}
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-md w-[calc(100%-2rem)] bg-[var(--warm-dark)] text-white text-xs rounded-lg px-4 py-3 shadow-lift flex items-start gap-2">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[var(--z-modal)] max-w-md w-[calc(100%-2rem)] bg-[var(--warm-dark)] text-white text-xs rounded-lg px-4 py-3 shadow-lift flex items-start gap-2">
           <span className="flex-1 leading-relaxed">{toast}</span>
           <button onClick={() => setToast(null)} className="shrink-0 text-white/60 hover:text-white">✕</button>
         </div>
@@ -1068,7 +1078,7 @@ export default function TenantClient({
 
       {/* 삭제 확인 모달 */}
       {deleteTarget && (
-        <div className="fixed inset-0 bg-black/70 z-[210] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal-2)] flex items-center justify-center p-4">
           <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm p-6 space-y-4">
             <div className="flex items-start gap-3">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--persimmon)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}>
@@ -1108,7 +1118,7 @@ export default function TenantClient({
         const unreturned = dep - depositReturnAmt
         const exceedsMax = depositReturnAmt > maxRefund
         return (
-          <div className="fixed inset-0 bg-black/70 z-[210] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/70 z-[var(--z-modal-2)] flex items-center justify-center p-4">
             <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden">
               <div className="px-5 py-4 border-b border-[var(--warm-border)]">
                 <p className="text-base font-bold text-[var(--warm-dark)]">보증금 환불</p>
@@ -1142,7 +1152,7 @@ export default function TenantClient({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">반환일</label>
                   <DatePicker value={depositReturnDate} onChange={setDepositReturnDate}
-                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                 </div>
 
                 <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ background: 'rgba(244,98,58,0.08)', color: 'var(--warm-dark)' }}>
@@ -1186,7 +1196,7 @@ export default function TenantClient({
         const dirLabel = diff > 0 ? '인상' : diff < 0 ? '인하' : '동결'
         const dirColor = diff > 0 ? 'text-rose-600' : diff < 0 ? 'text-emerald-600' : 'text-[var(--warm-dark)]'
         return (
-          <div className="fixed inset-0 bg-black/70 z-[220] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/70 z-[var(--z-modal-3)] flex items-center justify-center p-4">
             <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-bold text-[var(--warm-dark)]">가격 변동 적용</h2>
@@ -1195,7 +1205,7 @@ export default function TenantClient({
               <p className="text-sm text-[var(--warm-mid)] leading-relaxed">
                 <span className="font-semibold text-[var(--warm-dark)]">{fmtRoomNo(rentChangeModal.roomNo)}</span>가 공실로 변경됩니다. 예정된 가격 변동을 즉시 적용할까요?
               </p>
-              <div className="bg-[var(--canvas)] rounded-xl px-3 py-2.5 text-sm flex items-center justify-center gap-2 flex-wrap">
+              <div className="bg-[var(--canvas)] rounded-sm px-3 py-2.5 text-sm flex items-center justify-center gap-2 flex-wrap">
                 <span className="text-[var(--warm-muted)]">기존</span>
                 <span className="font-semibold text-[var(--warm-dark)]">{rentChangeModal.baseRent.toLocaleString()}원</span>
                 <span className="text-[var(--warm-muted)]">→</span>
@@ -1498,7 +1508,7 @@ export default function TenantClient({
           clearTenantUrlParams()
         }
         return (
-          <div className="fixed inset-0 bg-black/70 z-[260] flex items-center justify-center p-4"
+          <div className="fixed inset-0 bg-black/70 z-[var(--z-modal-2)] flex items-center justify-center p-4"
             onClick={closeEdit}>
             <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[88vh]"
               onClick={e => e.stopPropagation()}>
@@ -1550,7 +1560,7 @@ export default function TenantClient({
 
       {/* ── 입주자 추가 모달 ────────────────────────────────────────── */}
       {showAdd && (
-        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
           onClick={() => setShowAdd(false)}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh]"
             onClick={e => e.stopPropagation()}>
@@ -1577,7 +1587,7 @@ export default function TenantClient({
 
       {/* ── 입주자 수정 모달 ────────────────────────────────────────── */}
       {editTenant && (
-        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
           onClick={() => setEditTenant(null)}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh]"
             onClick={e => e.stopPropagation()}>
@@ -1621,7 +1631,7 @@ export default function TenantClient({
           return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})`
         }
         return (
-          <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
+          <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
             onClick={closePayModal}>
             <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[88vh]"
               onClick={e => e.stopPropagation()}>
@@ -1682,7 +1692,7 @@ export default function TenantClient({
                           const absAmt = Math.abs(p.actualAmount)
                           const label = p.memo?.replace('[납입일변경] ', '') ?? ''
                           return (
-                            <div key={p.id} className="flex items-center justify-between rounded-xl px-3 py-2.5"
+                            <div key={p.id} className="flex items-center justify-between rounded-sm px-3 py-2.5"
                               style={{
                                 background: isExtra ? 'rgba(239,68,68,0.07)' : 'rgba(34,197,94,0.07)',
                                 border: `1px solid ${isExtra ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)'}`,
@@ -1748,7 +1758,7 @@ export default function TenantClient({
                             )
                           }
                           return (
-                            <div key={p.id} className="flex items-center justify-between rounded-xl px-3 py-2.5 bg-purple-50 border border-purple-200">
+                            <div key={p.id} className="flex items-center justify-between rounded-sm px-3 py-2.5 bg-purple-50 border border-purple-200">
                               <div>
                                 <p className="text-xs text-purple-600">
                                   {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
@@ -1818,7 +1828,7 @@ export default function TenantClient({
                             )
                           }
                           return (
-                            <div key={p.id} className={`flex items-center justify-between rounded-xl px-3 py-2.5 ${prevOwner ? 'bg-amber-50 border border-amber-200' : 'bg-[var(--canvas)]'}`}>
+                            <div key={p.id} className={`flex items-center justify-between rounded-sm px-3 py-2.5 ${prevOwner ? 'bg-amber-50 border border-amber-200' : 'bg-[var(--canvas)]'}`}>
                               <div>
                                 <p className={`text-xs ${prevOwner ? 'text-amber-600' : 'text-[var(--warm-mid)]'}`}>
                                   {p.seqNo}회차 · {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
@@ -2146,7 +2156,7 @@ export default function TenantClient({
       {roomDetailId && (() => {
         const room = rooms.find(r => r.id === roomDetailId)
         return (
-          <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4"
+          <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
             onClick={() => setRoomDetailId(null)}>
             <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm p-6 space-y-3"
               onClick={e => e.stopPropagation()}>
@@ -2671,7 +2681,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
                     }
                   }}
                   placeholder="문의 날짜 선택"
-                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
+                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
                 />
               </div>
               <input
@@ -2694,7 +2704,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               value={tourDateVal}
               onChange={setTourDateVal}
               placeholder="투어 예정일 선택"
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
             />
           </div>
         )}
@@ -2728,7 +2738,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               value={moveInDateVal}
               onChange={setMoveInDateVal}
               placeholder="입주 희망일 선택"
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
             />
           </div>
         )}
@@ -2840,7 +2850,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
                   }
                 }}
                 placeholder={`${moveInLabel} 선택`}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
               />
             </div>
           )}
@@ -2940,7 +2950,7 @@ function DateFieldInner({ name, defaultValue, placeholder }: { name: string; def
   const [val, setVal] = useState(defaultValue ?? '')
   return (
     <DatePicker name={name} value={val} onChange={setVal} placeholder={placeholder ?? '날짜 선택'}
-      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
   )
 }
 
@@ -3119,7 +3129,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[90vh]"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">

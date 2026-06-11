@@ -407,7 +407,7 @@ function AiImportModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70" onClick={onCancel}>
+    <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-4 bg-black/70" onClick={onCancel}>
       <div className="bg-[var(--cream)] rounded-2xl w-full max-w-sm p-6 space-y-4" onClick={e => e.stopPropagation()}>
         <h2 className="text-sm font-semibold text-[var(--warm-dark)]">AI 도면 인식</h2>
         <p className="text-xs text-[var(--warm-muted)] leading-relaxed">

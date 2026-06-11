@@ -84,7 +84,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
         onChange={e => setJoinCode(e.target.value.toUpperCase())}
         placeholder="영업장 운영자에게 받은 6자 코드"
         autoComplete="off"
-        className="w-full rounded-xl px-3 py-2.5 text-sm outline-none font-mono"
+        className="w-full rounded-sm px-3 py-2.5 text-sm outline-none font-mono"
         style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
       />
       <textarea
@@ -92,7 +92,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
         onChange={e => setJoinMsg(e.target.value)}
         rows={2}
         placeholder="간단한 메시지 (선택) — 본인 소개 등"
-        className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none"
+        className="w-full rounded-sm px-3 py-2.5 text-sm outline-none resize-none"
         style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
       />
       {joinError && <p className="text-xs" style={{ color: '#dc2626' }}>{joinError}</p>}
@@ -126,7 +126,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
         onChange={e => setNewName(e.target.value)}
         onKeyDown={e => e.key === 'Enter' && handleCreate()}
         placeholder="영업장 이름 (예: 강남 고시원)"
-        className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+        className="w-full rounded-sm px-3 py-2.5 text-sm outline-none"
         style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
       />
       {createError && <p className="text-xs text-red-500">{createError}</p>}

@@ -9,6 +9,7 @@ import { applyStatusTransition, recordDepositReturn } from '@/app/(app)/tenants/
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -88,9 +89,16 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
   const transitions = transitionsFor(lease.status)
   if (transitions.length === 0) return null
 
-  const handleClick = (def: TransitionDef) => {
+  const handleClick = async (def: TransitionDef) => {
     if (!def.field) {
-      if (def.confirm && !confirm(`${tenantName}님 — ${def.confirm}`)) return
+      if (def.confirm) {
+        const ok = await confirmDialog({
+          title: `${tenantName}님 — ${def.confirm}`,
+          confirmLabel: def.label,
+          ...(def.tone === 'danger' ? { level: 'caution' as const } : {}),
+        })
+        if (!ok) return
+      }
       runTransition(def, undefined)
       return
     }
@@ -171,7 +179,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
 
       {/* 미니폼 모달 — z=300 (셸 위) */}
       {active && (
-        <div className="fixed inset-0 bg-black/70 z-[300] flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/70 z-[var(--z-confirm)] flex items-center justify-center p-4"
           onClick={() => { if (!pending) setActive(null) }}>
           <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col"
             onClick={e => e.stopPropagation()}>
@@ -183,7 +191,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">{active.def.fieldLabel}</label>
                   <DatePicker value={transDate} onChange={setTransDate}
-                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                 </div>
               )}
               {active.def.field === 'rentAmount' && (
