@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { useState } from 'react'
 import { SplashScreen } from '@/components/brand/SplashScreen'
+import { markAuthRedirect } from '@/components/brand/SplashController'
 
 export default function LoginButton({ returnTo }: { returnTo?: string }) {
   const [isLoading, setIsLoading] = useState(false)
@@ -30,6 +31,7 @@ export default function LoginButton({ returnTo }: { returnTo?: string }) {
       return
     }
     setRedirecting(true)
+    markAuthRedirect()   // 복귀 로드에서 인트로 생략 (재접속 아님)
     window.location.replace(data.url)
   }
 
