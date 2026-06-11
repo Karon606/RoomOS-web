@@ -2,16 +2,20 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { useState } from 'react'
+import { SplashScreen } from '@/components/brand/SplashScreen'
 
 export default function LoginButton({ returnTo }: { returnTo?: string }) {
   const [isLoading, setIsLoading] = useState(false)
+  // §18.5 — 인증 리디렉트로 떠나는 동안 풀스크린 스플래시 (콜드 부트 ①과 동일 상황)
+  const [redirecting, setRedirecting] = useState(false)
+  const [error, setError] = useState('')
   const supabase = createClient()
 
   const handleGoogleLogin = async () => {
-    setIsLoading(true)
+    setIsLoading(true); setError('')
     // skipBrowserRedirect 으로 URL만 받아 window.location.replace 사용 → /login 이 history 에 안 남도록.
     // (#18 안드로이드 뒤로가기 시 google.com/accounts 노출 회피 — 2026-05-30)
-    const { data, error } = await supabase.auth.signInWithOAuth({
+    const { data, error: err } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/callback?returnTo=${returnTo ?? '/property-select'}`,
@@ -19,15 +23,20 @@ export default function LoginButton({ returnTo }: { returnTo?: string }) {
         skipBrowserRedirect: true,
       },
     })
-    if (error || !data?.url) {
-      console.error('Google 로그인 실패:', error?.message)
+    if (err || !data?.url) {
+      // §18.5 인증 실패 — 스플래시 없이 폼으로 즉시 복귀 + 인라인 에러
+      setError('Google 연결에 실패했습니다. 잠시 후 다시 시도해주세요.')
       setIsLoading(false)
       return
     }
+    setRedirecting(true)
     window.location.replace(data.url)
   }
 
+  if (redirecting) return <SplashScreen immediate />
+
   return (
+    <div className="w-full">
     <button
       onClick={handleGoogleLogin}
       disabled={isLoading}
@@ -52,5 +61,8 @@ export default function LoginButton({ returnTo }: { returnTo?: string }) {
         </>
       )}
     </button>
+    {/* §18.5 인증 실패 — 인라인 에러 (스플래시 위 표시 금지) */}
+    {error && <p className="mt-2 text-xs text-center" style={{ color: 'var(--tc-d, #7C2D26)' }}>{error}</p>}
+    </div>
   )
 }

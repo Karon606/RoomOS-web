@@ -9,7 +9,10 @@
 import { useEffect, useState } from 'react'
 import { BrandLoader } from './BrandLoader'
 
-export function SplashScreen() {
+export function SplashScreen({ immediate = false }: {
+  /** SplashHost 가 자체적으로 300ms 지연을 관리할 때 — 내부 delayed-fallback 생략 */
+  immediate?: boolean
+}) {
   const [phase, setPhase] = useState<'normal' | 'slow' | 'stalled'>('normal')
 
   useEffect(() => {
@@ -35,7 +38,7 @@ export function SplashScreen() {
       `}</style>
       <div data-splash-bg className="absolute inset-0" style={{ background: 'var(--cold-bg, #E8DDD0)' }} />
       {/* 수직 중앙 -8% (시각 중심) */}
-      <div className="delayed-fallback absolute inset-x-0 flex flex-col items-center"
+      <div className={`${immediate ? '' : 'delayed-fallback '}absolute inset-x-0 flex flex-col items-center`}
         style={{ top: '42%', transform: 'translateY(-50%)', color: 'var(--ink, #3d2418)' }}>
         <BrandLoader size="lg" />
         {phase !== 'normal' && (

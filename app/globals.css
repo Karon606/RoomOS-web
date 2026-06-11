@@ -200,6 +200,16 @@
 /* §18.5 버튼 스피너 회전 (Tailwind v4 기본 keyframes 미보장 — 직접 정의) */
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* v1.2 §08 접근성 — 모션 민감 사용자: 모든 애니메이션·전환 즉시 완료 상태로.
+   (브랜드 로더 line-draw 포함. 가이드 규정이었으나 미구현 상태였음 — v1.3.1 작업에서 보강) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* §18.3 표시 지연 — 300ms 안에 끝나는 전환에선 로더/스켈레톤이 아예 안 보임.
    언마운트가 delay 이전이면 사용자는 한 프레임도 못 본다(깜박임 방지). */
 .delayed-fallback {

@@ -5,6 +5,7 @@ import { ThemeProvider, themeBootstrapScript } from '@/components/theme/ThemePro
 import { FontSizeProvider, fontSizeBootstrapScript } from '@/components/theme/FontSizeProvider'
 import NavProgress from '@/components/layout/NavProgress'
 import { AuthBackTrap } from '@/components/auth/AuthBackTrap'
+import { SplashHost } from '@/components/brand/SplashController'
 import { Analytics } from '@vercel/analytics/next'
 
 // 가이드 명시: Numbers·Mono·Meta는 DM Mono
@@ -77,6 +78,7 @@ export default function RootLayout({
       <body>
         <NavProgress />
         <AuthBackTrap />
+        <SplashHost />
         <FontSizeProvider>
           <ThemeProvider>{children}</ThemeProvider>
         </FontSizeProvider>
