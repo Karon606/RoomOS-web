@@ -16,7 +16,9 @@ type Size = 'sm' | 'md' | 'lg'
 const SIZE_MAP: Record<Size, { arch: number; gap: string; fontEN: number; fontKO: number; stroke: number }> = {
   sm: { arch: 56,  gap: '8px',  fontEN: 22, fontKO: 18, stroke: 2 },
   md: { arch: 88,  gap: '10px', fontEN: 32, fontKO: 26, stroke: 2.5 },
-  lg: { arch: 120, gap: '12px', fontEN: 44, fontKO: 36, stroke: 3 },
+  // lg = 콜드 스타트 스플래시 전용 — v1.3 §18.2 "마크 높이 48px" (arch 는 폭: 48 ÷ 84/113 ≈ 65).
+  // 워드마크 크기는 가이드 미명시 — 기존 lg 비율(fontEN/arch ≈ 0.37) 유지해 환산.
+  lg: { arch: 65,  gap: '10px', fontEN: 24, fontKO: 20, stroke: 2 },
 }
 
 export function BrandLoader({
