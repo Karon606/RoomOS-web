@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
-  addExpense, updateExpense, deleteExpense, attachShippingToOrder,
+  addExpense, updateExpense, deleteExpense, attachShippingToOrder, detachShippingFromOrder,
   addExtraIncome, updateExtraIncome, deleteExtraIncome,
   settleCardExpenses, unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
@@ -1256,7 +1256,7 @@ export default function FinanceClient({
   const [detailExpEdit, setDetailExpEdit] = useState(false)
   // 합배송 배송비 — 수정 폼의 '별도 지출로 묶기' 입력값
   const [attachShipAmount, setAttachShipAmount] = useState<number | undefined>(undefined)
-  const [attachShipType, setAttachShipType] = useState<'선불' | '착불' | '신용'>('착불')
+  const [attachShipType, setAttachShipType] = useState<'선불' | '착불' | '신용'>('선불')
   const [attachShipMemo, setAttachShipMemo] = useState('')
   const [attachShipSiblings, setAttachShipSiblings] = useState<string[]>([])  // 함께 묶을 다른 지출 id
   const [addExpMethod, setAddExpMethod]   = useState('계좌이체')
@@ -1670,10 +1670,18 @@ export default function FinanceClient({
       try {
         const res = await updateExpense(fd)
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-        // 배송비 '별도 지출로 묶기(합배송)' 선택 시 — 수정 저장 후 주문 묶기 처리
-        if (editShipSeparate && detailExp && (attachShipAmount ?? 0) > 0) {
-          const sres = await attachShippingToOrder({ expenseIds: [detailExp.id, ...attachShipSiblings], amount: attachShipAmount!, shippingType: attachShipType, shippingMemo: attachShipMemo || null })
-          if (!sres.ok) { setError(sres.error); pushToast('error', sres.error); return }
+        // 배송비 '별도 지출로 묶기(합배송)' — 수정 저장 후 주문 묶기/해제 처리.
+        // 배송비 라인 자체는 제외(자기 자신을 묶으려다 오류 + 반쪽 저장이 되던 문제).
+        if (detailExp && !detailExp.isShipping) {
+          if (editShipSeparate && (attachShipAmount ?? 0) > 0) {
+            const sres = await attachShippingToOrder({ expenseIds: [detailExp.id, ...attachShipSiblings], amount: attachShipAmount!, shippingType: attachShipType, shippingMemo: attachShipMemo || null })
+            if (!sres.ok) { setError(sres.error); pushToast('error', sres.error); return }
+          } else if (!editShipSeparate && detailExp.orderId) {
+            // 체크 해제 = 묶기 해제(적용취소) — 이전엔 조용한 무동작이라 풀린 줄 알게 만들던 문제
+            const dres = await detachShippingFromOrder(detailExp.id)
+            if (!dres.ok) { setError(dres.error); pushToast('error', dres.error); return }
+            pushToast('info', dres.notice)
+          }
         }
         setDetailExp(null); setDetailExpEdit(false); setEditShipSeparate(false); router.refresh()
         pushToast('success', '지출 수정됨')
@@ -2889,23 +2897,31 @@ export default function FinanceClient({
                     setEditExpRoomId(detailExp.roomId ?? '')
                     setEditReceiptUrl(detailExp.receiptUrl ?? '')
                     setEditExpCategory(detailExp.category)
+                    // '배송비 포함'(합산형)으로 등록된 지출 — detail 의 '배송비 N원' 표기에서 합산분 복원.
+                    // 안 하면 수정 저장 시 배송비가 이중 합산되거나 표기가 사라지고 단가가 부풀던 문제.
+                    const shipMatch = !detailExp.isShipping ? (detailExp.detail ?? '').match(/배송비\s*([\d,]+)원/) : null
+                    const includedShip = shipMatch ? parseInt(shipMatch[1].replace(/,/g, ''), 10) || 0 : 0
+                    const baseAmount = detailExp.amount - includedShip
                     setEditItems(detailExp.itemLabel ? [{
                       label: detailExp.itemLabel,
                       specValue: detailExp.specValue?.toString() ?? '',
                       specUnit:  detailExp.specUnit ?? '',
                       qtyValue:  detailExp.qtyValue?.toString() ?? '',
                       qtyUnit:   detailExp.qtyUnit ?? '',
-                      amount:    detailExp.amount,
-                      // 단가 복원 — 금액÷수량(저장엔 단가 없음). 안 채우면 수정 시 단가 0 으로 보임.
-                      unitPrice: detailExp.amount != null ? Math.round(detailExp.amount / (Number(detailExp.qtyValue) || 1)) : undefined,
+                      amount:    baseAmount,
+                      // 단가 복원 — (금액−배송비)÷수량(저장엔 단가 없음). 안 채우면 수정 시 단가 0 으로 보임.
+                      unitPrice: Math.round(baseAmount / (Number(detailExp.qtyValue) || 1)),
                     }] : [])
-                    setEditExpAmount(detailExp.amount); setEditExpDetail(detailExp.detail ?? ''); setEditHasShipping(false); setEditShipping(undefined)
-                    // 이미 합배송 주문에 묶여 있으면 '별도 묶기' 모드로 프리필
-                    if (detailExp.order) {
+                    setEditExpAmount(baseAmount)
+                    setEditExpDetail((detailExp.detail ?? '').replace(/\s*·?\s*배송비\s*[\d,]+원/, '').trim())
+                    setEditHasShipping(includedShip > 0); setEditShipping(includedShip > 0 ? includedShip : undefined)
+                    // 이미 합배송 주문에 묶여 있으면 '별도 묶기' 모드로 프리필.
+                    // 배송비 라인 자체는 제외 — 자기 자신을 다시 묶으려다 '지출을 찾을 수 없습니다' 오류가 나던 문제.
+                    if (detailExp.order && !detailExp.isShipping) {
                       const shipRow = expenses.find(x => x.orderId === detailExp.order!.id && x.isShipping)
                       setEditShipSeparate(true)
                       setAttachShipAmount(shipRow?.amount)
-                      setAttachShipType((detailExp.order.shippingType as '선불' | '착불' | '신용') ?? '착불')
+                      setAttachShipType((detailExp.order.shippingType as '선불' | '착불' | '신용') ?? '선불')
                       setAttachShipMemo(detailExp.order.shippingMemo ?? '')
                       setAttachShipSiblings([])
                     } else {
@@ -2940,6 +2956,8 @@ export default function FinanceClient({
                         return (
                           <>
                             <input type="hidden" name="amount" value={total} />
+                            {/* 합산형 배송비 — 서버 품목합 검증에서 차감(품목 2개+ 도 저장 가능) */}
+                            <input type="hidden" name="shippingIncluded" value={ship} />
                             {editItems.length >= 1 ? (
                               <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
                                 {total.toLocaleString()}원
@@ -2978,7 +2996,9 @@ export default function FinanceClient({
                       />
                     </div>
                   )}
-                  {/* 배송비 — 두 방식(합산 / 별도 묶기)을 한 곳에 모아 명확히 구분 */}
+                  {/* 배송비 — 두 방식(합산 / 별도 묶기)을 한 곳에 모아 명확히 구분.
+                      배송비 라인 자체엔 비노출(자기 자신을 묶는 모순 방지) — 금액·결제구분만 일반 필드로 수정 */}
+                  {!detailExp.isShipping && (
                   <div className="space-y-2 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)]/40 px-3 py-2.5">
                     <p className="text-xs font-semibold text-[var(--warm-mid)]">배송비 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></p>
                     <label className="flex items-center gap-1.5 text-xs text-[var(--warm-dark)] cursor-pointer">
@@ -3037,10 +3057,11 @@ export default function FinanceClient({
                             </div>
                           )
                         })()}
-                        <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">저장하면 배송비가 별도 지출로 기록되고 같은 주문번호로 묶입니다. 신용(후불)은 미정산.</p>
+                        <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">저장하면 배송비가 별도 지출로 기록되고 같은 주문번호로 묶입니다. 신용(후불)은 미정산. 체크를 해제하고 저장하면 묶음이 해제됩니다.</p>
                       </div>
                     )}
                   </div>
+                  )}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                     {editItems.length > 0
@@ -3309,6 +3330,8 @@ export default function FinanceClient({
                       return (
                         <>
                           <input type="hidden" name="amount" value={total} />
+                          {/* 합산형 배송비 — 서버 품목합 검증에서 차감(품목 2개+ 도 저장 가능) */}
+                          <input type="hidden" name="shippingIncluded" value={ship} />
                           {addItems.length >= 1 ? (
                             <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-xl px-3 py-2.5 text-sm text-[var(--warm-dark)]">
                               {total.toLocaleString()}원
@@ -3342,31 +3365,29 @@ export default function FinanceClient({
                     <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={rooms} />
                   </div>
                 )}
-                {/* 배송비 — 기본 무료. 품목 단가에 포함되지 않고 총액에만 합산(합배송 시 단가 왜곡 방지). 세부항목에 표기됨 */}
-                <div className="space-y-1.5">
-                  <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--warm-mid)] cursor-pointer">
+                {/* 배송비 — 수정 폼과 동일한 단일 섹션(두 방식 상호배타). 용어·구조·기본값 통일 */}
+                <div className="space-y-2 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)]/40 px-3 py-2.5">
+                  <p className="text-xs font-semibold text-[var(--warm-mid)]">배송비 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></p>
+                  <label className="flex items-center gap-1.5 text-xs text-[var(--warm-dark)] cursor-pointer">
                     <input type="checkbox" checked={addHasShipping}
                       onChange={e => { setAddHasShipping(e.target.checked); if (e.target.checked) setAddOrderMode(false); else setAddShipping(undefined) }}
                       className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                    배송비 포함 <span className="text-[var(--warm-muted)] font-normal">(이 지출 총액에 합산)</span>
+                    <span><strong>이 지출 금액에 합산</strong> · 별도 줄 없이 총액에만 더함</span>
                   </label>
                   {addHasShipping && (
-                    <>
+                    <div className="pl-5">
                       <MoneyInput value={addShipping} onChange={setAddShipping} placeholder="배송비 0원" />
-                      <p className="text-[0.625rem] text-[var(--warm-muted)]">단가에 포함되지 않고 총액에만 더해집니다 (합배송이어도 단가 정확).</p>
-                    </>
+                      <p className="text-[0.625rem] text-[var(--warm-muted)] mt-1">품목 단가엔 미포함, 총액에만 더해집니다.</p>
+                    </div>
                   )}
-                </div>
-                {/* 합배송 — 배송비를 별도 지출(주문 묶음)로. 여러 지출이 한 주문번호로 묶이고 배송비는 따로 기록됨. */}
-                <div className="space-y-1.5">
-                  <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--warm-mid)] cursor-pointer">
+                  <label className="flex items-center gap-1.5 text-xs text-[var(--warm-dark)] cursor-pointer">
                     <input type="checkbox" checked={addOrderMode}
                       onChange={e => { setAddOrderMode(e.target.checked); if (e.target.checked) { setAddHasShipping(false); setAddShipping(undefined) } else setAddOrderShipping(undefined) }}
                       className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                    합배송 (배송비 별도) <span className="text-[var(--warm-muted)] font-normal">(주문 묶음으로 기록)</span>
+                    <span><strong>별도 지출로 묶기 (합배송)</strong> · 배송비 1건 + 주문번호로 묶음</span>
                   </label>
                   {addOrderMode && (
-                    <div className="space-y-2 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)] px-3 py-2.5">
+                    <div className="pl-5 space-y-2">
                       <MoneyInput value={addOrderShipping} onChange={setAddOrderShipping} placeholder="배송비 0원" />
                       <div className="flex items-center gap-1.5">
                         {(['선불', '착불', '신용'] as const).map(t => (
@@ -3377,13 +3398,10 @@ export default function FinanceClient({
                         ))}
                       </div>
                       <input type="text" value={addOrderShipMemo} onChange={e => setAddOrderShipMemo(e.target.value)}
-                        placeholder="배송 메모 (결제수단·송장번호 등, 선택)"
+                        placeholder="배송 메모 (선택)"
                         className="w-full bg-white border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-500 outline-none focus:border-[var(--coral)]" />
-                      <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
-                        배송비가 <strong>별도 지출 1건</strong>으로 기록되고, 이 주문의 품목들과 같은 주문번호로 묶입니다.
-                        품목·방별로 나뉘어도 한 주문으로 인식돼요. 신용(후불)은 미정산으로 기록됩니다.
-                      </p>
-                      {addOrderMode && (addOrderShipping ?? 0) > 0 && (
+                      <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">배송비가 별도 지출로 기록되고 품목들과 같은 주문번호로 묶입니다. 신용(후불)은 미정산.</p>
+                      {(addOrderShipping ?? 0) > 0 && (
                         <>
                           <input type="hidden" name="orderShipping" value={addOrderShipping ?? 0} />
                           <input type="hidden" name="orderShippingType" value={addOrderShipType} />

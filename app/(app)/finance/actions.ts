@@ -337,6 +337,9 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const orderShippingType = (formData.get('orderShippingType') as string) || null
     const orderShippingMemo = (formData.get('orderShippingMemo') as string) || null
     const isOrderMode       = !!orderShipping && orderShipping > 0
+    // 합산형 배송비('배송비 포함') — amount 에 이미 더해져 제출됨. 품목합 검증 시 이만큼 차감.
+    // (이전엔 이 필드가 없어 '품목 2개+ + 배송비 포함' 조합이 합계 불일치로 항상 저장 실패)
+    const shippingIncluded  = parseAmount(formData.get('shippingIncluded')) || 0
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
@@ -355,10 +358,12 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
 
     const baseSettleStatus: SettleStatus = payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED'
 
-    // 품목 합계 검증을 주문 생성보다 먼저 — 실패 시 고아 주문 방지
+    // 품목 합계 검증을 주문 생성보다 먼저 — 실패 시 고아 주문 방지 (합산형 배송비는 차감 후 비교)
     if (multiItems) {
       const sum = multiItems.reduce((s, it) => s + (Number(it.amount) || 0), 0)
-      if (Math.abs(sum - amount) > 1) return { ok: false, error: `품목 금액 합계(${sum.toLocaleString()}원)와 총 금액(${amount.toLocaleString()}원)이 일치하지 않습니다.` }
+      if (Math.abs(sum + shippingIncluded - amount) > 1) {
+        return { ok: false, error: `품목 금액 합계(${sum.toLocaleString()}원${shippingIncluded ? ` + 배송비 ${shippingIncluded.toLocaleString()}원` : ''})와 총 금액(${amount.toLocaleString()}원)이 일치하지 않습니다.` }
+      }
     }
 
     // 합배송이면 주문(ExpenseOrder)을 먼저 만들어 모든 라인에 orderId 부여
@@ -429,6 +434,10 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
       }))
       const ops = [...itemCreates]
       if (shippingCreate) ops.push(shippingCreate)
+      // 합산형 배송비 — 품목 행으로 흡수하면 단가가 왜곡되므로 별도 행(재고 제외)으로 분리
+      if (shippingIncluded > 0) ops.push(prisma.expense.create({
+        data: { ...baseRow, amount: shippingIncluded, detail: '배송비', isShipping: true, excludeFromInventory: true },
+      }))
       await prisma.$transaction(ops)
       revalidatePath('/finance')
       return { ok: true }
@@ -479,10 +488,20 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
     const specValueRaw = formData.get('specValue') as string
     const qtyValueRaw  = formData.get('qtyValue') as string
     const itemsJsonRaw = formData.get('itemsJson') as string
+    // 합산형 배송비('배송비 포함') — amount 에 이미 더해져 제출됨 (addExpense 와 동일)
+    const shippingIncluded = parseAmount(formData.get('shippingIncluded')) || 0
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
-    const baseSettleStatus: SettleStatus = payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED'
+    const existing = await prisma.expense.findUnique({
+      where: { id },
+      select: { isShipping: true, settleStatus: true },
+    })
+    // 배송비 라인은 결제구분(선불/착불/신용)에 따라 settleStatus 가 별도 관리됨 —
+    // 일반 수정 저장이 payMethod 기준으로 재계산해 '신용(미정산)'을 조용히 정산완료로 뒤집지 않게 보존.
+    const baseSettleStatus: SettleStatus = existing?.isShipping
+      ? existing.settleStatus
+      : (payMethod === '신용카드' ? 'UNSETTLED' : 'SETTLED')
 
     // 다중 품목/방별 분배 편집: 품목 2개+ 또는 방별 분배 있으면 분할.
     // 첫 행은 현재 row 업데이트, 나머지(추가 품목·방별 행·미지정 나머지)는 새 row.
@@ -499,7 +518,9 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
 
     if (multiItems) {
       const sum = multiItems.reduce((s, it) => s + (Number(it.amount) || 0), 0)
-      if (Math.abs(sum - amount) > 1) return { ok: false, error: `품목 금액 합계(${sum.toLocaleString()}원)와 총 금액(${amount.toLocaleString()}원)이 일치하지 않습니다.` }
+      if (Math.abs(sum + shippingIncluded - amount) > 1) {
+        return { ok: false, error: `품목 금액 합계(${sum.toLocaleString()}원${shippingIncluded ? ` + 배송비 ${shippingIncluded.toLocaleString()}원` : ''})와 총 금액(${amount.toLocaleString()}원)이 일치하지 않습니다.` }
+      }
 
       const rows = expandExpenseRows(multiItems, roomId || null)
       const firstRow = rows[0]
@@ -551,6 +572,23 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
             qtyValue:  r.qtyValue  ? parseFloat(r.qtyValue)  : null,
           },
         })),
+        // 합산형 배송비 — 품목 단가 왜곡 방지를 위해 별도 행(재고 제외)으로 분리 (addExpense 와 동일)
+        ...(shippingIncluded > 0 ? [prisma.expense.create({
+          data: {
+            propertyId,
+            date:               new Date(date),
+            amount:             shippingIncluded,
+            category,
+            detail:             '배송비',
+            vendor:             vendor || null,
+            payMethod:          payMethod || '계좌이체',
+            financialAccountId: financialAccountId || null,
+            financeName:        financeName || null,
+            settleStatus:       baseSettleStatus,
+            isShipping:         true,
+            excludeFromInventory: true,
+          },
+        })] : []),
       ])
       revalidatePath('/finance')
       return { ok: true }
@@ -587,8 +625,64 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
 
 export async function deleteExpense(id: string) {
   await requireEdit()
+  const target = await prisma.expense.findUnique({ where: { id }, select: { orderId: true } })
   await prisma.expense.delete({ where: { id } })
+  // 주문 묶음 고아 정리 — 품목을 다 지워 배송비 라인만 남으면 배송비·주문도 정리,
+  // 행이 하나만 남으면 묶음 의미가 없으므로 연결 해제 후 빈 주문 삭제.
+  if (target?.orderId) await cleanupOrderIfOrphan(target.orderId)
   revalidatePath('/finance')
+}
+
+// 주문에 비배송 품목이 없으면 배송비 라인+주문 삭제, 1개 행만 남으면 연결 해제 후 주문 삭제.
+async function cleanupOrderIfOrphan(orderId: string) {
+  const rows = await prisma.expense.findMany({
+    where: { orderId },
+    select: { id: true, isShipping: true },
+  })
+  const items = rows.filter(r => !r.isShipping)
+  if (items.length === 0) {
+    // 배송비만 남음 — 배송비 라인과 주문 모두 정리
+    await prisma.expense.deleteMany({ where: { orderId, isShipping: true } })
+    await prisma.expenseOrder.delete({ where: { id: orderId } }).catch(() => {})
+  } else if (rows.length === 1) {
+    await prisma.expense.updateMany({ where: { orderId }, data: { orderId: null } })
+    await prisma.expenseOrder.delete({ where: { id: orderId } }).catch(() => {})
+  }
+}
+
+// 합배송 묶기 해제 — attachShippingToOrder 의 역방향(적용취소).
+// 해당 지출을 주문에서 분리하고, 주문에 비배송 품목이 안 남으면 배송비 라인·주문도 삭제.
+export async function detachShippingFromOrder(expenseId: string): Promise<{ ok: true; notice: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const exp = await prisma.expense.findFirst({
+      where: { id: expenseId, propertyId },
+      select: { orderId: true, isShipping: true },
+    })
+    if (!exp?.orderId) return { ok: false, error: '주문에 묶여 있지 않은 지출입니다.' }
+    if (exp.isShipping) return { ok: false, error: '배송비 라인은 품목 지출에서 해제해주세요.' }
+
+    await prisma.expense.update({ where: { id: expenseId }, data: { orderId: null } })
+    const remaining = await prisma.expense.findMany({
+      where: { orderId: exp.orderId },
+      select: { id: true, isShipping: true },
+    })
+    const remainingItems = remaining.filter(r => !r.isShipping)
+    let notice: string
+    if (remainingItems.length === 0) {
+      await prisma.expense.deleteMany({ where: { orderId: exp.orderId, isShipping: true } })
+      await prisma.expenseOrder.delete({ where: { id: exp.orderId } }).catch(() => {})
+      notice = '합배송 묶음을 해제했습니다 — 마지막 품목이라 배송비 라인과 주문도 정리했습니다.'
+    } else {
+      notice = `합배송 묶음에서 분리했습니다 — 주문에 남은 품목 ${remainingItems.length}건과 배송비는 유지됩니다.`
+    }
+    revalidatePath('/finance')
+    return { ok: true, notice }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 // ── 합배송 Phase 2: 기존 지출(들)에 배송비를 묶기 ──
