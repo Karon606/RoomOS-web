@@ -19,18 +19,25 @@ const fmtDate = (d: Date | string) => {
 
 const SOURCE_LABEL: Record<string, string> = { GENERATED: '앱 서명', UPLOADED: '스캔 업로드' }
 
+// 퇴실 그룹: 퇴실 완료 + 입실 취소. 연결 계약이 없는(status null) 파일은 거주중 쪽에 둔다.
+const isDeparted = (status: string | null) => status === 'CHECKED_OUT' || status === 'CANCELLED'
+
 export default function ContractsClient({ contracts }: { contracts: ContractListRow[] }) {
   const router = useRouter()
   const entityModal = useEntityModal()
   const [query, setQuery] = useState('')
+  const [residency, setResidency] = useState<'current' | 'departed' | 'all'>('current')
   const [source, setSource] = useState<'all' | 'GENERATED' | 'UPLOADED'>('all')
   const [sort, setSort] = useState<'latest' | 'tenant'>('latest')
   const [pending, startTransition] = useTransition()
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
+  const departedCount = useMemo(() => contracts.filter(c => isDeparted(c.status)).length, [contracts])
+
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
     let list = contracts.filter(c => {
+      if (residency !== 'all' && (residency === 'departed') !== isDeparted(c.status)) return false
       if (source !== 'all' && c.source !== source) return false
       if (!q) return true
       return (
@@ -45,7 +52,7 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
         : a.tenantName.localeCompare(b.tenantName, 'ko') || (a.roomNo ?? '').localeCompare(b.roomNo ?? '', 'ko', { numeric: true }),
     )
     return list
-  }, [contracts, query, source, sort])
+  }, [contracts, query, residency, source, sort])
 
   const handleDelete = (id: string, name: string) => {
     if (!confirm(`${name}님의 이 계약서 파일을 삭제하시겠습니까?\n(Drive 원본도 함께 삭제됩니다)`)) return
@@ -64,7 +71,7 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
       <div className="space-y-2">
         <div>
           <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">계약서</h1>
-          <p className="text-xs text-[var(--warm-muted)] mt-0.5">앱 서명·스캔 업로드된 계약서를 한곳에서 봅니다. 총 {contracts.length}건.</p>
+          <p className="text-xs text-[var(--warm-muted)] mt-0.5">앱 서명·스캔 업로드된 계약서를 한곳에서 봅니다. 거주중 {contracts.length - departedCount}건 · 퇴실 {departedCount}건.</p>
         </div>
         <input
           type="text"
@@ -74,6 +81,17 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)]"
         />
         <div className="flex flex-wrap gap-2">
+          <SegmentedControl
+            size="sm"
+            ariaLabel="거주 상태 필터"
+            value={residency}
+            onChange={setResidency}
+            options={[
+              { value: 'current', label: '거주중' },
+              { value: 'departed', label: '퇴실' },
+              { value: 'all', label: '전체' },
+            ]}
+          />
           <SegmentedControl
             size="sm"
             ariaLabel="출처 필터"
