@@ -36,6 +36,25 @@ export function SplashScreen({ immediate = false }: {
         }
         html.dark [data-splash-bg] { background: var(--cold-bg-dark, #2A1A10) !important; }
         @keyframes splash-caption-in { from { opacity: 0 } to { opacity: 1 } }
+        /* 와이프 리빌 + 숨쉬기 — transform/opacity 만(컴포지터 스레드, 메인스레드 정체에도 안 멈춤) */
+        @keyframes sy-splash-wipe { to { transform: translateX(103%); } }
+        .sy-splash-wipe {
+          position: absolute; inset: -2px;
+          background: var(--cold-bg, #E8DDD0);
+          animation: sy-splash-wipe 900ms cubic-bezier(.65,0,.35,1) forwards;
+          will-change: transform;
+        }
+        @media (prefers-color-scheme: dark) { .sy-splash-wipe { background: var(--cold-bg-dark, #2A1A10) !important; } }
+        html.dark .sy-splash-wipe { background: var(--cold-bg-dark, #2A1A10) !important; }
+        @keyframes sy-splash-in { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
+        .sy-splash-in { opacity: 0; animation: sy-splash-in 400ms cubic-bezier(.65,0,.35,1) 700ms forwards; will-change: opacity, transform; }
+        @keyframes sy-splash-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .82; } }
+        .sy-splash-breathe { animation: sy-splash-breathe 2.4s ease-in-out 1600ms infinite; will-change: opacity; }
+        @media (prefers-reduced-motion: reduce) {
+          .sy-splash-wipe { animation: none; transform: translateX(103%); }
+          .sy-splash-in { animation: none; opacity: 1; }
+          .sy-splash-breathe { animation: none; }
+        }
         .sy-splash-lockup { display: flex; align-items: center; gap: 20px; }
         .sy-splash-mark   { width: 104px; }
         .sy-splash-wm     { font-size: 44px; }
@@ -50,12 +69,16 @@ export function SplashScreen({ immediate = false }: {
       {/* 수직 중앙 -8% (시각 중심) */}
       <div className={`${immediate ? '' : 'delayed-fallback '}absolute inset-x-0 flex flex-col items-center`}
         style={{ top: '42%', transform: 'translateY(-50%)', color: 'var(--ink, #3d2418)' }}>
-        <div className="sy-splash-lockup">
-          <svg viewBox="8 8 113 84" className="sy-splash-mark" style={{ overflow: 'visible', height: 'auto' }} aria-hidden="true">
-            <path d={ARCH_PATH} fill="var(--persimmon, #a03c2e)" />
-          </svg>
-          <div className="sy-splash-div" style={{ width: 1.5, height: 56, background: 'var(--border-s, rgba(61,36,24,.18))' }} />
-          <span className="sy-splash-wm whitespace-nowrap leading-none"
+        <div className="sy-splash-breathe sy-splash-lockup">
+          {/* 마크 — 채워진 아치 위로 배경색 커버가 밀려나며 드러남 (와이프 클리핑) */}
+          <div className="relative overflow-hidden" style={{ lineHeight: 0 }}>
+            <svg viewBox="8 8 113 84" className="sy-splash-mark" style={{ height: 'auto' }} aria-hidden="true">
+              <path d={ARCH_PATH} fill="var(--persimmon, #a03c2e)" />
+            </svg>
+            <div className="sy-splash-wipe" />
+          </div>
+          <div className="sy-splash-in sy-splash-div" style={{ width: 1.5, height: 56, background: 'var(--border-s, rgba(61,36,24,.18))' }} />
+          <span className="sy-splash-in sy-splash-wm whitespace-nowrap leading-none"
             style={{ fontFamily: "var(--font-plus-jakarta, 'Plus Jakarta Sans', sans-serif)", letterSpacing: '-0.025em' }}>
             <span style={{ fontWeight: 300 }}>stay</span>
             <span style={{ fontWeight: 700, color: 'var(--persimmon, #a03c2e)' }}>eum</span>
