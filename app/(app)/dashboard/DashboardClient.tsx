@@ -1957,7 +1957,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: '0.65625rem', color: 'rgba(255,252,247,0.5)', lineHeight: 1.5 }}>
             수납액+기타수익
             {revChange != null && (
-              <em style={{ fontStyle: 'normal', color: 'var(--viz-4)', marginLeft: 6 }}>{revChange >= 0 ? '+' : ''}{revChange}%</em>
+              /* §19-2-2: 테라코타 solid 위 텍스트는 cream/sand 계열만 — 강조는 색이 아니라 weight */
+              <em style={{ fontStyle: 'normal', color: 'var(--rev-change)', fontWeight: 700, marginLeft: 6 }}>{revChange >= 0 ? '+' : ''}{revChange}%</em>
             )}
           </p>
         </div>
@@ -1968,18 +1969,23 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           const isPos = net >= 0
           const hasReserveOut = data.reserveAccrualFromThisMonth > 0
           return (
-            <div className="rounded-xl" style={{ background: 'var(--ink)', padding: '18px 20px' }}>
-              <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(180,210,240,0.45)', marginBottom: 8 }}>
+            // §19-2-1: 표면·텍스트 페어 토큰 — 라이트=잉크 다크 카드(현행), 다크=--d-card+--d-success 팁.
+            // 이전엔 --ink 를 배경으로 써서 다크모드에서 크림 카드+연청 라벨로 뒤집혔음(절대규칙 2 위반).
+            <div className="rounded-xl" style={{
+              background: 'var(--np-card-bg)', padding: '18px 20px',
+              boxShadow: 'inset 3px 0 0 var(--np-tip), inset 0 0 0 1px var(--np-card-bd)',
+            }}>
+              <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--np-label)', marginBottom: 8 }}>
                 현재 순이익
               </p>
-              <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: isPos ? 'var(--viz-3)' : 'var(--tc-s)' }}>
+              <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: isPos ? 'var(--np-pos)' : 'var(--np-neg)' }}>
                 {isPos ? '+' : ''}{net.toLocaleString()}
-                <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'rgba(180,210,240,0.3)', marginLeft: 2 }}>원</small>
+                <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--np-unit)', marginLeft: 2 }}>원</small>
               </p>
-              <p style={{ fontSize: '0.65625rem', color: 'rgba(180,210,240,0.4)', marginBottom: hasReserveOut ? 4 : 0 }}>수납 − 실제 지출</p>
+              <p style={{ fontSize: '0.65625rem', color: 'var(--np-cap)', marginBottom: hasReserveOut ? 4 : 0 }}>수납 − 실제 지출</p>
               {hasReserveOut && (
-                <p style={{ fontSize: '0.625rem', color: 'rgba(180,210,240,0.55)' }}>
-                  예비비 −{data.reserveAccrualFromThisMonth.toLocaleString()}원 이체 · 운영 가용 <span style={{ color: 'var(--viz-7)', fontWeight: 600 }}>{data.operatingCashAvailable.toLocaleString()}원</span>
+                <p style={{ fontSize: '0.625rem', color: 'var(--np-cap2)' }}>
+                  예비비 −{data.reserveAccrualFromThisMonth.toLocaleString()}원 이체 · 운영 가용 <span style={{ color: 'var(--np-cash)', fontWeight: 600 }}>{data.operatingCashAvailable.toLocaleString()}원</span>
                 </p>
               )}
             </div>
@@ -2000,7 +2006,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           </p>
           {data.upcomingAmount > 0 && (
             <p style={{ fontSize: '0.625rem', color: 'var(--warm-muted)' }}>
-              <span style={{ color: '#1e40af', fontWeight: 500 }}>+{data.upcomingAmount.toLocaleString()}원</span> 납부 예정 ({data.upcomingCount}건)
+              {/* §19-2-5: AWAIT 상태 토큰 — 라이트 #1e40af(동일값)·다크 --d-blue 로 자동 분기 */}
+              <span style={{ color: 'var(--status-await-fg)', fontWeight: 500 }}>+{data.upcomingAmount.toLocaleString()}원</span> 납부 예정 ({data.upcomingCount}건)
             </p>
           )}
         </Link>
@@ -2059,7 +2066,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             <small style={{ fontSize: '0.8125rem', fontWeight: 400, color: 'var(--warm-muted)' }}> / {data.totalRooms}</small>
           </p>
           <p style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)' }}>
-            공실 <em style={{ fontStyle: 'normal', color: 'var(--coral)' }}>{data.vacantRooms}개</em>
+            공실 <em style={{ fontStyle: 'normal', color: 'var(--vacant-num)' }}>{data.vacantRooms}개</em>
           </p>
         </Link>
       </div>

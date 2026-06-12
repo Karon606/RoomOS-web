@@ -102,6 +102,24 @@
   --accent-deposit: #7c3aed;
   --accent-reserve: #0d9488;
 
+  /* §19-2 페어 토큰 — 라이트=현행 픽셀 그대로, 다크는 html.dark 에서 §19 값으로 교체.
+     표면·텍스트를 쌍으로 묶어 '라이트 표면+다크 텍스트' 조합 사고(§19 절대규칙 2)를 차단. */
+  /* #1 현재 순이익 위젯 (라이트: 잉크 다크 카드 + 연청 라벨 — 의도된 디자인) */
+  --np-card-bg: var(--ink);
+  --np-card-bd: transparent;
+  --np-tip:     transparent;                /* 다크에서만 좌측 3px 팁 */
+  --np-label:   rgba(180,210,240,0.45);
+  --np-unit:    rgba(180,210,240,0.3);
+  --np-cap:     rgba(180,210,240,0.4);
+  --np-cap2:    rgba(180,210,240,0.55);
+  --np-pos:     var(--viz-3);
+  --np-neg:     var(--tc-s);
+  --np-cash:    var(--viz-7);
+  /* #2 당월 매출 증감(테라코타 solid 위) */
+  --rev-change: var(--viz-4);
+  /* #6 공실 수치 — 라이트 현행 유지, 다크는 뮤트(공실≠위험) */
+  --vacant-num: var(--coral);
+
   /* ── Brand Guide v1.2 토큰 alias — 기존 v1.1 토큰 위에 안전하게 추가 ──
      신규 코드는 v1.2 토큰 사용 권장 (docs/brand-guide-v1.2.md).
      v1.1 변수는 호환성 유지 위해 유지. v1.2 --cream-2 (#F5EDE0)는
@@ -303,62 +321,95 @@ body {
    라이트 cream/ink → 다크 dark-bg/cream-on-dark.
    기존 코드의 var(--cream)·var(--warm-dark) 등은 자동으로 다크 적용. */
 html.dark {
-  /* Surface — 어두운 잉크 톤 */
-  --cream:        #1a1815;   /* 메인 surface (다크 카드) */
-  --cream-soft:   #211e1a;   /* 보조 표면 (중첩 패널·hover) */
-  --cream-2:      #0e0d0b;   /* 페이지 배경 */
-  --cream-3:      #2a2620;   /* 테두리·디바이더 */
-  --canvas:       #0e0d0b;   /* alias */
+  /* ── Brand Guide v1.3 §19 다크 팔레트 — 웜 브라운 계열 (순흑·순백 금지, §18 --cold-bg-dark 정합) ── */
+  --d-page: #2A1A10;         /* 페이지 배경. = --cold-bg-dark */
+  --d-card: #36251A;         /* 카드·위젯 표면 */
+  --d-card-2: #412E20;       /* hover·중첩 표면 */
+  --d-ink: #F2E8DC;          /* 본문·숫자 */
+  --d-ink-s: #C7B5A2;        /* 라벨·보조 텍스트 */
+  --d-ink-m: #93816F;        /* 캡션 한정 — 12px 미만 본문에 사용 금지 */
+  --d-border: rgba(242,232,220,.08);
+  --d-border-s: rgba(242,232,220,.16);
+  --d-tc-text: #C9614C;      /* 다크 위 테라코타 텍스트·아이콘 (밝힘) */
+  --d-success: #A3BF7B;      /* PAID·긍정 수치 */
+  --d-amber: #D9A648;        /* UNPAID */
+  --d-blue: #93A9D1;         /* AWAIT 전용 */
+  --d-overdue: #E08A75;      /* OVERDUE 텍스트용. solid 배지는 --tc 유지 */
+  --d-camel: #D4B494;        /* §19-2-3 지정값 — viz-2 카멜의 다크 변형 (보증금 수치) */
 
-  /* Text — 다크에선 ink가 밝은 cream */
-  --ink:          #fbf6ef;   /* 1차 텍스트 */
-  --ink-2:        #ebe1cf;   /* 본문 */
-  --ink-3:        #c8b89a;   /* 보조 */
-  --ink-mute:     #a89880;   /* placeholder·메타 */
-  --warm-dark:    #ebe1cf;   /* alias → ink-2 */
-  --warm-mid:     #c8b89a;   /* alias → ink-3 */
-  --warm-muted:   #a89880;   /* alias → ink-mute */
-  --warm-border:  #2a2620;   /* alias → cream-3 */
+  /* Surface — 기존 alias 를 §19 토큰으로 재매핑 (구 near-black #0e0d0b 는 순흑 금지 위반) */
+  --cream:        var(--d-card);
+  --cream-soft:   var(--d-card-2);
+  --cream-2:      var(--d-page);
+  --cream-3:      var(--d-border-s);
+  --canvas:       var(--d-page);
 
-  /* Terracotta·Honey — 동일 hex (가이드 명시) */
-  /* persimmon-l는 다크에선 더 짙게 — 페일 배경이 너무 밝아 보이지 않도록 */
+  /* Text */
+  --ink:          var(--d-ink);
+  --ink-2:        var(--d-ink);
+  --ink-3:        var(--d-ink-s);
+  --ink-mute:     var(--d-ink-m);
+  --warm-dark:    var(--d-ink);
+  --warm-mid:     var(--d-ink-s);
+  --warm-muted:   var(--d-ink-m);
+  --warm-border:  var(--d-border);
+
+  /* Terracotta — solid 요소는 동일 hex 유지, 페일 배경만 짙게 */
   --persimmon-l:  #3a1f18;
-  --coral-pale:   #3a1f18;   /* alias */
+  --coral-pale:   #3a1f18;
 
-  /* Chart — 다크에서 미세 조정 (어두운 배경에 더 잘 보이게)
-     원래 카테고리 색은 채도 높은 편이라 대부분 OK. ink(#1a1a1a)는 다크 배경이라 안 보여 cream으로 */
-  --chart-1:  #fbf6ef;       /* ops — light ink in dark mode */
+  --chart-1:  var(--d-ink);
 
-  /* Status — 다크 적합 톤. 배경 alpha 약간 ↑, 텍스트는 밝은 톤으로 */
-  --status-paid-bg:     rgba(124,154,82,0.20);  /* Warm Olive — 다크 */
-  --status-paid-fg:     #a8c47e;                /* 밝은 올리브 */
-  --status-paid-strong: #8fae5e;                /* solid */
-  --status-await-bg:    rgba(96,165,250,0.18);  /* blue-400 alpha */
-  --status-await-fg:    #93c5fd;                /* blue-300 */
-  --status-unpaid-bg:   rgba(251,191,36,0.20);  /* amber-400 alpha */
-  --status-unpaid-fg:   #fcd34d;                /* amber-300 */
-  --status-vacant-bg:   rgba(168,152,128,0.16); /* warm muted */
-  --status-vacant-fg:   #c8b89a;                /* 밝은 베이지 */
+  /* Status 5단계 — §19-3 다크 변형 */
+  --status-paid-bg:     rgba(163,191,123,.14);
+  --status-paid-fg:     var(--d-success);
+  --status-paid-strong: var(--d-success);
+  --status-await-bg:    rgba(147,169,209,.14);
+  --status-await-fg:    var(--d-blue);
+  --status-unpaid-bg:   rgba(217,166,72,.14);
+  --status-unpaid-fg:   var(--d-amber);
+  --status-vacant-bg:   rgba(242,232,220,.06);
+  --status-vacant-fg:   var(--d-ink-m);
+  --success:            var(--d-success);
+  --success-bg:         rgba(163,191,123,.14);
+  --overdue:            var(--d-overdue);       /* 텍스트·팁용 */
+  --overdue-bg:         rgba(160,60,46,.30);
 
-  /* 상태 카드·뱃지 — 다크 톤. vacant/neutral/info 는 cream·border 변수라 자동 대응 */
-  --card-resident-bg: rgba(124,154,82,0.14);
-  --card-resident-bd: rgba(124,154,82,0.28);
-  --badge-paid-bg:    rgba(124,154,82,0.20);
-  --badge-paid-fg:    #a8c47e;
-  --badge-await-bg:   rgba(96,165,250,0.20);
-  --badge-await-fg:   #93c5fd;
-  --badge-unpaid-bg:  rgba(180,120,10,0.24);
-  --badge-unpaid-fg:  #d9a544;
-  --badge-overdue-bg: #b85042;
+  --card-resident-bg: rgba(163,191,123,.14);
+  --card-resident-bd: rgba(163,191,123,.28);
+  --badge-paid-bg:    rgba(163,191,123,.14);
+  --badge-paid-fg:    var(--d-success);
+  --badge-await-bg:   rgba(147,169,209,.14);
+  --badge-await-fg:   var(--d-blue);
+  --badge-unpaid-bg:  rgba(217,166,72,.14);
+  --badge-unpaid-fg:  var(--d-amber);
+  --badge-overdue-bg: #a03c2e;                  /* solid 배지는 다크에서도 --tc + cream (§19-3) */
   --badge-overdue-fg: #fbf6ef;
   --badge-exit-bg:    rgba(200,160,125,0.26);
   --badge-exit-fg:    #d8bf9c;
   --badge-movein-bg:  rgba(200,160,125,0.26);
   --badge-movein-fg:  #d8bf9c;
 
-  /* 강조 — 다크에서 더 밝게 */
-  --accent-deposit: #a78bfa;                    /* violet-400 */
-  --accent-reserve: #5eead4;                    /* teal-300 */
+  /* 강조 — §19-2: 보라·틸 폐기 */
+  --accent-deposit: var(--d-camel);
+  --accent-reserve: var(--d-success);
+
+  /* §19-2 페어 토큰 — 다크 값 */
+  /* #1 현재 순이익: --d-card 표면 + --d-success 팁/수치 + --d-ink-s 라벨 (크림 카드 반입 금지) */
+  --np-card-bg: var(--d-card);
+  --np-card-bd: var(--d-border);
+  --np-tip:     var(--d-success);
+  --np-label:   var(--d-ink-s);
+  --np-unit:    var(--d-ink-m);
+  --np-cap:     var(--d-ink-m);
+  --np-cap2:    var(--d-ink-s);
+  --np-pos:     var(--d-success);
+  --np-neg:     var(--d-overdue);
+  --np-cash:    var(--d-success);
+  /* #2 -N% 텍스트: sand (앰버 금지, 강조는 weight 로) */
+  --rev-change: var(--sand);
+  /* #6 공실 = 위험 아님 */
+  --vacant-num: var(--d-ink-m);
 }
 
 html.dark body { color: var(--ink-2); background: var(--cream-2); }
