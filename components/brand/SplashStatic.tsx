@@ -12,8 +12,8 @@ export function SplashStatic() {
       aria-busy="true" aria-label="스테이음 로딩 중"
       style={{ background: 'var(--cold-bg, #E8DDD0)' }}>
       <style>{`
-        @media (prefers-color-scheme: dark) { [data-static-bg] { background: var(--cold-bg-dark, #2A1A10) !important; } }
-        html.dark [data-static-bg] { background: var(--cold-bg-dark, #2A1A10) !important; }
+        @media (prefers-color-scheme: dark) { [data-static-bg] { background: var(--cold-bg-dark, #000000) !important; } }
+        html.dark [data-static-bg] { background: var(--cold-bg-dark, #000000) !important; }
 
         .sy-st-stroke {
           fill: none; stroke: var(--tc, #A03C2E);

@@ -38,8 +38,8 @@ export function SplashIntro() {
       aria-busy="true" aria-label="스테이음 로딩 중"
       style={{ background: 'var(--cold-bg, #E8DDD0)' }}>
       <style>{`
-        @media (prefers-color-scheme: dark) { [data-intro-bg] { background: var(--cold-bg-dark, #2A1A10) !important; } }
-        html.dark [data-intro-bg] { background: var(--cold-bg-dark, #2A1A10) !important; }
+        @media (prefers-color-scheme: dark) { [data-intro-bg] { background: var(--cold-bg-dark, #000000) !important; } }
+        html.dark [data-intro-bg] { background: var(--cold-bg-dark, #000000) !important; }
 
         /* §3b draw — 중심선 한 획(stroke 20) 왼→오. pathLength=1 정규화 */
         .sy-in-stroke {

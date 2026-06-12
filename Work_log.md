@@ -3,6 +3,9 @@
 마지막 업데이트: 2026-06-12
 브랜치: main
 
+## 2026-06-12 (이어서) — 브랜드 v1.3.3 정정: 다크모드 트루 블랙 [배포, SQL 불필요]
+Claude Design 정정 반영. 교체값 4종 — --d-page #2A1A10→**#000000**(OLED 절전·번인), --cold-bg-dark #2A1A10→#000000(FOUC 인라인 CSS·theme-color 다크 메타 포함), --d-card #36251A→**#1A130E**(웜 니어블랙), --d-card-2 #412E20→#261C14. 적용 파일: globals.css(토큰+주석), layout.tsx(인라인 FOUC+themeColor), 스플래시 3종(SplashScreen/SplashStatic/SplashIntro 의 var() 폴백), docs/brand-guide-v1.3.md(§18.2·§18.4·§19 동기화). 원칙 변경: 순흑 금지는 **다크 페이지 배경에 한해 해제**, 순백 텍스트는 여전히 금지(--d-ink 유지). 구 hex 전수 검색 0건 확인(워크로그 과거 기록 2줄은 역사 보존 차원에서 유지 — 이 항목이 정정을 명시). 다크 페어 토큰(--np-* 등)은 --d-* 참조라 자동 반영.
+
 ## 2026-06-12 (이어서) — 세탁조크리너 수령대기 알림 해소(데이터) + 계약서 탭 거주중/퇴실 필터 [배포, SQL 불필요]
 **① 수령대기 알림 재발 (버그 아님, 데이터)**: 5/31 코스트코 세탁조크리너 12,990원 Expense 가 `receivedAt=null`(수령 미확정)로 남아 있었음. 알림은 설계상 "해소될 때까지 매일" + 벨 클릭 읽음은 '오늘만 숨김'(localStorage per-day)이라 매일 재등장한 것. 수령 확정 UI 는 재고관리 품목 행("N건 수령대기" 배지 → 수령 확인)에 있는데 알림이 /inventory 로만 보내 발견 못 함. **조치**: receivedAt = 구매일(5/31)로 직접 채움 — 6/8 점검(잔량 3) 기준선 이전이라 잔량 이중계산 없음. 되돌리기: `UPDATE "Expense" SET "receivedAt" = NULL WHERE id = 'fe71f7c2-fcd6-4b0e-a578-549c520d95b6';`
 **② 계약서 탭 거주중/퇴실 구분**: [ContractsClient](app/(app)/contracts/ContractsClient.tsx) 에 거주 상태 SegmentedControl 추가(거주중·퇴실·전체, 기본 **거주중**). 퇴실 그룹 = CHECKED_OUT+CANCELLED, 연결 계약 없는 파일(status null)은 거주중 쪽. 부제에 거주중/퇴실 건수 표기. 적용취소 = '전체' 선택.

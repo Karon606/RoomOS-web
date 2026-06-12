@@ -213,7 +213,7 @@
   --splash-fade: 400ms;      /* 스플래시 → 콘텐츠 크로스페이드 */
   --splash-slow: 5000ms;     /* 초과 시 느린 연결 메시지 */
   --cold-bg: #E8DDD0;        /* = --page. manifest background 와 동일값 강제(불일치=릴리즈 블로커) */
-  --cold-bg-dark: #2A1A10;   /* 다크모드 첫 페인트 배경 */
+  --cold-bg-dark: #000000;   /* 다크모드 첫 페인트 배경 — v1.3.3 OLED 트루 블랙 */
 }
 
 /* §18.5 버튼 스피너 회전 (Tailwind v4 기본 keyframes 미보장 — 직접 정의) */
@@ -321,10 +321,11 @@ body {
    라이트 cream/ink → 다크 dark-bg/cream-on-dark.
    기존 코드의 var(--cream)·var(--warm-dark) 등은 자동으로 다크 적용. */
 html.dark {
-  /* ── Brand Guide v1.3 §19 다크 팔레트 — 웜 브라운 계열 (순흑·순백 금지, §18 --cold-bg-dark 정합) ── */
-  --d-page: #2A1A10;         /* 페이지 배경. = --cold-bg-dark */
-  --d-card: #36251A;         /* 카드·위젯 표면 */
-  --d-card-2: #412E20;       /* hover·중첩 표면 */
+  /* ── Brand Guide v1.3 §19 다크 팔레트 — v1.3.3: 페이지는 OLED 트루 블랙, 표면은 웜 니어블랙.
+     순흑 금지는 다크 페이지 배경에 한해 해제. 순백 텍스트는 여전히 금지(본문은 --d-ink). ── */
+  --d-page: #000000;         /* 페이지 배경. = --cold-bg-dark (OLED 절전·번인 고려) */
+  --d-card: #1A130E;         /* 카드·위젯 표면 — 웜 니어블랙 */
+  --d-card-2: #261C14;       /* hover·중첩 표면 */
   --d-ink: #F2E8DC;          /* 본문·숫자 */
   --d-ink-s: #C7B5A2;        /* 라벨·보조 텍스트 */
   --d-ink-m: #93816F;        /* 캡션 한정 — 12px 미만 본문에 사용 금지 */

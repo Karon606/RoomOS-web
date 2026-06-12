@@ -323,7 +323,7 @@ PAID/AWAIT/UNPAID/OVERDUE/VACANT 토큰은 **수납 표·호실 카드·대시�
   --splash-fade: 400ms;      /* 스플래시 → 콘텐츠 크로스페이드 */
   --splash-slow: 5000ms;     /* 초과 시 느린 연결 메시지 표시 */
   --cold-bg: #E8DDD0;        /* = --page. manifest background와 동일값 강제 */
-  --cold-bg-dark: #2A1A10;   /* 다크모드 첫 페인트 배경 */
+  --cold-bg-dark: #000000;   /* 다크모드 첫 페인트 배경 — v1.3.3 OLED 트루 블랙 */
 }
 ```
 
@@ -348,7 +348,7 @@ PAID/AWAIT/UNPAID/OVERDUE/VACANT 토큰은 **수납 표·호실 카드·대시�
 | 항목 | 값 | 근거 |
 |---|---|---|
 | 배경 | `--cold-bg` #E8DDD0 (= --page) | manifest background와 동일 → PWA 3단계 연속성. 브랜드 풀블리드(--tc)는 로그인 전 압박감 + 로더 stroke와 동색 충돌로 기각 |
-| 다크모드 배경 | `--cold-bg-dark` #2A1A10 | ink 계열 웜 브라운 — 순흑 금지 원칙 유지 |
+| 다크모드 배경 | `--cold-bg-dark` #000000 | v1.3.3 정정 — OLED 절전·번인 고려 트루 블랙. 순흑 금지는 다크 페이지 배경에 한해 해제 |
 | 로더 | 브랜드 로더 lg — 마크 높이 48px, 워드마크 포함 락업 | 콜드 부트는 첫인상 1회—이름을 보여준다. 사이클 1은 항상 EN부터 |
 | 위치 | 화면 수직 중앙에서 **-8% 위** (시각 중심), 수평 중앙 | 광학적 안정감 |
 | 느린 연결 | `--splash-slow` 5000ms 초과 시 로더 아래 24px에 캡션 12.5px `--ink-s` 페이드인: "연결이 느립니다 — 계속 시도 중입니다" | 재시도 버튼은 10s 초과 시에만 |
@@ -367,9 +367,9 @@ PAID/AWAIT/UNPAID/OVERDUE/VACANT 토큰은 **수납 표·호실 카드·대시�
 
 - `index.html` 인라인 critical CSS (외부 CSS보다 앞에):
   ```html
-  <style>html{background:#E8DDD0}@media(prefers-color-scheme:dark){html{background:#2A1A10}}</style>
+  <style>html{background:#E8DDD0}@media(prefers-color-scheme:dark){html{background:#000000}}</style>
   <meta name="theme-color" content="#E8DDD0" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#2A1A10" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   ```
 - 흰 화면(#fff) 노출 0ms — HTML 도착 순간부터 브랜드 배경.
 - 다크모드 감지는 CSS 미디어 쿼리로만 (JS 감지 전 깜박임 원천 차단). JS 테마 설정은 이후 덮어쓰기만.
@@ -402,14 +402,15 @@ PAID/AWAIT/UNPAID/OVERDUE/VACANT 토큰은 **수납 표·호실 카드·대시�
 
 > 절대 규칙: ① 다크 화면에 크림(#FBF6EF) 카드 반입 금지 — 강조는 숫자 색+좌측 3px 팁
 > ② 표면·텍스트는 같은 테마의 토큰 쌍만 조합(라이트 표면+다크 텍스트 금지)
-> ③ 순흑·순백 금지(웜 브라운 계열) ④ 토큰 외 다크 색 하드코딩 금지
+> ③ 순백 텍스트(#fff) 금지 — 본문은 --d-ink. 순흑 금지는 v1.3.3에서 다크 페이지 배경에 한해 해제
+> ④ 토큰 외 다크 색 하드코딩 금지
 > ⑤ 대비 본문·라벨 ≥4.5:1, 24px+ 숫자 ≥3:1.
 
 ```css
 /* 다크 분기(html.dark)에 선언 */
---d-page: #2A1A10;   /* 페이지 배경. = --cold-bg-dark (§18 정합) */
---d-card: #36251A;   /* 카드·위젯 표면 */
---d-card-2: #412E20; /* hover·중첩 표면 */
+--d-page: #000000;   /* 페이지 배경. = --cold-bg-dark (v1.3.3 OLED 트루 블랙) */
+--d-card: #1A130E;   /* 카드·위젯 표면 — 웜 니어블랙 */
+--d-card-2: #261C14; /* hover·중첩 표면 */
 --d-ink: #F2E8DC;    /* 본문·숫자 */
 --d-ink-s: #C7B5A2;  /* 라벨·보조 */
 --d-ink-m: #93816F;  /* 캡션 한정 — 12px 미만 본문 금지 */
