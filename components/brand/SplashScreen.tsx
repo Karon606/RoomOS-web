@@ -1,14 +1,13 @@
 'use client'
 
 // 일반 모드 스플래시 — 셸 없는 구간(인트로 이후 재발동·소셜 리디렉트·로그아웃) 전용.
-// **즉시 완성형 락업** (드로잉 모션 없음): 이 스플래시가 보이는 동안 전체 문서 이동·
-// OAuth 이탈·하이드레이션이 메인스레드를 멈추면 stroke-dashoffset 드로잉이 중간
-// 프레임(컨투어)에서 얼어붙는다 — 실기기 검증으로 확인(2026-06-12). 얼 수 있는 중간
-// 상태를 없애고, 드로잉 모션은 SplashIntro(§3b, 하이드레이션 후 안정 구간) 전용으로.
+// 레퍼런스 'stayeum Splash Intro.html'의 첫 구간(draw 0–1.0s → EN 락업)과 동일 비주얼.
+// 드로잉 = 중심선 한 획 + stroke-width 20 (외곽선 컨투어 아님 — 채워진 아치가 자라남).
 // 5s 초과 시 느린 연결 캡션, 10s 초과 시 재시도 (§18.2). 표시 타이밍은 SplashHost 가 관리.
 
 import { useEffect, useState } from 'react'
-import { ARCH_PATH } from './StayeumWordmark'
+
+const STROKE_PATH = 'M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82'
 
 export function SplashScreen({ immediate = false }: {
   /** SplashHost 가 자체적으로 300ms 지연을 관리할 때 — 내부 delayed-fallback 생략 */
@@ -23,78 +22,72 @@ export function SplashScreen({ immediate = false }: {
   }, [])
 
   return (
-    <div
-      className="fixed inset-0 z-[var(--z-loader)]"
-      style={{ background: 'var(--cold-bg, #E8DDD0)' }}
-      aria-busy="true"
-      aria-label="스테이음 로딩 중"
-    >
-      {/* 다크모드 배경 — JS 테마 감지 전에도 CSS 미디어쿼리로 즉시 적용 (§18.4) */}
+    <div className="fixed inset-0 z-[var(--z-loader)] flex items-center justify-center"
+      aria-busy="true" aria-label="스테이음 로딩 중"
+      style={{ background: 'var(--cold-bg, #E8DDD0)' }}>
       <style>{`
-        @media (prefers-color-scheme: dark) {
-          [data-splash-bg] { background: var(--cold-bg-dark, #2A1A10) !important; }
-        }
+        @media (prefers-color-scheme: dark) { [data-splash-bg] { background: var(--cold-bg-dark, #2A1A10) !important; } }
         html.dark [data-splash-bg] { background: var(--cold-bg-dark, #2A1A10) !important; }
-        @keyframes splash-caption-in { from { opacity: 0 } to { opacity: 1 } }
-        /* 와이프 리빌 + 숨쉬기 — transform/opacity 만(컴포지터 스레드, 메인스레드 정체에도 안 멈춤) */
-        @keyframes sy-splash-wipe { to { transform: translateX(103%); } }
-        .sy-splash-wipe {
-          position: absolute; inset: -2px;
-          background: var(--cold-bg, #E8DDD0);
-          animation: sy-splash-wipe 900ms cubic-bezier(.65,0,.35,1) forwards;
-          will-change: transform;
+
+        .sy-sp-stroke {
+          fill: none; stroke: var(--tc, #A03C2E);
+          stroke-width: 20; stroke-linecap: round; stroke-linejoin: round;
+          stroke-dasharray: 1; stroke-dashoffset: 1;
+          animation: sy-sp-draw 1000ms cubic-bezier(.65,0,.35,1) forwards;
         }
-        @media (prefers-color-scheme: dark) { .sy-splash-wipe { background: var(--cold-bg-dark, #2A1A10) !important; } }
-        html.dark .sy-splash-wipe { background: var(--cold-bg-dark, #2A1A10) !important; }
-        @keyframes sy-splash-in { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
-        .sy-splash-in { opacity: 0; animation: sy-splash-in 400ms cubic-bezier(.65,0,.35,1) 700ms forwards; will-change: opacity, transform; }
-        @keyframes sy-splash-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .82; } }
-        .sy-splash-breathe { animation: sy-splash-breathe 2.4s ease-in-out 1600ms infinite; will-change: opacity; }
+        @keyframes sy-sp-draw { to { stroke-dashoffset: 0; } }
+        .sy-sp-mark { width: 104px; height: 80px; display: flex; align-items: center; justify-content: center; }
+        .sy-sp-mark svg { width: 100%; height: 100%; overflow: visible; }
+        .sy-sp-div { width: 1px; height: 42px; background: var(--border-s, rgba(61,36,24,.18)); opacity: 0; transform: scaleY(0); animation: sy-sp-div 400ms ease 1000ms forwards; }
+        @keyframes sy-sp-div { to { opacity: 1; transform: scaleY(1); } }
+        .sy-sp-word {
+          font-family: var(--font-plus-jakarta, 'Plus Jakarta Sans', sans-serif);
+          font-weight: 600; font-size: 44px; letter-spacing: -.028em; line-height: 1;
+          white-space: nowrap; opacity: 0;
+          animation: sy-sp-word 400ms ease 1000ms forwards;
+        }
+        @keyframes sy-sp-word { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes sy-sp-caption { from { opacity: 0 } to { opacity: 1 } }
+
+        .sy-sp-lockup { display: flex; align-items: center; gap: 22px; }
+        @media (max-width: 640px) {
+          .sy-sp-lockup { flex-direction: column; gap: 22px; }
+          .sy-sp-div { display: none; }
+          .sy-sp-mark { width: 88px; height: 68px; }
+          .sy-sp-word { font-size: 32px; }
+        }
         @media (prefers-reduced-motion: reduce) {
-          .sy-splash-wipe { animation: none; transform: translateX(103%); }
-          .sy-splash-in { animation: none; opacity: 1; }
-          .sy-splash-breathe { animation: none; }
-        }
-        .sy-splash-lockup { display: flex; align-items: center; gap: 20px; }
-        .sy-splash-mark   { width: 104px; }
-        .sy-splash-wm     { font-size: 44px; }
-        @media (max-width: 639px) {
-          .sy-splash-lockup { flex-direction: column; gap: 14px; }
-          .sy-splash-mark   { width: 88px; }
-          .sy-splash-div    { display: none; }
-          .sy-splash-wm     { font-size: 32px; }
+          .sy-sp-stroke { animation: none; stroke-dashoffset: 0; }
+          .sy-sp-div { animation: none; opacity: 1; transform: scaleY(1); }
+          .sy-sp-word { animation: none; opacity: 1; }
         }
       `}</style>
       <div data-splash-bg className="absolute inset-0" style={{ background: 'var(--cold-bg, #E8DDD0)' }} />
-      {/* 수직 중앙 -8% (시각 중심) */}
-      <div className={`${immediate ? '' : 'delayed-fallback '}absolute inset-x-0 flex flex-col items-center`}
-        style={{ top: '42%', transform: 'translateY(-50%)', color: 'var(--ink, #3d2418)' }}>
-        <div className="sy-splash-breathe sy-splash-lockup">
-          {/* 마크 — 채워진 아치 위로 배경색 커버가 밀려나며 드러남 (와이프 클리핑) */}
-          <div className="relative overflow-hidden" style={{ lineHeight: 0 }}>
-            <svg viewBox="8 8 113 84" className="sy-splash-mark" style={{ height: 'auto' }} aria-hidden="true">
-              <path d={ARCH_PATH} fill="var(--persimmon, #a03c2e)" />
+      <div className={`${immediate ? '' : 'delayed-fallback '}relative flex flex-col items-center`}
+        style={{ gap: 32, transform: 'translateY(-8vh)', color: 'var(--ink, #3d2418)' }}>
+        <div className="sy-sp-lockup">
+          <div className="sy-sp-mark">
+            <svg viewBox="0 0 130 100" aria-hidden="true">
+              <path className="sy-sp-stroke" d={STROKE_PATH} pathLength={1} />
             </svg>
-            <div className="sy-splash-wipe" />
           </div>
-          <div className="sy-splash-in sy-splash-div" style={{ width: 1.5, height: 56, background: 'var(--border-s, rgba(61,36,24,.18))' }} />
-          <span className="sy-splash-in sy-splash-wm whitespace-nowrap leading-none"
-            style={{ fontFamily: "var(--font-plus-jakarta, 'Plus Jakarta Sans', sans-serif)", letterSpacing: '-0.025em' }}>
-            <span style={{ fontWeight: 300 }}>stay</span>
-            <span style={{ fontWeight: 700, color: 'var(--persimmon, #a03c2e)' }}>eum</span>
+          <div className="sy-sp-div" />
+          <span className="sy-sp-word">
+            <span style={{ color: 'var(--ink, #3D2418)' }}>stay</span>
+            <span style={{ color: 'var(--tc, #A03C2E)' }}>eum</span>
           </span>
         </div>
         {phase !== 'normal' && (
           <p className="text-[12.5px]" style={{
-            marginTop: 24, color: 'var(--ink-s, #7A6553)',
-            animation: 'splash-caption-in 400ms ease forwards',
+            color: 'var(--ink-s, #7A6553)',
+            animation: 'sy-sp-caption 400ms ease forwards',
           }}>
             연결이 느립니다 — 계속 시도 중입니다
           </p>
         )}
         {phase === 'stalled' && (
           <button type="button" onClick={() => window.location.reload()}
-            className="mt-3 px-4 h-10 rounded-lg text-sm font-medium border transition-colors"
+            className="px-4 h-10 rounded-lg text-sm font-medium border transition-colors"
             style={{ borderColor: 'var(--border-s, rgba(61,36,24,.18))', color: 'var(--ink, #3d2418)' }}>
             다시 시도
           </button>

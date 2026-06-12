@@ -1,15 +1,16 @@
 'use client'
 
-// 콜드 부트 인트로 — Brand Guide v1.3.1 §3b. 루프형 BrandLoader 와 달리 1회성 시퀀스.
-//   draw 0–1.0s → lockup EN 1.0–1.4 → hold EN –2.0 → swap KO 2.0–2.35 → hold KO –3.2
-//   이후 로딩 지속 시: 3200ms 마다 KO↔EN 크로스페이드(350ms), 5s 캡션, 10s 재시도.
-// ⚠️ 레퍼런스 'stayeum Splash Intro.html' 이 리포에 없어(지시서와 달리 미제공)
-//   아치 마크업은 기존 BrandLoader 자산(ARCH_PATH 컨투어 드로잉)을 재사용하고
-//   타이밍·이징·크기·시퀀스만 §3b 표 그대로 구현 — 파일 수령 시 마크업 교체 여지.
-// 완주 보장(3200ms)·세션 1회 게이트는 SplashController 가 담당.
+// 콜드 부트 인트로 — Brand Guide §3b, 레퍼런스 'stayeum Splash Intro.html' 이식.
+// 핵심: 드로잉은 외곽선 컨투어가 아니라 **중심선 한 획 + stroke-width 20** —
+// 두꺼운 획 자체가 아치라 그리는 중에도 '채워진 아치가 자라나는' 모습(§3b draw).
+// pathLength=1 정규화로 측정 불필요. 타이밍·이징·구조 레퍼런스 그대로:
+//   draw 0–1.0s → EN 락업 1.0–1.4 → swap KO 2.0–2.35 → hold → (대기 연장) KO↔EN 3.2s 주기
+// 완주 보장(3200ms)·세션 게이트·퇴장 페이드는 SplashController 가 담당.
 
 import { useEffect, useState } from 'react'
-import { ARCH_PATH } from './StayeumWordmark'
+
+// 레퍼런스 중심선 패스 — viewBox 0 0 130 100, 열린 곡선 (StayeumWordmark 의 외곽선 ARCH_PATH 와 다름)
+const STROKE_PATH = 'M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82'
 
 const SWAP_MS = 350
 const SEQ_MS = 3200
@@ -29,120 +30,100 @@ export function SplashIntro() {
     return () => { timers.forEach(clearTimeout); clearInterval(alt) }
   }, [])
 
-  // extended 구간 워드마크 표시 여부 (350ms 크로스페이드는 CSS transition)
   const enOn = phase === 'extended' && word === 'en'
   const koOn = phase === 'extended' ? word === 'ko' : true   // seq 구간은 키프레임이 제어
 
   return (
-    <div className="fixed inset-0 z-[var(--z-loader)]" aria-busy="true" aria-label="스테이음 로딩 중"
+    <div className="fixed inset-0 z-[var(--z-loader)] flex items-center justify-center"
+      aria-busy="true" aria-label="스테이음 로딩 중"
       style={{ background: 'var(--cold-bg, #E8DDD0)' }}>
       <style>{`
         @media (prefers-color-scheme: dark) { [data-intro-bg] { background: var(--cold-bg-dark, #2A1A10) !important; } }
         html.dark [data-intro-bg] { background: var(--cold-bg-dark, #2A1A10) !important; }
 
-        /* §3b draw 대체 — 0–1.0s 와이프 리빌(transform만 = 컴포지터 스레드).
-           stroke-dashoffset 드로잉은 메인스레드라 하이드레이션 직후의 대형 렌더·패치에
-           컨투어 중간 프레임으로 얼어붙었음(실기기 반복 확인) — 부트 경로 stroke 모션 전면 금지. */
-        @keyframes sy-intro-wipe { to { transform: translateX(103%); } }
-        .sy-intro-wipe {
-          position: absolute; inset: -2px;
-          background: var(--cold-bg, #E8DDD0);
-          animation: sy-intro-wipe 1000ms cubic-bezier(.65,0,.35,1) forwards;
-          will-change: transform;
+        /* §3b draw — 중심선 한 획(stroke 20) 왼→오. pathLength=1 정규화 */
+        .sy-in-stroke {
+          fill: none; stroke: var(--tc, #A03C2E);
+          stroke-width: 20; stroke-linecap: round; stroke-linejoin: round;
+          stroke-dasharray: 1; stroke-dashoffset: 1;
+          animation: sy-in-draw 1000ms cubic-bezier(.65,0,.35,1) forwards;
         }
-        @media (prefers-color-scheme: dark) { .sy-intro-wipe { background: var(--cold-bg-dark, #2A1A10) !important; } }
-        html.dark .sy-intro-wipe { background: var(--cold-bg-dark, #2A1A10) !important; }
-        /* 디바이더 — 1.0–1.4s scaleY (데스크톱 가로 락업 전용) */
-        @keyframes sy-intro-div { from { transform: scaleY(0); opacity: 0; } to { transform: scaleY(1); opacity: 1; } }
-        .sy-intro-div { transform: scaleY(0); opacity: 0; transform-origin: center; animation: sy-intro-div 400ms cubic-bezier(.65,0,.35,1) 1000ms forwards; }
-        /* EN — 1.0–1.4 페이드인(translateX −6→0) → 2.0–2.35 페이드아웃 */
-        @keyframes sy-intro-en {
-          0%, 71.4%      { opacity: 0; transform: translateX(-6px); }   /* –1.0s */
-          100%           { opacity: 1; transform: translateX(0); }      /* 1.4s */
-        }
-        @keyframes sy-intro-en-out { from { opacity: 1; } to { opacity: 0; } }
-        .sy-intro-en {
-          opacity: 0;
-          animation: sy-intro-en 1400ms cubic-bezier(.65,0,.35,1) forwards,
-                     sy-intro-en-out ${SWAP_MS}ms ease 2000ms forwards;
-        }
-        /* KO — 2.0–2.35 크로스페이드 인 → hold */
-        @keyframes sy-intro-ko { from { opacity: 0; } to { opacity: 1; } }
-        .sy-intro-ko { opacity: 0; animation: sy-intro-ko ${SWAP_MS}ms ease 2000ms forwards; }
+        @keyframes sy-in-draw { to { stroke-dashoffset: 0; } }
 
+        .sy-in-mark { width: 104px; height: 80px; display: flex; align-items: center; justify-content: center; }
+        .sy-in-mark svg { width: 100%; height: 100%; overflow: visible; }
+
+        /* 디바이더 — 1.0s 에 scaleY */
+        .sy-in-div { width: 1px; height: 42px; background: var(--border-s, rgba(61,36,24,.18)); opacity: 0; transform: scaleY(0); animation: sy-in-div 400ms ease 1000ms forwards; }
+        @keyframes sy-in-div { to { opacity: 1; transform: scaleY(1); } }
+
+        /* 워드마크 — 같은 자리 교차. EN 1.0s 인 → 2.0s 아웃, KO 2.0s 인 */
+        .sy-in-words { position: relative; height: 52px; min-width: 200px; }
+        .sy-in-word {
+          position: absolute; inset: 0; display: flex; align-items: center;
+          font-family: var(--font-plus-jakarta, 'Plus Jakarta Sans', sans-serif);
+          font-weight: 600; font-size: 44px; letter-spacing: -.028em; line-height: 1;
+          white-space: nowrap; opacity: 0;
+        }
+        @keyframes sy-in-word { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes sy-out-word { from { opacity: 1; } to { opacity: 0; } }
+        .sy-in-en { animation: sy-in-word 400ms ease 1000ms forwards, sy-out-word ${SWAP_MS}ms ease 2000ms forwards; }
+        .sy-in-ko { animation: sy-in-word ${SWAP_MS}ms ease 2000ms forwards; }
         /* extended 구간 — JS 제어 + transition 크로스페이드 */
-        .sy-intro-x { transition: opacity ${SWAP_MS}ms ease; animation: none !important; }
+        .sy-in-x { transition: opacity ${SWAP_MS}ms ease; animation: none !important; }
 
-        @keyframes sy-intro-caption { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes sy-in-caption { from { opacity: 0 } to { opacity: 1 } }
 
-        /* 모바일(<640px) — 세로 스택, 디바이더 생략 (§3b-7) */
-        .sy-intro-lockup { display: flex; align-items: center; gap: 20px; }
-        .sy-intro-mark   { width: 104px; }
-        .sy-intro-wm     { font-size: 44px; }
-        .sy-intro-wm-ko  { font-size: 36px; }
-        @media (max-width: 639px) {
-          .sy-intro-lockup { flex-direction: column; gap: 14px; }
-          .sy-intro-mark   { width: 88px; }
-          .sy-intro-div    { display: none; }
-          .sy-intro-wm     { font-size: 32px; }
-          .sy-intro-wm-ko  { font-size: 27px; }
+        /* 모바일 — 가로 락업이 분리되므로 세로 스택 (레퍼런스 그대로) */
+        .sy-in-lockup { display: flex; align-items: center; gap: 22px; }
+        @media (max-width: 640px) {
+          .sy-in-lockup { flex-direction: column; gap: 22px; }
+          .sy-in-div { display: none; }
+          .sy-in-mark { width: 88px; height: 68px; }
+          .sy-in-words { height: 40px; min-width: 220px; }
+          .sy-in-word { font-size: 32px; justify-content: center; }
         }
 
-        /* 접근성 — 인트로 생략, 정적 락업 즉시 (전역 reduce 규칙과 별개로 명시) */
         @media (prefers-reduced-motion: reduce) {
-          .sy-intro-wipe { animation: none; transform: translateX(103%); }
-          .sy-intro-div  { animation: none; transform: scaleY(1); opacity: 1; }
-          .sy-intro-en   { animation: none; opacity: 1; }
-          .sy-intro-ko   { animation: none; opacity: 0; }
+          .sy-in-stroke { animation: none; stroke-dashoffset: 0; }
+          .sy-in-div { animation: none; opacity: 1; transform: scaleY(1); }
+          .sy-in-en { animation: none; opacity: 1; }
+          .sy-in-ko { animation: none; opacity: 0; }
         }
       `}</style>
       <div data-intro-bg className="absolute inset-0" style={{ background: 'var(--cold-bg, #E8DDD0)' }} />
 
-      {/* 수직 중앙 -8% (시각 중심) */}
-      <div className="absolute inset-x-0 flex flex-col items-center"
-        style={{ top: '42%', transform: 'translateY(-50%)', color: 'var(--ink, #3d2418)' }}>
-        <div className="sy-intro-lockup">
-          {/* 마크 — 채워진 아치 위로 배경색 커버가 왼→오로 밀려나며 드러남 (와이프 클리핑) */}
-          <div className="relative overflow-hidden" style={{ lineHeight: 0 }}>
-            <svg viewBox="8 8 113 84" className="sy-intro-mark" style={{ height: 'auto' }} aria-hidden="true">
-              <path d={ARCH_PATH} fill="var(--persimmon, #a03c2e)" />
+      {/* 레퍼런스: 수직 중앙 기준 translateY(-8vh) */}
+      <div className="relative flex flex-col items-center" style={{ gap: 32, transform: 'translateY(-8vh)', color: 'var(--ink, #3d2418)' }}>
+        <div className="sy-in-lockup">
+          <div className="sy-in-mark">
+            <svg viewBox="0 0 130 100" aria-hidden="true">
+              <path className="sy-in-stroke" d={STROKE_PATH} pathLength={1} />
             </svg>
-            <div className="sy-intro-wipe" />
           </div>
-          <div className="sy-intro-div" style={{ width: 1.5, height: 56, background: 'var(--border-s, rgba(61,36,24,.18))' }} />
-          {/* 워드마크 — EN/KO 같은 자리 교차 */}
-          <div className="relative" style={{ width: 'max-content', minWidth: 220, height: 62 }}>
-            <span className={`sy-intro-en ${phase === 'extended' ? 'sy-intro-x' : ''} sy-intro-wm absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap leading-none`}
-              style={{
-                fontFamily: "var(--font-plus-jakarta, 'Plus Jakarta Sans', sans-serif)",
-                letterSpacing: '-0.025em',
-                ...(phase === 'extended' ? { opacity: enOn ? 1 : 0 } : {}),
-              }}>
-              <span style={{ fontWeight: 300 }}>stay</span>
-              <span style={{ fontWeight: 700, color: 'var(--persimmon, #a03c2e)' }}>eum</span>
+          <div className="sy-in-div" />
+          <div className="sy-in-words">
+            <span className={`sy-in-word sy-in-en ${phase === 'extended' ? 'sy-in-x' : ''}`}
+              style={phase === 'extended' ? { opacity: enOn ? 1 : 0 } : undefined}>
+              <span style={{ color: 'var(--ink, #3D2418)' }}>stay</span>
+              <span style={{ color: 'var(--tc, #A03C2E)' }}>eum</span>
             </span>
-            <span className={`sy-intro-ko ${phase === 'extended' ? 'sy-intro-x' : ''} sy-intro-wm-ko absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap leading-none`}
-              style={{
-                letterSpacing: '-0.03em',
-                ...(phase === 'extended' ? { opacity: koOn ? 1 : 0 } : {}),
-              }}>
-              <span style={{ fontWeight: 500 }}>스테이</span>
-              <span style={{ fontWeight: 700, color: 'var(--persimmon, #a03c2e)' }}>음</span>
+            <span className={`sy-in-word sy-in-ko ${phase === 'extended' ? 'sy-in-x' : ''}`}
+              style={phase === 'extended' ? { opacity: koOn ? 1 : 0 } : undefined}>
+              <span style={{ color: 'var(--ink, #3D2418)' }}>스테이</span>
+              <span style={{ color: 'var(--tc, #A03C2E)' }}>음</span>
             </span>
           </div>
         </div>
 
         {net !== 'normal' && (
-          <p className="text-[12.5px]" style={{
-            marginTop: 24, color: 'var(--ink-s, #7A6553)',
-            animation: 'sy-intro-caption 400ms ease forwards',
-          }}>
+          <p className="text-[12.5px]" style={{ color: 'var(--ink-s, #7A6553)', animation: 'sy-in-caption 400ms ease forwards' }}>
             연결이 느립니다 — 계속 시도 중입니다
           </p>
         )}
         {net === 'stalled' && (
           <button type="button" onClick={() => window.location.reload()}
-            className="mt-3 px-4 h-10 rounded-lg text-sm font-medium border transition-colors"
+            className="px-4 h-10 rounded-lg text-sm font-medium border transition-colors"
             style={{ borderColor: 'var(--border-s, rgba(61,36,24,.18))', color: 'var(--ink, #3d2418)' }}>
             다시 시도
           </button>

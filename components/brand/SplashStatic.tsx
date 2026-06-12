@@ -1,71 +1,65 @@
-// 브랜드 락업 스플래시 — 서버 렌더 가능. **컴포지터 안전 모션만 사용**.
-// 이 컴포넌트가 보이는 구간(SSR 스트리밍·하이드레이션)은 무거운 JS 가 메인스레드를 점유해
-// stroke-dashoffset 선 드로잉은 컨투어 중간 프레임에서 얼어붙는다(실기기 확인, 2026-06-12).
-// transform/opacity 는 GPU 합성 스레드에서 돌아 메인스레드가 막혀도 계속 움직이므로:
-//   ① 와이프 리빌 — 배경색 커버가 왼→오로 밀려나며 채워진 아치가 '칠해지듯' 드러남(0.9s)
-//   ② 워드마크·디바이더 페이드인(translate/opacity)
-//   ③ 완료 후 은은한 숨쉬기 펄스(무한) — 긴 SSR 대기에도 '살아있음'이 보임
-// 진짜 선 드로잉은 SplashIntro(§3b, 하이드레이션 후 안정 구간) 전용.
-// 300ms 표시 지연(.delayed-fallback)으로 빠른 전환에선 보이지 않는다(§18.3).
+// 브랜드 스플래시(서버 렌더, JS 불필요) — 레퍼런스 'stayeum Splash Intro.html'의
+// 첫 구간(draw 0–1.0s → EN 락업)과 동일. 드로잉 = 중심선 한 획 + stroke-width 20
+// (두꺼운 획 자체가 아치 — 그리는 중에도 채워진 아치가 자라나는 모습, 외곽선 컨투어 아님).
+// pathLength=1 정규화라 측정 불필요 → 서버 CSS 만으로 동작.
+// 용도: 루트 loading.tsx 스트리밍 폴백. 300ms 표시 지연(.delayed-fallback, §18.3).
 
-import { ARCH_PATH } from './StayeumWordmark'
+const STROKE_PATH = 'M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82'
 
 export function SplashStatic() {
   return (
-    <div className="fixed inset-0 z-[var(--z-loader)]" aria-busy="true" aria-label="스테이음 로딩 중"
+    <div className="fixed inset-0 z-[var(--z-loader)] flex items-center justify-center"
+      aria-busy="true" aria-label="스테이음 로딩 중"
       style={{ background: 'var(--cold-bg, #E8DDD0)' }}>
       <style>{`
-        @media (prefers-color-scheme: dark) {
-          [data-static-bg], .sy-wipe-cover { background: var(--cold-bg-dark, #2A1A10) !important; }
-        }
-        html.dark [data-static-bg], html.dark .sy-wipe-cover { background: var(--cold-bg-dark, #2A1A10) !important; }
+        @media (prefers-color-scheme: dark) { [data-static-bg] { background: var(--cold-bg-dark, #2A1A10) !important; } }
+        html.dark [data-static-bg] { background: var(--cold-bg-dark, #2A1A10) !important; }
 
-        /* ① 와이프 리빌 — transform만 사용(컴포지터 스레드, 메인스레드 정체에도 안 멈춤) */
-        @keyframes sy-wipe { to { transform: translateX(103%); } }
-        .sy-wipe-cover {
-          position: absolute; inset: -2px;
-          background: var(--cold-bg, #E8DDD0);
-          animation: sy-wipe 900ms cubic-bezier(.65,0,.35,1) forwards;
-          will-change: transform;
+        .sy-st-stroke {
+          fill: none; stroke: var(--tc, #A03C2E);
+          stroke-width: 20; stroke-linecap: round; stroke-linejoin: round;
+          stroke-dasharray: 1; stroke-dashoffset: 1;
+          animation: sy-st-draw 1000ms cubic-bezier(.65,0,.35,1) forwards;
         }
-        /* ② 워드마크·디바이더 — opacity/transform 페이드인 */
-        @keyframes sy-stat-in { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
-        .sy-stat-in { opacity: 0; animation: sy-stat-in 400ms cubic-bezier(.65,0,.35,1) 700ms forwards; will-change: opacity, transform; }
-        /* ③ 숨쉬기 펄스 — 리빌 완료 후 무한 (opacity만) */
-        @keyframes sy-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .82; } }
-        .sy-breathe { animation: sy-breathe 2.4s ease-in-out 1600ms infinite; will-change: opacity; }
+        @keyframes sy-st-draw { to { stroke-dashoffset: 0; } }
+        .sy-st-mark { width: 104px; height: 80px; display: flex; align-items: center; justify-content: center; }
+        .sy-st-mark svg { width: 100%; height: 100%; overflow: visible; }
+        .sy-st-div { width: 1px; height: 42px; background: var(--border-s, rgba(61,36,24,.18)); opacity: 0; transform: scaleY(0); animation: sy-st-div 400ms ease 1000ms forwards; }
+        @keyframes sy-st-div { to { opacity: 1; transform: scaleY(1); } }
+        .sy-st-word {
+          font-family: var(--font-plus-jakarta, 'Plus Jakarta Sans', sans-serif);
+          font-weight: 600; font-size: 44px; letter-spacing: -.028em; line-height: 1;
+          white-space: nowrap; opacity: 0;
+          animation: sy-st-word 400ms ease 1000ms forwards;
+        }
+        @keyframes sy-st-word { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
 
-        .sy-static-lockup { display: flex; align-items: center; gap: 20px; }
-        .sy-static-mark   { width: 104px; }
-        .sy-static-wm     { font-size: 44px; }
-        @media (max-width: 639px) {
-          .sy-static-lockup { flex-direction: column; gap: 14px; }
-          .sy-static-mark   { width: 88px; }
-          .sy-static-div    { display: none; }
-          .sy-static-wm     { font-size: 32px; }
+        .sy-st-lockup { display: flex; align-items: center; gap: 22px; }
+        @media (max-width: 640px) {
+          .sy-st-lockup { flex-direction: column; gap: 22px; }
+          .sy-st-div { display: none; }
+          .sy-st-mark { width: 88px; height: 68px; }
+          .sy-st-word { font-size: 32px; }
         }
         @media (prefers-reduced-motion: reduce) {
-          .sy-wipe-cover { animation: none; transform: translateX(103%); }
-          .sy-stat-in    { animation: none; opacity: 1; }
-          .sy-breathe    { animation: none; }
+          .sy-st-stroke { animation: none; stroke-dashoffset: 0; }
+          .sy-st-div { animation: none; opacity: 1; transform: scaleY(1); }
+          .sy-st-word { animation: none; opacity: 1; }
         }
       `}</style>
       <div data-static-bg className="absolute inset-0" style={{ background: 'var(--cold-bg, #E8DDD0)' }} />
-      <div className="delayed-fallback absolute inset-x-0 flex flex-col items-center"
-        style={{ top: '42%', transform: 'translateY(-50%)', color: 'var(--ink, #3d2418)' }}>
-        <div className="sy-breathe sy-static-lockup">
-          {/* 마크 — 채워진 아치 위로 배경색 커버가 밀려나며 드러남 (클리핑용 overflow hidden) */}
-          <div className="relative overflow-hidden" style={{ lineHeight: 0 }}>
-            <svg viewBox="8 8 113 84" className="sy-static-mark" style={{ height: 'auto' }} aria-hidden="true">
-              <path d={ARCH_PATH} fill="var(--persimmon, #a03c2e)" />
+      <div className="delayed-fallback relative flex flex-col items-center"
+        style={{ transform: 'translateY(-8vh)', color: 'var(--ink, #3d2418)' }}>
+        <div className="sy-st-lockup">
+          <div className="sy-st-mark">
+            <svg viewBox="0 0 130 100" aria-hidden="true">
+              <path className="sy-st-stroke" d={STROKE_PATH} pathLength={1} />
             </svg>
-            <div className="sy-wipe-cover" />
           </div>
-          <div className="sy-stat-in sy-static-div" style={{ width: 1.5, height: 56, background: 'var(--border-s, rgba(61,36,24,.18))' }} />
-          <span className="sy-stat-in sy-static-wm whitespace-nowrap leading-none"
-            style={{ fontFamily: "var(--font-plus-jakarta, 'Plus Jakarta Sans', sans-serif)", letterSpacing: '-0.025em' }}>
-            <span style={{ fontWeight: 300 }}>stay</span>
-            <span style={{ fontWeight: 700, color: 'var(--persimmon, #a03c2e)' }}>eum</span>
+          <div className="sy-st-div" />
+          <span className="sy-st-word">
+            <span style={{ color: 'var(--ink, #3D2418)' }}>stay</span>
+            <span style={{ color: 'var(--tc, #A03C2E)' }}>eum</span>
           </span>
         </div>
       </div>
