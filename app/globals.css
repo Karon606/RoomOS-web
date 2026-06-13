@@ -62,15 +62,16 @@
   --chart-10: #4d3e2e;   /* extra — ink-3 */
 
   /* Status (의미) — 페일 셀 / 강조 페어. 라이트 톤. 다크는 .dark에서 override */
-  --status-paid-bg:     rgba(85,108,58,0.10);   /* 납부 완료 — v1.1 Warm Olive */
-  --status-paid-fg:     #4e6834;                /* v1.1 --success */
-  --status-paid-strong: #7a9a52;                /* 솔리드 (b-success) — Warm Olive */
-  --status-await-bg:    rgba(59,130,246,0.12);  /* 납부 예정 */
-  --status-await-fg:    #1e40af;
-  --status-unpaid-bg:   rgba(234,179,8,0.18);   /* 미납 */
-  --status-unpaid-fg:   #a16207;
-  --status-vacant-bg:   rgba(200,160,120,0.12); /* 공실 */
-  --status-vacant-fg:   #7a6a55;
+  /* §14.4 별칭 — status-* = 정본 의미색 (paid=success·await=info·unpaid=warning·vacant=neutral) */
+  --status-paid-bg:     var(--success-bg);      /* 납부 완료 = success */
+  --status-paid-fg:     var(--success-fg);
+  --status-paid-strong: var(--success-solid);   /* 솔리드 (b-success) */
+  --status-await-bg:    var(--info-bg);          /* 납부 예정 = info */
+  --status-await-fg:    var(--info-fg);
+  --status-unpaid-bg:   var(--warning-bg);       /* 미납 = warning */
+  --status-unpaid-fg:   var(--warning-fg);
+  --status-vacant-bg:   var(--neutral-bg);       /* 공실 = neutral */
+  --status-vacant-fg:   var(--neutral-fg);
 
   /* 상태 카드·뱃지 — 통일 시스템 (RoomCard / StatusBadge).
      카드 베이스 = 카드의 종류(거주/비거주/일반), 뱃지 = 예외 상황(미납·납부예정 등).
@@ -82,14 +83,14 @@
   --card-vacant-bd:   var(--warm-border);
   --card-neutral-bg:  var(--cream);           /* 수납·재고 등 일반 데이터 카드 */
   --card-neutral-bd:  var(--warm-border);
-  /* 뱃지 — Brand Guide v1.1 상태색 */
-  --badge-paid-bg:    rgba(85,108,58,0.12);   /* 완납·정상 — Warm Olive (b-success) */
-  --badge-paid-fg:    #4e6834;
-  --badge-await-bg:   #eff6ff;                /* 납부·입실 예정 — Blue (b-blue) */
-  --badge-await-fg:   #1e40af;
-  --badge-unpaid-bg:  rgba(180,120,10,0.13);  /* 미납 — Amber (b-warn) */
-  --badge-unpaid-fg:  #8b5e0a;
-  --badge-overdue-bg: #a03c2e;                /* 연체 — Terracotta 솔리드 (b-overdue) */
+  /* 뱃지 — §14.4 정본 별칭 (paid=success·await=info·unpaid=warning·overdue=overdue-solid) */
+  --badge-paid-bg:    var(--success-bg);      /* 완납·정상 */
+  --badge-paid-fg:    var(--success-fg);
+  --badge-await-bg:   var(--info-bg);          /* 납부·입실 예정 */
+  --badge-await-fg:   var(--info-fg);
+  --badge-unpaid-bg:  var(--warning-bg);       /* 미납 */
+  --badge-unpaid-fg:  var(--warning-fg);
+  --badge-overdue-bg: var(--overdue-solid);    /* 연체 — Terracotta 솔리드 */
   --badge-overdue-fg: #fbf6ef;
   --badge-exit-bg:    rgba(200,160,125,0.30); /* 퇴실 예정 — Camel */
   --badge-exit-fg:    #7c2d26;
@@ -98,9 +99,21 @@
   --badge-info-bg:    var(--cream-2);         /* 일반 정보 — 중립 */
   --badge-info-fg:    var(--ink-3);
 
-  /* 강조 보조색 — 보증금(purple), 예비비(teal) */
-  --accent-deposit: #7c3aed;
-  --accent-reserve: #0d9488;
+  /* ── §14.4 의미색 정본 (Semantic Color Canon) — 무지개 디톡스 단일 출처 ──
+     fg = 텍스트·아이콘 (다크에서 밝아짐) · solid = 솔리드 배지 배경 (양 모드 깊은값 + cream 글자)
+     bg/ring = 투명 틴트 (칩·박스). 라이트=여기, 다크=html.dark 블록. */
+  --danger-fg:    #A03C2E;  --danger-bg:  rgba(160,60,46,.08);  --danger-ring:  rgba(160,60,46,.22);  --danger-solid:  #A03C2E;
+  --success-fg:   #4E6834;  --success-bg: rgba(85,108,58,.10);   --success-ring: rgba(85,108,58,.22); --success-solid: #4E6834;
+  --warning-fg:   #8B5E0A;  --warning-bg: rgba(180,120,10,.10);  --warning-ring: rgba(180,120,10,.24); --warning-solid: #8B5E0A;
+  --info-fg:      #1E40AF;  --info-bg:    rgba(30,64,175,.08);   --info-ring:    rgba(30,64,175,.20);  --info-solid:    #1E40AF;
+  --deposit-fg:   #8A6843;  --deposit-bg: rgba(200,160,125,.16); --deposit-ring: rgba(200,160,125,.40);
+  --reserve-fg:   #6E5C49;  --reserve-bg: rgba(140,122,102,.14); --reserve-ring: rgba(140,122,102,.32);
+  --overdue-fg:   #A03C2E;  --overdue-solid: #A03C2E;            /* 배지 글자 cream */
+  --neutral-fg:   #7A6553;  --neutral-bg: rgba(61,36,24,.05);    --neutral-ring: rgba(61,36,24,.14);
+
+  /* 강조 보조색 — §14.4 결정#4: 보증금 보라→카멜, 예약 teal→토프 (라이트값도 정본 교체) */
+  --accent-deposit: var(--deposit-fg);
+  --accent-reserve: var(--reserve-fg);
 
   /* §19-2 페어 토큰 — 라이트=현행 픽셀 그대로, 다크는 html.dark 에서 §19 값으로 교체.
      표면·텍스트를 쌍으로 묶어 '라이트 표면+다크 텍스트' 조합 사고(§19 절대규칙 2)를 차단. */
@@ -142,9 +155,8 @@
   --page:         var(--cream-2);
 
   /* Status — v1.2 명시 토큰 */
-  --success:      var(--status-paid-fg);    /* #4E6834 */
-  --success-bg:   var(--status-paid-bg);    /* rgba(85,108,58,.10) */
-  --overdue:      var(--persimmon);         /* #A03C2E */
+  --success:      var(--success-fg);        /* #4E6834 — §14.4 정본 직접 참조(순환 방지) */
+  --overdue:      var(--overdue-fg);        /* #A03C2E */
   --overdue-bg:   rgba(160,60,46,.18);
 
   /* Border tokens — 카드·디바이더 표준 (v1.1는 var(--warm-border) 단일 hex 사용) */
@@ -391,9 +403,19 @@ html.dark {
   --badge-movein-bg:  rgba(200,160,125,0.26);
   --badge-movein-fg:  #d8bf9c;
 
-  /* 강조 — §19-2: 보라·틸 폐기 */
-  --accent-deposit: var(--d-camel);
-  --accent-reserve: var(--d-success);
+  /* ── §14.4 의미색 정본 — 다크값 (fg 밝아짐 / solid 깊은값 고정 ⛔ / bg·ring 다크 틴트) ── */
+  --danger-fg:  #E08A75; --danger-bg:  rgba(224,138,117,.12); --danger-ring:  rgba(224,138,117,.28); --danger-solid:  #A03C2E;
+  --success-fg: #A3BF7B; --success-bg: rgba(163,191,123,.14); --success-ring: rgba(163,191,123,.30); --success-solid: #4E6834;
+  --warning-fg: #D9A648; --warning-bg: rgba(217,166,72,.14);  --warning-ring: rgba(217,166,72,.30);  --warning-solid: #8B5E0A;
+  --info-fg:    #93A9D1; --info-bg:    rgba(147,169,209,.14); --info-ring:    rgba(147,169,209,.30); --info-solid:    #1E40AF;
+  --deposit-fg: #D4B494; --deposit-bg: rgba(212,180,148,.14); --deposit-ring: rgba(212,180,148,.28);
+  --reserve-fg: #BBA892; --reserve-bg: rgba(187,168,146,.12); --reserve-ring: rgba(187,168,146,.26);
+  --overdue-fg: #E08A75; --overdue-solid: #A03C2E;
+  --neutral-fg: #C7B5A2; --neutral-bg: rgba(242,232,220,.06); --neutral-ring: rgba(242,232,220,.14);
+
+  /* 강조 — §14.4 결정#4: deposit=카멜·reserve=토프 (정본 별칭) */
+  --accent-deposit: var(--deposit-fg);
+  --accent-reserve: var(--reserve-fg);
 
   /* §19-2 페어 토큰 — 다크 값 */
   /* #1 현재 순이익: --d-card 표면 + --d-success 팁/수치 + --d-ink-s 라벨 (크림 카드 반입 금지) */
