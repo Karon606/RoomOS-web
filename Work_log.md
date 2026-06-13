@@ -3,6 +3,13 @@
 마지막 업데이트: 2026-06-12
 브랜치: main
 
+## 2026-06-13 (이어서) — §14.4 무지개색 디톡스 (Claude Design 핸드오프 반영) [⚠️ 로컬 커밋, 미푸시 — 시각 검토 후 배포]
+Claude Design `claude-code-handoff-semantic-colors.md` + 가이드 §14.4 정본 반영. raw Tailwind 무지개 ~604건 + 인라인 hex/rgba ~40건을 의미 토큰으로 일괄 치환.
+**커밋 6개**: ① §1 토큰 선언+별칭(`a8e7b23`) — danger/success/warning/info/deposit/reserve/overdue/neutral 의 fg/bg/ring/solid 를 :root+html.dark 선언, status/badge/accent 별칭 재배선. solid 는 양모드 깊은값 고정(다크 흰글자 대비 붕괴 차단). ② red→danger(`139866c`) ③ amber→warning, **양도인→info**(`76ab883`) ④ green→success(`c423414`) ⑤ blue→info·purple→deposit·teal→reserve·gray→neutral(`4000617`) ⑥ 인라인 hex/rgba(`ec4cbcc`).
+**판단 기록**: ⒜ 차트(StatsClient·dashboard/page.tsx)·ReportClient 팔레트 배열은 §14 viz 소관 → **제외**. ⒝ 양도인 record 마커는 §14.4 결정#5대로 info(블루), 양도인 정산 **버튼**은 caution 액션이라 warning 유지. ⒞ 솔리드 삭제버튼 → soft(danger). 솔리드 액션버튼 → -solid+cream. ⒟ accent-deposit 보라→카멜·reserve teal→토프(라이트값도 교체, 결정#4). ⒠ gray 음영별 warm 매핑. ⒡ Google 로그인 버튼·dashboard alert dotColor(hexToRgba JS소비)·DatePicker 주말색은 정당 제외/유지.
+**버그·교훈**: perl `(?:50|100|200)`에 `\b` 누락 → `bg-purple-500`의 `50` 부분매칭으로 `]0` 손상 4건 발생, 전수검색으로 즉시 정정. 클래스 sed는 **항상 `\d{2,3}` 전체매칭 또는 `\b`** 사용할 것.
+**Acceptance**: in-scope 무지개 0(클래스·인라인 모두), solid 양모드 동일 확인, build·tsc 통과. ⚠️ **미푸시** — 앱 전역 시각 변경(빨강→테라코타·보라→카멜 등)이라 사용자 시각 검토 후 배포 예정. 잔여 viz 팔레트(차트·dotColor) 토큰화는 별도 §14 작업.
+
 ## 2026-06-13 (이어서) — §14.1 raw hex "안전·확실" 분석 + Badge 올리브 토큰화 [배포, SQL 불필요]
 **방법**: hex→토큰 치환을 **그 토큰이 다크에서 재정의되지 않는 경우(= 양쪽 모드 픽셀 동일)에만** 적용 — 회귀가 구조적으로 불가능한 집합만.
 **핵심 발견 — §14.1 백로그는 대부분 허수였음**: raw hex 275곳을 분석하니 ⓐ **브랜드색 hex는 이미 `var(--persimmon, #a03c2e)` 폴백 문법**으로 토큰화돼 있음(#a03c2e 10·#7c2d26 1 전부 폴백) ⓑ 나머지 대량은 **Tailwind 무지개색**(#ef4444 빨강·#22c55e 초록·#3b82f6 파랑·#a855f7 보라) — 브랜드엔 대응색이 없어(danger=테라코타≠빨강) 토큰화=색 변경=**디자인 판단** ⓒ 차트 팔레트(StatsClient·dashboard 차트 → viz 시맨틱) ⓓ 정당한 리터럴(계약서 인쇄·OLED 트루블랙). → **"안전·확실"로 고칠 진짜 raw hex는 Badge.tsx 올리브 `#7a9a52` 3곳뿐**, `--viz-3`(다크 미재정의)으로 픽셀 동일 치환. 다크 함정 주의: `--success`/`--status-paid-*`는 다크에서 `--d-success`(#A3BF7B 밝은올리브)로 뒤집혀 흰 글자 대비 붕괴 → 그 토큰들은 의도적으로 미사용, viz-3 선택.
