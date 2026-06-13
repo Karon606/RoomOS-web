@@ -95,7 +95,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
         className="w-full rounded-sm px-3 py-2.5 text-sm outline-none resize-none"
         style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
       />
-      {joinError && <p className="text-xs" style={{ color: '#dc2626' }}>{joinError}</p>}
+      {joinError && <p className="text-xs" style={{ color: 'var(--danger-fg)' }}>{joinError}</p>}
       {joinSuccess && <p className="text-xs leading-relaxed" style={{ color: 'var(--persimmon-d)' }}>{joinSuccess}</p>}
       <div className="flex gap-2">
         <button

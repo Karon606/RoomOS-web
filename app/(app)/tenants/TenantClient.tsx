@@ -1181,7 +1181,7 @@ export default function TenantClient({
                 </button>
                 <button type="button" onClick={handleDepositRefundConfirm} disabled={isPending || exceedsMax}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
-                  style={{ background: '#eab308', color: 'white' }}>
+                  style={{ background: 'var(--warning-solid)', color: 'var(--cream)' }}>
                   {isPending ? '처리 중...' : '퇴실 처리'}
                 </button>
               </div>
@@ -1660,7 +1660,7 @@ export default function TenantClient({
                         <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]"><MoneyDisplay amount={regularPaid} /></p>
                         {adjNet !== 0 && (
                           <p className="text-[0.625rem] mt-0.5 font-medium"
-                            style={{ color: adjNet > 0 ? '#16a34a' : '#ef4444' }}>
+                            style={{ color: adjNet > 0 ? 'var(--success-fg)' : 'var(--danger-fg)' }}>
                             조정 {adjNet > 0 ? '+' : ''}{adjNet.toLocaleString()}원
                           </p>
                         )}
@@ -1694,12 +1694,12 @@ export default function TenantClient({
                           return (
                             <div key={p.id} className="flex items-center justify-between rounded-sm px-3 py-2.5"
                               style={{
-                                background: isExtra ? 'rgba(239,68,68,0.07)' : 'rgba(34,197,94,0.07)',
-                                border: `1px solid ${isExtra ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)'}`,
+                                background: isExtra ? 'var(--danger-bg)' : 'var(--success-bg)',
+                                border: `1px solid ${isExtra ? 'var(--danger-ring)' : 'var(--success-ring)'}`,
                               }}>
                               <div>
                                 <p className="text-xs font-semibold"
-                                  style={{ color: isExtra ? '#ef4444' : '#16a34a' }}>
+                                  style={{ color: isExtra ? 'var(--danger-fg)' : 'var(--success-fg)' }}>
                                   {isExtra ? '추가납부 필요' : '과입금 처리'}
                                 </p>
                                 {label && (
@@ -1708,7 +1708,7 @@ export default function TenantClient({
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-semibold"
-                                  style={{ color: isExtra ? '#ef4444' : '#16a34a' }}>
+                                  style={{ color: isExtra ? 'var(--danger-fg)' : 'var(--success-fg)' }}>
                                   {isExtra ? '-' : '+'}{absAmt.toLocaleString()}원
                                 </span>
                                 <button onClick={() => handleDeletePayRecord(p.id)}

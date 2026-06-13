@@ -166,13 +166,13 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
 
       {error && (
         <p className="text-sm rounded-sm px-3 py-2.5"
-           style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444' }}>
+           style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-ring)', color: 'var(--danger-fg)' }}>
           {error}
         </p>
       )}
       {success && (
         <p className="text-sm rounded-sm px-3 py-2.5"
-           style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: '#059669' }}>
+           style={{ background: 'var(--success-bg)', border: '1px solid var(--success-bg)', color: '#059669' }}>
           {success}
         </p>
       )}

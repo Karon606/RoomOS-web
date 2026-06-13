@@ -26,7 +26,7 @@ const INVENTORY_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비'
 
 const KIND_LABEL: Record<string, { label: string; color: string }> = {
   expense:   { label: '지출(영수증)', color: 'var(--coral)' },
-  inventory: { label: '재고/물품',     color: '#16a34a' },
+  inventory: { label: '재고/물품',     color: 'var(--success-fg)' },
   unknown:   { label: '미분류',        color: 'var(--warm-mid)' },
 }
 
@@ -185,7 +185,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
           </span>
           {editingMode && (
             <span className="text-[0.625rem] font-semibold px-1.5 py-0.5 rounded"
-              style={{ background: isInventory ? '#16a34a20' : 'var(--coral)20', color: isInventory ? '#16a34a' : 'var(--coral)' }}>
+              style={{ background: isInventory ? 'var(--success-bg)' : 'var(--coral)20', color: isInventory ? 'var(--success-fg)' : 'var(--coral)' }}>
               {isInventory ? '재고 등록 중' : '지출 등록 중'}
             </span>
           )}
@@ -219,8 +219,8 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
               <button onClick={() => onStartEdit('inventory')} disabled={pending}
                 className="text-[0.6875rem] px-2 py-1 rounded-lg font-medium"
                 style={{
-                  background: aiSuggestsInventory ? '#16a34a' : 'var(--cream)',
-                  color: aiSuggestsInventory ? '#fff' : 'var(--warm-dark)',
+                  background: aiSuggestsInventory ? 'var(--success-solid)' : 'var(--cream)',
+                  color: aiSuggestsInventory ? 'var(--cream)' : 'var(--warm-dark)',
                   border: aiSuggestsInventory ? 'none' : '1px solid var(--warm-border)',
                 }}>
                 재고 등록
@@ -303,7 +303,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
             <div className="flex gap-1.5 pt-1">
               <button onClick={handleApprove} disabled={pending}
                 className="flex-1 text-[0.6875rem] py-1.5 rounded-lg font-medium"
-                style={{ background: isInventory ? '#16a34a' : 'var(--coral)', color: '#fff' }}>
+                style={{ background: isInventory ? 'var(--success-solid)' : 'var(--coral)', color: 'var(--cream)' }}>
                 {pending ? '저장 중...' : (isInventory ? '재고 보충 등록' : '지출 등록')}
               </button>
               <button onClick={onCancelEdit} disabled={pending}

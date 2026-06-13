@@ -112,7 +112,7 @@ export function DiscountWidget({ leaseTermId, onChange }: {
             <button onClick={() => setShowForm(false)}
               className="flex-1 py-1.5 text-sm rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>
             <button onClick={handleAdd} disabled={pending || !(value > 0)}
-              className="flex-1 py-1.5 text-sm font-medium rounded-lg text-white disabled:opacity-50" style={{ background: '#16a34a' }}>적용</button>
+              className="flex-1 py-1.5 text-sm font-medium rounded-lg text-[var(--cream)] disabled:opacity-50" style={{ background: 'var(--success-solid)' }}>적용</button>
           </div>
           <p className="text-[0.625rem] text-[var(--warm-muted)]">할인은 해당 월 청구액(이용료)에서 차감돼 미수 계산에 반영됩니다.</p>
         </div>

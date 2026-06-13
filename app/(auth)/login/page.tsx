@@ -37,14 +37,14 @@ export default async function LoginPage({
 
           {message === 'password_updated' && (
             <div className="rounded-xl p-3"
-                 style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                 style={{ background: 'var(--success-bg)', border: '1px solid var(--success-bg)' }}>
               <p className="text-sm" style={{ color: '#059669' }}>비밀번호가 변경됐습니다. 새 비밀번호로 로그인해주세요.</p>
             </div>
           )}
 
           {error && (
             <div className="rounded-xl p-3"
-                 style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}>
+                 style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-ring)' }}>
               <p className="text-[var(--danger-fg)] text-sm">로그인에 실패했습니다. 다시 시도해주세요.</p>
             </div>
           )}

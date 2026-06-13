@@ -258,7 +258,7 @@ function NavContent({
 
         {/* 로그아웃 */}
         <form action={signOut}>
-          <button type="submit" className={acctRow} style={{ color: '#ef4444' }}>
+          <button type="submit" className={acctRow} style={{ color: 'var(--danger-fg)' }}>
             <svg {...ico}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
             <span className={acctLabel}>로그아웃</span>
           </button>
@@ -377,7 +377,7 @@ function MobileMenu({
           영업장
         </Link>
         <form action={signOut}>
-          <button type="submit" className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs transition-colors hover:bg-[var(--canvas)]" style={{ color: '#ef4444' }}>
+          <button type="submit" className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs transition-colors hover:bg-[var(--canvas)]" style={{ color: 'var(--danger-fg)' }}>
             <svg {...ico} width={16} height={16}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
             로그아웃
           </button>

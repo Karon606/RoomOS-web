@@ -149,7 +149,7 @@ export function DatePicker({
             <div className="grid grid-cols-7 mb-1">
               {KO_DOW.map((d, i) => (
                 <div key={d} className="text-center py-1"
-                  style={{ fontSize: 10, fontWeight: 600, color: i === 0 ? '#ef4444' : i === 6 ? '#3b82f6' : 'var(--warm-muted)' }}>
+                  style={{ fontSize: 10, fontWeight: 600, color: i === 0 ? 'var(--danger-fg)' : i === 6 ? 'var(--info-fg)' : 'var(--warm-muted)' }}>
                   {d}
                 </div>
               ))}
@@ -176,7 +176,7 @@ export function DatePicker({
                       ? { background: 'var(--coral)', color: '#fff' }
                       : isToday
                         ? { background: 'rgba(244,98,58,0.12)', color: 'var(--coral)', fontWeight: 700 }
-                        : { color: dow === 0 ? '#ef4444' : dow === 6 ? '#3b82f6' : 'var(--warm-dark)' }
+                        : { color: dow === 0 ? 'var(--danger-fg)' : dow === 6 ? 'var(--info-fg)' : 'var(--warm-dark)' }
                     }
                   >
                     {day}

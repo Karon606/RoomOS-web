@@ -2293,7 +2293,7 @@ export default function FinanceClient({
                             <tr key={`rec-${r.id}`}
                               onClick={() => { setRecordingRec(r); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
                               className="border-b border-[var(--warm-border)] bg-[var(--canvas)]/40 hover:bg-[var(--canvas)] transition-colors cursor-pointer"
-                              style={{ boxShadow: 'inset 3px 0 0 #fbbf24' }}>
+                              style={{ boxShadow: 'inset 3px 0 0 var(--warning-fg)' }}>
                               <td className="px-4 py-3 text-xs text-[var(--warm-muted)] overflow-hidden">
                                 <span className="truncate block">{item.dateStr.slice(5).replace('-', '/')} 납부</span>
                               </td>
@@ -4103,7 +4103,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <p className="text-xs text-[var(--warm-muted)] mb-1">현재 보유</p>
-            <p className="text-xl font-bold" style={{ color: '#7c3aed' }}>
+            <p className="text-xl font-bold" style={{ color: 'var(--deposit-fg)' }}>
               <MoneyDisplay amount={totalBalance} />
             </p>
           </div>
@@ -4171,7 +4171,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
                     </p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-bold" style={{ color: d.balance > 0 ? '#7c3aed' : 'var(--warm-muted)' }}>
+                    <p className="text-sm font-bold" style={{ color: d.balance > 0 ? 'var(--deposit-fg)' : 'var(--warm-muted)' }}>
                       {d.balance.toLocaleString()}원
                     </p>
                     <p className="text-[0.625rem] text-[var(--warm-muted)]">현재 잔고</p>
@@ -4350,7 +4350,7 @@ function ReserveTab({
           </div>
           <div>
             <p className="text-xs text-[var(--warm-muted)] mb-1">{targetMonth} 매출에서</p>
-            <p className="text-base font-semibold" style={{ color: '#0d9488' }}>
+            <p className="text-base font-semibold" style={{ color: 'var(--reserve-fg)' }}>
               −<MoneyDisplay amount={monthly.depositFromThisMonthRevenue} />
             </p>
             <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">예비비로 적립된 금액</p>

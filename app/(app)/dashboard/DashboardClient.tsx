@@ -308,7 +308,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
                   style={{ borderColor: 'var(--warm-border)' }}
                 >
                   <span className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[0.6875rem] font-bold"
-                    style={{ background: c.rank === 1 ? 'rgba(34,197,94,0.18)' : 'var(--canvas)', color: c.rank === 1 ? 'var(--success)' : 'var(--warm-mid)' }}>
+                    style={{ background: c.rank === 1 ? 'var(--success-bg)' : 'var(--canvas)', color: c.rank === 1 ? 'var(--success)' : 'var(--warm-mid)' }}>
                     {c.rank}
                   </span>
                   <div className="flex-1 min-w-0">
@@ -623,7 +623,7 @@ function AlertsStrip({ alerts, onOpenAlert }: {
       {/* ── 지금 급함 — 카테고리 무관, 항상 펼침 ── */}
       {urgent.length > 0 && (
         <div style={{ borderBottom: groups.length > 0 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}>
-          <div className="flex items-center gap-2 px-5 py-2.5" style={{ background: 'rgba(220,38,38,0.06)' }}>
+          <div className="flex items-center gap-2 px-5 py-2.5" style={{ background: 'var(--danger-bg)' }}>
             <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--tc)' }} />
             <span className="text-[0.6875rem] font-bold flex-1 text-left" style={{ color: 'var(--tc)' }}>긴급</span>
             <span className="text-[0.625rem] font-medium" style={{ color: 'var(--warm-muted)' }}>{urgent.length}건</span>
@@ -2107,13 +2107,13 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         {/* 범례 */}
                         <div className="flex gap-3.5 shrink-0 flex-wrap">
                           <div className="flex items-center gap-[5px]" style={{ fontSize: '0.625rem', color: 'var(--warm-muted)' }}>
-                            <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(16,185,129,0.35)' }} />납부완료
+                            <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'var(--success-fg)' }} />납부완료
                           </div>
                           <div className="flex items-center gap-[5px]" style={{ fontSize: '0.625rem', color: 'var(--warm-muted)' }}>
-                            <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(59,130,246,0.35)' }} />납부예정
+                            <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'var(--info-fg)' }} />납부예정
                           </div>
                           <div className="flex items-center gap-[5px]" style={{ fontSize: '0.625rem', color: 'var(--warm-muted)' }}>
-                            <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(234,179,8,0.45)' }} />미납
+                            <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'var(--warning-fg)' }} />미납
                           </div>
                           <div className="flex items-center gap-[5px]" style={{ fontSize: '0.625rem', color: 'var(--warm-muted)' }}>
                             <span className="inline-block w-[7px] h-[7px] rounded-[2px]" style={{ background: 'rgba(200,160,120,0.25)' }} />공실
@@ -2300,7 +2300,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'rgba(200,160,120,0.4)' }} />
                             <span style={{ fontSize: '0.6875rem', color: 'var(--warm-muted)' }}>수납 예정</span>
                             {data.pendingCount > 0 && (
-                              <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: '0.5625rem', fontWeight: 600, background: data.unpaidCount > 0 ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.12)', color: data.unpaidCount > 0 ? 'var(--tc)' : '#1e40af' }}>
+                              <span className="rounded-full px-1.5 py-0.5" style={{ fontSize: '0.5625rem', fontWeight: 600, background: data.unpaidCount > 0 ? 'var(--danger-bg)' : 'var(--info-bg)', color: data.unpaidCount > 0 ? 'var(--tc)' : '#1e40af' }}>
                                 {data.pendingCount}건{data.unpaidCount > 0 ? ` (미납 ${data.unpaidCount})` : ''}
                               </span>
                             )}
@@ -2462,7 +2462,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   </p>
                                   <p className="text-[0.625rem] font-medium mt-0.5" style={{ color: dl.color }}>{dl.text}</p>
                                 </div>
-                                <span className="rounded-full shrink-0 text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--tc)' }}>
+                                <span className="rounded-full shrink-0 text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--danger-bg)', color: 'var(--tc)' }}>
                                   {fmtKorMoney(l.unpaidAmount)}
                                 </span>
                               </button>
@@ -2495,7 +2495,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         <span className="rounded-full text-[0.5625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
                       </div>
                       {data.activity.length > 0 && (
-                        <span className="rounded-full text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--success)' }}>
+                        <span className="rounded-full text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>
                           {data.activity.length}건
                         </span>
                       )}
@@ -2513,14 +2513,14 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                               style={{ borderBottom: i < arr.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}
                             >
                               <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
-                                style={{ background: 'rgba(34,197,94,0.12)', fontSize: '0.6875rem', color: 'var(--success)' }}>
+                                style={{ background: 'var(--success-bg)', fontSize: '0.6875rem', color: 'var(--success)' }}>
                                 {item.tenantName.slice(0, 1)}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink-2)' }}>{fmtRoomNo(item.roomNo)} {item.tenantName}</p>
                                 <p className="text-[0.625rem] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</p>
                               </div>
-                              <span className="rounded-full shrink-0 text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--success)' }}>
+                              <span className="rounded-full shrink-0 text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>
                                 {fmtKorMoney(item.amount)}
                               </span>
                             </button>

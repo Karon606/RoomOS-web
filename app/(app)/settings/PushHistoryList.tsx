@@ -69,8 +69,8 @@ export function PushHistoryList() {
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[0.6875rem] font-semibold px-1.5 py-0.5 rounded"
                         style={{
-                          background: r.source === 'test' ? 'rgba(59,130,246,0.12)' : 'rgba(160,60,46,0.10)',
-                          color: r.source === 'test' ? '#3b82f6' : 'var(--coral)',
+                          background: r.source === 'test' ? 'var(--info-bg)' : 'rgba(160,60,46,0.10)',
+                          color: r.source === 'test' ? 'var(--info-fg)' : 'var(--coral)',
                         }}>
                         {SOURCE_LABEL[r.source] ?? r.source}
                       </span>

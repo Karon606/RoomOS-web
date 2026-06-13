@@ -53,10 +53,10 @@ function intervalLabel(days: number): string {
 
 function dueChip(row: ChecklistRow) {
   if (row.daysUntilDue == null) {
-    return { label: '점검 필요', color: '#dc2626', bg: 'rgba(220,38,38,0.1)' }
+    return { label: '점검 필요', color: 'var(--danger-fg)', bg: 'var(--danger-bg)' }
   }
   if (row.daysUntilDue < 0) {
-    return { label: `${Math.abs(row.daysUntilDue)}일 경과`, color: '#dc2626', bg: 'rgba(220,38,38,0.1)' }
+    return { label: `${Math.abs(row.daysUntilDue)}일 경과`, color: 'var(--danger-fg)', bg: 'var(--danger-bg)' }
   }
   if (row.daysUntilDue === 0) {
     return { label: '오늘 점검', color: '#ea580c', bg: 'rgba(234,88,12,0.12)' }
@@ -64,7 +64,7 @@ function dueChip(row: ChecklistRow) {
   if (row.daysUntilDue <= row.alertDaysBefore) {
     return { label: `D-${row.daysUntilDue}`, color: '#d4a847', bg: 'rgba(212,168,71,0.18)' }
   }
-  return { label: `D-${row.daysUntilDue}`, color: '#16a34a', bg: 'rgba(34,197,94,0.12)' }
+  return { label: `D-${row.daysUntilDue}`, color: 'var(--success-fg)', bg: 'var(--success-bg)' }
 }
 
 export default function ChecklistClient({ initialRows }: { initialRows: ChecklistRow[] }) {
@@ -228,7 +228,7 @@ function Card({ row, onCheck, onEdit, muted }: { row: ChecklistRow; onCheck: () 
   const chip = dueChip(row)
   return (
     <div className={`bg-[var(--cream)] border rounded-xl px-4 py-3 ${muted ? 'opacity-60' : ''}`}
-      style={{ borderColor: chip.color === '#dc2626' ? '#fecaca' : 'var(--warm-border)' }}>
+      style={{ borderColor: chip.color === 'var(--danger-fg)' ? 'var(--danger-ring)' : 'var(--warm-border)' }}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">

@@ -87,7 +87,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2 text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>
                     <span>요청 {fmtDate(r.requestDate)}</span>
-                    {r.targetDate && <span className="font-medium" style={{ color: '#f97316' }}>목표 {fmtDate(r.targetDate)}</span>}
+                    {r.targetDate && <span className="font-medium" style={{ color: 'var(--warning-fg)' }}>목표 {fmtDate(r.targetDate)}</span>}
                   </div>
                   <button onClick={() => handleDelete(r.id)} disabled={pending}
                     className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md transition-colors disabled:opacity-40"
@@ -100,7 +100,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
                 <p className="text-sm leading-snug" style={{ color: 'var(--warm-dark)' }}>{r.content}</p>
                 <button onClick={() => handleResolve(r.id)} disabled={pending}
                   className="w-full py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
-                  style={{ background: 'rgba(34,197,94,0.12)', color: '#16a34a', border: '1.5px solid rgba(34,197,94,0.35)' }}>
+                  style={{ background: 'var(--success-bg)', color: 'var(--success-fg)', border: '1.5px solid var(--success-ring)' }}>
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6l3 3 5-5" /></svg>
                   완료로 처리하기
                 </button>

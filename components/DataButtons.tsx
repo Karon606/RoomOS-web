@@ -351,7 +351,7 @@ export default function DataButtons() {
             <p className="text-sm font-semibold text-[var(--warm-dark)]">총 {totalImported}건 처리됨</p>
           </div>
           {allErrors.length > 0 && (
-            <div className="rounded-xl p-3 space-y-1" style={{ background: 'rgba(239,68,68,0.06)' }}>
+            <div className="rounded-xl p-3 space-y-1" style={{ background: 'var(--danger-bg)' }}>
               <p className="text-xs font-medium text-[var(--danger-fg)]">오류 {allErrors.length}건</p>
               {allErrors.slice(0, 5).map((e, i) => <p key={i} className="text-xs text-[var(--danger-fg)]">{e}</p>)}
               {allErrors.length > 5 && <p className="text-xs text-[var(--danger-fg)]">외 {allErrors.length - 5}건...</p>}

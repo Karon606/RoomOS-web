@@ -18,7 +18,7 @@ export function statusTipColor(tone: BadgeTone): string {
 // 행 배경 틴트 — §상태 5단계 bg 기준의 옅은 rgba (라이트·다크 공용).
 const ROW_TINT: Record<BadgeTone, string> = {
   paid:    'rgba(85,108,58,0.10)',
-  await:   'rgba(59,130,246,0.08)',
+  await:   'var(--info-bg)',
   unpaid:  'rgba(180,120,10,0.10)',
   overdue: 'rgba(160,60,46,0.09)',
   exit:    'rgba(200,160,125,0.16)',
