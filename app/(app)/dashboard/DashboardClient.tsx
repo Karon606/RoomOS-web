@@ -12,6 +12,7 @@ import { getTrendData, type TrendRange, type TrendPoint } from './actions'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { PendingReceiptSection } from '@/components/dashboard/PendingReceiptSection'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { Modal } from '@/components/ui/Modal'
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -143,14 +144,24 @@ function CheckoutRefundModal({
   const exceedsMax = refund > maxRefund
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal-2)] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
-        onClick={e => e.stopPropagation()}>
-        <div className="px-5 py-4 border-b" style={{ borderColor: DIVIDER_COLOR }}>
-          <p className="text-base font-bold" style={{ color: 'var(--warm-dark)' }}>보증금 환불</p>
-          <p className="text-xs mt-1" style={{ color: 'var(--warm-muted)' }}>{tenantName}님 퇴실 정산</p>
+    <Modal open onClose={onClose} z={260} width="sm" title="보증금 환불" subtitle={`${tenantName}님 퇴실 정산`}
+      dirty={refund !== maxRefund}
+      footer={
+        <div className="flex gap-2">
+          <button onClick={onClose} disabled={pending}
+            className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
+            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+            취소
+          </button>
+          <button
+            onClick={() => onConfirm(refund)}
+            disabled={pending || exceedsMax}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
+            style={{ background: 'var(--viz-4)', color: 'white' }}>
+            {pending ? '처리 중...' : '퇴실 처리'}
+          </button>
         </div>
-
+      }>
         <div className="px-5 py-4 space-y-3">
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
@@ -202,23 +213,7 @@ function CheckoutRefundModal({
             </p>
           </div>
         </div>
-
-        <div className="px-5 pb-5 pt-1 flex gap-2">
-          <button onClick={onClose} disabled={pending}
-            className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
-            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-            취소
-          </button>
-          <button
-            onClick={() => onConfirm(refund)}
-            disabled={pending || exceedsMax}
-            className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
-            style={{ background: 'var(--viz-4)', color: 'white' }}>
-            {pending ? '처리 중...' : '퇴실 처리'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -281,27 +276,22 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
-        onClick={e => e.stopPropagation()}>
-        {/* 헤더 */}
-        <div className="flex items-start justify-between px-5 py-4 border-b" style={{ borderColor: DIVIDER_COLOR }}>
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold"
-              style={{ background: avatarBg, fontSize: '0.875rem', color: alert.dotColor }}>
-              {initial}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold leading-snug" style={{ color: 'var(--ink-2)' }}>{alert.text}</p>
-              <span className="inline-block mt-1.5 text-[0.625rem] font-semibold rounded-full px-2 py-0.5"
-                style={{ background: hexToRgba(alert.dotColor, 0.12), color: alert.dotColor }}>
-                {alert.timeLabel}{alert.exactDate ? ` · ${alert.exactDate}` : ''}
-              </span>
-            </div>
+    <Modal open onClose={onClose} width="sm"
+      title={
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold"
+            style={{ background: avatarBg, fontSize: '0.875rem', color: alert.dotColor }}>
+            {initial}
           </div>
-          <button onClick={onClose} aria-label="닫기" className="ml-3 shrink-0 w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+          <div className="min-w-0">
+            <p className="text-sm font-bold leading-snug" style={{ color: 'var(--ink-2)' }}>{alert.text}</p>
+            <span className="inline-block mt-1.5 text-[0.625rem] font-semibold rounded-full px-2 py-0.5"
+              style={{ background: hexToRgba(alert.dotColor, 0.12), color: alert.dotColor }}>
+              {alert.timeLabel}{alert.exactDate ? ` · ${alert.exactDate}` : ''}
+            </span>
+          </div>
         </div>
-
+      }>
         {/* 후보 리스트 (희망 호실/조건 매칭 그룹) */}
         {alert.wishCandidates && alert.wishCandidates.length > 0 ? (
           <div className="px-5 py-4 space-y-2" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
@@ -387,7 +377,6 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               : '입주자 관리에서 보기 →'}
           </Link>
         </div>
-      </div>
       {refundModalOpen && (
         <CheckoutRefundModal
           tenantName={moveOutTenantName}
@@ -398,7 +387,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
           onConfirm={handleRefundConfirm}
         />
       )}
-    </div>
+    </Modal>
   )
 }
 
@@ -435,16 +424,11 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
     })
   }
 
-  return (
-    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
-        onClick={e => e.stopPropagation()}>
-        {/* 헤더 */}
-        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: DIVIDER_COLOR }}>
-          <p className="text-sm font-bold" style={{ color: 'var(--warm-dark)' }}>지출 등록</p>
-          <button onClick={onClose} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
-        </div>
+  // §13.2 dirty — 제안값에서 바뀌었거나 추가 입력이 있으면 닫기 확인
+  const dirty = !done && (amount !== suggestedAmount || detail !== '' || memo !== '')
 
+  return (
+    <Modal open onClose={onClose} width="sm" title="지출 등록" dirty={dirty}>
         {done ? (
           <div className="px-5 py-10 text-center">
             <p className="text-sm font-semibold text-green-600">지출이 기록되었습니다</p>
@@ -525,8 +509,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -1234,12 +1217,12 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
 
   if (!lease && !loading) {
     return (
-      <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
-        <div className="bg-[var(--cream)] rounded-xl p-6 text-center" onClick={e => e.stopPropagation()}>
+      <Modal open onClose={onClose} width="xs">
+        <div className="p-6 text-center">
           <p className="text-sm text-[var(--warm-muted)]">활성 계약을 찾을 수 없습니다.</p>
           <button onClick={onClose} className="mt-3 text-sm font-medium" style={{ color: 'var(--coral)' }}>닫기</button>
         </div>
-      </div>
+      </Modal>
     )
   }
 
@@ -1361,30 +1344,34 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
     })
   }
 
+  // §13.2 dirty — 수납/수정 입력이 진행 중이면 닫기 확인 (금융 입력 유실 방지)
+  const formDirty = !loading && (editingId !== null || editingAutoPay)
+
   return (
-    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[88vh]"
-        onClick={e => e.stopPropagation()}>
-
-        {/* 헤더 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-          {loading ? (
-            <div className="h-5 w-32 bg-[var(--cream-3)] rounded animate-pulse" />
-          ) : (
-            <div>
-              <h2 className="text-base font-bold text-[var(--warm-dark)]">
-                {lease?.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}{lease?.tenant.name}
-              </h2>
-              <p className="text-xs text-[var(--warm-muted)] mt-0.5">
-                {targetMonth} · 예정 {lease?.rentAmount.toLocaleString()}원
-              </p>
-            </div>
-          )}
-          <button onClick={onClose} aria-label="닫기" className="ml-4 w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
+    <Modal open onClose={onClose} width="md" dirty={formDirty}
+      title={loading
+        ? <div className="h-5 w-32 bg-[var(--cream-3)] rounded animate-pulse" />
+        : <h2 className="text-base font-bold text-[var(--warm-dark)] truncate">
+            {lease?.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}{lease?.tenant.name}
+          </h2>}
+      subtitle={loading ? undefined : `${targetMonth} · 예정 ${lease?.rentAmount.toLocaleString()}원`}
+      footer={!loading && lease ? (
+        <div className="flex gap-2">
+          <Link href={`/rooms?month=${targetMonth}`}
+            onClick={onClose}
+            className="flex-1 text-center text-xs font-medium py-2 rounded-xl border transition-colors"
+            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+            수납 관리 →
+          </Link>
+          <Link href={`/tenants?tenantId=${lease.tenant.id}&tab=info`}
+            onClick={onClose}
+            className="flex-1 text-center text-xs font-medium py-2 rounded-xl border transition-colors"
+            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+            입주자 관리 →
+          </Link>
         </div>
-
-        {/* 본문 */}
-        <div className="flex-1 overflow-y-auto">
+      ) : undefined}>
+        <div>
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="w-6 h-6 border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
@@ -1611,26 +1598,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
             </div>
           )}
         </div>
-
-        {/* 하단 — 바로가기 버튼 */}
-        {!loading && lease && (
-          <div className="px-6 py-3 border-t shrink-0 flex gap-2" style={{ borderColor: 'var(--warm-border)' }}>
-            <Link href={`/rooms?month=${targetMonth}`}
-              onClick={onClose}
-              className="flex-1 text-center text-xs font-medium py-2 rounded-xl border transition-colors"
-              style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-              수납 관리 →
-            </Link>
-            <Link href={`/tenants?tenantId=${lease.tenant.id}&tab=info`}
-              onClick={onClose}
-              className="flex-1 text-center text-xs font-medium py-2 rounded-xl border transition-colors"
-              style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-              입주자 관리 →
-            </Link>
-          </div>
-        )}
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -1736,21 +1704,14 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
   const lease = info?.leaseTerms?.[0] ?? null
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
-          <span className="text-base font-bold text-[var(--warm-dark)]">
-            {loading ? '불러오는 중…' : (info?.name ?? '입주자 정보')}
-          </span>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-lg leading-none">✕</button>
-        </div>
-
+    <Modal open onClose={onClose} width="sm"
+      title={loading ? '불러오는 중…' : (info?.name ?? '입주자 정보')}>
         {loading ? (
           <Loading />
         ) : !info ? (
           <div className="px-5 py-8 text-center text-sm text-[var(--warm-muted)]">입주자 정보를 찾을 수 없습니다.</div>
         ) : (
-          <div className="px-5 py-4 space-y-2 text-sm max-h-[70vh] overflow-y-auto">
+          <div className="px-5 py-4 space-y-2 text-sm">
             {/* 기본 정보 */}
             <p className="text-[0.625rem] font-semibold uppercase tracking-wider text-[var(--warm-muted)] mb-1">기본 정보</p>
             {info.gender && (
@@ -1845,8 +1806,7 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
             )}
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   )
 }
 
