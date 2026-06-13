@@ -2895,7 +2895,7 @@ export default function FinanceClient({
                         setDetailExp({ ...detailExp, excludeFromInventory: false })
                       })} disabled={isPending}
                         className="shrink-0 px-2.5 py-1 text-[0.625rem] font-medium rounded-lg border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--canvas)] transition-colors disabled:opacity-40">
-                        다시 포함
+                        적용취소
                       </button>
                     </div>
                   )}

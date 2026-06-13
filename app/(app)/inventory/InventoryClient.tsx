@@ -36,6 +36,7 @@ import {
   updateStockAddition,
   updateExpenseFromInventory,
   excludeExpenseFromInventory,
+  includeExpenseInInventory,
   seedTrackedItemsFromExpenses,
   confirmReceipt,
   confirmAllPending,
@@ -227,7 +228,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             <Btn variant="secondary" size="sm" onClick={() => setShowExcluded(true)}>
               숨김 품목{archivedCount > 0 ? ` (${archivedCount})` : ''}
             </Btn>
-            <Btn variant="secondary" size="sm" onClick={() => setShowMergeRules(true)}>병합 해제·규칙</Btn>
+            <Btn variant="secondary" size="sm" onClick={() => setShowMergeRules(true)}>병합 적용취소·규칙</Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowReconcile(true)}>전체 재고 보정</Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowCatSettings(true)}>카테고리 설정</Btn>
             <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
@@ -1274,6 +1275,13 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
           const res = await excludeExpenseFromInventory(entry.id)
           setSavePending(false)
           if (!res.ok) { setEditError(res.error); return }
+          // §10-1 — 적용 직후 토스트 액션으로 즉시 회수 가능
+          pushToast('success', '구매를 재고에서 제외했습니다', {
+            action: { label: '적용취소', run: () => { void includeExpenseInInventory(entry.id).then(r => {
+              if (r.ok) { pushToast('success', '제외를 적용취소했습니다'); onChanged() }
+              else pushToast('error', r.error)
+            }) } },
+          })
           onChanged()
         }}
         pending={savePending}
@@ -3023,7 +3031,7 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
   const isEmpty = rules.length === 0 && undos.length === 0
 
   return (
-    <Modal open onClose={onClose} width="md" title="병합 해제·규칙"
+    <Modal open onClose={onClose} width="md" title="병합 적용취소·규칙"
       subtitle="잘못 합친 품목 되돌리기 · 자동등록 추천(연결)·거절(다시 안 물어봄) 관리">
       <div className="px-5 sm:px-6 py-4 space-y-4">
         {loading ? <Loading /> : isEmpty ? (
@@ -3038,7 +3046,7 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
                   <div key={u.id} className="flex items-center gap-2 text-sm bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">
                     <span className="min-w-0 flex-1 truncate text-[var(--warm-dark)]">{u.label}</span>
                     <button type="button" onClick={() => undo(u.id)} disabled={pendingId === u.id}
-                      className="text-[0.6875rem] font-medium text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50 disabled:opacity-40 shrink-0 px-2 py-1 rounded-lg">병합 해제</button>
+                      className="text-[0.6875rem] font-medium text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50 disabled:opacity-40 shrink-0 px-2 py-1 rounded-lg">적용취소</button>
                   </div>
                 ))}
               </div>
