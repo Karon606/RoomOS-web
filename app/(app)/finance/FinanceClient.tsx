@@ -2338,7 +2338,7 @@ export default function FinanceClient({
                         <div key={rec.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 opacity-50">
                           <div className="flex items-center justify-between mb-1.5">
                             <span className="text-xs text-[var(--warm-muted)]">매월 {rec.dueDay}일</span>
-                            <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 ring-1 ring-blue-200 font-medium">{rec.activeSince?.slice(0, 7)} 활성화</span>
+                            <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--info-bg)] text-[var(--info-fg)] ring-1 ring-[var(--info-ring)] font-medium">{rec.activeSince?.slice(0, 7)} 활성화</span>
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap mb-1">
                             <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20">{rec.category}</span>
@@ -2361,7 +2361,7 @@ export default function FinanceClient({
                               <td className="px-4 py-3 text-sm text-[var(--warm-muted)]">{rec.title}</td>
                               <td className="px-4 py-3 text-sm text-[var(--warm-muted)] text-right"><MoneyDisplay amount={rec.amount} prefix="-" /></td>
                               <td className="px-4 py-3 text-right w-32">
-                                <span className="text-[0.625rem] font-semibold text-blue-500 bg-blue-500/10 px-2 py-1 rounded-lg">{rec.activeSince?.slice(0, 7)} 활성화</span>
+                                <span className="text-[0.625rem] font-semibold text-[var(--info-fg)] bg-[var(--info-bg)] px-2 py-1 rounded-lg">{rec.activeSince?.slice(0, 7)} 활성화</span>
                               </td>
                             </tr>
                           ))}
@@ -2577,7 +2577,7 @@ export default function FinanceClient({
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-[var(--warm-dark)]">{g.accountName}</span>
-                        <span className="text-xs text-[var(--success-fg)] bg-[var(--success-bg)]0/10 px-2 py-0.5 rounded-full">정산완료</span>
+                        <span className="text-xs text-[var(--success-fg)] bg-[var(--success-bg)] px-2 py-0.5 rounded-full">정산완료</span>
                       </div>
                       <p className="text-xs text-[var(--warm-muted)] mt-0.5">{g.billingPeriodStr}</p>
                     </div>
@@ -3830,8 +3830,8 @@ export default function FinanceClient({
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{r.title}</p>
                         {isParent && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--coral)]/15 text-[var(--coral)]">묶음 {r.items.length}</span>}
-                        {r.isAutoDebit && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">자동이체</span>}
-                        {!r.isActive && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">비활성</span>}
+                        {r.isAutoDebit && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--info-bg)] text-[var(--info-fg)]">자동이체</span>}
+                        {!r.isActive && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--neutral-bg)] text-[var(--neutral-fg)]">비활성</span>}
                         {r.activeSince && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--warning-bg)] text-[var(--warning-fg)]">{r.activeSince.slice(0, 7)}부터</span>}
                       </div>
                       <p className="text-xs text-[var(--warm-muted)] mt-0.5">
@@ -3933,7 +3933,7 @@ export default function FinanceClient({
                 <label className="text-xs text-[var(--warm-muted)]">
                   금액
                   {recordingRec.historicalAvg && (
-                    <span className="ml-1 text-blue-400 text-[0.625rem]">평균 {recordingRec.historicalAvg.toLocaleString()}원</span>
+                    <span className="ml-1 text-[var(--info-fg)] text-[0.625rem]">평균 {recordingRec.historicalAvg.toLocaleString()}원</span>
                   )}
                 </label>
                 <MoneyInput value={recRecAmount} onChange={v => setRecRecAmount(v)} placeholder="0원" />

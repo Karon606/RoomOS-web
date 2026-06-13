@@ -1607,9 +1607,9 @@ function DashPayRow({ p, isPreAcq, onEdit, onDelete, color }: {
   onEdit: (p: DashPayRecord) => void; onDelete: (id: string) => void
   color: 'purple' | 'amber' | 'default'
 }) {
-  const bg = color === 'purple' ? 'bg-purple-50 border border-purple-200' : color === 'amber' ? 'bg-[var(--info-bg)] border border-[var(--info-ring)]' : 'bg-[var(--canvas)]'
-  const textColor = color === 'purple' ? 'text-purple-600' : color === 'amber' ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'
-  const amountColor = color === 'purple' ? 'text-purple-700' : color === 'amber' ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'
+  const bg = color === 'purple' ? 'bg-[var(--deposit-bg)] border border-[var(--deposit-ring)]' : color === 'amber' ? 'bg-[var(--info-bg)] border border-[var(--info-ring)]' : 'bg-[var(--canvas)]'
+  const textColor = color === 'purple' ? 'text-[var(--deposit-fg)]' : color === 'amber' ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'
+  const amountColor = color === 'purple' ? 'text-[var(--deposit-fg)]' : color === 'amber' ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'
   const DAYS = ['일', '월', '화', '수', '목', '금', '토']
   const fmtD = (d: Date | string) => { const dt = new Date(d); return `${dt.getMonth()+1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})` }
   return (
@@ -1617,7 +1617,7 @@ function DashPayRow({ p, isPreAcq, onEdit, onDelete, color }: {
       <div>
         <p className={`text-xs ${textColor}`}>
           {p.seqNo}회차 · {fmtD(p.payDate)} · {p.payMethod ?? '—'}
-          {color === 'purple' && <span className="ml-1.5 text-[0.625rem] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>}
+          {color === 'purple' && <span className="ml-1.5 text-[0.625rem] font-semibold bg-[var(--deposit-bg)] text-[var(--deposit-fg)] rounded px-1 py-0.5">보증금</span>}
           {isPreAcq && <span className="ml-1.5 text-[0.625rem] font-semibold bg-[var(--info-bg)] text-[var(--info-fg)] rounded px-1 py-0.5">양도인</span>}
         </p>
         {p.memo && !p.isDeposit && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
@@ -1638,8 +1638,8 @@ function DashEditRow({ editAmount, editDate, editPayMethod, editMemo, setEditAmo
   setEditAmount: (v: number) => void; setEditDate: (v: string) => void; setEditPayMethod: (v: string) => void; setEditMemo: (v: string) => void
   onSave: () => void; onCancel: () => void; isPending: boolean; color: 'purple' | 'amber' | 'default'
 }) {
-  const borderColor = color === 'purple' ? 'border-purple-400' : color === 'amber' ? 'border-[var(--info-ring)]' : 'border-[var(--coral)]'
-  const bg = color === 'purple' ? 'bg-purple-50' : color === 'amber' ? 'bg-[var(--info-bg)]' : 'bg-[var(--canvas)]'
+  const borderColor = color === 'purple' ? 'border-[var(--deposit-ring)]' : color === 'amber' ? 'border-[var(--info-ring)]' : 'border-[var(--coral)]'
+  const bg = color === 'purple' ? 'bg-[var(--deposit-bg)]' : color === 'amber' ? 'bg-[var(--info-bg)]' : 'bg-[var(--canvas)]'
   return (
     <div className={`rounded-xl border ${borderColor} ${bg} px-3 py-2.5 space-y-2`}>
       <div className="grid grid-cols-2 gap-2">

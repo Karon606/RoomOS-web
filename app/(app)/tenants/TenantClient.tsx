@@ -1727,49 +1727,49 @@ export default function TenantClient({
                         {depositRecords.map(p => {
                           if (editingPayId === p.id) {
                             return (
-                              <div key={p.id} className="rounded-xl border border-purple-400 bg-purple-50 px-3 py-2.5 space-y-2">
+                              <div key={p.id} className="rounded-xl border border-[var(--deposit-ring)] bg-[var(--deposit-bg)] px-3 py-2.5 space-y-2">
                                 <div className="grid grid-cols-2 gap-2">
                                   <div className="space-y-1">
-                                    <p className="text-[0.625rem] text-purple-500">금액</p>
+                                    <p className="text-[0.625rem] text-[var(--deposit-fg)]">금액</p>
                                     <input type="text" inputMode="numeric"
                                       value={editAmount.toLocaleString()}
                                       onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
-                                    <p className="text-[0.625rem] text-purple-500">납부일</p>
+                                    <p className="text-[0.625rem] text-[var(--deposit-fg)]">납부일</p>
                                     <DatePicker value={editDate} onChange={setEditDate}
                                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
                                   </div>
                                 </div>
                                 <div className="space-y-1">
-                                  <p className="text-[0.625rem] text-purple-500">납부방법</p>
+                                  <p className="text-[0.625rem] text-[var(--deposit-fg)]">납부방법</p>
                                   <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
                                     placeholder="계좌이체, 현금…"
                                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                 </div>
                                 <div className="flex gap-2 justify-end">
                                   <button onClick={() => setEditingPayId(null)}
-                                    className="text-xs text-purple-500 hover:text-purple-700 px-3 py-1.5 rounded-lg border border-purple-200 transition-colors">취소</button>
+                                    className="text-xs text-[var(--deposit-fg)] hover:text-[var(--deposit-fg)] px-3 py-1.5 rounded-lg border border-[var(--deposit-ring)] transition-colors">취소</button>
                                   <button onClick={handleSaveEdit} disabled={isPending}
-                                    className="text-xs text-white bg-purple-500 hover:bg-purple-600 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">저장</button>
+                                    className="text-xs bg-[var(--deposit-bg)] hover:bg-[var(--deposit-ring)] text-[var(--deposit-fg)] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">저장</button>
                                 </div>
                               </div>
                             )
                           }
                           return (
-                            <div key={p.id} className="flex items-center justify-between rounded-sm px-3 py-2.5 bg-purple-50 border border-purple-200">
+                            <div key={p.id} className="flex items-center justify-between rounded-sm px-3 py-2.5 bg-[var(--deposit-bg)] border border-[var(--deposit-ring)]">
                               <div>
-                                <p className="text-xs text-purple-600">
+                                <p className="text-xs text-[var(--deposit-fg)]">
                                   {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
-                                  <span className="ml-1.5 text-[0.625rem] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>
+                                  <span className="ml-1.5 text-[0.625rem] font-semibold bg-[var(--deposit-bg)] text-[var(--deposit-fg)] rounded px-1 py-0.5">보증금</span>
                                 </p>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className="text-sm font-semibold text-purple-700">{p.actualAmount.toLocaleString()}원</span>
+                                <span className="text-sm font-semibold text-[var(--deposit-fg)]">{p.actualAmount.toLocaleString()}원</span>
                                 <div className="flex gap-1.5 ml-1">
                                   <button onClick={() => handleUpdatePayRecord(p)}
-                                    className="text-[0.625rem] font-medium px-2 py-1 rounded-lg border border-purple-200 text-purple-500 transition-colors">
+                                    className="text-[0.625rem] font-medium px-2 py-1 rounded-lg border border-[var(--deposit-ring)] text-[var(--deposit-fg)] transition-colors">
                                     수정
                                   </button>
                                   <button onClick={() => handleDeletePayRecord(p.id)}
@@ -2794,7 +2794,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
                   {hasNRRate ? '비거주 이용료' : '월 이용료'}
                 </label>
                 {hasNRRate && (
-                  <span className="text-[0.625rem] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200 font-medium">
+                  <span className="text-[0.625rem] px-1.5 py-0.5 rounded-full bg-[var(--info-bg)] text-[var(--info-fg)] ring-1 ring-[var(--info-ring)] font-medium">
                     비거주 전용
                   </span>
                 )}

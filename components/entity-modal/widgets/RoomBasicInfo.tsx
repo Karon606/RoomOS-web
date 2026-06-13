@@ -69,7 +69,7 @@ export function RoomBasicInfo({ room, onApplyScheduledNow }: {
         <>
           <div className="border-t border-[var(--warm-border)] my-1" />
           <InfoRow label="비거주 이용료" value={
-            <span className="text-indigo-600 font-medium">
+            <span className="text-[var(--info-fg)] font-medium">
               <MoneyDisplay amount={room.nonResidentRent} />
             </span>
           } />

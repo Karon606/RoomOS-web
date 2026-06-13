@@ -26,8 +26,8 @@ type Category = (typeof CATEGORIES)[number]
 const CATEGORY_COLORS: Record<string, { bg: string; fg: string; ring: string }> = {
   시설: { bg: 'bg-[var(--warning-bg)]',  fg: 'text-[var(--warning-fg)]',  ring: 'ring-[var(--warning-ring)]'  },
   소음: { bg: 'bg-[var(--danger-bg)]',   fg: 'text-[var(--danger-fg)]',   ring: 'ring-[var(--danger-ring)]'   },
-  청결: { bg: 'bg-cyan-50',   fg: 'text-cyan-700',   ring: 'ring-cyan-200'   },
-  편의: { bg: 'bg-violet-50', fg: 'text-violet-700', ring: 'ring-violet-200' },
+  청결: { bg: 'bg-[var(--reserve-bg)]',   fg: 'text-[var(--reserve-fg)]',   ring: 'ring-[var(--reserve-ring)]'   },
+  편의: { bg: 'bg-[var(--deposit-bg)]', fg: 'text-[var(--deposit-fg)]', ring: 'ring-[var(--deposit-ring)]' },
   기타: { bg: 'bg-stone-50',  fg: 'text-stone-700',  ring: 'ring-stone-200'  },
 }
 

@@ -1127,11 +1127,11 @@ export default function FloorPlanEditor({
           {editMode && (<>
             {/* 다중·변형 모드 */}
             <button onClick={() => setMultiSelectMode(v => !v)}
-              className={multiSelectMode ? `${btnOn()} bg-blue-500` : btnGray}>
+              className={multiSelectMode ? `${btnOn()} bg-[var(--info-solid)]` : btnGray}>
               다중{multiSelectMode && ' ✓'}
             </button>
             <button onClick={() => setTransformMode(v => !v)}
-              className={transformMode ? `${btnOn()} bg-purple-600` : btnGray}>
+              className={transformMode ? `${btnOn()} bg-[var(--deposit-fg)]` : btnGray}>
               {transformMode ? '변형 중' : '변형'}
             </button>
 
@@ -1258,7 +1258,7 @@ export default function FloorPlanEditor({
       {editMode && !transformMode && !drawingPolygon && selectedIds.length > 0 && (
         <div className="hidden md:flex items-center justify-center py-1 text-[0.6875rem] text-[var(--warm-muted)] border-b border-[var(--warm-border)]"
           style={{ background: 'var(--canvas)' }}>
-          이동 모드 — 크기·회전 변경이 필요하면 <strong className="mx-1 text-purple-600">변형</strong> 버튼을 활성화하세요
+          이동 모드 — 크기·회전 변경이 필요하면 <strong className="mx-1 text-[var(--deposit-fg)]">변형</strong> 버튼을 활성화하세요
         </div>
       )}
 

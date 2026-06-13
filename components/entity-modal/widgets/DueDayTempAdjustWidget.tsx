@@ -158,7 +158,7 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
               <div className="flex items-center gap-1.5 bg-[var(--danger-bg)] border border-[var(--danger-ring)] rounded-lg px-2 py-1">
                 <span className="text-xs text-[var(--danger-fg)]">정말 삭제할까요?</span>
                 <button type="button" onClick={() => setConfirmClear(false)}
-                  className="text-xs text-gray-400 hover:text-gray-600">취소</button>
+                  className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-mid)]">취소</button>
                 <button type="button" onClick={handleClear}
                   className="text-xs bg-[var(--danger-bg)] hover:bg-[var(--danger-ring)] text-[var(--danger-fg)] font-semibold px-1.5 py-0.5 rounded">삭제</button>
               </div>
