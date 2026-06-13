@@ -153,7 +153,8 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
         propertyId,
         category: item.category,
         itemLabel: item.label,
-        ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
+        // 단위 미입력(null) 구매도 포함 — 수량 없이 기록된 구매가 타임라인·수령 확인에서 누락되지 않게
+        ...(item.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: item.qtyUnit }] } : {}),
         excludeFromInventory: false,
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -180,7 +181,8 @@ export async function getInventoryDetail(trackedItemId: string): Promise<{
       storageLocationId: a.storageLocationId,
       storageLocationName: a.storageLocation?.name ?? null,
     })),
-    ...purchases.filter(p => p.qtyValue != null).map(p => ({
+    // 수량 미입력 구매도 타임라인에 포함(qtyValue 0 으로) — 입고 수학엔 0 기여라 무해, 수령 확인 진입점은 보존
+    ...purchases.map(p => ({
       type: 'purchase' as const,
       id: p.id, date: p.date, createdAt: p.createdAt, qtyValue: p.qtyValue ?? 0, qtyUnit: p.qtyUnit,
       specValue: p.specValue, specUnit: p.specUnit,
@@ -1887,7 +1889,7 @@ export async function confirmAllPending(trackedItemId: string): Promise<{ ok: tr
         propertyId,
         category: item.category,
         itemLabel: item.label,
-        ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
+        ...(item.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: item.qtyUnit }] } : {}),
         receivedAt: null,
       },
       data: { receivedAt: new Date() },

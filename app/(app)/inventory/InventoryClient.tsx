@@ -1290,7 +1290,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
               <p className="text-xs text-[var(--warm-muted)]">
                 구매일 {fmtDate(entry.date)}{packLabel ? ` · ${packLabel}` : ''}
               </p>
-              <p className="text-sm font-medium text-[var(--warm-dark)]">+ {fmtQty(baseQty, baseUnit)}{entry.amount > 0 ? ` (${entry.amount.toLocaleString()}원)` : ''}</p>
+              <p className="text-sm font-medium text-[var(--warm-dark)]">{baseQty > 0 ? `+ ${fmtQty(baseQty, baseUnit)}` : '수량 미기록'}{entry.amount > 0 ? ` (${entry.amount.toLocaleString()}원)` : ''}</p>
               {isPendingReceipt ? (
                 <p className="text-[0.625rem] text-[var(--honey)] mt-0.5">수령 대기 중</p>
               ) : entry.receivedAt ? (

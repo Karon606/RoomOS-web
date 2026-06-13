@@ -157,7 +157,9 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true } } },
   })
 
-  // 수령 대기 구매 일괄 조회 — 루프 내 N+1 방지
+  // 수령 대기 구매 일괄 조회 — 루프 내 N+1 방지.
+  // qtyValue 조건 없음 — 수량 미입력 구매도 수령 대기로 노출(알림 쿼리와 동일 기준).
+  // 수량은 소모량·단가 수학에만 필수, 수령 확인 자체엔 불필요 (세탁조크리너 케이스).
   const allPending = await prisma.expense.findMany({
     where: {
       propertyId,
@@ -165,7 +167,6 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       itemLabel: { not: null },
       receivedAt: null,
       excludeFromInventory: false,
-      qtyValue: { gt: 0 },
     },
     select: { id: true, date: true, qtyValue: true, specValue: true, specUnit: true, qtyUnit: true, itemLabel: true, category: true, amount: true, vendor: true, memo: true },
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -327,7 +328,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       .filter(p =>
         p.category === it.category &&
         p.itemLabel === it.label &&
-        (it.qtyUnit == null || p.qtyUnit === it.qtyUnit),
+        // 단위는 양쪽 다 있을 때만 비교 — 단위 미입력 구매가 배지에서 누락되지 않게
+        (it.qtyUnit == null || p.qtyUnit == null || p.qtyUnit === it.qtyUnit),
       )
       .map(p => ({
         id: p.id,
