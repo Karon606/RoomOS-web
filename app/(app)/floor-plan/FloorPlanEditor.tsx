@@ -7,6 +7,7 @@ import {
   type ElementType, saveFloorPlan, parseFloorPlanImage, setFloorPlanDashboardVisibility,
 } from './actions'
 import { pushToast } from '@/lib/saveStatus'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 // ── 상수 ─────────────────────────────────────────────────────
 const GRID = 20
@@ -1096,7 +1097,7 @@ export default function FloorPlanEditor({
             {fl.label}
             {floors.length > 1 && !viewOnly && (
               <button
-                onClick={e => { e.stopPropagation(); if (window.confirm(`'${fl.label}'을 삭제할까요?`)) deleteFloor(fl.id) }}
+                onClick={async e => { e.stopPropagation(); if (await confirmDialog({ title: `'${fl.label}'을 삭제할까요?`, message: '이 층에 배치된 도면 요소도 함께 삭제됩니다.', level: 'danger', confirmLabel: '삭제' })) deleteFloor(fl.id) }}
                 className="ml-0.5 w-4 h-4 flex items-center justify-center text-[var(--warm-muted)] hover:text-red-400 rounded-full text-[0.625rem] leading-none">
                 ×
               </button>

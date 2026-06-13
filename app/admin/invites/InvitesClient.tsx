@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { pushToast } from '@/lib/saveStatus'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { createInviteCode, toggleInviteCode, deleteInviteCode } from '../actions'
 
 type Row = {
@@ -212,8 +213,8 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
                   </button>
                   <button
                     disabled={rowBusy}
-                    onClick={() => {
-                      if (confirm(`코드 ${c.code} 를 삭제할까요?`)) act(c.id, () => deleteInviteCode(c.id))
+                    onClick={async () => {
+                      if (await confirmDialog({ title: `코드 ${c.code} 를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' })) act(c.id, () => deleteInviteCode(c.id))
                     }}
                     className="px-3 py-1.5 text-sm rounded-lg disabled:opacity-50"
                     style={{ background: 'transparent', color: 'var(--persimmon-d)', border: '1px solid var(--persimmon-l)' }}

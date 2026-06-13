@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { moveRecordTargetMonth, bulkApplyLatePayments, type SuspectRecord, type SuspectCategory } from './actions'
 import { Btn } from '@/components/ui/Btn'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 type Result = {
   total: number
@@ -46,11 +47,13 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
     ? result.suspects
     : result.suspects.filter(s => s.category === filter)
 
-  const handleMove = (record: SuspectRecord, newMonth: string) => {
+  const handleMove = async (record: SuspectRecord, newMonth: string) => {
     if (!newMonth) return
-    if (!confirm(
-      `${record.roomNo ?? '?'}호 ${record.tenantName}님 ${record.payDate} 입금 ${fmtMoney(record.actualAmount)}\n\n귀속 월: ${record.targetMonth} → ${newMonth}\n\n이 기록의 targetMonth를 변경합니다. 진행할까요?`
-    )) return
+    if (!(await confirmDialog({
+      title: `귀속 월을 ${record.targetMonth} → ${newMonth} 로 변경할까요?`,
+      message: `${record.roomNo ?? '?'}호 ${record.tenantName}님 ${record.payDate} 입금 ${fmtMoney(record.actualAmount)} — 입금일·금액은 그대로 두고 매출 귀속 월만 바뀝니다.`,
+      level: 'caution', confirmLabel: '변경',
+    }))) return
 
     startTransition(async () => {
       const res = await moveRecordTargetMonth(record.id, newMonth)
@@ -69,12 +72,13 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
     'mismatch-other': result.suspects.filter(s => s.category === 'mismatch-other').length,
   }
 
-  const handleBulkLate = () => {
+  const handleBulkLate = async () => {
     if (counts['late-payment'] === 0) return
-    if (!confirm(
-      `지연 입금 ${counts['late-payment']}건을 모두 직전 월로 이동합니다.\n` +
-      `각 기록은 입금일이 속한 월의 직전 월 매출로 재분류됩니다 (입금일/금액은 그대로).\n\n진행할까요?`
-    )) return
+    if (!(await confirmDialog({
+      title: `지연 입금 ${counts['late-payment']}건을 모두 직전 월로 이동할까요?`,
+      message: '각 기록은 입금일이 속한 월의 직전 월 매출로 재분류됩니다. 입금일·금액은 그대로 유지됩니다.',
+      level: 'caution', confirmLabel: '일괄 이동',
+    }))) return
     startTransition(async () => {
       const res = await bulkApplyLatePayments()
       if (!res.ok) { setError(res.error); return }

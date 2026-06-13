@@ -11,6 +11,7 @@ import MonthSelector from '@/components/layout/MonthSelector'
 import { getTrendData, type TrendRange, type TrendPoint } from './actions'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { PendingReceiptSection } from '@/components/dashboard/PendingReceiptSection'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -257,7 +258,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
       return
     }
     // 보증금 없는 경우 바로 처리
-    if (!confirm('퇴실 처리하시겠습니까? 호실이 공실로 전환됩니다.')) return
+    if (!(await confirmDialog({ title: '퇴실 처리할까요?', message: '호실이 공실로 전환됩니다.', level: 'caution', confirmLabel: '퇴실 처리' }))) return
     setConfirmPending(true); setConfirmError('')
     const res = await checkoutTenant(moveOutLeaseId, alert.tenantId)
     if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
@@ -1330,8 +1331,8 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
     })
   }
 
-  const handleDelete = (id: string) => {
-    if (!confirm('이 수납 기록을 삭제하시겠습니까?')) return
+  const handleDelete = async (id: string) => {
+    if (!(await confirmDialog({ title: '이 수납 기록을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
     startTransition(async () => {
       const release = trackSave()
       try {

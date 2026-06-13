@@ -506,7 +506,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
   const apply = async (oldName: string, rawNew: string) => {
     const newName = rawNew.trim()
     if (newName === oldName) return
-    if (newName === '' && !confirm(`'${oldName}' 구매처를 비울까요?\n해당 지출들의 구매처 표시가 사라집니다(지출 자체는 유지).`)) return
+    if (newName === '' && !(await confirmDialog({ title: `'${oldName}' 구매처를 비울까요?`, message: '해당 지출들의 구매처 표시가 사라집니다. 지출 자체는 유지됩니다.', level: 'caution', confirmLabel: '비우기' }))) return
     setBusy(oldName)
     const release = trackSave()
     try {
@@ -1352,11 +1352,11 @@ export default function FinanceClient({
 
   // 스캔(크롭) 완료 → 지출 등록 폼이면 '분석할까요?' 팝업으로 자동 분석/첨부 분기.
   // 편집 폼은 기존대로 미리보기 + 수동 버튼 유지.
-  const handleScanConfirm = (result: { dataUrl: string; base64: string }) => {
+  const handleScanConfirm = async (result: { dataUrl: string; base64: string }) => {
     setScanBitmap(prev => { prev?.close?.(); return null })
     setScanCropped(result)
     if (scanTargetRef.current === 'add') {
-      if (confirm('영수증을 분석해서 날짜·금액·품목을 자동 입력할까요?\n\n· 예: 자동 분석 후 첨부\n· 아니오: 영수증만 첨부')) {
+      if (await confirmDialog({ title: '영수증을 분석해서 자동 입력할까요?', message: '날짜·금액·품목을 자동으로 채웁니다. 첨부만 할 수도 있습니다.', confirmLabel: '자동 분석', cancelLabel: '영수증만 첨부' })) {
         void ocrCropped(result)
       } else {
         void uploadCropped(result)
@@ -1465,8 +1465,8 @@ export default function FinanceClient({
       router.refresh()
     })
   }
-  const handleDeleteRecMgmt = (id: string, title: string) => {
-    if (!confirm(`'${title}' 고정 지출을 삭제할까요?`)) return
+  const handleDeleteRecMgmt = async (id: string, title: string) => {
+    if (!(await confirmDialog({ title: `'${title}' 고정 지출을 삭제할까요?`, message: '다음 달부터 자동 기장이 중단됩니다. 이미 기장된 지출은 남습니다.', level: 'caution', confirmLabel: '삭제' }))) return
     startRecMgmtTransition(async () => {
       await deleteRecurringExpense(id)
       const list = await getRecurringExpenses()
@@ -1741,22 +1741,22 @@ export default function FinanceClient({
       } finally { release() }
     })
   }
-  const handleDeleteInc = (id: string) => {
-    if (!confirm('삭제하시겠습니까?')) return
+  const handleDeleteInc = async (id: string) => {
+    if (!(await confirmDialog({ title: '이 수익 기록을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
     startTransition(async () => {
       await deleteExtraIncome(id); setDetailInc(null); router.refresh()
     })
   }
 
-  const handleSettle = (ids: string[], name: string, billMonth: string) => {
-    if (!confirm(`'${name}' ${billMonth} 청구분(${ids.length}건)을 정산 완료 처리하시겠습니까?`)) return
+  const handleSettle = async (ids: string[], name: string, billMonth: string) => {
+    if (!(await confirmDialog({ title: `'${name}' ${billMonth} 청구분 ${ids.length}건을 정산 완료로 처리할까요?`, confirmLabel: '정산 완료' }))) return
     startTransition(async () => {
       await settleCardExpenses(ids); router.refresh()
     })
   }
 
-  const handleUnsettle = (id: string) => {
-    if (!confirm('이 지출을 미정산 상태로 되돌리시겠습니까?')) return
+  const handleUnsettle = async (id: string) => {
+    if (!(await confirmDialog({ title: '이 지출을 미정산 상태로 되돌릴까요?', confirmLabel: '되돌리기' }))) return
     startTransition(async () => {
       await unsettleExpenses([id]); setDetailExp(null); router.refresh()
     })
@@ -1771,16 +1771,16 @@ export default function FinanceClient({
       setEditingAcc(null); setAssetType('BANK_ACCOUNT'); setAssetBrand(''); setAssetFormKey(k => k + 1); router.refresh()
     })
   }
-  const handleDeleteAsset = (id: string) => {
-    if (!confirm('자산을 완전히 삭제하시겠습니까?\n기존 지출·수익 기록과의 연결도 끊어집니다.')) return
+  const handleDeleteAsset = async (id: string) => {
+    if (!(await confirmDialog({ title: '이 자산을 완전히 삭제할까요?', message: '기존 지출·수익 기록과의 연결도 끊어집니다.', level: 'danger', confirmLabel: '영구 삭제' }))) return
     startTransition(async () => {
       await deleteFinancialAccount(id)
       setEditingAcc(null); setAssetBrand(''); setAssetFormKey(k => k + 1); router.refresh()
     })
   }
 
-  const handleDeactivateAsset = (id: string) => {
-    if (!confirm('해지 처리 하시겠습니까?\n기존 기록은 유지되며 신규 사용은 불가합니다.')) return
+  const handleDeactivateAsset = async (id: string) => {
+    if (!(await confirmDialog({ title: '이 자산을 해지 처리할까요?', message: '기존 기록은 유지되며 신규 사용은 불가합니다.', level: 'caution', confirmLabel: '해지' }))) return
     startTransition(async () => {
       await deactivateFinancialAccount(id)
       setEditingAcc(null); setAssetBrand(''); setAssetFormKey(k => k + 1); router.refresh()
@@ -2592,8 +2592,8 @@ export default function FinanceClient({
                     <div className="flex items-center justify-between pt-1 border-t border-[var(--warm-border)]">
                       <span className="text-sm font-bold text-[var(--warm-dark)]">{g.total.toLocaleString()}원</span>
                       <button
-                        onClick={() => {
-                          if (!confirm(`'${g.accountName}' ${g.billMonth} 청구분 정산을 전부 취소하시겠습니까?`)) return
+                        onClick={async () => {
+                          if (!(await confirmDialog({ title: `'${g.accountName}' ${g.billMonth} 청구분 정산을 전부 취소할까요?`, confirmLabel: '전체 취소' }))) return
                           startTransition(async () => {
                             await unsettleExpenses(g.items.map(i => i.id)); router.refresh()
                           })
@@ -4078,8 +4078,8 @@ function DepositTab({ summary, ledger, totalBalance }: {
   const [recPending, startRec] = useTransition()
 
   // 전 원장 등으로 받았으나 입금기록 없는 보증금 → '받음(실수납)'으로 기록.
-  const handleRecordReceived = (leaseTermId: string, name: string, amount: number) => {
-    if (!confirm(`${name} 보증금을 '받음(실수납)'으로 기록할까요?\n계약상 금액(${amount.toLocaleString()}원)으로 입금 기록이 생성됩니다.`)) return
+  const handleRecordReceived = async (leaseTermId: string, name: string, amount: number) => {
+    if (!(await confirmDialog({ title: `${name} 보증금을 '받음(실수납)'으로 기록할까요?`, message: `계약상 금액(${amount.toLocaleString()}원)으로 입금 기록이 생성됩니다.`, confirmLabel: '기록' }))) return
     startRec(async () => {
       const release = trackSave()
       try {
@@ -4311,8 +4311,8 @@ function ReserveTab({
     })
   }
 
-  const handleDelete = (id: string) => {
-    if (!confirm('이 거래를 삭제하시겠습니까?')) return
+  const handleDelete = async (id: string) => {
+    if (!(await confirmDialog({ title: '이 거래를 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
     startTransition(async () => {
       const res = await deleteReserveTransaction(id)
       if (!res.ok) { setError(res.error); return }

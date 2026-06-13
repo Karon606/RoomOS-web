@@ -13,6 +13,7 @@ import {
 import { DEFAULT_CHECKLIST_ALERT_DAYS_BEFORE } from '@/lib/appConfig'
 import { withSave } from '@/lib/saveStatus'
 import { Btn } from '@/components/ui/Btn'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 type Mode = 'create' | { mode: 'edit'; row: ChecklistRow } | { mode: 'check'; row: ChecklistRow } | null
 
@@ -141,8 +142,8 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
               refresh()
             })
           }}
-          onDelete={mode && typeof mode === 'object' && mode.mode === 'edit' ? () => {
-            if (!confirm('이 체크리스트 항목과 모든 점검 이력을 삭제하시겠습니까?')) return
+          onDelete={mode && typeof mode === 'object' && mode.mode === 'edit' ? async () => {
+            if (!(await confirmDialog({ title: '이 체크리스트 항목을 삭제할까요?', message: '모든 점검 이력도 함께 삭제됩니다.', level: 'danger', confirmLabel: '삭제' }))) return
             startTransition(async () => {
               const res = await withSave(() => deleteChecklist((mode as { mode: 'edit'; row: ChecklistRow }).row.id), { success: '체크리스트 삭제됨' })
               if (!res.ok) { setError(res.error); return }
@@ -185,8 +186,8 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
               refresh()
             })
           }}
-          onDeleteLog={(logId) => {
-            if (!confirm('이 점검 이력을 삭제하시겠습니까?')) return
+          onDeleteLog={async (logId) => {
+            if (!(await confirmDialog({ title: '이 점검 이력을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
             startTransition(async () => {
               const res = await withSave(() => deleteChecklistLog(logId), { success: '점검 이력 삭제됨' })
               if (!res.ok) { setError(res.error); return }

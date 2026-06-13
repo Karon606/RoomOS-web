@@ -263,7 +263,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                   hasDraft={draftIds.has(r.id)}
                   onOpen={() => selectMode ? toggleSelect(r.id) : setDetailId(r.id)}
                   onArchive={async () => {
-                    if (!confirm(`'${r.label}' 을(를) 숨길까요?\n\n· 카드 목록에서 사라집니다.\n· 점검·구매·지출 기록은 모두 보존됩니다.\n· 헤더 "숨김 품목"에서 언제든 복구할 수 있습니다.`)) return
+                    if (!(await confirmDialog({ title: `'${r.label}' 품목을 숨길까요?`, message: '카드 목록에서 사라집니다. 점검·구매·지출 기록은 모두 보존되며, 헤더의 "숨김 품목"에서 언제든 복구할 수 있습니다.', confirmLabel: '숨김' }))) return
                     const res = await archiveTrackedItem(r.id)
                     if (res.ok) { refreshArchivedCount(); router.refresh(); pushToast('success', '품목 숨김 처리됨') }
                     else { pushToast('error', res.error) }
@@ -600,8 +600,8 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
   ])
   useEffect(() => { reload() }, [trackedItemId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleArchive = () => {
-    if (!confirm('이 품목을 숨길까요?\n\n· 재고 카드 목록에서 사라집니다 (당분간 사용하지 않을 품목용).\n· 점검·무상입수·지출 기록은 모두 보존됩니다.\n· 헤더의 "숨김 품목" 메뉴에서 언제든 복구할 수 있습니다.')) return
+  const handleArchive = async () => {
+    if (!(await confirmDialog({ title: '이 품목을 숨길까요?', message: '재고 카드 목록에서 사라집니다 (당분간 사용하지 않을 품목용). 점검·무상입수·지출 기록은 모두 보존되며, 헤더의 "숨김 품목" 메뉴에서 언제든 복구할 수 있습니다.', confirmLabel: '숨김' }))) return
     startTransition(async () => {
       const release = trackSave()
       try {
@@ -612,8 +612,8 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     })
   }
 
-  const handleDeleteCheck = (id: string) => {
-    if (!confirm('이 점검 기록을 삭제하시겠습니까?')) return
+  const handleDeleteCheck = async (id: string) => {
+    if (!(await confirmDialog({ title: '이 점검 기록을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
     setLoadingId(id)
     const release = trackSave()
     deleteStockCheck(id).then(res => {
@@ -622,8 +622,8 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     }).catch(() => { setLoadingId(null); release() })
   }
 
-  const handleDeleteAddition = (id: string) => {
-    if (!confirm('이 입수 기록을 삭제하시겠습니까?')) return
+  const handleDeleteAddition = async (id: string) => {
+    if (!(await confirmDialog({ title: '이 입수 기록을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
     setLoadingId(id)
     const release = trackSave()
     deleteStockAddition(id).then(res => {
@@ -938,7 +938,7 @@ function SettingsForm({ row, onCancel, onDone }: {
     const f = unitFactor(row.specUnit, target)
     if (f == null) { setUnitMsg(`${row.specUnit} → ${target} 는 변환할 수 없는 단위입니다.`); return }
     const ex = f >= 1 ? `1${row.specUnit} = ${f}${target}` : `${1 / f}${row.specUnit} = 1${target}`
-    if (!confirm(`단위를 ${row.specUnit} → ${target} 로 바꿉니다.\n저장된 모든 점검·입수 기록이 환산됩니다 (${ex}).\n계속할까요?`)) return
+    if (!(await confirmDialog({ title: `단위를 ${row.specUnit} → ${target} 로 바꿀까요?`, message: `저장된 모든 점검·입수 기록이 환산됩니다 (${ex}).`, level: 'caution', confirmLabel: '변경' }))) return
     setUnitPending(true); setUnitMsg('')
     const res = await changeTrackedItemUnit(row.id, target)
     setUnitPending(false)
@@ -1269,7 +1269,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
           setEditing(false); onChanged()
         }}
         onDelete={async () => {
-          if (!confirm('이 구매를 재고에서 제외하시겠습니까?\n지출 페이지에는 그대로 남습니다.')) return
+          if (!(await confirmDialog({ title: '이 구매를 재고에서 제외할까요?', message: '지출 페이지에는 그대로 남습니다.', level: 'caution', confirmLabel: '제외' }))) return
           setSavePending(true)
           const res = await excludeExpenseFromInventory(entry.id)
           setSavePending(false)
@@ -1445,7 +1445,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], onCancel, onDone 
   const handleSave = async () => {
     // 같은 날 이미 점검이 있으면 — 새 보정을 또 만들면 타임라인이 중복돼 헷갈림.
     // 그 점검을 수정하는 게 정확. 한 번 더 확인받고 진행.
-    if (dateHasCheck && !confirm(`${date}에 이미 점검 기록이 있어요.\n\n새 보정을 또 추가하면 같은 날 항목이 둘이 돼 헷갈릴 수 있어요. 보통은 '취소'를 누르고 그 점검의 [수정]에서 고치는 게 정확합니다.\n\n그래도 새 보정을 추가할까요?`)) {
+    if (dateHasCheck && !(await confirmDialog({ title: `${date}에 이미 점검 기록이 있어요`, message: "새 보정을 또 추가하면 같은 날 항목이 둘이 돼 헷갈릴 수 있어요. 보통은 '취소'를 누르고 그 점검의 [수정]에서 고치는 게 정확합니다.", level: 'caution', confirmLabel: '그래도 추가' }))) {
       return
     }
     setPending(true); setError('')
@@ -3162,7 +3162,7 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
   }
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`'${name}' 위치를 삭제하시겠습니까?\n이 위치가 할당된 품목에서도 자동으로 제거됩니다.`)) return
+    if (!(await confirmDialog({ title: `'${name}' 위치를 삭제할까요?`, message: '이 위치가 할당된 품목에서도 자동으로 제거됩니다.', level: 'danger', confirmLabel: '삭제' }))) return
     setPending(true)
     const res = await deleteStorageLocation(id)
     setPending(false)

@@ -10,6 +10,7 @@ import {
   deleteSurvey,
 } from './actions'
 import type { RoomPrice, CompetitorRow } from './actions'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -728,9 +729,9 @@ export default function MarketClient({
   }
 
   // ── 경쟁업체 삭제 ─────────────────────────────────────────────
-  const handleDeleteCompetitor = (id: string) => {
+  const handleDeleteCompetitor = async (id: string) => {
     if (!activeSurvey) return
-    if (!confirm('경쟁업체를 삭제할까요?')) return
+    if (!(await confirmDialog({ title: '이 경쟁업체를 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
     startTransition(async () => {
       const res = await deleteCompetitor(id)
       if (res.ok) {
@@ -746,8 +747,8 @@ export default function MarketClient({
   }
 
   // ── 조사 삭제 ─────────────────────────────────────────────────
-  const handleDeleteSurvey = (surveyId: string) => {
-    if (!confirm('이 조사를 삭제할까요?')) return
+  const handleDeleteSurvey = async (surveyId: string) => {
+    if (!(await confirmDialog({ title: '이 조사를 삭제할까요?', message: '조사에 기록된 경쟁업체 정보도 함께 삭제됩니다.', level: 'danger', confirmLabel: '삭제' }))) return
     startTransition(async () => {
       const res = await deleteSurvey(surveyId)
       if (res.ok) {

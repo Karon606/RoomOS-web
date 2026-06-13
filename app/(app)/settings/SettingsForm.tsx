@@ -24,6 +24,7 @@ import { regenerateJoinCode, approveJoinRequest, rejectJoinRequest } from './mem
 import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { Btn } from '@/components/ui/Btn'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { PushToggle } from './PushToggle'
 import DataButtons from '@/components/DataButtons'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
@@ -126,7 +127,7 @@ export default function SettingsForm({
     } finally { release(); setLogoUploading(false) }
   }
   const handleLogoDelete = async () => {
-    if (!confirm('영업장 로고를 삭제할까요?')) return
+    if (!(await confirmDialog({ title: '영업장 로고를 삭제할까요?', level: 'caution', confirmLabel: '삭제' }))) return
     const release = trackSave()
     try {
       const res = await deleteLogo()
@@ -179,7 +180,7 @@ export default function SettingsForm({
     setRoomTypes(prev => [...prev, v]); setNewRoomType('')
   }
   const handleDeleteRoomType = async (name: string) => {
-    if (!confirm(`'${name}' 방타입을 삭제할까요?`)) return
+    if (!(await confirmDialog({ title: `'${name}' 방타입을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
     await deleteRoomTypeOption(name)
     setRoomTypes(prev => prev.filter(t => t !== name))
   }
@@ -193,7 +194,7 @@ export default function SettingsForm({
     setRoomTypes(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
   }
   const handleResetRoomTypes = async () => {
-    if (!confirm('방타입을 기본값(원룸, 미니룸)으로 초기화할까요?')) return
+    if (!(await confirmDialog({ title: '방타입을 기본값(원룸, 미니룸)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
     setRoomTypes(await resetOptionsToDefault('roomTypeOptions'))
   }
 
@@ -209,7 +210,7 @@ export default function SettingsForm({
     setRoomTiers(prev => [...prev, v]); setNewRoomTier('')
   }
   const handleDeleteRoomTier = async (name: string) => {
-    if (!confirm(`'${name}' 등급을 삭제할까요?`)) return
+    if (!(await confirmDialog({ title: `'${name}' 등급을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
     await deleteRoomTierOption(name)
     setRoomTiers(prev => prev.filter(t => t !== name))
   }
@@ -223,7 +224,7 @@ export default function SettingsForm({
     setRoomTiers(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
   }
   const handleResetRoomTiers = async () => {
-    if (!confirm('등급을 기본값(스탠다드, 실속형)으로 초기화할까요?')) return
+    if (!(await confirmDialog({ title: '등급을 기본값(스탠다드, 실속형)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
     setRoomTiers(await resetOptionsToDefault('roomTierOptions'))
   }
 
@@ -239,7 +240,7 @@ export default function SettingsForm({
     setWindowTypes(prev => [...prev, v]); setNewWindowType('')
   }
   const handleDeleteWindowType = async (name: string) => {
-    if (!confirm(`'${windowLabel(name)}' 창문 유형을 삭제할까요?`)) return
+    if (!(await confirmDialog({ title: `'${windowLabel(name)}' 창문 유형을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
     await deleteWindowTypeOption(name)
     setWindowTypes(prev => prev.filter(t => t !== name))
   }
@@ -253,7 +254,7 @@ export default function SettingsForm({
     setWindowTypes(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
   }
   const handleResetWindowTypes = async () => {
-    if (!confirm('창문 유형을 기본값(외창, 내창)으로 초기화할까요?')) return
+    if (!(await confirmDialog({ title: '창문 유형을 기본값(외창, 내창)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
     setWindowTypes(await resetOptionsToDefault('windowTypeOptions'))
   }
 
@@ -269,7 +270,7 @@ export default function SettingsForm({
     setDirections(prev => [...prev, v]); setNewDirection('')
   }
   const handleDeleteDirection = async (name: string) => {
-    if (!confirm(`'${name}' 방향을 삭제할까요?`)) return
+    if (!(await confirmDialog({ title: `'${name}' 방향을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
     await deleteRoomDirectionOption(name)
     setDirections(prev => prev.filter(t => t !== name))
   }
@@ -283,7 +284,7 @@ export default function SettingsForm({
     setDirections(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
   }
   const handleResetDirections = async () => {
-    if (!confirm('방향을 기본값(북향~북서향 8방위)으로 초기화할까요?')) return
+    if (!(await confirmDialog({ title: '방향을 기본값(북향~북서향 8방위)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
     setDirections(await resetOptionsToDefault('directionOptions'))
   }
 
@@ -309,7 +310,7 @@ export default function SettingsForm({
   }
 
   const handleRemove = async (userId: string, name: string) => {
-    if (!confirm(`'${name}' 멤버를 제거할까요?`)) return
+    if (!(await confirmDialog({ title: `'${name}' 멤버를 제거할까요?`, message: '이 영업장에 더 이상 접근할 수 없게 됩니다. 참여 코드로 다시 참여할 수 있습니다.', level: 'caution', confirmLabel: '제거' }))) return
     const result = await removeMember(userId)
     if (!result.ok) { showToast(result.error); return }
     setMembers(prev => prev.filter(m => m.userId !== userId))
@@ -321,7 +322,7 @@ export default function SettingsForm({
   const [joinRequests, setJoinRequests] = useState<JoinRequestRow[]>(initialJoinRequests ?? [])
 
   const handleRegenJoinCode = async () => {
-    if (joinCode && !confirm('새 코드를 발급하면 기존 코드는 더 이상 사용할 수 없습니다. 계속할까요?')) return
+    if (joinCode && !(await confirmDialog({ title: '새 참여 코드를 발급할까요?', message: '기존 코드는 더 이상 사용할 수 없습니다.', level: 'caution', confirmLabel: '재발급' }))) return
     const res = await regenerateJoinCode()
     if (!res.ok) { showToast(res.error); return }
     setJoinCode(res.code)
@@ -360,7 +361,7 @@ export default function SettingsForm({
     setIncomeCategs(prev => [...prev, v]); setNewIncomeCateg('')
   }
   const handleDeleteIncomeCateg = async (name: string) => {
-    if (!confirm(`'${name}' 카테고리를 삭제할까요?`)) return
+    if (!(await confirmDialog({ title: `'${name}' 카테고리를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
     await deleteIncomeCategory(name)
     setIncomeCategs(prev => prev.filter(t => t !== name))
   }
@@ -374,7 +375,7 @@ export default function SettingsForm({
     setIncomeCategs(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
   }
   const handleResetIncomeCategs = async () => {
-    if (!confirm('부가수익 카테고리를 기본값으로 초기화할까요?')) return
+    if (!(await confirmDialog({ title: '부가수익 카테고리를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
     setIncomeCategs(await resetOptionsToDefault('incomeCategories'))
   }
 
@@ -388,7 +389,7 @@ export default function SettingsForm({
     setExpenseCategs(prev => [...prev, v]); setNewExpenseCateg('')
   }
   const handleDeleteExpenseCateg = async (name: string) => {
-    if (!confirm(`'${name}' 카테고리를 삭제할까요?`)) return
+    if (!(await confirmDialog({ title: `'${name}' 카테고리를 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
     await deleteExpenseCategory(name)
     setExpenseCategs(prev => prev.filter(t => t !== name))
   }
@@ -402,7 +403,7 @@ export default function SettingsForm({
     setExpenseCategs(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
   }
   const handleResetExpenseCategs = async () => {
-    if (!confirm('지출 카테고리를 기본값으로 초기화할까요?')) return
+    if (!(await confirmDialog({ title: '지출 카테고리를 기본값으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
     setExpenseCategs(await resetOptionsToDefault('expenseCategories'))
   }
 
@@ -416,7 +417,7 @@ export default function SettingsForm({
     setPayMethods(prev => [...prev, v]); setNewPayMethod('')
   }
   const handleDeletePayMethod = async (name: string) => {
-    if (!confirm(`'${name}' 결제 수단을 삭제할까요?`)) return
+    if (!(await confirmDialog({ title: `'${name}' 결제 수단을 삭제할까요?`, level: 'caution', confirmLabel: '삭제' }))) return
     await deletePaymentMethod(name)
     setPayMethods(prev => prev.filter(t => t !== name))
   }
@@ -430,7 +431,7 @@ export default function SettingsForm({
     setPayMethods(prev => prev.map(v => v === oldVal ? newVal.trim() : v))
   }
   const handleResetPayMethods = async () => {
-    if (!confirm('결제 수단을 기본값(계좌이체, 신용카드, 체크카드, 현금)으로 초기화할까요?')) return
+    if (!(await confirmDialog({ title: '결제 수단을 기본값(계좌이체, 신용카드, 체크카드, 현금)으로 초기화할까요?', level: 'caution', confirmLabel: '초기화' }))) return
     setPayMethods(await resetOptionsToDefault('paymentMethods'))
   }
 
@@ -531,7 +532,7 @@ export default function SettingsForm({
     })
   }
   const handleDeleteRec = async (id: string, title: string) => {
-    if (!confirm(`'${title}' 고정 지출을 삭제할까요?`)) return
+    if (!(await confirmDialog({ title: `'${title}' 고정 지출을 삭제할까요?`, message: '다음 달부터 자동 기장이 중단됩니다. 이미 기장된 지출은 남습니다.', level: 'caution', confirmLabel: '삭제' }))) return
     try {
       const res = await deleteRecurringExpense(id)
       if (!res.ok) { showToast(`삭제 실패: ${res.error}`); return }
@@ -1216,8 +1217,8 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
       return { ...t, sections: next }
     })
   }
-  const removeSection = (idx: number) => {
-    if (!confirm('이 섹션을 삭제할까요?')) return
+  const removeSection = async (idx: number) => {
+    if (!(await confirmDialog({ title: '이 섹션을 삭제할까요?', level: 'caution', confirmLabel: '삭제' }))) return
     setTemplate(t => ({ ...t, sections: t.sections.filter((_, i) => i !== idx) }))
   }
   const addSection = () => {
@@ -1272,7 +1273,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
     } finally { release(); setStampUploading(false) }
   }
   const handleStampDelete = async () => {
-    if (!confirm('도장 이미지를 삭제할까요?')) return
+    if (!(await confirmDialog({ title: '도장 이미지를 삭제할까요?', level: 'caution', confirmLabel: '삭제' }))) return
     const release = trackSave()
     try {
       const res = await deleteStamp()

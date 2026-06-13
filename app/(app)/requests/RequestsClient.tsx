@@ -13,6 +13,7 @@ import {
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
 
@@ -91,8 +92,8 @@ export default function RequestsClient({
     })
   }
 
-  const handleDelete = (id: string) => {
-    if (!confirm('이 요청을 삭제하시겠습니까?\n복구할 수 없습니다.')) return
+  const handleDelete = async (id: string) => {
+    if (!(await confirmDialog({ title: '이 요청을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
     startTransition(async () => {
       const release = trackSave()
       try {

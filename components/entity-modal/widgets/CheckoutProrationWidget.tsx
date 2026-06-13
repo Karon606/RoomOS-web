@@ -13,6 +13,7 @@ import {
 import type { CheckoutProrationResult } from '@/lib/prorate'
 import { PRORATE_BASE_DAYS } from '@/lib/prorate'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn } from '@/components/ui/Btn'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 
@@ -75,8 +76,8 @@ export function CheckoutProrationWidget({
     })
   }
 
-  const handleClear = () => {
-    if (!confirm('퇴실 정산을 적용취소하고 적용 직전 상태(거주중·퇴실예정일·청구)로 되돌릴까요?')) return
+  const handleClear = async () => {
+    if (!(await confirmDialog({ title: '퇴실 정산을 적용취소할까요?', message: '적용 직전 상태(거주중·퇴실예정일·청구)로 되돌립니다.', confirmLabel: '적용취소' }))) return
     startTransition(async () => {
       const release = trackSave()
       try {

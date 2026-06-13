@@ -8,6 +8,7 @@ import {
   setPrevOwnerSettleMenu, getPrevOwnerSettleState, savePrevOwnerSettle,
 } from '@/app/(app)/rooms/actions'
 import { trackSave, pushToast, withSave } from '@/lib/saveStatus'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 export function PrevOwnerSettleWidget({ leaseTermId, targetMonth, canEdit, onChange }: {
   leaseTermId: string
@@ -48,8 +49,8 @@ export function PrevOwnerSettleWidget({ leaseTermId, targetMonth, canEdit, onCha
     })
   }
 
-  const handleSettle = () => {
-    if (!confirm(`${Number(targetMonth.slice(5))}월 임대료를 양도인 정산으로 처리할까요?\n이 달은 현 소유주 미납·매출 집계에서 제외됩니다.`)) return
+  const handleSettle = async () => {
+    if (!(await confirmDialog({ title: `${Number(targetMonth.slice(5))}월 임대료를 양도인 정산으로 처리할까요?`, message: '이 달은 현 소유주 미납·매출 집계에서 제외됩니다.', level: 'caution', confirmLabel: '정산 처리' }))) return
     startTransition(async () => {
       const res = await withSave(() => savePrevOwnerSettle(leaseTermId, targetMonth), { success: '양도인 정산 처리됨' })
       if (res.ok) { await reload(); onChange?.() }

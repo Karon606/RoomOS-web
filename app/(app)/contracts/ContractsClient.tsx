@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { pushToast } from '@/lib/saveStatus'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { deleteContractFile } from '@/app/(app)/tenants/actions'
 import type { ContractListRow } from './actions'
@@ -54,8 +55,8 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
     return list
   }, [contracts, query, residency, source, sort])
 
-  const handleDelete = (id: string, name: string) => {
-    if (!confirm(`${name}님의 이 계약서 파일을 삭제하시겠습니까?\n(Drive 원본도 함께 삭제됩니다)`)) return
+  const handleDelete = async (id: string, name: string) => {
+    if (!(await confirmDialog({ title: `${name}님의 이 계약서 파일을 삭제할까요?`, message: 'Google Drive 원본도 함께 삭제됩니다.', level: 'danger', confirmLabel: '삭제' }))) return
     setDeletingId(id)
     startTransition(async () => {
       const res = await deleteContractFile(id)

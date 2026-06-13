@@ -9,6 +9,7 @@ import {
 } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { kstYmdStr } from '@/lib/kstDate'
 import { Section } from './Section'
 
@@ -39,8 +40,8 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
   const handleResolve = (id: string) => {
     startTransition(async () => { await resolveTenantRequest(id); await reload() })
   }
-  const handleDelete = (id: string) => {
-    if (!confirm('이 요청을 삭제하시겠습니까? 복구할 수 없습니다.')) return
+  const handleDelete = async (id: string) => {
+    if (!(await confirmDialog({ title: '이 요청을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
     startTransition(async () => { await deleteTenantRequest(id); await reload() })
   }
 

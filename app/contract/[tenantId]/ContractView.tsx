@@ -10,6 +10,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 const fmtDate = (d: string | null) => {
   if (!d) return ''
@@ -133,9 +134,9 @@ export default function ContractView({ data }: { data: ContractData }) {
     })
   }
 
-  const handleResetOverride = () => {
+  const handleResetOverride = async () => {
     if (!data.lease?.id) return
-    if (!confirm('이 입실자 계약서를 영업장 공통 템플릿으로 되돌릴까요?\n\n현재 입실자에게 저장된 수정 내용은 사라집니다.')) return
+    if (!(await confirmDialog({ title: '이 입실자 계약서를 영업장 공통 템플릿으로 되돌릴까요?', message: '현재 입실자에게 저장된 수정 내용은 사라집니다.', level: 'caution', confirmLabel: '되돌리기' }))) return
     const leaseId = data.lease.id
     startTransition(async () => {
       const release = trackSave()
@@ -162,8 +163,8 @@ export default function ContractView({ data }: { data: ContractData }) {
       return { ...t, sections: next }
     })
   }
-  const removeSection = (idx: number) => {
-    if (!confirm('이 섹션을 삭제할까요?')) return
+  const removeSection = async (idx: number) => {
+    if (!(await confirmDialog({ title: '이 섹션을 삭제할까요?', level: 'caution', confirmLabel: '삭제' }))) return
     setDraft(t => ({ ...t, sections: t.sections.filter((_, i) => i !== idx) }))
   }
   const addSection = () => {
@@ -241,7 +242,7 @@ export default function ContractView({ data }: { data: ContractData }) {
       pushToast('error', '먼저 서명을 받아주세요.')
       return
     }
-    if (!confirm('이 계약서를 PDF로 저장하시겠습니까?\n\n· 도장·로고·서명이 합성된 PDF가 Google Drive에 업로드됩니다.\n· 입실자 정보의 \'계약서 파일\' 에 자동 첨부됩니다.')) return
+    if (!(await confirmDialog({ title: '이 계약서를 PDF로 저장할까요?', message: "도장·로고·서명이 합성된 PDF가 Google Drive에 업로드되고, 입실자 정보의 '계약서 파일'에 자동 첨부됩니다.", confirmLabel: '저장' }))) return
     setContractSaving(true)
     const release = trackSave()
     try {

@@ -12,6 +12,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 type Record = Awaited<ReturnType<typeof getPaymentsByLease>>['records'][number]
 type TmOption = Awaited<ReturnType<typeof getTargetMonthOptions>>[number]
@@ -81,8 +82,8 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
     })
   }
 
-  const handleDelete = (paymentId: string) => {
-    if (!confirm('이 수납 기록을 삭제하시겠습니까?')) return
+  const handleDelete = async (paymentId: string) => {
+    if (!(await confirmDialog({ title: '이 수납 기록을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
     startTransition(async () => {
       const release = trackSave()
       try {

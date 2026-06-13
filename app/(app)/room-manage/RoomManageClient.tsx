@@ -10,6 +10,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { Modal as SharedModal } from '@/components/ui/Modal'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { useUrlState } from '@/lib/useUrlState'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SortSelect } from '@/components/ui/SortSelect'
@@ -435,7 +436,7 @@ export default function RoomManageClient({
   }
 
   const handlePhotoDelete = async (photoId: string) => {
-    if (!confirm('이 사진을 삭제하시겠습니까?')) return
+    if (!(await confirmDialog({ title: '이 사진을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
     const res = await deleteRoomPhoto(photoId)
     if (!res.ok) { setError(res.error); return }
     setEditPhotos(prev => prev.filter(p => p.id !== photoId))

@@ -776,7 +776,7 @@ export default function TenantClient({
   }
 
   const handleDeletePayRecord = async (paymentId: string) => {
-    if (!confirm('이 수납 기록을 삭제하시겠습니까?')) return
+    if (!(await confirmDialog({ title: '이 수납 기록을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
     startTransition(async () => {
       const res = await withSave(() => deletePayment(paymentId), { success: '수납 기록 삭제됨' })
       if (!res.ok) { setError(res.error); return }
@@ -3041,7 +3041,7 @@ function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string; tenant
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('이 계약서 파일을 삭제할까요?\n\n· Google Drive에서도 삭제됩니다.')) return
+    if (!(await confirmDialog({ title: '이 계약서 파일을 삭제할까요?', message: 'Google Drive에서도 삭제됩니다.', level: 'danger', confirmLabel: '삭제' }))) return
     const release = trackSave()
     try {
       const res = await deleteContractFile(id)
