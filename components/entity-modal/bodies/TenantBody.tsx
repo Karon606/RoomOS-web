@@ -116,7 +116,7 @@ function PaymentSummaryWithAI({ tenantId, lease }: {
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
           <p className="text-xs text-[var(--warm-muted)] mb-1">납부월</p>
-          <p className="text-lg font-bold text-green-400">{paidMonths}개월</p>
+          <p className="text-lg font-bold text-[var(--success-fg)]">{paidMonths}개월</p>
         </div>
         <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
           <p className="text-xs text-[var(--warm-muted)] mb-1">총 납부액</p>

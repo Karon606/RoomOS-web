@@ -25,7 +25,7 @@ const CATEGORY_LABEL: Record<SuspectCategory, string> = {
 
 const CATEGORY_COLOR: Record<SuspectCategory, string> = {
   'late-payment':   'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]',
-  'pre-payment':    'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+  'pre-payment':    'bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]',
   'mismatch-other': 'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]',
 }
 
@@ -103,7 +103,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
           <span>일치: <span className="font-semibold text-[var(--warm-dark)]">{result.matched}건</span></span>
           <span>양도인: <span className="font-semibold text-[var(--warm-muted)]">{result.prevOwnerCount}건</span></span>
           <span>지연 입금: <span className="font-semibold text-[var(--warning-fg)]">{counts['late-payment']}건</span></span>
-          <span>선납: <span className="font-semibold text-emerald-600">{counts['pre-payment']}건</span></span>
+          <span>선납: <span className="font-semibold text-[var(--success-fg)]">{counts['pre-payment']}건</span></span>
           <span>월 불일치: <span className="font-semibold text-[var(--danger-fg)]">{counts['mismatch-other']}건</span></span>
         </div>
       </div>

@@ -1121,7 +1121,7 @@ export default function SettingsForm({
                   ) : (
                     <span className={`text-xs px-2 py-1 rounded-lg font-medium
                       ${m.role === 'OWNER' ? 'bg-[var(--coral)]/30 text-[var(--coral)]' :
-                        m.role === 'MANAGER' ? 'bg-emerald-600/30 text-emerald-300' :
+                        m.role === 'MANAGER' ? 'bg-[var(--success-bg)] text-[var(--success-fg)]' :
                         'bg-[var(--canvas)] text-[var(--warm-mid)]'}`}>
                       {m.roleLabel}
                     </span>

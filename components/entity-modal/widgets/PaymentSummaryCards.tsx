@@ -22,7 +22,7 @@ export function PaymentSummaryCards({ settlement, month }: { settlement: Settlem
         </div>
         <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
           <p className="text-xs text-[var(--warm-muted)]">잔액</p>
-          <p className={`text-sm font-bold mt-0.5 ${settlement.balance >= 0 ? 'text-green-400' : 'text-[var(--danger-fg)]'}`}>
+          <p className={`text-sm font-bold mt-0.5 ${settlement.balance >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
             {settlement.balance > 0 ? `+${fmtWon(settlement.balance)}` : settlement.balance < 0 ? `-${fmtWon(Math.abs(settlement.balance))}` : '0원'}
           </p>
         </div>

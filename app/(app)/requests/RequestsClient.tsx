@@ -377,7 +377,7 @@ export default function RequestsClient({
                     </span>
                   )}
                   {resolved && (
-                    <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+                    <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]">
                       완료
                     </span>
                   )}
@@ -398,7 +398,7 @@ export default function RequestsClient({
                     <span className="text-[0.625rem] font-medium text-[var(--warning-fg)]">목표 {fmtDate(r.targetDate)}</span>
                   )}
                   {resolved && (
-                    <span className="text-[0.625rem] text-emerald-600">완료 {fmtDate(r.resolvedAt)}</span>
+                    <span className="text-[0.625rem] text-[var(--success-fg)]">완료 {fmtDate(r.resolvedAt)}</span>
                   )}
                 </div>
 
@@ -407,7 +407,7 @@ export default function RequestsClient({
 
                 {/* 처리 메모 */}
                 {r.resolutionMemo && (
-                  <p className="text-xs text-emerald-700 mt-2 pt-2 border-t border-emerald-200/40">
+                  <p className="text-xs text-[var(--success-fg)] mt-2 pt-2 border-t border-[var(--success-ring)]">
                     ↳ {r.resolutionMemo}
                   </p>
                 )}
@@ -415,7 +415,7 @@ export default function RequestsClient({
                 {/* 액션 */}
                 {!resolved ? (
                   resolvingId === r.id ? (
-                    <div className="mt-3 space-y-2 rounded-lg p-2.5 bg-emerald-50/40 border border-emerald-200/50">
+                    <div className="mt-3 space-y-2 rounded-lg p-2.5 bg-[var(--success-bg)] border border-[var(--success-ring)]">
                       <textarea
                         value={resolvingMemo}
                         onChange={e => setResolvingMemo(e.target.value)}
@@ -435,7 +435,7 @@ export default function RequestsClient({
                         <button
                           onClick={() => handleResolve(r.id, resolvingMemo)}
                           disabled={pending}
-                          className="flex-1 py-1.5 text-xs font-semibold rounded-md bg-emerald-600 text-white disabled:opacity-50"
+                          className="flex-1 py-1.5 text-xs font-semibold rounded-md bg-[var(--success-solid)] text-[var(--cream)] disabled:opacity-50"
                         >
                           {pending ? '저장 중...' : '완료로 저장'}
                         </button>
@@ -446,7 +446,7 @@ export default function RequestsClient({
                       <button
                         onClick={() => { setResolvingId(r.id); setResolvingMemo('') }}
                         disabled={pending}
-                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 disabled:opacity-50"
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)] hover:bg-[var(--success-bg)] disabled:opacity-50"
                       >
                         ✓ 완료로 처리
                       </button>

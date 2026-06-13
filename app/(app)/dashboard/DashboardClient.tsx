@@ -431,7 +431,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
     <Modal open onClose={onClose} width="sm" title="지출 등록" dirty={dirty}>
         {done ? (
           <div className="px-5 py-10 text-center">
-            <p className="text-sm font-semibold text-green-600">지출이 기록되었습니다</p>
+            <p className="text-sm font-semibold text-[var(--success-fg)]">지출이 기록되었습니다</p>
           </div>
         ) : (
           <div className="px-5 py-4 space-y-3">
@@ -1427,7 +1427,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                         {carryOver < 0 ? (
                           <>이월 미수 <span className="text-[var(--danger-fg)] font-medium mono tnum">{Math.abs(carryOver).toLocaleString()}원</span> 포함</>
                         ) : (
-                          <>이월 선납 <span className="text-emerald-600 font-medium mono tnum">{carryOver.toLocaleString()}원</span> 포함</>
+                          <>이월 선납 <span className="text-[var(--success-fg)] font-medium mono tnum">{carryOver.toLocaleString()}원</span> 포함</>
                         )}
                         {!viewDuePassed && viewBalance < 0 && (
                           <span className="ml-1.5 text-[var(--warm-muted)]">(이달 청구 {Math.abs(viewBalance).toLocaleString()}원은 도래 전)</span>

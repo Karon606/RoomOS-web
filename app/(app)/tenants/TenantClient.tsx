@@ -1194,7 +1194,7 @@ export default function TenantClient({
       {rentChangeModal && (() => {
         const diff = rentChangeModal.scheduledRent - rentChangeModal.baseRent
         const dirLabel = diff > 0 ? '인상' : diff < 0 ? '인하' : '동결'
-        const dirColor = diff > 0 ? 'text-[var(--danger-fg)]' : diff < 0 ? 'text-emerald-600' : 'text-[var(--warm-dark)]'
+        const dirColor = diff > 0 ? 'text-[var(--danger-fg)]' : diff < 0 ? 'text-[var(--success-fg)]' : 'text-[var(--warm-dark)]'
         return (
           <div className="fixed inset-0 bg-black/70 z-[var(--z-modal-3)] flex items-center justify-center p-4">
             <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm p-6 space-y-4">
@@ -1667,7 +1667,7 @@ export default function TenantClient({
                       </div>
                       <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
                         <p className="text-xs text-[var(--warm-muted)]">잔액</p>
-                        <p className={`text-sm font-bold mt-0.5 ${balance >= 0 ? 'text-green-400' : 'text-[var(--danger-fg)]'}`}>
+                        <p className={`text-sm font-bold mt-0.5 ${balance >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
                           {balance > 0
                             ? <MoneyDisplay amount={balance} prefix="+" />
                             : balance < 0
@@ -2112,7 +2112,7 @@ export default function TenantClient({
                           </span>
                         </label>
                         {isDepositMode && payAmount > lease.depositAmount && (
-                          <p className="text-xs text-emerald-600">
+                          <p className="text-xs text-[var(--success-fg)]">
                             초과금 {(payAmount - lease.depositAmount).toLocaleString()}원 → {targetMonth} 이용료 처리
                           </p>
                         )}
@@ -2166,7 +2166,7 @@ export default function TenantClient({
               </div>
               {room ? (
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-[var(--warm-muted)]">상태</span><span className={room.isVacant ? 'text-[var(--warm-mid)]' : 'text-green-300'}>{room.isVacant ? '공실' : '거주중'}</span></div>
+                  <div className="flex justify-between"><span className="text-[var(--warm-muted)]">상태</span><span className={room.isVacant ? 'text-[var(--warm-mid)]' : 'text-[var(--success-fg)]'}>{room.isVacant ? '공실' : '거주중'}</span></div>
                   <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기본 이용료</span><span className="text-[var(--warm-dark)]"><MoneyDisplay amount={room.baseRent} /></span></div>
                 </div>
               ) : (
@@ -3074,7 +3074,7 @@ function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string; tenant
             const dateLabel = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')}`
             return (
               <li key={f.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)]">
-                <span className={`text-[0.625rem] px-1.5 py-0.5 rounded font-medium ${f.source === 'GENERATED' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]'}`}>
+                <span className={`text-[0.625rem] px-1.5 py-0.5 rounded font-medium ${f.source === 'GENERATED' ? 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]' : 'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]'}`}>
                   {f.source === 'GENERATED' ? '서명' : '스캔'}
                 </span>
                 <a href={f.viewUrl} target="_blank" rel="noreferrer" className="flex-1 min-w-0 text-xs text-[var(--warm-dark)] hover:text-[var(--coral)] truncate">

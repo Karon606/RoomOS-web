@@ -2394,7 +2394,7 @@ export default function FinanceClient({
             </select>
             <button onClick={() => setIncFilter({ method: 'all', category: 'all' })}
               className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2">초기화</button>
-            <span className="ml-auto text-sm font-bold text-green-400 num">
+            <span className="ml-auto text-sm font-bold text-[var(--success-fg)] num">
               합계: <MoneyDisplay amount={totalInc} />
             </span>
             <Btn variant="primary" size="md" onClick={() => { setShowAddInc(true); setAddIncMethod('계좌이체'); setAddIncAccId(''); setError('') }}>
@@ -2416,11 +2416,11 @@ export default function FinanceClient({
                   {/* 날짜 + 금액 */}
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs text-[var(--warm-muted)]">{fmtDate(i.date)}</span>
-                    <span className="text-sm font-bold text-emerald-600"><MoneyDisplay amount={i.amount} prefix="+" alwaysFull /></span>
+                    <span className="text-sm font-bold text-[var(--success-fg)]"><MoneyDisplay amount={i.amount} prefix="+" alwaysFull /></span>
                   </div>
                   {/* 카테고리 + 입금수단 */}
                   <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                    <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">{i.category}</span>
+                    <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]">{i.category}</span>
                     {i.payMethod && (
                       <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{i.payMethod}</span>
                     )}
@@ -2472,12 +2472,12 @@ export default function FinanceClient({
                         )}
                       </td>
                       <td className="px-4 py-3 overflow-hidden">
-                        <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 whitespace-nowrap">{i.category}</span>
+                        <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)] whitespace-nowrap">{i.category}</span>
                       </td>
                       <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
                         <span className="truncate block">{i.detail ?? '—'}</span>
                       </td>
-                      <td className="px-4 py-3 text-sm font-semibold text-emerald-600 overflow-hidden">
+                      <td className="px-4 py-3 text-sm font-semibold text-[var(--success-fg)] overflow-hidden">
                         <span className="truncate block"><MoneyDisplay amount={i.amount} prefix="+" /></span>
                       </td>
                     </tr>
@@ -2577,7 +2577,7 @@ export default function FinanceClient({
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-[var(--warm-dark)]">{g.accountName}</span>
-                        <span className="text-xs text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full">정산완료</span>
+                        <span className="text-xs text-[var(--success-fg)] bg-[var(--success-bg)]0/10 px-2 py-0.5 rounded-full">정산완료</span>
                       </div>
                       <p className="text-xs text-[var(--warm-muted)] mt-0.5">{g.billingPeriodStr}</p>
                     </div>
@@ -2862,7 +2862,7 @@ export default function FinanceClient({
                   <DetailRow label="결제수단"    value={detailExp.payMethod ?? '—'} />
                   {detailExp.financeName && <DetailRow label="금융사" value={detailExp.financeName} />}
                   <DetailRow label="정산상태"    value={
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ring-1 ${detailExp.settleStatus === 'UNSETTLED' ? 'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ring-1 ${detailExp.settleStatus === 'UNSETTLED' ? 'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]' : 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-[var(--success-ring)]'}`}>
                       {detailExp.settleStatus === 'UNSETTLED' ? '미정산' : '정산완료'}
                     </span>
                   } />
@@ -3251,7 +3251,7 @@ export default function FinanceClient({
                   <DetailRow label="날짜"      value={fmtDate(detailInc.date)} />
                   <DetailRow label="카테고리"  value={detailInc.category} />
                   <DetailRow label="세부 항목" value={detailInc.detail ?? '—'} />
-                  <DetailRow label="금액"      value={<span className="text-green-400 font-semibold"><MoneyDisplay amount={detailInc.amount} prefix="+" /></span>} />
+                  <DetailRow label="금액"      value={<span className="text-[var(--success-fg)] font-semibold"><MoneyDisplay amount={detailInc.amount} prefix="+" /></span>} />
                   <DetailRow label="입금수단"  value={detailInc.payMethod ?? '—'} />
                   {detailInc.financialAccount && <DetailRow label="금융사" value={accName(detailInc.financialAccount)} />}
                   {detailInc.memo && <DetailRow label="메모" value={detailInc.memo} />}
@@ -3624,7 +3624,7 @@ export default function FinanceClient({
                 <button type="button" onClick={() => setShowAddInc(false)}
                   className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">취소</button>
                 <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-green-700 hover:bg-green-600 text-[var(--warm-dark)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  className="flex-1 py-2.5 bg-[var(--success-solid)] hover:opacity-90 text-[var(--cream)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                   {isPending ? '저장 중...' : '저장'}
                 </button>
               </div>
@@ -4109,7 +4109,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
           </div>
           <div>
             <p className="text-xs text-[var(--warm-muted)] mb-1">누적 입금</p>
-            <p className="text-base font-semibold text-emerald-600"><MoneyDisplay amount={totalIn} /></p>
+            <p className="text-base font-semibold text-[var(--success-fg)]"><MoneyDisplay amount={totalIn} /></p>
           </div>
           <div>
             <p className="text-xs text-[var(--warm-muted)] mb-1">누적 반환</p>
@@ -4177,7 +4177,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
                     <p className="text-[0.625rem] text-[var(--warm-muted)]">현재 잔고</p>
                     {d.hasNoInRecord && d.status !== 'CHECKED_OUT' && d.contractDeposit > 0 && (
                       <button onClick={() => handleRecordReceived(d.leaseTermId, d.tenantName, d.contractDeposit)} disabled={recPending}
-                        className="mt-1.5 text-[0.625rem] font-medium px-2 py-1 rounded-lg ring-1 ring-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 whitespace-nowrap">
+                        className="mt-1.5 text-[0.625rem] font-medium px-2 py-1 rounded-lg ring-1 ring-[var(--success-ring)] text-[var(--success-fg)] hover:bg-[var(--success-bg)] disabled:opacity-50 whitespace-nowrap">
                         받음으로 기록
                       </button>
                     )}
@@ -4199,7 +4199,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
                 <li key={i} className="px-5 py-3 flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                      <span className={`text-xs font-semibold ${e.type === 'IN' ? 'text-emerald-600' : 'text-[var(--warning-fg)]'}`}>
+                      <span className={`text-xs font-semibold ${e.type === 'IN' ? 'text-[var(--success-fg)]' : 'text-[var(--warning-fg)]'}`}>
                         {e.type === 'IN' ? '입금' : '환불'}
                       </span>
                       <span className="text-xs text-[var(--warm-muted)]">{new Date(e.date).toISOString().slice(0, 10)}</span>
@@ -4216,7 +4216,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
                     {e.memo && <p className="text-xs text-[var(--warm-muted)] truncate">메모: {e.memo}</p>}
                   </div>
                   <div className="text-right shrink-0">
-                    <p className={`text-sm font-semibold ${e.type === 'IN' ? 'text-emerald-600' : 'text-[var(--warning-fg)]'}`}>
+                    <p className={`text-sm font-semibold ${e.type === 'IN' ? 'text-[var(--success-fg)]' : 'text-[var(--warning-fg)]'}`}>
                       {e.type === 'IN' ? '+' : '−'}{e.amount.toLocaleString()}원
                     </p>
                   </div>
@@ -4323,7 +4323,7 @@ function ReserveTab({
   const typeLabel = (t: ReserveTxn['type']) =>
     t === 'DEPOSIT' ? '적립' : t === 'WITHDRAW_DIRECT' ? '직접 인출' : '사후 정산'
   const typeColor = (t: ReserveTxn['type']) =>
-    t === 'DEPOSIT' ? 'text-emerald-600' : 'text-[var(--warning-fg)]'
+    t === 'DEPOSIT' ? 'text-[var(--success-fg)]' : 'text-[var(--warning-fg)]'
 
   return (
     <div className="space-y-5">
@@ -4338,7 +4338,7 @@ function ReserveTab({
           </div>
           <div>
             <p className="text-xs text-[var(--warm-muted)] mb-1">{targetMonth} 적립</p>
-            <p className="text-base font-semibold text-emerald-600">
+            <p className="text-base font-semibold text-[var(--success-fg)]">
               +<MoneyDisplay amount={monthly.deposit} />
             </p>
           </div>

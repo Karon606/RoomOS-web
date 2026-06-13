@@ -3046,7 +3046,7 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
                   <div key={u.id} className="flex items-center gap-2 text-sm bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">
                     <span className="min-w-0 flex-1 truncate text-[var(--warm-dark)]">{u.label}</span>
                     <button type="button" onClick={() => undo(u.id)} disabled={pendingId === u.id}
-                      className="text-[0.6875rem] font-medium text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50 disabled:opacity-40 shrink-0 px-2 py-1 rounded-lg">적용취소</button>
+                      className="text-[0.6875rem] font-medium text-[var(--success-fg)] ring-1 ring-[var(--success-ring)] hover:bg-[var(--success-bg)] disabled:opacity-40 shrink-0 px-2 py-1 rounded-lg">적용취소</button>
                   </div>
                 ))}
               </div>
@@ -3343,7 +3343,7 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
     <div className="space-y-2 pt-2 border-t border-[var(--warm-border)]/60">
       <div className="flex items-center justify-between">
         <label className="text-xs font-medium text-[var(--warm-mid)]">보관 위치</label>
-        {saved && <span className="text-[0.625rem] text-emerald-600">저장됨</span>}
+        {saved && <span className="text-[0.625rem] text-[var(--success-fg)]">저장됨</span>}
       </div>
       <div className="flex flex-wrap gap-2">
         {allLocs.map(loc => (

@@ -58,10 +58,10 @@ export function DiscountWidget({ leaseTermId, onChange }: {
   return (
     <div className="border-t border-[var(--warm-border)] pt-3 mt-1 space-y-2">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-emerald-600">월세 할인</p>
+        <p className="text-xs font-medium text-[var(--success-fg)]">월세 할인</p>
         {!showForm && (
           <button onClick={() => setShowForm(true)}
-            className="text-xs px-2.5 py-1 rounded-lg border border-emerald-300 text-emerald-600 hover:bg-emerald-50 transition-colors">+ 할인 추가</button>
+            className="text-xs px-2.5 py-1 rounded-lg border border-[var(--success-ring)] text-[var(--success-fg)] hover:bg-[var(--success-bg)] transition-colors">+ 할인 추가</button>
         )}
       </div>
       {discs.length === 0 && !showForm && (
@@ -75,7 +75,7 @@ export function DiscountWidget({ leaseTermId, onChange }: {
         </div>
       ))}
       {showForm && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 space-y-2">
+        <div className="rounded-xl border border-[var(--success-ring)] bg-[var(--success-bg)] p-3 space-y-2">
           <div className="flex gap-2">
             <select value={type} onChange={e => setType(e.target.value as 'amount' | 'percent')}
               className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none">

@@ -123,7 +123,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
                   <div key={r.id} className="rounded-xl p-3 opacity-60" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
                     <div className="flex items-start justify-between gap-1 mb-1">
                       <div className="flex items-center gap-2 text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>
-                        <span className="font-medium text-green-500">완료</span>
+                        <span className="font-medium text-[var(--success-fg)]">완료</span>
                         <span>{fmtDate(r.resolvedAt)}</span>
                         <span>·</span>
                         <span>요청 {fmtDate(r.requestDate)}</span>

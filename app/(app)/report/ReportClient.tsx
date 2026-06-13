@@ -153,7 +153,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
         <SummaryCard
           label="순이익"
           value={(summary.totalProfit >= 0 ? '+' : '-') + fmt(Math.abs(summary.totalProfit)).replace('원', '원')}
-          accent={summary.totalProfit >= 0 ? 'text-emerald-600' : 'text-[var(--danger-fg)]'}
+          accent={summary.totalProfit >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}
         />
       </div>
 
@@ -166,7 +166,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
               <p className="text-xs text-[var(--warm-muted)]">{q.q}분기</p>
               <p className="text-sm font-bold mt-1 text-[var(--warm-dark)]">{fmt(q.revenue)}</p>
               <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-0.5">지출 {fmt(q.expense)}</p>
-              <p className={`text-[0.6875rem] mt-0.5 font-semibold ${q.profit > 0 ? 'text-emerald-600' : q.profit < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}`}>
+              <p className={`text-[0.6875rem] mt-0.5 font-semibold ${q.profit > 0 ? 'text-[var(--success-fg)]' : q.profit < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}`}>
                 {q.profit === 0 ? '—' : (q.profit > 0 ? '+' : '-') + Math.abs(q.profit).toLocaleString() + '원'}
               </p>
             </div>
@@ -218,7 +218,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
               <div className="flex items-center justify-between pb-2 border-b border-[var(--warm-border)]/60">
                 <span className="text-sm font-bold text-[var(--warm-dark)]">{Number(r.month.slice(5))}월</span>
                 <span className={`text-sm font-semibold ${
-                  r.profit > 0 ? 'text-emerald-600' : r.profit < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
+                  r.profit > 0 ? 'text-[var(--success-fg)]' : r.profit < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
                 }`}>
                   순이익 {r.profit === 0 ? '—' : (r.profit > 0 ? '+' : '-') + Math.abs(r.profit).toLocaleString() + '원'}
                 </span>
@@ -234,7 +234,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                     <span className="flex items-center gap-1.5">
                       <span className="text-[var(--warm-mid)]">{fmt(prevRow?.revenue ?? 0)}</span>
                       {prevRow && r.revenue > 0 && delta !== 0 && (
-                        <span className={`text-[0.625rem] font-semibold ${delta > 0 ? 'text-emerald-600' : 'text-[var(--danger-fg)]'}`}>
+                        <span className={`text-[0.625rem] font-semibold ${delta > 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
                           {(delta > 0 ? '▲' : '▼')} {Math.abs(delta).toLocaleString()}원
                         </span>
                       )}
@@ -264,7 +264,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
         <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-4 space-y-2">
           <div className="flex items-center justify-between pb-2 border-b border-[var(--warm-border)]/60">
             <span className="text-sm font-bold text-[var(--warm-dark)]">합계</span>
-            <span className={`text-sm font-bold ${summary.totalProfit >= 0 ? 'text-emerald-600' : 'text-[var(--danger-fg)]'}`}>
+            <span className={`text-sm font-bold ${summary.totalProfit >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
               {(summary.totalProfit >= 0 ? '+' : '-') + Math.abs(summary.totalProfit).toLocaleString() + '원'}
             </span>
           </div>
@@ -281,7 +281,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                   <span className="flex items-center gap-1.5">
                     <span className="text-[var(--warm-mid)]">{fmt(summary.prevYear.totalRevenue)}</span>
                     {totalDelta !== 0 && (
-                      <span className={`text-[0.625rem] font-semibold ${totalDelta > 0 ? 'text-emerald-600' : 'text-[var(--danger-fg)]'}`}>
+                      <span className={`text-[0.625rem] font-semibold ${totalDelta > 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
                         {(totalDelta > 0 ? '▲' : '▼')} {Math.abs(totalDelta).toLocaleString()}원
                       </span>
                     )}
@@ -325,7 +325,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                         <div className="text-[var(--warm-mid)] text-xs">{fmt(prevRow?.revenue ?? 0)}</div>
                         {prevRow && r.revenue > 0 && (
                           <div className={`text-[0.625rem] mt-0.5 font-semibold ${
-                            delta > 0 ? 'text-emerald-600' : delta < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
+                            delta > 0 ? 'text-[var(--success-fg)]' : delta < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
                           }`}>
                             {delta === 0 ? '—' : (delta > 0 ? '▲' : '▼') + ' ' + Math.abs(delta).toLocaleString() + '원'}
                           </div>
@@ -335,7 +335,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                     <td className="px-4 py-3 text-right text-[var(--warm-mid)]">{fmt(r.extraIncome)}</td>
                     <td className="px-4 py-3 text-right text-[var(--warm-mid)]">{fmt(r.expense)}</td>
                     <td className={`px-4 py-3 text-right font-semibold ${
-                      r.profit > 0 ? 'text-emerald-600' : r.profit < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
+                      r.profit > 0 ? 'text-[var(--success-fg)]' : r.profit < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
                     }`}>
                       {r.profit === 0 ? '—' : (r.profit > 0 ? '+' : '-') + Math.abs(r.profit).toLocaleString() + '원'}
                     </td>
@@ -369,7 +369,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                       const totalDelta = summary.totalRevenue - summary.prevYear.totalRevenue
                       return (
                         <div className={`text-[0.625rem] mt-0.5 font-semibold ${
-                          totalDelta > 0 ? 'text-emerald-600' : totalDelta < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
+                          totalDelta > 0 ? 'text-[var(--success-fg)]' : totalDelta < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
                         }`}>
                           {totalDelta === 0 ? '—' : (totalDelta > 0 ? '▲' : '▼') + ' ' + Math.abs(totalDelta).toLocaleString() + '원'}
                         </div>
@@ -379,7 +379,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                 )}
                 <td className="px-4 py-3 text-right text-[var(--warm-mid)]">{fmt(summary.totalExtraIncome)}</td>
                 <td className="px-4 py-3 text-right text-[var(--warm-mid)]">{fmt(summary.totalExpense)}</td>
-                <td className={`px-4 py-3 text-right ${summary.totalProfit >= 0 ? 'text-emerald-600' : 'text-[var(--danger-fg)]'}`}>
+                <td className={`px-4 py-3 text-right ${summary.totalProfit >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
                   {(summary.totalProfit >= 0 ? '+' : '-') + Math.abs(summary.totalProfit).toLocaleString() + '원'}
                 </td>
                 <td className="px-4 py-3 text-right text-[var(--warning-fg)]">{fmt(summary.endingUnpaid)}</td>
@@ -408,7 +408,7 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
         <SummaryCard
           label="6개월 예상 순이익"
           value={(forecast.totalProfit >= 0 ? '+' : '-') + Math.abs(forecast.totalProfit).toLocaleString() + '원'}
-          accent={forecast.totalProfit >= 0 ? 'text-emerald-600' : 'text-[var(--danger-fg)]'}
+          accent={forecast.totalProfit >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}
         />
       </div>
       {/* 예상 카드 (모바일 전용) */}
@@ -418,7 +418,7 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
             <div className="flex items-center justify-between pb-2 border-b border-[var(--warm-border)]/60">
               <span className="text-sm font-bold text-[var(--warm-dark)]">{r.month.slice(0, 4)}년 {Number(r.month.slice(5))}월</span>
               <span className={`text-sm font-semibold ${
-                r.expectedProfit > 0 ? 'text-emerald-600' : r.expectedProfit < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
+                r.expectedProfit > 0 ? 'text-[var(--success-fg)]' : r.expectedProfit < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
               }`}>
                 {r.expectedProfit === 0 ? '—' : (r.expectedProfit > 0 ? '+' : '-') + Math.abs(r.expectedProfit).toLocaleString() + '원'}
               </span>
@@ -455,7 +455,7 @@ function ForecastSection({ forecast }: { forecast: ForecastSummary }) {
                   <td className="px-4 py-3 text-right text-[var(--warm-mid)]">{fmt(r.expectedExtraIncome)}</td>
                   <td className="px-4 py-3 text-right text-[var(--warm-mid)]">{fmt(r.expectedExpense)}</td>
                   <td className={`px-4 py-3 text-right font-semibold ${
-                    r.expectedProfit > 0 ? 'text-emerald-600' : r.expectedProfit < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
+                    r.expectedProfit > 0 ? 'text-[var(--success-fg)]' : r.expectedProfit < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
                   }`}>
                     {r.expectedProfit === 0 ? '—' : (r.expectedProfit > 0 ? '+' : '-') + Math.abs(r.expectedProfit).toLocaleString() + '원'}
                   </td>
@@ -533,7 +533,7 @@ function AISection() {
 
       {data && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <SummaryCard label="점유율 (현재)" value={`${(data.occupancyRate * 100).toFixed(1)}%`} accent="text-emerald-600" />
+          <SummaryCard label="점유율 (현재)" value={`${(data.occupancyRate * 100).toFixed(1)}%`} accent="text-[var(--success-fg)]" />
           <SummaryCard label="미수율 (최근 12개월)" value={`${(data.unpaidRate * 100).toFixed(1)}%`} accent={data.unpaidRate > 0.05 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-dark)]'} />
           <SummaryCard label="평균 거주기간 (퇴실자)" value={data.avgStayMonths != null ? `${data.avgStayMonths.toFixed(1)}개월` : '—'} />
           <SummaryCard label="퇴실 (최근 6개월)" value={`${data.turnoverPer6mo}건`} />

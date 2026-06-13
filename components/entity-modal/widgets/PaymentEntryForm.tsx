@@ -184,7 +184,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
           </label>
           {isDepositMode && (
             payAmount > room.depositAmount ? (
-              <p className="text-xs text-emerald-600">
+              <p className="text-xs text-[var(--success-fg)]">
                 보증금 {fmtKorMoney(room.depositAmount)} + 이용료 {fmtKorMoney(payAmount - room.depositAmount)} = {fmtKorMoney(payAmount)}
               </p>
             ) : (
@@ -213,7 +213,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
             <span className="text-xs text-[var(--warm-mid)]">청소비 포함 수납 (청소비 {fmtKorMoney(room.cleaningFee)})</span>
           </label>
           {isCleaningFeeMode && (
-            <p className="text-xs text-emerald-600">
+            <p className="text-xs text-[var(--success-fg)]">
               청소비 {fmtKorMoney(room.cleaningFee)} + 이용료 {fmtKorMoney(room.expected)} = {fmtKorMoney(room.cleaningFee + room.expected)}
             </p>
           )}
