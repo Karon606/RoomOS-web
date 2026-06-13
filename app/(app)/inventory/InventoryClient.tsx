@@ -3213,7 +3213,7 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
                       reload()
                       setPending(false)
                     }}
-                    className={`text-[0.625rem] px-2 py-1 rounded-lg border transition-colors ${loc.isHub ? 'bg-amber-50 border-amber-200 text-amber-700' : 'border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-amber-300 hover:text-amber-600'}`}>
+                    className={`text-[0.625rem] px-2 py-1 rounded-lg border transition-colors ${loc.isHub ? 'bg-[var(--warning-bg)] border-[var(--warning-ring)] text-[var(--warning-fg)]' : 'border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-[var(--warning-ring)] hover:text-[var(--warning-fg)]'}`}>
                     {loc.isHub ? '기본 창고 ✓' : '기본 창고'}
                   </button>
                   <button type="button" onClick={() => { setEditId(loc.id); setEditName(loc.name) }}
@@ -3235,7 +3235,7 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
       </div>
       <div className="border-t border-[var(--warm-border)] px-5 sm:px-6 py-3 space-y-2">
         <p className="text-[0.625rem] text-[var(--warm-muted)]">
-          <strong className="text-amber-600">허브</strong>로 지정한 위치(예: 창고)는 위치별 점검 시 "이동 수량" 입력란이 표시됩니다.
+          <strong className="text-[var(--warning-fg)]">허브</strong>로 지정한 위치(예: 창고)는 위치별 점검 시 "이동 수량" 입력란이 표시됩니다.
         </p>
         <ModalFooterActions onCancel={onClose}>
           <Btn variant="primary" onClick={onClose}>완료</Btn>

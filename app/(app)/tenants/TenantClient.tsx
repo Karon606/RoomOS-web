@@ -1677,9 +1677,9 @@ export default function TenantClient({
                       </div>
                     </div>
                     {prevOwnerPaid > 0 && (
-                      <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                        <p className="text-xs text-amber-700">양도인 귀속 (인수일 이전 납부)</p>
-                        <p className="text-xs font-semibold text-amber-700">{prevOwnerPaid.toLocaleString()}원</p>
+                      <div className="flex items-center justify-between bg-[var(--info-bg)] border border-[var(--info-ring)] rounded-xl px-3 py-2">
+                        <p className="text-xs text-[var(--info-fg)]">양도인 귀속 (인수일 이전 납부)</p>
+                        <p className="text-xs font-semibold text-[var(--info-fg)]">{prevOwnerPaid.toLocaleString()}원</p>
                       </div>
                     )}
 
@@ -1792,30 +1792,30 @@ export default function TenantClient({
                           const prevOwner = isPreAcq(p)
                           if (editingPayId === p.id) {
                             return (
-                              <div key={p.id} className={`rounded-xl border px-3 py-2.5 space-y-2 ${prevOwner ? 'border-amber-400 bg-amber-50' : 'border-[var(--coral)] bg-[var(--canvas)]'}`}>
+                              <div key={p.id} className={`rounded-xl border px-3 py-2.5 space-y-2 ${prevOwner ? 'border-[var(--info-ring)] bg-[var(--info-bg)]' : 'border-[var(--coral)] bg-[var(--canvas)]'}`}>
                                 <div className="grid grid-cols-2 gap-2">
                                   <div className="space-y-1">
-                                    <p className={`text-[0.625rem] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>금액</p>
+                                    <p className={`text-[0.625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>금액</p>
                                     <input type="text" inputMode="numeric"
                                       value={editAmount.toLocaleString()}
                                       onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
-                                    <p className={`text-[0.625rem] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>납부일</p>
+                                    <p className={`text-[0.625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>납부일</p>
                                     <DatePicker value={editDate} onChange={setEditDate}
                                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
                                   </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                   <div className="space-y-1">
-                                    <p className={`text-[0.625rem] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>납부방법</p>
+                                    <p className={`text-[0.625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>납부방법</p>
                                     <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
                                       placeholder="계좌이체, 현금…"
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
-                                    <p className={`text-[0.625rem] ${prevOwner ? 'text-amber-500' : 'text-[var(--warm-muted)]'}`}>메모</p>
+                                    <p className={`text-[0.625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>메모</p>
                                     <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
@@ -1828,11 +1828,11 @@ export default function TenantClient({
                             )
                           }
                           return (
-                            <div key={p.id} className={`flex items-center justify-between rounded-sm px-3 py-2.5 ${prevOwner ? 'bg-amber-50 border border-amber-200' : 'bg-[var(--canvas)]'}`}>
+                            <div key={p.id} className={`flex items-center justify-between rounded-sm px-3 py-2.5 ${prevOwner ? 'bg-[var(--info-bg)] border border-[var(--info-ring)]' : 'bg-[var(--canvas)]'}`}>
                               <div>
-                                <p className={`text-xs ${prevOwner ? 'text-amber-600' : 'text-[var(--warm-mid)]'}`}>
+                                <p className={`text-xs ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'}`}>
                                   {p.seqNo}회차 · {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
-                                  {prevOwner && <span className="ml-1.5 text-[0.625rem] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
+                                  {prevOwner && <span className="ml-1.5 text-[0.625rem] font-semibold bg-[var(--info-bg)] text-[var(--info-fg)] rounded px-1 py-0.5">양도인</span>}
                                   {!p.isDeposit && p.targetMonth !== targetMonth && (
                                     <span className="ml-1.5 text-[0.625rem] font-semibold bg-[var(--badge-await-bg)] text-[var(--badge-await-fg)] rounded px-1 py-0.5">
                                       {p.targetMonth < targetMonth
@@ -1844,7 +1844,7 @@ export default function TenantClient({
                                 {p.memo && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className={`text-sm font-semibold ${prevOwner ? 'text-amber-700' : 'text-[var(--warm-dark)]'}`}>{p.actualAmount.toLocaleString()}원</span>
+                                <span className={`text-sm font-semibold ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'}`}>{p.actualAmount.toLocaleString()}원</span>
                                 <div className="flex gap-1.5 ml-1">
                                   <button onClick={() => handleUpdatePayRecord(p)}
                                     className="text-[0.625rem] font-medium px-2 py-1 rounded-lg border transition-colors"
@@ -1877,12 +1877,12 @@ export default function TenantClient({
                       return v.includes('말') ? '말일' : `${v}일`
                     }
                     return (
-                      <div className="border-t border-amber-500/20 bg-amber-500/5 px-6 py-3 space-y-2 shrink-0">
+                      <div className="border-t border-[var(--warning-ring)] bg-[var(--warning-solid)]/5 px-6 py-3 space-y-2 shrink-0">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-semibold text-amber-300">납부일 임시 조정</span>
+                            <span className="text-xs font-semibold text-[var(--warning-fg)]">납부일 임시 조정</span>
                             {isOverrideActive && (
-                              <span className="text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full">
+                              <span className="text-xs bg-[var(--warning-solid)]/20 text-[var(--warning-fg)] px-1.5 py-0.5 rounded-full">
                                 {targetMonth} · {fmtOvr(lease.overrideDueDay)}로 적용 중
                               </span>
                             )}
@@ -1963,7 +1963,7 @@ export default function TenantClient({
                                   setOverrideReason(isOverrideActive ? (lease.overrideDueDayReason ?? '') : '')
                                 }
                               }}
-                              className="text-xs text-amber-400 hover:text-amber-300 transition-colors">
+                              className="text-xs text-[var(--warning-fg)] hover:text-[var(--warning-fg)] transition-colors">
                               {showOverrideForm ? '닫기' : isOverrideActive ? '수정' : '조정하기'}
                             </button>
                           </div>
@@ -1985,7 +1985,7 @@ export default function TenantClient({
                                   value={overrideDateInput}
                                   onChange={setOverrideDateInput}
                                   minDate={`${targetMonth}-01`}
-                                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] focus:border-amber-500"
+                                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] focus:border-[var(--warning-ring)]"
                                 />
                               </div>
                               <div className="flex-1 space-y-1">
@@ -1995,7 +1995,7 @@ export default function TenantClient({
                                   value={overrideReason}
                                   onChange={e => setOverrideReason(e.target.value)}
                                   placeholder="예: 급여일 변경"
-                                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-amber-500"
+                                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--warning-ring)]"
                                 />
                               </div>
                             </div>
@@ -2037,7 +2037,7 @@ export default function TenantClient({
                                   } finally { release() }
                                 })
                               }}
-                              className="w-full py-2 bg-amber-500 active:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40">
+                              className="w-full py-2 bg-[var(--warning-solid)] active:bg-[var(--warning-solid)] text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40">
                               {isPending ? '저장 중...' : (() => {
                                 if (!overrideDateInput) return '날짜를 선택하세요'
                                 const selectedYM = overrideDateInput.slice(0, 7)
@@ -2801,7 +2801,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               </div>
               <MoneyInput name="rentAmount" value={rentAmount} onChange={setRentAmount} placeholder="0원" />
               {isNR && selectedRoom && selectedRoom.nonResidentRent == null && (
-                <p className="text-[0.625rem] text-amber-500">
+                <p className="text-[0.625rem] text-[var(--warning-fg)]">
                   이 호실에 비거주 이용료가 설정되어 있지 않습니다. 호실 관리에서 먼저 설정해 주세요.
                 </p>
               )}
@@ -3074,7 +3074,7 @@ function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string; tenant
             const dateLabel = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')}`
             return (
               <li key={f.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)]">
-                <span className={`text-[0.625rem] px-1.5 py-0.5 rounded font-medium ${f.source === 'GENERATED' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'}`}>
+                <span className={`text-[0.625rem] px-1.5 py-0.5 rounded font-medium ${f.source === 'GENERATED' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]'}`}>
                   {f.source === 'GENERATED' ? '서명' : '스캔'}
                 </span>
                 <a href={f.viewUrl} target="_blank" rel="noreferrer" className="flex-1 min-w-0 text-xs text-[var(--warm-dark)] hover:text-[var(--coral)] truncate">

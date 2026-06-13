@@ -1895,12 +1895,12 @@ export default function FinanceClient({
                     <div className="flex items-center gap-1">
                       <span className="text-[var(--warm-muted)]">고정 지출 (예정)</span>
                       {recPendingTotal > 0 && (
-                        <span className="text-[0.5625rem] bg-amber-400/15 text-amber-600 px-1.5 py-0.5 rounded-full font-medium">
+                        <span className="text-[0.5625rem] bg-[var(--warning-bg)] text-[var(--warning-fg)] px-1.5 py-0.5 rounded-full font-medium">
                           {recUnrecordedCount}건 미기록
                         </span>
                       )}
                     </div>
-                    <span className="text-amber-600 font-medium num">
+                    <span className="text-[var(--warning-fg)] font-medium num">
                       <MoneyDisplay amount={recPendingTotal} />
                     </span>
                   </div>
@@ -2172,7 +2172,7 @@ export default function FinanceClient({
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5 mb-0.5">
-                                  {isFixed && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-0.5" />}
+                                  {isFixed && <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)] shrink-0 mt-0.5" />}
                                   <span className="text-[0.625rem] text-[var(--coral)] font-medium">{e.category}</span>
                                   {isUnsettled && <span className="text-[0.625rem] text-[var(--danger-fg)] font-medium">· 미정산</span>}
                                 </div>
@@ -2201,12 +2201,12 @@ export default function FinanceClient({
                       return (
                         <div key={`rec-${r.id}`}
                           onClick={() => { setRecordingRec(r); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
-                          className="border border-amber-200 rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity bg-amber-50/30">
+                          className="border border-[var(--warning-ring)] rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity bg-[var(--warning-bg)]/30">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5 mb-0.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-0.5" />
-                                <span className="text-[0.625rem] text-amber-600 font-medium">{r.category}</span>
+                                <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)] shrink-0 mt-0.5" />
+                                <span className="text-[0.625rem] text-[var(--warning-fg)] font-medium">{r.category}</span>
                                 <span className="text-[0.625rem] text-[var(--warm-muted)]">고정{r.isVariable ? ' · 변동' : ''}</span>
                               </div>
                               <p className="text-sm text-[var(--warm-dark)] font-medium truncate">{r.title}</p>
@@ -2260,7 +2260,7 @@ export default function FinanceClient({
                                 </td>
                                 <td className="px-4 py-3 overflow-hidden">
                                   <div className="flex items-center gap-1.5">
-                                    {e.recurringExpenseId && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="고정지출" />}
+                                    {e.recurringExpenseId && <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)] shrink-0" title="고정지출" />}
                                     <span className="text-xs text-[var(--coral)] font-medium truncate">{e.category}</span>
                                     {e.recurringExpense?.isVariable && <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">변동</span>}
                                   </div>
@@ -2302,7 +2302,7 @@ export default function FinanceClient({
                               </td>
                               <td className="px-4 py-3 overflow-hidden">
                                   <div className="flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)] shrink-0" />
                                     <span className="text-xs text-[var(--coral)] font-medium truncate">{r.category}</span>
                                     {r.isVariable && <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">변동</span>}
                                   </div>
@@ -2317,7 +2317,7 @@ export default function FinanceClient({
                                 {r.isVariable && <span className="text-[0.625rem] text-[var(--warm-muted)]">예상치</span>}
                               </td>
                               <td className="px-4 py-3 overflow-hidden">
-                                <span className="text-xs text-amber-600 font-medium">
+                                <span className="text-xs text-[var(--warning-fg)] font-medium">
                                   {r.isAutoDebit ? '자동이체' : '확인 필요'}
                                 </span>
                               </td>
@@ -2508,7 +2508,7 @@ export default function FinanceClient({
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-[var(--warm-dark)] text-base">{g.accountName}</span>
                       {g.payDayStr !== '미지정' && (
-                        <span className="text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 font-medium">
+                        <span className="text-xs px-2.5 py-1 rounded-full bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)] font-medium">
                           결제일: {g.payDayStr}
                         </span>
                       )}
@@ -2599,7 +2599,7 @@ export default function FinanceClient({
                           })
                         }}
                         disabled={isPending}
-                        className="text-xs text-yellow-400 hover:text-yellow-300 px-3 py-1.5 bg-yellow-500/10 hover:bg-yellow-500/20 rounded-lg transition-colors disabled:opacity-40">
+                        className="text-xs text-[var(--warning-fg)] hover:text-[var(--warning-fg)] px-3 py-1.5 bg-[var(--warning-bg)] hover:bg-[var(--warning-bg)] rounded-lg transition-colors disabled:opacity-40">
                         전체 정산 취소
                       </button>
                     </div>
@@ -2794,7 +2794,7 @@ export default function FinanceClient({
                             </button>
                             <button
                               onClick={() => handleDeactivateAsset(a.id)}
-                              className="text-xs text-amber-400 hover:text-amber-300 px-3 py-1.5 bg-amber-500/10 rounded-lg transition-colors shrink-0">
+                              className="text-xs text-[var(--warning-fg)] hover:text-[var(--warning-fg)] px-3 py-1.5 bg-[var(--warning-bg)] rounded-lg transition-colors shrink-0">
                               해지
                             </button>
                             <button
@@ -2850,7 +2850,7 @@ export default function FinanceClient({
                           <div key={i} className="flex items-center justify-between text-xs">
                             <span className="text-[var(--warm-dark)]">
                               {it.name}
-                              {it.isVariable && <span className="ml-1 text-[0.5625rem] text-amber-600">(변동)</span>}
+                              {it.isVariable && <span className="ml-1 text-[0.5625rem] text-[var(--warning-fg)]">(변동)</span>}
                             </span>
                             <span className="num text-[var(--warm-dark)]">{it.amount.toLocaleString()}원</span>
                           </div>
@@ -2913,7 +2913,7 @@ export default function FinanceClient({
                   </button>
                   {detailExp.settleStatus === 'SETTLED' && (detailExp.payMethod === '신용카드' || detailExp.payMethod === '체크카드') && (
                     <button onClick={() => handleUnsettle(detailExp.id)} disabled={isPending}
-                      className="px-4 py-2.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 text-sm rounded-xl transition-colors disabled:opacity-40">
+                      className="px-4 py-2.5 bg-[var(--warning-bg)] hover:bg-[var(--warning-bg)] text-[var(--warning-fg)] text-sm rounded-xl transition-colors disabled:opacity-40">
                       정산 취소
                     </button>
                   )}
@@ -3832,7 +3832,7 @@ export default function FinanceClient({
                         {isParent && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--coral)]/15 text-[var(--coral)]">묶음 {r.items.length}</span>}
                         {r.isAutoDebit && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">자동이체</span>}
                         {!r.isActive && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">비활성</span>}
-                        {r.activeSince && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600">{r.activeSince.slice(0, 7)}부터</span>}
+                        {r.activeSince && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--warning-bg)] text-[var(--warning-fg)]">{r.activeSince.slice(0, 7)}부터</span>}
                       </div>
                       <p className="text-xs text-[var(--warm-muted)] mt-0.5">
                         매월 {r.dueDay}일 · {r.amount.toLocaleString()}원 · {r.category}
@@ -3898,7 +3898,7 @@ export default function FinanceClient({
                       <span className="text-xs text-[var(--warm-dark)] flex-1 truncate">
                         {it.name}
                         {it.isVariable
-                          ? <span className="ml-1 text-[0.5625rem] text-amber-600 bg-amber-400/15 px-1 py-0.5 rounded-full">변동</span>
+                          ? <span className="ml-1 text-[0.5625rem] text-[var(--warning-fg)] bg-[var(--warning-bg)] px-1 py-0.5 rounded-full">변동</span>
                           : <span className="ml-1 text-[0.5625rem] text-[var(--warm-muted)]">고정</span>}
                       </span>
                       {it.isVariable ? (
@@ -4113,7 +4113,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
           </div>
           <div>
             <p className="text-xs text-[var(--warm-muted)] mb-1">누적 반환</p>
-            <p className="text-base font-semibold text-amber-600"><MoneyDisplay amount={totalReturned} /></p>
+            <p className="text-base font-semibold text-[var(--warning-fg)]"><MoneyDisplay amount={totalReturned} /></p>
           </div>
           <div>
             <p className="text-xs text-[var(--warm-muted)] mb-1">누적 미반환</p>
@@ -4151,7 +4151,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
                         {DEPOSIT_STATUS_LABEL[d.status] ?? d.status}
                       </span>
                       {d.hasNoInRecord && (
-                        <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                        <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]">
                           입금 거래 기록 없음
                         </span>
                       )}
@@ -4163,7 +4163,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
                       {d.totalReturned > 0 && ` · 반환 ${d.totalReturned.toLocaleString()}원`}
                       {d.totalWithheld > 0 && ` · 미반환 ${d.totalWithheld.toLocaleString()}원`}
                       {!d.hasNoInRecord && d.contractDeposit !== d.totalIn && (
-                        <span className="ml-1 text-amber-500">(계약 {d.contractDeposit.toLocaleString()}원)</span>
+                        <span className="ml-1 text-[var(--warning-fg)]">(계약 {d.contractDeposit.toLocaleString()}원)</span>
                       )}
                       {d.status === 'CHECKED_OUT' && d.balance === 0 && (d.totalReturned + d.totalWithheld === 0) && (
                         <span className="ml-1 text-[var(--warm-muted)]">· 퇴실 정리됨</span>
@@ -4199,7 +4199,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
                 <li key={i} className="px-5 py-3 flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                      <span className={`text-xs font-semibold ${e.type === 'IN' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                      <span className={`text-xs font-semibold ${e.type === 'IN' ? 'text-emerald-600' : 'text-[var(--warning-fg)]'}`}>
                         {e.type === 'IN' ? '입금' : '환불'}
                       </span>
                       <span className="text-xs text-[var(--warm-muted)]">{new Date(e.date).toISOString().slice(0, 10)}</span>
@@ -4216,7 +4216,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
                     {e.memo && <p className="text-xs text-[var(--warm-muted)] truncate">메모: {e.memo}</p>}
                   </div>
                   <div className="text-right shrink-0">
-                    <p className={`text-sm font-semibold ${e.type === 'IN' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    <p className={`text-sm font-semibold ${e.type === 'IN' ? 'text-emerald-600' : 'text-[var(--warning-fg)]'}`}>
                       {e.type === 'IN' ? '+' : '−'}{e.amount.toLocaleString()}원
                     </p>
                   </div>
@@ -4323,7 +4323,7 @@ function ReserveTab({
   const typeLabel = (t: ReserveTxn['type']) =>
     t === 'DEPOSIT' ? '적립' : t === 'WITHDRAW_DIRECT' ? '직접 인출' : '사후 정산'
   const typeColor = (t: ReserveTxn['type']) =>
-    t === 'DEPOSIT' ? 'text-emerald-600' : 'text-amber-600'
+    t === 'DEPOSIT' ? 'text-emerald-600' : 'text-[var(--warning-fg)]'
 
   return (
     <div className="space-y-5">
@@ -4344,7 +4344,7 @@ function ReserveTab({
           </div>
           <div>
             <p className="text-xs text-[var(--warm-muted)] mb-1">{targetMonth} 사용</p>
-            <p className="text-base font-semibold text-amber-600">
+            <p className="text-base font-semibold text-[var(--warning-fg)]">
               −<MoneyDisplay amount={monthly.withdraw} />
             </p>
           </div>

@@ -59,7 +59,7 @@ function ConflictRow({
         <div className="text-xs text-[var(--warm-muted)] space-y-0.5">
           <p>기존 호실: {conflict.existingRoom ?? '없음'} ({conflict.existingStatus ?? '—'})</p>
           <p>새 호실: {conflict.incomingRoom ?? '없음'}</p>
-          {conflict.sameRoom && <p className="text-amber-400">같은 호실 — 기존 입주자 퇴실 처리 필요</p>}
+          {conflict.sameRoom && <p className="text-[var(--warning-fg)]">같은 호실 — 기존 입주자 퇴실 처리 필요</p>}
         </div>
       )
     }
@@ -127,7 +127,7 @@ function ResBtn({ active, onClick, label, color = 'default' }: {
   const baseStyle = 'text-xs px-2.5 py-1.5 rounded-lg font-medium transition-colors border'
   const activeStyle =
     color === 'coral' ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--warm-dark)]' :
-    color === 'amber' ? 'bg-amber-500 border-amber-500 text-white' :
+    color === 'amber' ? 'bg-[var(--warning-solid)] border-[var(--warning-ring)] text-[var(--cream)]' :
     'bg-[var(--warm-dark)] border-[var(--warm-dark)] text-[var(--canvas)]'
   const inactiveStyle = 'bg-transparent border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'
   return (
@@ -278,7 +278,7 @@ export default function DataButtons() {
 
           {/* 내보내기 전용 시트 안내 */}
           {preview.hasPaymentSheet && (
-            <div className="mx-6 mt-4 px-4 py-3 rounded-xl text-xs text-amber-700 bg-amber-50 border border-amber-200">
+            <div className="mx-6 mt-4 px-4 py-3 rounded-xl text-xs text-[var(--warning-fg)] bg-[var(--warning-bg)] border border-[var(--warning-ring)]">
               <span className="font-semibold">수납현황</span> 시트는 내보내기 전용입니다. 가져오기 시 무시됩니다.
             </div>
           )}
@@ -307,7 +307,7 @@ export default function DataButtons() {
                     </button>
                     {sheet === 'tenants' && (
                       <button type="button" onClick={() => setBulk(sheet, 'archive')}
-                        className="text-xs px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-amber-400 transition-colors">
+                        className="text-xs px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warning-fg)] transition-colors">
                         전체 퇴실→신규
                       </button>
                     )}

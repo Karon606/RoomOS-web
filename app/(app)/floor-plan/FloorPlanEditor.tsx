@@ -1208,7 +1208,7 @@ export default function FloorPlanEditor({
             {bgDataUrl && (<>
               {divider}
               <button onClick={() => setShowBg(v => !v)}
-                className={showBg ? `${btnOn()} bg-amber-500` : btnOff}
+                className={showBg ? `${btnOn()} bg-[var(--warning-solid)]` : btnOff}
                 title="업로드한 도면 배경 이미지 표시/숨기기">
                 도면 배경
               </button>

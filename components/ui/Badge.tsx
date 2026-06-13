@@ -23,7 +23,7 @@ const SOLID_CLS: Record<SemanticTone, string> = {
 const PALE_CLS: Record<string, string> = {
   'pale-coral':  'bg-[var(--persimmon-l)] text-[var(--persimmon-d)] ring-[var(--persimmon)]/20',
   'pale-green':  'bg-[#eef2e5] text-[#4e6834] ring-[var(--viz-3)]/30',
-  'pale-amber':  'bg-amber-50 text-amber-700 ring-amber-200',
+  'pale-amber':  'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-[var(--warning-ring)]',
   'pale-blue':   'bg-blue-50 text-blue-700 ring-blue-200',
   'pale-red':    'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]',
   'pale-teal':   'bg-teal-50 text-teal-700 ring-teal-200',
@@ -31,7 +31,7 @@ const PALE_CLS: Record<string, string> = {
   // legacy alias — 기존 코드 호환
   'coral':       'bg-[var(--persimmon-l)] text-[var(--persimmon-d)] ring-[var(--persimmon)]/20',
   'green':       'bg-[#eef2e5] text-[#4e6834] ring-[var(--viz-3)]/30',
-  'amber':       'bg-amber-50 text-amber-700 ring-amber-200',
+  'amber':       'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-[var(--warning-ring)]',
   'blue':        'bg-blue-50 text-blue-700 ring-blue-200',
   'red':         'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]',
   'teal':        'bg-teal-50 text-teal-700 ring-teal-200',

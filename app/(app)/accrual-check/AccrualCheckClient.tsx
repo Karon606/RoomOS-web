@@ -24,7 +24,7 @@ const CATEGORY_LABEL: Record<SuspectCategory, string> = {
 }
 
 const CATEGORY_COLOR: Record<SuspectCategory, string> = {
-  'late-payment':   'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+  'late-payment':   'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]',
   'pre-payment':    'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
   'mismatch-other': 'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]',
 }
@@ -102,7 +102,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
           <span>전체: <span className="font-semibold text-[var(--warm-dark)]">{result.total}건</span></span>
           <span>일치: <span className="font-semibold text-[var(--warm-dark)]">{result.matched}건</span></span>
           <span>양도인: <span className="font-semibold text-[var(--warm-muted)]">{result.prevOwnerCount}건</span></span>
-          <span>지연 입금: <span className="font-semibold text-amber-600">{counts['late-payment']}건</span></span>
+          <span>지연 입금: <span className="font-semibold text-[var(--warning-fg)]">{counts['late-payment']}건</span></span>
           <span>선납: <span className="font-semibold text-emerald-600">{counts['pre-payment']}건</span></span>
           <span>월 불일치: <span className="font-semibold text-[var(--danger-fg)]">{counts['mismatch-other']}건</span></span>
         </div>
@@ -135,7 +135,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
           <button
             onClick={handleBulkLate}
             disabled={isPending}
-            className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500 text-white hover:opacity-90 disabled:opacity-60 transition-opacity"
+            className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold bg-[var(--warning-solid)] text-[var(--cream)] hover:opacity-90 disabled:opacity-60 transition-opacity"
             title="지연 입금 record 전체를 직전 월로 한 번에 이동"
           >
             {isPending ? '적용 중...' : `지연 입금 ${counts['late-payment']}건 일괄 적용`}
@@ -177,7 +177,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
                 {s.inferredAccrualMonth && s.inferredAccrualMonth !== s.targetMonth && (
                   <>
                     <span className="text-[var(--warm-muted)]">→ 추정:</span>
-                    <span className="font-semibold text-amber-600">{s.inferredAccrualMonth}</span>
+                    <span className="font-semibold text-[var(--warning-fg)]">{s.inferredAccrualMonth}</span>
                   </>
                 )}
                 <span className="text-[var(--warm-muted)]">·</span>

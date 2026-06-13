@@ -24,7 +24,7 @@ const CATEGORIES = ['시설', '소음', '청결', '편의', '기타'] as const
 type Category = (typeof CATEGORIES)[number]
 
 const CATEGORY_COLORS: Record<string, { bg: string; fg: string; ring: string }> = {
-  시설: { bg: 'bg-amber-50',  fg: 'text-amber-700',  ring: 'ring-amber-200'  },
+  시설: { bg: 'bg-[var(--warning-bg)]',  fg: 'text-[var(--warning-fg)]',  ring: 'ring-[var(--warning-ring)]'  },
   소음: { bg: 'bg-[var(--danger-bg)]',   fg: 'text-[var(--danger-fg)]',   ring: 'ring-[var(--danger-ring)]'   },
   청결: { bg: 'bg-cyan-50',   fg: 'text-cyan-700',   ring: 'ring-cyan-200'   },
   편의: { bg: 'bg-violet-50', fg: 'text-violet-700', ring: 'ring-violet-200' },
@@ -395,7 +395,7 @@ export default function RequestsClient({
                   )}
                   <span className="text-[0.625rem] text-[var(--warm-muted)]">요청 {fmtDate(r.requestDate)}</span>
                   {r.targetDate && !resolved && (
-                    <span className="text-[0.625rem] font-medium text-amber-600">목표 {fmtDate(r.targetDate)}</span>
+                    <span className="text-[0.625rem] font-medium text-[var(--warning-fg)]">목표 {fmtDate(r.targetDate)}</span>
                   )}
                   {resolved && (
                     <span className="text-[0.625rem] text-emerald-600">완료 {fmtDate(r.resolvedAt)}</span>

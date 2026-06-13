@@ -1472,29 +1472,29 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                       })
                     }
                     return editingAutoPay ? (
-                      <div className="bg-amber-50 border border-amber-200 rounded-sm px-3 py-2.5 space-y-2">
-                        <p className="text-xs font-semibold text-amber-700">양도인 수납 — 납부일 직접 입력</p>
+                      <div className="bg-[var(--info-bg)] border border-[var(--info-ring)] rounded-sm px-3 py-2.5 space-y-2">
+                        <p className="text-xs font-semibold text-[var(--info-fg)]">양도인 수납 — 납부일 직접 입력</p>
                         <div className="flex gap-2 items-center">
                           <div className="flex-1">
                             <DatePicker value={autoPayDate} onChange={setAutoPayDate}
-                              className="bg-[var(--canvas)] border border-amber-200 rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
+                              className="bg-[var(--canvas)] border border-[var(--info-ring)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
                           </div>
                           <button onClick={handleSaveAutoPay} disabled={isPending || !autoPayDate}
-                            className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors disabled:opacity-50">저장</button>
+                            className="px-3 py-1.5 text-xs font-semibold text-white bg-[var(--info-solid)] hover:bg-[var(--info-solid)] rounded-lg transition-colors disabled:opacity-50">저장</button>
                           <button onClick={() => setEditingAutoPay(false)}
-                            className="px-3 py-1.5 text-xs text-amber-600 rounded-lg border border-amber-200 hover:bg-amber-100 transition-colors">취소</button>
+                            className="px-3 py-1.5 text-xs text-[var(--info-fg)] rounded-lg border border-[var(--info-ring)] hover:bg-[var(--info-bg)] transition-colors">취소</button>
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-sm px-3 py-2.5">
+                      <div className="flex items-center justify-between bg-[var(--info-bg)] border border-[var(--info-ring)] rounded-sm px-3 py-2.5">
                         <div>
-                          <p className="text-xs font-semibold text-amber-700">양도인 수납</p>
+                          <p className="text-xs font-semibold text-[var(--info-fg)]">양도인 수납</p>
                           <button onClick={() => { setAutoPayDate(getAutoDefault()); setEditingAutoPay(true) }}
-                            className="text-[0.625rem] text-amber-600 mt-0.5 hover:underline text-left">
+                            className="text-[0.625rem] text-[var(--info-fg)] mt-0.5 hover:underline text-left">
                             {getDueDateStr()} 납부 (자동) · <span className="underline">날짜 수정</span>
                           </button>
                         </div>
-                        <p className="text-xs font-semibold text-amber-700">{lease!.rentAmount.toLocaleString()}원</p>
+                        <p className="text-xs font-semibold text-[var(--info-fg)]">{lease!.rentAmount.toLocaleString()}원</p>
                       </div>
                     )
                   })()}
@@ -1513,9 +1513,9 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                     </>
                   )}
                   {prevOwnerPaid > 0 && (
-                    <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                      <p className="text-xs text-amber-700">양도인 귀속</p>
-                      <p className="text-xs font-semibold text-amber-700">{prevOwnerPaid.toLocaleString()}원</p>
+                    <div className="flex items-center justify-between bg-[var(--info-bg)] border border-[var(--info-ring)] rounded-xl px-3 py-2">
+                      <p className="text-xs text-[var(--info-fg)]">양도인 귀속</p>
+                      <p className="text-xs font-semibold text-[var(--info-fg)]">{prevOwnerPaid.toLocaleString()}원</p>
                     </div>
                   )}
                   {regularRecords.length > 0 && (
@@ -1607,9 +1607,9 @@ function DashPayRow({ p, isPreAcq, onEdit, onDelete, color }: {
   onEdit: (p: DashPayRecord) => void; onDelete: (id: string) => void
   color: 'purple' | 'amber' | 'default'
 }) {
-  const bg = color === 'purple' ? 'bg-purple-50 border border-purple-200' : color === 'amber' ? 'bg-amber-50 border border-amber-200' : 'bg-[var(--canvas)]'
-  const textColor = color === 'purple' ? 'text-purple-600' : color === 'amber' ? 'text-amber-600' : 'text-[var(--warm-mid)]'
-  const amountColor = color === 'purple' ? 'text-purple-700' : color === 'amber' ? 'text-amber-700' : 'text-[var(--warm-dark)]'
+  const bg = color === 'purple' ? 'bg-purple-50 border border-purple-200' : color === 'amber' ? 'bg-[var(--info-bg)] border border-[var(--info-ring)]' : 'bg-[var(--canvas)]'
+  const textColor = color === 'purple' ? 'text-purple-600' : color === 'amber' ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'
+  const amountColor = color === 'purple' ? 'text-purple-700' : color === 'amber' ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'
   const DAYS = ['일', '월', '화', '수', '목', '금', '토']
   const fmtD = (d: Date | string) => { const dt = new Date(d); return `${dt.getMonth()+1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})` }
   return (
@@ -1618,7 +1618,7 @@ function DashPayRow({ p, isPreAcq, onEdit, onDelete, color }: {
         <p className={`text-xs ${textColor}`}>
           {p.seqNo}회차 · {fmtD(p.payDate)} · {p.payMethod ?? '—'}
           {color === 'purple' && <span className="ml-1.5 text-[0.625rem] font-semibold bg-purple-200 text-purple-800 rounded px-1 py-0.5">보증금</span>}
-          {isPreAcq && <span className="ml-1.5 text-[0.625rem] font-semibold bg-amber-200 text-amber-800 rounded px-1 py-0.5">양도인</span>}
+          {isPreAcq && <span className="ml-1.5 text-[0.625rem] font-semibold bg-[var(--info-bg)] text-[var(--info-fg)] rounded px-1 py-0.5">양도인</span>}
         </p>
         {p.memo && !p.isDeposit && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
       </div>
@@ -1638,8 +1638,8 @@ function DashEditRow({ editAmount, editDate, editPayMethod, editMemo, setEditAmo
   setEditAmount: (v: number) => void; setEditDate: (v: string) => void; setEditPayMethod: (v: string) => void; setEditMemo: (v: string) => void
   onSave: () => void; onCancel: () => void; isPending: boolean; color: 'purple' | 'amber' | 'default'
 }) {
-  const borderColor = color === 'purple' ? 'border-purple-400' : color === 'amber' ? 'border-amber-400' : 'border-[var(--coral)]'
-  const bg = color === 'purple' ? 'bg-purple-50' : color === 'amber' ? 'bg-amber-50' : 'bg-[var(--canvas)]'
+  const borderColor = color === 'purple' ? 'border-purple-400' : color === 'amber' ? 'border-[var(--info-ring)]' : 'border-[var(--coral)]'
+  const bg = color === 'purple' ? 'bg-purple-50' : color === 'amber' ? 'bg-[var(--info-bg)]' : 'bg-[var(--canvas)]'
   return (
     <div className={`rounded-xl border ${borderColor} ${bg} px-3 py-2.5 space-y-2`}>
       <div className="grid grid-cols-2 gap-2">

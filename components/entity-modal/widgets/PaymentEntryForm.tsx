@@ -138,7 +138,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
               })}
             </select>
             {forcedTm !== 'auto' && (
-              <p className="text-[0.625rem] text-amber-600 leading-relaxed">
+              <p className="text-[0.625rem] text-[var(--warning-fg)] leading-relaxed">
                 FIFO 우회 — 입력 금액이 한 달 이용료를 초과하면 그 다음 달로 이월됩니다.
               </p>
             )}

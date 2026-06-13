@@ -175,14 +175,14 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
           <div key={p.id}
             className={`rounded-sm px-3 py-2.5 space-y-1.5 ${
               p.isDeposit ? 'bg-purple-50 border border-purple-200' :
-              prevOwner ? 'bg-amber-50 border border-amber-200' : 'bg-[var(--canvas)]'
+              prevOwner ? 'bg-[var(--info-bg)] border border-[var(--info-ring)]' : 'bg-[var(--canvas)]'
             }`}>
             {/* 줄1: 회차·날짜·방법 + 금액(우측, 안 줄임) */}
             <div className="flex items-baseline justify-between gap-2">
-              <p className={`text-xs ${p.isDeposit ? 'text-purple-600' : prevOwner ? 'text-amber-600' : 'text-[var(--warm-mid)]'}`}>
+              <p className={`text-xs ${p.isDeposit ? 'text-purple-600' : prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'}`}>
                 {displaySeq}회차 · {fmtDate(p.payDate)} · {p.payMethod ?? '—'}
               </p>
-              <span className={`text-sm font-semibold whitespace-nowrap ${p.isDeposit ? 'text-purple-700' : prevOwner ? 'text-amber-700' : 'text-[var(--warm-dark)]'}`}>
+              <span className={`text-sm font-semibold whitespace-nowrap ${p.isDeposit ? 'text-purple-700' : prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'}`}>
                 {p.actualAmount.toLocaleString()}원
               </span>
             </div>
@@ -190,7 +190,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-1 flex-wrap">
                 {p.isDeposit && <span className="text-[0.625rem] font-semibold bg-purple-200 text-purple-800 rounded px-1.5 py-0.5">보증금</span>}
-                {prevOwner && <span className="text-[0.625rem] font-semibold bg-amber-200 text-amber-800 rounded px-1.5 py-0.5">양도인</span>}
+                {prevOwner && <span className="text-[0.625rem] font-semibold bg-[var(--info-bg)] text-[var(--info-fg)] rounded px-1.5 py-0.5">양도인</span>}
                 {!p.isDeposit && (
                   <span className={`text-[0.625rem] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap ${
                     p.targetMonth === targetMonth

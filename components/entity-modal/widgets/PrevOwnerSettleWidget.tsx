@@ -74,7 +74,7 @@ export function PrevOwnerSettleWidget({ leaseTermId, targetMonth, canEdit, onCha
         </div>
         {canSettle && (
           <button type="button" onClick={handleSettle} disabled={pending}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50">
+            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--warning-bg)] border border-[var(--warning-ring)] text-[var(--warning-fg)] hover:bg-[var(--warning-bg)] transition-colors disabled:opacity-50">
             양도인 정산
           </button>
         )}

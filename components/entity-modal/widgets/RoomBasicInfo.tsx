@@ -48,7 +48,7 @@ export function RoomBasicInfo({ room, onApplyScheduledNow }: {
       {room.scheduledRent != null && (
         <>
           <InfoRow label="예약 이용료" value={
-            <span className="text-amber-400">
+            <span className="text-[var(--warning-fg)]">
               <MoneyDisplay amount={room.scheduledRent} />
               {room.rentUpdateDate && (
                 <span className="text-[var(--warm-muted)] ml-1 text-xs">({fmtDate(room.rentUpdateDate)} 적용)</span>
@@ -58,7 +58,7 @@ export function RoomBasicInfo({ room, onApplyScheduledNow }: {
           {onApplyScheduledNow && isVacant && (
             <div className="flex justify-end">
               <button type="button" onClick={onApplyScheduledNow} disabled={isPending}
-                className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 ring-1 ring-amber-200 hover:bg-amber-100 transition-colors disabled:opacity-60">
+                className="text-xs px-3 py-1.5 rounded-lg bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)] hover:bg-[var(--warning-bg)] transition-colors disabled:opacity-60">
                 {isPending ? '적용 중...' : '예정 가격 즉시 적용'}
               </button>
             </div>
@@ -75,7 +75,7 @@ export function RoomBasicInfo({ room, onApplyScheduledNow }: {
           } />
           {room.nonResidentScheduled != null && (
             <InfoRow label="비거주 예약료" value={
-              <span className="text-amber-400">
+              <span className="text-[var(--warning-fg)]">
                 <MoneyDisplay amount={room.nonResidentScheduled} />
                 {room.nonResidentRentDate && (
                   <span className="text-[var(--warm-muted)] ml-1 text-xs">({fmtDate(room.nonResidentRentDate)} 적용)</span>

@@ -227,7 +227,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                 <div className="flex justify-between"><span className="text-[var(--warm-muted)]">매출</span><span className="text-[var(--warm-dark)]">{fmt(r.revenue)}</span></div>
                 <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기타수익</span><span className="text-[var(--warm-mid)]">{fmt(r.extraIncome)}</span></div>
                 <div className="flex justify-between"><span className="text-[var(--warm-muted)]">지출</span><span className="text-[var(--warm-mid)]">{fmt(r.expense)}</span></div>
-                <div className="flex justify-between"><span className="text-[var(--warm-muted)]">월말 미수</span><span className="text-amber-600">{r.unpaidAmount > 0 ? fmt(r.unpaidAmount) : '—'}</span></div>
+                <div className="flex justify-between"><span className="text-[var(--warm-muted)]">월말 미수</span><span className="text-[var(--warning-fg)]">{r.unpaidAmount > 0 ? fmt(r.unpaidAmount) : '—'}</span></div>
                 {summary.prevYear && (
                   <div className="col-span-2 flex justify-between pt-1 border-t border-[var(--warm-border)]/40">
                     <span className="text-[var(--warm-muted)]">전년 매출</span>
@@ -272,7 +272,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
             <div className="flex justify-between"><span className="text-[var(--warm-muted)]">매출</span><span className="text-[var(--warm-dark)] font-medium">{fmt(summary.totalRevenue)}</span></div>
             <div className="flex justify-between"><span className="text-[var(--warm-muted)]">기타수익</span><span className="text-[var(--warm-mid)]">{fmt(summary.totalExtraIncome)}</span></div>
             <div className="flex justify-between"><span className="text-[var(--warm-muted)]">지출</span><span className="text-[var(--warm-mid)]">{fmt(summary.totalExpense)}</span></div>
-            <div className="flex justify-between"><span className="text-[var(--warm-muted)]">월말 미수</span><span className="text-amber-600">{fmt(summary.endingUnpaid)}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--warm-muted)]">월말 미수</span><span className="text-[var(--warning-fg)]">{fmt(summary.endingUnpaid)}</span></div>
             {summary.prevYear && summary.prevYear.totalRevenue > 0 && (() => {
               const totalDelta = summary.totalRevenue - summary.prevYear.totalRevenue
               return (
@@ -339,7 +339,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                     }`}>
                       {r.profit === 0 ? '—' : (r.profit > 0 ? '+' : '-') + Math.abs(r.profit).toLocaleString() + '원'}
                     </td>
-                    <td className="px-4 py-3 text-right text-amber-600">{r.unpaidAmount > 0 ? fmt(r.unpaidAmount) : '—'}</td>
+                    <td className="px-4 py-3 text-right text-[var(--warning-fg)]">{r.unpaidAmount > 0 ? fmt(r.unpaidAmount) : '—'}</td>
                     <td className="px-4 py-3 w-44">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
@@ -382,7 +382,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                 <td className={`px-4 py-3 text-right ${summary.totalProfit >= 0 ? 'text-emerald-600' : 'text-[var(--danger-fg)]'}`}>
                   {(summary.totalProfit >= 0 ? '+' : '-') + Math.abs(summary.totalProfit).toLocaleString() + '원'}
                 </td>
-                <td className="px-4 py-3 text-right text-amber-600">{fmt(summary.endingUnpaid)}</td>
+                <td className="px-4 py-3 text-right text-[var(--warning-fg)]">{fmt(summary.endingUnpaid)}</td>
                 <td className="px-4 py-3"></td>
               </tr>
             </tbody>

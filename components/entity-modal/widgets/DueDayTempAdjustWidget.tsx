@@ -139,12 +139,12 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
   const deferToUnpaid = !!firstUnpaidMonth && overrideMonth === firstUnpaidMonth
 
   return (
-    <div className="border-t border-amber-200 px-6 py-3 shrink-0 bg-amber-50">
+    <div className="border-t border-[var(--warning-ring)] px-6 py-3 shrink-0 bg-[var(--warning-bg)]">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs font-medium text-amber-400">납부일 임시 조정</p>
+          <p className="text-xs font-medium text-[var(--warning-fg)]">납부일 임시 조정</p>
           {isActive ? (
-            <p className="text-xs text-amber-700 mt-0.5">
+            <p className="text-xs text-[var(--warning-fg)] mt-0.5">
               {room.overrideDueDayMonth && `${monthLabel(room.overrideDueDayMonth)}분 `}납부일: <span className="font-bold">{overrideLabel}</span>
               {room.overrideDueDayReason && ` (${room.overrideDueDayReason})`}
             </p>
@@ -169,7 +169,7 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
           )}
           {canEdit && (
             <button onClick={handleOpenForm}
-              className="text-xs text-amber-600 hover:text-amber-700 px-2 py-1 rounded-lg border border-amber-200 hover:border-amber-400 transition-colors">
+              className="text-xs text-[var(--warning-fg)] hover:text-[var(--warning-fg)] px-2 py-1 rounded-lg border border-[var(--warning-ring)] hover:border-[var(--warning-ring)] transition-colors">
               {showForm ? '닫기' : (isActive ? '수정' : '조정하기')}
             </button>
           )}
@@ -178,13 +178,13 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
       {showForm && (
         <div className="mt-3 space-y-2">
           {/* 대상 청구 월 — 기본은 미납월. '다른 달' 옵션으로 변경 */}
-          <div className="text-xs text-amber-700">
+          <div className="text-xs text-[var(--warning-fg)]">
             {deferToUnpaid
               ? <>밀린 <span className="font-bold">{monthLabel(overrideMonth)}분</span>을 미루는 중</>
               : <><span className="font-bold">{monthLabel(overrideMonth)}분</span> 납부일 조정 중</>}
             {monthOptions.length > 1 && (
               <button type="button" onClick={() => setShowMonthOpt(v => !v)}
-                className="ml-2 text-amber-600 underline hover:text-amber-700">{showMonthOpt ? '닫기' : '다른 달'}</button>
+                className="ml-2 text-[var(--warning-fg)] underline hover:text-[var(--warning-fg)]">{showMonthOpt ? '닫기' : '다른 달'}</button>
             )}
           </div>
           {showMonthOpt && (
@@ -192,8 +192,8 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
               {monthOptions.map(m => (
                 <button key={m} type="button" onClick={() => setOverrideMonth(m)}
                   className={`text-xs px-2 py-1 rounded-lg border transition-colors ${overrideMonth === m
-                    ? 'bg-amber-500 text-white border-amber-500'
-                    : 'bg-[var(--canvas)] text-amber-700 border-amber-200 hover:border-amber-400'}`}>
+                    ? 'bg-[var(--warning-solid)] text-[var(--cream)] border-[var(--warning-ring)]'
+                    : 'bg-[var(--canvas)] text-[var(--warning-fg)] border-[var(--warning-ring)] hover:border-[var(--warning-ring)]'}`}>
                   {monthLabel(m)}{firstUnpaidMonth === m ? ' (미납)' : ''}
                 </button>
               ))}
@@ -203,16 +203,16 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
             <div className="flex-1 space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">조정 납부일</label>
               <DatePicker value={dateInput} onChange={setDateInput} minDate={`${overrideMonth}-01`}
-                className="bg-[var(--canvas)] border border-amber-200 rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] focus:border-amber-500" />
+                className="bg-[var(--canvas)] border border-[var(--warning-ring)] rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] focus:border-[var(--warning-ring)]" />
             </div>
             <div className="flex-1 space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">사유 (선택)</label>
               <input type="text" placeholder="사유" value={reason} onChange={e => setReason(e.target.value)}
-                className="w-full bg-[var(--canvas)] border border-amber-200 rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-amber-500" />
+                className="w-full bg-[var(--canvas)] border border-[var(--warning-ring)] rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--warning-ring)]" />
             </div>
           </div>
           <button disabled={!dateInput || pending} onClick={handleSave}
-            className="w-full py-2 bg-amber-500 active:bg-amber-600 hover:bg-amber-400 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors">
+            className="w-full py-2 bg-[var(--warning-solid)] hover:opacity-90 disabled:opacity-50 text-[var(--cream)] text-sm font-semibold rounded-lg transition-colors">
             {pending ? '저장 중...' : (() => {
               if (!dateInput) return '날짜를 선택하세요'
               const d = new Date(dateInput + 'T00:00:00')
