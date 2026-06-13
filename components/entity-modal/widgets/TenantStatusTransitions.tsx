@@ -10,6 +10,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { Modal } from '@/components/ui/Modal'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
@@ -177,15 +178,17 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
         })}
       </div>
 
-      {/* 미니폼 모달 — z=300 (셸 위) */}
+      {/* 미니폼 모달 — 엔티티 모달 위에 겹침 (§12: z 토큰 260=modal-2, 구 z-confirm 오용 교정) */}
       {active && (
-        <div className="fixed inset-0 bg-black/70 z-[var(--z-confirm)] flex items-center justify-center p-4"
-          onClick={() => { if (!pending) setActive(null) }}>
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col"
-            onClick={e => e.stopPropagation()}>
-            <div className="px-5 py-4 border-b border-[var(--warm-border)]">
-              <h2 className="text-sm font-bold text-[var(--warm-dark)]">{active.tenantName}님 — {active.def.label}</h2>
+        <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null}
+          onClose={() => { if (!pending) setActive(null) }}
+          title={`${active.tenantName}님 — ${active.def.label}`}
+          footer={
+            <div className="flex gap-2">
+              <Btn variant="secondary" size="md" onClick={() => setActive(null)} disabled={pending} className="flex-1">취소</Btn>
+              <Btn variant="primary" size="md" onClick={submit} disabled={pending} className="flex-1">{pending ? '처리 중…' : '확인'}</Btn>
             </div>
+          }>
             <div className="px-5 py-4 space-y-3">
               {['moveInDate', 'expectedMoveOut', 'moveOutDate'].includes(active.def.field ?? '') && (
                 <div className="space-y-1.5">
@@ -210,33 +213,16 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                 </div>
               )}
             </div>
-            <div className="px-5 py-3 border-t border-[var(--warm-border)] flex gap-2">
-              <Btn variant="secondary" size="md" onClick={() => setActive(null)} disabled={pending} className="flex-1">취소</Btn>
-              <Btn variant="primary" size="md" onClick={submit} disabled={pending} className="flex-1">{pending ? '처리 중…' : '확인'}</Btn>
-            </div>
-          </div>
-        </div>
+      </Modal>
       )}
 
-      {/* 퇴실 정산 여부 팝업 — 퇴실일이 납입일과 가까울 때만. 날짜는 이미 저장됨. */}
+      {/* 퇴실 정산 여부 팝업 — 퇴실일이 납입일과 가까울 때만. 날짜는 이미 저장됨. (§12: 구 z-[310] raw 교정) */}
       {prorateAsk && (
-        <div className="fixed inset-0 bg-black/70 z-[310] flex items-center justify-center p-4"
-          onClick={() => setProrateAsk(null)}>
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col"
-            onClick={e => e.stopPropagation()}>
-            <div className="px-5 py-4 border-b border-[var(--warm-border)]">
-              <h2 className="text-sm font-bold text-[var(--warm-dark)]">{tenantName}님 — 퇴실 정산</h2>
-            </div>
-            <div className="px-5 py-4 space-y-2">
-              <p className="text-sm text-[var(--warm-dark)] leading-relaxed">
-                퇴실 예정일이 납입일과 가깝습니다. 선납 기준 <b>일할로 퇴실 정산</b>을 하시겠어요?
-              </p>
-              <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
-                · <b>예</b> — 수납 화면의 퇴실 정산으로 이동해 일수만큼 계산(미납 시 정산 후 입금 / 완납 시 환불).<br />
-                · <b>아니오</b> — 퇴실 예정일만 저장(이번 달 풀 청구 유지).
-              </p>
-            </div>
-            <div className="px-5 py-3 border-t border-[var(--warm-border)] flex gap-2">
+        <Modal open z={260} width="sm"
+          onClose={() => setProrateAsk(null)}
+          title={`${tenantName}님 — 퇴실 정산`}
+          footer={
+            <div className="flex gap-2">
               <Btn variant="secondary" size="md" onClick={() => setProrateAsk(null)} className="flex-1">아니오</Btn>
               <Btn variant="primary" size="md" className="flex-1"
                 onClick={() => {
@@ -246,8 +232,17 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                 예, 정산하기
               </Btn>
             </div>
-          </div>
-        </div>
+          }>
+            <div className="px-5 py-4 space-y-2">
+              <p className="text-sm text-[var(--warm-dark)] leading-relaxed">
+                퇴실 예정일이 납입일과 가깝습니다. 선납 기준 <b>일할로 퇴실 정산</b>을 하시겠어요?
+              </p>
+              <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
+                · <b>예</b> — 수납 화면의 퇴실 정산으로 이동해 일수만큼 계산(미납 시 정산 후 입금 / 완납 시 환불).<br />
+                · <b>아니오</b> — 퇴실 예정일만 저장(이번 달 풀 청구 유지).
+              </p>
+            </div>
+      </Modal>
       )}
     </>
   )

@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import type { Conflict, PreviewResult } from '@/lib/import-types'
+import { Modal } from '@/components/ui/Modal'
 
 type SheetResult = { imported: number; skipped: number; errors: string[] }
 type Resolution = 'overwrite' | 'keep' | 'archive'
@@ -254,26 +255,26 @@ export default function DataButtons() {
     const hasConflicts = preview.conflicts.length > 0
 
     return (
-      <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}
-        onClick={close}>
-        <div className="w-full max-w-lg bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl flex flex-col max-h-[88vh]"
-          onClick={e => e.stopPropagation()}>
-
-          {/* 헤더 */}
-          <div className="flex items-start justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-            <div>
-              <h3 className="font-semibold text-[var(--warm-dark)]">
-                {hasConflicts ? '중복 데이터 발견' : '가져오기 확인'}
-              </h3>
-              {summaryParts.length > 0 && (
-                <p className="text-xs text-[var(--warm-muted)] mt-0.5">{summaryParts.join(' · ')}</p>
-              )}
-              {hasConflicts && (
-                <p className="text-xs text-[var(--warm-muted)] mt-0.5">충돌 {preview.conflicts.length}건 — 각 항목의 처리 방법을 선택하세요</p>
-              )}
-            </div>
-            <button onClick={close} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none ml-4">✕</button>
+      <Modal open onClose={close} width="lg"
+        // 처리 방법을 하나라도 직접 고른 뒤에는 §13.2 dirty — 배경클릭 오조작으로 분석 결과 유실 방지
+        dirty={Object.keys(resolutions).length > 0}
+        title={hasConflicts ? '중복 데이터 발견' : '가져오기 확인'}
+        subtitle={[
+          summaryParts.length > 0 ? summaryParts.join(' · ') : null,
+          hasConflicts ? `충돌 ${preview.conflicts.length}건 — 각 항목의 처리 방법을 선택하세요` : null,
+        ].filter(Boolean).join(' / ')}
+        footer={
+          <div className="flex gap-2">
+            <button onClick={close}
+              className="flex-1 py-2.5 bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
+              취소
+            </button>
+            <button onClick={() => applyImport(file, resolutions)}
+              className="flex-1 py-2.5 bg-[var(--coral)] text-white text-sm font-medium rounded-xl transition-colors">
+              가져오기 적용
+            </button>
           </div>
+        }>
 
           {/* 내보내기 전용 시트 안내 */}
           {preview.hasPaymentSheet && (
@@ -283,7 +284,7 @@ export default function DataButtons() {
           )}
 
           {/* 충돌 목록 */}
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+          <div className="px-6 py-4 space-y-6">
             {conflictsBySheet.length === 0 && !preview.hasPaymentSheet && (
               <p className="text-sm text-[var(--warm-muted)] text-center py-4">충돌 없음 — 모든 데이터를 가져올 수 있습니다.</p>
             )}
@@ -321,20 +322,7 @@ export default function DataButtons() {
               </div>
             ))}
           </div>
-
-          {/* 푸터 */}
-          <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-            <button onClick={close}
-              className="flex-1 py-2.5 bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
-              취소
-            </button>
-            <button onClick={() => applyImport(file, resolutions)}
-              className="flex-1 py-2.5 bg-[var(--coral)] text-white text-sm font-medium rounded-xl transition-colors">
-              가져오기 적용
-            </button>
-          </div>
-        </div>
-      </div>
+      </Modal>
     )
   }
 
@@ -347,14 +335,8 @@ export default function DataButtons() {
     const allErrors = Object.entries(results).flatMap(([sheet, r]) => r.errors.map(e => `[${sheet}] ${e}`))
 
     return (
-      <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }}
-        onClick={close}>
-        <div className="w-full max-w-sm bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-6 space-y-4"
-          onClick={e => e.stopPropagation()}>
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-sm text-[var(--warm-dark)]">가져오기 완료</h3>
-            <button onClick={close} className="text-[var(--warm-muted)]">✕</button>
-          </div>
+      <Modal open onClose={close} width="sm" title="가져오기 완료">
+        <div className="p-6 pt-4 space-y-4">
           <div className="space-y-2">
             {Object.entries(results).map(([sheet, r]) => (
               <div key={sheet} className="flex items-center justify-between text-sm">
@@ -380,7 +362,7 @@ export default function DataButtons() {
             확인
           </button>
         </div>
-      </div>
+      </Modal>
     )
   }
 
@@ -422,15 +404,24 @@ export default function DataButtons() {
 
       {/* ── 내보내기 범위 선택 모달 ── */}
       {showExportModal && (
-        <div className="fixed inset-0 bg-black/50 z-[var(--z-modal)] flex items-end sm:items-center justify-center p-4"
-          onClick={() => setShowExportModal(false)}>
-          <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm"
-            onClick={e => e.stopPropagation()}>
-            <div className="px-6 pt-6 pb-4">
-              <h3 className="text-base font-bold mb-1" style={{ color: 'var(--warm-dark)' }}>내보내기 범위</h3>
-              <p className="text-xs mb-4" style={{ color: 'var(--warm-muted)' }}>
-                {month.slice(0, 4)}년 {parseInt(month.slice(5))}월 기준
-              </p>
+        <Modal open onClose={() => setShowExportModal(false)} width="sm"
+          title="내보내기 범위"
+          subtitle={`${month.slice(0, 4)}년 ${parseInt(month.slice(5))}월 기준`}
+          footer={
+            <div className="flex gap-2">
+              <button onClick={() => setShowExportModal(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium"
+                style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
+                취소
+              </button>
+              <button onClick={doExport}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium text-white"
+                style={{ background: 'var(--coral)' }}>
+                내보내기
+              </button>
+            </div>
+          }>
+            <div className="px-6 py-4">
               <div className="space-y-2">
                 {([
                   { value: 'month', label: '해당 월',   desc: `${month.slice(0, 4)}년 ${parseInt(month.slice(5))}월 데이터` },
@@ -457,20 +448,7 @@ export default function DataButtons() {
                 ))}
               </div>
             </div>
-            <div className="flex gap-2 px-6 pb-6">
-              <button onClick={() => setShowExportModal(false)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-medium"
-                style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
-                취소
-              </button>
-              <button onClick={doExport}
-                className="flex-1 py-2.5 rounded-xl text-sm font-medium text-white"
-                style={{ background: 'var(--coral)' }}>
-                내보내기
-              </button>
-            </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       <ConflictModal />

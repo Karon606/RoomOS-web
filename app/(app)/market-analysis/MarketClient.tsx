@@ -11,6 +11,7 @@ import {
 } from './actions'
 import type { RoomPrice, CompetitorRow } from './actions'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { Modal } from '@/components/ui/Modal'
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -192,6 +193,9 @@ function CompetitorModal({
   directions: string[]
 }) {
   const [form, setForm] = useState<CompetitorFormData>(initial ?? emptyForm())
+  // §13.2 dirty — 초기 스냅샷 대비 변경 여부 (배경클릭 무시 + 닫기 확인)
+  const [initialSnapshot] = useState(() => JSON.stringify(initial ?? emptyForm()))
+  const dirty = JSON.stringify(form) !== initialSnapshot
 
   const setField = <K extends keyof CompetitorFormData>(k: K, v: CompetitorFormData[K]) =>
     setForm(f => ({ ...f, [k]: v }))
@@ -283,27 +287,27 @@ function CompetitorModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.7)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
-    >
-      <div
-        className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl flex flex-col"
-        style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
-      >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between shrink-0"
-          style={{ padding: '16px 20px', borderBottom: '1px solid var(--warm-border)' }}
-        >
-          <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--warm-dark)' }}>
-            {initial ? '경쟁업체 수정' : '경쟁업체 추가'}
-          </span>
-          <button onClick={onClose} style={{ color: 'var(--warm-muted)', fontSize: '1.25rem', lineHeight: 1 }}>×</button>
+    <Modal open onClose={onClose} width="lg" dirty={dirty}
+      title={initial ? '경쟁업체 수정' : '경쟁업체 추가'}
+      footer={
+        <div className="flex flex-col gap-2">
+          {saveError && (
+            <div style={{ fontSize: '0.8125rem', color: '#b91c1c', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, padding: '8px 12px' }}>
+              {saveError}
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Btn variant="secondary" onClick={onClose}>취소</Btn>
+            <Btn
+              variant="primary"
+              disabled={isPending || !form.name.trim() || !form.address.trim()}
+              onClick={() => onSave(form)}
+            >
+              {isPending ? '저장 중...' : '저장'}
+            </Btn>
+          </div>
         </div>
-
-        {/* Body */}
+      }>
         <div className="flex flex-col gap-4" style={{ padding: 20 }}>
           <div>
             <label style={labelStyle}>업체명 *</label>
@@ -477,30 +481,7 @@ function CompetitorModal({
             />
           </div>
         </div>
-
-        {/* Footer */}
-        <div
-          className="flex flex-col gap-2 shrink-0"
-          style={{ padding: '12px 20px', borderTop: '1px solid var(--warm-border)' }}
-        >
-          {saveError && (
-            <div style={{ fontSize: '0.8125rem', color: '#b91c1c', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, padding: '8px 12px' }}>
-              {saveError}
-            </div>
-          )}
-          <div className="flex justify-end gap-2">
-            <Btn variant="secondary" onClick={onClose}>취소</Btn>
-            <Btn
-              variant="primary"
-              disabled={isPending || !form.name.trim() || !form.address.trim()}
-              onClick={() => onSave(form)}
-            >
-              {isPending ? '저장 중...' : '저장'}
-            </Btn>
-          </div>
-        </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

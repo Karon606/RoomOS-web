@@ -14,6 +14,7 @@ import { DEFAULT_CHECKLIST_ALERT_DAYS_BEFORE } from '@/lib/appConfig'
 import { withSave } from '@/lib/saveStatus'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { Modal } from '@/components/ui/Modal'
 
 type Mode = 'create' | { mode: 'edit'; row: ChecklistRow } | { mode: 'check'; row: ChecklistRow } | null
 
@@ -289,16 +290,39 @@ function FormModal({
   const [alertDaysBefore, setAlertDaysBefore] = useState(row?.alertDaysBefore ?? DEFAULT_CHECKLIST_ALERT_DAYS_BEFORE)
   const [customMode, setCustomMode] = useState(row ? !PRESETS.some(p => p.days === row.intervalDays) : false)
 
-  return (
-    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
-        onClick={e => e.stopPropagation()}>
-        <div className="px-5 py-4 border-b border-[var(--warm-border)] flex items-center justify-between">
-          <p className="text-base font-bold" style={{ color: 'var(--warm-dark)' }}>{row ? '체크리스트 편집' : '체크리스트 추가'}</p>
-          <button onClick={onClose} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none">✕</button>
-        </div>
+  // §13.2 dirty — 초기값 대비 변경이 있으면 배경클릭 무시 + 닫기 확인
+  const dirty =
+    title !== (row?.title ?? '') ||
+    memo !== (row?.memo ?? '') ||
+    intervalDays !== (row?.intervalDays ?? 7) ||
+    alertDaysBefore !== (row?.alertDaysBefore ?? DEFAULT_CHECKLIST_ALERT_DAYS_BEFORE)
 
-        <div className="px-5 py-4 space-y-3 max-h-[70vh] overflow-y-auto">
+  return (
+    <Modal open onClose={onClose} width="sm" dirty={dirty}
+      title={row ? '체크리스트 편집' : '체크리스트 추가'}
+      footer={
+        <div className="flex gap-2">
+          {row && onDelete && (
+            <button type="button" onClick={onDelete} disabled={isPending}
+              className="px-3 py-2.5 rounded-xl text-xs font-medium border border-red-200 text-red-500 transition-opacity hover:opacity-70 disabled:opacity-50">
+              삭제
+            </button>
+          )}
+          <button type="button" onClick={onClose} disabled={isPending}
+            className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
+            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+            취소
+          </button>
+          <button type="button"
+            onClick={() => onSubmit({ title, memo, intervalDays, alertDaysBefore })}
+            disabled={isPending || !title.trim() || intervalDays < 1}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50"
+            style={{ background: 'var(--coral)' }}>
+            {isPending ? '저장 중...' : '저장'}
+          </button>
+        </div>
+      }>
+        <div className="px-5 py-4 space-y-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>제목 *</label>
             <input type="text" value={title} onChange={e => setTitle(e.target.value)}
@@ -373,29 +397,7 @@ function FormModal({
 
           {error && <p className="text-red-500 text-xs">{error}</p>}
         </div>
-
-        <div className="px-5 py-4 border-t border-[var(--warm-border)] flex gap-2">
-          {row && onDelete && (
-            <button type="button" onClick={onDelete} disabled={isPending}
-              className="px-3 py-2.5 rounded-xl text-xs font-medium border border-red-200 text-red-500 transition-opacity hover:opacity-70 disabled:opacity-50">
-              삭제
-            </button>
-          )}
-          <button type="button" onClick={onClose} disabled={isPending}
-            className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
-            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-            취소
-          </button>
-          <button type="button"
-            onClick={() => onSubmit({ title, memo, intervalDays, alertDaysBefore })}
-            disabled={isPending || !title.trim() || intervalDays < 1}
-            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50"
-            style={{ background: 'var(--coral)' }}>
-            {isPending ? '저장 중...' : '저장'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -412,18 +414,24 @@ function CheckModal({
 }) {
   const [memo, setMemo] = useState('')
   return (
-    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden"
-        onClick={e => e.stopPropagation()}>
-        <div className="px-5 py-4 border-b border-[var(--warm-border)] flex items-center justify-between">
-          <div>
-            <p className="text-base font-bold" style={{ color: 'var(--warm-dark)' }}>{row.title}</p>
-            <p className="text-xs mt-1" style={{ color: 'var(--warm-muted)' }}>{intervalLabel(row.intervalDays)} · 마지막 {fmtRelative(row.lastCheckedAt)}</p>
-          </div>
-          <button onClick={onClose} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none">✕</button>
+    <Modal open onClose={onClose} width="sm" dirty={memo.trim() !== ''}
+      title={row.title}
+      subtitle={`${intervalLabel(row.intervalDays)} · 마지막 ${fmtRelative(row.lastCheckedAt)}`}
+      footer={
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} disabled={isPending}
+            className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
+            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+            닫기
+          </button>
+          <button type="button" onClick={() => onConfirm(memo)} disabled={isPending}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50"
+            style={{ background: 'var(--coral)' }}>
+            {isPending ? '처리 중...' : '오늘 점검 완료'}
+          </button>
         </div>
-
-        <div className="px-5 py-4 space-y-3 max-h-[70vh] overflow-y-auto">
+      }>
+        <div className="px-5 py-4 space-y-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>점검 메모 (선택)</label>
             <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={2}
@@ -454,20 +462,6 @@ function CheckModal({
 
           {error && <p className="text-red-500 text-xs">{error}</p>}
         </div>
-
-        <div className="px-5 py-4 border-t border-[var(--warm-border)] flex gap-2">
-          <button type="button" onClick={onClose} disabled={isPending}
-            className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
-            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-            닫기
-          </button>
-          <button type="button" onClick={() => onConfirm(memo)} disabled={isPending}
-            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50"
-            style={{ background: 'var(--coral)' }}>
-            {isPending ? '처리 중...' : '오늘 점검 완료'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

@@ -8,6 +8,7 @@ import {
 } from './actions'
 import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { Modal } from '@/components/ui/Modal'
 
 // ── 상수 ─────────────────────────────────────────────────────
 const GRID = 20
@@ -408,9 +409,10 @@ function AiImportModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-4 bg-black/70" onClick={onCancel}>
-      <div className="bg-[var(--cream)] rounded-2xl w-full max-w-sm p-6 space-y-4" onClick={e => e.stopPropagation()}>
-        <h2 className="text-sm font-semibold text-[var(--warm-dark)]">AI 도면 인식</h2>
+    <Modal open onClose={onCancel} width="sm" title="AI 도면 인식"
+      // 인식 결과(preview)가 있으면 배경클릭 오조작으로 분석 결과가 날아가지 않게
+      dirty={!!preview || pending}>
+      <div className="p-6 pt-4 space-y-4">
         <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
           평면도 사진을 업로드하면 AI가 방, 복도, 계단 등을 자동으로 인식하여 추가합니다.
         </p>
@@ -460,7 +462,7 @@ function AiImportModal({
         )}
         <button onClick={onCancel} className="w-full text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] py-1">취소</button>
       </div>
-    </div>
+    </Modal>
   )
 }
 

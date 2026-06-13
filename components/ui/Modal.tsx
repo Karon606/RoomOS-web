@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import { confirmDialog } from './ConfirmDialog'
 
 type Width = 'xs' | 'sm' | 'md' | 'lg'
 
@@ -27,6 +28,7 @@ export function Modal({
   children,
   bodyClassName = '',
   z = 200,
+  dirty = false,
 }: {
   open: boolean
   onClose: () => void
@@ -39,7 +41,29 @@ export function Modal({
   children: React.ReactNode
   bodyClassName?: string
   z?: 200 | 260 | 280                // 다른 모달 위에 겹쳐 띄울 때 (통합 상세 모달 등)
+  /** §13.2 입력 유실 방지 — true 면 배경클릭 무시, Esc·X 는 닫기 확인 1회 */
+  dirty?: boolean
 }) {
+  // dirty 닫기 정책 — Esc/X 는 "작성 중인 내용이 있습니다" 확인을 거친다.
+  // ref 로 들고 있어 Esc 핸들러 재등록 없이 최신값 사용. asking 플래그는
+  // 확인 다이얼로그가 떠 있는 동안 Esc 연타로 다이얼로그가 중첩되는 것을 막는다.
+  const dirtyRef = React.useRef(dirty)
+  dirtyRef.current = dirty
+  const askingRef = React.useRef(false)
+  const requestClose = React.useCallback(async () => {
+    if (askingRef.current) return
+    if (dirtyRef.current) {
+      askingRef.current = true
+      try {
+        const ok = await confirmDialog({
+          title: '작성 중인 내용이 있습니다. 닫을까요?',
+          confirmLabel: '닫기', cancelLabel: '계속 작성',
+        })
+        if (!ok) return
+      } finally { askingRef.current = false }
+    }
+    onClose()
+  }, [onClose])
   // Esc 로 닫기 — 배경 클릭과 동일하게 동작(키보드 기대 일관성).
   // 겹친 모달에서는 최상단 것만 닫히도록 전역 스택으로 판별.
   React.useEffect(() => {
@@ -49,7 +73,7 @@ export function Modal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       if (escStack[escStack.length - 1] !== id) return
-      onClose()
+      void requestClose()
     }
     window.addEventListener('keydown', onKey)
     return () => {
@@ -57,9 +81,10 @@ export function Modal({
       if (idx >= 0) escStack.splice(idx, 1)
       window.removeEventListener('keydown', onKey)
     }
-  }, [open, onClose])
+  }, [open, requestClose])
 
   if (!open) return null
+  // §13.2 — dirty 면 배경클릭(아래 onClick)은 조용히 무시(대부분 오조작), 닫기는 Esc·X 확인 경로로만
   // v1.3 §12 레이어 토큰 매핑 — 호출부 API(200/260/280)는 유지, 실제 z는 토큰
   const zClass = z === 280 ? 'z-[var(--z-modal-3)]' : z === 260 ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-modal)]'
   return (
@@ -73,7 +98,7 @@ export function Modal({
         paddingLeft:   'max(1rem, env(safe-area-inset-left))',
         paddingRight:  'max(1rem, env(safe-area-inset-right))',
       }}
-      onClick={onClose}
+      onClick={dirty ? undefined : onClose}
     >
       <div
         className={`bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl shadow-lift w-full ${WIDTH_CLS[width]} flex flex-col`}
@@ -102,7 +127,7 @@ export function Modal({
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => void requestClose()}
               className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] w-11 h-11 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors shrink-0"
               title="닫기"
             ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
