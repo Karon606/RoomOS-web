@@ -1119,10 +1119,16 @@ function MergeSection({ currentId, currentLabel, category, onDone }: {
 
       {/* 병합 방향 확인 모달 */}
       {showConfirm && target && (
-        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={() => setShowConfirm(false)}>
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm p-5 space-y-4 shadow-lift" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-bold text-[var(--warm-dark)]">병합 방향 확인</h3>
-
+        <Modal open onClose={() => setShowConfirm(false)} width="sm" z={260} title="병합 방향 확인"
+          footer={
+            <div className="flex gap-2">
+              <Btn type="button" variant="secondary" fullWidth onClick={() => setShowConfirm(false)}>취소</Btn>
+              <Btn type="button" variant="danger" fullWidth onClick={handleMerge} disabled={pending}>
+                {pending ? '병합 중...' : '확인'}
+              </Btn>
+            </div>
+          }>
+          <div className="p-5 space-y-4">
             {/* 방향 표시 + 스왑 버튼 */}
             <div className="flex items-center gap-2">
               <div className="flex-1 text-center">
@@ -1145,14 +1151,8 @@ function MergeSection({ currentId, currentLabel, category, onDone }: {
               <li>· 대상 카드의 수량 단위 필터는 해제(다양한 포장 합산)됩니다.</li>
             </ul>
 
-            <div className="flex gap-2 pt-1">
-              <Btn type="button" variant="secondary" fullWidth onClick={() => setShowConfirm(false)}>취소</Btn>
-              <Btn type="button" variant="danger" fullWidth onClick={handleMerge} disabled={pending}>
-                {pending ? '병합 중...' : '확인'}
-              </Btn>
-            </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )
