@@ -608,7 +608,7 @@ export default function SettingsForm({
                 </label>
                 {logoUrl && (
                   <button type="button" onClick={handleLogoDelete} disabled={logoUploading}
-                    className="px-3 py-1.5 text-xs rounded-lg border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-50">
+                    className="px-3 py-1.5 text-xs rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:bg-[var(--danger-bg)] disabled:opacity-50">
                     삭제
                   </button>
                 )}
@@ -890,7 +890,7 @@ export default function SettingsForm({
                               placeholder="세부항목명 (예: 청소관리비)"
                               className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                             <button type="button" onClick={() => removeRecItem(i)}
-                              className="shrink-0 w-7 h-7 flex items-center justify-center text-red-400 hover:text-red-600 rounded-lg transition-colors" aria-label="세부항목 삭제">✕</button>
+                              className="shrink-0 w-7 h-7 flex items-center justify-center text-[var(--danger-fg)] hover:text-[var(--danger-fg)] rounded-lg transition-colors" aria-label="세부항목 삭제">✕</button>
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="flex-1 min-w-0">
@@ -1005,7 +1005,7 @@ export default function SettingsForm({
                     <button onClick={() => openEditRec(r)}
                       className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
                     <button onClick={() => handleDeleteRec(r.id, r.title)}
-                      className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-red-200 text-red-400 hover:text-red-600 transition-colors">삭제</button>
+                      className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors">삭제</button>
                   </div>
                 </div>
               ))}
@@ -1129,7 +1129,7 @@ export default function SettingsForm({
                   {isOwner && m.role !== 'OWNER' && (
                     <button
                       onClick={() => handleRemove(m.userId, m.name ?? m.email)}
-                      className="text-xs text-red-400 hover:text-red-300 transition-colors ml-1">
+                      className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors ml-1">
                       제거
                     </button>
                   )}
@@ -1377,7 +1377,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
                 <button type="button" onClick={() => moveSection(idx, 1)} disabled={idx === template.sections.length - 1}
                   className="text-xs px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] disabled:opacity-30">↓</button>
                 <button type="button" onClick={() => removeSection(idx)}
-                  className="text-xs px-2 py-1 rounded-md border border-red-200 text-red-500 hover:bg-red-50">삭제</button>
+                  className="text-xs px-2 py-1 rounded-md border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:bg-[var(--danger-bg)]">삭제</button>
               </div>
               <textarea
                 value={sec.items.join('\n')}
@@ -1432,7 +1432,7 @@ function FontSizePreview({ basePx }: { basePx: number }) {
     >
       <div className="flex items-center justify-between">
         <span style={{ fontSize: `${0.625 * scale}rem`, lineHeight: 1.4 }} className="text-[var(--warm-muted)]">2026년 5월 15일</span>
-        <span style={{ fontSize: `${0.875 * scale}rem` }} className="font-bold text-red-500">-58만원</span>
+        <span style={{ fontSize: `${0.875 * scale}rem` }} className="font-bold text-[var(--danger-fg)]">-58만원</span>
       </div>
       <div className="flex items-center gap-1.5">
         <span style={{ fontSize: `${0.625 * scale}rem` }} className="px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)]">통신비</span>
@@ -1636,7 +1636,7 @@ function OptionSection({
                     className="shrink-0 text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
                 )}
                 <button onClick={() => onDelete(item)}
-                  className="shrink-0 text-[0.625rem] text-red-400 hover:text-red-300 transition-colors px-1">삭제</button>
+                  className="shrink-0 text-[0.625rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors px-1">삭제</button>
               </>
             )}
           </div>
@@ -1649,14 +1649,14 @@ function OptionSection({
             onKeyDown={e => e.key === 'Enter' && handleAdd()}
             placeholder={placeholder ?? '입력...'}
             className={`flex-1 bg-[var(--canvas)] border rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none transition-colors ${
-              isDuplicate ? 'border-red-400 focus:border-red-400' : 'border-[var(--warm-border)] focus:border-[var(--coral)]'
+              isDuplicate ? 'border-[var(--danger-ring)] focus:border-[var(--danger-ring)]' : 'border-[var(--warm-border)] focus:border-[var(--coral)]'
             }`} />
           <Btn variant="primary" size="md" className="min-w-[56px]" onClick={handleAdd} disabled={isAdding || !trimmed || isDuplicate}>
             {isAdding ? '…' : '등록'}
           </Btn>
         </div>
         {isDuplicate && (
-          <p className="text-[0.6875rem] text-red-400">이미 존재하는 항목입니다.</p>
+          <p className="text-[0.6875rem] text-[var(--danger-fg)]">이미 존재하는 항목입니다.</p>
         )}
       </div>
     </div>
@@ -1704,7 +1704,7 @@ function BackupButton() {
       <Btn type="button" variant="primary" size="sm" onClick={handleBackup} disabled={busy}>
         {busy ? '백업 생성 중...' : 'JSON 백업 다운로드'}
       </Btn>
-      {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
+      {error && <p className="text-[var(--danger-fg)] text-xs mt-2">{error}</p>}
     </div>
   )
 }

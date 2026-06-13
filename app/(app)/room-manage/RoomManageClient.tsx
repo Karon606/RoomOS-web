@@ -683,8 +683,8 @@ export default function RoomManageClient({
 
       {/* 에러 */}
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
-          <p className="text-red-400 text-sm">{error}</p>
+        <div className="bg-[var(--danger-bg)] border border-[var(--danger-ring)] rounded-xl p-3">
+          <p className="text-[var(--danger-fg)] text-sm">{error}</p>
         </div>
       )}
 
@@ -919,7 +919,7 @@ export default function RoomManageClient({
               )}
             </div>
 
-            {error && <p className="text-red-400 text-sm">{error}</p>}
+            {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
               <Btn type="button" variant="secondary" onClick={closeAddModal} fullWidth>취소</Btn>
               <Btn type="submit" variant="primary" disabled={isPending} fullWidth>
@@ -1039,7 +1039,7 @@ export default function RoomManageClient({
                         <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-full bg-black/65 text-white text-[0.5625rem] font-bold pointer-events-none">360°</span>
                       )}
                       <button type="button" onClick={() => handlePhotoDelete(photo.id)}
-                        className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-red-600/80 rounded-full text-[var(--warm-dark)] text-xs transition-colors flex items-center justify-center">
+                        className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-[var(--danger-solid)]/80 rounded-full text-[var(--warm-dark)] text-xs transition-colors flex items-center justify-center">
                         ✕
                       </button>
                     </div>
@@ -1073,7 +1073,7 @@ export default function RoomManageClient({
               )}
             </div>
 
-            {error && <p className="text-red-400 text-sm">{error}</p>}
+            {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
               <Btn type="button" variant="secondary" onClick={closeEdit} fullWidth>취소</Btn>
               <Btn type="submit" variant="primary" disabled={isPending} fullWidth>
@@ -1243,7 +1243,7 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
     <Modal title={`호실 일괄 편집 (${selectedIds.length}개)`} onClose={onClose}>
       <div className="space-y-4">
         <p className="text-xs text-[var(--warm-muted)]">입력하지 않은 항목은 변경되지 않습니다.</p>
-        {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+        {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
 
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">방 타입</label>

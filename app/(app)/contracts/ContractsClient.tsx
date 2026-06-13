@@ -150,7 +150,7 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
                   보기
                 </a>
                 <button type="button" onClick={() => handleDelete(c.id, c.tenantName)} disabled={pending && deletingId === c.id}
-                  className="px-2 py-1.5 text-xs font-medium rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 transition-colors">
+                  className="px-2 py-1.5 text-xs font-medium rounded-lg text-[var(--danger-fg)] hover:text-[var(--danger-fg)] hover:bg-[var(--danger-bg)] disabled:opacity-40 transition-colors">
                   {pending && deletingId === c.id ? '삭제 중…' : '삭제'}
                 </button>
               </div>

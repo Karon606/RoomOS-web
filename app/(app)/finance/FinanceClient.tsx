@@ -371,7 +371,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
               <div key={idx} className="px-2.5 py-2 bg-[var(--coral-pale)] rounded-xl ring-1 ring-[var(--coral)]/20 space-y-1.5">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium text-[var(--coral)] flex-1 min-w-0 truncate">{fmtItemDetail(it)}</span>
-                  <button type="button" onClick={() => removeItem(idx)} className="text-[var(--coral)] hover:text-red-600 leading-none text-sm shrink-0">×</button>
+                  <button type="button" onClick={() => removeItem(idx)} className="text-[var(--coral)] hover:text-[var(--danger-fg)] leading-none text-sm shrink-0">×</button>
                 </div>
                 {allowMulti && (
                   <div className="flex items-end gap-1.5 flex-wrap">
@@ -417,13 +417,13 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                               onChange={e => setAllocs(idx, it.allocations!.map((x, i) => i === ai ? { ...x, qty: e.target.value.replace(/[^0-9.]/g, '') } : x))}
                               className={`w-14 ${smallNum}`} />
                             <button type="button" onClick={() => setAllocs(idx, it.allocations!.filter((_, i) => i !== ai))}
-                              className="text-[var(--warm-muted)] hover:text-red-600 text-sm shrink-0">×</button>
+                              className="text-[var(--warm-muted)] hover:text-[var(--danger-fg)] text-sm shrink-0">×</button>
                           </div>
                         ))}
                         <div className="flex items-center justify-between">
                           <button type="button" onClick={() => setAllocs(idx, [...it.allocations!, { roomId: '', qty: '' }])}
                             className="text-[0.625rem] text-[var(--coral)] hover:underline">+ 방 추가</button>
-                          <span className={`text-[0.5625rem] ${allocOver ? 'text-red-500' : 'text-[var(--warm-muted)]'}`}>
+                          <span className={`text-[0.5625rem] ${allocOver ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}`}>
                             방 배정 {allocSum} / 전체 {it.qtyValue || 0}
                             {allocOver ? ' ⚠ 수량 초과' : allocRemain > 0.001 ? ` · 나머지 ${allocRemain}개 미지정` : ''}
                           </span>
@@ -545,7 +545,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
                 <button type="button" disabled={busy === r.vendor || !changed} onClick={() => apply(r.vendor, val)}
                   className="text-xs px-2 py-1 rounded-lg bg-[var(--coral)] text-white disabled:opacity-30 shrink-0">저장</button>
                 <button type="button" disabled={busy === r.vendor} onClick={() => apply(r.vendor, '')}
-                  className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 px-1.5 py-1 shrink-0" title="구매처 비우기">비움</button>
+                  className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-1.5 py-1 shrink-0" title="구매처 비우기">비움</button>
               </div>
             )
           })}
@@ -2022,7 +2022,7 @@ export default function FinanceClient({
               className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2">초기화</button>
             <span className="ml-auto flex flex-col items-end">
               <span className="text-[0.6875rem] text-[var(--warm-muted)] leading-none">실제 지출 합계 <span className="text-[0.5625rem]">(예정 제외)</span></span>
-              <span className="text-sm font-bold text-red-400 num mt-0.5">
+              <span className="text-sm font-bold text-[var(--danger-fg)] num mt-0.5">
                 <MoneyDisplay amount={totalExp} />
               </span>
             </span>
@@ -2168,13 +2168,13 @@ export default function FinanceClient({
                         return (
                           <div key={e.id}
                             onClick={() => { setDetailExp(e); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }}
-                            className={`bg-[var(--cream)] border rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity ${isUnsettled ? 'border-red-200/60' : 'border-[var(--warm-border)]'}`}>
+                            className={`bg-[var(--cream)] border rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity ${isUnsettled ? 'border-[var(--danger-ring)]' : 'border-[var(--warm-border)]'}`}>
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5 mb-0.5">
                                   {isFixed && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-0.5" />}
                                   <span className="text-[0.625rem] text-[var(--coral)] font-medium">{e.category}</span>
-                                  {isUnsettled && <span className="text-[0.625rem] text-red-500 font-medium">· 미정산</span>}
+                                  {isUnsettled && <span className="text-[0.625rem] text-[var(--danger-fg)] font-medium">· 미정산</span>}
                                 </div>
                                 <p className="text-sm text-[var(--warm-dark)] truncate">{[e.vendor, e.detail].filter(Boolean).join(' · ') || '—'}</p>
                                 {(() => { const c = orderChip(e); return c ? (
@@ -2188,7 +2188,7 @@ export default function FinanceClient({
                                 </p>
                               </div>
                               <div className="text-right shrink-0">
-                                <p className="text-sm font-semibold text-red-500"><MoneyDisplay amount={e.amount} prefix="-" alwaysFull /></p>
+                                <p className="text-sm font-semibold text-[var(--danger-fg)]"><MoneyDisplay amount={e.amount} prefix="-" alwaysFull /></p>
                                 {e.receiptUrl && <span className="text-[0.5625rem] text-[var(--coral)]">영수증</span>}
                               </div>
                             </div>
@@ -2216,7 +2216,7 @@ export default function FinanceClient({
                               </p>
                             </div>
                             <div className="text-right shrink-0">
-                              <p className="text-sm font-semibold text-red-500"><MoneyDisplay amount={expectedAmt} prefix="-" /></p>
+                              <p className="text-sm font-semibold text-[var(--danger-fg)]"><MoneyDisplay amount={expectedAmt} prefix="-" /></p>
                               {r.isVariable && <p className="text-[0.5625rem] text-[var(--warm-muted)] mt-0.5">예상치</p>}
                             </div>
                           </div>
@@ -2276,10 +2276,10 @@ export default function FinanceClient({
                                     </span>
                                   ) : null })()}
                                 </td>
-                                <td className="px-4 py-3 text-sm font-semibold text-red-500 overflow-hidden"><span className="truncate block"><MoneyDisplay amount={e.amount} prefix="-" /></span></td>
+                                <td className="px-4 py-3 text-sm font-semibold text-[var(--danger-fg)] overflow-hidden"><span className="truncate block"><MoneyDisplay amount={e.amount} prefix="-" /></span></td>
                                 <td className="px-4 py-3 overflow-hidden">
                                   {e.settleStatus === 'UNSETTLED'
-                                    ? <span className="text-xs text-red-500 font-medium">미정산</span>
+                                    ? <span className="text-xs text-[var(--danger-fg)] font-medium">미정산</span>
                                     : <span className="text-xs text-[var(--warm-muted)]">정산완료</span>}
                                 </td>
                               </tr>
@@ -2311,7 +2311,7 @@ export default function FinanceClient({
                                 <span className="truncate block font-medium">{r.title}</span>
                               </td>
                               <td className="px-4 py-3 overflow-hidden">
-                                <span className="text-sm font-semibold text-red-500 truncate block">
+                                <span className="text-sm font-semibold text-[var(--danger-fg)] truncate block">
                                   <MoneyDisplay amount={expectedAmt} prefix="-" />
                                 </span>
                                 {r.isVariable && <span className="text-[0.625rem] text-[var(--warm-muted)]">예상치</span>}
@@ -2527,7 +2527,7 @@ export default function FinanceClient({
                       <span className="text-xs text-[var(--warm-mid)] font-medium">
                         {g.billMonth.replace('-', '년 ')}월 청구 총액
                       </span>
-                      <span className="text-xl font-bold text-red-400 num">
+                      <span className="text-xl font-bold text-[var(--danger-fg)] num">
                         {g.total.toLocaleString()}원
                       </span>
                     </div>
@@ -2729,7 +2729,7 @@ export default function FinanceClient({
                 </>
               )}
 
-              {assetError && <p className="text-red-400 text-sm">{assetError}</p>}
+              {assetError && <p className="text-[var(--danger-fg)] text-sm">{assetError}</p>}
 
               <div className="flex gap-2 pt-1">
                 {editingAcc && (
@@ -2799,7 +2799,7 @@ export default function FinanceClient({
                             </button>
                             <button
                               onClick={() => handleDeleteAsset(a.id)}
-                              className="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 bg-red-500/10 rounded-lg transition-colors shrink-0">
+                              className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] px-3 py-1.5 bg-[var(--danger-bg)] rounded-lg transition-colors shrink-0">
                               삭제
                             </button>
                           </div>
@@ -2837,7 +2837,7 @@ export default function FinanceClient({
                   <DetailRow label="카테고리"    value={detailExp.category} />
                   {detailExp.vendor && <DetailRow label="구매처"   value={detailExp.vendor} />}
                   <DetailRow label="세부 항목"   value={detailExp.detail ?? '—'} />
-                  <DetailRow label="금액"        value={<span className="text-red-400 font-semibold"><MoneyDisplay amount={detailExp.amount} prefix="-" /></span>} />
+                  <DetailRow label="금액"        value={<span className="text-[var(--danger-fg)] font-semibold"><MoneyDisplay amount={detailExp.amount} prefix="-" /></span>} />
                   {/* #1 관리비 묶음: 세부 내역(breakdownJson)이 있으면 펼쳐 표시 */}
                   {detailExp.breakdownJson && (() => {
                     let bd: { name: string; amount: number; isVariable: boolean }[] = []
@@ -2862,7 +2862,7 @@ export default function FinanceClient({
                   <DetailRow label="결제수단"    value={detailExp.payMethod ?? '—'} />
                   {detailExp.financeName && <DetailRow label="금융사" value={detailExp.financeName} />}
                   <DetailRow label="정산상태"    value={
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ring-1 ${detailExp.settleStatus === 'UNSETTLED' ? 'bg-red-50 text-red-600 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ring-1 ${detailExp.settleStatus === 'UNSETTLED' ? 'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'}`}>
                       {detailExp.settleStatus === 'UNSETTLED' ? '미정산' : '정산완료'}
                     </span>
                   } />
@@ -2908,7 +2908,7 @@ export default function FinanceClient({
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <button onClick={() => handleDeleteExp(detailExp)} disabled={isPending}
-                    className="px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm rounded-xl transition-colors disabled:opacity-40">
+                    className="px-4 py-2.5 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-sm rounded-xl transition-colors disabled:opacity-40">
                     {detailExp.recurringExpenseId ? '이번 달 기록 취소' : '삭제'}
                   </button>
                   {detailExp.settleStatus === 'SETTLED' && (detailExp.payMethod === '신용카드' || detailExp.payMethod === '체크카드') && (
@@ -3199,7 +3199,7 @@ export default function FinanceClient({
                       </label>
                     )}
                   </div>
-                  {error && <p className="text-red-400 text-sm">{error}</p>}
+                  {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => { setDetailExpEdit(false); setError('') }}>취소</Btn>
@@ -3258,7 +3258,7 @@ export default function FinanceClient({
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <button onClick={() => handleDeleteInc(detailInc.id)} disabled={isPending}
-                    className="px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm rounded-xl transition-colors disabled:opacity-40">삭제</button>
+                    className="px-4 py-2.5 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-sm rounded-xl transition-colors disabled:opacity-40">삭제</button>
                   <div className="flex-1" />
                   <Btn variant="primary" size="md" onClick={() => {
                     setDetailIncEdit(true)
@@ -3310,7 +3310,7 @@ export default function FinanceClient({
                     <input type="text" name="memo" defaultValue={detailInc.memo ?? ''}
                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   </div>
-                  {error && <p className="text-red-400 text-sm">{error}</p>}
+                  {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => { setDetailIncEdit(false); setError('') }}>취소</Btn>
@@ -3538,7 +3538,7 @@ export default function FinanceClient({
                           {receiptUploading ? '업로드 중…' : '첨부만'}
                         </Btn>
                       </div>
-                      {scanOcrError && <p className="text-[0.625rem] text-red-500">{scanOcrError}</p>}
+                      {scanOcrError && <p className="text-[0.625rem] text-[var(--danger-fg)]">{scanOcrError}</p>}
                     </div>
                   ) : addReceiptUrl ? (
                     <div className="relative">
@@ -3554,7 +3554,7 @@ export default function FinanceClient({
                     </label>
                   )}
                 </div>
-                {error && <p className="text-red-400 text-sm">{error}</p>}
+                {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
               </div>
               <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                 <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => setShowAddExp(false)}>취소</Btn>
@@ -3618,7 +3618,7 @@ export default function FinanceClient({
                   <input type="text" name="memo" placeholder="메모 (선택)"
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                 </div>
-                {error && <p className="text-red-400 text-sm">{error}</p>}
+                {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
               </div>
               <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                 <button type="button" onClick={() => setShowAddInc(false)}
@@ -3761,7 +3761,7 @@ export default function FinanceClient({
                   <input type="text" value={recMgmtForm.memo} onChange={e => setRecMgmtForm(p => ({ ...p, memo: e.target.value }))}
                     className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                 </div>
-                {recMgmtError && <p className="text-red-400 text-xs">{recMgmtError}</p>}
+                {recMgmtError && <p className="text-[var(--danger-fg)] text-xs">{recMgmtError}</p>}
                 <div className="flex gap-2 pt-1">
                   <button onClick={() => { setShowRecMgmtForm(false); setEditingRecMgmt(null); setRecMgmtError('') }}
                     className="flex-1 py-2 text-sm rounded-xl border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>
@@ -3854,7 +3854,7 @@ export default function FinanceClient({
                       <button onClick={() => openEditRecMgmt(r)}
                         className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
                       <button onClick={() => handleDeleteRecMgmt(r.id, r.title)}
-                        className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-red-200 text-red-400 hover:text-red-600 transition-colors">삭제</button>
+                        className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors">삭제</button>
                     </div>
                     )}
                   </div>
@@ -3986,7 +3986,7 @@ export default function FinanceClient({
                 </select>
               </div>
             )}
-            {recError && <p className="text-red-400 text-xs">{recError}</p>}
+            {recError && <p className="text-[var(--danger-fg)] text-xs">{recError}</p>}
             {recordingRec.pendingAmount != null && (
               <p className="text-[0.625rem] text-[var(--warm-muted)] -mt-1">
                 예약된 금액 {recordingRec.pendingAmount.toLocaleString()}원이 자동 입력되었습니다.
@@ -4463,7 +4463,7 @@ function ReserveTab({
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
           </div>
 
-          {error && <p className="text-red-400 text-xs">{error}</p>}
+          {error && <p className="text-[var(--danger-fg)] text-xs">{error}</p>}
 
           <div className="flex gap-2 pt-1">
             <Btn variant="secondary" onClick={reset} fullWidth>취소</Btn>
@@ -4515,7 +4515,7 @@ function ReserveTab({
                     {t.type === 'DEPOSIT' ? '+' : '−'}{t.amount.toLocaleString()}원
                   </span>
                   <button onClick={() => handleDelete(t.id)}
-                    className="text-xs text-[var(--warm-muted)] hover:text-red-500">삭제</button>
+                    className="text-xs text-[var(--warm-muted)] hover:text-[var(--danger-fg)]">삭제</button>
                 </div>
               </li>
             ))}

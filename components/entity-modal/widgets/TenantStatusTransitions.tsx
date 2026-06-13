@@ -166,7 +166,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
           const cls = def.tone === 'primary'
             ? 'bg-[var(--coral)] text-white hover:opacity-90'
             : def.tone === 'danger'
-            ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
+            ? 'bg-[var(--danger-bg)] text-[var(--danger-fg)] hover:bg-[var(--danger-bg)]'
             : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'
           return (
             <button key={def.key} type="button" disabled={pending}

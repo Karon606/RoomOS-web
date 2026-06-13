@@ -226,7 +226,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                 재고 등록
               </button>
               <button onClick={onRejected} disabled={pending}
-                className="text-[0.6875rem] px-2 py-1 rounded-lg border border-red-200 text-red-500 font-medium">
+                className="text-[0.6875rem] px-2 py-1 rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] font-medium">
                 거절
               </button>
             </div>

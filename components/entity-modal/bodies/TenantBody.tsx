@@ -124,7 +124,7 @@ function PaymentSummaryWithAI({ tenantId, lease }: {
         </div>
         <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
           <p className="text-xs text-[var(--warm-muted)] mb-1">미납액</p>
-          <p className={`text-lg font-bold ${unpaid > 0 ? 'text-red-400' : 'text-[var(--warm-dark)]'}`}>
+          <p className={`text-lg font-bold ${unpaid > 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-dark)]'}`}>
             <MoneyDisplay amount={unpaid} />
           </p>
         </div>

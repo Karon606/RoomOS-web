@@ -212,7 +212,7 @@ function PropertiesPanel({
     <div className="space-y-3 p-4">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-[var(--warm-dark)]">{TYPE_LABEL[el.type]}</p>
-        <button onClick={onDelete} className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition-colors">삭제</button>
+        <button onClick={onDelete} className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] px-2 py-1 rounded hover:bg-[var(--danger-bg)] transition-colors">삭제</button>
       </div>
 
       {/* 도형 변환 */}
@@ -434,7 +434,7 @@ function AiImportModal({
             )}
             <input ref={fileRef} type="file" accept="image/*" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }} />
-            {error && <p className="text-xs text-red-500">{error}</p>}
+            {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
           </>
         ) : (
           <>
@@ -1100,7 +1100,7 @@ export default function FloorPlanEditor({
             {floors.length > 1 && !viewOnly && (
               <button
                 onClick={async e => { e.stopPropagation(); if (await confirmDialog({ title: `'${fl.label}'을 삭제할까요?`, message: '이 층에 배치된 도면 요소도 함께 삭제됩니다.', level: 'danger', confirmLabel: '삭제' })) deleteFloor(fl.id) }}
-                className="ml-0.5 w-4 h-4 flex items-center justify-center text-[var(--warm-muted)] hover:text-red-400 rounded-full text-[0.625rem] leading-none">
+                className="ml-0.5 w-4 h-4 flex items-center justify-center text-[var(--warm-muted)] hover:text-[var(--danger-fg)] rounded-full text-[0.625rem] leading-none">
                 ×
               </button>
             )}
@@ -1149,7 +1149,7 @@ export default function FloorPlanEditor({
 
             {elements.length > 0 && (
               <button onClick={clearAll}
-                className={`${btn} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-red-300 hover:text-red-400`}>
+                className={`${btn} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-[var(--danger-ring)] hover:text-[var(--danger-fg)]`}>
                 전체 지우기
               </button>
             )}
@@ -1217,7 +1217,7 @@ export default function FloorPlanEditor({
             {selectedIds.length > 0 && (<>
               {divider}
               <button onClick={deleteSelected}
-                className={`${btn} bg-red-50 border border-red-200 text-red-500 hover:bg-red-100`}>
+                className={`${btn} bg-[var(--danger-bg)] border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:bg-[var(--danger-bg)]`}>
                 삭제 ({selectedIds.length})
               </button>
             </>)}
@@ -1423,7 +1423,7 @@ export default function FloorPlanEditor({
                 복사
               </button>
               <button onClick={deleteSelected}
-                className="w-full text-xs text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 rounded-lg py-2 transition-colors">
+                className="w-full text-xs text-[var(--danger-fg)] border border-[var(--danger-ring)] bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] rounded-lg py-2 transition-colors">
                 선택 삭제
               </button>
             </div>

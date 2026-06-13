@@ -237,7 +237,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         )}
       </div>
 
-      {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+      {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
 
       {viewMode === 'location' ? (
         <LocationBatchCheckModal inline rows={rows} onClose={() => changeView('item')} onDone={() => { router.refresh(); refreshDrafts() }} onDraftChange={refreshDrafts} />
@@ -554,7 +554,7 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
           <input type="text" value={memo} onChange={e => setMemo(e.target.value)} placeholder="선택"
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
         </div>
-        {error && <p className="text-xs text-red-500">{error}</p>}
+        {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       </form>
       <div className="border-t border-[var(--warm-border)] px-5 sm:px-6 py-3">
         <ModalFooterActions onCancel={onClose}>
@@ -724,7 +724,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
             })()}
           </div>
           <div className="px-5 sm:px-6 py-3 space-y-3">
-            {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+            {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
             {tab === 'timeline' && (() => {
               const nowMonth = kstMonthStr()
               // 엔트리 월 — 점검·무상입수는 날짜, 구매는 수령확정(receivedAt) 기준. 미수령 구매는 현재 월로 이월.
@@ -1030,7 +1030,7 @@ function SettingsForm({ row, onCancel, onDone }: {
               {' '}· 저장된 점검·입수 기록이 함께 환산됩니다. 영수증은 그대로 두어도 자동 환산됩니다.
             </p>
           )}
-          {unitMsg && <p className="text-[0.625rem] text-red-500">{unitMsg}</p>}
+          {unitMsg && <p className="text-[0.625rem] text-[var(--danger-fg)]">{unitMsg}</p>}
         </div>
       )}
       <div className="space-y-1.5">
@@ -1062,7 +1062,7 @@ function SettingsForm({ row, onCancel, onDone }: {
       <LocationAssignSection trackedItemId={row.id} initialLocations={row.locations} />
       {/* 병합 섹션 — 같은 카테고리 다른 카드로 통합 */}
       <MergeSection currentId={row.id} currentLabel={row.label} category={row.category} onDone={onDone} />
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="pt-2 flex gap-2">
         <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>
         <Btn type="submit" variant="primary" disabled={pending} fullWidth>
@@ -1241,7 +1241,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
           <button type="button" disabled={pending} onClick={() => setEditing(true)}
             className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>
           <button type="button" disabled={pending} onClick={() => onDeleteCheck(entry.id)}
-            className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-red-50">삭제</button>
+            className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--danger-bg)]">삭제</button>
         </div>
       </li>
     )
@@ -1391,7 +1391,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
         <button type="button" disabled={pending} onClick={() => setEditing(true)}
           className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>
         <button type="button" disabled={pending} onClick={() => onDeleteAddition(entry.id)}
-          className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-red-50">삭제</button>
+          className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--danger-bg)]">삭제</button>
       </div>
     </li>
   )
@@ -1472,7 +1472,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], onCancel, onDone 
         <p className="text-xs font-medium text-[var(--warm-mid)]">보정 끼워넣기</p>
         <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">고른 날짜 시점의 실제 수량으로 기준선을 보정합니다. 차이는 사용량으로 잡히지 않습니다.</p>
       </div>
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">보정 시점(날짜)</label>
         <DatePicker value={date} onChange={setDate} />
@@ -1587,7 +1587,7 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-          {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+          {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
           <div className="space-y-2">
             <p className="text-[0.6875rem] font-medium text-[var(--warm-mid)]">표시 중인 카테고리 (위에서부터 표시 순서)</p>
             {entries.map((e, i) => (
@@ -1605,7 +1605,7 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
                   <button type="button" onClick={() => move(i, 1)} disabled={i === entries.length - 1}
                     className="p-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-30" aria-label="아래로">▼</button>
                   <button type="button" onClick={() => remove(e.cat)}
-                    className="p-1 text-red-400 hover:text-red-600 text-xs" aria-label="제거">✕</button>
+                    className="p-1 text-[var(--danger-fg)] hover:text-[var(--danger-fg)] text-xs" aria-label="제거">✕</button>
                 </div>
               </div>
             ))}
@@ -1733,7 +1733,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-          {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+          {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
           {categories.map(({ cat, alias }) => {
             const catRows = rows.filter(r => r.category === cat)
             if (!catRows.length) return null
@@ -1911,7 +1911,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
   return (
     <li className="border border-[var(--coral)]/30 rounded-xl px-3 py-3 space-y-2.5 bg-[var(--canvas)]">
       <p className="text-xs font-medium text-[var(--warm-mid)]">재고 점검 수정</p>
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="grid grid-cols-2 gap-2">
         <div>
           <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">날짜</p>
@@ -2038,7 +2038,7 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
   return (
     <li className="border border-[var(--warm-border)] rounded-xl px-3 py-3 space-y-2 bg-[var(--canvas)]">
       <p className="text-xs font-medium text-[var(--warm-mid)]">무상 입수 수정</p>
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="grid grid-cols-2 gap-2">
         <div>
           <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">날짜</p>
@@ -2070,7 +2070,7 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
       </div>
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onDelete} disabled={pending}
-          className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 px-2 py-1.5 rounded-lg hover:bg-red-50">삭제</button>
+          className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-2 py-1.5 rounded-lg hover:bg-[var(--danger-bg)]">삭제</button>
         <div className="flex-1" />
         <button type="button" onClick={onCancel} disabled={pending}
           className="text-xs text-[var(--warm-muted)] px-3 py-1.5 rounded-lg hover:bg-[var(--cream)]">취소</button>
@@ -2124,7 +2124,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
   return (
     <li className="border border-[var(--warm-border)] rounded-xl px-3 py-3 space-y-2 bg-[var(--canvas)]">
       <p className="text-xs font-medium text-[var(--warm-mid)]">구매 수정 <span className="text-[0.625rem] font-normal text-[var(--warm-muted)]">— 수정 내용은 지출 페이지에도 반영됩니다</span></p>
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="grid grid-cols-2 gap-2">
         <div>
           <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1">구매일</p>
@@ -2166,7 +2166,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
       </div>
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onDelete} disabled={pending}
-          className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 px-2 py-1.5 rounded-lg hover:bg-red-50">재고에서 제외</button>
+          className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-2 py-1.5 rounded-lg hover:bg-[var(--danger-bg)]">재고에서 제외</button>
         <div className="flex-1" />
         <button type="button" onClick={onCancel} disabled={pending}
           className="text-xs text-[var(--warm-muted)] px-3 py-1.5 rounded-lg hover:bg-[var(--cream)]">취소</button>
@@ -2576,7 +2576,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
             className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] underline shrink-0">비우기</button>
         </div>
       )}
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="pt-2 flex gap-2">
         <Btn type="button" variant="secondary" onClick={onCancel}>취소</Btn>
         <Btn type="button" variant="secondary" onClick={handleSaveDraft} disabled={draftPending || pending} fullWidth>
@@ -2876,7 +2876,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
               )
             })
           )}
-          {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+          {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
         </div>
 
         {locId && locItems.length > 0 && totalRestock > 0 && (
@@ -2962,7 +2962,7 @@ function MergeDecisionModal({ decisions, onClose, onDone }: {
         </div>
       }>
       <div className="px-5 sm:px-6 py-4 space-y-4">
-        {error && <p className="text-xs text-red-500">{error}</p>}
+        {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
         {decisions.map((d, i) => (
           <div key={i} className="space-y-2 border-b border-[var(--warm-border)]/50 pb-3 last:border-0">
             <p className="text-sm font-medium text-[var(--warm-dark)]">
@@ -3061,7 +3061,7 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
                     </span>
                     <span className="text-[0.5625rem] text-[var(--warm-muted)] shrink-0">{r.category}</span>
                     <button type="button" onClick={() => remove(r.id)} disabled={pendingId === r.id}
-                      className="text-[0.6875rem] text-red-400 hover:text-red-600 disabled:opacity-40 shrink-0 px-2 py-1 rounded-lg hover:bg-red-50">연결 해제</button>
+                      className="text-[0.6875rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 shrink-0 px-2 py-1 rounded-lg hover:bg-[var(--danger-bg)]">연결 해제</button>
                   </div>
                 ))}
               </div>
@@ -3181,7 +3181,7 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal open onClose={onClose} title="보관 위치 관리" subtitle="창고 / 4층 주방 / 손님실 등 보관 장소를 등록하세요" width="sm">
       <div className="px-5 sm:px-6 py-4 space-y-4">
-        {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+        {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
         {locs.length === 0 && !pending && (
           <p className="text-sm text-[var(--warm-muted)] text-center py-4">등록된 위치가 없습니다.</p>
         )}
@@ -3219,7 +3219,7 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
                   <button type="button" onClick={() => { setEditId(loc.id); setEditName(loc.name) }}
                     className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>
                   <button type="button" onClick={() => handleDelete(loc.id, loc.name)} disabled={pending}
-                    className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-red-50">삭제</button>
+                    className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--danger-bg)]">삭제</button>
                 </>
               )}
             </li>
@@ -3272,7 +3272,7 @@ function BatchLocationModal({ selectedIds, onClose, onDone }: {
   return (
     <Modal open onClose={onClose} title="위치 일괄 할당" subtitle={`${selectedIds.length}개 품목에 동일 위치를 적용합니다`} width="sm">
       <div className="px-5 sm:px-6 py-4 space-y-3">
-        {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+        {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
         {allLocs.length === 0 ? (
           <p className="text-sm text-[var(--warm-muted)] text-center py-4">등록된 위치가 없습니다. 먼저 "위치 관리"에서 추가하세요.</p>
         ) : (
@@ -3358,7 +3358,7 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
           </button>
         ))}
       </div>
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <Btn
         type="button"
         variant={dirty && !saved ? 'primary' : 'secondary'}
@@ -3492,7 +3492,7 @@ function AdditionForm({ item, onCancel, onDone }: {
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
       </div>
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="pt-2 flex gap-2">
         <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>
         <Btn type="submit" variant="primary" disabled={pending} fullWidth>

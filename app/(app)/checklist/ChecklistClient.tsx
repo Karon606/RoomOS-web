@@ -304,7 +304,7 @@ function FormModal({
         <div className="flex gap-2">
           {row && onDelete && (
             <button type="button" onClick={onDelete} disabled={isPending}
-              className="px-3 py-2.5 rounded-xl text-xs font-medium border border-red-200 text-red-500 transition-opacity hover:opacity-70 disabled:opacity-50">
+              className="px-3 py-2.5 rounded-xl text-xs font-medium border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-opacity hover:opacity-70 disabled:opacity-50">
               삭제
             </button>
           )}
@@ -395,7 +395,7 @@ function FormModal({
             </button>
           )}
 
-          {error && <p className="text-red-500 text-xs">{error}</p>}
+          {error && <p className="text-[var(--danger-fg)] text-xs">{error}</p>}
         </div>
     </Modal>
   )
@@ -451,7 +451,7 @@ function CheckModal({
                       {log.memo && <p className="text-[0.6875rem] truncate" style={{ color: 'var(--warm-muted)' }}>{log.memo}</p>}
                     </div>
                     <button onClick={() => onDeleteLog(log.id)} disabled={isPending}
-                      className="text-[0.625rem] text-red-500 hover:text-red-600 px-2 py-1 disabled:opacity-50">
+                      className="text-[0.625rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] px-2 py-1 disabled:opacity-50">
                       삭제
                     </button>
                   </div>
@@ -460,7 +460,7 @@ function CheckModal({
             </div>
           )}
 
-          {error && <p className="text-red-500 text-xs">{error}</p>}
+          {error && <p className="text-[var(--danger-fg)] text-xs">{error}</p>}
         </div>
     </Modal>
   )

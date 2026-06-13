@@ -25,7 +25,7 @@ type Category = (typeof CATEGORIES)[number]
 
 const CATEGORY_COLORS: Record<string, { bg: string; fg: string; ring: string }> = {
   시설: { bg: 'bg-amber-50',  fg: 'text-amber-700',  ring: 'ring-amber-200'  },
-  소음: { bg: 'bg-rose-50',   fg: 'text-rose-700',   ring: 'ring-rose-200'   },
+  소음: { bg: 'bg-[var(--danger-bg)]',   fg: 'text-[var(--danger-fg)]',   ring: 'ring-[var(--danger-ring)]'   },
   청결: { bg: 'bg-cyan-50',   fg: 'text-cyan-700',   ring: 'ring-cyan-200'   },
   편의: { bg: 'bg-violet-50', fg: 'text-violet-700', ring: 'ring-violet-200' },
   기타: { bg: 'bg-stone-50',  fg: 'text-stone-700',  ring: 'ring-stone-200'  },
@@ -367,7 +367,7 @@ export default function RequestsClient({
                 {/* 메타 행 */}
                 <div className="flex items-center gap-2 flex-wrap mb-2">
                   {r.isUrgent && !resolved && (
-                    <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-semibold bg-red-50 text-red-600 ring-1 ring-red-200">
+                    <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-semibold bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]">
                       긴급
                     </span>
                   )}
@@ -453,7 +453,7 @@ export default function RequestsClient({
                       <button
                         onClick={() => handleDelete(r.id)}
                         disabled={pending}
-                        className="px-3 py-1.5 text-xs font-medium rounded-lg text-red-500 border border-red-200 hover:bg-red-50 disabled:opacity-50"
+                        className="px-3 py-1.5 text-xs font-medium rounded-lg text-[var(--danger-fg)] border border-[var(--danger-ring)] hover:bg-[var(--danger-bg)] disabled:opacity-50"
                       >
                         삭제
                       </button>
@@ -464,7 +464,7 @@ export default function RequestsClient({
                     <button
                       onClick={() => handleDelete(r.id)}
                       disabled={pending}
-                      className="px-3 py-1.5 text-xs font-medium rounded-lg text-red-500 border border-red-200 hover:bg-red-50 disabled:opacity-50"
+                      className="px-3 py-1.5 text-xs font-medium rounded-lg text-[var(--danger-fg)] border border-[var(--danger-ring)] hover:bg-[var(--danger-bg)] disabled:opacity-50"
                     >
                       삭제
                     </button>

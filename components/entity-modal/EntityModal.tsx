@@ -232,7 +232,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
           {kind === 'room' && hasRoom && (
             <div className="flex gap-2 items-center">
               <button type="button" onClick={handleDeleteRoom} disabled={isPending}
-                className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
+                className="px-3 py-2 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
                 삭제
               </button>
               <div className="flex-1" />
@@ -244,7 +244,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
           {kind === 'tenant' && hasTenant && (
             <div className="flex gap-2 items-center">
               <button type="button" onClick={handleDeleteTenant} disabled={isPending}
-                className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
+                className="px-3 py-2 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
                 삭제
               </button>
               {links?.tenantId && (

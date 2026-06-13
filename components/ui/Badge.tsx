@@ -25,7 +25,7 @@ const PALE_CLS: Record<string, string> = {
   'pale-green':  'bg-[#eef2e5] text-[#4e6834] ring-[var(--viz-3)]/30',
   'pale-amber':  'bg-amber-50 text-amber-700 ring-amber-200',
   'pale-blue':   'bg-blue-50 text-blue-700 ring-blue-200',
-  'pale-red':    'bg-red-50 text-red-700 ring-red-200',
+  'pale-red':    'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]',
   'pale-teal':   'bg-teal-50 text-teal-700 ring-teal-200',
   'pale-purple': 'bg-purple-50 text-purple-700 ring-purple-200',
   // legacy alias — 기존 코드 호환
@@ -33,7 +33,7 @@ const PALE_CLS: Record<string, string> = {
   'green':       'bg-[#eef2e5] text-[#4e6834] ring-[var(--viz-3)]/30',
   'amber':       'bg-amber-50 text-amber-700 ring-amber-200',
   'blue':        'bg-blue-50 text-blue-700 ring-blue-200',
-  'red':         'bg-red-50 text-red-700 ring-red-200',
+  'red':         'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]',
   'teal':        'bg-teal-50 text-teal-700 ring-teal-200',
   'purple':      'bg-purple-50 text-purple-700 ring-purple-200',
 }

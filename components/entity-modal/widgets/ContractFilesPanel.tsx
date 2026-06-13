@@ -87,7 +87,7 @@ export function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string;
                 <a href={f.viewUrl} target="_blank" rel="noreferrer" className="flex-1 min-w-0 text-xs text-[var(--warm-dark)] hover:text-[var(--coral)] truncate">
                   {tenantName} · {dateLabel}
                 </a>
-                <button onClick={() => handleDelete(f.id)} className="text-[0.6875rem] text-red-500 hover:text-red-600">
+                <button onClick={() => handleDelete(f.id)} className="text-[0.6875rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)]">
                   삭제
                 </button>
               </li>

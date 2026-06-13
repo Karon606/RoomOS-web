@@ -352,9 +352,9 @@ export default function DataButtons() {
           </div>
           {allErrors.length > 0 && (
             <div className="rounded-xl p-3 space-y-1" style={{ background: 'rgba(239,68,68,0.06)' }}>
-              <p className="text-xs font-medium text-red-500">오류 {allErrors.length}건</p>
-              {allErrors.slice(0, 5).map((e, i) => <p key={i} className="text-xs text-red-400">{e}</p>)}
-              {allErrors.length > 5 && <p className="text-xs text-red-400">외 {allErrors.length - 5}건...</p>}
+              <p className="text-xs font-medium text-[var(--danger-fg)]">오류 {allErrors.length}건</p>
+              {allErrors.slice(0, 5).map((e, i) => <p key={i} className="text-xs text-[var(--danger-fg)]">{e}</p>)}
+              {allErrors.length > 5 && <p className="text-xs text-[var(--danger-fg)]">외 {allErrors.length - 5}건...</p>}
             </div>
           )}
           <button onClick={close} className="w-full py-2.5 rounded-xl text-sm font-medium"

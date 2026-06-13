@@ -129,7 +129,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
         className="w-full rounded-sm px-3 py-2.5 text-sm outline-none"
         style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
       />
-      {createError && <p className="text-xs text-red-500">{createError}</p>}
+      {createError && <p className="text-xs text-[var(--danger-fg)]">{createError}</p>}
       <div className="flex gap-2">
         <button
           onClick={() => { setShowCreate(false); setNewName(''); setCreateError('') }}

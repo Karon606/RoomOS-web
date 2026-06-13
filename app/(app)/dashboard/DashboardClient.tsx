@@ -193,7 +193,7 @@ function CheckoutRefundModal({
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
             />
             {exceedsMax && (
-              <p className="text-[0.6875rem] text-red-500">환불 금액은 최대 {maxRefund.toLocaleString()}원입니다.</p>
+              <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {maxRefund.toLocaleString()}원입니다.</p>
             )}
           </div>
 
@@ -333,7 +333,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
         {/* 하단 버튼 */}
         <div className="px-5 pb-5 pt-4 space-y-2">
           {confirmError && (
-            <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{confirmError}</p>
+            <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{confirmError}</p>
           )}
           {reservationDueLeaseId && (
             <button
@@ -495,7 +495,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
             </div>
 
-            {error && <p className="text-xs text-red-500">{error}</p>}
+            {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
 
             {/* 버튼 */}
             <div className="flex gap-2 pt-1">
@@ -1138,7 +1138,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
             Gemini가 재무 데이터를 분석하고 있습니다...
           </div>
         )}
-        {error && <p className="text-red-500 text-sm py-4 text-center">{error}</p>}
+        {error && <p className="text-[var(--danger-fg)] text-sm py-4 text-center">{error}</p>}
         {aiText && (
           <div className="rounded-xl p-4" style={{ background: 'var(--coral-pale)', border: '1px solid rgba(244,98,58,0.2)' }}>
             <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--warm-dark)' }}>
@@ -1378,7 +1378,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
             </div>
           ) : (
             <div className="p-6 space-y-5">
-              {error && <p className="text-xs text-red-500 bg-red-50 rounded-xl px-3 py-2">{error}</p>}
+              {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] rounded-xl px-3 py-2">{error}</p>}
 
               {/* 수납 현황 — 누적 미수(이월 + viewMonth 도래 후 미회수) 정확히 반영 */}
               {(() => {
@@ -1425,7 +1425,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                     {carryOver !== 0 && (
                       <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-1.5 text-center">
                         {carryOver < 0 ? (
-                          <>이월 미수 <span className="text-red-500 font-medium mono tnum">{Math.abs(carryOver).toLocaleString()}원</span> 포함</>
+                          <>이월 미수 <span className="text-[var(--danger-fg)] font-medium mono tnum">{Math.abs(carryOver).toLocaleString()}원</span> 포함</>
                         ) : (
                           <>이월 선납 <span className="text-emerald-600 font-medium mono tnum">{carryOver.toLocaleString()}원</span> 포함</>
                         )}
@@ -1626,7 +1626,7 @@ function DashPayRow({ p, isPreAcq, onEdit, onDelete, color }: {
         <span className={`text-sm font-semibold ${amountColor}`}>{p.actualAmount.toLocaleString()}원</span>
         <div className="flex gap-1.5 ml-1">
           <button onClick={() => onEdit(p)} className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border transition-colors" style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>수정</button>
-          <button onClick={() => onDelete(p.id)} className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-red-200 text-red-500 transition-colors">삭제</button>
+          <button onClick={() => onDelete(p.id)} className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">삭제</button>
         </div>
       </div>
     </div>

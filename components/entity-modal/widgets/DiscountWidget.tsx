@@ -71,7 +71,7 @@ export function DiscountWidget({ leaseTermId, onChange }: {
         <div key={d.id} className="flex items-center gap-2 text-xs">
           <span className="flex-1 text-[var(--warm-dark)]">{discountLabel(d)}</span>
           <button onClick={() => handleDelete(d.id)} disabled={pending}
-            className="text-[0.6875rem] px-2 py-1 rounded-lg border border-red-200 text-red-400 hover:text-red-600 transition-colors disabled:opacity-40">삭제</button>
+            className="text-[0.6875rem] px-2 py-1 rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors disabled:opacity-40">삭제</button>
         </div>
       ))}
       {showForm && (

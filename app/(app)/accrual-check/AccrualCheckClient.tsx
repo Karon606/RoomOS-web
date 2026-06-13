@@ -26,7 +26,7 @@ const CATEGORY_LABEL: Record<SuspectCategory, string> = {
 const CATEGORY_COLOR: Record<SuspectCategory, string> = {
   'late-payment':   'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
   'pre-payment':    'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-  'mismatch-other': 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
+  'mismatch-other': 'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]',
 }
 
 function fmtMoney(n: number) { return n.toLocaleString('ko-KR') + '원' }
@@ -104,13 +104,13 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
           <span>양도인: <span className="font-semibold text-[var(--warm-muted)]">{result.prevOwnerCount}건</span></span>
           <span>지연 입금: <span className="font-semibold text-amber-600">{counts['late-payment']}건</span></span>
           <span>선납: <span className="font-semibold text-emerald-600">{counts['pre-payment']}건</span></span>
-          <span>월 불일치: <span className="font-semibold text-rose-600">{counts['mismatch-other']}건</span></span>
+          <span>월 불일치: <span className="font-semibold text-[var(--danger-fg)]">{counts['mismatch-other']}건</span></span>
         </div>
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
-          <p className="text-red-400 text-sm">{error}</p>
+        <div className="bg-[var(--danger-bg)] border border-[var(--danger-ring)] rounded-xl p-3">
+          <p className="text-[var(--danger-fg)] text-sm">{error}</p>
         </div>
       )}
 

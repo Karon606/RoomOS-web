@@ -212,7 +212,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                     수정
                   </button>
                   <button onClick={() => handleDelete(p.id)}
-                    className="text-[0.625rem] font-medium px-2 py-1 rounded-lg border border-red-200 text-red-500 transition-colors">
+                    className="text-[0.625rem] font-medium px-2 py-1 rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">
                     삭제
                   </button>
                 </div>

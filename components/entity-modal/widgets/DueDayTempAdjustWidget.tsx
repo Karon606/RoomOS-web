@@ -155,16 +155,16 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
         <div className="flex items-center gap-1.5">
           {canEdit && isActive && !showForm && (
             confirmClear ? (
-              <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-lg px-2 py-1">
-                <span className="text-xs text-red-500">정말 삭제할까요?</span>
+              <div className="flex items-center gap-1.5 bg-[var(--danger-bg)] border border-[var(--danger-ring)] rounded-lg px-2 py-1">
+                <span className="text-xs text-[var(--danger-fg)]">정말 삭제할까요?</span>
                 <button type="button" onClick={() => setConfirmClear(false)}
                   className="text-xs text-gray-400 hover:text-gray-600">취소</button>
                 <button type="button" onClick={handleClear}
-                  className="text-xs bg-red-500 hover:bg-red-400 text-white font-semibold px-1.5 py-0.5 rounded">삭제</button>
+                  className="text-xs bg-[var(--danger-bg)] hover:bg-[var(--danger-ring)] text-[var(--danger-fg)] font-semibold px-1.5 py-0.5 rounded">삭제</button>
               </div>
             ) : (
               <button type="button" onClick={() => setConfirmClear(true)}
-                className="text-xs text-red-500 hover:text-red-600 px-2 py-1 rounded-lg border border-red-200 hover:border-red-400 transition-colors">삭제</button>
+                className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] px-2 py-1 rounded-lg border border-[var(--danger-ring)] hover:border-[var(--danger-ring)] transition-colors">삭제</button>
             )
           )}
           {canEdit && (

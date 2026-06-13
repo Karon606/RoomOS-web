@@ -1071,8 +1071,8 @@ export default function TenantClient({
 
       {/* 에러 */}
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
-          <p className="text-red-400 text-sm">{error}</p>
+        <div className="bg-[var(--danger-bg)] border border-[var(--danger-ring)] rounded-xl p-3">
+          <p className="text-[var(--danger-fg)] text-sm">{error}</p>
         </div>
       )}
 
@@ -1089,7 +1089,7 @@ export default function TenantClient({
               <div>
                 <p className="font-semibold text-[var(--warm-dark)]">{deleteTarget.name}님을 완전 삭제하시겠습니까?</p>
                 <p className="text-sm text-[var(--warm-mid)] mt-1.5 leading-relaxed">
-                  수납 기록, 계약 이력, 연락처 등 모든 데이터가 <span className="text-red-400 font-medium">영구적으로 삭제</span>되며 복구할 수 없습니다. 거주중이었다면 해당 호실은 공실로 전환됩니다.
+                  수납 기록, 계약 이력, 연락처 등 모든 데이터가 <span className="text-[var(--danger-fg)] font-medium">영구적으로 삭제</span>되며 복구할 수 없습니다. 거주중이었다면 해당 호실은 공실로 전환됩니다.
                 </p>
               </div>
             </div>
@@ -1102,7 +1102,7 @@ export default function TenantClient({
               <button
                 onClick={confirmDelete}
                 disabled={isPending}
-                className="flex-1 py-2.5 rounded-xl text-sm bg-red-500 hover:bg-red-600 text-white font-medium transition-colors disabled:opacity-50">
+                className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--danger-bg)] hover:bg-[var(--danger-ring)] text-[var(--danger-fg)] font-medium transition-colors disabled:opacity-50">
                 {isPending ? '삭제 중...' : '영구 삭제'}
               </button>
             </div>
@@ -1133,7 +1133,7 @@ export default function TenantClient({
                   </div>
                   <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
                     <p className="text-[var(--warm-muted)]">청소비 차감</p>
-                    <p className={`text-sm font-semibold mt-0.5 ${fee > 0 ? 'text-red-600' : 'text-[var(--warm-mid)]'}`}>
+                    <p className={`text-sm font-semibold mt-0.5 ${fee > 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-mid)]'}`}>
                       {fee > 0 ? `-${fee.toLocaleString()}원` : '없음'}
                     </p>
                   </div>
@@ -1145,7 +1145,7 @@ export default function TenantClient({
                   </label>
                   <MoneyInput value={depositReturnAmt} onChange={setDepositReturnAmt} placeholder="0원" />
                   {exceedsMax && (
-                    <p className="text-[0.6875rem] text-red-500">환불 금액은 최대 {maxRefund.toLocaleString()}원입니다.</p>
+                    <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {maxRefund.toLocaleString()}원입니다.</p>
                   )}
                 </div>
 
@@ -1171,7 +1171,7 @@ export default function TenantClient({
                   </p>
                 </div>
 
-                {error && <p className="text-red-400 text-sm">{error}</p>}
+                {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
               </div>
 
               <div className="px-5 pb-5 pt-1 flex gap-2">
@@ -1194,7 +1194,7 @@ export default function TenantClient({
       {rentChangeModal && (() => {
         const diff = rentChangeModal.scheduledRent - rentChangeModal.baseRent
         const dirLabel = diff > 0 ? '인상' : diff < 0 ? '인하' : '동결'
-        const dirColor = diff > 0 ? 'text-rose-600' : diff < 0 ? 'text-emerald-600' : 'text-[var(--warm-dark)]'
+        const dirColor = diff > 0 ? 'text-[var(--danger-fg)]' : diff < 0 ? 'text-emerald-600' : 'text-[var(--warm-dark)]'
         return (
           <div className="fixed inset-0 bg-black/70 z-[var(--z-modal-3)] flex items-center justify-center p-4">
             <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm p-6 space-y-4">
@@ -1667,7 +1667,7 @@ export default function TenantClient({
                       </div>
                       <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
                         <p className="text-xs text-[var(--warm-muted)]">잔액</p>
-                        <p className={`text-sm font-bold mt-0.5 ${balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        <p className={`text-sm font-bold mt-0.5 ${balance >= 0 ? 'text-green-400' : 'text-[var(--danger-fg)]'}`}>
                           {balance > 0
                             ? <MoneyDisplay amount={balance} prefix="+" />
                             : balance < 0
@@ -1712,7 +1712,7 @@ export default function TenantClient({
                                   {isExtra ? '-' : '+'}{absAmt.toLocaleString()}원
                                 </span>
                                 <button onClick={() => handleDeletePayRecord(p.id)}
-                                  className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-red-200 text-red-500 transition-colors">삭제</button>
+                                  className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">삭제</button>
                               </div>
                             </div>
                           )
@@ -1773,7 +1773,7 @@ export default function TenantClient({
                                     수정
                                   </button>
                                   <button onClick={() => handleDeletePayRecord(p.id)}
-                                    className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-red-200 text-red-500 transition-colors">
+                                    className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">
                                     삭제
                                   </button>
                                 </div>
@@ -1852,7 +1852,7 @@ export default function TenantClient({
                                     수정
                                   </button>
                                   <button onClick={() => handleDeletePayRecord(p.id)}
-                                    className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-red-200 text-red-500 transition-colors">
+                                    className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">
                                     삭제
                                   </button>
                                 </div>
@@ -1890,8 +1890,8 @@ export default function TenantClient({
                           <div className="flex items-center gap-2">
                             {isOverrideActive && !showOverrideForm && (
                               confirmClearOverride ? (
-                                <div className="flex items-center gap-2 bg-red-500/10 border border-red-400/30 rounded-lg px-2.5 py-1.5">
-                                  <span className="text-xs text-red-300">정말 삭제할까요?</span>
+                                <div className="flex items-center gap-2 bg-[var(--danger-bg)] border border-[var(--danger-ring)] rounded-lg px-2.5 py-1.5">
+                                  <span className="text-xs text-[var(--danger-fg)]">정말 삭제할까요?</span>
                                   <button type="button" onClick={() => setConfirmClearOverride(false)}
                                     className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-1.5 py-0.5 rounded">취소</button>
                                   <button
@@ -1920,13 +1920,13 @@ export default function TenantClient({
                                         } finally { release() }
                                       })
                                     }}
-                                    className="text-xs bg-red-500 hover:bg-red-400 active:bg-red-600 text-white font-semibold px-2 py-0.5 rounded disabled:opacity-40">
+                                    className="text-xs bg-[var(--danger-bg)] hover:bg-[var(--danger-ring)] text-[var(--danger-fg)] font-semibold px-2 py-0.5 rounded disabled:opacity-40">
                                     삭제
                                   </button>
                                 </div>
                               ) : (
                                 <button type="button" onClick={() => setConfirmClearOverride(true)}
-                                  className="text-xs text-red-400 hover:text-red-300 border border-red-400/40 rounded px-2 py-0.5 transition-colors">
+                                  className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] border border-[var(--danger-ring)] rounded px-2 py-0.5 transition-colors">
                                   삭제
                                 </button>
                               )
@@ -2133,7 +2133,7 @@ export default function TenantClient({
                       <input type="text" name="memo" placeholder="메모 (선택)"
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)]" />
                     </div>
-                    {error && <p className="text-red-400 text-sm">{error}</p>}
+                    {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
                   </div>
                   <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                     <Btn type="button" variant="secondary" size="md" onClick={() => { setShowPayForm(false); setError('') }}
@@ -2375,7 +2375,7 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
                 <span key={roomNo} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--coral)]/20 text-[var(--coral)]">
                   {WISH_RANK[i]} {fmtRoomNo(roomNo)}
                   <button type="button" onClick={() => remove(roomNo)}
-                    className="leading-none hover:text-red-400 transition-colors">×</button>
+                    className="leading-none hover:text-[var(--danger-fg)] transition-colors">×</button>
                 </span>
               ))}
             </div>
@@ -2930,7 +2930,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] resize-none" />
       </FormSection>
 
-      {error && <p className="text-red-400 text-sm">{error}</p>}
+      {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
     </>
   )
 }
@@ -3080,7 +3080,7 @@ function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string; tenant
                 <a href={f.viewUrl} target="_blank" rel="noreferrer" className="flex-1 min-w-0 text-xs text-[var(--warm-dark)] hover:text-[var(--coral)] truncate">
                   {tenantName} · {dateLabel}
                 </a>
-                <button onClick={() => handleDelete(f.id)} className="text-[0.6875rem] text-red-500 hover:text-red-600">
+                <button onClick={() => handleDelete(f.id)} className="text-[0.6875rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)]">
                   삭제
                 </button>
               </li>
@@ -3140,7 +3140,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
           <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl">✕</button>
         </div>
         <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
-          {error && <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+          {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
 
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">국적</label>

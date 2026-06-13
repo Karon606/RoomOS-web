@@ -45,7 +45,7 @@ export default async function LoginPage({
           {error && (
             <div className="rounded-xl p-3"
                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}>
-              <p className="text-red-500 text-sm">로그인에 실패했습니다. 다시 시도해주세요.</p>
+              <p className="text-[var(--danger-fg)] text-sm">로그인에 실패했습니다. 다시 시도해주세요.</p>
             </div>
           )}
 
