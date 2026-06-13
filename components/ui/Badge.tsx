@@ -13,7 +13,7 @@ type Tone = SemanticTone | PaleTone | LegacyTone
 
 // Brand Guide v1.1 솔리드 톤 — 강조용. mono uppercase 권장
 const SOLID_CLS: Record<SemanticTone, string> = {
-  success: 'bg-[#7a9a52] text-white',   // Warm Olive
+  success: 'bg-[var(--viz-3)] text-white',   // Warm Olive (= #7A9A52, 다크 미재정의 → 양쪽 동일)
   warn:    'bg-[var(--honey)] text-[var(--ink)]',
   danger:  'bg-[var(--persimmon)] text-white',
   neutral: 'bg-[var(--cream-3)] text-[var(--ink-3)]',
@@ -22,7 +22,7 @@ const SOLID_CLS: Record<SemanticTone, string> = {
 // 페일 톤 — 일반 라벨용. ring 1px solid 색약 강조
 const PALE_CLS: Record<string, string> = {
   'pale-coral':  'bg-[var(--persimmon-l)] text-[var(--persimmon-d)] ring-[var(--persimmon)]/20',
-  'pale-green':  'bg-[#eef2e5] text-[#4e6834] ring-[#7a9a52]/30',
+  'pale-green':  'bg-[#eef2e5] text-[#4e6834] ring-[var(--viz-3)]/30',
   'pale-amber':  'bg-amber-50 text-amber-700 ring-amber-200',
   'pale-blue':   'bg-blue-50 text-blue-700 ring-blue-200',
   'pale-red':    'bg-red-50 text-red-700 ring-red-200',
@@ -30,7 +30,7 @@ const PALE_CLS: Record<string, string> = {
   'pale-purple': 'bg-purple-50 text-purple-700 ring-purple-200',
   // legacy alias — 기존 코드 호환
   'coral':       'bg-[var(--persimmon-l)] text-[var(--persimmon-d)] ring-[var(--persimmon)]/20',
-  'green':       'bg-[#eef2e5] text-[#4e6834] ring-[#7a9a52]/30',
+  'green':       'bg-[#eef2e5] text-[#4e6834] ring-[var(--viz-3)]/30',
   'amber':       'bg-amber-50 text-amber-700 ring-amber-200',
   'blue':        'bg-blue-50 text-blue-700 ring-blue-200',
   'red':         'bg-red-50 text-red-700 ring-red-200',
