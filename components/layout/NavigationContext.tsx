@@ -9,7 +9,7 @@ const NavigationContext = createContext<StartNavigation | null>(null)
 /**
  * AppShell 의 useTransition(startNavigation)을 페이지 트리 깊은 곳까지 공급한다.
  * 월 셀렉터가 헤더 → 페이지 콘텐츠 상단으로 내려가면서 prop 전달이 끊겼기 때문에,
- * 페이지 안의 컨트롤도 이 컨텍스트로 전환 로딩 오버레이(BrandLoader)를 띄울 수 있게 한다.
+ * 페이지 안의 컨트롤도 이 컨텍스트로 전환 pending 상태(본문 스켈레톤)를 쓸 수 있게 한다.
  */
 export function NavigationProvider({
   startNavigation,

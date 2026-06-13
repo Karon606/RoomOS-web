@@ -2494,8 +2494,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   <p className="text-xs font-semibold truncate flex items-center gap-1" style={{ color: 'var(--ink-2)' }}>
                                     {fmtRoomNo(l.roomNo)} {l.tenantName}
                                     {l.daysOverdue != null && l.daysOverdue >= 7 && (
-                                      <span className="rounded-full text-[0.5625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--tc)', color: '#fff' }}>
-                                        {l.daysOverdue}일 경과
+                                      <span className="rounded-full text-[0.5625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--badge-overdue-bg)', color: 'var(--badge-overdue-fg)' }}>
+                                        연체 D+{l.daysOverdue}
                                       </span>
                                     )}
                                   </p>
