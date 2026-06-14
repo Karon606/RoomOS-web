@@ -2188,8 +2188,9 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
   const hasLocations = item.locations.length > 0
   const [date, setDate] = useState(kstYmdStr())
 
-  // 이전 점검의 위치별 수량 맵
+  // 이전 점검의 위치별 수량 맵 + 그때 보충한 양(restockedQty) 맵 — 참고줄에 계속 표시
   const prevMap = Object.fromEntries(lastCheckBreakdown.map(lb => [lb.locationId, lb.qty]))
+  const prevRestockedMap = Object.fromEntries(lastCheckBreakdown.map(lb => [lb.locationId, lb.restockedQty]))
   const hasPrev = lastCheckBreakdown.length > 0
 
   // 첫 허브 위치 (다중 허브면 첫 번째 — 보충량 자동 차감 대상)
@@ -2459,42 +2460,45 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
             const beforeN = beforeStr === '' ? null : Number(beforeStr)
             const afterN  = afterStr === '' ? null : Number(afterStr)
             const restocked = (beforeN !== null && afterN !== null && afterN > beforeN) ? afterN - beforeN : 0
+            const lastRestocked = prevRestockedMap[loc.id]
             return (
               <div key={loc.id} className="space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{loc.name}</span>
-                  <div className="flex items-baseline gap-1.5 shrink-0">
-                    <button type="button"
-                      onClick={() => {
-                        const cur = beforeQtys[loc.id] ?? ''
-                        if (cur === '' && prevQty !== undefined) {
-                          const v = String(prevQty)
-                          setBeforeQtys(p => ({ ...p, [loc.id]: v }))
-                          setAfterQtys(p => ({ ...p, [loc.id]: v }))
-                        } else {
-                          setAfterQtys(p => ({ ...p, [loc.id]: cur }))
-                        }
-                      }}
-                      className="text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10">
-                      유지
-                    </button>
-                    {restocked > 0 && (
-                      <span className="text-[0.625rem] text-[var(--coral)]">창고 → +{Math.round(restocked * 100) / 100}</span>
-                    )}
-                    {prevQty !== undefined && <span className="text-[0.625rem] text-[var(--warm-muted)]">이전 {prevQty}{stockUnit ?? ''}</span>}
-                  </div>
+                  <button type="button"
+                    onClick={() => {
+                      const cur = beforeQtys[loc.id] ?? ''
+                      if (cur === '' && prevQty !== undefined) {
+                        const v = String(prevQty)
+                        setBeforeQtys(p => ({ ...p, [loc.id]: v }))
+                        setAfterQtys(p => ({ ...p, [loc.id]: v }))
+                      } else {
+                        setAfterQtys(p => ({ ...p, [loc.id]: cur }))
+                      }
+                    }}
+                    className="shrink-0 text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10">
+                    직전값 유지
+                  </button>
                 </div>
+                {/* 참고줄 — 입력 중에도 직전 잔량·지난 보충량이 계속 보이게 */}
+                {(prevQty !== undefined || lastRestocked != null || restocked > 0) && (
+                  <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[0.625rem] bg-[var(--canvas)] rounded-md px-2 py-1">
+                    {prevQty !== undefined && <span className="text-[var(--warm-mid)]">직전 잔량 <strong className="text-[var(--warm-dark)] tabular-nums">{prevQty}{stockUnit ?? ''}</strong></span>}
+                    {lastRestocked != null && lastRestocked > 0 && <span className="text-[var(--warm-muted)]">· 지난 보충 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(lastRestocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                    {restocked > 0 && <span className="text-[var(--coral)] ml-auto">이번 보충 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-1.5">
                   <div>
-                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">보충 전</p>
+                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (보충 전)</p>
                     <input type="text" inputMode="decimal" placeholder="0"
                       value={beforeStr}
                       onChange={e => setBeforeQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                       className={`w-full min-w-0 ${inputCls}`} />
                   </div>
                   <div>
-                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">보충 후</p>
-                    <input type="text" inputMode="decimal" placeholder="0"
+                    <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">보충 후 <span className="text-[var(--warm-muted)]/70">(보충 시)</span></p>
+                    <input type="text" inputMode="decimal" placeholder="—"
                       value={afterStr}
                       onChange={e => setAfterQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                       className={`w-full min-w-0 ${inputCls}`} />
@@ -2816,33 +2820,33 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                       <p className="text-xs font-medium text-[var(--warm-dark)] truncate">{r.label}</p>
                       <p className="text-[0.625rem] text-[var(--warm-muted)]">{r.category}</p>
                     </div>
-                    <div className="flex items-baseline gap-1.5 shrink-0">
-                      <button type="button"
-                        onClick={() => {
-                          if (rowIsHub) {
-                            if (prev != null) setAfterQtys(p => ({ ...p, [r.id]: String(prev.qty) }))
+                    <button type="button"
+                      onClick={() => {
+                        if (rowIsHub) {
+                          if (prev != null) setAfterQtys(p => ({ ...p, [r.id]: String(prev.qty) }))
+                        } else {
+                          const cur = beforeQtys[r.id] ?? ''
+                          if (cur === '' && prev != null) {
+                            const v = String(prev.qty)
+                            setBeforeQtys(p => ({ ...p, [r.id]: v }))
+                            setAfterQtys(p => ({ ...p, [r.id]: v }))
                           } else {
-                            const cur = beforeQtys[r.id] ?? ''
-                            if (cur === '' && prev != null) {
-                              const v = String(prev.qty)
-                              setBeforeQtys(p => ({ ...p, [r.id]: v }))
-                              setAfterQtys(p => ({ ...p, [r.id]: v }))
-                            } else {
-                              setAfterQtys(p => ({ ...p, [r.id]: cur }))
-                            }
+                            setAfterQtys(p => ({ ...p, [r.id]: cur }))
                           }
-                        }}
-                        className="text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10">
-                        유지
-                      </button>
-                      {restocked > 0 && !rowIsHub && (
-                        <span className="text-[0.625rem] text-[var(--coral)]">창고 → +{Math.round(restocked * 100) / 100}</span>
-                      )}
-                      {prev != null && (
-                        <span className="text-[0.625rem] text-[var(--warm-muted)]">이전 {prev.qty}{stockUnit ?? ''}</span>
-                      )}
-                    </div>
+                        }
+                      }}
+                      className="shrink-0 text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10">
+                      직전값 유지
+                    </button>
                   </div>
+                  {/* 참고줄 — 직전 잔량·지난 보충량 계속 표시 */}
+                  {(prev != null || (restocked > 0 && !rowIsHub)) && (
+                    <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[0.625rem] bg-[var(--canvas)] rounded-md px-2 py-1">
+                      {prev != null && <span className="text-[var(--warm-mid)]">직전 잔량 <strong className="text-[var(--warm-dark)] tabular-nums">{prev.qty}{stockUnit ?? ''}</strong></span>}
+                      {prev?.restockedQty != null && prev.restockedQty > 0 && <span className="text-[var(--warm-muted)]">· 지난 보충 <strong className="text-[var(--coral)] tabular-nums">+{Math.round(prev.restockedQty * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                      {restocked > 0 && !rowIsHub && <span className="text-[var(--coral)] ml-auto">이번 보충 <strong className="tabular-nums">+{Math.round(restocked * 100) / 100}{stockUnit ?? ''}</strong></span>}
+                    </div>
+                  )}
                   {rowIsHub ? (
                     // 허브 위치 점검 — 잔량 1칸
                     <div className="flex items-center gap-1.5">
@@ -2854,18 +2858,18 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                       <span className="text-[0.625rem] text-[var(--warm-muted)] w-6 shrink-0 text-right">{stockUnit ?? ''}</span>
                     </div>
                   ) : (
-                    // 비허브 위치 점검 — 보충 전 / 보충 후
+                    // 비허브 위치 점검 — 현재 잔량 / 보충 후(선택)
                     <div className="grid grid-cols-2 gap-1.5">
                       <div>
-                        <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">보충 전</p>
+                        <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (보충 전)</p>
                         <input type="text" inputMode="decimal" placeholder="0"
                           value={beforeStr}
                           onChange={e => setBeforeQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                           className={qtyInputCls} />
                       </div>
                       <div>
-                        <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">보충 후</p>
-                        <input type="text" inputMode="decimal" placeholder="0"
+                        <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">보충 후 <span className="text-[var(--warm-muted)]/70">(보충 시)</span></p>
+                        <input type="text" inputMode="decimal" placeholder="—"
                           value={afterStr}
                           onChange={e => setAfterQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                           className={qtyInputCls} />
