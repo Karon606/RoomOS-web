@@ -1966,7 +1966,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
                     <button type="button"
                       onClick={() => setAfterQtys(p => ({ ...p, [l.id]: beforeQtys[l.id] ?? '' }))}
                       className="text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
-                      유지
+                      보충 없음
                     </button>
                     {restocked > 0 && (
                       <span className="text-[0.625rem] text-[var(--coral)]">창고 → +{Math.round(restocked * 100) / 100}</span>
@@ -2461,16 +2461,6 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
               <div key={loc.id} className="space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{loc.name}</span>
-                  <button type="button"
-                    onClick={() => {
-                      if (prevQty === undefined) return
-                      const v = String(prevQty)
-                      setBeforeQtys(p => ({ ...p, [loc.id]: v }))
-                      setAfterQtys(p => ({ ...p, [loc.id]: v }))
-                    }}
-                    className="shrink-0 text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
-                    직전값 유지
-                  </button>
                 </div>
                 {/* 참고줄 — 입력 중에도 직전 잔량·지난 보충량이 계속 보이게 */}
                 {(prevQty !== undefined || lastRestocked != null || restocked > 0) && (
@@ -2495,6 +2485,21 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
                       onChange={e => setAfterQtys(prev => ({ ...prev, [loc.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                       className={`w-full min-w-0 ${inputCls}`} />
                   </div>
+                </div>
+                {/* 보충 없음 — 추가 보충 없이 센 값 그대로 확정(보충 후=현재 잔량). 안 셌으면 직전 잔량으로 채움 */}
+                <div className="flex justify-end">
+                  <button type="button"
+                    onClick={() => {
+                      if (beforeStr !== '') setAfterQtys(p => ({ ...p, [loc.id]: beforeStr }))
+                      else if (prevQty !== undefined) {
+                        const v = String(prevQty)
+                        setBeforeQtys(p => ({ ...p, [loc.id]: v }))
+                        setAfterQtys(p => ({ ...p, [loc.id]: v }))
+                      }
+                    }}
+                    className="text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
+                    보충 없음
+                  </button>
                 </div>
               </div>
             )
@@ -2613,17 +2618,10 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
 
   useEffect(() => {
     if (!locId) return
-    // "보충 전"을 직전 점검 잔량으로 prefill — 보충 후만 입력해도 보충량(후-전)이
-    // 정확히 계산되어 허브에서 자동 차감됨. (빈칸이면 보충 0으로 처리돼 허브 차감 없이
-    // 순증가하던 버그 수정. 아이템별 점검 CheckForm 과 prefill 동작 통일.)
-    const initBefore: Record<string, string> = {}
-    rows
-      .filter(r => !r.isArchived && r.locations.some(l => l.id === locId))
-      .forEach(r => {
-        const prev = r.lastCheckLocationBreakdown.find(lb => lb.locationId === locId)
-        initBefore[r.id] = prev != null ? String(prev.qty) : ''
-      })
-    setBeforeQtys(initBefore)
+    // 현재 잔량(보충 전)은 빈칸으로 시작 — 직접 세어 입력(미리 채운 값 수정 번거로움 해소).
+    // 보충 후만 입력하고 현재 잔량을 비운 경우는 computeRow 가 직전 잔량을 보충 기준으로 삼아
+    // 허브 미차감(총량 변동) 버그를 막는다. CheckForm 과 동작 통일.
+    setBeforeQtys({})
     setAfterQtys({})
     setMergeChoice(null)
     setConfirmItems([])
@@ -2649,13 +2647,17 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
     const afterStr  = afterQtys[r.id] ?? ''
     const b = beforeStr === '' ? null : Number(beforeStr)
     const a = afterStr  === '' ? null : Number(afterStr)
-    const restocked = (b !== null && a !== null && a > b) ? a - b : 0
-    return { beforeStr, afterStr, beforeN: b, afterN: a, restocked }
+    // 최종 잔량 = 보충 후(입력 시) 아니면 현재 잔량. 현재 잔량만 입력해도 점검으로 저장된다.
+    const finalN = a ?? b
+    // 보충량: 보충 후만 입력하고 현재 잔량을 비웠다면 직전 잔량을 기준으로 삼아 허브 미차감 방지
+    const restockBase = b ?? (r.lastCheckLocationBreakdown.find(lb => lb.locationId === locId)?.qty ?? null)
+    const restocked = (restockBase !== null && a !== null && a > restockBase) ? a - restockBase : 0
+    return { beforeStr, afterStr, beforeN: b, afterN: a, finalN, restocked }
   }
 
   const isItemDirty = (r: InventoryRow) => {
-    const { afterStr } = computeRow(r)
-    return afterStr !== ''
+    const { beforeStr, afterStr } = computeRow(r)
+    return beforeStr !== '' || afterStr !== ''
   }
 
   const totalRestock = locItems.reduce((s, r) => s + computeRow(r).restocked, 0)
@@ -2668,13 +2670,13 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
     const now = Date.now()
     try {
       await Promise.all(toSave.map(r => {
-        const { afterN, restocked } = computeRow(r)
+        const { finalN, restocked } = computeRow(r)
         // #3 서버가 DB의 현재(머지대상)·직전(신규) 위치별 잔량을 base로 허브 차감·이월을 계산한다.
         //    (클라가 props의 stale한 직전값으로 계산하던 과다 차감·덮어쓰기 버그 제거)
         const hubLoc = r.locations.find(l => l.isHub)
         const locationPatch = {
           checkedLocationId: locId!,
-          afterQty: afterN ?? 0,
+          afterQty: finalN ?? 0,
           restockedQty: restocked,
           hubLocationId: hubLoc?.id ?? null,
         }
@@ -2812,19 +2814,6 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                       <p className="text-xs font-medium text-[var(--warm-dark)] truncate">{r.label}</p>
                       <p className="text-[0.625rem] text-[var(--warm-muted)]">{r.category}</p>
                     </div>
-                    <button type="button"
-                      onClick={() => {
-                        if (prev == null) return
-                        const v = String(prev.qty)
-                        if (rowIsHub) { setAfterQtys(p => ({ ...p, [r.id]: v })) }
-                        else {
-                          setBeforeQtys(p => ({ ...p, [r.id]: v }))
-                          setAfterQtys(p => ({ ...p, [r.id]: v }))
-                        }
-                      }}
-                      className="shrink-0 text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
-                      직전값 유지
-                    </button>
                   </div>
                   {/* 참고줄 — 직전 잔량·지난 보충량 계속 표시 */}
                   {(prev != null || (restocked > 0 && !rowIsHub)) && (
@@ -2843,25 +2832,49 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                         onChange={e => setAfterQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
                         className={qtyInputCls} />
                       <span className="text-[0.625rem] text-[var(--warm-muted)] w-6 shrink-0 text-right">{stockUnit ?? ''}</span>
+                      {prev != null && (
+                        <button type="button"
+                          onClick={() => setAfterQtys(p => ({ ...p, [r.id]: String(prev.qty) }))}
+                          className="shrink-0 text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
+                          직전값
+                        </button>
+                      )}
                     </div>
                   ) : (
-                    // 비허브 위치 점검 — 현재 잔량 / 보충 후(선택)
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <div>
-                        <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (보충 전)</p>
-                        <input type="text" inputMode="decimal" placeholder="0"
-                          value={beforeStr}
-                          onChange={e => setBeforeQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                          className={qtyInputCls} />
+                    <>
+                      {/* 비허브 위치 점검 — 현재 잔량 / 보충 후(선택) */}
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <div>
+                          <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">현재 잔량 (보충 전)</p>
+                          <input type="text" inputMode="decimal" placeholder="0"
+                            value={beforeStr}
+                            onChange={e => setBeforeQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                            className={qtyInputCls} />
+                        </div>
+                        <div>
+                          <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">보충 후 <span className="text-[var(--warm-muted)]/70">(보충 시)</span></p>
+                          <input type="text" inputMode="decimal" placeholder="—"
+                            value={afterStr}
+                            onChange={e => setAfterQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                            className={qtyInputCls} />
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[0.5625rem] text-[var(--warm-muted)] mb-0.5">보충 후 <span className="text-[var(--warm-muted)]/70">(보충 시)</span></p>
-                        <input type="text" inputMode="decimal" placeholder="—"
-                          value={afterStr}
-                          onChange={e => setAfterQtys(p => ({ ...p, [r.id]: e.target.value.replace(/[^0-9.]/g, '') }))}
-                          className={qtyInputCls} />
+                      {/* 보충 없음 — 추가 보충 없이 센 값 그대로 확정(보충 후=현재 잔량). 안 셌으면 직전 잔량으로 채움 */}
+                      <div className="flex justify-end mt-1">
+                        <button type="button"
+                          onClick={() => {
+                            if (beforeStr !== '') setAfterQtys(p => ({ ...p, [r.id]: beforeStr }))
+                            else if (prev != null) {
+                              const v = String(prev.qty)
+                              setBeforeQtys(p => ({ ...p, [r.id]: v }))
+                              setAfterQtys(p => ({ ...p, [r.id]: v }))
+                            }
+                          }}
+                          className="text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
+                          보충 없음
+                        </button>
                       </div>
-                    </div>
+                    </>
                   )}
                 </div>
               )
