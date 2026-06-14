@@ -56,9 +56,11 @@ export type MarketingStats = {
   oses: { os: string; count: number; percent: number }[]
   // 브라우저 Top
   browsers: { browser: string; count: number; percent: number }[]
-  // 지역 (국가 / 도시)
+  // 지역 (국가 / 도시) — city 에 상위 지역(시·도) 병행 표기
   countries: { country: string; count: number; percent: number }[]
-  cities: { city: string; country: string | null; count: number }[]
+  cities: { city: string; region: string | null; country: string | null; count: number }[]
+  // 선택된 특정 날짜 (YYYY-MM-DD KST) — 프리셋 범위면 null
+  customDate: string | null
   // 언어 Top
   languages: { language: string; count: number }[]
   // 화면 해상도 Top
@@ -82,6 +84,21 @@ function rangeStart(range: MarketingRange): { start: Date; bucket: MarketingBuck
 // KST 보정 (브라우저/서버 timezone과 무관하게 한국시간 기준 day/month)
 const KST_OFFSET = 9 * 60 * 60 * 1000
 const toKst = (d: Date) => new Date(d.getTime() + KST_OFFSET)
+
+// Vercel x-vercel-ip-country-region(ISO 3166-2 코드)을 한국 시·도명으로.
+// 같은 city 명(예: suseong-gu)이 서울인지 대구인지 상위 지역으로 구분하기 위함.
+const KR_REGION: Record<string, string> = {
+  '11': '서울', '26': '부산', '27': '대구', '28': '인천', '29': '광주', '30': '대전',
+  '31': '울산', '50': '세종', '41': '경기', '42': '강원', '43': '충북', '44': '충남',
+  '45': '전북', '46': '전남', '47': '경북', '48': '경남', '49': '제주',
+}
+function regionDisplay(country: string | null, region: string | null): string | null {
+  if (!region) return null
+  let code = region.toUpperCase()
+  if (code.startsWith('KR-')) code = code.slice(3)
+  if ((!country || country.toUpperCase() === 'KR') && KR_REGION[code]) return KR_REGION[code]
+  return region   // 한국 외·미매핑이면 원본 그대로
+}
 
 type Row = {
   occurredAt: Date
@@ -165,7 +182,10 @@ function buildTrend(rows: Row[], start: Date, bucket: MarketingBucket): { label:
   return buckets.map(b => ({ label: b.label, views: b.views, visitors: b.visitors.size }))
 }
 
-export async function getMarketingStats(range: MarketingRange = '30d'): Promise<MarketingStats> {
+export async function getMarketingStats(
+  range: MarketingRange = '30d',
+  customDate: string | null = null,
+): Promise<MarketingStats> {
   const propertyId = await getPropertyId()
   const property = await prisma.property.findUnique({
     where: { id: propertyId },
@@ -174,7 +194,19 @@ export async function getMarketingStats(range: MarketingRange = '30d'): Promise<
   const slug = property?.publicSlug?.trim() || null
   const publicUrl = slug ? `https://www.stayeum.com/members/${slug}/` : null
 
-  const { start, bucket } = rangeStart(range)
+  // 특정 날짜(YYYY-MM-DD, KST 하루) 선택 시 → 그 날 0~24시(시간별). 아니면 프리셋 범위.
+  const validCustom = customDate && /^\d{4}-\d{2}-\d{2}$/.test(customDate) ? customDate : null
+  let start: Date
+  let end: Date | null = null
+  let bucket: MarketingBucket
+  if (validCustom) {
+    start = new Date(`${validCustom}T00:00:00+09:00`)
+    end = new Date(start.getTime() + 24 * 60 * 60 * 1000)
+    bucket = 'hour'
+  } else {
+    const r = rangeStart(range)
+    start = r.start; bucket = r.bucket
+  }
 
   if (!slug) {
     return {
@@ -187,13 +219,13 @@ export async function getMarketingStats(range: MarketingRange = '30d'): Promise<
       hourly: Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 })),
       deviceTypes: [], oses: [], browsers: [],
       countries: [], cities: [], languages: [], resolutions: [],
-      botCount: 0,
+      customDate: validCustom, botCount: 0,
     }
   }
 
   // 범위 내 행 (집계 대상)
   const inRange = await prisma.pageView.findMany({
-    where: { slug, isBot: false, occurredAt: { gte: start } },
+    where: { slug, isBot: false, occurredAt: { gte: start, ...(end ? { lt: end } : {}) } },
     orderBy: { occurredAt: 'asc' },
     select: {
       occurredAt: true,
@@ -218,7 +250,7 @@ export async function getMarketingStats(range: MarketingRange = '30d'): Promise<
     prisma.pageView.count({ where: { slug, isBot: false, occurredAt: { gte: startOfWeek } } }),
     prisma.pageView.count({ where: { slug, isBot: false, occurredAt: { gte: startOfMonth } } }),
     prisma.pageView.count({ where: { slug, isBot: false } }),
-    prisma.pageView.count({ where: { slug, isBot: true, occurredAt: { gte: start } } }),
+    prisma.pageView.count({ where: { slug, isBot: true, occurredAt: { gte: start, ...(end ? { lt: end } : {}) } } }),
   ])
 
   // 트렌드
@@ -331,14 +363,15 @@ export async function getMarketingStats(range: MarketingRange = '30d'): Promise<
     .sort((a, b) => b.count - a.count)
     .slice(0, 10)
 
-  // 도시 (국가 함께)
-  const cityMap = new Map<string, { city: string; country: string | null; count: number }>()
+  // 도시 (상위 지역·국가 함께) — 같은 city명 구분 위해 region(시·도) 병행
+  const cityMap = new Map<string, { city: string; region: string | null; country: string | null; count: number }>()
   for (const r of inRange) {
     if (!r.city) continue
-    const key = `${r.country ?? ''}|${r.city}`
+    const region = regionDisplay(r.country, r.region)
+    const key = `${r.country ?? ''}|${region ?? ''}|${r.city}`
     const existing = cityMap.get(key)
     if (existing) existing.count++
-    else cityMap.set(key, { city: r.city, country: r.country, count: 1 })
+    else cityMap.set(key, { city: r.city, region, country: r.country, count: 1 })
   }
   const cities = Array.from(cityMap.values()).sort((a, b) => b.count - a.count).slice(0, 12)
 
@@ -382,6 +415,6 @@ export async function getMarketingStats(range: MarketingRange = '30d'): Promise<
     trend, referrers, channels, namedSources, campaigns, hourly,
     deviceTypes, oses, browsers,
     countries, cities, languages, resolutions,
-    botCount,
+    customDate: validCustom, botCount,
   }
 }

@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useState, useTransition } from 'react'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { getMarketingStats, type MarketingStats, type MarketingRange } from './actions'
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
@@ -50,18 +51,31 @@ const RANGES: { key: MarketingRange; label: string; granularity: string }[] = [
   { key: '1y',    label: '1년',   granularity: '월별' },
 ]
 
+const todayStr = () => {
+  const k = new Date(Date.now() + 9 * 3600 * 1000)
+  return `${k.getUTCFullYear()}-${String(k.getUTCMonth() + 1).padStart(2, '0')}-${String(k.getUTCDate()).padStart(2, '0')}`
+}
+
 export default function MarketingClient({ initialStats }: { initialStats: MarketingStats }) {
   const [stats, setStats] = useState<MarketingStats>(initialStats)
   const [range, setRange] = useState<MarketingRange>(initialStats.range)
+  const [customDate, setCustomDate] = useState<string | null>(initialStats.customDate)
+  const [selTrend, setSelTrend] = useState<number | null>(null)
+  const [selHour, setSelHour] = useState<number | null>(null)
   const [pending, startTransition] = useTransition()
 
+  // 프리셋 범위 선택 — 특정 날짜 모드 해제
   const handleRange = (r: MarketingRange) => {
-    if (r === range) return
-    setRange(r)
-    startTransition(async () => {
-      const fresh = await getMarketingStats(r)
-      setStats(fresh)
-    })
+    if (r === range && !customDate) return
+    setRange(r); setCustomDate(null); setSelTrend(null); setSelHour(null)
+    startTransition(async () => { setStats(await getMarketingStats(r)) })
+  }
+
+  // 특정 날짜 선택 — 그 날 0~24시(시간별)
+  const handleDate = (d: string) => {
+    if (!d || d === customDate) return
+    setCustomDate(d); setSelTrend(null); setSelHour(null)
+    startTransition(async () => { setStats(await getMarketingStats(range, d)) })
   }
 
   if (!stats.publicSlug) {
@@ -87,7 +101,11 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
 
   const trendMax = Math.max(1, ...stats.trend.map(d => d.views))
   const hourMax  = Math.max(1, ...stats.hourly.map(h => h.count))
-  const currentRangeMeta = RANGES.find(r => r.key === range) ?? RANGES[2]
+  const presetMeta = RANGES.find(r => r.key === range) ?? RANGES[2]
+  // 특정 날짜 모드면 그 날짜·시간별, 아니면 프리셋 라벨
+  const currentRangeMeta = customDate
+    ? { label: customDate, granularity: '시간별' }
+    : presetMeta
   const fmtDuration = (ms: number) => {
     if (ms < 1000) return `${ms}ms`
     const s = Math.round(ms / 1000)
@@ -100,7 +118,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
     <div className="space-y-4" style={{ opacity: pending ? 0.6 : 1, transition: 'opacity 150ms' }}>
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <h1 className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>마케팅</h1>
+          <h1 className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>방문 분석</h1>
           {stats.publicUrl && (
             <a href={stats.publicUrl} target="_blank" rel="noopener noreferrer"
               className="text-xs hover:underline" style={{ color: 'var(--persimmon-d)' }}>
@@ -115,10 +133,10 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
         )}
       </div>
 
-      {/* 범위 선택 */}
+      {/* 범위 선택 + 특정 날짜 */}
       <div className="flex items-center gap-1.5 flex-wrap">
         {RANGES.map(r => {
-          const active = r.key === range
+          const active = r.key === range && !customDate
           return (
             <button
               key={r.key}
@@ -136,8 +154,23 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
             </button>
           )
         })}
-        <span className="text-[11px] ml-2" style={{ color: 'var(--warm-muted)' }}>
-          {currentRangeMeta.granularity}
+        {/* 특정 날짜 — 선택하면 그 날 0~24시(시간별) */}
+        <div className="flex items-center gap-1" style={{
+          padding: '1px', borderRadius: 9,
+          border: '1px solid ' + (customDate ? 'var(--persimmon)' : 'var(--warm-border)'),
+          background: customDate ? 'rgba(160,60,46,.06)' : 'transparent',
+        }}>
+          <DatePicker value={customDate ?? ''} onChange={handleDate} maxDate={todayStr()}
+            placeholder="특정 날짜"
+            className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-xs text-[var(--warm-dark)]" />
+          {customDate && (
+            <button type="button" onClick={() => handleRange(range)} disabled={pending}
+              title="특정 날짜 해제" aria-label="특정 날짜 해제"
+              className="px-1.5 text-xs disabled:opacity-50" style={{ color: 'var(--persimmon)' }}>✕</button>
+          )}
+        </div>
+        <span className="text-[11px] ml-1" style={{ color: 'var(--warm-muted)' }}>
+          {customDate ? `${customDate} · 시간별` : currentRangeMeta.granularity}
         </span>
       </div>
 
@@ -181,15 +214,23 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
           <p className="text-xs text-center py-6" style={{ color: 'var(--warm-muted)' }}>데이터 없음</p>
         ) : (
           <>
+            {/* 선택 막대 상세 (모바일 탭 대응 — 데스크탑 hover 도 유지) */}
+            <p className="text-[11px] mb-1.5 h-4" style={{ color: 'var(--warm-mid)' }}>
+              {selTrend != null && stats.trend[selTrend]
+                ? <><strong style={{ color: 'var(--warm-dark)' }}>{stats.trend[selTrend].label}</strong> · {fmt(stats.trend[selTrend].views)}뷰 · {fmt(stats.trend[selTrend].visitors)}명</>
+                : <span style={{ color: 'var(--warm-muted)' }}>막대를 탭하면 상세가 표시됩니다</span>}
+            </p>
             <div className="flex items-end gap-[3px] h-28">
               {stats.trend.map((d, i) => {
                 const h = (d.views / trendMax) * 100
+                const sel = selTrend === i
                 return (
-                  <div key={i} className="flex-1 h-full flex flex-col justify-end items-center"
+                  <button key={i} type="button" onClick={() => setSelTrend(sel ? null : i)}
+                    className="flex-1 h-full flex flex-col justify-end items-center cursor-pointer"
                     title={`${d.label}: ${d.views}뷰 · ${d.visitors}명`}>
-                    <div className="w-full rounded-t-sm"
-                      style={{ height: `${Math.max(2, h)}%`, background: 'var(--persimmon)' }} />
-                  </div>
+                    <div className="w-full rounded-t-sm transition-opacity"
+                      style={{ height: `${Math.max(2, h)}%`, background: 'var(--persimmon)', opacity: selTrend == null || sel ? 1 : 0.4 }} />
+                  </button>
                 )
               })}
             </div>
@@ -300,7 +341,9 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
               {stats.cities.map((c, i) => (
                 <li key={i} className="flex items-baseline justify-between gap-2">
                   <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>
-                    {c.city} {c.country && <span className="text-[10px]" style={{ color: 'var(--warm-muted)' }}>({c.country})</span>}
+                    {c.city}
+                    {c.region && <span className="text-[11px]" style={{ color: 'var(--warm-mid)' }}> · {c.region}</span>}
+                    {c.country && <span className="text-[10px]" style={{ color: 'var(--warm-muted)' }}> ({c.country})</span>}
                   </span>
                   <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(c.count)}건</span>
                 </li>
@@ -360,14 +403,21 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
         <p className="text-xs font-semibold mb-3" style={{ color: 'var(--ink-2)' }}>
           시간대 분포 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(KST 0-23시 누적)</span>
         </p>
+        <p className="text-[11px] mb-1.5 h-4" style={{ color: 'var(--warm-mid)' }}>
+          {selHour != null && stats.hourly[selHour]
+            ? <><strong style={{ color: 'var(--warm-dark)' }}>{stats.hourly[selHour].hour}시</strong> · {fmt(stats.hourly[selHour].count)}뷰</>
+            : <span style={{ color: 'var(--warm-muted)' }}>막대를 탭하면 상세가 표시됩니다</span>}
+        </p>
         <div className="flex items-end gap-[2px] h-20">
           {stats.hourly.map((h, i) => {
             const height = (h.count / hourMax) * 100
+            const sel = selHour === i
             return (
-              <div key={i} className="flex-1 h-full flex flex-col justify-end" title={`${h.hour}시: ${h.count}뷰`}>
-                <div className="w-full rounded-t-sm"
-                  style={{ height: `${Math.max(2, height)}%`, background: 'var(--camel)' }} />
-              </div>
+              <button key={i} type="button" onClick={() => setSelHour(sel ? null : i)}
+                className="flex-1 h-full flex flex-col justify-end cursor-pointer" title={`${h.hour}시: ${h.count}뷰`}>
+                <div className="w-full rounded-t-sm transition-opacity"
+                  style={{ height: `${Math.max(2, height)}%`, background: 'var(--camel)', opacity: selHour == null || sel ? 1 : 0.4 }} />
+              </button>
             )
           })}
         </div>
