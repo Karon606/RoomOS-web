@@ -254,9 +254,13 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
 
   function confirmAdd(label: string) {
     const amount = amountStr ? Number(amountStr.replace(/[^0-9]/g, '')) : undefined
-    const q = Number(qtyValue) || 1
+    // 수량 미입력 → 자동 1개 (화면·detail·DB 표기 일관: "x 1개"). 단위도 비었으면 '개'.
+    const noQty = qtyValue.trim() === ''
+    const resolvedQty  = noQty ? '1' : qtyValue
+    const resolvedUnit = noQty && qtyUnit.trim() === '' ? '개' : qtyUnit
+    const q = Number(resolvedQty) || 1
     const unitPrice = amount != null && q > 0 ? Math.round(amount / q) : undefined
-    const data: ItemPickState = { label, specValue, specUnit, qtyValue, qtyUnit, amount, unitPrice }
+    const data: ItemPickState = { label, specValue, specUnit, qtyValue: resolvedQty, qtyUnit: resolvedUnit, amount, unitPrice }
     onChange([...items, data])
     setActiveLabel(null)
     setSpecValue(''); setQtyValue(''); setAmountStr(''); setCustomLabel('')
@@ -2941,8 +2945,9 @@ export default function FinanceClient({
                       label: detailExp.itemLabel,
                       specValue: detailExp.specValue?.toString() ?? '',
                       specUnit:  detailExp.specUnit ?? '',
-                      qtyValue:  detailExp.qtyValue?.toString() ?? '',
-                      qtyUnit:   detailExp.qtyUnit ?? '',
+                      // 수량 미입력 항목은 자동 1개로 (confirmAdd 와 동일 규칙) — 재저장 시 "x 1개" 일관 표기
+                      qtyValue:  detailExp.qtyValue != null ? detailExp.qtyValue.toString() : '1',
+                      qtyUnit:   detailExp.qtyValue != null ? (detailExp.qtyUnit ?? '') : (detailExp.qtyUnit ?? '개'),
                       amount:    baseAmount,
                       // 단가 복원 — (금액−배송비)÷수량(저장엔 단가 없음). 안 채우면 수정 시 단가 0 으로 보임.
                       unitPrice: Math.round(baseAmount / (Number(detailExp.qtyValue) || 1)),
