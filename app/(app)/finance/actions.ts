@@ -393,7 +393,10 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     }
 
     // 배송비 별도 지출 라인(합배송) — 주문에 연결, 재고 계산 제외.
-    //   결제구분 '신용'(후불)이면 미정산으로.
+    //   카드결제(신용카드)면 본 지출과 동일하게 미정산, 배송비 자체가 후불('신용')이어도 미정산.
+    //   (예전엔 배송 구분만 보고 카드결제인데도 자동 정산완료되던 버그)
+    const shippingSettle: SettleStatus =
+      (payMethod === '신용카드' || orderShippingType === '신용') ? 'UNSETTLED' : 'SETTLED'
     const shippingCreate = isOrderMode
       ? prisma.expense.create({
           data: {
@@ -407,7 +410,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
             payMethod:          payMethod || '계좌이체',
             financialAccountId: financialAccountId || null,
             financeName:        financeName || null,
-            settleStatus:       orderShippingType === '신용' ? 'UNSETTLED' : 'SETTLED',
+            settleStatus:       shippingSettle,
             orderId,
             isShipping:         true,
             excludeFromInventory: true,
@@ -741,7 +744,9 @@ export async function attachShippingToOrder(input: {
     const shipData = {
       amount:             Math.round(input.amount),
       detail:             `배송비${shipType ? ` (${shipType})` : ''}`,
-      settleStatus:       (shipType === '신용' ? 'UNSETTLED' : 'SETTLED') as SettleStatus,
+      // 배송비는 대표 지출의 결제수단을 따름 — 카드결제(신용카드)면 미정산, 후불('신용')이어도 미정산.
+      //   (예전엔 배송 구분만 보고 카드결제인데도 자동 정산완료되던 버그)
+      settleStatus:       ((rep.payMethod === '신용카드' || shipType === '신용') ? 'UNSETTLED' : 'SETTLED') as SettleStatus,
       shippingMemo:       input.shippingMemo || null,
     }
 
@@ -784,16 +789,19 @@ export async function attachShippingToOrder(input: {
 
 export async function getExpenseDetailSuggestions(): Promise<string[]> {
   const propertyId = await getPropertyId()
+  // 품목명 자동완성 — 과거 지출의 깔끔한 품목 라벨(itemLabel)을 최신순 distinct 로.
+  // (detail 은 '[고추장] 500g x 2 · 배송비…' 처럼 합성 문자열이라 품목명 입력엔 부적합)
   const rows = await prisma.expense.findMany({
-    where: { propertyId, detail: { not: null } },
-    select: { detail: true },
+    where: { propertyId, itemLabel: { not: null } },
+    select: { itemLabel: true },
     orderBy: { createdAt: 'desc' },
     take: FINANCE_DETAIL_SUGGESTIONS_LIMIT,
   })
   const seen = new Set<string>()
   const result: string[] = []
   for (const r of rows) {
-    if (r.detail && !seen.has(r.detail)) { seen.add(r.detail); result.push(r.detail) }
+    const v = r.itemLabel?.trim()
+    if (v && !seen.has(v)) { seen.add(v); result.push(v) }
   }
   return result
 }

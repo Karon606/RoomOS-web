@@ -202,12 +202,13 @@ function UnitCombobox({ value, onChange, options, placeholder }: {
   )
 }
 
-function ItemSelector({ category, value, onChange, allowMulti = true, rooms = [] }: {
+function ItemSelector({ category, value, onChange, allowMulti = true, rooms = [], detailSuggestions = [] }: {
   category: string
   value: ItemPickState[]
   onChange: (data: ItemPickState[]) => void
   allowMulti?: boolean
   rooms?: { id: string; roomNo: string }[]   // 방별 분배용 (선택). 없으면 방 분배 UI 미표시.
+  detailSuggestions?: string[]               // 과거 품목명 자동완성(구매처와 동일 방식)
 }) {
   // 프리셋이 없는 카테고리도 '직접 입력'으로 품목·수량 추가 가능(옵션). 카테고리 커스터마이징 대응.
   const presets = ITEM_PRESETS[category] ?? []
@@ -482,7 +483,11 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
           </div>
           <div className="space-y-1">
             <label className="text-[0.625rem] text-[var(--warm-muted)]">품목명</label>
-            <input type="text" placeholder="예: 고추장" value={customLabel} onChange={e => setCustomLabel(e.target.value)} className={textCls} />
+            <input type="text" placeholder="예: 고추장" value={customLabel} onChange={e => setCustomLabel(e.target.value)} className={textCls}
+              list="item-detail-suggestions" />
+            {detailSuggestions.length > 0 && (
+              <datalist id="item-detail-suggestions">{detailSuggestions.map(d => <option key={d} value={d} />)}</datalist>
+            )}
           </div>
           {SpecQtyInputs()}
           <Btn variant="primary" size="sm" fullWidth onClick={() => { if (customLabel.trim()) confirmAdd(customLabel.trim()) }}>
@@ -2133,7 +2138,7 @@ export default function FinanceClient({
               <>
                 {/* 고정지출 가시성 토글 + 숨김 요약 */}
                 {isThisMonth && unconfirmedRecsFiltered.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-2 -mb-1">
+                  <div className="flex flex-wrap items-center gap-2">
                     <SegmentedControl
                       size="sm"
                       ariaLabel="고정지출 표시"
@@ -3023,6 +3028,7 @@ export default function FinanceClient({
                         value={editItems}
                         onChange={setEditItems}
                         rooms={rooms}
+                        detailSuggestions={detailSuggestions}
                       />
                     </div>
                   )}
@@ -3392,7 +3398,7 @@ export default function FinanceClient({
                 {(
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택 <span className="text-[var(--warm-muted)] font-normal">(여러 품목 추가 가능)</span></label>
-                    <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={rooms} />
+                    <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={rooms} detailSuggestions={detailSuggestions} />
                   </div>
                 )}
                 {/* 배송비 — 수정 폼과 동일한 단일 섹션(두 방식 상호배타). 용어·구조·기본값 통일 */}

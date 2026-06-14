@@ -1,7 +1,17 @@
 # 스테이음 작업 로그
 
-마지막 업데이트: 2026-06-14
+마지막 업데이트: 2026-06-15
 브랜치: main
+
+## 2026-06-15 — 사용자 요청 6건: 호실저장 토스트·재고보충·지출 [SQL 불필요]
+호실 수정 저장 글리치 + 재고 보충 UX 재설계 + 지출 3건.
+- **#1 호실 수정 저장(RoomManageClient)**: 저장 후 토스트(초록) 안 뜨고 메인→수정팝업 되돌아오던 글리치. 원인=`window.location.reload()` 전체 새로고침이 ⓐ pushToast 직후 토스트를 날리고 ⓑ ref(handledOpenRef) 초기화로 URL `?roomId&edit=1` 가 effect 재오픈을 유발. 해결=soft `router.refresh()` 로 교체(토스트 유지·ref 보존→재오픈 차단). handleAdd 도 동일 교체.
+- **#2 재고 현재 잔량 빈칸(InventoryClient)**: 위치별 점검(LocationBatchCheckModal)도 현재 잔량(보충 전) 직전값 prefill 제거 → 빈칸 시작(CheckForm 과 통일). 미리 채운 값 수정 번거로움 해소.
+- **#3 '직전값 유지'→'보충 없음' 재설계**: 기존 버튼이 보충 전·후 **모두** 직전값으로 덮어써 사용자가 센(소모된) 값이 사라지던 문제. 의미 정정="추가 보충 없이 센 값 그대로 확정" → 보충 후=현재 잔량(센 값 보존), 현재 잔량 비었을 때만 직전값으로 채움. 버튼 위치=품명 우측→입력칸 아래로, 명칭='보충 없음'. CheckForm·LocationBatch·아이템편집폼 3곳 통일. 저장 로직: 현재 잔량만 입력해도 저장(finalN=후 ?? 전, entered=전||후), 보충 후만 입력 시 직전 잔량 기준 보충량 산출(허브 미차감 방지).
+- **#4 지출 품목명 자동완성(FinanceClient·actions)**: 구매처처럼 과거 이력 datalist. `getExpenseDetailSuggestions` 를 합성 detail→깔끔한 `Expense.itemLabel` distinct(최신순)로 변경, ItemSelector '직접 입력' 품목명 input 에 연결. 미사용이던 detailSuggestions prop 활용.
+- **#5 합배송 배송비 자동 정산완료 버그(actions)**: 카드결제인데 배송비만 정산완료되던 문제. 원인=배송비 settleStatus 가 결제수단 무시하고 배송구분(선불/착불/신용)만 봄. 수정=`payMethod==='신용카드' || 배송구분==='신용' → 미정산`. createExpense(주문모드)·attachShippingToOrder(사후묶기, 대표지출 payMethod 기준) 2곳. updateExpense 는 기존 보존 로직 유지(수동 정산취소 안 뒤집힘).
+- **#6 '임박하지 않은 고정' 줄 간격(FinanceClient)**: 토글 줄 `-mb-1`(음수 마진)이 아래 내역 카드를 끌어올려 겹침 → 제거, space-y-4 기본 1rem 간격 복원.
+**검증**: 변경 파일 tsc 통과(잔여 에러는 iCloud `.next/types/… 3.ts` 중복뿐). SQL 불필요.
 
 ## 2026-06-14 (이어서) — 후속 수정 5건 [전부 배포, SQL 불필요]
 - **인트로 로고 획 두 번 그어짐(`171db30`)**: 콜드부트 시 SplashStatic(loading.tsx, SSR)이 1회 + 하이드레이션 후 SplashIntro 가 1회 → 두 번. 정적 스플래시가 파싱 시점 인라인스크립트로 `window.__sySplashStatic` 플래그 설정, SplashIntro `skipDraw` prop(=플래그)이면 재드로잉·EN 재등장 생략하고 이어받아 EN→KO 만. no-suspend 경로(정적 미표시)는 정상 1회.
