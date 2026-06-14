@@ -150,7 +150,8 @@ model Property {
   contractTemplate Json?     // 섹션 본문 + 추가 표시 옵션. shape: { title, sections: [{ title, items: string[] }], oathText }
   businessInfo     Json?     // 사업자 정보. shape: { name, registrationNo, ceoName, address }
   stampDriveFileId String?   // 도장 PNG (Drive 파일 ID, 투명 배경 권장)
-  logoDriveFileId  String?   // 영업장 로고 (Drive 파일 ID, 계약서 헤더 좌측 표시)
+  logoDriveFileId  String?   // 영업장 로고 (Drive 파일 ID, 계약서 헤더 좌측 — 투명 배경 서류용)
+  appLogoDriveFileId String? // 앱 로고 (Drive 파일 ID, 헤더 영업장명 앞 원형 표시 — 배경 있는 일반 로고)
   floorPlanData    Json?     // 도면 데이터. shape: { elements: FloorPlanElement[], canvasWidth, canvasHeight }
   createdAt        DateTime  @default(now())
   updatedAt   DateTime @updatedAt

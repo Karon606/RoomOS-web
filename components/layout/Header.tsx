@@ -12,8 +12,8 @@ export type AppUser = {
   email?: string
   user_metadata?: { avatar_url?: string; full_name?: string }
 }
-// 영업장 스위처용 — id·name만
-export type SwitchProperty = { id: string; name: string }
+// 영업장 스위처용 — id·name·앱로고(원형)
+export type SwitchProperty = { id: string; name: string; appLogoUrl?: string | null }
 
 export default function Header({
   properties,
@@ -66,10 +66,15 @@ export default function Header({
         <div ref={propRef} className="relative min-w-0">
           <button
             onClick={() => setPropOpen(v => !v)}
-            className="flex items-center gap-1 max-w-[60vw] md:max-w-none px-2 py-2 rounded-xl transition-colors hover:bg-[var(--canvas)]"
+            className="flex items-center gap-1.5 max-w-[60vw] md:max-w-none px-2 py-2 rounded-xl transition-colors hover:bg-[var(--canvas)]"
             aria-label="영업장 선택"
             aria-expanded={propOpen}
           >
+            {currentProperty?.appLogoUrl && (
+              <img src={currentProperty.appLogoUrl} alt=""
+                className="w-7 h-7 rounded-full object-cover shrink-0"
+                style={{ border: '1px solid var(--warm-border)' }} />
+            )}
             <span className="text-sm font-bold truncate" style={{ color: 'var(--warm-dark)' }}>
               {currentProperty?.name ?? '영업장 선택'}
             </span>
@@ -92,6 +97,10 @@ export default function Header({
                     <button key={p.id} type="button" onClick={() => onSelectProperty(p.id)}
                       className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-left transition-colors min-h-[44px] hover:bg-[var(--canvas)]"
                       style={{ color: 'var(--warm-dark)', background: active ? 'rgba(244,98,58,0.06)' : undefined }}>
+                      {p.appLogoUrl && (
+                        <img src={p.appLogoUrl} alt="" className="w-5 h-5 rounded-full object-cover shrink-0"
+                          style={{ border: '1px solid var(--warm-border)' }} />
+                      )}
                       <span className="flex-1 truncate" style={{ fontWeight: active ? 600 : 400, color: active ? 'var(--coral)' : 'var(--warm-dark)' }}>
                         {p.name}
                       </span>

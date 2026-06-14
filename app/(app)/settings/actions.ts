@@ -49,15 +49,18 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       defaultCleaningFee: true,
       publicSlug: true,
       logoDriveFileId: true,
+      appLogoDriveFileId: true,
     },
   })
   if (!property) return null
   // 로고는 화면 어디서든 즉시 표시할 수 있도록 thumbnail URL을 같이 반환
-  const { logoDriveFileId, ...rest } = property
+  const { logoDriveFileId, appLogoDriveFileId, ...rest } = property
   return {
     ...rest,
     logoDriveFileId,
     logoThumbnailUrl: logoDriveFileId ? buildDriveThumbnailUrl(logoDriveFileId, 300) : null,
+    appLogoDriveFileId,
+    appLogoThumbnailUrl: appLogoDriveFileId ? buildDriveThumbnailUrl(appLogoDriveFileId, 300) : null,
   }
 })
 
@@ -737,6 +740,87 @@ export async function deleteLogo(): Promise<{ ok: true } | { ok: false; error: s
     await prisma.property.update({
       where: { id: propertyId },
       data: { logoDriveFileId: null },
+    })
+    revalidatePath('/settings')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
+  }
+}
+
+// ── 앱 로고 (헤더 원형 표시용 — 로고와 동일한 업로드 패턴, 별도 필드) ──────
+
+export async function createAppLogoUploadSession(input: {
+  fileName: string
+  mimeType: string
+  fileSize: number
+  origin: string
+}): Promise<{ ok: true; uploadUrl: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    if (!input.mimeType.startsWith('image/')) return { ok: false, error: '이미지 파일만 업로드 가능합니다.' }
+    if (input.fileSize <= 0) return { ok: false, error: '파일이 비어 있습니다.' }
+    if (input.fileSize > MAX_LOGO_BYTES) return { ok: false, error: `파일 크기는 ${MAX_LOGO_BYTES / 1024 / 1024}MB 이하여야 합니다.` }
+    if (!input.origin) return { ok: false, error: 'Origin 정보가 누락되었습니다.' }
+    const propertyId = await getPropertyId()
+    const ext = input.fileName.split('.').pop() ?? 'png'
+    const uniqueName = `applogo_${propertyId}_${Date.now()}.${ext}`
+    const uploadUrl = await createDriveResumableSession({
+      fileName: uniqueName,
+      mimeType: input.mimeType,
+      fileSize: input.fileSize,
+      origin: input.origin,
+    })
+    return { ok: true, uploadUrl }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: `업로드 준비 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
+  }
+}
+
+export async function finalizeAppLogo(driveFileId: string): Promise<{ ok: true; thumbnailUrl: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    if (!driveFileId) return { ok: false, error: 'Drive 파일 ID가 없습니다.' }
+    const propertyId = await getPropertyId()
+    await setDrivePublicReadable(driveFileId)
+    const prev = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { appLogoDriveFileId: true },
+    })
+    if (prev?.appLogoDriveFileId && prev.appLogoDriveFileId !== driveFileId) {
+      try { await deleteFromDrive(prev.appLogoDriveFileId) } catch { /* 이전 파일 정리 실패 무시 */ }
+    }
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { appLogoDriveFileId: driveFileId },
+    })
+    revalidatePath('/settings')
+    return { ok: true, thumbnailUrl: buildDriveThumbnailUrl(driveFileId, 300) }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    if (driveFileId) {
+      try { await deleteFromDrive(driveFileId) } catch { /* 정리 실패 무시 */ }
+    }
+    return { ok: false, error: `업로드 마무리 실패: ${(err as Error).message ?? '알 수 없는 오류'}` }
+  }
+}
+
+export async function deleteAppLogo(): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const prev = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { appLogoDriveFileId: true },
+    })
+    if (prev?.appLogoDriveFileId) {
+      try { await deleteFromDrive(prev.appLogoDriveFileId) } catch { /* 무시 */ }
+    }
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { appLogoDriveFileId: null },
     })
     revalidatePath('/settings')
     return { ok: true }

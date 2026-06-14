@@ -6,6 +6,7 @@ import AppShell from '@/components/layout/AppShell'
 import { EntityModalProvider } from '@/components/entity-modal/EntityModal'
 import ClearAppBadge from '@/components/ClearAppBadge'
 import { isSuperAdminEmail } from '@/lib/auth/access'
+import { buildDriveThumbnailUrl } from '@/lib/google-drive'
 
 export default async function AppLayout({
   children,
@@ -40,15 +41,16 @@ export default async function AppLayout({
     if (!skipped) redirect('/profile-setup')
   }
   const currentPropertyId = cookieStore.get('selected_property_id')?.value ?? null
-  let properties: { id: string; name: string }[]
+  let properties: { id: string; name: string; appLogoUrl?: string | null }[]
   let myPropertyIds: Set<string>
+  const appLogo = (id: string | null) => id ? buildDriveThumbnailUrl(id, 120) : null
   if (isSuperAdmin) {
     const all = await prisma.property.findMany({
       where: { isActive: true },
-      select: { id: true, name: true },
+      select: { id: true, name: true, appLogoDriveFileId: true },
       orderBy: { createdAt: 'asc' },
     })
-    properties = all
+    properties = all.map(p => ({ id: p.id, name: p.name, appLogoUrl: appLogo(p.appLogoDriveFileId) }))
     const myRoles = await prisma.userPropertyRole.findMany({
       where: { userId },
       select: { propertyId: true },
@@ -57,10 +59,10 @@ export default async function AppLayout({
   } else {
     const roles = await prisma.userPropertyRole.findMany({
       where: { userId },
-      select: { property: { select: { id: true, name: true } } },
+      select: { property: { select: { id: true, name: true, appLogoDriveFileId: true } } },
       orderBy: { createdAt: 'asc' },
     })
-    properties = roles.map(r => ({ id: r.property.id, name: r.property.name }))
+    properties = roles.map(r => ({ id: r.property.id, name: r.property.name, appLogoUrl: appLogo(r.property.appLogoDriveFileId) }))
     myPropertyIds = new Set(properties.map(p => p.id))
   }
 

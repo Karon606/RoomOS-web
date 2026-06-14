@@ -18,6 +18,7 @@ import {
   saveContractTemplate, saveBusinessInfo,
   createStampUploadSession, finalizeStamp, deleteStamp,
   createLogoUploadSession, finalizeLogo, deleteLogo,
+  createAppLogoUploadSession, finalizeAppLogo, deleteAppLogo,
   type MemberWithUser, type RecurringExpenseRow, type ContractSettings, type RecurringItemInput,
 } from './actions'
 import { regenerateJoinCode, approveJoinRequest, rejectJoinRequest } from './memberActions'
@@ -52,6 +53,8 @@ type Property = {
   publicSlug: string | null
   logoDriveFileId: string | null
   logoThumbnailUrl: string | null
+  appLogoDriveFileId: string | null
+  appLogoThumbnailUrl: string | null
 }
 
 const WINDOW_TYPE_LABEL: Record<string, string> = {
@@ -134,6 +137,41 @@ export default function SettingsForm({
       if (!res.ok) { pushToast('error', res.error); return }
       setLogoUrl(null)
       pushToast('success', '로고 삭제됨')
+    } finally { release() }
+  }
+
+  // 앱 로고 — 헤더 영업장명 앞 원형 표시용 (배경 있는 일반 로고)
+  const [appLogoUrl, setAppLogoUrl]         = useState<string | null>(property?.appLogoThumbnailUrl ?? null)
+  const [appLogoUploading, setAppLogoUploading] = useState(false)
+  const handleAppLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setAppLogoUploading(true)
+    const release = trackSave()
+    try {
+      const session = await createAppLogoUploadSession({
+        fileName: file.name, mimeType: file.type, fileSize: file.size,
+        origin: window.location.origin,
+      })
+      if (!session.ok) { pushToast('error', session.error); return }
+      const driveFileId = await uploadFileToDriveSession(session.uploadUrl, file)
+      const fin = await finalizeAppLogo(driveFileId)
+      if (!fin.ok) { pushToast('error', fin.error); return }
+      setAppLogoUrl(fin.thumbnailUrl)
+      pushToast('success', '앱 로고 업로드됨 — 상단 영업장명 앞에 표시됩니다')
+    } catch (err) {
+      pushToast('error', (err as Error).message ?? '앱 로고 업로드 실패')
+    } finally { release(); setAppLogoUploading(false) }
+  }
+  const handleAppLogoDelete = async () => {
+    if (!(await confirmDialog({ title: '앱 로고를 삭제할까요?', level: 'caution', confirmLabel: '삭제' }))) return
+    const release = trackSave()
+    try {
+      const res = await deleteAppLogo()
+      if (!res.ok) { pushToast('error', res.error); return }
+      setAppLogoUrl(null)
+      pushToast('success', '앱 로고 삭제됨')
     } finally { release() }
   }
 
@@ -608,6 +646,33 @@ export default function SettingsForm({
                 </label>
                 {logoUrl && (
                   <button type="button" onClick={handleLogoDelete} disabled={logoUploading}
+                    className="px-3 py-1.5 text-xs rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:bg-[var(--danger-bg)] disabled:opacity-50">
+                    삭제
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 앱 로고 — 상단 헤더 영업장명 앞 원형 표시 (배경 있는 일반 로고) */}
+          <div className="space-y-1.5 mb-4">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">앱 로고 <span className="text-[var(--warm-muted)] font-normal">(상단 영업장명 앞)</span></label>
+            <p className="text-xs text-[var(--warm-muted)]">정사각형 권장 — 앱 상단에 <strong>원형으로 잘려</strong> 표시됩니다. 배경이 있는 일반 로고를 올리세요(위 계약서용 투명 로고와 별개).</p>
+            <div className="flex items-center gap-3">
+              <div className="w-16 h-16 rounded-full border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--canvas)] overflow-hidden shrink-0">
+                {appLogoUrl ? (
+                  <img src={appLogoUrl} alt="앱 로고" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-[0.625rem] text-[var(--warm-muted)]">미등록</span>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className={`px-3 py-1.5 text-xs rounded-lg cursor-pointer text-center font-medium transition-colors ${appLogoUploading ? 'opacity-60' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'}`}>
+                  {appLogoUploading ? '업로드 중...' : (appLogoUrl ? '교체' : '업로드')}
+                  <input type="file" accept="image/*" className="hidden" onChange={handleAppLogoSelect} disabled={appLogoUploading} />
+                </label>
+                {appLogoUrl && (
+                  <button type="button" onClick={handleAppLogoDelete} disabled={appLogoUploading}
                     className="px-3 py-1.5 text-xs rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:bg-[var(--danger-bg)] disabled:opacity-50">
                     삭제
                   </button>
