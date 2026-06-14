@@ -26,6 +26,7 @@ import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/cont
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { ImageCropModal } from '@/components/ui/ImageCropModal'
 import { PushToggle } from './PushToggle'
 import DataButtons from '@/components/DataButtons'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
@@ -140,16 +141,25 @@ export default function SettingsForm({
     } finally { release() }
   }
 
-  // 앱 로고 — 헤더 영업장명 앞 원형 표시용 (배경 있는 일반 로고)
+  // 영업장 로고(앱 표시·원형) — 헤더·사이드바·대시보드. 업로드 시 원형 크롭 도구로 위치·확대 조정.
   const [appLogoUrl, setAppLogoUrl]         = useState<string | null>(property?.appLogoThumbnailUrl ?? null)
   const [appLogoUploading, setAppLogoUploading] = useState(false)
-  const handleAppLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [cropSrc, setCropSrc] = useState<string | null>(null)   // 크롭 모달용 원본 object URL
+  const closeCrop = () => { setCropSrc(s => { if (s) URL.revokeObjectURL(s); return null }) }
+  // 파일 선택 → 바로 업로드하지 않고 크롭 도구를 연다
+  const handleAppLogoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
+    if (cropSrc) URL.revokeObjectURL(cropSrc)
+    setCropSrc(URL.createObjectURL(file))
+  }
+  // 크롭 확정 → 정사각 PNG 업로드
+  const handleAppLogoCropped = async (blob: Blob) => {
     setAppLogoUploading(true)
     const release = trackSave()
     try {
+      const file = new File([blob], 'logo.png', { type: 'image/png' })
       const session = await createAppLogoUploadSession({
         fileName: file.name, mimeType: file.type, fileSize: file.size,
         origin: window.location.origin,
@@ -159,19 +169,19 @@ export default function SettingsForm({
       const fin = await finalizeAppLogo(driveFileId)
       if (!fin.ok) { pushToast('error', fin.error); return }
       setAppLogoUrl(fin.thumbnailUrl)
-      pushToast('success', '앱 로고 업로드됨 — 상단 영업장명 앞에 표시됩니다')
+      pushToast('success', '영업장 로고 저장됨')
     } catch (err) {
-      pushToast('error', (err as Error).message ?? '앱 로고 업로드 실패')
-    } finally { release(); setAppLogoUploading(false) }
+      pushToast('error', (err as Error).message ?? '로고 업로드 실패')
+    } finally { release(); setAppLogoUploading(false); closeCrop() }
   }
   const handleAppLogoDelete = async () => {
-    if (!(await confirmDialog({ title: '앱 로고를 삭제할까요?', level: 'caution', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: '영업장 로고를 삭제할까요?', level: 'caution', confirmLabel: '삭제' }))) return
     const release = trackSave()
     try {
       const res = await deleteAppLogo()
       if (!res.ok) { pushToast('error', res.error); return }
       setAppLogoUrl(null)
-      pushToast('success', '앱 로고 삭제됨')
+      pushToast('success', '영업장 로고 삭제됨')
     } finally { release() }
   }
 
@@ -627,14 +637,41 @@ export default function SettingsForm({
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
           <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-4">영업장 기본 정보</h2>
 
-          {/* 영업장 로고 — 계약서 헤더 외에 사이드바·대시보드 등에서도 재사용 */}
+          {/* 영업장 로고 (앱 표시·원형) — 헤더·사이드바·대시보드. 업로드 시 원형 크롭 도구로 조정 */}
           <div className="space-y-1.5 mb-4">
             <label className="text-xs font-medium text-[var(--warm-mid)]">영업장 로고</label>
-            <p className="text-xs text-[var(--warm-muted)]">투명 배경 PNG 권장 (가로형). 계약서 헤더와 향후 사이드바·대시보드 등에서 표시됩니다.</p>
+            <p className="text-xs text-[var(--warm-muted)]">앱 상단·사이드바·대시보드에 <strong>원형으로</strong> 표시되는 대표 로고입니다. 올리면 <strong>위치·크기를 직접 맞출 수</strong> 있어요. 배경 있는 정사각형 권장.</p>
+            <div className="flex items-center gap-3">
+              <div className="w-20 h-20 rounded-full border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--canvas)] overflow-hidden shrink-0">
+                {appLogoUrl ? (
+                  <img src={appLogoUrl} alt="영업장 로고" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-[0.625rem] text-[var(--warm-muted)]">미등록</span>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className={`px-3 py-1.5 text-xs rounded-lg cursor-pointer text-center font-medium transition-colors ${appLogoUploading ? 'opacity-60' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'}`}>
+                  {appLogoUploading ? '저장 중...' : (appLogoUrl ? '교체' : '업로드')}
+                  <input type="file" accept="image/*" className="hidden" onChange={handleAppLogoSelect} disabled={appLogoUploading} />
+                </label>
+                {appLogoUrl && (
+                  <button type="button" onClick={handleAppLogoDelete} disabled={appLogoUploading}
+                    className="px-3 py-1.5 text-xs rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:bg-[var(--danger-bg)] disabled:opacity-50">
+                    삭제
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 계약서용 로고 (투명) — 계약서 헤더에만 사용 */}
+          <div className="space-y-1.5 mb-4">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">계약서용 로고 <span className="text-[var(--warm-muted)] font-normal">(투명 PNG)</span></label>
+            <p className="text-xs text-[var(--warm-muted)]">계약서 헤더에만 표시됩니다. 투명 배경 가로형 PNG 권장.</p>
             <div className="flex items-center gap-3">
               <div className="w-32 h-16 rounded-xl border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--canvas)] overflow-hidden">
                 {logoUrl ? (
-                  <img src={logoUrl} alt="로고" className="max-w-full max-h-full object-contain" />
+                  <img src={logoUrl} alt="계약서용 로고" className="max-w-full max-h-full object-contain" />
                 ) : (
                   <span className="text-xs text-[var(--warm-muted)]">미등록</span>
                 )}
@@ -654,32 +691,10 @@ export default function SettingsForm({
             </div>
           </div>
 
-          {/* 앱 로고 — 상단 헤더 영업장명 앞 원형 표시 (배경 있는 일반 로고) */}
-          <div className="space-y-1.5 mb-4">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">앱 로고 <span className="text-[var(--warm-muted)] font-normal">(상단 영업장명 앞)</span></label>
-            <p className="text-xs text-[var(--warm-muted)]">정사각형 권장 — 앱 상단에 <strong>원형으로 잘려</strong> 표시됩니다. 배경이 있는 일반 로고를 올리세요(위 계약서용 투명 로고와 별개).</p>
-            <div className="flex items-center gap-3">
-              <div className="w-16 h-16 rounded-full border border-dashed border-[var(--warm-border)] flex items-center justify-center bg-[var(--canvas)] overflow-hidden shrink-0">
-                {appLogoUrl ? (
-                  <img src={appLogoUrl} alt="앱 로고" className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-[0.625rem] text-[var(--warm-muted)]">미등록</span>
-                )}
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className={`px-3 py-1.5 text-xs rounded-lg cursor-pointer text-center font-medium transition-colors ${appLogoUploading ? 'opacity-60' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'}`}>
-                  {appLogoUploading ? '업로드 중...' : (appLogoUrl ? '교체' : '업로드')}
-                  <input type="file" accept="image/*" className="hidden" onChange={handleAppLogoSelect} disabled={appLogoUploading} />
-                </label>
-                {appLogoUrl && (
-                  <button type="button" onClick={handleAppLogoDelete} disabled={appLogoUploading}
-                    className="px-3 py-1.5 text-xs rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:bg-[var(--danger-bg)] disabled:opacity-50">
-                    삭제
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+          {cropSrc && (
+            <ImageCropModal src={cropSrc} title="영업장 로고 조정"
+              onCancel={closeCrop} onConfirm={handleAppLogoCropped} />
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <Field label="영업장명 *" name="name" defaultValue={property?.name ?? ''} />
