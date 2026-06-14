@@ -11,6 +11,8 @@ export function SplashStatic() {
     <div className="fixed inset-0 z-[var(--z-loader)] flex items-center justify-center"
       aria-busy="true" aria-label="스테이음 로딩 중"
       style={{ background: 'var(--cold-bg, #E8DDD0)' }}>
+      {/* 파싱 시점(하이드레이션 전)에 플래그 — 인트로가 '획은 이미 그려졌다'고 판단해 재드로잉 생략 */}
+      <script dangerouslySetInnerHTML={{ __html: 'window.__sySplashStatic=1' }} />
       <style>{`
         @media (prefers-color-scheme: dark) { [data-static-bg] { background: var(--cold-bg-dark, #000000) !important; } }
         html.dark [data-static-bg] { background: var(--cold-bg-dark, #000000) !important; }

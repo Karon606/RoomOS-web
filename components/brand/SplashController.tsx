@@ -59,6 +59,8 @@ type Phase = 'off' | 'pending' | 'visible' | 'fading'
 export function SplashHost() {
   const [phase, setPhase] = useState<Phase>('off')
   const [introMode, setIntroMode] = useState(false)
+  // 정적 스플래시(loading.tsx)가 이미 획을 그렸으면 인트로는 재드로잉 생략 (두 번 그어짐 방지)
+  const [introSkip, setIntroSkip] = useState(false)
   const phaseRef = useRef<Phase>('off')
   const introRef = useRef(false)
   const shownAt = useRef(0)
@@ -85,6 +87,9 @@ export function SplashHost() {
     const markIntroSeen = () => { shouldPlayIntroOnce.current = false }
     const reducedMotion = () =>
       typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    // 정적 스플래시가 이 로드에서 떴는가 — 파싱 시점 인라인 스크립트가 심은 플래그(SplashStatic)
+    const staticShown = () =>
+      typeof window !== 'undefined' && !!(window as { __sySplashStatic?: number }).__sySplashStatic
 
     // 판정은 하트비트가 기록을 덮기 전에 1회만
     shouldPlayIntroOnce.current = shouldPlayIntro()
@@ -107,7 +112,7 @@ export function SplashHost() {
         if (!introSeen()) {
           // §3b 인트로 — 즉시 표시(지연 규칙 미적용), 재생 시작 시점에 세션 게이트 기록
           markIntroSeen()
-          introRef.current = true; setIntroMode(true)
+          introRef.current = true; setIntroMode(true); setIntroSkip(staticShown())
           shownAt.current = Date.now()
           go('visible')
         } else {
@@ -135,7 +140,7 @@ export function SplashHost() {
     // Host 가 스스로 인트로를 재생하고, 진행 중 로딩(Gate 신호)이 없으면 3200ms 완주 후 퇴장.
     if (!introSeen()) {
       markIntroSeen()
-      introRef.current = true; setIntroMode(true)
+      introRef.current = true; setIntroMode(true); setIntroSkip(staticShown())
       shownAt.current = Date.now()
       go('visible')
       if (!lastSignal) {
@@ -167,7 +172,7 @@ export function SplashHost() {
         pointerEvents: phase === 'fading' ? 'none' : 'auto',
       }}
     >
-      {introMode ? <SplashIntro /> : <SplashScreen immediate />}
+      {introMode ? <SplashIntro skipDraw={introSkip} /> : <SplashScreen immediate />}
     </div>
   )
 }

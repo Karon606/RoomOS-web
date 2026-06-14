@@ -15,7 +15,8 @@ const STROKE_PATH = 'M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82'
 const SWAP_MS = 350
 const SEQ_MS = 3200
 
-export function SplashIntro() {
+export function SplashIntro({ skipDraw = false }: { skipDraw?: boolean }) {
+  // skipDraw: 정적 스플래시(loading.tsx)가 이미 획을 그렸으면 재드로잉 없이 이어받아 EN→KO 만.
   // seq: 0–3.2s CSS 키프레임 구간 / extended: 이후 JS 제어 교차 구간
   const [phase, setPhase] = useState<'seq' | 'extended'>('seq')
   const [word, setWord] = useState<'ko' | 'en'>('ko')   // extended 시작 시 KO 에서 이어받음
@@ -72,6 +73,12 @@ export function SplashIntro() {
         /* extended 구간 — JS 제어 + transition 크로스페이드 */
         .sy-in-x { transition: opacity ${SWAP_MS}ms ease; animation: none !important; }
 
+        /* skipDraw — 정적 스플래시가 이미 그린 획을 이어받음: 재드로잉·EN 재등장 없이 EN→KO 스왑만 */
+        .sy-skip .sy-in-stroke { animation: none; stroke-dashoffset: 0; }
+        .sy-skip .sy-in-div { animation: none; opacity: 1; transform: scaleY(1); }
+        .sy-skip .sy-in-en { opacity: 1; animation: sy-out-word ${SWAP_MS}ms ease 1000ms forwards; }
+        .sy-skip .sy-in-ko { animation: sy-in-word ${SWAP_MS}ms ease 1000ms forwards; }
+
         @keyframes sy-in-caption { from { opacity: 0 } to { opacity: 1 } }
 
         /* 모바일 — 가로 락업이 분리되므로 세로 스택 (레퍼런스 그대로) */
@@ -95,7 +102,7 @@ export function SplashIntro() {
 
       {/* 레퍼런스: 수직 중앙 기준 translateY(-8vh) */}
       <div className="relative flex flex-col items-center" style={{ gap: 32, transform: 'translateY(-8vh)', color: 'var(--ink, #3d2418)' }}>
-        <div className="sy-in-lockup">
+        <div className={`sy-in-lockup ${skipDraw ? 'sy-skip' : ''}`}>
           <div className="sy-in-mark">
             <svg viewBox="0 0 130 100" aria-hidden="true">
               <path className="sy-in-stroke" d={STROKE_PATH} pathLength={1} />
