@@ -362,8 +362,8 @@ export default function RoomManageClient({
           }
         }
         closeAddModal()
+        router.refresh()
         pushToast('success', '호실 추가됨')
-        window.location.reload()
       } finally { release() }
     })
   }
@@ -376,8 +376,11 @@ export default function RoomManageClient({
       try {
         await updateRoom(formData)
         closeEdit()
+        // 전체 새로고침(window.reload) 대신 soft refresh — 토스트가 살아남고,
+        // URL ?roomId&edit=1 이 남아 있어도 handledOpenRef 가 유지돼 폼이 재오픈되지 않음
+        // (full reload 시 ref 초기화로 수정 팝업이 되돌아오던 글리치 해소).
+        router.refresh()
         pushToast('success', '호실 수정됨')
-        window.location.reload()
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : '오류가 발생했습니다.'
         setError(msg); pushToast('error', msg)
