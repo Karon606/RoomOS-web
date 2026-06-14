@@ -1,7 +1,18 @@
 # 스테이음 작업 로그
 
-마지막 업데이트: 2026-06-12
+마지막 업데이트: 2026-06-14
 브랜치: main
+
+## 2026-06-14 — 사용자 요청 7건: 방문분석 개편·재고보충 UX·앱로고·섹션체류 [배포 완료, SQL 2건 적용됨]
+사용자 7개 요청. 조사(Explore 3병렬) 후 결정: 마케팅="방문 분석"(공개 안내페이지 방문자 분석, PageView 테이블 자체수집), 차트색·dotColor 제외, 양도인은 별개. AskUser 4결정: 메뉴명=방문 분석, 앱로고=1개(헤더 원형크롭), #4=섹션 전체구현, #6=2칸+참고줄.
+**SQL-불필요 (즉시 배포)**:
+- #1·2·3·5 방문 분석(`dbb0f25`): 메뉴 '마케팅'→'방문 분석' · 특정 날짜 DatePicker(그날 0~24시, gte/lt) · 도시에 상위 시·도 병행(region ISO 3166-2→한국시도명, 예 suseong-gu·대구) · 추이·시간대 차트 막대 **탭-툴팁**(모바일 대응, hover 유지).
+- #6 재고 보충(`2fce5e5`): 2칸(현재잔량/보충후) 유지 + 입력 중에도 '직전 잔량·지난 보충+N·이번 보충+N' **참고줄 상시표시**(작은 우측텍스트→틴트 줄 승격). prevRestockedMap 노출, CheckForm·LocationBatchCheckModal 양쪽.
+**SQL-필요 (적용 후 배포)**:
+- #7 앱 로고(`9f2df49`): `Property.appLogoDriveFileId`(배경 있는 일반 로고, 기존 투명·계약서용과 별개). 설정 업로드(원형 미리보기) + 헤더 영업장명 앞·스위처 목록 원형. layout.tsx properties 에 appLogoUrl 동봉. **SQL**: `ALTER TABLE properties ADD COLUMN "appLogoDriveFileId" TEXT;`
+- #4 섹션 체류시간(`ebe6e67`): `PageView.sectionDwellMs Json`. 공개페이지 추적스크립트가 1초마다 뷰포트 중앙 섹션에 적립(탭숨김·공백 제외)→closeup 동봉. 섹션=기존 `<section id>`. closeup API 검증(키 화이트리스트·max20·0~24h). 방문분석에 '섹션별 평균 체류시간' 패널(1위 🏆). **SQL**: `ALTER TABLE page_views ADD COLUMN "sectionDwellMs" JSONB;` · ⚠️과거 소급 불가, 지금부터 데이터 쌓임.
+**검증**: 전 항목 tsc·build 통과, 4커밋 배포 Ready, 공개페이지 섹션스크립트 반영 확인(캐시우회), 로그인 200.
+
 
 ## 2026-06-13 (이어서) — §14.4 무지개색 디톡스 (Claude Design 핸드오프 반영) [⚠️ 로컬 커밋, 미푸시 — 시각 검토 후 배포]
 Claude Design `claude-code-handoff-semantic-colors.md` + 가이드 §14.4 정본 반영. raw Tailwind 무지개 ~604건 + 인라인 hex/rgba ~40건을 의미 토큰으로 일괄 치환.
