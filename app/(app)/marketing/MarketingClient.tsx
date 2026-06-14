@@ -273,6 +273,39 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
         )}
       </div>
 
+      {/* 섹션별 체류시간 — 페이지 어느 영역에 오래 머물렀나 */}
+      <div className="rounded-xl p-4"
+        style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+        <p className="text-xs font-semibold mb-1" style={{ color: 'var(--ink-2)' }}>
+          섹션별 평균 체류시간 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(영역별, 샘플 {fmt(stats.sectionSampleCount)}건)</span>
+        </p>
+        <p className="text-[11px] mb-3" style={{ color: 'var(--warm-muted)' }}>방문자가 페이지의 어느 부분에서 더 오래 머물렀는지 — 화면 중앙에 머문 시간 기준</p>
+        {stats.sections.length === 0 ? (
+          <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>
+            아직 측정 데이터 없음 (공개 페이지 방문이 쌓이면 영역별로 표시됩니다)
+          </p>
+        ) : (
+          <ul className="space-y-1.5">
+            {(() => {
+              const secMax = Math.max(1, ...stats.sections.map(s => s.avgMs))
+              return stats.sections.map((s, i) => (
+                <li key={s.id}>
+                  <div className="flex items-baseline justify-between gap-2 mb-1">
+                    <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>{i === 0 && '🏆 '}{s.name}</span>
+                    <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>
+                      {fmtDuration(s.avgMs)} · {fmt(s.sampleCount)}명
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--canvas)' }}>
+                    <div className="h-full rounded-full" style={{ width: `${(s.avgMs / secMax) * 100}%`, background: i === 0 ? 'var(--persimmon)' : 'var(--camel)' }} />
+                  </div>
+                </li>
+              ))
+            })()}
+          </ul>
+        )}
+      </div>
+
       {/* 채널 카테고리 + 디바이스 종류 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <BarPanel title="채널" rows={stats.channels.map(c => ({ label: c.category, count: c.count, percent: c.percent }))}

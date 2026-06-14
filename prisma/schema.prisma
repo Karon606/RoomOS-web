@@ -1195,6 +1195,7 @@ model PageView {
   // 참여도 (페이지 닫을 때 sendBeacon 으로 업데이트 — 별도 endpoint)
   durationMs    Int?                           // 체류 시간 (밀리초)
   scrollDepthPct Int?                          // 0-100, 최대 스크롤 깊이
+  sectionDwellMs Json?                         // 섹션별 체류 시간 { sectionId: ms } — 페이지 어느 영역에 오래 머물렀나
 
   // 클라이언트 (원본 보존용 — 디버그)
   userAgent    String?

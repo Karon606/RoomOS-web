@@ -79,13 +79,40 @@
     }
     window.addEventListener('scroll', onScroll, { passive: true });
 
-    // 3) 페이지 닫을 때 closeup (체류시간 + 최대 스크롤) — sendBeacon 으로 안전 전송
+    // 2b) 섹션별 체류시간 — 1초마다 '뷰포트 중앙을 차지한 섹션'에 시간을 적립.
+    //     어떤 영역(객실·편의·위치·문의 등)에 오래 머물렀는지 /marketing 에서 본다.
+    var SECTIONS = ['top','rooms','amenities','video','gallery','location','contact'];
+    var sectionTimes = {};
+    var lastTick = Date.now();
+    setInterval(function(){
+      var now = Date.now();
+      var dt = now - lastTick;
+      lastTick = now;
+      // 탭이 숨겨졌거나(백그라운드) 긴 공백이면 적립하지 않음
+      if (document.visibilityState !== 'visible' || dt > 5000) return;
+      var winH = window.innerHeight || document.documentElement.clientHeight;
+      var centerY = winH / 2;
+      var best = null, bestDist = Infinity;
+      for (var i = 0; i < SECTIONS.length; i++) {
+        var el = document.getElementById(SECTIONS[i]);
+        if (!el) continue;
+        var r = el.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > winH) continue;            // 화면 밖
+        if (r.top <= centerY && r.bottom >= centerY) { best = SECTIONS[i]; break; } // 중앙 포함 = 확정
+        var dist = r.top > centerY ? r.top - centerY : centerY - r.bottom;
+        if (dist < bestDist) { bestDist = dist; best = SECTIONS[i]; }
+      }
+      if (best) sectionTimes[best] = (sectionTimes[best] || 0) + dt;
+    }, 1000);
+
+    // 3) 페이지 닫을 때 closeup (체류시간 + 최대 스크롤 + 섹션별 체류) — sendBeacon 으로 안전 전송
     function sendCloseup() {
       if (!pv_id) return;
       var data = {
         id: pv_id,
         durationMs: Date.now() - startedAt,
         scrollDepthPct: getScrollPct() > maxScrollPct ? getScrollPct() : maxScrollPct,
+        sectionDwellMs: sectionTimes,
       };
       var url = '/api/track/closeup';
       var json = JSON.stringify(data);

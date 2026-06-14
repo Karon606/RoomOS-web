@@ -38,6 +38,9 @@ export type MarketingStats = {
     sampleCount: number     // 측정된 샘플 수
     bounceRatePct: number   // 이탈률(체류 5초 미만)
   }
+  // 섹션별 평균 체류시간 — 페이지 어느 영역에 오래 머물렀나
+  sections: { id: string; name: string; avgMs: number; sampleCount: number }[]
+  sectionSampleCount: number   // 섹션 데이터가 있는 세션 수
   // 트렌드 (자동 세분도)
   trend: { label: string; views: number; visitors: number }[]
   // 유입 출처 Top (범위 내, 호스트 기준)
@@ -121,7 +124,15 @@ type Row = {
   screenHeight: number | null
   durationMs: number | null
   scrollDepthPct: number | null
+  sectionDwellMs: unknown
 }
+
+// 공개페이지 섹션 id → 표시 이름 (index.html 의 <section id> 와 일치)
+const SECTION_LABEL: Record<string, string> = {
+  top: '첫 화면(소개)', rooms: '객실·가격', amenities: '편의시설',
+  video: '투어 영상', gallery: '갤러리', location: '위치·약도', contact: '문의',
+}
+const SECTION_ORDER = ['top', 'rooms', 'amenities', 'video', 'gallery', 'location', 'contact']
 
 function buildTrend(rows: Row[], start: Date, bucket: MarketingBucket): { label: string; views: number; visitors: number }[] {
   type Acc = { label: string; views: number; visitors: Set<string> }
@@ -214,6 +225,7 @@ export async function getMarketingStats(
       totals: { today: 0, week: 0, month: 0, allTime: 0 },
       rangeViews: 0, rangeVisitors: 0,
       engagement: { avgDurationMs: 0, avgScrollPct: 0, sampleCount: 0, bounceRatePct: 0 },
+      sections: [], sectionSampleCount: 0,
       trend: [],
       referrers: [], channels: [], namedSources: [], campaigns: [],
       hourly: Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 })),
@@ -235,7 +247,7 @@ export async function getMarketingStats(
       country: true, region: true, city: true,
       os: true, browser: true, deviceType: true,
       language: true, screenWidth: true, screenHeight: true,
-      durationMs: true, scrollDepthPct: true,
+      durationMs: true, scrollDepthPct: true, sectionDwellMs: true,
     },
   })
 
@@ -408,10 +420,37 @@ export async function getMarketingStats(
     bounceRatePct,
   }
 
+  // 섹션별 평균 체류시간 — sectionDwellMs(JSON { id: ms }) 가 있는 세션만 평균
+  const secTotal = new Map<string, number>()   // 섹션별 누적 ms
+  const secCount = new Map<string, number>()   // 섹션별 세션 수(그 섹션을 본 세션)
+  let sectionSampleCount = 0
+  for (const r of inRange) {
+    const sd = r.sectionDwellMs
+    if (!sd || typeof sd !== 'object' || Array.isArray(sd)) continue
+    let any = false
+    for (const [id, v] of Object.entries(sd as Record<string, unknown>)) {
+      const ms = typeof v === 'number' ? v : Number(v)
+      if (!Number.isFinite(ms) || ms <= 0) continue
+      secTotal.set(id, (secTotal.get(id) ?? 0) + ms)
+      secCount.set(id, (secCount.get(id) ?? 0) + 1)
+      any = true
+    }
+    if (any) sectionSampleCount++
+  }
+  const sections = SECTION_ORDER
+    .filter(id => secCount.has(id))
+    .map(id => ({
+      id,
+      name: SECTION_LABEL[id] ?? id,
+      avgMs: Math.round((secTotal.get(id) ?? 0) / (secCount.get(id) ?? 1)),
+      sampleCount: secCount.get(id) ?? 0,
+    }))
+    .sort((a, b) => b.avgMs - a.avgMs)
+
   return {
     range, bucket, publicSlug: slug, publicUrl,
     totals: { today: todayCount, week: weekCount, month: monthCount, allTime: allTimeCount },
-    rangeViews, rangeVisitors, engagement,
+    rangeViews, rangeVisitors, engagement, sections, sectionSampleCount,
     trend, referrers, channels, namedSources, campaigns, hourly,
     deviceTypes, oses, browsers,
     countries, cities, languages, resolutions,

@@ -10,22 +10,40 @@ function safeInt(v: unknown, max: number): number | null {
   return Math.floor(n)
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+// 섹션별 체류시간 { sectionId: ms } — 키 [a-zA-Z0-9_-] 1~32자·최대 20개, 값 0~24h 정수.
+function safeSectionDwell(v: unknown): Record<string, number> | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+  const out: Record<string, number> = {}
+  let n = 0
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (n >= 20) break
+    if (!/^[a-zA-Z0-9_-]{1,32}$/.test(k)) continue
+    const ms = safeInt(val, DAY_MS)
+    if (ms === null || ms === 0) continue
+    out[k] = ms; n++
+  }
+  return n > 0 ? out : null
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null) as
-      | { id?: string; durationMs?: number; scrollDepthPct?: number }
+      | { id?: string; durationMs?: number; scrollDepthPct?: number; sectionDwellMs?: unknown }
       | null
     if (!body || typeof body.id !== 'string' || !body.id) {
       return NextResponse.json({ ok: false }, { status: 400 })
     }
-    const durationMs    = safeInt(body.durationMs,    24 * 60 * 60 * 1000)  // 최대 24시간
+    const durationMs    = safeInt(body.durationMs,    DAY_MS)  // 최대 24시간
     const scrollDepthPct = safeInt(body.scrollDepthPct, 100)
+    const sectionDwellMs = safeSectionDwell(body.sectionDwellMs)
 
     await prisma.pageView.update({
       where: { id: body.id },
       data: {
         ...(durationMs    !== null && { durationMs }),
         ...(scrollDepthPct !== null && { scrollDepthPct }),
+        ...(sectionDwellMs !== null && { sectionDwellMs }),
       },
     }).catch(() => null)  // 행 없음 등 무시
 
