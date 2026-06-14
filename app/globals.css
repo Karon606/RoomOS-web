@@ -143,6 +143,7 @@
   --tc:           var(--persimmon);    /* #A03C2E */
   --tc-d:         var(--persimmon-d);  /* #7C2D26 */
   --tc-s:         #B85042;             /* Terracotta soft (중간 호버 톤) */
+  --tc-text:      var(--coral);        /* 테라코타 텍스트·보조 액션 — 다크에서 밝아짐(§19 페어, html.dark 참조) */
 
   /* Sand soft */
   --sand-s:       var(--sand-2);       /* #F5E5CC */
@@ -344,6 +345,7 @@ html.dark {
   --d-border: rgba(242,232,220,.08);
   --d-border-s: rgba(242,232,220,.16);
   --d-tc-text: #C9614C;      /* 다크 위 테라코타 텍스트·아이콘 (밝힘) */
+  --tc-text:   var(--d-tc-text);   /* §19 페어 — 다크에서 보조 액션 테라코타 텍스트 밝게(저대비 방지) */
   --d-success: #A3BF7B;      /* PAID·긍정 수치 */
   --d-amber: #D9A648;        /* UNPAID */
   --d-blue: #93A9D1;         /* AWAIT 전용 */

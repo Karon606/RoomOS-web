@@ -1965,7 +1965,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
                   <div className="flex items-baseline gap-1.5 shrink-0">
                     <button type="button"
                       onClick={() => setAfterQtys(p => ({ ...p, [l.id]: beforeQtys[l.id] ?? '' }))}
-                      className="text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10">
+                      className="text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
                       유지
                     </button>
                     {restocked > 0 && (
@@ -2209,14 +2209,9 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
   // 보충 모드 — 위치별 "보충 전" + "보충 후"
   // "보충 전"을 직전 점검 잔량으로 prefill — 위치별 점검(LocationBatchCheckModal)과
   // 동일하게, "보충 후"만 입력해도 보충량(후-전)이 정확히 계산돼 허브에서 자동 차감됨.
-  // (빈칸이면 보충 0으로 처리돼 허브 미차감 → 총량 변동하던 버그 방지.)
-  const [beforeQtys, setBeforeQtys] = useState<Record<string, string>>(
-    () => Object.fromEntries(
-      item.locations
-        .filter(l => !l.isHub)
-        .map(l => [l.id, prevMap[l.id] != null ? String(prevMap[l.id]) : '']),
-    ),
-  )
+  // 현재 잔량은 빈칸으로 시작 — 직접 세어 입력(미리 채운 값 수정이 번거로움). 미변경 위치는 '직전값 유지'로 채움.
+  // 보충 후만 입력하고 현재 잔량을 비운 경우는 buildLocationData 가 직전 잔량을 보충 기준으로 삼아 허브 미차감(총량 변동) 버그를 막는다.
+  const [beforeQtys, setBeforeQtys] = useState<Record<string, string>>({})
   const [afterQtys, setAfterQtys]   = useState<Record<string, string>>({})
   // 허브 사용자 보정 여부 — true 면 자동 차감값을 덮어쓰지 않음
   const [hubTouched, setHubTouched] = useState(false)
@@ -2344,12 +2339,13 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
         const afterStr  = afterQtys[l.id] ?? ''
         const beforeN = beforeStr === '' ? null : Number(beforeStr)
         const afterN  = afterStr  === '' ? null : Number(afterStr)
-        // 후만 입력 → 단순 잔량, 보충 없음
         // 전·후 모두 입력 → 보충량 = max(0, 후-전)
         // 전만 입력 → 보충 없이 잔량 = 전
+        // 후만 입력(현재 잔량 비움) → 직전 잔량을 기준으로 보충량 산출(허브 미차감·총량 변동 방지)
         // 모두 비움 → qty=0 (entered=false → 저장 제외, carryOver 보존)
+        const restockBase = beforeN ?? (prevMap[l.id] ?? null)
         const finalQty = afterN ?? beforeN ?? 0
-        const restocked = (beforeN !== null && afterN !== null && afterN > beforeN) ? afterN - beforeN : undefined
+        const restocked = (restockBase !== null && afterN !== null && afterN > restockBase) ? afterN - restockBase : undefined
         return { storageLocationId: l.id, qty: finalQty, restockedQty: restocked, entered: beforeStr !== '' || afterStr !== '' }
       })
     }
@@ -2467,16 +2463,12 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
                   <span className="text-xs font-medium text-[var(--warm-mid)] truncate">{loc.name}</span>
                   <button type="button"
                     onClick={() => {
-                      const cur = beforeQtys[loc.id] ?? ''
-                      if (cur === '' && prevQty !== undefined) {
-                        const v = String(prevQty)
-                        setBeforeQtys(p => ({ ...p, [loc.id]: v }))
-                        setAfterQtys(p => ({ ...p, [loc.id]: v }))
-                      } else {
-                        setAfterQtys(p => ({ ...p, [loc.id]: cur }))
-                      }
+                      if (prevQty === undefined) return
+                      const v = String(prevQty)
+                      setBeforeQtys(p => ({ ...p, [loc.id]: v }))
+                      setAfterQtys(p => ({ ...p, [loc.id]: v }))
                     }}
-                    className="shrink-0 text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10">
+                    className="shrink-0 text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
                     직전값 유지
                   </button>
                 </div>
@@ -2822,20 +2814,15 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                     </div>
                     <button type="button"
                       onClick={() => {
-                        if (rowIsHub) {
-                          if (prev != null) setAfterQtys(p => ({ ...p, [r.id]: String(prev.qty) }))
-                        } else {
-                          const cur = beforeQtys[r.id] ?? ''
-                          if (cur === '' && prev != null) {
-                            const v = String(prev.qty)
-                            setBeforeQtys(p => ({ ...p, [r.id]: v }))
-                            setAfterQtys(p => ({ ...p, [r.id]: v }))
-                          } else {
-                            setAfterQtys(p => ({ ...p, [r.id]: cur }))
-                          }
+                        if (prev == null) return
+                        const v = String(prev.qty)
+                        if (rowIsHub) { setAfterQtys(p => ({ ...p, [r.id]: v })) }
+                        else {
+                          setBeforeQtys(p => ({ ...p, [r.id]: v }))
+                          setAfterQtys(p => ({ ...p, [r.id]: v }))
                         }
                       }}
-                      className="shrink-0 text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10">
+                      className="shrink-0 text-[0.625rem] px-1.5 py-0.5 rounded-md border border-[var(--tc-text)]/45 text-[var(--tc-text)] hover:bg-[var(--tc-text)]/10">
                       직전값 유지
                     </button>
                   </div>
