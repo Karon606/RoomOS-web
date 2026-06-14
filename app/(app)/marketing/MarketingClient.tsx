@@ -293,7 +293,9 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
               return stats.sections.map((s, i) => (
                 <li key={s.id}>
                   <div className="flex items-baseline justify-between gap-2 mb-1">
-                    <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>{i === 0 && '🏆 '}{s.name}</span>
+                    <span className="text-xs truncate" style={{ color: i === 0 ? 'var(--tc-text)' : 'var(--warm-dark)', fontWeight: i === 0 ? 600 : 400 }}>
+                      {s.name}{i === 0 && <span className="text-[0.625rem] font-normal"> · 최다 체류</span>}
+                    </span>
                     <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>
                       {fmtDuration(s.avgMs)} · {fmt(s.sampleCount)}명
                     </span>
