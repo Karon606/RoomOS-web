@@ -285,16 +285,16 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
           transform: scale(var(--paper-scale, 1)); transform-origin: top left;
           width: 210mm; min-height: 297mm; background: #fff; color: #1a1a1a;
           padding: 14mm; box-shadow: 0 6px 24px rgba(0,0,0,0.12);
-          font-size: 10.5pt; line-height: 1.5;
+          font-size: 10pt; line-height: 1.35;
         }
-        .rc-outer { border: 1.5px solid #1a1a1a; padding: 7mm 6mm; min-height: calc(297mm - 28mm); }
+        .rc-outer { border: 1.5px solid #1a1a1a; padding: 5mm 7mm; min-height: calc(297mm - 28mm); }
 
-        .rc-doc-title { text-align: center; font-size: 19pt; font-weight: 700; letter-spacing: 8px; margin: 2mm 0 6mm; }
+        .rc-doc-title { text-align: center; font-size: 17pt; font-weight: 700; letter-spacing: 6px; margin: 1mm 0 4mm; }
 
-        .rc-form { width: 100%; border-collapse: collapse; font-size: 10.5pt; }
-        .rc-form th, .rc-form td { border: 1px solid #1a1a1a; padding: 4px 8px; vertical-align: middle; }
+        .rc-form { width: 100%; border-collapse: collapse; font-size: 10pt; }
+        .rc-form th, .rc-form td { border: 1px solid #1a1a1a; padding: 3px 8px; vertical-align: middle; }
         .rc-form th { font-weight: 500; text-align: center; white-space: nowrap; letter-spacing: 2px; }
-        .rc-row { height: 32px; }
+        .rc-row { height: 26px; }
 
         .rc-in { width: 100%; border: 0; background: transparent; font: inherit; color: inherit; padding: 1px 2px; outline: none; }
         .rc-in:focus { background: #fff6e0; border-radius: 3px; }
@@ -309,24 +309,25 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         .rc-rent { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
         .rc-amount { width: 90px; text-align: right; display: inline-block; }
 
-        .rc-confirm { margin: 9mm 0 0; }
-        .rc-issue-date { text-align: center; margin: 7mm 0 8mm; }
+        .rc-confirm { margin: 5mm 0 0; }
+        .rc-issue-date { text-align: center; margin: 4mm 0 5mm; }
 
-        .rc-landlord-head { margin: 0 0 3mm; }
-        .rc-lrow { display: flex; align-items: center; margin: 0 0 1.5mm; padding-left: 7mm; }
+        .rc-landlord-head { margin: 0 0 2mm; }
+        .rc-lrow { display: flex; align-items: center; margin: 0 0 0.8mm; padding-left: 7mm; min-height: 6mm; }
         .rc-llabel { display: inline-block; width: 36mm; letter-spacing: 1px; flex: 0 0 36mm; }
         .rc-lvalue { flex: 1; }
         .rc-stamp-slot { display: flex; align-items: center; gap: 2mm; }
         .rc-lname { width: 40mm; flex: 0 0 auto; }
-        .rc-seal { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 16mm; height: 16mm; }
-        .rc-seal-img { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 15mm; height: 15mm; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .rc-seal { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 13mm; height: 13mm; }
+        .rc-seal-img { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 13mm; height: 13mm; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-        .rc-submit-to { text-align: right; margin: 6mm 0 0; }
-        .rc-submit-in { width: 60mm; text-align: right; display: inline-block; font-weight: 700; font-size: 12pt; }
+        .rc-submit-to { text-align: right; margin: 4mm 0 0; }
+        .rc-submit-in { width: 60mm; text-align: right; display: inline-block; font-weight: 700; font-size: 11.5pt; }
 
-        .rc-warning { margin-top: 8mm; border-top: 1px solid #1a1a1a; padding-top: 3mm; font-size: 8.5pt; line-height: 1.45; }
+        .rc-warning { margin-top: 4mm; border-top: 1px solid #1a1a1a; padding-top: 2mm; font-size: 8.5pt; line-height: 1.4; }
 
         @media print {
+          @page { size: A4; margin: 12mm; }
           html, body { background: #fff !important; }
           .rc-shell { display: block !important; padding: 0 !important; }
           .no-print { display: none !important; }
@@ -336,7 +337,10 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
             width: 100% !important; min-height: auto !important;
             padding: 0 !important; box-shadow: none !important;
           }
+          /* 인쇄 시 외곽 박스가 페이지를 강제로 채우지 않도록 — 한 장에 자연스럽게 들어가게 */
+          .rc-outer { min-height: 0 !important; }
           .rc-in:focus { background: transparent !important; }
+          .rc-paper, .rc-outer { page-break-inside: avoid; }
           .rc-form, .rc-landlord, .rc-warning { page-break-inside: avoid; }
         }
       `}</style>

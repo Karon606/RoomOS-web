@@ -56,35 +56,35 @@ export function buildResidenceCertPrintHtml(d: PrintResidenceCertData): string {
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #fff; color: #1a1a1a; font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif; }
-  body { font-size: 10.5pt; line-height: 1.5; }
+  body { font-size: 10pt; line-height: 1.35; }
 
   .paper { position: relative; padding: 0; }
-  .outer { border: 1.5px solid #1a1a1a; padding: 7mm 6mm; }
+  .outer { border: 1.5px solid #1a1a1a; padding: 5mm 7mm; }
 
-  .doc-title { text-align: center; font-size: 19pt; font-weight: 700; letter-spacing: 8px; margin: 2mm 0 6mm; }
+  .doc-title { text-align: center; font-size: 17pt; font-weight: 700; letter-spacing: 6px; margin: 1mm 0 4mm; }
 
-  .form-table { width: 100%; border-collapse: collapse; font-size: 10.5pt; }
-  .form-table th, .form-table td { border: 1px solid #1a1a1a; padding: 5px 8px; vertical-align: middle; }
+  .form-table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+  .form-table th, .form-table td { border: 1px solid #1a1a1a; padding: 3px 8px; vertical-align: middle; }
   .form-table th { background: #fff; font-weight: 500; text-align: center; white-space: nowrap; letter-spacing: 2px; }
-  .row-h { height: 30px; }
+  .row-h { height: 26px; }
   .area-note { float: right; color: #1a1a1a; }
   .muted { color: #555; }
 
-  .confirm-line { margin: 9mm 0 0; font-size: 10.5pt; }
-  .issue-date { text-align: center; margin: 7mm 0 8mm; font-size: 10.5pt; }
+  .confirm-line { margin: 5mm 0 0; font-size: 10pt; }
+  .issue-date { text-align: center; margin: 4mm 0 5mm; font-size: 10pt; }
 
-  .landlord { font-size: 10.5pt; }
-  .landlord-head { margin: 0 0 3mm; }
-  .landlord-row { display: flex; align-items: center; margin: 0 0 1.5mm; padding-left: 7mm; }
+  .landlord { font-size: 10pt; }
+  .landlord-head { margin: 0 0 2mm; }
+  .landlord-row { display: flex; align-items: center; margin: 0 0 0.8mm; padding-left: 7mm; min-height: 6mm; }
   .landlord-label { display: inline-block; width: 30mm; letter-spacing: 1px; }
   .landlord-value { flex: 1; }
   .stamp-slot { display: inline-flex; align-items: center; gap: 2mm; }
-  .seal { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 16mm; height: 16mm; }
-  .seal-img { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 15mm; height: 15mm; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .seal { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 13mm; height: 13mm; }
+  .seal-img { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 13mm; height: 13mm; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-  .submit-to { text-align: right; font-weight: 700; font-size: 12pt; margin: 6mm 0 0; }
+  .submit-to { text-align: right; font-weight: 700; font-size: 11.5pt; margin: 4mm 0 0; }
 
-  .warning { margin-top: 8mm; border-top: 1px solid #1a1a1a; padding-top: 3mm; font-size: 8.5pt; line-height: 1.45; color: #1a1a1a; }
+  .warning { margin-top: 4mm; border-top: 1px solid #1a1a1a; padding-top: 2mm; font-size: 8.5pt; line-height: 1.4; color: #1a1a1a; }
 </style>
 </head>
 <body>
