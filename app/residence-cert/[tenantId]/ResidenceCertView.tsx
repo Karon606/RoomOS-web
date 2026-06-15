@@ -40,6 +40,9 @@ type Fields = {
 }
 
 function buildInitial(data: ResidenceCertData): Fields {
+  // 거주기간 — 시작은 입주일, 끝은 퇴실 예정일이 있으면 그것, 없으면 오늘 날짜로 채움(편집·삭제 가능).
+  const start = fmtDot(data.periodStart)
+  const end = fmtDot(data.periodEnd || kstYmdStr())
   return {
     siteAddress: data.siteAddress,
     areaM2: data.areaM2,
@@ -47,7 +50,7 @@ function buildInitial(data: ResidenceCertData): Fields {
     tenantAddress: data.tenantAddress,
     tenantBirth: fmtDot(data.tenantBirth),
     tenantPhone: data.tenantPhone,
-    periodText: [data.periodStart, data.periodEnd].map(fmtDot).filter(Boolean).join('  ~  '),
+    periodText: start ? `${start}  ~  ${end}` : end,
     rentText: data.rentAmount ? data.rentAmount.toLocaleString() : '',
     depositText: data.depositAmount ? data.depositAmount.toLocaleString() : '',
     landlordBusinessName: data.landlordBusinessName,
