@@ -74,6 +74,7 @@ type LeaseTerm = {
 
 type Tenant = {
   id: string; name: string; englishName: string | null
+  email: string | null
   birthdate: string | Date | null; memo: string | null
   nationality: string | null; gender: string; job: string | null
   isBasicRecipient: boolean; contacts: Contact[]; leaseTerms: LeaseTerm[]
@@ -2617,6 +2618,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             <PhoneInput name="contactValue" defaultValue={primary?.contactValue ?? ''} />
           </div>
         </div>
+        <Field label="이메일" name="email" type="email" defaultValue={tenant?.email ?? ''} placeholder="example@email.com" />
         <div className="grid grid-cols-3 gap-2">
           <Field label="비상연락 관계" name="emergencyRelation" defaultValue={emergency?.emergencyRelation ?? ''} placeholder="부모님" />
           <div className="col-span-2 space-y-1.5">

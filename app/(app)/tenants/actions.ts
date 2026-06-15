@@ -80,6 +80,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
 
   const name             = formData.get('name') as string
   const englishName      = formData.get('englishName') as string
+  const email            = formData.get('email') as string
   const birthdate        = formData.get('birthdate') as string
   const isBasicRecipient = formData.get('isBasicRecipient') === 'true'
   const roomId           = formData.get('roomId') as string
@@ -173,6 +174,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
       propertyId,
       name: name.trim(),
       englishName: englishName || null,
+      email: email || null,
       birthdate: birthdate ? new Date(birthdate) : null,
       isBasicRecipient,
       memo: memo || null,
@@ -246,6 +248,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
   // 입주자 기본 정보
   const name             = formData.get('name') as string
   const englishName      = formData.get('englishName') as string
+  const email            = formData.get('email') as string
   const birthdate        = formData.get('birthdate') as string
   const isBasicRecipient = formData.get('isBasicRecipient') === 'true'
   const memo             = formData.get('memo') as string
@@ -343,6 +346,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
     data: {
       name: name.trim(),
       englishName: englishName || null,
+      email: email || null,
       birthdate: birthdate ? new Date(birthdate) : null,
       isBasicRecipient,
       memo: memo || null,

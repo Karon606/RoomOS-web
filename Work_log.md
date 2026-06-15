@@ -32,6 +32,9 @@ CREATE INDEX "residence_cert_files_propertyId_createdAt_idx" ON residence_cert_f
 ```
 **남은 것**: 지역별 제출처 분기(서울 외), 임차인 주소를 영업장+방번호로 자동 — 사용자 실측 검증 후 레이아웃 미세조정.
 
+### 후속 — 입주자 이메일 필드 [⚠️ SQL 1건 적용 후 배포]
+입주자 정보에 이메일이 없어 추가. `Tenant.email String?` 신설(ContactType enum엔 EMAIL 없어 전용 필드가 깔끔). 고객 폼 연락처 섹션에 이메일 입력칸(type=email), createTenant·updateTenant 저장, getTenantDetail select 에 email 추가, TenantBasicInfo 표시(있을 때만). getTenants 는 include 라 자동 포함. **SQL**: `ALTER TABLE tenants ADD COLUMN email TEXT;`
+
 ## 2026-06-15 — 사용자 요청 6건: 호실저장 토스트·재고보충·지출 [SQL 불필요]
 호실 수정 저장 글리치 + 재고 보충 UX 재설계 + 지출 3건.
 - **#1 호실 수정 저장(RoomManageClient)**: 저장 후 토스트(초록) 안 뜨고 메인→수정팝업 되돌아오던 글리치. 원인=`window.location.reload()` 전체 새로고침이 ⓐ pushToast 직후 토스트를 날리고 ⓑ ref(handledOpenRef) 초기화로 URL `?roomId&edit=1` 가 effect 재오픈을 유발. 해결=soft `router.refresh()` 로 교체(토스트 유지·ref 보존→재오픈 차단). handleAdd 도 동일 교체.

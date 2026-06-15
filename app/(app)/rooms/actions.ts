@@ -1266,7 +1266,7 @@ export async function getTenantDetail(tenantId: string) {
   return prisma.tenant.findUnique({
     where: { id: tenantId },
     select: {
-      id: true, name: true, englishName: true,
+      id: true, name: true, englishName: true, email: true,
       gender: true, nationality: true, job: true,
       birthdate: true, isBasicRecipient: true, memo: true,
       contacts: {

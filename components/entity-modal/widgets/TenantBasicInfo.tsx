@@ -6,6 +6,7 @@ import { Section, Grid, Item } from './Section'
 type Tenant = {
   name: string
   englishName: string | null
+  email: string | null
   gender: string
   nationality: string | null
   job: string | null
@@ -34,6 +35,7 @@ export function TenantBasicInfo({ tenant }: { tenant: Tenant }) {
         <Item label="이름"       value={<span className="font-semibold text-[var(--warm-dark)]">{tenant.name}</span>} />
         <Item label="호실"       value={fmtRoomNo(lease?.room?.roomNo)} />
         {tenant.englishName && <Item label="영어이름" value={tenant.englishName} />}
+        {tenant.email && <Item label="이메일" value={tenant.email} />}
         <Item label="성별"       value={GENDER_LABEL[tenant.gender] ?? tenant.gender} />
         <Item label="국적"       value={tenant.nationality ? `${natFlag} ${tenant.nationality}` : '—'} />
         <Item label="직업"       value={tenant.job ?? '—'} />

@@ -267,6 +267,7 @@ model Tenant {
   id               String   @id @default(uuid()) @db.Uuid
   name             String
   englishName      String?
+  email            String?
   birthdate        DateTime? @db.Date
   gender           Gender    @default(UNKNOWN)
   nationality      String?
