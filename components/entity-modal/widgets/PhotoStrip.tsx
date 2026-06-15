@@ -44,15 +44,29 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
   const [mounted, setMounted]     = useState(false)
   const [drag, setDrag]           = useState(0)
   const [animating, setAnimating] = useState(false)
-  const touchStart = useRef<{ x: number; y: number } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const curImgRef = useRef<HTMLImageElement>(null)
 
-  // 360 보기 — 현재 사진이 360(파일명 단서)이고 driveFileId 있으면 기본 ON. 사진 바뀌면 재설정.
+  // 확대(줌) 상태 — 현재 사진. 사진 바뀌면 초기화.
+  const MAX_ZOOM = 4
+  const [scale, setScale]   = useState(1)
+  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const pointers = useRef<Map<number, { x: number; y: number }>>(new Map())
+  const pinchRef = useRef<{ dist: number; scale: number } | null>(null)
+  const panRef   = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
+  const swipeRef = useRef<{ x: number; y: number } | null>(null)
+  const tapRef   = useRef<{ t: number; x: number; y: number; moved: boolean } | null>(null)
+  const multiRef = useRef(false)   // 핀치(2손가락) 발생 시 단일터치 팬/스와이프 무시
+  const lastTap  = useRef(0)
+
+  // 360 보기 — 360 가능(파일명 단서 또는 2:1 비율) + driveFileId 있을 때만 토글 노출.
   const cur = photos[index]
-  const can360 = !!cur?.driveFileId
+  const [ratio360, setRatio360] = useState<Set<string>>(new Set())
+  const is360Capable = !!cur?.driveFileId && (looksLike360(cur?.fileName) || (cur ? ratio360.has(cur.id) : false))
   const [view360, setView360] = useState(false)
   useEffect(() => {
-    setView360(can360 && looksLike360(cur?.fileName))
+    setView360(!!cur?.driveFileId && looksLike360(cur?.fileName))
+    setScale(1); setOffset({ x: 0, y: 0 })  // 사진 전환 시 줌 초기화
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index])
 
@@ -80,24 +94,76 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, total, view360])
 
-  const onTouchStart = (e: React.TouchEvent) => {
-    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+  const onImgLoad = (p: Photo, e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget
+    const r = img.naturalWidth / img.naturalHeight
+    if (r >= 1.9 && r <= 2.1) setRatio360(prev => prev.has(p.id) ? prev : new Set(prev).add(p.id))
+  }
+
+  // 확대 상태에서 이미지가 화면 밖으로 과하게 빠지지 않게 오프셋 제한
+  const clampOffset = (o: { x: number; y: number }, s: number) => {
+    const img = curImgRef.current, wrap = containerRef.current
+    if (!img || !wrap) return o
+    const maxX = Math.max(0, (img.offsetWidth * s - wrap.clientWidth) / 2)
+    const maxY = Math.max(0, (img.offsetHeight * s - wrap.clientHeight) / 2)
+    return { x: Math.max(-maxX, Math.min(maxX, o.x)), y: Math.max(-maxY, Math.min(maxY, o.y)) }
+  }
+  const applyScale = (next: number) => {
+    const s = Math.max(1, Math.min(MAX_ZOOM, next))
+    setScale(s)
+    setOffset(o => clampOffset(s === 1 ? { x: 0, y: 0 } : o, s))
+  }
+  const toggleZoom = () => applyScale(scale > 1 ? 1 : 2)
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     setAnimating(false)
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()]
+      pinchRef.current = { dist: Math.hypot(a.x - b.x, a.y - b.y), scale }
+      multiRef.current = true
+      panRef.current = null; swipeRef.current = null; tapRef.current = null; setDrag(0)
+    } else if (!multiRef.current) {
+      tapRef.current = { t: Date.now(), x: e.clientX, y: e.clientY, moved: false }
+      if (scale > 1) { panRef.current = { x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y }; swipeRef.current = null }
+      else { swipeRef.current = { x: e.clientX, y: e.clientY }; panRef.current = null }
+    }
   }
-  const onTouchMove = (e: React.TouchEvent) => {
-    if (!touchStart.current) return
-    const dx = e.touches[0].clientX - touchStart.current.x
-    const dy = e.touches[0].clientY - touchStart.current.y
-    if (Math.abs(dx) > Math.abs(dy)) setDrag(dx)
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pinchRef.current && pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()]
+      applyScale(pinchRef.current.scale * (Math.hypot(a.x - b.x, a.y - b.y) / pinchRef.current.dist))
+      return
+    }
+    if (multiRef.current) return
+    if (tapRef.current && Math.hypot(e.clientX - tapRef.current.x, e.clientY - tapRef.current.y) > 10) tapRef.current.moved = true
+    if (panRef.current) {
+      setOffset(clampOffset({ x: panRef.current.ox + (e.clientX - panRef.current.x), y: panRef.current.oy + (e.clientY - panRef.current.y) }, scale))
+    } else if (swipeRef.current) {
+      const dx = e.clientX - swipeRef.current.x, dy = e.clientY - swipeRef.current.y
+      if (Math.abs(dx) > Math.abs(dy)) setDrag(dx)
+    }
   }
-  const onTouchEnd = () => {
-    if (!touchStart.current) { setDrag(0); return }
-    const w = containerRef.current?.offsetWidth ?? window.innerWidth
-    const threshold = Math.max(50, w * 0.15)
-    setAnimating(true)
-    if (Math.abs(drag) > threshold) go(drag > 0 ? -1 : 1)
-    setDrag(0)
-    touchStart.current = null
+  const onPointerUp = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId)
+    if (pointers.current.size < 2) pinchRef.current = null
+    if (pointers.current.size === 0) {
+      if (swipeRef.current) {
+        const w = containerRef.current?.offsetWidth ?? window.innerWidth
+        const threshold = Math.max(50, w * 0.15)
+        setAnimating(true)
+        if (Math.abs(drag) > threshold) go(drag > 0 ? -1 : 1)
+        setDrag(0)
+      }
+      const t = tapRef.current
+      if (t && !t.moved && Date.now() - t.t < 250) {
+        if (Date.now() - lastTap.current < 300) { toggleZoom(); lastTap.current = 0 }
+        else lastTap.current = Date.now()
+      }
+      panRef.current = null; swipeRef.current = null; tapRef.current = null; multiRef.current = false
+    }
   }
 
   const handleClose = () => {
@@ -134,8 +200,8 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
         {index + 1} / {total}
       </div>
 
-      {/* 360 / 일반 토글 — driveFileId 있을 때만 */}
-      {can360 && (
+      {/* 360 / 일반 토글 — 360 가능 사진(파일명 단서 또는 2:1 비율)일 때만 */}
+      {is360Capable && (
         <button
           onClick={e => { e.stopPropagation(); setView360(v => !v) }}
           className="absolute top-4 left-1/2 -translate-x-1/2 z-10 text-white text-xs font-semibold px-3 h-10 flex items-center rounded-full bg-black/40 hover:bg-black/60 transition-colors"
@@ -159,7 +225,12 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
         ref={containerRef}
         className={`w-full h-full overflow-hidden ${mounted ? 'scale-100' : 'scale-95'} transition-transform duration-200`}
         onClick={e => e.stopPropagation()}
-        {...(view360 ? {} : { onTouchStart, onTouchMove, onTouchEnd })}
+        style={view360 ? undefined : { touchAction: 'none' }}
+        {...(view360 ? {} : {
+          onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp,
+          onWheel: (e: React.WheelEvent) => applyScale(scale - e.deltaY * 0.003),
+          onDoubleClick: toggleZoom,
+        })}
       >
         {view360 && cur?.driveFileId ? (
           // 360 뷰어 — 현재 사진만. 드래그/휠은 pannellum 이 처리(스와이프 비활성).
@@ -170,12 +241,18 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
               transform: trackTransform,
               transition: animating ? 'transform 320ms cubic-bezier(0.22,1,0.36,1)' : 'none',
             }}>
-            {photos.map(p => (
+            {photos.map((p, i) => (
               <div key={p.id} className="w-full h-full shrink-0 flex items-center justify-center px-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
+                  ref={i === index ? curImgRef : undefined}
                   src={p.driveFileId ? driveImageUrl(p.driveFileId, 2000) : p.storageUrl}
                   alt={p.fileName ?? ''}
-                  className="max-w-[95vw] max-h-[90vh] object-contain pointer-events-none"
+                  onLoad={e => onImgLoad(p, e)}
+                  className="max-w-[95vw] max-h-[90vh] object-contain select-none"
+                  style={i === index
+                    ? { transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`, transformOrigin: 'center', cursor: scale > 1 ? 'grab' : 'auto' }
+                    : { pointerEvents: 'none' }}
                   draggable={false}
                 />
               </div>
