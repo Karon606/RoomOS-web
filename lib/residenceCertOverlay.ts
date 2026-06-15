@@ -45,7 +45,8 @@ export async function fillResidenceCertSeoul(
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.load(TEMPLATE_BYTES)
   doc.registerFontkit(fontkit)
-  const font = await doc.embedFont(await getNanumGothic(), { subset: true })
+  // subset:true 는 이 폰트에서 글리프가 깨져(글자 누락·오표기) 전체 임베드 사용.
+  const font = await doc.embedFont(await getNanumGothic())
   const page = doc.getPages()[0]
   const black = rgb(0, 0, 0)
   const white = rgb(1, 1, 1)
