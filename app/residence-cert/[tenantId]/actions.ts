@@ -1,0 +1,124 @@
+'use server'
+
+import prisma from '@/lib/prisma'
+import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
+import { createClient } from '@/lib/supabase/server'
+import { buildDriveThumbnailUrl } from '@/lib/google-drive'
+
+// 실거주 확인서 자동 채움 데이터.
+// 고시원 특성상 임차인 주소 = 영업장 주소 + 방번호 (별도 주소 필드 불필요).
+// 면적 = 호실 areaM2 우선, 없으면 영업장 기본 면적(defaultAreaM2).
+// 임대료 줄의 보증금은 보증금 금액만 (청소비 합성 없음).
+
+export type ResidenceCertData = {
+  tenantId: string
+  leaseTermId: string | null
+  // 소재지·임차인
+  siteAddress: string        // 소재지 = 영업장 주소 + 방번호
+  areaM2: string             // 면적(㎡) — 문자열(편집 가능)
+  tenantName: string
+  tenantAddress: string      // 고시원: 소재지와 동일
+  tenantBirth: string        // YYYY-MM-DD (없으면 '')
+  tenantPhone: string
+  // 거주기간 (YYYY-MM-DD, 없으면 '')
+  periodStart: string
+  periodEnd: string
+  // 금액
+  rentAmount: number
+  depositAmount: number
+  // 임대인(영업장)
+  landlordBusinessName: string   // 상호
+  landlordName: string           // 성명(대표)
+  landlordAddress: string        // 사업장 주소
+  landlordBirth: string          // 생년월일 (개인 임대인용, 보통 빈값)
+  landlordRegistrationNo: string // 사업자등록번호
+  landlordPhone: string          // 연락처
+  // 도장
+  stampImageUrl: string | null
+  // 제출처 (지역별 — v1 서울 고정)
+  submitTo: string
+}
+
+type BusinessInfo = { name?: string; registrationNo?: string; ceoName?: string; address?: string }
+
+async function requireAuthAndProperty() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+  const cookieStore = await cookies()
+  const propertyId = cookieStore.get('selected_property_id')?.value
+  if (!propertyId) redirect('/property-select')
+  return { userId: user.id, propertyId }
+}
+
+const ymd = (d: Date | null | undefined) =>
+  d ? new Date(d).toISOString().slice(0, 10) : ''
+
+const fmtRoom = (v: string | null | undefined) => {
+  if (!v) return ''
+  return /^\d+$/.test(v.trim()) ? `${v.trim()}호` : v
+}
+
+export async function getResidenceCertData(tenantId: string): Promise<ResidenceCertData | null> {
+  const { propertyId } = await requireAuthAndProperty()
+
+  const [tenant, property] = await Promise.all([
+    prisma.tenant.findFirst({
+      where: { id: tenantId, propertyId },
+      include: {
+        contacts: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] },
+        leaseTerms: {
+          where: { status: { in: ['ACTIVE', 'RESERVED'] } },
+          orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
+          take: 1,
+          include: { room: { select: { roomNo: true, areaM2: true } } },
+        },
+      },
+    }),
+    prisma.property.findUnique({
+      where: { id: propertyId },
+      select: {
+        address: true, phone: true, businessInfo: true,
+        stampDriveFileId: true, defaultAreaM2: true,
+      },
+    }),
+  ])
+
+  if (!tenant) return null
+
+  const lease = tenant.leaseTerms[0] ?? null
+  const primaryContact = tenant.contacts.find(c => c.isPrimary && !c.isEmergency)
+                       ?? tenant.contacts.find(c => !c.isEmergency)
+  const biz = (property?.businessInfo as BusinessInfo | null) ?? {}
+
+  const roomLabel = fmtRoom(lease?.room?.roomNo)
+  const baseAddress = property?.address ?? ''
+  const siteAddress = [baseAddress, roomLabel].filter(Boolean).join(' ')
+
+  // 면적: 호실 areaM2 우선 → 영업장 기본 면적
+  const area = lease?.room?.areaM2 ?? property?.defaultAreaM2 ?? null
+
+  return {
+    tenantId: tenant.id,
+    leaseTermId: lease?.id ?? null,
+    siteAddress,
+    areaM2: area != null ? String(area) : '',
+    tenantName: tenant.name,
+    tenantAddress: siteAddress,
+    tenantBirth: ymd(tenant.birthdate),
+    tenantPhone: primaryContact?.contactValue ?? '',
+    periodStart: ymd(lease?.moveInDate),
+    periodEnd: ymd(lease?.expectedMoveOut),
+    rentAmount: lease?.rentAmount ?? 0,
+    depositAmount: lease?.depositAmount ?? 0,
+    landlordBusinessName: biz.name ?? '',
+    landlordName: biz.ceoName ?? '',
+    landlordAddress: biz.address ?? '',
+    landlordBirth: '',
+    landlordRegistrationNo: biz.registrationNo ?? '',
+    landlordPhone: property?.phone ?? '',
+    stampImageUrl: property?.stampDriveFileId ? buildDriveThumbnailUrl(property.stampDriveFileId, 800) : null,
+    submitTo: '서울특별시장 귀하',
+  }
+}

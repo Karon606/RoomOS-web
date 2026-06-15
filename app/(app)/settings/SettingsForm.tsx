@@ -51,6 +51,7 @@ type Property = {
   prevOwnerCutoffDate: Date | null
   defaultDeposit: number | null
   defaultCleaningFee: number | null
+  defaultAreaM2: number | null
   publicSlug: string | null
   logoDriveFileId: string | null
   logoThumbnailUrl: string | null
@@ -724,6 +725,15 @@ export default function SettingsForm({
                 <label className="text-xs font-medium text-[var(--warm-mid)]">기본 청소비</label>
                 <MoneyInput name="defaultCleaningFee" defaultValue={property?.defaultCleaningFee ?? undefined} placeholder="0원" />
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">기본 전용면적 (㎡)</label>
+              <p className="text-xs text-[var(--warm-muted)]">실거주 확인서 등 서류의 면적 기본값입니다. 호실관리에 호실별 면적이 있으면 그 값이 우선 적용되고, 비어 있을 때 이 값이 쓰입니다.</p>
+              <input type="text" inputMode="decimal" name="defaultAreaM2"
+                defaultValue={property?.defaultAreaM2 ?? ''}
+                placeholder="예: 13.2"
+                autoComplete="off"
+                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">공개 페이지 슬러그</label>

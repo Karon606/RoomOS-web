@@ -146,6 +146,7 @@ model Property {
   paymentMethods     String?   // 결제 수단 목록 (콤마 구분)
   defaultDeposit   Int?      // 기본 보증금
   defaultCleaningFee Int?    // 기본 청소비
+  defaultAreaM2    Float?    // 기본 전용면적(㎡) — 실거주 확인서 등 서류 기본값. 호실별 areaM2 가 비었을 때 사용
   // 계약서 (영업장별 별도 운영)
   contractTemplate Json?     // 섹션 본문 + 추가 표시 옵션. shape: { title, sections: [{ title, items: string[] }], oathText }
   businessInfo     Json?     // 사업자 정보. shape: { name, registrationNo, ceoName, address }
@@ -179,6 +180,7 @@ model Property {
   reserveTransactions ReserveTransaction[]
   depositRefunds      DepositRefund[]
   contractFiles       ContractFile[]
+  residenceCertFiles  ResidenceCertFile[]
 
   @@map("properties")
 }
@@ -284,6 +286,7 @@ model Tenant {
   requests       TenantRequest[]
   depositRefunds DepositRefund[]
   contractFiles  ContractFile[]
+  residenceCertFiles ResidenceCertFile[]
 
   @@map("tenants")
 }
@@ -369,6 +372,7 @@ model LeaseTerm {
   statusLogs     TenantStatusLog[]
   depositRefunds DepositRefund[]
   contractFiles  ContractFile[]
+  residenceCertFiles ResidenceCertFile[]
   discounts      RentDiscount[]   // #14 월세 할인(입주자별, 여러 개 가능)
 
   @@index([propertyId, status]) // 영업장별 현재 거주자 조회 최적화
@@ -1102,6 +1106,28 @@ model ContractFile {
   @@index([tenantId, createdAt])
   @@index([propertyId, createdAt])
   @@map("contract_files")
+}
+
+// 실거주 확인서 — 입실자별 발급 PDF (계약서와 동일 구조). 발급 시 Drive 업로드 + 이력 보관.
+model ResidenceCertFile {
+  id           String   @id @default(uuid()) @db.Uuid
+  driveFileId  String                            // Google Drive file ID
+  fileName     String                            // 표시용 파일명
+  issuedAt     DateTime @default(now())          // 작성(발급)일 — 사용자가 입력한 작성일
+  createdAt    DateTime @default(now())
+
+  tenantId     String   @db.Uuid
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  leaseTermId  String?  @db.Uuid
+  leaseTerm    LeaseTerm? @relation(fields: [leaseTermId], references: [id], onDelete: SetNull)
+
+  propertyId   String   @db.Uuid
+  property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([propertyId, createdAt])
+  @@map("residence_cert_files")
 }
 
 // ============================================================

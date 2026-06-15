@@ -218,6 +218,12 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
     const latest = files[0]
     setPrintChoice({ scanUrl: latest.viewUrl, fileName: latest.fileName ?? '스캔본' })
   }
+  // 실거주 확인서 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
+  const handleResidenceCert = () => {
+    if (!links?.tenantId) return
+    router.push(`/residence-cert/${links.tenantId}`)
+    onClose()
+  }
 
   // Phase 2.4a (2026-05-30): kind='payment' 의 '수납 관리에서 열기' 딥링크 제거.
   // PaymentBody 내부 summary→full 모드 토글이 in-place 전환 (배경 안 바뀜) — 사용자 비전.
@@ -242,7 +248,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
             </div>
           )}
           {kind === 'tenant' && hasTenant && (
-            <div className="flex gap-2 items-center">
+            <div className="flex flex-wrap gap-2 items-center">
               <button type="button" onClick={handleDeleteTenant} disabled={isPending}
                 className="px-3 py-2 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-xs font-medium rounded-lg transition-colors disabled:opacity-40">
                 삭제
@@ -251,6 +257,12 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
                 <button type="button" onClick={handlePrintContract}
                   className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
                   계약서 출력
+                </button>
+              )}
+              {links?.tenantId && (
+                <button type="button" onClick={handleResidenceCert}
+                  className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                  실거주 확인서
                 </button>
               )}
               <div className="flex-1" />

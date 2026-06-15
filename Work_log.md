@@ -3,6 +3,35 @@
 마지막 업데이트: 2026-06-15
 브랜치: main
 
+## 2026-06-15 (이어서) — 실거주 확인서 발급 기능 (서류 메뉴 1탄) [⚠️ SQL 2건 적용 후 배포]
+입실자 서류 작성·발급 트랙의 첫 실물 기능. 계약서 시스템을 본떠 자동채움 + 도장 + Drive 저장 + 발급 이력.
+**메뉴 구조**: 사이드바 '운영'에서 계약서를 빼고 **'관련 서류' 그룹** 신설 → [계약서, 실거주 확인서].
+**핵심 결정(고시원 도메인)**: 임차인 주소 = 영업장 주소 + 방번호 (별도 필드 불필요·SQL 0). 면적 = 호실 areaM2 우선 → 환경설정 기본면적(defaultAreaM2) fallback. 도장 = 기존 `Property.stampDriveFileId` 재사용. 임대료 줄 보증금 = 보증금 금액만(청소비 합성 X). 제출처 = ' 서울특별시장 귀하' 고정(지역별 분기는 추후 영업장 주소 기반).
+**라우트**(계약서 contract/contracts 패턴 모방 — 충돌 회피): 목록 `/residence-certs`((app) 셸), 작성·발급 `/residence-cert/[tenantId]`(standalone, 셸 밖·인쇄용), API `/api/residence-cert/generate`(puppeteer A4 PDF).
+**작성 화면**(ResidenceCertView): PDF와 동일 정부양식 A4. **모든 칸 편집 가능**(자동 채움 + 직접 수정), 작성일 date, '자동값으로'(undo) · '인쇄'(window.print) · '발급(PDF 저장)'. 도장은 임대인 성명줄 (인) 옆 합성.
+**발급 흐름**: POST → 서버가 도장 URL을 DB 기준으로 재결정(주입 방지) → buildResidenceCertPrintHtml → puppeteer PDF → Drive 업로드 → ResidenceCertFile 레코드 → 목록으로.
+**목록**(/residence-certs): 상단 '새 발급'(거주중 입실자 칩 → 작성화면) + 하단 '발급 이력'(보기·재발급·삭제, Drive 원본 동반삭제).
+**입주자 모달**: '실거주 확인서' 버튼 추가(계약서 출력 옆, flex-wrap).
+**환경설정**: '기본 전용면적(㎡)' 입력란 추가(호실 면적 우선·비면 이 값).
+**신규 파일**: prisma(ResidenceCertFile, Property.defaultAreaM2) · lib/residenceCertPrintHtml.ts · app/residence-cert/[tenantId]/{page,ResidenceCertView,actions} · app/api/residence-cert/generate/route · app/(app)/residence-certs/{page,ResidenceCertClient,actions}. 수정: Sidebar · settings(actions·SettingsForm) · EntityModal.
+**검증**: tsc·build 통과, 3개 라우트 정상 등록(충돌 없음).
+**⚠️ SQL (적용 후 배포)**:
+```sql
+ALTER TABLE properties ADD COLUMN "defaultAreaM2" DOUBLE PRECISION;
+CREATE TABLE residence_cert_files (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "driveFileId" TEXT NOT NULL, "fileName" TEXT NOT NULL,
+  "issuedAt" TIMESTAMP(3) NOT NULL DEFAULT now(), "createdAt" TIMESTAMP(3) NOT NULL DEFAULT now(),
+  "tenantId" UUID NOT NULL, "leaseTermId" UUID, "propertyId" UUID NOT NULL,
+  CONSTRAINT "residence_cert_files_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES tenants(id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "residence_cert_files_leaseTermId_fkey" FOREIGN KEY ("leaseTermId") REFERENCES lease_terms(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT "residence_cert_files_propertyId_fkey" FOREIGN KEY ("propertyId") REFERENCES properties(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX "residence_cert_files_tenantId_createdAt_idx" ON residence_cert_files ("tenantId", "createdAt");
+CREATE INDEX "residence_cert_files_propertyId_createdAt_idx" ON residence_cert_files ("propertyId", "createdAt");
+```
+**남은 것**: 지역별 제출처 분기(서울 외), 임차인 주소를 영업장+방번호로 자동 — 사용자 실측 검증 후 레이아웃 미세조정.
+
 ## 2026-06-15 — 사용자 요청 6건: 호실저장 토스트·재고보충·지출 [SQL 불필요]
 호실 수정 저장 글리치 + 재고 보충 UX 재설계 + 지출 3건.
 - **#1 호실 수정 저장(RoomManageClient)**: 저장 후 토스트(초록) 안 뜨고 메인→수정팝업 되돌아오던 글리치. 원인=`window.location.reload()` 전체 새로고침이 ⓐ pushToast 직후 토스트를 날리고 ⓑ ref(handledOpenRef) 초기화로 URL `?roomId&edit=1` 가 effect 재오픈을 유발. 해결=soft `router.refresh()` 로 교체(토스트 유지·ref 보존→재오픈 차단). handleAdd 도 동일 교체.
