@@ -111,3 +111,13 @@ export async function deleteFromDrive(fileId: string): Promise<void> {
   const drive = getDriveClient()
   await drive.files.delete({ fileId })
 }
+
+// 원본 파일 바이트 다운로드 (alt=media) — 썸네일이 아닌 원본(예: 투명 PNG 도장)을 그대로 받음.
+export async function downloadDriveBytes(fileId: string): Promise<Buffer> {
+  const drive = getDriveClient()
+  const res = await drive.files.get(
+    { fileId, alt: 'media' },
+    { responseType: 'arraybuffer' },
+  )
+  return Buffer.from(res.data as ArrayBuffer)
+}

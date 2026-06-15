@@ -32,6 +32,15 @@ CREATE INDEX "residence_cert_files_propertyId_createdAt_idx" ON residence_cert_f
 ```
 **남은 것**: 지역별 제출처 분기(서울 외), 임차인 주소를 영업장+방번호로 자동 — 사용자 실측 검증 후 레이아웃 미세조정.
 
+### 후속 — 실거주 확인서: 원본 양식 위 overlay 방식으로 전환 [SQL 불필요]
+"양식을 최대한 원본 그대로(폰트까지)" 요청 → HTML 재현(puppeteer) 대신 **원본 빈 양식 PDF 위에 데이터·도장만 좌표로 얹는** 방식으로 발급 경로 교체. 양식·선·라벨·폰트가 100% 원본.
+- **원본 폰트** = HCR돋움·한컴돋움(고딕). 채우는 글자는 무료 **나눔고딕 TTF** 런타임 fetch+캐시(woff2는 fontkit 임베드 불가) + subset 임베드.
+- **좌표맵**: pdfjs로 원본(A4 595×842pt)의 모든 라벨 baseline 추출 → 데이터 위치 매핑([residenceCertOverlay.ts](lib/residenceCertOverlay.ts)). 거주기간·작성일은 인쇄된 빈칸 채움(작성일)·흰 박스로 덮고 재기입(거주기간). 임대료/보증금은 인쇄된 '원' 앞 우측정렬. **도장은 (인) 위에 흰 박스+이미지로 덮음**(원본 PNG 바이트 다운로드로 투명도 보존 — google-drive downloadDriveBytes 신설).
+- **검증**: 샘플 발급 PDF의 텍스트 좌표를 pdfjs로 역추출 → 모든 값이 해당 라벨 baseline에 정확히 안착 확인(자동). 시각 미세조정(특히 도장)은 사용자 발급 후.
+- 발급 경로: puppeteer/HTML 제거 → pdf-lib overlay(가볍고 빠름, maxDuration 60→30). **인쇄** 버튼은 화면 HTML 대신 실제 overlay PDF를 preview 모드(?preview)로 받아 새 탭에서 인쇄. 화면은 입력용 미리보기로 명시.
+- 양식 추가 시: `public/forms/<form>.pdf` + base64 임베드 + 좌표맵 한 쌍만 추가. 원본: [public/forms/residence-cert-seoul.pdf](public/forms/residence-cert-seoul.pdf).
+- deps: pdf-lib·@pdf-lib/fontkit(런타임), pdfjs-dist(dev, 좌표 측정용). 구 [lib/residenceCertPrintHtml.ts] 삭제.
+
 ### 후속 — 실거주 확인서 사용자 피드백 4건 [SQL 불필요]
 - **Made with 스테이음 제거**: 공문서라 브랜딩 X — 화면·PDF 양쪽 워드마크 삭제.
 - **주소 호수 미부착**: 소재지·임차인 주소를 영업장 주소 하나로 통일(4·5층 뒤 호수 부착 어색). 필요시 화면에서 수동 수정.

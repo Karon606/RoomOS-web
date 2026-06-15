@@ -101,7 +101,39 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
     return () => ro.disconnect()
   }, [f])
 
-  const handlePrint = () => window.print()
+  // 인쇄 미리보기 — 화면 HTML 이 아니라 '원본 양식에 데이터를 얹은 실제 PDF' 를 새 탭으로 열어 인쇄.
+  const [previewing, setPreviewing] = useState(false)
+  const handlePrint = async () => {
+    if (previewing) return
+    setPreviewing(true)
+    try {
+      const res = await fetch('/api/residence-cert/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: data.tenantId,
+          leaseTermId: data.leaseTermId,
+          fields: { ...f, issueDate },
+          preview: true,
+        }),
+      })
+      if (!res.ok) {
+        let msg = `서버 오류 (${res.status})`
+        try { const j = await res.json(); msg = j?.error ?? msg } catch { /* not json */ }
+        pushToast('error', msg)
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank')
+      // 메모리 정리는 새 탭이 로드된 뒤
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (err) {
+      pushToast('error', (err as Error).message ?? '미리보기 생성 실패')
+    } finally {
+      setPreviewing(false)
+    }
+  }
 
   const reset = async () => {
     if (!(await confirmDialog({ title: '자동값으로 되돌릴까요?', message: '직접 수정한 내용이 모두 사라지고 시스템 자동값으로 복원됩니다.', confirmLabel: '되돌리기', level: 'caution' }))) return
@@ -157,13 +189,15 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
           <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
         </label>
         <button onClick={reset} className="rc-btn-secondary">자동값으로</button>
-        <button onClick={handlePrint} className="rc-btn-secondary">인쇄</button>
+        <button onClick={handlePrint} disabled={previewing} className="rc-btn-secondary">
+          {previewing ? '여는 중…' : '미리보기·인쇄'}
+        </button>
         <button onClick={handleIssue} disabled={issuing} className="rc-issue">
-          {issuing ? '발급 중... (5~15초)' : '발급 (PDF 저장)'}
+          {issuing ? '발급 중…' : '발급 (PDF 저장)'}
         </button>
       </div>
 
-      <p className="no-print rc-hint">모든 칸을 직접 수정할 수 있습니다. 자동으로 채워진 값이 틀리면 그대로 고쳐서 발급하세요.</p>
+      <p className="no-print rc-hint">아래 화면은 입력용입니다. 모든 칸을 직접 수정할 수 있고, <strong>실제 발급물은 정부 원본 양식</strong>에 이 내용이 그대로 채워져 나옵니다. ‘미리보기·인쇄’로 실제 출력물을 확인하세요.</p>
 
       {/* A4 1장 — 모바일에선 scale로 viewport에 맞춤 (인쇄 시는 원본) */}
       <div

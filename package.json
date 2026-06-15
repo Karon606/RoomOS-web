@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.65",
+    "@pdf-lib/fontkit": "^1.1.1",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
     "@sparticuz/chromium": "^148.0.0",
@@ -24,6 +25,7 @@
     "libphonenumber-js": "^1.12.42",
     "next": "16.2.3",
     "next-nprogress-bar": "^2.4.7",
+    "pdf-lib": "^1.17.1",
     "pg": "^8.20.0",
     "prisma": "^7.7.0",
     "puppeteer-core": "^24.43.0",
@@ -44,6 +46,7 @@
     "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
+    "pdfjs-dist": "^6.0.227",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

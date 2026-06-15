@@ -1,25 +1,21 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import puppeteer from 'puppeteer-core'
-import chromium from '@sparticuz/chromium'
 import prisma from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { requireEdit } from '@/lib/role'
-import { uploadToDrive, buildDriveThumbnailUrl } from '@/lib/google-drive'
-import {
-  buildResidenceCertPrintHtml, getPretendardBase64,
-  type ResidenceCertFields, type PrintResidenceCertData,
-} from '@/lib/residenceCertPrintHtml'
+import { uploadToDrive, downloadDriveBytes } from '@/lib/google-drive'
+import { fillResidenceCertSeoul, type ResidenceCertFields } from '@/lib/residenceCertOverlay'
 
-// puppeteer + chromium은 nodejs runtime 필수.
+// pdf-lib 는 가볍고 빠름 — puppeteer 불필요. nodejs runtime(Buffer·googleapis) 필요.
 export const runtime = 'nodejs'
-export const maxDuration = 60
+export const maxDuration = 30
 export const dynamic = 'force-dynamic'
 
 type Body = {
   tenantId: string
   leaseTermId: string | null
   fields: ResidenceCertFields
+  preview?: boolean   // true 면 Drive 저장 없이 PDF 바이트만 반환(인쇄 미리보기)
 }
 
 export async function POST(req: Request) {
@@ -35,12 +31,34 @@ export async function POST(req: Request) {
     const body = (await req.json()) as Body
     if (!body.tenantId || !body.fields) return NextResponse.json({ ok: false, error: '필수 데이터 누락' }, { status: 400 })
 
-    // 본인 영업장 입실자만 — 도장 이미지는 클라가 아니라 서버 DB 기준으로 결정(주입 방지)
+    // 본인 영업장 입실자만 — 도장은 클라가 아니라 서버 DB 기준으로 결정(주입 방지)
     const [tenant, property] = await Promise.all([
       prisma.tenant.findFirst({ where: { id: body.tenantId, propertyId }, select: { id: true, name: true } }),
       prisma.property.findUnique({ where: { id: propertyId }, select: { stampDriveFileId: true } }),
     ])
     if (!tenant) return NextResponse.json({ ok: false, error: '입실자를 찾을 수 없습니다.' }, { status: 404 })
+
+    // 도장 원본 바이트(투명 PNG 보존) — 없으면 도장 없이 발급
+    let stampBytes: Uint8Array | null = null
+    if (property?.stampDriveFileId) {
+      try { stampBytes = new Uint8Array(await downloadDriveBytes(property.stampDriveFileId)) }
+      catch { stampBytes = null }
+    }
+
+    // 원본 양식 위에 데이터·도장 overlay
+    const pdfBytes = await fillResidenceCertSeoul(body.fields, stampBytes)
+
+    // 인쇄 미리보기 — 저장 없이 PDF 바로 반환
+    if (body.preview) {
+      return new NextResponse(Buffer.from(pdfBytes), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'inline; filename="residence-cert-preview.pdf"',
+          'Cache-Control': 'no-store',
+        },
+      })
+    }
 
     // 묶인 lease 가 본인 영업장인지 검증
     let leaseTermId: string | null = null
@@ -49,41 +67,10 @@ export async function POST(req: Request) {
       leaseTermId = lease?.id ?? null
     }
 
-    const pretendardBase64 = await getPretendardBase64()
-    const printData: PrintResidenceCertData = {
-      ...body.fields,
-      stampImageUrl: property?.stampDriveFileId ? buildDriveThumbnailUrl(property.stampDriveFileId, 800) : null,
-      pretendardBase64,
-    }
-    const html = buildResidenceCertPrintHtml(printData)
-
-    chromium.setGraphicsMode = false
-    const browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: { width: 794, height: 1123, deviceScaleFactor: 2 },
-      executablePath: await chromium.executablePath(),
-      headless: true,
-    })
-    let pdfBuffer: Buffer
-    try {
-      const page = await browser.newPage()
-      await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 })
-      await page.evaluateHandle('document.fonts.ready')
-      const pdfUint8 = await page.pdf({
-        format: 'A4',
-        margin: { top: '12mm', right: '14mm', bottom: '12mm', left: '14mm' },
-        printBackground: true,
-        preferCSSPageSize: false,
-      })
-      pdfBuffer = Buffer.from(pdfUint8)
-    } finally {
-      await browser.close().catch(() => {})
-    }
-
     const issueDate = body.fields.issueDate || new Date().toISOString().slice(0, 10)
     const safeTenantName = tenant.name.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40) || 'tenant'
     const fileName = `실거주확인서_${safeTenantName}_${issueDate.replace(/-/g, '')}_${Date.now()}.pdf`
-    const { fileId } = await uploadToDrive(pdfBuffer, fileName, 'application/pdf')
+    const { fileId } = await uploadToDrive(Buffer.from(pdfBytes), fileName, 'application/pdf')
 
     const record = await prisma.residenceCertFile.create({
       data: {
