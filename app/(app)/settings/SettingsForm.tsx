@@ -216,6 +216,7 @@ export default function SettingsForm({
     : ''
   const [acqDateVal, setAcqDateVal]         = useState(acqDate)
   const [cutoffDateVal, setCutoffDateVal]   = useState(cutoffDate)
+  const [areaVal, setAreaVal]               = useState(property?.defaultAreaM2 != null ? String(property.defaultAreaM2) : '')
 
   // ── 방타입 ─────────────────────────────────────────────────────
   const [roomTypes, setRoomTypes] = useState<string[]>([])
@@ -727,13 +728,19 @@ export default function SettingsForm({
               </div>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--warm-mid)]">기본 전용면적 (㎡)</label>
-              <p className="text-xs text-[var(--warm-muted)]">실거주 확인서 등 서류의 면적 기본값입니다. 호실관리에 호실별 면적이 있으면 그 값이 우선 적용되고, 비어 있을 때 이 값이 쓰입니다.</p>
-              <input type="text" inputMode="decimal" name="defaultAreaM2"
-                defaultValue={property?.defaultAreaM2 ?? ''}
-                placeholder="예: 13.2"
-                autoComplete="off"
-                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
+              <label className="text-xs font-medium text-[var(--warm-mid)]">영업장 전용면적</label>
+              <p className="text-xs text-[var(--warm-muted)]">영업장(호실)의 전용면적입니다. 실거주 확인서의 면적 칸에 자동으로 들어갑니다. (호실별 측정 면적이 아닌 영업장 기준 면적)</p>
+              <div className="relative">
+                <input type="text" inputMode="decimal" name="defaultAreaM2"
+                  value={areaVal}
+                  onChange={e => setAreaVal(e.target.value.replace(/[^0-9.]/g, ''))}
+                  placeholder="예: 13.2"
+                  autoComplete="off"
+                  className="w-full px-3 py-2.5 pr-10 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
+                {areaVal.trim() !== '' && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-mid)] pointer-events-none">㎡</span>
+                )}
+              </div>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">공개 페이지 슬러그</label>

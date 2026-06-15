@@ -229,8 +229,10 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
                 <span className="rc-llabel">성 명 :</span>
                 <span className="rc-lvalue rc-stamp-slot">
                   <input className="rc-in rc-lname" value={f.landlordName} onChange={upd('landlordName')} />
-                  <span className="rc-in-mark">(인)</span>
-                  {data.stampImageUrl && <img className="rc-stamp-img" src={data.stampImageUrl} alt="도장" />}
+                  <span className="rc-seal">
+                    <span className="rc-seal-mark" style={data.stampImageUrl ? { visibility: 'hidden' } : undefined}>(인)</span>
+                    {data.stampImageUrl && <img className="rc-seal-img" src={data.stampImageUrl} alt="도장" />}
+                  </span>
                 </span>
               </div>
               <div className="rc-lrow"><span className="rc-llabel">주 소 :</span><input className="rc-in rc-lvalue" value={f.landlordAddress} onChange={upd('landlordAddress')} /></div>
@@ -242,11 +244,6 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
             <p className="rc-submit-to"><input className="rc-in rc-submit-in" value={f.submitTo} onChange={upd('submitTo')} /></p>
 
             <p className="rc-warning">다른 사람의 인장 도용 등 허위로 확인서를 작성하여 신청할 경우에는 「형법」 제231조와 제232조에 따라 사문서 위조ㆍ변조죄로 5년 이하의 징역 또는 1천만 원 이하의 벌금에 처하게 됩니다.</p>
-
-            <div className="rc-made-with" aria-label="Made with Stayeum">
-              <span className="rc-mw-prefix">Made with</span>
-              <span className="rc-mw-wordmark">Stay<span className="o">eum</span></span>
-            </div>
           </div>
         </main>
       </div>
@@ -316,19 +313,15 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         .rc-lrow { display: flex; align-items: center; margin: 0 0 1.5mm; padding-left: 7mm; }
         .rc-llabel { display: inline-block; width: 36mm; letter-spacing: 1px; flex: 0 0 36mm; }
         .rc-lvalue { flex: 1; }
-        .rc-stamp-slot { display: flex; align-items: center; gap: 3mm; position: relative; }
+        .rc-stamp-slot { display: flex; align-items: center; gap: 2mm; }
         .rc-lname { width: 40mm; flex: 0 0 auto; }
-        .rc-stamp-img { width: 15mm; height: 15mm; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .rc-seal { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 16mm; height: 16mm; }
+        .rc-seal-img { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 15mm; height: 15mm; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
         .rc-submit-to { text-align: right; margin: 6mm 0 0; }
         .rc-submit-in { width: 60mm; text-align: right; display: inline-block; font-weight: 700; font-size: 12pt; }
 
         .rc-warning { margin-top: 8mm; border-top: 1px solid #1a1a1a; padding-top: 3mm; font-size: 8.5pt; line-height: 1.45; }
-
-        .rc-made-with { margin-top: 6mm; text-align: right; display: flex; justify-content: flex-end; align-items: center; gap: 5px; }
-        .rc-mw-prefix { font-family: 'DM Mono', 'Pretendard', monospace; font-size: 6.5pt; letter-spacing: 0.04em; color: #b8b0a3; font-weight: 500; }
-        .rc-mw-wordmark { font-family: 'Pretendard', sans-serif; font-weight: 900; font-size: 11px; letter-spacing: -0.06em; color: #4a4a4a; opacity: 0.78; }
-        .rc-mw-wordmark .o { color: #a03c2e; }
 
         @media print {
           html, body { background: #fff !important; }
@@ -341,7 +334,7 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
             padding: 0 !important; box-shadow: none !important;
           }
           .rc-in:focus { background: transparent !important; }
-          .rc-form, .rc-landlord, .rc-warning, .rc-made-with { page-break-inside: avoid; }
+          .rc-form, .rc-landlord, .rc-warning { page-break-inside: avoid; }
         }
       `}</style>
     </div>

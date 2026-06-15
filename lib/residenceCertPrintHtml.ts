@@ -78,17 +78,13 @@ export function buildResidenceCertPrintHtml(d: PrintResidenceCertData): string {
   .landlord-row { display: flex; align-items: center; margin: 0 0 1.5mm; padding-left: 7mm; }
   .landlord-label { display: inline-block; width: 30mm; letter-spacing: 1px; }
   .landlord-value { flex: 1; }
-  .stamp-slot { position: relative; display: inline-flex; align-items: center; gap: 3mm; }
-  .stamp-img { width: 15mm; height: 15mm; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .stamp-slot { display: inline-flex; align-items: center; gap: 2mm; }
+  .seal { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 16mm; height: 16mm; }
+  .seal-img { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 15mm; height: 15mm; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
   .submit-to { text-align: right; font-weight: 700; font-size: 12pt; margin: 6mm 0 0; }
 
   .warning { margin-top: 8mm; border-top: 1px solid #1a1a1a; padding-top: 3mm; font-size: 8.5pt; line-height: 1.45; color: #1a1a1a; }
-
-  .made-with { margin-top: 6mm; text-align: right; display: flex; justify-content: flex-end; align-items: center; gap: 5px; }
-  .made-with-prefix { font-family: 'DM Mono', 'Pretendard', monospace; font-size: 6.5pt; letter-spacing: 0.04em; color: #b8b0a3; font-weight: 500; }
-  .made-with-wordmark { font-family: 'Pretendard', sans-serif; font-weight: 900; font-size: 11px; letter-spacing: -0.06em; color: #4a4a4a; opacity: 0.78; }
-  .made-with-wordmark .o { color: #a03c2e; }
 </style>
 </head>
 <body>
@@ -132,8 +128,11 @@ export function buildResidenceCertPrintHtml(d: PrintResidenceCertData): string {
         <div class="landlord-row">
           <span class="landlord-label">성 명 :</span>
           <span class="landlord-value stamp-slot">
-            <span>${escape(d.landlordName)} (인)</span>
-            ${d.stampImageUrl ? `<img class="stamp-img" src="${escape(d.stampImageUrl)}" alt="도장" />` : ''}
+            <span>${escape(d.landlordName)}</span>
+            <span class="seal">
+              <span class="seal-mark"${d.stampImageUrl ? ' style="visibility:hidden"' : ''}>(인)</span>
+              ${d.stampImageUrl ? `<img class="seal-img" src="${escape(d.stampImageUrl)}" alt="도장" />` : ''}
+            </span>
           </span>
         </div>
         <div class="landlord-row"><span class="landlord-label">주 소 :</span><span class="landlord-value">${escape(d.landlordAddress)}</span></div>
@@ -145,11 +144,6 @@ export function buildResidenceCertPrintHtml(d: PrintResidenceCertData): string {
       <p class="submit-to">${escape(d.submitTo)}</p>
 
       <p class="warning">${escape(WARNING)}</p>
-    </div>
-
-    <div class="made-with" aria-label="Made with Stayeum">
-      <span class="made-with-prefix">Made with</span>
-      <span class="made-with-wordmark">Stay<span class="o">eum</span></span>
     </div>
   </div>
 </body>

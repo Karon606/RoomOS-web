@@ -7,8 +7,8 @@ import { createClient } from '@/lib/supabase/server'
 import { buildDriveThumbnailUrl } from '@/lib/google-drive'
 
 // 실거주 확인서 자동 채움 데이터.
-// 고시원 특성상 임차인 주소 = 영업장 주소 + 방번호 (별도 주소 필드 불필요).
-// 면적 = 호실 areaM2 우선, 없으면 영업장 기본 면적(defaultAreaM2).
+// 소재지·임차인 주소 = 영업장 주소 하나로 통일(호수 미부착 — 필요시 화면에서 수동 수정).
+// 면적 = 영업장 전용면적(환경설정 defaultAreaM2). 호실별 측정 면적이 아님.
 // 임대료 줄의 보증금은 보증금 금액만 (청소비 합성 없음).
 
 export type ResidenceCertData = {
@@ -55,11 +55,6 @@ async function requireAuthAndProperty() {
 const ymd = (d: Date | null | undefined) =>
   d ? new Date(d).toISOString().slice(0, 10) : ''
 
-const fmtRoom = (v: string | null | undefined) => {
-  if (!v) return ''
-  return /^\d+$/.test(v.trim()) ? `${v.trim()}호` : v
-}
-
 export async function getResidenceCertData(tenantId: string): Promise<ResidenceCertData | null> {
   const { propertyId } = await requireAuthAndProperty()
 
@@ -72,7 +67,6 @@ export async function getResidenceCertData(tenantId: string): Promise<ResidenceC
           where: { status: { in: ['ACTIVE', 'RESERVED'] } },
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
           take: 1,
-          include: { room: { select: { roomNo: true, areaM2: true } } },
         },
       },
     }),
@@ -92,12 +86,11 @@ export async function getResidenceCertData(tenantId: string): Promise<ResidenceC
                        ?? tenant.contacts.find(c => !c.isEmergency)
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}
 
-  const roomLabel = fmtRoom(lease?.room?.roomNo)
-  const baseAddress = property?.address ?? ''
-  const siteAddress = [baseAddress, roomLabel].filter(Boolean).join(' ')
+  // 소재지·임차인 주소 = 영업장 주소 하나로 통일 (호수 미부착)
+  const siteAddress = property?.address ?? ''
 
-  // 면적: 호실 areaM2 우선 → 영업장 기본 면적
-  const area = lease?.room?.areaM2 ?? property?.defaultAreaM2 ?? null
+  // 면적: 영업장 전용면적(환경설정). 호실별 측정 면적 아님.
+  const area = property?.defaultAreaM2 ?? null
 
   return {
     tenantId: tenant.id,

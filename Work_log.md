@@ -32,6 +32,12 @@ CREATE INDEX "residence_cert_files_propertyId_createdAt_idx" ON residence_cert_f
 ```
 **남은 것**: 지역별 제출처 분기(서울 외), 임차인 주소를 영업장+방번호로 자동 — 사용자 실측 검증 후 레이아웃 미세조정.
 
+### 후속 — 실거주 확인서 사용자 피드백 4건 [SQL 불필요]
+- **Made with 스테이음 제거**: 공문서라 브랜딩 X — 화면·PDF 양쪽 워드마크 삭제.
+- **주소 호수 미부착**: 소재지·임차인 주소를 영업장 주소 하나로 통일(4·5층 뒤 호수 부착 어색). 필요시 화면에서 수동 수정.
+- **면적 = 영업장 전용면적**: 호실별 areaM2 fallback 제거 → 환경설정 defaultAreaM2 만 사용(영업장 기준). 환경설정 라벨 '기본 전용면적'→'영업장 전용면적', 입력 시 ㎡ 접미사 자동 표시(controlled).
+- **도장이 (인) 덮음**: 도장 있으면 (인) `visibility:hidden` + 도장을 그 자리(seal 16mm 박스)에 절대배치로 중앙 합성 → (인) 안 보임. 화면·PDF 동일.
+
 ### 후속 — 입주자 이메일 필드 [⚠️ SQL 1건 적용 후 배포]
 입주자 정보에 이메일이 없어 추가. `Tenant.email String?` 신설(ContactType enum엔 EMAIL 없어 전용 필드가 깔끔). 고객 폼 연락처 섹션에 이메일 입력칸(type=email), createTenant·updateTenant 저장, getTenantDetail select 에 email 추가, TenantBasicInfo 표시(있을 때만). getTenants 는 include 라 자동 포함. **SQL**: `ALTER TABLE tenants ADD COLUMN email TEXT;`
 
