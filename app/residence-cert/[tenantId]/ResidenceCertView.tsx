@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { ResidenceCertData } from './actions'
+import { RC_PAGE, RC_TEXT_FIELDS, RC_ISSUE_GAPS, RC_STAMP } from '@/lib/residenceCertLayout'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -15,131 +16,79 @@ const fmtDot = (d: string) => {
   return `${y}. ${Number(m)}. ${Number(dd)}`
 }
 
-const issueDateLabel = (d: string) => {
-  const [y, m, dd] = d.split('-').map(Number)
-  return Number.isFinite(y) ? `${y}년 ${m}월 ${dd}일` : d
-}
-
 type Fields = {
-  siteAddress: string
-  areaM2: string
-  tenantName: string
-  tenantAddress: string
-  tenantBirth: string
-  tenantPhone: string
-  periodText: string
-  rentText: string
-  depositText: string
-  landlordBusinessName: string
-  landlordName: string
-  landlordAddress: string
-  landlordBirth: string
-  landlordRegistrationNo: string
-  landlordPhone: string
-  submitTo: string
+  siteAddress: string; areaM2: string
+  tenantName: string; tenantAddress: string; tenantBirth: string; tenantPhone: string
+  periodText: string; rentText: string; depositText: string
+  landlordBusinessName: string; landlordName: string; landlordAddress: string
+  landlordIdNo: string; landlordPhone: string
 }
 
 function buildInitial(data: ResidenceCertData): Fields {
-  // 거주기간 — 시작은 입주일, 끝은 퇴실 예정일이 있으면 그것, 없으면 오늘 날짜로 채움(편집·삭제 가능).
   const start = fmtDot(data.periodStart)
   const end = fmtDot(data.periodEnd || kstYmdStr())
   return {
-    siteAddress: data.siteAddress,
-    areaM2: data.areaM2,
-    tenantName: data.tenantName,
-    tenantAddress: data.tenantAddress,
-    tenantBirth: fmtDot(data.tenantBirth),
-    tenantPhone: data.tenantPhone,
+    siteAddress: data.siteAddress, areaM2: data.areaM2,
+    tenantName: data.tenantName, tenantAddress: data.tenantAddress,
+    tenantBirth: fmtDot(data.tenantBirth), tenantPhone: data.tenantPhone,
     periodText: start ? `${start}  ~  ${end}` : end,
     rentText: data.rentAmount ? data.rentAmount.toLocaleString() : '',
     depositText: data.depositAmount ? data.depositAmount.toLocaleString() : '',
-    landlordBusinessName: data.landlordBusinessName,
-    landlordName: data.landlordName,
-    landlordAddress: data.landlordAddress,
-    landlordBirth: data.landlordBirth,
-    landlordRegistrationNo: data.landlordRegistrationNo,
+    landlordBusinessName: data.landlordBusinessName, landlordName: data.landlordName,
+    landlordAddress: data.landlordAddress, landlordIdNo: data.landlordIdNo,
     landlordPhone: data.landlordPhone,
-    submitTo: data.submitTo,
   }
 }
+
+// PDF baseline(원점 좌하단) → CSS top(원점 좌상단, 디자인 단위 = pt). 베이스라인 근사 보정.
+const topOf = (y: number, size: number) => (RC_PAGE.h - y) - size * 1.04
 
 export default function ResidenceCertView({ data }: { data: ResidenceCertData }) {
   const router = useRouter()
   const [f, setF] = useState<Fields>(() => buildInitial(data))
   const [issueDate, setIssueDate] = useState(kstYmdStr())
-  const upd = (k: keyof Fields) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (k: keyof Fields) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setF(p => ({ ...p, [k]: e.target.value }))
 
-  // ── 모바일 횡스크롤 방지: 210mm 종이를 viewport 폭에 맞춰 scale ──
-  const paperRef = useRef<HTMLElement>(null)
+  // 디자인 폭(595.3pt)을 viewport 에 맞춰 scale (최대 1.4배까지 확대해 가독성 확보)
   const [scale, setScale] = useState(1)
-  const [paperHeight, setPaperHeight] = useState<number | null>(null)
-  const PAPER_W_PX = 210 * 3.7795275591
-
   useEffect(() => {
-    const calc = () => {
-      const SIDE_PADDING = 12
-      const available = window.innerWidth - SIDE_PADDING * 2
-      setScale(Math.min(1, available / PAPER_W_PX))
-    }
+    const calc = () => setScale(Math.min(1.4, (window.innerWidth - 24) / RC_PAGE.w))
     calc()
     window.addEventListener('resize', calc)
     window.addEventListener('orientationchange', calc)
-    return () => {
-      window.removeEventListener('resize', calc)
-      window.removeEventListener('orientationchange', calc)
-    }
-  }, [PAPER_W_PX])
+    return () => { window.removeEventListener('resize', calc); window.removeEventListener('orientationchange', calc) }
+  }, [])
 
-  useLayoutEffect(() => {
-    const node = paperRef.current
-    if (!node) return
-    const update = () => setPaperHeight(node.offsetHeight)
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(node)
-    return () => ro.disconnect()
-  }, [f])
+  const reset = async () => {
+    if (!(await confirmDialog({ title: '자동값으로 되돌릴까요?', message: '직접 수정한 내용이 모두 사라지고 시스템 자동값으로 복원됩니다.', confirmLabel: '되돌리기', level: 'caution' }))) return
+    setF(buildInitial(data)); setIssueDate(kstYmdStr())
+    pushToast('info', '자동값으로 되돌렸습니다')
+  }
 
-  // 인쇄 미리보기 — 화면 HTML 이 아니라 '원본 양식에 데이터를 얹은 실제 PDF' 를 새 탭으로 열어 인쇄.
+  const payload = () => ({ tenantId: data.tenantId, leaseTermId: data.leaseTermId, fields: { ...f, issueDate } })
+
   const [previewing, setPreviewing] = useState(false)
   const handlePrint = async () => {
     if (previewing) return
     setPreviewing(true)
     try {
       const res = await fetch('/api/residence-cert/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId: data.tenantId,
-          leaseTermId: data.leaseTermId,
-          fields: { ...f, issueDate },
-          preview: true,
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload(), preview: true }),
       })
       if (!res.ok) {
         let msg = `서버 오류 (${res.status})`
         try { const j = await res.json(); msg = j?.error ?? msg } catch { /* not json */ }
-        pushToast('error', msg)
-        return
+        pushToast('error', msg); return
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       window.open(url, '_blank')
-      // 메모리 정리는 새 탭이 로드된 뒤
       setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (err) {
       pushToast('error', (err as Error).message ?? '미리보기 생성 실패')
-    } finally {
-      setPreviewing(false)
-    }
-  }
-
-  const reset = async () => {
-    if (!(await confirmDialog({ title: '자동값으로 되돌릴까요?', message: '직접 수정한 내용이 모두 사라지고 시스템 자동값으로 복원됩니다.', confirmLabel: '되돌리기', level: 'caution' }))) return
-    setF(buildInitial(data))
-    setIssueDate(kstYmdStr())
-    pushToast('info', '자동값으로 되돌렸습니다')
+    } finally { setPreviewing(false) }
   }
 
   const [issuing, setIssuing] = useState(false)
@@ -149,43 +98,42 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
     const release = trackSave()
     try {
       const res = await fetch('/api/residence-cert/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId: data.tenantId,
-          leaseTermId: data.leaseTermId,
-          fields: { ...f, issueDate },
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload()),
       })
       const text = await res.text()
       let json: { ok: boolean; error?: string } | null = null
-      try { json = JSON.parse(text) } catch { /* not JSON */ }
+      try { json = JSON.parse(text) } catch { /* not json */ }
       if (!res.ok || !json?.ok) {
-        const msg = json?.error ?? `서버 오류 (${res.status}): ${text.slice(0, 200)}`
-        pushToast('error', msg)
-        alert(`실거주 확인서 PDF 생성 실패\n\n${msg}`)
-        return
+        const msg = json?.error ?? `서버 오류 (${res.status})`
+        pushToast('error', msg); alert(`실거주 확인서 PDF 생성 실패\n\n${msg}`); return
       }
       pushToast('success', '실거주 확인서 발급됨 — 발급 이력으로 이동합니다')
       router.push('/residence-certs')
     } catch (err) {
       const msg = (err as Error).message ?? 'PDF 생성 실패'
-      pushToast('error', msg)
-      alert(`실거주 확인서 PDF 생성 실패\n\n${msg}`)
-    } finally {
-      release()
-      setIssuing(false)
-    }
+      pushToast('error', msg); alert(`실거주 확인서 PDF 생성 실패\n\n${msg}`)
+    } finally { release(); setIssuing(false) }
   }
+
+  // 작성일 분해 (인쇄된 '20 년 월 일' 빈칸 표시)
+  const dm = issueDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+  const issueParts: Record<string, string> = dm
+    ? { yy: dm[1].slice(2), mm: String(Number(dm[2])), dd: String(Number(dm[3])) }
+    : { yy: '', mm: '', dd: '' }
+
+  const fv = f as unknown as Record<string, string>
 
   return (
     <div className="rc-shell">
-      {/* 화면 전용 툴바 — 인쇄 시 숨김 */}
+      {/* 폰트 — 출력 PDF(나눔고딕)와 동일하게 */}
+      {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap" />
+
       <div className="no-print rc-toolbar">
         <Link href="/residence-certs" className="rc-link">← 실거주 확인서</Link>
         <div className="rc-spacer" />
-        <label className="rc-field">
-          <span>작성일</span>
+        <label className="rc-field"><span>작성일</span>
           <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
         </label>
         <button onClick={reset} className="rc-btn-secondary">자동값으로</button>
@@ -197,111 +145,73 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         </button>
       </div>
 
-      <p className="no-print rc-hint">아래 화면은 입력용입니다. 모든 칸을 직접 수정할 수 있고, <strong>실제 발급물은 정부 원본 양식</strong>에 이 내용이 그대로 채워져 나옵니다. ‘미리보기·인쇄’로 실제 출력물을 확인하세요.</p>
+      <p className="no-print rc-hint">원본 양식 위에 바로 입력합니다. 칸을 눌러 수정하세요 — 보이는 그대로 발급됩니다.</p>
 
-      {/* A4 1장 — 모바일에선 scale로 viewport에 맞춤 (인쇄 시는 원본) */}
-      <div
-        className="rc-cage"
-        style={{
-          ['--paper-scale' as string]: scale,
-          ['--paper-h' as string]: paperHeight != null ? `${paperHeight}px` : '297mm',
-        }}
-      >
-        <main ref={paperRef} className="rc-paper">
-          <div className="rc-outer">
-            <h1 className="rc-doc-title">실거주 확인서</h1>
+      <div className="rc-cage" style={{ width: RC_PAGE.w * scale, height: RC_PAGE.h * scale }}>
+        <div className="rc-page" style={{ width: RC_PAGE.w, height: RC_PAGE.h, transform: `scale(${scale})` }}>
+          {/* 원본 양식 배경 */}
+          <img src="/forms/residence-cert-seoul-bg.png" alt="실거주 확인서 양식" className="rc-bg"
+            style={{ width: RC_PAGE.w, height: RC_PAGE.h }} draggable={false} />
 
-            <table className="rc-form">
-              <colgroup><col style={{ width: '18%' }} /><col style={{ width: '14%' }} /><col /></colgroup>
-              <tbody>
-                <tr className="rc-row">
-                  <th>소 재 지</th>
-                  <td colSpan={2}>
-                    <div className="rc-site">
-                      <input className="rc-in rc-site-addr" value={f.siteAddress} onChange={upd('siteAddress')} />
-                      <span className="rc-area">(※ 면적 : <input className="rc-in rc-area-in" value={f.areaM2} onChange={upd('areaM2')} /> ㎡)</span>
-                    </div>
-                  </td>
-                </tr>
-                <tr className="rc-row">
-                  <th rowSpan={4}>임 차 인</th>
-                  <th>성 명</th>
-                  <td><input className="rc-in" value={f.tenantName} onChange={upd('tenantName')} /></td>
-                </tr>
-                <tr className="rc-row"><th>주 소</th><td><input className="rc-in" value={f.tenantAddress} onChange={upd('tenantAddress')} /></td></tr>
-                <tr className="rc-row"><th>생년월일</th><td><input className="rc-in" value={f.tenantBirth} onChange={upd('tenantBirth')} /></td></tr>
-                <tr className="rc-row"><th>연 락 처</th><td><input className="rc-in" value={f.tenantPhone} onChange={upd('tenantPhone')} /></td></tr>
-                <tr className="rc-row">
-                  <th colSpan={2}>거 주 기 간</th>
-                  <td>
-                    <div className="rc-period">
-                      <input className="rc-in" value={f.periodText} onChange={upd('periodText')} placeholder="2026. 1. 1  ~  2026. 7. 1" />
-                      <span className="rc-muted">* (최소 1개월 기재)</span>
-                    </div>
-                  </td>
-                </tr>
-                <tr className="rc-row">
-                  <th colSpan={2}>임 대 료</th>
-                  <td>
-                    <div className="rc-rent">
-                      <span>월</span>
-                      <input className="rc-in rc-amount" value={f.rentText} onChange={upd('rentText')} />
-                      <span>원 (보증금 :</span>
-                      <input className="rc-in rc-amount" value={f.depositText} onChange={upd('depositText')} />
-                      <span>원)</span>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          {/* 인쇄된 빈칸(거주기간 '20 . . . ~ 20 . . .') 흰 박스로 덮기 — 입력칸 아래 */}
+          {RC_TEXT_FIELDS.filter(field => field.cover).map(field => (
+            <div key={field.key + '-cover'} className="rc-stamp-cover" style={{
+              left: field.cover!.x, top: RC_PAGE.h - (field.cover!.y + field.cover!.h),
+              width: field.cover!.w, height: field.cover!.h,
+            }} />
+          ))}
 
-            <p className="rc-confirm">위 임차인이 상기와 같이 거주하고 있음을 확인합니다.</p>
+          {/* 입력칸 — 공유 좌표맵 */}
+          {RC_TEXT_FIELDS.map(field => {
+            const isRight = field.align === 'right'
+            const isCenter = field.align === 'center'
+            const left = isRight ? field.x - field.width : isCenter ? field.x - field.width / 2 : field.x
+            return (
+              <input key={field.key} type="text" value={fv[field.key] ?? ''} onChange={set(field.key as keyof Fields)}
+                className="rc-in"
+                style={{
+                  left, top: topOf(field.y, field.size), width: field.width,
+                  height: field.size * 1.5, fontSize: field.size, lineHeight: `${field.size * 1.5}px`,
+                  textAlign: isRight ? 'right' : isCenter ? 'center' : 'left',
+                }} />
+            )
+          })}
 
-            <p className="rc-issue-date">{issueDateLabel(issueDate)}</p>
+          {/* 작성일 빈칸 (작성일은 툴바에서 선택, 여기엔 표시) */}
+          {RC_ISSUE_GAPS.map(g => (
+            <span key={g.part} className="rc-gap"
+              style={{ left: g.cx, top: topOf(g.y, g.size), fontSize: g.size, lineHeight: `${g.size * 1.5}px`, height: g.size * 1.5 }}>
+              {issueParts[g.part]}
+            </span>
+          ))}
 
-            <div className="rc-landlord">
-              <p className="rc-landlord-head">임 대 인(확인)</p>
-              <div className="rc-lrow"><span className="rc-llabel">상 호 :</span><input className="rc-in rc-lvalue" value={f.landlordBusinessName} onChange={upd('landlordBusinessName')} /></div>
-              <div className="rc-lrow">
-                <span className="rc-llabel">성 명 :</span>
-                <span className="rc-lvalue rc-stamp-slot">
-                  <input className="rc-in rc-lname" value={f.landlordName} onChange={upd('landlordName')} />
-                  <span className="rc-seal">
-                    <span className="rc-seal-mark" style={data.stampImageUrl ? { visibility: 'hidden' } : undefined}>(인)</span>
-                    {data.stampImageUrl && <img className="rc-seal-img" src={data.stampImageUrl} alt="도장" />}
-                  </span>
-                </span>
-              </div>
-              <div className="rc-lrow"><span className="rc-llabel">주 소 :</span><input className="rc-in rc-lvalue" value={f.landlordAddress} onChange={upd('landlordAddress')} /></div>
-              <div className="rc-lrow"><span className="rc-llabel">생 년 월 일 :</span><input className="rc-in rc-lvalue" value={f.landlordBirth} onChange={upd('landlordBirth')} /></div>
-              <div className="rc-lrow"><span className="rc-llabel">(사업자등록번호) :</span><input className="rc-in rc-lvalue" value={f.landlordRegistrationNo} onChange={upd('landlordRegistrationNo')} /></div>
-              <div className="rc-lrow"><span className="rc-llabel">연 락 처 :</span><input className="rc-in rc-lvalue" value={f.landlordPhone} onChange={upd('landlordPhone')} /></div>
-            </div>
-
-            <p className="rc-submit-to"><input className="rc-in rc-submit-in" value={f.submitTo} onChange={upd('submitTo')} /></p>
-
-            <p className="rc-warning">다른 사람의 인장 도용 등 허위로 확인서를 작성하여 신청할 경우에는 「형법」 제231조와 제232조에 따라 사문서 위조ㆍ변조죄로 5년 이하의 징역 또는 1천만 원 이하의 벌금에 처하게 됩니다.</p>
-          </div>
-        </main>
+          {/* 도장 — (인) 위 흰 박스 + 도장 이미지 */}
+          {data.stampImageUrl && (
+            <>
+              <div className="rc-stamp-cover" style={{
+                left: RC_STAMP.cover.x, top: RC_PAGE.h - (RC_STAMP.cover.y + RC_STAMP.cover.h),
+                width: RC_STAMP.cover.w, height: RC_STAMP.cover.h,
+              }} />
+              <img src={data.stampImageUrl} alt="도장" className="rc-stamp" draggable={false}
+                style={{
+                  left: RC_STAMP.cx - RC_STAMP.size / 2, top: RC_PAGE.h - (RC_STAMP.cy + RC_STAMP.size / 2),
+                  width: RC_STAMP.size, height: RC_STAMP.size,
+                }} />
+            </>
+          )}
+        </div>
       </div>
 
       <style jsx global>{`
-        html, body {
-          overflow-x: hidden !important;
-          overflow-y: auto !important;
-          height: auto !important;
-          background: #efeae0;
-        }
+        html, body { overflow-x: hidden !important; overflow-y: auto !important; height: auto !important; background: #efeae0; }
         body { margin: 0; }
-
-        .rc-shell { min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 16px 0 40px; }
+        .rc-shell { min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 16px 0 48px; }
 
         .rc-toolbar {
-          position: sticky; top: 8px; z-index: 5;
-          width: min(210mm, 100% - 24px);
-          display: flex; align-items: center; gap: 10px;
-          padding: 10px 14px; background: #fff; border: 1px solid #e7dfd1; border-radius: 12px;
-          margin-bottom: 10px; flex-wrap: wrap; box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+          position: sticky; top: 8px; z-index: 5; width: min(595px, 100% - 24px);
+          display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+          background: #fff; border: 1px solid #e7dfd1; border-radius: 12px; margin-bottom: 10px;
+          flex-wrap: wrap; box-shadow: 0 4px 12px rgba(0,0,0,0.06);
         }
         .rc-link { color: #a03c2e; font-size: 13px; text-decoration: none; }
         .rc-spacer { flex: 1; }
@@ -310,73 +220,32 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         .rc-issue { padding: 6px 14px; background: #a03c2e; color: #fff; border: 0; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
         .rc-issue:disabled { opacity: 0.6; }
         .rc-btn-secondary { padding: 6px 12px; background: #fff; color: #1a1a1a; border: 1px solid #d6cdbb; border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }
-        .rc-hint { width: min(210mm, 100% - 24px); font-size: 12px; color: #8a7f70; margin: 0 0 12px; }
+        .rc-btn-secondary:disabled { opacity: 0.6; }
+        .rc-hint { width: min(595px, 100% - 24px); font-size: 12px; color: #8a7f70; margin: 0 0 12px; }
 
-        .rc-cage { width: calc(210mm * var(--paper-scale, 1)); height: calc(var(--paper-h, 297mm) * var(--paper-scale, 1)); margin: 0 auto; position: relative; }
-
-        .rc-paper {
-          position: absolute; top: 0; left: 0;
-          transform: scale(var(--paper-scale, 1)); transform-origin: top left;
-          width: 210mm; min-height: 297mm; background: #fff; color: #1a1a1a;
-          padding: 14mm; box-shadow: 0 6px 24px rgba(0,0,0,0.12);
-          font-size: 10pt; line-height: 1.35;
+        .rc-cage { margin: 0 auto; position: relative; }
+        .rc-page {
+          position: absolute; top: 0; left: 0; transform-origin: top left;
+          background: #fff; box-shadow: 0 6px 24px rgba(0,0,0,0.14);
+          font-family: 'Nanum Gothic', 'Apple SD Gothic Neo', sans-serif;
         }
-        .rc-outer { border: 1.5px solid #1a1a1a; padding: 5mm 7mm; min-height: calc(297mm - 28mm); }
+        .rc-bg { position: absolute; left: 0; top: 0; pointer-events: none; user-select: none; }
 
-        .rc-doc-title { text-align: center; font-size: 17pt; font-weight: 700; letter-spacing: 6px; margin: 1mm 0 4mm; }
-
-        .rc-form { width: 100%; border-collapse: collapse; font-size: 10pt; }
-        .rc-form th, .rc-form td { border: 1px solid #1a1a1a; padding: 3px 8px; vertical-align: middle; }
-        .rc-form th { font-weight: 500; text-align: center; white-space: nowrap; letter-spacing: 2px; }
-        .rc-row { height: 26px; }
-
-        .rc-in { width: 100%; border: 0; background: transparent; font: inherit; color: inherit; padding: 1px 2px; outline: none; }
-        .rc-in:focus { background: #fff6e0; border-radius: 3px; }
-        .rc-in-mark { white-space: nowrap; }
-
-        .rc-site { display: flex; align-items: center; gap: 6px; }
-        .rc-site-addr { flex: 1; }
-        .rc-area { white-space: nowrap; color: #1a1a1a; }
-        .rc-area-in { width: 60px; text-align: right; display: inline-block; }
-        .rc-period { display: flex; align-items: center; gap: 8px; }
-        .rc-muted { color: #777; white-space: nowrap; font-size: 9.5pt; }
-        .rc-rent { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
-        .rc-amount { width: 90px; text-align: right; display: inline-block; }
-
-        .rc-confirm { margin: 5mm 0 0; }
-        .rc-issue-date { text-align: center; margin: 4mm 0 5mm; }
-
-        .rc-landlord-head { margin: 0 0 2mm; }
-        .rc-lrow { display: flex; align-items: center; margin: 0 0 0.8mm; padding-left: 7mm; min-height: 6mm; }
-        .rc-llabel { display: inline-block; width: 36mm; letter-spacing: 1px; flex: 0 0 36mm; }
-        .rc-lvalue { flex: 1; }
-        .rc-stamp-slot { display: flex; align-items: center; gap: 2mm; }
-        .rc-lname { width: 40mm; flex: 0 0 auto; }
-        .rc-seal { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 13mm; height: 13mm; }
-        .rc-seal-img { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 13mm; height: 13mm; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-
-        .rc-submit-to { text-align: right; margin: 4mm 0 0; }
-        .rc-submit-in { width: 60mm; text-align: right; display: inline-block; font-weight: 700; font-size: 11.5pt; }
-
-        .rc-warning { margin-top: 4mm; border-top: 1px solid #1a1a1a; padding-top: 2mm; font-size: 8.5pt; line-height: 1.4; }
-
-        @media print {
-          @page { size: A4; margin: 12mm; }
-          html, body { background: #fff !important; }
-          .rc-shell { display: block !important; padding: 0 !important; }
-          .no-print { display: none !important; }
-          .rc-cage { width: auto !important; height: auto !important; }
-          .rc-paper {
-            position: static !important; transform: none !important;
-            width: 100% !important; min-height: auto !important;
-            padding: 0 !important; box-shadow: none !important;
-          }
-          /* 인쇄 시 외곽 박스가 페이지를 강제로 채우지 않도록 — 한 장에 자연스럽게 들어가게 */
-          .rc-outer { min-height: 0 !important; }
-          .rc-in:focus { background: transparent !important; }
-          .rc-paper, .rc-outer { page-break-inside: avoid; }
-          .rc-form, .rc-landlord, .rc-warning { page-break-inside: avoid; }
+        .rc-in {
+          position: absolute; border: 0; background: transparent; padding: 0; margin: 0;
+          color: #1a1a1a; font-family: inherit; outline: none; box-sizing: border-box;
         }
+        .rc-in:hover { background: rgba(160,60,46,0.06); border-radius: 2px; }
+        .rc-in:focus { background: rgba(255,214,0,0.18); border-radius: 2px; }
+
+        .rc-gap {
+          position: absolute; transform: translateX(-50%); white-space: nowrap;
+          color: #1a1a1a; font-family: inherit; pointer-events: none; text-align: center;
+        }
+        .rc-stamp-cover { position: absolute; background: #fff; pointer-events: none; }
+        .rc-stamp { position: absolute; object-fit: contain; pointer-events: none; }
+
+        @media print { .rc-shell { display: none !important; } }
       `}</style>
     </div>
   )

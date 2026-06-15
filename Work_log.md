@@ -41,6 +41,14 @@ CREATE INDEX "residence_cert_files_propertyId_createdAt_idx" ON residence_cert_f
 - 양식 추가 시: `public/forms/<form>.pdf` + base64 임베드 + 좌표맵 한 쌍만 추가. 원본: [public/forms/residence-cert-seoul.pdf](public/forms/residence-cert-seoul.pdf).
 - deps: pdf-lib·@pdf-lib/fontkit(런타임), pdfjs-dist(dev, 좌표 측정용). 구 [lib/residenceCertPrintHtml.ts] 삭제.
 
+### 후속 — 실거주 확인서 원본 양식 100% 보존(overlay) + WYSIWYG 편집기 [SQL 불필요]
+**발급 PDF = 원본 그대로**: puppeteer HTML 재현 폐기 → 원본 빈 양식 PDF(base64 임베드, lib/residenceCertTemplateSeoul.ts) 위에 pdf-lib 로 데이터·도장만 좌표로 얹음. 양식·선·라벨·폰트 100% 원본. 채우는 글자는 원본 폰트(돋움)에 맞춰 **나눔고딕** 임베드(`subset:false` — subset 시 글리프 깨짐). 도장은 인쇄된 '(인)' 을 흰 박스로 덮고 그 자리에 원본 PNG 합성(Drive 원본 바이트 다운로드 `downloadDriveBytes`, 투명 보존). 좌표는 pdfjs 로 라벨 baseline 추출해 매핑.
+**좌표 단일 소스** `lib/residenceCertLayout.ts` — overlay(서버 PDF)와 편집 화면이 공유. 양식 바뀌면 이 파일만 갱신.
+**WYSIWYG 편집기**: ResidenceCertView 를 '원본 양식 이미지(public/forms/residence-cert-seoul-bg.png, qlmanage 렌더) 배경 + 좌표 투명 입력칸' 으로 재작성. 폰트는 출력과 같은 나눔고딕(웹폰트). 화면=출력 일치. '미리보기·인쇄'는 서버에서 overlay PDF(preview 모드, Drive 저장 없이 바이트 반환)를 새 탭으로 열어 인쇄.
+**검증 방법 확립**: macOS `qlmanage -t` 로 PDF·HTML 을 PNG 로 렌더해 **배포 전 시각 확인**(앞서 폰트깨짐을 미확인 배포한 실수 재발 방지). 편집기도 동일 좌표로 정적 HTML 만들어 렌더 검증.
+**필드 정리**: 임대인 생년월일/사업자등록번호 → 단일 `landlordIdNo`(개인=생년월일·사업자=등록번호, '생 년 월 일 :' 줄에 표기). 임차인 값 x=252 들여쓰기.
+**신규 deps**: pdf-lib·@pdf-lib/fontkit(런타임), pdfjs-dist(좌표측정).
+
 ### 후속 — 실거주 확인서 사용자 피드백 4건 [SQL 불필요]
 - **Made with 스테이음 제거**: 공문서라 브랜딩 X — 화면·PDF 양쪽 워드마크 삭제.
 - **주소 호수 미부착**: 소재지·임차인 주소를 영업장 주소 하나로 통일(4·5층 뒤 호수 부착 어색). 필요시 화면에서 수동 수정.

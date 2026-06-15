@@ -31,8 +31,7 @@ export type ResidenceCertData = {
   landlordBusinessName: string   // 상호
   landlordName: string           // 성명(대표)
   landlordAddress: string        // 사업장 주소
-  landlordBirth: string          // 생년월일 (개인 임대인용, 보통 빈값)
-  landlordRegistrationNo: string // 사업자등록번호
+  landlordIdNo: string           // '생년월일' 칸 값 = 사업자등록번호(사업자) 또는 생년월일(개인)
   landlordPhone: string          // 연락처
   // 도장
   stampImageUrl: string | null
@@ -108,8 +107,7 @@ export async function getResidenceCertData(tenantId: string): Promise<ResidenceC
     landlordBusinessName: biz.name ?? '',
     landlordName: biz.ceoName ?? '',
     landlordAddress: biz.address ?? '',
-    landlordBirth: '',
-    landlordRegistrationNo: biz.registrationNo ?? '',
+    landlordIdNo: biz.registrationNo ?? '',
     landlordPhone: property?.phone ?? '',
     stampImageUrl: property?.stampDriveFileId ? buildDriveThumbnailUrl(property.stampDriveFileId, 800) : null,
     submitTo: '서울특별시장 귀하',
