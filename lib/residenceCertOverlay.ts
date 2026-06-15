@@ -75,11 +75,11 @@ export async function fillResidenceCertSeoul(
   drawFit(v.siteAddress, 140, 700.4, 240, 11)
   drawCenter(v.areaM2, 448, 700.4, 11) // : (~432) 와 ㎡ (463) 사이
 
-  // ── 임차인 ─────────────────────────────────────────────────
-  drawFit(v.tenantName, 236, 671.6, 300, 11)
-  drawFit(v.tenantAddress, 236, 643.8, 300, 11)
-  draw(v.tenantBirth, 236, 615.8, 11)
-  draw(v.tenantPhone, 236, 588, 11)
+  // ── 임차인 ── (값은 칸 경계선에서 살짝 들여써 x=252) ──────────
+  drawFit(v.tenantName, 252, 671.6, 285, 11)
+  drawFit(v.tenantAddress, 252, 643.8, 285, 11)
+  draw(v.tenantBirth, 252, 615.8, 11)
+  draw(v.tenantPhone, 252, 588, 11)
 
   // ── 거주기간 — 인쇄된 '20 . . . ~ 20 . . .' 를 흰 박스로 덮고 다시 씀 ──
   if (v.periodText && v.periodText.trim()) {
@@ -106,8 +106,8 @@ export async function fillResidenceCertSeoul(
   drawFit(v.landlordBusinessName, 180, 349, 350, 11)
   draw(v.landlordName, 180, 322.2, 11)
   drawFit(v.landlordAddress, 180, 295.2, 350, 11)
-  draw(v.landlordBirth, 180, 271.6, 11)
-  draw(v.landlordRegistrationNo, 180, 252.4, 11)
+  // '생 년 월 일 :' 줄 = 개인이면 생년월일, 사업자면 사업자등록번호. 아래 '(사업자등록번호)'는 안내 라벨이라 값 안 찍음.
+  draw(v.landlordBirth || v.landlordRegistrationNo, 180, 271.6, 11)
   draw(v.landlordPhone, 180, 228.9, 11)
 
   // ── 도장 — 인쇄된 '(인)' 을 흰 박스로 덮고 그 자리에 도장 합성 ──
