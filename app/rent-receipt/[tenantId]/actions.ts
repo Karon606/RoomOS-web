@@ -5,23 +5,23 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 
-// 월세 영수증 자동 채움 — 입실자/계약/영업장에서.
+// 입실료 납부 확인서 자동 채움 — 입실자/계약/영업장에서.
 export type RentReceiptData = {
   tenantId: string
   leaseTermId: string | null
-  name: string            // 성명(입주자)
+  name: string            // 수령인(입주자) 성명
   room: string            // 호실
-  periodStart: string     // YYYY-MM-DD (이번 1달 선납 주기 시작)
-  periodEnd: string       // YYYY-MM-DD (주기 끝)
+  period: string          // 거주 기간 (예 '2026.01.15 ~ 2026.07.14')
   targetMonth: string     // 납부 대상월 (예 '2026년 6월분')
   amount: number          // 월세
-  payDate: string         // 납부일 (예 '2026. 6. 5')
+  payDate: string         // 납부일 (예 '2026년 6월 16일')
   payMethod: string       // 납부방법 (계좌이체 · 계좌번호 / 현금)
   note: string            // 비고 (기본: 다음 납부 예정일)
   recipientName: string   // 임대인 대표 성명
 }
 
-const dot = (ymd: string) => { const [y, m, d] = ymd.split('-').map(Number); return `${y}. ${m}. ${d}` }
+const dotPad = (ymd: string) => { const [y, m, d] = ymd.split('-'); return `${y}.${(m ?? '').padStart(2, '0')}.${(d ?? '').padStart(2, '0')}` }
+const kor = (ymd: string) => { const [y, m, d] = ymd.split('-').map(Number); return `${y}년 ${m}월 ${d}일` }
 
 // 월세 1달 선납 주기 — 납부일(dueDay) 기준(없으면 입주일의 일). 예) dueDay 5 → 6/5~7/4.
 function rentCyclePeriod(dueDay: string | null, moveIn: Date | null): { start: string; end: string } {
@@ -80,19 +80,19 @@ export async function getRentReceiptData(tenantId: string): Promise<RentReceiptD
   const lease = tenant.leaseTerms[0] ?? null
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}
   const cycle = rentCyclePeriod(lease?.dueDay ?? null, lease?.moveInDate ?? null)
-  const nextDue = dot(new Date(new Date(`${cycle.end}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10))
+  const nextDue = dotPad(new Date(new Date(`${cycle.end}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10))
   const [cy, cm] = cycle.start.split('-').map(Number)
+  const todayKst = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
 
   return {
     tenantId: tenant.id,
     leaseTermId: lease?.id ?? null,
     name: tenant.name,
     room: fmtRoom(lease?.room?.roomNo),
-    periodStart: cycle.start,
-    periodEnd: cycle.end,
+    period: `${dotPad(cycle.start)} ~ ${dotPad(cycle.end)}`,
     targetMonth: `${cy}년 ${cm}월분`,
     amount: lease?.rentAmount ?? 0,
-    payDate: dot(cycle.start),
+    payDate: kor(todayKst),
     payMethod: property?.bankAccount ? `계좌이체 · ${property.bankAccount}` : '현금',
     note: `다음 납부 예정일 ${nextDue}`,
     recipientName: biz.ceoName ?? '',

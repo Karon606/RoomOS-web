@@ -8,25 +8,16 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
-const fmtDot = (d: string) => {
-  if (!d) return ''
-  const [y, m, dd] = d.split('-')
-  if (!y) return d
-  return `${y}. ${Number(m)}. ${Number(dd)}`
-}
-
 type Fields = {
   name: string; room: string; period: string; targetMonth: string
   amount: string; payDate: string; payMethod: string; note: string; recipientName: string
 }
 
 function buildInitial(data: RentReceiptData): Fields {
-  const start = fmtDot(data.periodStart)
-  const end = fmtDot(data.periodEnd)
   return {
     name: data.name,
     room: data.room,
-    period: start ? `${start} ~ ${end}` : end,
+    period: data.period,
     targetMonth: data.targetMonth,
     amount: data.amount ? data.amount.toLocaleString() : '',
     payDate: data.payDate,
@@ -125,16 +116,16 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
             <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className={inputCls} />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="성명 (입주자)" k="name" placeholder="홍길동" />
+            <Field label="수령인 (입주자)" k="name" placeholder="홍길동" />
             <Field label="호실" k="room" placeholder="501호" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="거주 기간 (1달 선납)" k="period" placeholder="2026. 6. 5 ~ 2026. 7. 4" />
+            <Field label="거주 기간 (1달 선납)" k="period" placeholder="2026.06.05 ~ 2026.07.04" />
             <Field label="납부 대상월" k="targetMonth" placeholder="2026년 6월분" />
           </div>
           <Field label="금액 (월세, 원)" k="amount" placeholder="390,000" />
           <div className="grid grid-cols-2 gap-3">
-            <Field label="납부일" k="payDate" placeholder="2026. 6. 5" />
+            <Field label="납부일" k="payDate" placeholder="2026년 6월 16일" />
             <Field label="납부방법" k="payMethod" placeholder="계좌이체 · 계좌번호 / 현금" />
           </div>
           <Field label="비고" k="note" placeholder="다음 납부 예정일 …" />
