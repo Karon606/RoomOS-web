@@ -41,6 +41,10 @@ CREATE INDEX "residence_cert_files_propertyId_createdAt_idx" ON residence_cert_f
 - 양식 추가 시: `public/forms/<form>.pdf` + base64 임베드 + 좌표맵 한 쌍만 추가. 원본: [public/forms/residence-cert-seoul.pdf](public/forms/residence-cert-seoul.pdf).
 - deps: pdf-lib·@pdf-lib/fontkit(런타임), pdfjs-dist(dev, 좌표 측정용). 구 [lib/residenceCertPrintHtml.ts] 삭제.
 
+### 후속 — 발급 confirm 무반응 + 보증금 환불 UX 2건 [SQL 불필요]
+- **실거주확인서 발급 버튼 모바일 무반응**: standalone 라우트(app/residence-cert/[tenantId])에 layout 이 없어 ConfirmHost/SaveFeedback 미마운트 → confirmDialog 가 큐에만 쌓여 안 뜨다가 다른 페이지에서 뒤늦게 노출. **app/residence-cert/[tenantId]/layout.tsx 신설**(ConfirmHost+SaveFeedback). (계약서는 이미 자체 layout 보유)
+- **보증금 환불(TenantStatusTransitions·퇴실)**: ① '환불 안 함' 버튼 추가(환불액 0). ② 기본 환불액 = 보증금 − 청소비(설정 입주자는 자동 차감, 미설정이면 청소비 0→전액). ③ 일부 환불 안내문구('일부만 환불하려면 금액 입력, 환불 안 하려면 환불 안 함'). ④ 환불 0 이어도 recordDepositReturn 호출하도록 조건 완화(`depositAmount>0 && transRefund!=null`) → 미반환 전액이 보증금 수익(extraIncome)으로 기록. lease.cleaningFee 를 TenantBody→위젯으로 전달(getTenantDetail 이미 select).
+
 ### 후속 — 실거주 확인서 원본 양식 100% 보존(overlay) + WYSIWYG 편집기 [SQL 불필요]
 **발급 PDF = 원본 그대로**: puppeteer HTML 재현 폐기 → 원본 빈 양식 PDF(base64 임베드, lib/residenceCertTemplateSeoul.ts) 위에 pdf-lib 로 데이터·도장만 좌표로 얹음. 양식·선·라벨·폰트 100% 원본. 채우는 글자는 원본 폰트(돋움)에 맞춰 **나눔고딕** 임베드(`subset:false` — subset 시 글리프 깨짐). 도장은 인쇄된 '(인)' 을 흰 박스로 덮고 그 자리에 원본 PNG 합성(Drive 원본 바이트 다운로드 `downloadDriveBytes`, 투명 보존). 좌표는 pdfjs 로 라벨 baseline 추출해 매핑.
 **좌표 단일 소스** `lib/residenceCertLayout.ts` — overlay(서버 PDF)와 편집 화면이 공유. 양식 바뀌면 이 파일만 갱신.

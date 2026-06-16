@@ -45,7 +45,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       {lease && (
         <TenantStatusTransitions
           lease={{
-            id: lease.id, status: lease.status, depositAmount: lease.depositAmount,
+            id: lease.id, status: lease.status, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee,
             moveInDate: lease.moveInDate, expectedMoveOut: lease.expectedMoveOut, rentAmount: lease.rentAmount,
             dueDay: lease.dueDay,
           }}

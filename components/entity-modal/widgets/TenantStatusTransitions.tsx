@@ -61,13 +61,14 @@ type Lease = {
   id: string
   status: string
   depositAmount: number
+  cleaningFee: number
   moveInDate: Date | string | null
   expectedMoveOut: Date | string | null
   rentAmount: number
   dueDay: string | null
 }
 
-type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number } | null
+type ActiveTransition = { def: TransitionDef; tenantId: string; tenantName: string; leaseTermId: string; depositAmount: number; cleaningFee: number } | null
 
 const toDateInput = (d: Date | string | null | undefined) => d ? kstYmdStr(new Date(d)) : ''
 
@@ -110,8 +111,9 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
       : '',
     )
     setTransRent(def.field === 'rentAmount' ? (lease.rentAmount || undefined) : undefined)
-    setTransRefund(def.withDeposit ? (lease.depositAmount || 0) : undefined)
-    setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: lease.depositAmount })
+    // 기본 환불액 = 보증금 − 청소비(설정 시 자동 차감, 미설정이면 청소비 0 → 전액). 환불 안 함은 버튼으로.
+    setTransRefund(def.withDeposit ? Math.max(0, (lease.depositAmount || 0) - (lease.cleaningFee || 0)) : undefined)
+    setActive({ def, tenantId, tenantName, leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee || 0 })
   }
 
   const runTransition = (
@@ -121,7 +123,8 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
     startTransition(async () => {
       const release = trackSave()
       try {
-        if (def.withDeposit && transRefund != null && transRefund > 0) {
+        // 보증금이 있으면 환불 0(=환불 안 함)이어도 기록 — 미반환분이 보증금 수익으로 잡히도록.
+        if (def.withDeposit && lease.depositAmount > 0 && transRefund != null) {
           const r = await recordDepositReturn({
             leaseTermId: lease.id, tenantId, depositAmount: lease.depositAmount,
             returnedAmount: transRefund,
@@ -205,11 +208,24 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
               )}
               {active.def.withDeposit && active.depositAmount > 0 && (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">
-                    보증금 환불액 <span className="text-[var(--warm-muted)] font-normal">(보증금 {active.depositAmount.toLocaleString()}원)</span>
-                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">
+                      보증금 환불액 <span className="text-[var(--warm-muted)] font-normal">(보증금 {active.depositAmount.toLocaleString()}원)</span>
+                    </label>
+                    <button type="button" onClick={() => setTransRefund(0)}
+                      className={`shrink-0 text-[0.625rem] px-2 py-1 rounded-md border transition-colors ${
+                        transRefund === 0
+                          ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/10'
+                          : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40'
+                      }`}>
+                      환불 안 함
+                    </button>
+                  </div>
                   <MoneyInput value={transRefund} onChange={setTransRefund} placeholder="0원" />
-                  <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">환불하지 않은 금액은 보증금 수익으로 기록됩니다.</p>
+                  <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
+                    {active.cleaningFee > 0 && <>청소비 {active.cleaningFee.toLocaleString()}원을 뺀 금액이 기본값입니다. </>}
+                    일부만 환불하려면 금액을 직접 입력하고, 환불하지 않으려면 ‘환불 안 함’을 누르세요. 환불하지 않은 금액은 보증금 수익으로 기록됩니다.
+                  </p>
                 </div>
               )}
             </div>
