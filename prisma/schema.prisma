@@ -181,6 +181,7 @@ model Property {
   depositRefunds      DepositRefund[]
   contractFiles       ContractFile[]
   residenceCertFiles  ResidenceCertFile[]
+  rentReceiptFiles    RentReceiptFile[]
 
   @@map("properties")
 }
@@ -288,6 +289,7 @@ model Tenant {
   depositRefunds DepositRefund[]
   contractFiles  ContractFile[]
   residenceCertFiles ResidenceCertFile[]
+  rentReceiptFiles   RentReceiptFile[]
 
   @@map("tenants")
 }
@@ -374,6 +376,7 @@ model LeaseTerm {
   depositRefunds DepositRefund[]
   contractFiles  ContractFile[]
   residenceCertFiles ResidenceCertFile[]
+  rentReceiptFiles   RentReceiptFile[]
   discounts      RentDiscount[]   // #14 월세 할인(입주자별, 여러 개 가능)
 
   @@index([propertyId, status]) // 영업장별 현재 거주자 조회 최적화
@@ -1132,6 +1135,28 @@ model ResidenceCertFile {
   @@index([tenantId, createdAt])
   @@index([propertyId, createdAt])
   @@map("residence_cert_files")
+}
+
+// 월세 영수증 — 입실자별 발급 PDF (외국인등록증 신청용 등). 실거주 확인서와 동일 구조.
+model RentReceiptFile {
+  id           String   @id @default(uuid()) @db.Uuid
+  driveFileId  String
+  fileName     String
+  issuedAt     DateTime @default(now())          // 발행일 — 사용자가 입력
+  createdAt    DateTime @default(now())
+
+  tenantId     String   @db.Uuid
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  leaseTermId  String?  @db.Uuid
+  leaseTerm    LeaseTerm? @relation(fields: [leaseTermId], references: [id], onDelete: SetNull)
+
+  propertyId   String   @db.Uuid
+  property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([propertyId, createdAt])
+  @@map("rent_receipt_files")
 }
 
 // ============================================================

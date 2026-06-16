@@ -62,6 +62,11 @@ CREATE INDEX "residence_cert_files_propertyId_createdAt_idx" ON residence_cert_f
 ### 후속 — 입주자 이메일 필드 [⚠️ SQL 1건 적용 후 배포]
 입주자 정보에 이메일이 없어 추가. `Tenant.email String?` 신설(ContactType enum엔 EMAIL 없어 전용 필드가 깔끔). 고객 폼 연락처 섹션에 이메일 입력칸(type=email), createTenant·updateTenant 저장, getTenantDetail select 에 email 추가, TenantBasicInfo 표시(있을 때만). getTenants 는 include 라 자동 포함. **SQL**: `ALTER TABLE tenants ADD COLUMN email TEXT;`
 
+## 2026-06-16 — 지출 방배정 묶기·비품자재·월세영수증 (①②③)
+**① 지출 방별 분배 묶기 + 호실 품목명 [SQL: expenses.allocationGroupId UUID]**: 한 품목을 방별로 나눠 등록하면 목록 행이 쪼개지던 것을, 저장 시 분배 행에 공통 allocationGroupId 부여 → 목록에서 한 줄(금액합산·'방 N개'·방목록)로 묶고 누르면 방별 펼침 모달(개별 수정). DB 행은 그대로라 방별 지출·집계 동일. 호실 상세 '이 방에 든 지출'에 품목명(detail/itemLabel) 표시.
+**② 비품·자재 탭(/inventory/assets) [SQL 불필요]**: 소모품 재고와 별개로 내구재(소모품 카테고리·배송비 제외 품목 지출)를 방별/미배정(여분)으로. 미배정에 '방 배정' 버튼 → Expense.roomId 설정(그 호실 지출로 이동, Req4). 재고관리 헤더에 진입 버튼.
+**③ 월세 영수증(외국인등록증 신청용) [SQL: rent_receipt_files 테이블]**: 자체 양식 pdf-lib 직접 그림(buildRentReceiptPdf — 제목·발행일·표[이름(호실)·거주기간·금액·수령인 이름/서명·연락처]·도장). 실거주 확인서 구조 미러: /rent-receipt/[tenantId] 작성(standalone+layout 호스트), /api/rent-receipt/generate(Drive+preview), /rent-receipts 목록(거주중 선택+이력), RentReceiptFile 모델. 사이드바 '관련 서류'에 추가 + 입주자 모달 + **수납관리(payment 모달) 푸터**에 '월세 영수증 발급' 버튼. 로컬 qlmanage 렌더 검증 완료.
+
 ## 2026-06-15 — 사용자 요청 6건: 호실저장 토스트·재고보충·지출 [SQL 불필요]
 호실 수정 저장 글리치 + 재고 보충 UX 재설계 + 지출 3건.
 - **#1 호실 수정 저장(RoomManageClient)**: 저장 후 토스트(초록) 안 뜨고 메인→수정팝업 되돌아오던 글리치. 원인=`window.location.reload()` 전체 새로고침이 ⓐ pushToast 직후 토스트를 날리고 ⓑ ref(handledOpenRef) 초기화로 URL `?roomId&edit=1` 가 effect 재오픈을 유발. 해결=soft `router.refresh()` 로 교체(토스트 유지·ref 보존→재오픈 차단). handleAdd 도 동일 교체.

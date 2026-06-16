@@ -224,6 +224,12 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
     router.push(`/residence-cert/${links.tenantId}`)
     onClose()
   }
+  // 월세 영수증 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
+  const handleRentReceipt = () => {
+    if (!links?.tenantId) return
+    router.push(`/rent-receipt/${links.tenantId}`)
+    onClose()
+  }
 
   // Phase 2.4a (2026-05-30): kind='payment' 의 '수납 관리에서 열기' 딥링크 제거.
   // PaymentBody 내부 summary→full 모드 토글이 in-place 전환 (배경 안 바뀜) — 사용자 비전.
@@ -265,10 +271,25 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
                   실거주 확인서
                 </button>
               )}
+              {links?.tenantId && (
+                <button type="button" onClick={handleRentReceipt}
+                  className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                  월세 영수증
+                </button>
+              )}
               <div className="flex-1" />
               <Btn variant="primary" size="md" onClick={handleEditTenant} disabled={isPending}>
                 수정
               </Btn>
+            </div>
+          )}
+          {/* 수납 관리(=payment 모달)에서도 월세 영수증 발급 진입 */}
+          {kind === 'payment' && links?.tenantId && (
+            <div className="flex justify-end">
+              <button type="button" onClick={handleRentReceipt}
+                className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                월세 영수증 발급
+              </button>
             </div>
           )}
           {/* deepLink 행 — Phase 2.4a 에서 수납 딥링크 in-place 전환으로 대체됨. 다른 kind 에 필요시 부활. */}

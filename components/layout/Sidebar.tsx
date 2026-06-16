@@ -46,6 +46,10 @@ function IcoContract() {
 function IcoResidenceCert() {
   return <svg {...ico}><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M9 15l2 2 4-4"/></svg>
 }
+// 월세 영수증 — Receipt
+function IcoReceipt() {
+  return <svg {...ico}><path d="M5 3v18l2-1.2 2 1.2 2-1.2 2 1.2 2-1.2 2 1.2V3l-2 1.2L15 3l-2 1.2L11 3 9 4.2 7 3z"/><path d="M8 8h8M8 12h8"/></svg>
+}
 // 체크리스트 — CalendarCheck
 function IcoChecklist() {
   return <svg {...ico}><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4M8 15l2 2 4-4"/></svg>
@@ -101,6 +105,7 @@ const NAV_GROUPS = [
     items: [
       { href: '/contracts',       label: '계약서',        Icon: IcoContract      },
       { href: '/residence-certs', label: '실거주 확인서', Icon: IcoResidenceCert },
+      { href: '/rent-receipts',   label: '월세 영수증',   Icon: IcoReceipt       },
     ],
   },
   {

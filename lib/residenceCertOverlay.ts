@@ -30,7 +30,7 @@ const TEMPLATE_BYTES = Uint8Array.from(Buffer.from(RESIDENCE_CERT_SEOUL_PDF_BASE
 // 나눔고딕 TTF — 런타임 fetch + 모듈 캐시 (woff2 는 fontkit 임베드 불가라 ttf 사용)
 const NANUM_URL = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/nanumgothic/NanumGothic-Regular.ttf'
 let fontCache: Uint8Array | null = null
-async function getNanumGothic(): Promise<Uint8Array> {
+export async function getNanumGothic(): Promise<Uint8Array> {
   if (fontCache) return fontCache
   const res = await fetch(NANUM_URL)
   if (!res.ok) throw new Error(`나눔고딕 폰트 다운로드 실패 (${res.status})`)
