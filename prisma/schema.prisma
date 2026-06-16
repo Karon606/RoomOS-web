@@ -147,6 +147,7 @@ model Property {
   defaultDeposit   Int?      // 기본 보증금
   defaultCleaningFee Int?    // 기본 청소비
   defaultAreaM2    Float?    // 기본 전용면적(㎡) — 실거주 확인서 등 서류 기본값. 호실별 areaM2 가 비었을 때 사용
+  bankAccount      String?   // 입금 계좌번호 (월세 영수증 납부방법에 자동 반영). 예 "○○은행 123-456 (예금주)"
   // 계약서 (영업장별 별도 운영)
   contractTemplate Json?     // 섹션 본문 + 추가 표시 옵션. shape: { title, sections: [{ title, items: string[] }], oathText }
   businessInfo     Json?     // 사업자 정보. shape: { name, registrationNo, ceoName, address }

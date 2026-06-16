@@ -4,21 +4,24 @@ import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { buildDriveThumbnailUrl } from '@/lib/google-drive'
 
 // 월세 영수증 자동 채움 — 입실자/계약/영업장에서.
 export type RentReceiptData = {
   tenantId: string
   leaseTermId: string | null
-  name: string            // 성명
+  name: string            // 성명(입주자)
   room: string            // 호실
   periodStart: string     // YYYY-MM-DD (이번 1달 선납 주기 시작)
   periodEnd: string       // YYYY-MM-DD (주기 끝)
+  targetMonth: string     // 납부 대상월 (예 '2026년 6월분')
   amount: number          // 월세
-  recipientName: string   // 거주제공자(임대인) 성명
-  recipientPhone: string  // 거주제공자 연락처
-  stampImageUrl: string | null
+  payDate: string         // 납부일 (예 '2026. 6. 5')
+  payMethod: string       // 납부방법 (계좌이체 · 계좌번호 / 현금)
+  note: string            // 비고 (기본: 다음 납부 예정일)
+  recipientName: string   // 임대인 대표 성명
 }
+
+const dot = (ymd: string) => { const [y, m, d] = ymd.split('-').map(Number); return `${y}. ${m}. ${d}` }
 
 // 월세 1달 선납 주기 — 납부일(dueDay) 기준(없으면 입주일의 일). 예) dueDay 5 → 6/5~7/4.
 function rentCyclePeriod(dueDay: string | null, moveIn: Date | null): { start: string; end: string } {
@@ -68,7 +71,7 @@ export async function getRentReceiptData(tenantId: string): Promise<RentReceiptD
     }),
     prisma.property.findUnique({
       where: { id: propertyId },
-      select: { phone: true, businessInfo: true, stampDriveFileId: true },
+      select: { phone: true, businessInfo: true, bankAccount: true },
     }),
   ])
 
@@ -77,6 +80,8 @@ export async function getRentReceiptData(tenantId: string): Promise<RentReceiptD
   const lease = tenant.leaseTerms[0] ?? null
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}
   const cycle = rentCyclePeriod(lease?.dueDay ?? null, lease?.moveInDate ?? null)
+  const nextDue = dot(new Date(new Date(`${cycle.end}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10))
+  const [cy, cm] = cycle.start.split('-').map(Number)
 
   return {
     tenantId: tenant.id,
@@ -85,9 +90,11 @@ export async function getRentReceiptData(tenantId: string): Promise<RentReceiptD
     room: fmtRoom(lease?.room?.roomNo),
     periodStart: cycle.start,
     periodEnd: cycle.end,
+    targetMonth: `${cy}년 ${cm}월분`,
     amount: lease?.rentAmount ?? 0,
+    payDate: dot(cycle.start),
+    payMethod: property?.bankAccount ? `계좌이체 · ${property.bankAccount}` : '현금',
+    note: `다음 납부 예정일 ${nextDue}`,
     recipientName: biz.ceoName ?? '',
-    recipientPhone: property?.phone ?? '',
-    stampImageUrl: property?.stampDriveFileId ? buildDriveThumbnailUrl(property.stampDriveFileId, 800) : null,
   }
 }

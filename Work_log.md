@@ -62,6 +62,11 @@ CREATE INDEX "residence_cert_files_propertyId_createdAt_idx" ON residence_cert_f
 ### 후속 — 입주자 이메일 필드 [⚠️ SQL 1건 적용 후 배포]
 입주자 정보에 이메일이 없어 추가. `Tenant.email String?` 신설(ContactType enum엔 EMAIL 없어 전용 필드가 깔끔). 고객 폼 연락처 섹션에 이메일 입력칸(type=email), createTenant·updateTenant 저장, getTenantDetail select 에 email 추가, TenantBasicInfo 표시(있을 때만). getTenants 는 include 라 자동 포함. **SQL**: `ALTER TABLE tenants ADD COLUMN email TEXT;`
 
+## 2026-06-16 (이어서) — 월세 영수증 §20 전면 반영 + 계좌번호 [⚠️ SQL: properties.bankAccount]
+브랜드 가이드 §20(인쇄 서류) 신설 반영. 영수증을 §20.10(a) 입실료 납부확인서 스펙으로 재작성:
+**A5 세로** + 인쇄전용 토큰(--p-*: ink/muted/tc/label-bg/rule). 헤더(로고12mm+영업장명+사업자등록번호·대표+주소·전화 + No.·발행일 + 테라코타 룰 1.6pt) · 제목 · 키값표1(성명/호실/거주기간/납부대상월) · 금액박스(영수금액 라벨 + 한글병기 '금 ○○원정' + ₩ 우측 14pt 테라코타) · 키값표2(납부일/납부방법/비고) · 영수확인문구 · 서명(임대인 대표 ○○○)+도장(이름 좌측·도장 우측 비간섭) · made with stayeum 워드마크.
+**발행번호** = `YYYYMMDD-NNN`(영업장별 일련 = RentReceiptFile count+1, §20.8). **계좌번호** Property.bankAccount 신설 → 환경설정 입력 → 영수증 납부방법('계좌이체 · {계좌}') 자동. **비고** 기본='다음 납부 예정일 {nextDue}'(추천값). **납부 대상월**='YYYY년 M월분', **거주기간**=1달 선납 주기. 부제(외국인등록증) 제거. 모든 칸 편집 가능. 폰트는 Pretendard 정적TTF 미가용(LFS)이라 §20.1 폴백 나눔고딕 유지. 로컬 qlmanage 렌더 검증. **SQL**: `ALTER TABLE properties ADD COLUMN "bankAccount" TEXT;`
+
 ## 2026-06-16 — 지출 방배정 묶기·비품자재·월세영수증 (①②③)
 **① 지출 방별 분배 묶기 + 호실 품목명 [SQL: expenses.allocationGroupId UUID]**: 한 품목을 방별로 나눠 등록하면 목록 행이 쪼개지던 것을, 저장 시 분배 행에 공통 allocationGroupId 부여 → 목록에서 한 줄(금액합산·'방 N개'·방목록)로 묶고 누르면 방별 펼침 모달(개별 수정). DB 행은 그대로라 방별 지출·집계 동일. 호실 상세 '이 방에 든 지출'에 품목명(detail/itemLabel) 표시.
 **② 비품·자재 탭(/inventory/assets) [SQL 불필요]**: 소모품 재고와 별개로 내구재(소모품 카테고리·배송비 제외 품목 지출)를 방별/미배정(여분)으로. 미배정에 '방 배정' 버튼 → Expense.roomId 설정(그 호실 지출로 이동, Req4). 재고관리 헤더에 진입 버튼.

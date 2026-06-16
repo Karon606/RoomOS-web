@@ -48,6 +48,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       defaultDeposit: true,
       defaultCleaningFee: true,
       defaultAreaM2: true,
+      bankAccount: true,
       publicSlug: true,
       logoDriveFileId: true,
       appLogoDriveFileId: true,
@@ -498,6 +499,7 @@ export async function updatePropertySettings(formData: FormData) {
   const defaultDeposit    = formData.get('defaultDeposit')
   const defaultCleaningFee = formData.get('defaultCleaningFee')
   const defaultAreaM2     = formData.get('defaultAreaM2')
+  const bankAccount       = formData.get('bankAccount') as string
   const publicSlugRaw     = formData.get('publicSlug') as string | null
   const publicSlug = publicSlugRaw
     ? publicSlugRaw.trim().toLowerCase().replace(/[^a-z0-9-]/g, '')
@@ -514,6 +516,7 @@ export async function updatePropertySettings(formData: FormData) {
       defaultDeposit:   defaultDeposit   ? Number(String(defaultDeposit).replace(/[^0-9]/g, ''))   : null,
       defaultCleaningFee: defaultCleaningFee ? Number(String(defaultCleaningFee).replace(/[^0-9]/g, '')) : null,
       defaultAreaM2:    defaultAreaM2 && String(defaultAreaM2).trim() ? Number(String(defaultAreaM2).replace(/[^0-9.]/g, '')) || null : null,
+      bankAccount:      bankAccount?.trim() || null,
       publicSlug:       publicSlug || null,
     },
   })

@@ -15,7 +15,10 @@ const fmtDot = (d: string) => {
   return `${y}. ${Number(m)}. ${Number(dd)}`
 }
 
-type Fields = { name: string; room: string; period: string; amount: string; recipientName: string; recipientPhone: string }
+type Fields = {
+  name: string; room: string; period: string; targetMonth: string
+  amount: string; payDate: string; payMethod: string; note: string; recipientName: string
+}
 
 function buildInitial(data: RentReceiptData): Fields {
   const start = fmtDot(data.periodStart)
@@ -24,9 +27,12 @@ function buildInitial(data: RentReceiptData): Fields {
     name: data.name,
     room: data.room,
     period: start ? `${start} ~ ${end}` : end,
+    targetMonth: data.targetMonth,
     amount: data.amount ? data.amount.toLocaleString() : '',
+    payDate: data.payDate,
+    payMethod: data.payMethod,
+    note: data.note,
     recipientName: data.recipientName,
-    recipientPhone: data.recipientPhone,
   }
 }
 
@@ -119,14 +125,21 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
             <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className={inputCls} />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="성명" k="name" placeholder="홍길동" />
+            <Field label="성명 (입주자)" k="name" placeholder="홍길동" />
             <Field label="호실" k="room" placeholder="501호" />
           </div>
-          <Field label="거주 기간 (1달 선납)" k="period" placeholder="2026. 6. 5 ~ 2026. 7. 4" />
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="거주 기간 (1달 선납)" k="period" placeholder="2026. 6. 5 ~ 2026. 7. 4" />
+            <Field label="납부 대상월" k="targetMonth" placeholder="2026년 6월분" />
+          </div>
           <Field label="금액 (월세, 원)" k="amount" placeholder="390,000" />
-          <Field label="수령인 이름 / 서명 (거주제공자)" k="recipientName" placeholder="김건우" />
-          <Field label="수령인 연락처 (전화번호)" k="recipientPhone" placeholder="010-0000-0000" />
-          <p className="text-[0.6875rem] text-[var(--warm-muted)]">수령인 서명란엔 환경설정에 등록된 도장이 자동으로 들어갑니다.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="납부일" k="payDate" placeholder="2026. 6. 5" />
+            <Field label="납부방법" k="payMethod" placeholder="계좌이체 · 계좌번호 / 현금" />
+          </div>
+          <Field label="비고" k="note" placeholder="다음 납부 예정일 …" />
+          <Field label="임대인 대표 (수령인)" k="recipientName" placeholder="김건우" />
+          <p className="text-[0.6875rem] text-[var(--warm-muted)]">영업장명·로고·사업자정보·발행번호·도장은 자동으로 들어갑니다. 모든 칸은 직접 수정 가능합니다. (납부방법의 계좌번호는 환경설정에서 설정)</p>
         </div>
 
         <div className="flex gap-2">

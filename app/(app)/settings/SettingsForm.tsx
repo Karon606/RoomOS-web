@@ -52,6 +52,7 @@ type Property = {
   defaultDeposit: number | null
   defaultCleaningFee: number | null
   defaultAreaM2: number | null
+  bankAccount: string | null
   publicSlug: string | null
   logoDriveFileId: string | null
   logoThumbnailUrl: string | null
@@ -741,6 +742,15 @@ export default function SettingsForm({
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-mid)] pointer-events-none">㎡</span>
                 )}
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">입금 계좌번호</label>
+              <p className="text-xs text-[var(--warm-muted)]">월세 영수증의 ‘납부방법’에 자동으로 들어갑니다. 은행·계좌번호·예금주까지 적어두면 좋습니다.</p>
+              <input type="text" name="bankAccount"
+                defaultValue={property?.bankAccount ?? ''}
+                placeholder="예: 카카오뱅크 3333-01-2345678 (김건우)"
+                autoComplete="off"
+                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">공개 페이지 슬러그</label>

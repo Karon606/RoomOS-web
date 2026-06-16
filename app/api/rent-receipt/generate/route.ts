@@ -45,14 +45,17 @@ export async function POST(req: Request) {
       try { logoBytes = new Uint8Array(await downloadDriveBytes(property.logoDriveFileId)) } catch { logoBytes = null }
     }
 
-    // 브랜드 헤더 — 영업장 사업자 정보
+    // 브랜드 헤더 — 영업장 사업자 정보 (§20.5)
     const biz = (property?.businessInfo as { name?: string; registrationNo?: string; ceoName?: string; address?: string } | null) ?? {}
     const businessName = biz.name || property?.name || ''
-    const businessSub = [biz.address, biz.registrationNo ? `사업자 ${biz.registrationNo}` : null, property?.phone ? `T. ${property.phone}` : null].filter(Boolean).join(' · ')
+    const bizLine1 = [biz.registrationNo ? `사업자등록번호 ${biz.registrationNo}` : null, biz.ceoName ? `대표 ${biz.ceoName}` : null].filter(Boolean).join(' · ')
+    const bizLine2 = [biz.address, property?.phone ? `T. ${property.phone}` : null].filter(Boolean).join(' · ')
     const issueDate = body.fields.issueDate || new Date().toISOString().slice(0, 10)
-    const receiptNo = `R-${issueDate.replace(/-/g, '')}-${String(1000 + Math.floor(Math.random() * 9000))}`
+    // 발행번호 = 발행일-발행순서 (영업장별 일련, §20.8). count+1 = 이번 발급분.
+    const seq = (await prisma.rentReceiptFile.count({ where: { propertyId } })) + 1
+    const receiptNo = `${issueDate.replace(/-/g, '')}-${String(seq).padStart(3, '0')}`
 
-    const pdfBytes = await buildRentReceiptPdf(body.fields, { businessName, businessSub, receiptNo }, logoBytes, stampBytes)
+    const pdfBytes = await buildRentReceiptPdf(body.fields, { businessName, bizLine1, bizLine2, receiptNo }, logoBytes, stampBytes)
 
     if (body.preview) {
       return new NextResponse(Buffer.from(pdfBytes), {
