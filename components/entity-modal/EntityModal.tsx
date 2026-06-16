@@ -274,7 +274,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
               {links?.tenantId && (
                 <button type="button" onClick={handleRentReceipt}
                   className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                  월세 영수증
+                  입실료 확인서
                 </button>
               )}
               <div className="flex-1" />
@@ -283,12 +283,12 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
               </Btn>
             </div>
           )}
-          {/* 수납 관리(=payment 모달)에서도 월세 영수증 발급 진입 */}
+          {/* 수납 관리(=payment 모달)에서도 입실료 납부 확인서 발급 진입 */}
           {kind === 'payment' && links?.tenantId && (
             <div className="flex justify-end">
               <button type="button" onClick={handleRentReceipt}
                 className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                월세 영수증 발급
+                입실료 납부 확인서 발급
               </button>
             </div>
           )}

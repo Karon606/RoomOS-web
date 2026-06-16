@@ -37,13 +37,13 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
   }, [files, fileQuery])
 
   const handleDelete = async (id: string, name: string) => {
-    if (!(await confirmDialog({ title: `${name}님의 이 월세 영수증을 삭제할까요?`, message: 'Google Drive 원본도 함께 삭제됩니다.', level: 'danger', confirmLabel: '삭제' }))) return
+    if (!(await confirmDialog({ title: `${name}님의 이 입실료 납부 확인서를 삭제할까요?`, message: 'Google Drive 원본도 함께 삭제됩니다.', level: 'danger', confirmLabel: '삭제' }))) return
     setDeletingId(id)
     startTransition(async () => {
       const res = await deleteRentReceiptFile(id)
       setDeletingId(null)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', '월세 영수증 삭제됨')
+      pushToast('success', '입실료 납부 확인서 삭제됨')
       router.refresh()
     })
   }
@@ -51,8 +51,8 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
   return (
     <div className="space-y-5 px-4 sm:px-6 py-5">
       <div>
-        <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">월세 영수증</h1>
-        <p className="text-xs text-[var(--warm-muted)] mt-0.5">거주중 입실자를 선택해 발급하면 이름·호실·거주기간·월세·수령인·도장이 자동으로 채워집니다. (외국인등록증 신청용)</p>
+        <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">입실료 납부 확인서</h1>
+        <p className="text-xs text-[var(--warm-muted)] mt-0.5">거주중 입실자를 선택해 발급하면 이름·호실·거주기간·월세·수령인·도장이 자동으로 채워집니다.</p>
       </div>
 
       <section className="space-y-2">

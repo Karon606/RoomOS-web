@@ -75,7 +75,7 @@ export async function POST(req: Request) {
     }
 
     const safeTenantName = tenant.name.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40) || 'tenant'
-    const fileName = `월세영수증_${safeTenantName}_${issueDate.replace(/-/g, '')}_${Date.now()}.pdf`
+    const fileName = `입실료납부확인서_${safeTenantName}_${issueDate.replace(/-/g, '')}_${Date.now()}.pdf`
     const { fileId } = await uploadToDrive(Buffer.from(pdfBytes), fileName, 'application/pdf')
 
     const record = await prisma.rentReceiptFile.create({
@@ -103,7 +103,7 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error('[/api/rent-receipt/generate] failed:', err)
     return NextResponse.json(
-      { ok: false, error: (err as Error).message ?? '월세 영수증 PDF 생성 실패' },
+      { ok: false, error: (err as Error).message ?? '입실료 납부 확인서 PDF 생성 실패' },
       { status: 500 },
     )
   }

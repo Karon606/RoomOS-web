@@ -75,7 +75,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
 
   const [issuing, setIssuing] = useState(false)
   const handleIssue = async () => {
-    if (!(await confirmDialog({ title: '월세 영수증을 발급할까요?', message: '도장이 합성된 PDF가 Google Drive에 저장되고 발급 이력에 추가됩니다.', confirmLabel: '발급' }))) return
+    if (!(await confirmDialog({ title: '입실료 납부 확인서를 발급할까요?', message: '도장이 합성된 PDF가 Google Drive에 저장되고 발급 이력에 추가됩니다.', confirmLabel: '발급' }))) return
     setIssuing(true)
     const release = trackSave()
     try {
@@ -88,13 +88,13 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
       try { json = JSON.parse(text) } catch { /* not json */ }
       if (!res.ok || !json?.ok) {
         const msg = json?.error ?? `서버 오류 (${res.status})`
-        pushToast('error', msg); alert(`월세 영수증 PDF 생성 실패\n\n${msg}`); return
+        pushToast('error', msg); alert(`입실료 납부 확인서 PDF 생성 실패\n\n${msg}`); return
       }
-      pushToast('success', '월세 영수증 발급됨 — 발급 이력으로 이동합니다')
+      pushToast('success', '입실료 납부 확인서 발급됨 — 발급 이력으로 이동합니다')
       router.push('/rent-receipts')
     } catch (err) {
       const msg = (err as Error).message ?? 'PDF 생성 실패'
-      pushToast('error', msg); alert(`월세 영수증 PDF 생성 실패\n\n${msg}`)
+      pushToast('error', msg); alert(`입실료 납부 확인서 PDF 생성 실패\n\n${msg}`)
     } finally { release(); setIssuing(false) }
   }
 
@@ -110,12 +110,12 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
     <div className="min-h-screen bg-[var(--canvas)] flex flex-col items-center px-4 py-6">
       <div className="w-full max-w-md space-y-4">
         <div className="flex items-center justify-between gap-2">
-          <Link href="/rent-receipts" className="text-sm text-[var(--coral)]">← 월세 영수증</Link>
+          <Link href="/rent-receipts" className="text-sm text-[var(--coral)]">← 입실료 납부 확인서</Link>
           <button onClick={reset} className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--cream)]">자동값으로</button>
         </div>
 
         <div>
-          <h1 className="text-lg font-bold text-[var(--warm-dark)]">월세 영수증 작성</h1>
+          <h1 className="text-lg font-bold text-[var(--warm-dark)]">입실료 납부 확인서 작성</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">자동으로 채워진 값을 확인·수정한 뒤 발급하세요. 영업장명·로고·사업자정보는 자동으로 들어갑니다.</p>
         </div>
 

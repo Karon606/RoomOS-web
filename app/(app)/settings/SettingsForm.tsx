@@ -745,7 +745,7 @@ export default function SettingsForm({
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">입금 계좌번호</label>
-              <p className="text-xs text-[var(--warm-muted)]">월세 영수증의 ‘납부방법’에 자동으로 들어갑니다. 은행·계좌번호·예금주까지 적어두면 좋습니다.</p>
+              <p className="text-xs text-[var(--warm-muted)]">입실료 납부 확인서의 ‘납부방법’에 자동으로 들어갑니다. 은행·계좌번호·예금주까지 적어두면 좋습니다.</p>
               <input type="text" name="bankAccount"
                 defaultValue={property?.bankAccount ?? ''}
                 placeholder="예: 카카오뱅크 3333-01-2345678 (김건우)"

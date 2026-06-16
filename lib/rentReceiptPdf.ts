@@ -114,7 +114,7 @@ export async function buildRentReceiptPdf(
   page.drawRectangle({ x: L, y: ruleY - 0.8, width: R - L, height: 1.6, color: P_TC })
 
   // ── 제목 ──
-  TC('월 세 영 수 증', PAGE_W / 2, ruleY - 24, 17, P_INK)
+  TC('입실료 납부 확인서', PAGE_W / 2, ruleY - 24, 17, P_INK)
 
   // ── 키-값 표 (라벨열 34mm, 행 8mm) ──
   const labelW = 34 * MM, rowH = 8 * MM
