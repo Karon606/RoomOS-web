@@ -7,15 +7,20 @@ import type { ContractData } from './actions'
 import { saveContractOverride, resetContractOverride } from './actions'
 import { renderContractText, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { kstYmdStr } from '@/lib/kstDate'
-import { fmtKorMoney } from '@/lib/fmtMoney'
 import { trackSave, pushToast } from '@/lib/saveStatus'
-import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 const fmtDate = (d: string | null) => {
   if (!d) return ''
   const [y, m, dd] = d.split('-')
   return `${y}.${m}.${dd}`
+}
+
+// 조항 항목 렌더 — 글머리('-'·'•'·'·') 제거 + **강조** → terracotta hl. (contractPrintHtml 와 동일 규칙)
+function renderClauseItem(text: string): React.ReactNode {
+  const stripped = text.replace(/^\s*[-–•·]\s?/, '')
+  const parts = stripped.split(/\*\*(.+?)\*\*/g) // 짝수 idx=일반, 홀수 idx=강조
+  return parts.map((p, i) => (i % 2 === 1 ? <span key={i} className="hl">{p}</span> : p))
 }
 
 export default function ContractView({ data }: { data: ContractData }) {
@@ -78,25 +83,20 @@ export default function ContractView({ data }: { data: ContractData }) {
     return /^\d+$/.test(v.trim()) ? `${v.trim()}호` : v
   })()
 
-  // 보증금/청소비 동적 표기
-  // 둘 다 0/없음     → 라벨 '입실 보증금 (Deposit)' / 값 ''
-  // 보증금만 있음    → 라벨 '입실 보증금 (Deposit)' / 값 'X원'
-  // 보증금+청소비    → 라벨 '입실 보증금 (Deposit)' / 값 'X원 (중 청소비 Y원)'
-  // 청소비만 있음    → 라벨 '청소비 (Cleaning Fee)'  / 값 'Y원'
-  const depositRow = (() => {
+  // 보증금/청소비 동적 표기 (§20 — 라벨 + 영문 + 값(청소비는 .sub))
+  const { depositLabel, depositEn, depositNode } = (() => {
     const dep = data.lease?.depositAmount ?? 0
-    const cln = data.lease?.cleaningFee   ?? 0
-    if (dep === 0 && cln > 0) {
-      return { label: '청소비 (Cleaning Fee)', value: `${cln.toLocaleString()}원` }
-    }
-    if (dep > 0 && cln > 0) {
-      return { label: '입실 보증금 (Deposit)', value: `${dep.toLocaleString()}원 (중 청소비 ${cln.toLocaleString()}원)` }
-    }
-    if (dep > 0) {
-      return { label: '입실 보증금 (Deposit)', value: `${dep.toLocaleString()}원` }
-    }
-    return { label: '입실 보증금 (Deposit)', value: '' }
+    const cln = data.lease?.cleaningFee ?? 0
+    if (dep === 0 && cln > 0) return { depositLabel: '청소비', depositEn: 'Cleaning Fee', depositNode: `${cln.toLocaleString()}원` as React.ReactNode }
+    if (dep > 0 && cln > 0)   return { depositLabel: '입실 보증금', depositEn: 'Deposit', depositNode: <>{dep.toLocaleString()}원<span className="sub"> (중 청소비 {cln.toLocaleString()}원)</span></> }
+    if (dep > 0)              return { depositLabel: '입실 보증금', depositEn: 'Deposit', depositNode: `${dep.toLocaleString()}원` as React.ReactNode }
+    return { depositLabel: '입실 보증금', depositEn: 'Deposit', depositNode: '' as React.ReactNode }
   })()
+
+  // 헤더/푸터 영업장 메타 (§20)
+  const biz = data.businessInfo
+  const bizMeta1 = [biz.registrationNo ? `사업자등록번호 ${biz.registrationNo}` : '', biz.ceoName ? `대표 ${biz.ceoName}` : ''].filter(Boolean).join(' · ')
+  const bizMeta2 = [biz.address || '', data.phone ? data.phone : ''].filter(Boolean).join(' · ')
 
   // 변수 치환 맵 — 본문 섹션 내 {{key}} 자리 자동 채움
   const vars = useMemo<Record<string, string>>(() => ({
@@ -338,7 +338,7 @@ export default function ContractView({ data }: { data: ContractData }) {
         )}
       </div>
 
-      {/* 인쇄 영역 — A4 1장. 모바일에선 scale로 viewport에 맞춤 (인쇄 시는 원본) */}
+      {/* 인쇄 영역. 모바일에선 scale로 viewport에 맞춤 (인쇄 시는 원본) */}
       <div
         className="paper-cage"
         style={{
@@ -347,177 +347,167 @@ export default function ContractView({ data }: { data: ContractData }) {
         }}
       >
       <main ref={paperRef} className="contract-paper">
-        <header className="contract-header">
-          <div className="contract-header-logo">
-            {data.logoImageUrl && (
-              <img src={data.logoImageUrl} alt="영업장 로고" className="contract-logo-img" />
-            )}
+        {/* 헤더 */}
+        <div className="doc-header">
+          <div className="biz">
+            <div className="biz-logo">
+              {data.logoImageUrl && <img src={data.logoImageUrl} alt="로고" />}
+            </div>
+            <div>
+              <div className="biz-name">{biz.name || ''}</div>
+              <div className="biz-meta">{bizMeta1}{bizMeta1 && bizMeta2 ? <br /> : null}{bizMeta2}</div>
+            </div>
           </div>
-          <h1 className="contract-title">{view.title}</h1>
-          <div className="contract-header-spacer" />
-        </header>
+          <div className="issue">작성일 {signDateLabel}</div>
+        </div>
+        <div className="tc-rule" />
 
-        {/* 입실자 정보 표 */}
-        <table className="info-table">
-          <colgroup>
-            <col style={{ width: '23%' }} />
-            <col style={{ width: '27%' }} />
-            <col style={{ width: '23%' }} />
-            <col style={{ width: '27%' }} />
-          </colgroup>
+        {/* 제목 */}
+        <div className="doc-title-row">
+          <div className="doc-title">{view.title}</div>
+          <div className="doc-title-en">Residence Agreement</div>
+        </div>
+
+        {/* 정보 표 */}
+        <table className="info">
           <tbody>
             <tr>
-              <th>성명 (Name)</th>
-              <td>{data.tenant.name}</td>
-              <th>연락처 (Mobile)</th>
-              <td>{data.tenant.primaryPhone ?? ''}</td>
+              <th>성명<span className="en">Name</span></th><td>{data.tenant.name}</td>
+              <th>연락처<span className="en">Mobile Phone</span></th><td className="num">{data.tenant.primaryPhone ?? ''}</td>
             </tr>
             <tr>
-              <th>생년월일 (Birth Date)</th>
-              <td>{fmtDate(data.tenant.birthdate)}</td>
-              <th>직업 (Job)</th>
-              <td>{data.tenant.job ?? ''}</td>
+              <th>생년월일<span className="en">Date of Birth</span></th><td className="num">{fmtDate(data.tenant.birthdate)}</td>
+              <th>직업<span className="en">Occupation</span></th><td>{data.tenant.job ?? ''}</td>
             </tr>
             <tr>
-              <th>성별 (Gender)</th>
-              <td>{data.tenant.gender}</td>
-              <th>흡연 여부 (Smoking)</th>
-              <td>{smoking}</td>
+              <th>성별<span className="en">Gender</span></th><td>{data.tenant.gender}</td>
+              <th>흡연 여부<span className="en">Smoking</span></th><td>{smoking}</td>
             </tr>
             <tr>
-              <th>{depositRow.label}</th>
-              <td>{depositRow.value}</td>
-              <th>입실일 (Check-in)</th>
-              <td>{fmtDate(data.lease?.moveInDate ?? null)}</td>
+              <th>호실<span className="en">Room Number</span></th><td className="num">{roomNoLabel}</td>
+              <th>전입신고<span className="en">Resident Reg.</span></th><td>{data.lease?.registrationStatus ?? '미신고'}</td>
             </tr>
             <tr>
-              <th>호실 (Room No.)</th>
-              <td>{roomNoLabel}</td>
-              <th>퇴실 예정일 (Check-out)</th>
-              <td>{fmtDate(data.lease?.expectedMoveOut ?? null)}</td>
+              <th>입실일<span className="en">Check-in</span></th><td className="num">{fmtDate(data.lease?.moveInDate ?? null)}</td>
+              <th>퇴실 예정일<span className="en">Check-out</span></th><td className="num">{fmtDate(data.lease?.expectedMoveOut ?? null) || '—'}</td>
             </tr>
             <tr>
-              <th>입실료 (Rent Fee)</th>
-              <td>{data.lease ? `${data.lease.rentAmount.toLocaleString()}원` : ''}</td>
-              <th>전입신고 유무</th>
-              <td>{data.lease?.registrationStatus ?? '미신고'}</td>
+              <th>{depositLabel}<span className="en">{depositEn}</span></th><td className="amt">{depositNode}</td>
+              <th>입실료<span className="en">Rent / month</span></th><td className="amt">{data.lease ? `${data.lease.rentAmount.toLocaleString()}원` : ''}</td>
             </tr>
           </tbody>
         </table>
 
-        {/* 비상 연락망 안내 */}
-        {view.emergencyContactNote && (
-          <p className="emergency-note">
-            {view.emergencyContactNote}{' '}
-            <span className="emergency-input-screen no-print">
-              <input
-                type="text"
-                value={emergencyContactText}
-                onChange={e => setEmergencyContactText(e.target.value)}
-                placeholder="이름/전화번호/관계"
-              />
-            </span>
-            <span className="only-print">{emergencyContactText}</span>
-          </p>
+        {/* 비상 연락망 — 화면 입력 / 인쇄 텍스트 */}
+        <table className="emerg">
+          <tbody>
+            <tr>
+              <th>비상 연락망<span className="en">Emergency Contact</span></th>
+              <td>
+                <span className="emerg-input no-print">
+                  <input type="text" value={emergencyContactText}
+                    onChange={e => setEmergencyContactText(e.target.value)}
+                    placeholder={view.emergencyContactNote || '이름 / 전화번호 / 관계'} />
+                </span>
+                <span className="only-print">{emergencyContactText}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* 조항 — 보기: 2단 / 편집: 단일 인라인 편집 */}
+        {!editing ? (
+          <div className="clauses">
+            {view.sections.map(sec => (
+              <div key={sec.id} className="clause-group">
+                <div className="clause-h">{renderContractText(sec.title, vars)}</div>
+                <ul className="clause-list">
+                  {sec.items.map((item, i) => (
+                    <li key={i}>{renderClauseItem(renderContractText(item, vars))}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="clauses-edit no-print-edit">
+            {draft.sections.map((sec, idx) => (
+              <div key={sec.id} className="section-edit">
+                <div className="section-edit-toolbar">
+                  <input type="text" value={sec.title} onChange={e => updateSection(idx, { title: e.target.value })} className="section-edit-title" />
+                  <button type="button" onClick={() => moveSection(idx, -1)} disabled={idx === 0} className="section-edit-btn">↑</button>
+                  <button type="button" onClick={() => moveSection(idx, 1)} disabled={idx === draft.sections.length - 1} className="section-edit-btn">↓</button>
+                  <button type="button" onClick={() => removeSection(idx)} className="section-edit-btn section-edit-btn-danger">삭제</button>
+                </div>
+                <textarea
+                  value={sec.items.join('\n')}
+                  onChange={e => updateSection(idx, { items: e.target.value.split('\n') })}
+                  rows={Math.max(3, sec.items.length)}
+                  className="section-edit-textarea"
+                />
+              </div>
+            ))}
+            <button type="button" onClick={addSection} className="section-add-btn">+ 섹션 추가</button>
+          </div>
         )}
 
-        {/* 본문 섹션 — editing 중엔 인라인 편집 가능 */}
-        <div className="sections">
-          {!editing && view.sections.map(sec => (
-            <section key={sec.id} className="section">
-              <p className="section-title">{renderContractText(sec.title, vars)}</p>
-              {sec.items.map((item, i) => (
-                <p key={i} className="section-item">{renderContractText(item, vars)}</p>
-              ))}
-            </section>
-          ))}
-          {editing && draft.sections.map((sec, idx) => (
-            <div key={sec.id} className="section section-edit no-print-edit">
-              <div className="section-edit-toolbar no-print">
-                <input
-                  type="text"
-                  value={sec.title}
-                  onChange={e => updateSection(idx, { title: e.target.value })}
-                  className="section-edit-title"
-                />
-                <button type="button" onClick={() => moveSection(idx, -1)} disabled={idx === 0} className="section-edit-btn">↑</button>
-                <button type="button" onClick={() => moveSection(idx, 1)} disabled={idx === draft.sections.length - 1} className="section-edit-btn">↓</button>
-                <button type="button" onClick={() => removeSection(idx)} className="section-edit-btn section-edit-btn-danger">삭제</button>
+        {/* 서약 */}
+        {editing ? (
+          <input type="text" value={draft.oathText} onChange={e => setDraft(t => ({ ...t, oathText: e.target.value }))} className="pledge-edit no-print" />
+        ) : (
+          <div className="pledge">{renderContractText(view.oathText, vars)}</div>
+        )}
+
+        {/* 서명 */}
+        <div className="sign-wrap">
+          <div className="sign-date num">{signDateLabel}</div>
+          <div className="sign-grid">
+            <div className="sign-col">
+              <div className="sign-role">임차인 (입주자)</div>
+              <div className="sign-line">
+                <span className="lbl">성명</span>
+                <span className="signame-input no-print">
+                  <input type="text" value={signatureName} onChange={e => setSignatureName(e.target.value)} />
+                </span>
+                <span className="val only-print">{signatureName}</span>
+                <span className="seal-wrap">
+                  {signatureDataUrl ? (
+                    <>
+                      <img className="sign-img" src={signatureDataUrl} alt="서명" />
+                      <button type="button" onClick={() => setSignatureDataUrl(null)} className="signature-clear no-print" title="서명 지우기">✕</button>
+                    </>
+                  ) : (
+                    <span className="seal-mark">(서명)</span>
+                  )}
+                </span>
               </div>
-              <textarea
-                value={sec.items.join('\n')}
-                onChange={e => updateSection(idx, { items: e.target.value.split('\n') })}
-                rows={Math.max(3, sec.items.length)}
-                className="section-edit-textarea"
-              />
             </div>
-          ))}
-          {editing && (
-            <button type="button" onClick={addSection} className="section-add-btn no-print">
-              + 섹션 추가
-            </button>
-          )}
-        </div>
-
-        {/* 서약 + 서명란 */}
-        <div className="oath">
-          {editing ? (
-            <input
-              type="text"
-              value={draft.oathText}
-              onChange={e => setDraft(t => ({ ...t, oathText: e.target.value }))}
-              className="oath-edit no-print"
-            />
-          ) : (
-            <p className="oath-text">{renderContractText(view.oathText, vars)}</p>
-          )}
-          <div className="signature-row">
-            <span className="signature-date">{signDateLabel}</span>
-            <span className="signature-name no-print">
-              <input type="text" value={signatureName} onChange={e => setSignatureName(e.target.value)} />
-            </span>
-            <span className="only-print">{signatureName}</span>
-            {signatureDataUrl ? (
-              <span className="signature-image-wrap">
-                <img src={signatureDataUrl} alt="서명" className="signature-image" />
-                <button
-                  type="button"
-                  onClick={() => setSignatureDataUrl(null)}
-                  className="signature-clear no-print"
-                  title="서명 지우기"
-                >✕</button>
-              </span>
-            ) : (
-              <span className="signature-stamp">(인)</span>
-            )}
-          </div>
-        </div>
-
-        {/* 사업자 정보 + 도장 — 도장은 우측에 flex로 자리잡아 줄바꿈 방지 */}
-        <div className="business-block">
-          <div className="business-info">
-            <div className="business-line">
-              상호: {data.businessInfo.name}
-              {data.businessInfo.registrationNo && ` / 사업자번호 ${data.businessInfo.registrationNo}`}
-              {data.businessInfo.ceoName && ` / 대표 ${data.businessInfo.ceoName}`}
+            <div className="sign-col">
+              <div className="sign-role">임대인 (사업자)</div>
+              <div className="sign-line">
+                <span className="lbl">대표</span>
+                <span className="val">{biz.ceoName || ''}</span>
+                <span className="seal-wrap">
+                  {data.stampImageUrl ? (
+                    <img className="seal-stamp" src={data.stampImageUrl} alt="도장" />
+                  ) : (
+                    <span className="seal-mark">(인)</span>
+                  )}
+                </span>
+              </div>
             </div>
-            {data.businessInfo.address && (
-              <div className="business-line">사업장 주소: {data.businessInfo.address}</div>
-            )}
-          </div>
-          <div className="business-stamp">
-            {data.stampImageUrl ? (
-              <img src={data.stampImageUrl} alt="도장" className="business-stamp-image" />
-            ) : (
-              <span className="business-stamp-marker">(인)</span>
-            )}
           </div>
         </div>
 
-        {/* 우측 하단 이스터에그 — Brand Guide 정식 워드마크(SVG) 사용 */}
-        <div className="made-with" aria-label="Made with 스테이음">
-          <span className="made-with-prefix">Made with</span>
-          <StayeumWordmark height={11} className="made-with-wm" />
+        {/* 푸터 */}
+        <div className="doc-footer">
+          <div className="foot-biz">
+            <span className="nm">{biz.name || ''}</span>
+            {biz.registrationNo ? ` · 사업자등록번호 ${biz.registrationNo}` : ''}
+            {biz.ceoName ? ` · 대표 ${biz.ceoName}` : ''}
+            {bizMeta2 ? <><br />{bizMeta2}</> : null}
+          </div>
+          <div className="wordmark">made with <span className="wm"><span className="wm-stay">stay</span><span className="wm-eum">eum</span></span></div>
         </div>
       </main>
       </div>
@@ -553,15 +543,13 @@ export default function ContractView({ data }: { data: ContractData }) {
         </div>
       )}
 
-      {/* 인쇄/화면 공통 스타일 */}
+      {/* 인쇄/화면 공통 스타일 — 브랜드 가이드 §20 입실 계약서 (contractPrintHtml 과 동일 시각) */}
       <style jsx global>{`
-        /* 글로벌 html/body overflow:hidden 을 이 라우트에선 해제 (스크롤 가능하도록).
-           좌우는 hidden — scale로 viewport에 맞췄어도 포함된 layout box 안전장치 */
         html, body {
           overflow-x: hidden !important;
           overflow-y: auto !important;
           height: auto !important;
-          background: #efeae0;
+          background: #E8DDD0;
         }
         body { margin: 0; }
 
@@ -575,371 +563,160 @@ export default function ContractView({ data }: { data: ContractData }) {
 
         /* 툴바 — 화면 전용 */
         .toolbar {
-          position: sticky;
-          top: 8px;
-          z-index: 5;
+          position: sticky; top: 8px; z-index: 5;
           width: min(210mm, 100% - 24px);
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 10px 14px;
-          background: #fff;
-          border: 1px solid #e7dfd1;
-          border-radius: 12px;
-          margin-bottom: 14px;
-          flex-wrap: wrap;
+          display: flex; align-items: center; gap: 10px;
+          padding: 10px 14px; background: #fff;
+          border: 1px solid #e7dfd1; border-radius: 12px;
+          margin-bottom: 14px; flex-wrap: wrap;
           box-shadow: 0 4px 12px rgba(0,0,0,0.06);
         }
-        .toolbar-link { color: #e84a1a; font-size: 13px; text-decoration: none; }
+        .toolbar-link { color: #a03c2e; font-size: 13px; text-decoration: none; }
         .toolbar-spacer { flex: 1; }
         .toolbar-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b6258; }
-        .toolbar-field input, .toolbar-field select {
-          padding: 4px 8px; border: 1px solid #e7dfd1; border-radius: 6px; font-size: 12px;
-        }
-        .toolbar-print {
-          padding: 6px 14px; background: #e84a1a; color: #fff; border: 0;
-          border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;
-        }
+        .toolbar-field input, .toolbar-field select { padding: 4px 8px; border: 1px solid #e7dfd1; border-radius: 6px; font-size: 12px; }
+        .toolbar-print { padding: 6px 14px; background: #a03c2e; color: #fff; border: 0; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
         .toolbar-print:disabled { opacity: 0.6; }
-        .toolbar-btn-secondary {
-          padding: 6px 12px; background: #fff; color: #1a1a1a; border: 1px solid #d6cdbb;
-          border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer;
-        }
+        .toolbar-btn-secondary { padding: 6px 12px; background: #fff; color: #1a1a1a; border: 1px solid #d6cdbb; border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }
         .toolbar-btn-warn { color: #b85a30; border-color: #f3c8b5; }
         .toolbar-status { font-size: 12px; color: #b85a30; font-weight: 600; }
-        .toolbar-badge {
-          padding: 3px 8px; background: #fff5ed; color: #b85a30; border: 1px solid #f3c8b5;
-          border-radius: 999px; font-size: 11px; font-weight: 600;
-        }
+        .toolbar-badge { padding: 3px 8px; background: #fff5ed; color: #b85a30; border: 1px solid #f3c8b5; border-radius: 999px; font-size: 11px; font-weight: 600; }
 
-        /* paper-cage: 화면용 viewport-fit wrapper.
-           cage 자체는 (210mm × paperHeight) × scale 크기로 layout 자리를 차지하고,
-           안의 .contract-paper 는 원본 사이즈 그대로 유지하면서 transform: scale 로 시각 축소. */
+        /* paper-cage: 화면용 viewport-fit wrapper */
         .paper-cage {
           width: calc(210mm * var(--paper-scale, 1));
           height: calc(var(--paper-h, 297mm) * var(--paper-scale, 1));
-          margin: 0 auto;
-          position: relative;
+          margin: 0 auto; position: relative;
         }
 
-        /* 인쇄 영역 — A4 1장. 화면에선 padding으로 종이 느낌, 인쇄에선 @page margin이 처리 */
+        /* ── §20 종이 ─────────────────────────────────────────────── */
         .contract-paper {
-          position: absolute;          /* cage 안쪽 좌상단 고정 */
-          top: 0;
-          left: 0;
-          transform: scale(var(--paper-scale, 1));
-          transform-origin: top left;
-          width: 210mm;
-          min-height: 297mm;
-          padding: 14mm 16mm;
-          background: #fff;
-          color: #1a1a1a;
+          position: absolute; top: 0; left: 0;
+          transform: scale(var(--paper-scale, 1)); transform-origin: top left;
+          width: 210mm; min-height: 297mm; padding: 11mm 18mm;
+          background: #fff; color: var(--p-ink);
           font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
-          font-size: 9pt;
-          line-height: 1.45;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-          box-sizing: border-box;
+          word-break: keep-all; box-sizing: border-box;
+          box-shadow: 0 4px 24px -6px rgba(61,36,24,.28);
+          display: flex; flex-direction: column;
+          --p-ink: #1F1A17; --p-muted: #6B5D4F; --p-tc: #A03C2E;
+          --p-label-bg: #F2ECE3; --p-rule: #D8CFC4; --p-rule-strong: #9A8A78; --p-amt-bg: #FCFAF6;
         }
+        .contract-paper .num { font-variant-numeric: tabular-nums; }
 
-        /* Made with 스테이음 — 콘텐츠 끝에 우측 정렬로 흐름 배치.
-           paper 강제 page-height 시 빈 2페이지가 생겨서 흐름 배치로 회피.
-           본문이 거의 페이지를 채우므로 시각적으로 footer 효과 동일. */
-        .made-with {
-          margin-top: 14pt;
-          display: flex;
-          justify-content: flex-end;
-          align-items: center;
-          gap: 5px;
-          /* 'stay' 글자만 톤 다운한 회색으로 — 'eum'·Arch 는 브랜드 Terracotta 그대로 유지.
-             (이전엔 --persimmon 도 다른 주황(#e84a1a)으로 덮어써 브랜드 색이 어긋났음) */
-          --ink: #4a4a4a;
-        }
-        .made-with-prefix {
-          font-family: 'DM Mono', 'Pretendard', monospace;
-          font-size: 6.5pt;
-          letter-spacing: 0.04em;
-          color: #b8b0a3;
-          font-weight: 500;
-        }
-        .made-with-wm {
-          opacity: 0.78; /* 너무 튀지 않게 살짝 죽임 */
-        }
+        /* 헤더 */
+        .contract-paper .doc-header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 3.5mm; gap: 6mm; }
+        .contract-paper .biz { display: flex; gap: 4mm; align-items: flex-start; }
+        .contract-paper .biz-logo { width: 13mm; height: 13mm; border: 0.6pt solid var(--p-rule); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .contract-paper .biz-logo img { max-width: 11mm; max-height: 11mm; width: auto; height: auto; object-fit: contain; }
+        .contract-paper .biz-name { font-size: 13pt; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; margin-bottom: 1mm; }
+        .contract-paper .biz-meta { font-size: 8pt; color: var(--p-muted); line-height: 1.5; }
+        .contract-paper .issue { text-align: right; font-size: 8pt; color: var(--p-ink); font-weight: 500; line-height: 1.65; flex-shrink: 0; white-space: nowrap; }
+        .contract-paper .tc-rule { height: 1.6pt; background: var(--p-tc); margin-bottom: 4mm; }
 
-        /* 헤더 — 좌측 로고 슬롯 / 중앙 제목 / 우측 빈공간으로 제목을 페이지 정중앙에 정렬 */
-        .contract-header {
-          display: grid;
-          grid-template-columns: 1fr auto 1fr;
-          align-items: center;
-          gap: 6mm;
-          margin-bottom: 10px;
-        }
-        .contract-header-logo {
-          justify-self: start;
-          height: 14mm;
-          max-width: 50mm;
-          display: flex;
-          align-items: center;
-        }
-        .contract-logo-img {
-          max-height: 14mm;
-          max-width: 50mm;
-          width: auto;
-          height: auto;
-          object-fit: contain;
-          opacity: 0.6;       /* 헤더 워터마크 톤 — 본문에 시선이 먼저 가도록 살짝 톤다운 */
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
-        .contract-header-spacer { /* 우측 가짜 컬럼 — 제목 정중앙 정렬용 */ }
+        /* 제목 */
+        .contract-paper .doc-title-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4mm; }
+        .contract-paper .doc-title { font-size: 21pt; font-weight: 700; letter-spacing: -.03em; }
+        .contract-paper .doc-title-en { font-size: 9pt; color: var(--p-muted); font-weight: 500; letter-spacing: .02em; }
 
-        .contract-title {
-          text-align: center;
-          font-size: 13pt;
-          font-weight: 700;
-          text-decoration: underline;
-          margin: 0;
-          white-space: nowrap;
-        }
+        /* 정보 표 */
+        .contract-paper .info { width: 100%; border-collapse: collapse; border: 0.6pt solid var(--p-rule-strong); margin-bottom: 3mm; }
+        .contract-paper .info tr { height: 7.4mm; }
+        .contract-paper .info th { width: 30mm; background: var(--p-label-bg); font-size: 8.5pt; font-weight: 600; text-align: left; padding: 0 3mm; border: 0.4pt solid var(--p-rule); vertical-align: middle; line-height: 1.25; }
+        .contract-paper .info th .en { display: block; font-size: 7pt; font-weight: 400; color: var(--p-muted); letter-spacing: .01em; }
+        .contract-paper .info td { font-size: 9.5pt; padding: 0 3mm; border: 0.4pt solid var(--p-rule); vertical-align: middle; }
+        .contract-paper .info td.amt { font-weight: 700; color: var(--p-tc); font-variant-numeric: tabular-nums; }
+        .contract-paper .info td .sub { font-size: 8pt; color: var(--p-muted); font-weight: 400; }
+        .contract-paper .emerg { width: 100%; border-collapse: collapse; border: 0.6pt solid var(--p-rule-strong); border-top: none; margin-bottom: 4mm; }
+        .contract-paper .emerg th { width: 30mm; background: var(--p-label-bg); font-size: 8.5pt; font-weight: 600; text-align: left; padding: 2mm 3mm; border: 0.4pt solid var(--p-rule); vertical-align: middle; line-height: 1.3; }
+        .contract-paper .emerg th .en { display: block; font-size: 7pt; font-weight: 400; color: var(--p-muted); }
+        .contract-paper .emerg td { font-size: 9pt; padding: 2mm 3mm; border: 0.4pt solid var(--p-rule); vertical-align: middle; }
+        .contract-paper .emerg-input input { width: 100%; min-width: 60mm; padding: 1mm 2mm; font-size: 9pt; border: 1px dashed #b9ac9a; border-radius: 4px; background: #fff; color: var(--p-ink); font-family: inherit; }
 
-        .info-table {
-          width: 100%;
-          border-collapse: collapse;
-          font-size: 9pt;
-        }
-        .info-table th, .info-table td {
-          border: 1px solid #1a1a1a;
-          padding: 4px 6px;
-          text-align: center;
-          vertical-align: middle;
-          height: 22px;
-        }
-        .info-table th { background: #fafafa; font-weight: 500; }
+        /* 조항 — 2단 */
+        .contract-paper .clauses { column-count: 2; column-gap: 7mm; margin-bottom: 3mm; }
+        .contract-paper .clause-group { break-inside: avoid; margin-bottom: 2.6mm; }
+        .contract-paper .clause-h { font-size: 10.5pt; font-weight: 700; letter-spacing: -.01em; margin-bottom: 1.6mm; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); line-height: 1.2; }
+        .contract-paper .clause-list { list-style: none; margin: 0; padding: 0; }
+        .contract-paper .clause-list li { font-size: 8.7pt; line-height: 1.42; color: var(--p-ink); padding-left: 3mm; text-indent: -3mm; margin-bottom: 0.8mm; word-break: keep-all; }
+        .contract-paper .clause-list li::before { content: "·"; color: var(--p-muted); margin-right: 1.5mm; }
+        .contract-paper .clause-list li .hl { color: var(--p-tc); font-weight: 600; }
 
-        .emergency-note {
-          margin: 10px 0 6px;
-          padding-left: 36pt;
-          font-size: 9pt;
-        }
-        .emergency-input-screen input {
-          padding: 2px 8px; font-size: 9pt; border: 1px dashed #999; border-radius: 4px; min-width: 240px;
-        }
+        /* 서약 */
+        .contract-paper .pledge { border: 0.6pt solid var(--p-rule-strong); background: var(--p-amt-bg); padding: 3mm 5mm; font-size: 9.5pt; font-weight: 500; line-height: 1.45; text-align: center; margin-bottom: 4.5mm; break-inside: avoid; }
+        .contract-paper .pledge-edit { width: 100%; padding: 3mm 5mm; border: 1px solid #d6cdbb; border-radius: 6px; text-align: center; font-size: 9.5pt; font-weight: 500; margin-bottom: 4.5mm; background: #fffaf2; font-family: inherit; }
 
-        .sections { margin-top: 8pt; }
-        .section { margin-bottom: 9pt; }
-        /* 소제목 — 왼쪽 끝에 붙여서 위계가 한눈에 보이게 */
-        .section-title { margin: 0 0 3pt 0; font-weight: 700; font-size: 9pt; }
-        /* 항목 — 소제목 아래로 들여쓰기. text-indent: -10pt 로 hanging indent →
-           '-' 글머리는 약간 왼쪽으로 튀어나오고, 줄바꿈된 본문은 들여쓴 위치에 맞춰 정렬 */
-        .section-item {
-          margin: 0 0 1pt 0;
-          padding-left: 14pt;
-          text-indent: -10pt;
-          font-size: 9pt;
-          white-space: pre-line;
-        }
+        /* 서명 */
+        .contract-paper .sign-wrap { margin-top: auto; }
+        .contract-paper .sign-date { text-align: center; font-size: 11pt; font-weight: 600; letter-spacing: .04em; margin-bottom: 3mm; }
+        .contract-paper .sign-grid { display: flex; justify-content: space-between; gap: 14mm; margin-bottom: 4mm; }
+        .contract-paper .sign-col { flex: 1; min-width: 0; }
+        .contract-paper .sign-role { font-size: 8.5pt; color: var(--p-muted); margin-bottom: 3mm; letter-spacing: .06em; }
+        .contract-paper .sign-line { display: flex; align-items: center; gap: 3mm; font-size: 10pt; border-bottom: 0.5pt solid var(--p-rule); padding-bottom: 2mm; min-height: 13mm; }
+        .contract-paper .sign-line .lbl { color: var(--p-muted); font-size: 8.5pt; flex-shrink: 0; white-space: nowrap; }
+        .contract-paper .sign-line .val { font-weight: 500; letter-spacing: .04em; white-space: nowrap; }
+        .contract-paper .signame-input input { padding: 0 2px; font-size: 10pt; border: 0; border-bottom: 1px dashed #b9ac9a; width: 6em; text-align: center; font-weight: 500; background: transparent; color: var(--p-ink); font-family: inherit; }
+        .contract-paper .sign-img { height: 11mm; width: auto; max-width: 42mm; object-fit: contain; }
+        .contract-paper .seal-wrap { margin-left: auto; position: relative; display: inline-flex; align-items: center; justify-content: center; }
+        .contract-paper .seal-mark { font-size: 9.5pt; color: var(--p-muted); white-space: nowrap; }
+        .contract-paper .seal-stamp { height: 15mm; width: auto; max-width: 22mm; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .contract-paper .signature-clear { margin-left: 4px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid #d6cdbb; background: #fff; color: #6b6258; font-size: 11px; cursor: pointer; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+        .contract-paper .signature-clear:hover { color: #c4452b; border-color: #f3c8b5; }
 
-        /* 편집 모드 */
-        .section-edit {
-          border: 1px dashed #d6cdbb;
-          border-radius: 8px;
-          padding: 8px;
-          margin-bottom: 10px;
-          background: #fffaf2;
-        }
-        .section-edit-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
-        .section-edit-title {
-          flex: 1; padding: 4px 8px; border: 1px solid #d6cdbb; border-radius: 6px;
-          font-size: 9pt; font-weight: 700; background: #fff;
-        }
-        .section-edit-btn {
-          padding: 3px 8px; font-size: 11px; border: 1px solid #d6cdbb; border-radius: 6px;
-          background: #fff; cursor: pointer; color: #6b6258;
-        }
-        .section-edit-btn:disabled { opacity: 0.3; }
-        .section-edit-btn-danger { color: #c4452b; border-color: #f3c8b5; }
-        .section-edit-textarea {
-          width: 100%; min-height: 80px; padding: 6px 8px; border: 1px solid #d6cdbb;
-          border-radius: 6px; font-size: 9pt; font-family: inherit; line-height: 1.5;
-          background: #fff; resize: vertical;
-        }
-        .section-add-btn {
-          width: 100%; padding: 8px; border: 1px dashed #e84a1a; color: #e84a1a;
-          background: transparent; border-radius: 8px; font-size: 12px; cursor: pointer;
-          margin-top: 6px;
-        }
-        .oath-edit {
-          width: 100%; max-width: 480px; padding: 4px 10px;
-          border: 1px solid #d6cdbb; border-radius: 6px; text-align: center;
-          font-size: 9pt; font-weight: 700; margin: 0 0 6pt;
-        }
+        /* 푸터 */
+        .contract-paper .doc-footer { border-top: 0.6pt solid var(--p-rule); padding-top: 3mm; margin-top: 4mm; display: flex; justify-content: space-between; align-items: flex-end; gap: 6mm; }
+        .contract-paper .foot-biz { font-size: 8pt; color: var(--p-muted); line-height: 1.55; }
+        .contract-paper .foot-biz .nm { color: var(--p-ink); font-weight: 600; }
+        .contract-paper .wordmark { font-size: 8pt; color: var(--p-muted); white-space: nowrap; }
+        .contract-paper .wordmark .wm { font-weight: 600; }
+        .contract-paper .wordmark .wm-stay { color: var(--p-ink); }
+        .contract-paper .wordmark .wm-eum { color: var(--p-tc); }
 
-        .oath { margin-top: 12pt; text-align: center; }
-        .oath-text { font-weight: 700; font-size: 9pt; margin: 0 0 6pt; }
-        .signature-row {
-          display: inline-flex; align-items: center; gap: 10px;
-          font-weight: 700; font-size: 9pt;
-        }
-        .signature-name input {
-          padding: 0 4px; font-size: 9pt; border: 0;
-          width: 6em; text-align: center;
-        }
-        .signature-image-wrap {
-          display: inline-flex; align-items: center; position: relative;
-          padding: 0 4px;
-        }
-        .signature-image {
-          height: 11mm; width: auto; max-width: 50mm;
-          object-fit: contain;
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
-        .signature-clear {
-          margin-left: 4px; width: 18px; height: 18px;
-          border-radius: 50%; border: 1px solid #d6cdbb; background: #fff;
-          color: #6b6258; font-size: 11px; cursor: pointer; line-height: 1;
-          display: inline-flex; align-items: center; justify-content: center;
-        }
-        .signature-clear:hover { color: #c4452b; border-color: #f3c8b5; }
         .only-print { display: none; }
 
-        .business-block {
-          margin-top: 14pt;
-          font-size: 9pt;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6mm;
-          flex-wrap: nowrap;
-        }
-        .business-info { text-align: center; flex: 0 1 auto; min-width: 0; }
-        .business-line { margin-bottom: 2pt; white-space: normal; }
-        .business-stamp {
-          flex: 0 0 auto;
-          width: 14mm;
-          height: 14mm;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .business-stamp-image {
-          max-width: 100%;
-          max-height: 100%;
-          width: auto;
-          height: auto;
-          object-fit: contain;
-          /* 인쇄·PDF에서도 도장 색이 빠지지 않도록 강제 */
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
-        .business-stamp-marker { font-weight: 600; }
+        /* 편집 모드 */
+        .contract-paper .clauses-edit { margin-bottom: 4mm; }
+        .contract-paper .section-edit { border: 1px dashed #d6cdbb; border-radius: 8px; padding: 8px; margin-bottom: 10px; background: #fffaf2; }
+        .contract-paper .section-edit-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+        .contract-paper .section-edit-title { flex: 1; padding: 4px 8px; border: 1px solid #d6cdbb; border-radius: 6px; font-size: 9.5pt; font-weight: 700; background: #fff; font-family: inherit; }
+        .contract-paper .section-edit-btn { padding: 3px 8px; font-size: 11px; border: 1px solid #d6cdbb; border-radius: 6px; background: #fff; cursor: pointer; color: #6b6258; }
+        .contract-paper .section-edit-btn:disabled { opacity: 0.3; }
+        .contract-paper .section-edit-btn-danger { color: #c4452b; border-color: #f3c8b5; }
+        .contract-paper .section-edit-textarea { width: 100%; min-height: 80px; padding: 6px 8px; border: 1px solid #d6cdbb; border-radius: 6px; font-size: 9.5pt; font-family: inherit; line-height: 1.5; background: #fff; resize: vertical; }
+        .contract-paper .section-add-btn { width: 100%; padding: 8px; border: 1px dashed #a03c2e; color: #a03c2e; background: transparent; border-radius: 8px; font-size: 12px; cursor: pointer; }
 
         /* ── 서명 모달 ──────────────────────────────────────────── */
-        .sig-overlay {
-          position: fixed; inset: 0; z-index: 100;
-          background: rgba(0,0,0,0.55);
-          display: flex; align-items: center; justify-content: center;
-          padding: 16px;
-        }
-        .sig-modal {
-          width: 100%; max-width: 640px;
-          background: #fff; border-radius: 16px; padding: 18px 18px 16px;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-          display: flex; flex-direction: column; gap: 14px;
-        }
+        .sig-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 16px; }
+        .sig-modal { width: 100%; max-width: 640px; background: #fff; border-radius: 16px; padding: 18px 18px 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 14px; }
         .sig-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
         .sig-title { font-size: 15px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
         .sig-sub { font-size: 12px; color: #6b6258; line-height: 1.5; }
         .sig-close { width: 32px; height: 32px; border: 0; background: transparent; color: #6b6258; font-size: 18px; cursor: pointer; border-radius: 8px; }
         .sig-close:hover { background: #f3eee5; }
-        .sig-canvas-wrap {
-          position: relative; width: 100%; aspect-ratio: 16 / 7;
-          background: #fbf6ee; border: 1px dashed #d6cdbb; border-radius: 12px;
-          touch-action: none; /* 모바일에서 스크롤로 가로채지 않도록 */
-        }
+        .sig-canvas-wrap { position: relative; width: 100%; aspect-ratio: 16 / 7; background: #fbf6ee; border: 1px dashed #d6cdbb; border-radius: 12px; touch-action: none; }
         .sig-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
-        .sig-baseline {
-          position: absolute; left: 12%; right: 12%; bottom: 22%;
-          border-top: 1px dashed #d6cdbb; pointer-events: none;
-        }
+        .sig-baseline { position: absolute; left: 12%; right: 12%; bottom: 22%; border-top: 1px dashed #d6cdbb; pointer-events: none; }
         .sig-actions { display: flex; align-items: center; gap: 8px; }
 
         /* ── 인쇄 전용 ─────────────────────────────────────────── */
-        /* iPad/iOS Safari 호환을 위해 @page margin 을 작게 (Safari가 자체 마진을
-           추가하더라도 1장 안에 들어가도록). 데스크톱 브라우저는 @page margin 그대로 따름. */
-        @page {
-          size: A4;
-          /* 상단 16mm: 브라우저 머리말 옵션 흡수
-             우측 18mm: 표 우측 테두리/콘텐츠가 프린터 비인쇄 영역에 살짝 걸리는
-                       문제 방지 (대부분 가정용 프린터 우측 비인쇄 ~5mm)
-             하단 12mm: 꼬리말 흡수
-             좌측 14mm: 표 좌측은 cell padding 으로 어차피 여유 */
-          margin: 16mm 18mm 12mm 14mm;
-        }
+        @page { size: A4; margin: 12mm 14mm; }
         @media print {
           html, body { background: #fff; overflow: visible !important; height: auto !important; }
-          .contract-shell { padding: 0; min-height: auto; }
+          .contract-shell { padding: 0; min-height: auto; display: block !important; align-items: stretch !important; }
           .no-print { display: none !important; }
           .only-print { display: inline !important; }
-          /* 인쇄 시: cage 레이아웃 완전 우회 — display:contents 로 cage box 제거.
-             contract-paper 가 contract-shell 의 직접 자식처럼 동작 → cage 의 width/height/
-             position 잔여 영향 zero */
-          .contract-shell {
-            display: block !important;
-            align-items: stretch !important;
-          }
-          .paper-cage {
-            display: contents !important;
-          }
+          .paper-cage { display: contents !important; }
           .contract-paper {
-            position: static !important;
-            top: auto !important;
-            left: auto !important;
-            right: auto !important;
-            bottom: auto !important;
-            transform: none !important;
-            transform-origin: 0 0 !important;
-            box-shadow: none;
-            width: 100% !important;            /* @page 콘텐츠 영역 전체 사용 */
-            max-width: 100% !important;
-            min-height: 0 !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            /* 루트 인쇄 요소엔 page-break-inside/after: avoid 를 걸지 않는다.
-               내용이 1장을 넘으면 일부 브라우저(Safari)가 넘치는 부분을 '상단부터'
-               잘라내 제목이 사라짐(507·509호 등 내용 긴 계약). 페이지 분할은
-               아래 내부 블록(.section·.info-table·.oath 등)의 avoid 로만 제어한다. */
-            font-size: 8pt;
-            line-height: 1.32;
+            position: static !important; transform: none !important; transform-origin: 0 0 !important;
+            box-shadow: none; width: 100% !important; max-width: 100% !important;
+            min-height: 0 !important; padding: 0 !important; margin: 0 !important;
           }
-          /* 헤더 — grid 레이아웃 유지 (로고 좌측, 제목 중앙). cage 우회 후엔 안전 */
-          .contract-header { margin-bottom: 4pt !important; }
-          .contract-header-logo { height: 10mm !important; }
-          .contract-logo-img { max-height: 10mm !important; }
-          .contract-title { font-size: 12pt !important; margin: 0 !important; }
-          .sections { margin-top: 5pt !important; }
-          .section { margin-bottom: 6pt !important; }
-          .section-title { margin-bottom: 2pt !important; }
-          .oath { margin-top: 8pt !important; }
-          .oath-text { margin-bottom: 4pt !important; }
-          .business-block { margin-top: 8pt !important; gap: 4mm !important; }
-          .business-line { margin-bottom: 1pt !important; }
-          .made-with { margin-top: 8pt !important; }
-          .emergency-note { margin: 6px 0 4px !important; }
-          .info-table th, .info-table td { padding: 2px 6px !important; height: auto !important; }
-          /* 페이지 split 금지 — 핵심 묶음 보존 */
-          .section, .info-table, .oath, .business-block, .emergency-note { page-break-inside: avoid; }
-          .section-item { page-break-inside: avoid; }     /* 항목 한 줄이 페이지 사이로 잘리지 않게 */
-          /* 서약 → 서명 → 사업자정보 → Made with 를 한 묶음으로 보존 (2장 가도 마지막에 같이 감) */
-          .oath { page-break-after: avoid !important; }
-          .business-block { page-break-before: avoid !important; page-break-after: avoid !important; }
-          .made-with { page-break-before: avoid !important; page-break-inside: avoid !important; }
-          /* 단락 widow/orphan — 페이지 끝/시작 최소 2줄 보장 */
+          /* 페이지 split 보호 */
+          .contract-paper .info, .contract-paper .emerg, .contract-paper .clause-group,
+          .contract-paper .pledge, .contract-paper .sign-wrap, .contract-paper .doc-footer { page-break-inside: avoid; }
+          .contract-paper .doc-footer { page-break-before: avoid; }
           body { widows: 2; orphans: 2; }
-          /* 도장·로고 — 인쇄에서도 색상 그대로 */
-          .business-stamp-image, .contract-logo-img, .signature-image, img {
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
+          .seal-stamp, .sign-img, .biz-logo img, img { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
       `}</style>
     </div>

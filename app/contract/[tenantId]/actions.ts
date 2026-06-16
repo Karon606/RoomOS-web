@@ -17,6 +17,7 @@ export type ContractData = {
   template: ContractTemplate           // 입실자 오버라이드 우선, 없으면 영업장 공통
   hasOverride: boolean                 // 오버라이드 사용 여부 — '원본으로' 버튼 활성화 판단용
   businessInfo: BusinessInfo
+  phone: string | null                 // 영업장 전화 — §20 헤더/푸터 메타
   stampImageUrl: string | null         // 인쇄에 쓰일 큰 사이즈
   logoImageUrl: string | null          // 영업장 로고 (헤더 좌측)
   tenant: {
@@ -79,6 +80,7 @@ export async function getContractData(tenantId: string): Promise<ContractData | 
       select: {
         contractTemplate: true, businessInfo: true,
         stampDriveFileId: true, logoDriveFileId: true,
+        phone: true,
       },
     }),
   ])
@@ -106,6 +108,7 @@ export async function getContractData(tenantId: string): Promise<ContractData | 
     template,
     hasOverride: !!override,
     businessInfo: (property?.businessInfo as BusinessInfo | null) ?? EMPTY_BUSINESS_INFO,
+    phone: property?.phone ?? null,
     // 도장은 인쇄 품질 기준 큰 사이즈 (= width 800px) 썸네일을 받아 max 24mm 슬롯에 object-fit:contain
     stampImageUrl: property?.stampDriveFileId ? buildDriveThumbnailUrl(property.stampDriveFileId, 800) : null,
     // 로고는 헤더 좌측 14mm 높이 슬롯 — 인쇄 화질 위해 width 600px 썸네일

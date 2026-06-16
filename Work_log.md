@@ -178,6 +178,13 @@ Claude Design 의뢰([docs/design-brief-v1.3-request.md](docs/design-brief-v1.3-
 - **모달·네비(`e289e69`)**: 알림벨 같은 페이지 무반응(push+refresh). 페이지 이동 시 전역 모달 정리(뒤로가기 잔존·스크롤 점프). openCheckoutProration 시드 1회성. 공용 Modal Esc 닫기(중첩 시 최상단만). useUrlState 스테일 params 레이스. accrual-check 귀속월 이동 revalidate.
 - **보류(다음 작업 후보)**: ① [미납][퇴실 예정] 2뱃지 C안을 호실관리·대시보드 방현황에 확산(수납 상태 데이터 파이프 필요) ② 대시보드 상태색 hex → StatusBadge 토큰 통일(차트 연동 검토) ③ 이종현 락인 교정 실행 여부 ④ 감사 보고서의 나머지 low 항목.
 
+## 2026-06-10 (이어서) — 계약서 화면/인쇄(ContractView)도 §20로 통일 [main 배포, SQL 불필요]
+배포 후 사용자: "예전 양식으로 나오는데?" → 원인: 계약서 출력 경로가 **둘**. PDF '발급'(=contractPrintHtml, §20 적용됨)과 **화면+'인쇄' 버튼(=ContractView.tsx, 옛 양식 그대로)**. 1차엔 PDF만 바꿔서 화면/인쇄는 옛날 그대로였음.
+- **[ContractView.tsx](app/contract/[tenantId]/ContractView.tsx) 전면 §20 재작성**: contractPrintHtml 과 동일 클래스·토큰(`--p-*`, doc-header/tc-rule/info/emerg/clauses 2단/pledge/sign-grid/doc-footer/wordmark). 편집(섹션 인라인·서약 input)·서명패드·흡연·비상연락 입력·모바일 scale·인쇄 CSS 전부 보존. 조항 항목 `renderClauseItem`(글머리 제거 + **강조**→hl).
+- **화면엔 계약번호 미표시**(발급 시 부여) — 작성일만. 발급 PDF는 계약번호 포함.
+- [actions.ts](app/contract/[tenantId]/actions.ts) ContractData에 `phone` 추가(헤더/푸터 메타, property.phone).
+- 결과: **화면·인쇄·발급 PDF 3경로 모두 동일한 §20 디자인**. tsc·build 통과. ⚠️ 화면 React 렌더라 로컬 정적검증 불가 → 배포 후 화면+인쇄 육안확인 필요.
+
 ## 2026-06-10 — 계약서 인쇄 템플릿 §20 전면 재디자인 (이전 세션 미완 → 마무리·배포) [main 배포, SQL 불필요]
 이전 세션에 `lib/contractPrintHtml.ts`(§20 A4 디자인)·`docs/brand-guide-v1.3.md`(§20 390줄) 작업하다 **호출부 미연결로 빌드 실패 상태로 멈춰 미커밋**이던 것을 마무리.
 - **블로커 해소**: 새 `PrintContractData`가 요구하는 `phone`·`contractNo`를 [route.ts](app/api/contract/generate/route.ts)가 미공급 → 타입에러. `phone=property.phone`, `contractNo=YYYYMMDD(signDate)-NNN`(=ContractFile 건수+1, 입실료확인서 §20.8 동일 패턴) 공급.
