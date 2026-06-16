@@ -4,7 +4,6 @@
 // 방별/미배정(여분)으로 보여주고, 미배정 아이템을 방에 배정하면 그 호실 지출로 넘어간다.
 
 import { useState, useTransition } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { pushToast } from '@/lib/saveStatus'
@@ -64,9 +63,14 @@ export default function AssetsClient({ data, rooms }: { data: AssetsData; rooms:
 
   return (
     <div className="space-y-5 px-4 sm:px-6 py-5">
+      {/* 동일 레벨 탭 — 소모품·부식 / 비품·자재(현재) */}
+      <div className="inline-flex rounded-xl border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
+        <button type="button" onClick={() => router.push('/inventory')}
+          className="px-4 py-2 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">소모품·부식</button>
+        <button type="button" className="px-4 py-2 bg-[var(--coral)] text-white">비품·자재</button>
+      </div>
       <div>
-        <Link href="/inventory" className="text-xs text-[var(--coral)]">← 재고 관리</Link>
-        <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)] mt-1">비품·자재</h1>
+        <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재</h1>
         <p className="text-xs text-[var(--warm-muted)] mt-0.5">
           품목으로 산 내구재(의자·거치대·수선유지 자재 등)를 방별로 모아 봅니다. 여분으로 둔 미배정 항목은 나중에 방에 배정하면 그 호실 지출로 넘어갑니다.
         </p>

@@ -201,6 +201,13 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
 
   return (
     <div className="space-y-4 px-4 sm:px-6 py-5">
+      {/* 동일 레벨 탭 — 소모품·부식(기본) / 비품·자재 */}
+      <div className="inline-flex rounded-xl border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
+        <button type="button"
+          className="px-4 py-2 bg-[var(--coral)] text-white">소모품·부식</button>
+        <button type="button" onClick={() => router.push('/inventory/assets')}
+          className="px-4 py-2 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">비품·자재</button>
+      </div>
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -224,7 +231,6 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             <Btn variant="secondary" size="sm" onClick={() => { selectMode ? exitSelectMode() : setSelectMode(true) }}>
               {selectMode ? `선택 취소${selected.size > 0 ? ` (${selected.size})` : ''}` : '선택'}
             </Btn>
-            <Btn variant="secondary" size="sm" onClick={() => router.push('/inventory/assets')}>비품·자재</Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowLocations(true)}>위치 관리</Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowExcluded(true)}>
               숨김 품목{archivedCount > 0 ? ` (${archivedCount})` : ''}
