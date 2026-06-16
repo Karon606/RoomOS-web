@@ -224,6 +224,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             <Btn variant="secondary" size="sm" onClick={() => { selectMode ? exitSelectMode() : setSelectMode(true) }}>
               {selectMode ? `선택 취소${selected.size > 0 ? ` (${selected.size})` : ''}` : '선택'}
             </Btn>
+            <Btn variant="secondary" size="sm" onClick={() => router.push('/inventory/assets')}>비품·자재</Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowLocations(true)}>위치 관리</Btn>
             <Btn variant="secondary" size="sm" onClick={() => setShowExcluded(true)}>
               숨김 품목{archivedCount > 0 ? ` (${archivedCount})` : ''}
