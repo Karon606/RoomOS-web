@@ -15,15 +15,16 @@ const fmtDot = (d: string) => {
   return `${y}. ${Number(m)}. ${Number(dd)}`
 }
 
-type Fields = { nameRoom: string; period: string; amount: string; recipientName: string; recipientPhone: string }
+type Fields = { name: string; room: string; period: string; amount: string; recipientName: string; recipientPhone: string }
 
 function buildInitial(data: RentReceiptData): Fields {
   const start = fmtDot(data.periodStart)
-  const end = fmtDot(data.periodEnd || kstYmdStr())
+  const end = fmtDot(data.periodEnd)
   return {
-    nameRoom: data.nameRoom,
+    name: data.name,
+    room: data.room,
     period: start ? `${start} ~ ${end}` : end,
-    amount: data.amount ? `${data.amount.toLocaleString()} 원` : '',
+    amount: data.amount ? data.amount.toLocaleString() : '',
     recipientName: data.recipientName,
     recipientPhone: data.recipientPhone,
   }
@@ -109,7 +110,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
 
         <div>
           <h1 className="text-lg font-bold text-[var(--warm-dark)]">월세 영수증 작성</h1>
-          <p className="text-xs text-[var(--warm-muted)] mt-0.5">외국인등록증 신청용. 자동으로 채워진 값을 확인·수정한 뒤 발급하세요.</p>
+          <p className="text-xs text-[var(--warm-muted)] mt-0.5">자동으로 채워진 값을 확인·수정한 뒤 발급하세요. 영업장명·로고·사업자정보는 자동으로 들어갑니다.</p>
         </div>
 
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 space-y-3">
@@ -117,9 +118,12 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
             <label className="text-xs font-medium text-[var(--warm-mid)]">발행일</label>
             <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className={inputCls} />
           </div>
-          <Field label="이름 (호실)" k="nameRoom" placeholder="홍길동 (501호)" />
-          <Field label="거주 기간" k="period" placeholder="2024. 8. 13 ~ 2026. 6. 15" />
-          <Field label="금액 (월세)" k="amount" placeholder="390,000 원" />
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="성명" k="name" placeholder="홍길동" />
+            <Field label="호실" k="room" placeholder="501호" />
+          </div>
+          <Field label="거주 기간 (1달 선납)" k="period" placeholder="2026. 6. 5 ~ 2026. 7. 4" />
+          <Field label="금액 (월세, 원)" k="amount" placeholder="390,000" />
           <Field label="수령인 이름 / 서명 (거주제공자)" k="recipientName" placeholder="김건우" />
           <Field label="수령인 연락처 (전화번호)" k="recipientPhone" placeholder="010-0000-0000" />
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">수령인 서명란엔 환경설정에 등록된 도장이 자동으로 들어갑니다.</p>

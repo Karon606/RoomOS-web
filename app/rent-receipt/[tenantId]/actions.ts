@@ -10,13 +10,31 @@ import { buildDriveThumbnailUrl } from '@/lib/google-drive'
 export type RentReceiptData = {
   tenantId: string
   leaseTermId: string | null
-  nameRoom: string        // 이름 (호실)
-  periodStart: string     // YYYY-MM-DD
-  periodEnd: string       // YYYY-MM-DD
+  name: string            // 성명
+  room: string            // 호실
+  periodStart: string     // YYYY-MM-DD (이번 1달 선납 주기 시작)
+  periodEnd: string       // YYYY-MM-DD (주기 끝)
   amount: number          // 월세
   recipientName: string   // 거주제공자(임대인) 성명
   recipientPhone: string  // 거주제공자 연락처
   stampImageUrl: string | null
+}
+
+// 월세 1달 선납 주기 — 납부일(dueDay) 기준(없으면 입주일의 일). 예) dueDay 5 → 6/5~7/4.
+function rentCyclePeriod(dueDay: string | null, moveIn: Date | null): { start: string; end: string } {
+  let day = parseInt((dueDay ?? '').replace(/[^0-9]/g, ''), 10)
+  if (!Number.isFinite(day) || day < 1 || day > 31) day = moveIn ? new Date(moveIn).getUTCDate() : 1
+  const now = new Date(Date.now() + 9 * 3600 * 1000) // KST
+  const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate()
+  const daysIn = (yy: number, mm: number) => new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate()
+  let sy = y, sm = m
+  if (d < Math.min(day, daysIn(y, m))) { sm = m - 1; if (sm < 0) { sm = 11; sy = y - 1 } }
+  const start = new Date(Date.UTC(sy, sm, Math.min(day, daysIn(sy, sm))))
+  let ny = sy, nm = sm + 1; if (nm > 11) { nm = 0; ny = sy + 1 }
+  const nextStart = new Date(Date.UTC(ny, nm, Math.min(day, daysIn(ny, nm))))
+  const end = new Date(nextStart.getTime() - 86400000)
+  const fmt = (dt: Date) => dt.toISOString().slice(0, 10)
+  return { start: fmt(start), end: fmt(end) }
 }
 
 type BusinessInfo = { name?: string; registrationNo?: string; ceoName?: string; address?: string }
@@ -31,7 +49,6 @@ async function requireAuthAndProperty() {
   return { userId: user.id, propertyId }
 }
 
-const ymd = (d: Date | null | undefined) => d ? new Date(d).toISOString().slice(0, 10) : ''
 const fmtRoom = (v: string | null | undefined) => v ? (/^\d+$/.test(v.trim()) ? `${v.trim()}호` : v) : ''
 
 export async function getRentReceiptData(tenantId: string): Promise<RentReceiptData | null> {
@@ -59,15 +76,15 @@ export async function getRentReceiptData(tenantId: string): Promise<RentReceiptD
 
   const lease = tenant.leaseTerms[0] ?? null
   const biz = (property?.businessInfo as BusinessInfo | null) ?? {}
-  const roomLabel = fmtRoom(lease?.room?.roomNo)
-  const nameRoom = roomLabel ? `${tenant.name} (${roomLabel})` : tenant.name
+  const cycle = rentCyclePeriod(lease?.dueDay ?? null, lease?.moveInDate ?? null)
 
   return {
     tenantId: tenant.id,
     leaseTermId: lease?.id ?? null,
-    nameRoom,
-    periodStart: ymd(lease?.moveInDate),
-    periodEnd: ymd(lease?.expectedMoveOut),
+    name: tenant.name,
+    room: fmtRoom(lease?.room?.roomNo),
+    periodStart: cycle.start,
+    periodEnd: cycle.end,
     amount: lease?.rentAmount ?? 0,
     recipientName: biz.ceoName ?? '',
     recipientPhone: property?.phone ?? '',

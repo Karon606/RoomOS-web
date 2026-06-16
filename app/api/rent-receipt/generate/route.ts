@@ -32,17 +32,27 @@ export async function POST(req: Request) {
 
     const [tenant, property] = await Promise.all([
       prisma.tenant.findFirst({ where: { id: body.tenantId, propertyId }, select: { id: true, name: true } }),
-      prisma.property.findUnique({ where: { id: propertyId }, select: { stampDriveFileId: true } }),
+      prisma.property.findUnique({ where: { id: propertyId }, select: { name: true, phone: true, businessInfo: true, stampDriveFileId: true, logoDriveFileId: true } }),
     ])
     if (!tenant) return NextResponse.json({ ok: false, error: '입실자를 찾을 수 없습니다.' }, { status: 404 })
 
     let stampBytes: Uint8Array | null = null
     if (property?.stampDriveFileId) {
-      try { stampBytes = new Uint8Array(await downloadDriveBytes(property.stampDriveFileId)) }
-      catch { stampBytes = null }
+      try { stampBytes = new Uint8Array(await downloadDriveBytes(property.stampDriveFileId)) } catch { stampBytes = null }
+    }
+    let logoBytes: Uint8Array | null = null
+    if (property?.logoDriveFileId) {
+      try { logoBytes = new Uint8Array(await downloadDriveBytes(property.logoDriveFileId)) } catch { logoBytes = null }
     }
 
-    const pdfBytes = await buildRentReceiptPdf(body.fields, stampBytes)
+    // 브랜드 헤더 — 영업장 사업자 정보
+    const biz = (property?.businessInfo as { name?: string; registrationNo?: string; ceoName?: string; address?: string } | null) ?? {}
+    const businessName = biz.name || property?.name || ''
+    const businessSub = [biz.address, biz.registrationNo ? `사업자 ${biz.registrationNo}` : null, property?.phone ? `T. ${property.phone}` : null].filter(Boolean).join(' · ')
+    const issueDate = body.fields.issueDate || new Date().toISOString().slice(0, 10)
+    const receiptNo = `R-${issueDate.replace(/-/g, '')}-${String(1000 + Math.floor(Math.random() * 9000))}`
+
+    const pdfBytes = await buildRentReceiptPdf(body.fields, { businessName, businessSub, receiptNo }, logoBytes, stampBytes)
 
     if (body.preview) {
       return new NextResponse(Buffer.from(pdfBytes), {
@@ -61,7 +71,6 @@ export async function POST(req: Request) {
       leaseTermId = lease?.id ?? null
     }
 
-    const issueDate = body.fields.issueDate || new Date().toISOString().slice(0, 10)
     const safeTenantName = tenant.name.replace(/[^\p{L}\p{N}_-]+/gu, '_').slice(0, 40) || 'tenant'
     const fileName = `월세영수증_${safeTenantName}_${issueDate.replace(/-/g, '')}_${Date.now()}.pdf`
     const { fileId } = await uploadToDrive(Buffer.from(pdfBytes), fileName, 'application/pdf')
