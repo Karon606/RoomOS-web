@@ -178,6 +178,15 @@ Claude Design 의뢰([docs/design-brief-v1.3-request.md](docs/design-brief-v1.3-
 - **모달·네비(`e289e69`)**: 알림벨 같은 페이지 무반응(push+refresh). 페이지 이동 시 전역 모달 정리(뒤로가기 잔존·스크롤 점프). openCheckoutProration 시드 1회성. 공용 Modal Esc 닫기(중첩 시 최상단만). useUrlState 스테일 params 레이스. accrual-check 귀속월 이동 revalidate.
 - **보류(다음 작업 후보)**: ① [미납][퇴실 예정] 2뱃지 C안을 호실관리·대시보드 방현황에 확산(수납 상태 데이터 파이프 필요) ② 대시보드 상태색 hex → StatusBadge 토큰 통일(차트 연동 검토) ③ 이종현 락인 교정 실행 여부 ④ 감사 보고서의 나머지 low 항목.
 
+## 2026-06-10 — 계약서 인쇄 템플릿 §20 전면 재디자인 (이전 세션 미완 → 마무리·배포) [main 배포, SQL 불필요]
+이전 세션에 `lib/contractPrintHtml.ts`(§20 A4 디자인)·`docs/brand-guide-v1.3.md`(§20 390줄) 작업하다 **호출부 미연결로 빌드 실패 상태로 멈춰 미커밋**이던 것을 마무리.
+- **블로커 해소**: 새 `PrintContractData`가 요구하는 `phone`·`contractNo`를 [route.ts](app/api/contract/generate/route.ts)가 미공급 → 타입에러. `phone=property.phone`, `contractNo=YYYYMMDD(signDate)-NNN`(=ContractFile 건수+1, 입실료확인서 §20.8 동일 패턴) 공급.
+- **이중번호 수정**: 실제 섹션 제목이 이미 `"1. 입실 계약"`이라, 레퍼런스 mock의 자동번호(`i+1 ·`)를 넣으면 `"1 · 1. ..."` → 자동번호 제거(제목 그대로).
+- **A4 페이지 정책(§20.10b)**: 계약서는 **다중 페이지** 서류(조항 적으면 1p). 기본 템플릿=2p 실측. → route에 **2-pass 렌더**: 1차 페이지수 판정 → **2장 이상일 때만** 꼬리말(좌 `1/2` 페이지번호 §20.9 + 우 영업장명 §20.10b). 단일 페이지는 페이지번호 생략. @sparticuz chromium 한글폰트 없어 **꼬리말에도 Pretendard base64 임베드**.
+- **디자인**: §20 레퍼런스(`stayeum 입실계약서 템플릿.html`) 그대로 — 헤더(로고·사업자정보·계약번호/작성일)·테라코타 룰·정보표(국/영 라벨 4열)·2단 조항(column-count:2)·서약 박스·서명(임차인/임대인·서명img·도장)·푸터 워드마크(stay**eum**). 인쇄전용 토큰 `--p-*`.
+- **유지(사용자 지시)**: 입력 구조(환경설정 `template.sections`/`oathText`) + 출력 파이프라인(puppeteer→PDF→Drive→ContractFile) 그대로. 데이터 2필드·2-pass만 보강.
+- **검증**: 시스템 Chrome puppeteer 로 2-pass·꼬리말 실렌더(최종 2p PDF). tsc·build(타입체크 포함) 통과. ⚠️배포 후 실입주자 1명 발급해 꼬리말 페이지번호·한글 정상 최종확인 권장.
+
 ## 2026-06-10 — 퇴실 일할 정산 (퇴실일 세팅 → 마지막 달 청구 일할) [main 배포·SQL 적용·검증 완료]
 **커밋**: `4ef9676`(코어) · `a727252`(뱃지 B안) · `3dcc2f2`(뱃지 C안) · `4b1d420`(고객관리 팝업) · `46b4186`(팝업 트리거 +1달). 모두 main 푸시·Vercel 배포됨. `migrate_checkout_proration.sql` Supabase 적용 완료(사용자 확인). 서민준 실데이터 검증 완료.
 사용자 사례: 418호 서민준(납부일 매월 8일, 선납). 6/8 미납 상태에서 6월말 퇴실 통보 → 선납 시스템이라 "퇴실 날짜에 맞춰 일할만 납부"하겠다는 케이스. 6/26 퇴실이면 6/8~6/26 = **19일치**만 청구. 앱엔 납부일 변경(일할)은 있어도 **퇴실일로 인한 청구액 변경**이 없었음.
