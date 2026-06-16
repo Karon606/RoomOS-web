@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
   // (Vercel의 var/task/node_modules/@sparticuz/chromium/bin 위치에 chromium 바이너리 배치 보장)
   outputFileTracingIncludes: {
     '/api/contract/generate': ['./node_modules/@sparticuz/chromium/**/*'],
+    // 입실료 납부 확인서 PDF — Pretendard TTF를 서버리스 함수 번들에 포함
+    '/api/rent-receipt/generate': ['./public/fonts/**'],
   },
   experimental: {
     serverActions: {

@@ -62,6 +62,15 @@ CREATE INDEX "residence_cert_files_propertyId_createdAt_idx" ON residence_cert_f
 ### 후속 — 입주자 이메일 필드 [⚠️ SQL 1건 적용 후 배포]
 입주자 정보에 이메일이 없어 추가. `Tenant.email String?` 신설(ContactType enum엔 EMAIL 없어 전용 필드가 깔끔). 고객 폼 연락처 섹션에 이메일 입력칸(type=email), createTenant·updateTenant 저장, getTenantDetail select 에 email 추가, TenantBasicInfo 표시(있을 때만). getTenants 는 include 라 자동 포함. **SQL**: `ALTER TABLE tenants ADD COLUMN email TEXT;`
 
+## 2026-06-17 — 입실료 납부 확인서: Claude Design A5 시안 + Pretendard 폰트 적용
+시안(HTML) 그대로 레이아웃 정밀화(제목 좌측·헤더 2줄·납부금액 박스·확인문구·서명/도장·님 제거).
+**폰트 Pretendard 적용** — public/fonts/Pretendard-Regular/Bold.ttf 임베드(진짜 Bold, faux-bold 제거).
+교훈/주의(다음에 폰트 추가 시):
+- Pretendard 표준 .otf(CFF)는 pdf-lib 임베드 불가 → otf2ttf 모듈(`from otf2ttf import main`)로 TTF 변환.
+- 변환 직후 하이픈/물결 폭이 깨짐(계좌·전화 `123- 45- 67890`). 원인=post format2의 `cidXXXX` 글리프명을 pdf-lib이 CID 폰트로 오인. **해결=fontTools로 GSUB/GPOS/GDEF 삭제 + post.formatType=3.0** 후 저장.
+- 검증은 qlmanage(QuickLook) 부정확 → **pdfjs-dist + @napi-rs/canvas**(브라우저와 동일 엔진)로 렌더해 확인.
+- next.config outputFileTracingIncludes에 `/api/rent-receipt/generate: ['./public/fonts/**']` 추가해야 Vercel 함수에 폰트 포함됨.
+
 ## 2026-06-16 (이어서) — 월세 영수증 §20 전면 반영 + 계좌번호 [⚠️ SQL: properties.bankAccount]
 브랜드 가이드 §20(인쇄 서류) 신설 반영. 영수증을 §20.10(a) 입실료 납부확인서 스펙으로 재작성:
 **A5 세로** + 인쇄전용 토큰(--p-*: ink/muted/tc/label-bg/rule). 헤더(로고12mm+영업장명+사업자등록번호·대표+주소·전화 + No.·발행일 + 테라코타 룰 1.6pt) · 제목 · 키값표1(성명/호실/거주기간/납부대상월) · 금액박스(영수금액 라벨 + 한글병기 '금 ○○원정' + ₩ 우측 14pt 테라코타) · 키값표2(납부일/납부방법/비고) · 영수확인문구 · 서명(임대인 대표 ○○○)+도장(이름 좌측·도장 우측 비간섭) · made with stayeum 워드마크.

@@ -1,9 +1,15 @@
 // 입실료 납부 확인서 — 브랜드 가이드 §20 + Claude Design A5 시안 반영.
 // A5 세로, 인쇄전용 토큰(--p-*). pdf-lib 직접 그림.
-// 폰트: §20.1 표준은 Pretendard TTF 이나 정적 TTF 미가용(LFS) → 폴백 나눔고딕(§20.1 폴백).
+// 폰트(§20.1): Pretendard(public/fonts) Regular+Bold 임베드.
+//   ※ 표준 .otf(CFF)는 pdf-lib 임베드 불가 → otf2ttf로 TTF 변환 후
+//     post를 format3(글리프명 제거)+GSUB/GPOS 제거로 정리해야 함.
+//     (cidXXXX 글리프명이 남으면 pdf-lib이 CID 폰트로 오인해 하이픈/물결 폭이 깨짐)
+//   읽기 실패 시 나눔고딕(§20.1 폴백) + faux-bold.
 
-import { PDFDocument, rgb } from 'pdf-lib'
+import { PDFDocument, rgb, type PDFFont } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
+import path from 'path'
+import { readFile } from 'fs/promises'
 import { getNanumGothic } from './residenceCertOverlay'
 
 export type RentReceiptFields = {
@@ -61,18 +67,31 @@ export async function buildRentReceiptPdf(
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
   doc.registerFontkit(fontkit)
-  const font = await doc.embedFont(await getNanumGothic())
+  let fontR: PDFFont, fontB: PDFFont, faux = false
+  try {
+    const dir = path.join(process.cwd(), 'public', 'fonts')
+    const [rb, bb] = await Promise.all([
+      readFile(path.join(dir, 'Pretendard-Regular.ttf')),
+      readFile(path.join(dir, 'Pretendard-Bold.ttf')),
+    ])
+    fontR = await doc.embedFont(new Uint8Array(rb))
+    fontB = await doc.embedFont(new Uint8Array(bb))
+  } catch {
+    fontR = fontB = await doc.embedFont(await getNanumGothic())  // §20.1 폴백
+    faux = true
+  }
   const page = doc.addPage([PAGE_W, PAGE_H])
 
-  const W = (t: string, s: number) => font.widthOfTextAtSize(t || '', s)
+  const W = (t: string, s: number, b = false) => (b ? fontB : fontR).widthOfTextAtSize(t || '', s)
   const T = (t: string, x: number, y: number, s = 9.5, c = P_INK, bold = false) => {
     if (!t) return
-    page.drawText(t, { x, y, size: s, font, color: c })
-    if (bold) page.drawText(t, { x: x + 0.3, y, size: s, font, color: c })  // faux-bold (나눔고딕 단일 웨이트)
+    const fnt = bold ? fontB : fontR
+    page.drawText(t, { x, y, size: s, font: fnt, color: c })
+    if (bold && faux) page.drawText(t, { x: x + 0.3, y, size: s, font: fnt, color: c })  // 폴백일 때만 faux-bold
   }
-  const TR = (t: string, xEnd: number, y: number, s: number, c = P_INK, bold = false) => T(t, xEnd - W(t, s), y, s, c, bold)
+  const TR = (t: string, xEnd: number, y: number, s: number, c = P_INK, bold = false) => T(t, xEnd - W(t, s, bold), y, s, c, bold)
   const fit = (t: string, x: number, y: number, maxW: number, start: number, c = P_INK, bold = false) => {
-    let s = start; while (s > 7 && W(t, s) > maxW) s -= 0.5; T(t, x, y, s, c, bold)
+    let s = start; while (s > 7 && W(t, s, bold) > maxW) s -= 0.5; T(t, x, y, s, c, bold)
   }
 
   const top = PAGE_H - 12 * MM
@@ -167,8 +186,8 @@ export async function buildRentReceiptPdf(
 
   // ── 푸터 워드마크 ──
   const wmY = 9 * MM
-  const preW = W('made with ', 8), stayW = W('stay', 8)
-  const startX = R - (preW + stayW + W('eum', 8))
+  const preW = W('made with ', 8), stayW = W('stay', 8, true)
+  const startX = R - (preW + stayW + W('eum', 8, true))
   T('made with ', startX, wmY, 8, P_MUTED)
   T('stay', startX + preW, wmY, 8, P_INK, true)
   T('eum', startX + preW + stayW, wmY, 8, P_TC, true)
