@@ -184,17 +184,17 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   /* 서약 */
   .pledge { border: 0.6pt solid var(--p-rule-strong); background: var(--p-amt-bg); padding: 3mm 5mm; font-size: 9.5pt; font-weight: 500; line-height: 1.4; text-align: center; margin-bottom: 4mm; break-inside: avoid; }
 
-  /* 서명 */
+  /* 서명 — 두 칸 같은 높이로 늘여 밑줄 좌우 정렬(서명/도장으로 한쪽이 커지면 반대쪽도 따라감). 긴 이름 줄바꿈 허용. */
   .sign-wrap { margin-top: 3mm; }
   .sign-date { text-align: center; font-size: 11pt; font-weight: 600; letter-spacing: .04em; margin-bottom: 3mm; }
-  .sign-grid { display: flex; justify-content: space-between; gap: 14mm; margin-bottom: 4mm; }
-  .sign-col { flex: 1; min-width: 0; }
+  .sign-grid { display: flex; align-items: stretch; gap: 14mm; margin-bottom: 4mm; }
+  .sign-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .sign-role { font-size: 8.5pt; color: var(--p-muted); margin-bottom: 3mm; letter-spacing: .06em; }
-  .sign-line { display: flex; align-items: center; gap: 3mm; font-size: 10pt; border-bottom: 0.5pt solid var(--p-rule); padding-bottom: 2mm; min-height: 13mm; }
+  .sign-line { flex: 1; display: flex; align-items: flex-end; gap: 3mm; font-size: 10pt; border-bottom: 0.5pt solid var(--p-rule); padding-bottom: 2mm; min-height: 16mm; }
   .sign-line .lbl { color: var(--p-muted); font-size: 8.5pt; flex-shrink: 0; white-space: nowrap; }
-  .sign-line .val { font-weight: 500; letter-spacing: .04em; white-space: nowrap; }
-  .sign-img { height: 11mm; width: auto; max-width: 42mm; object-fit: contain; }
-  .seal-wrap { margin-left: auto; position: relative; display: inline-flex; align-items: center; justify-content: center; }
+  .sign-line .val { font-weight: 500; letter-spacing: .04em; flex: 1; min-width: 0; word-break: keep-all; }
+  .sign-img { height: 11mm; width: auto; max-width: 42mm; object-fit: contain; flex-shrink: 0; }
+  .seal-wrap { flex-shrink: 0; position: relative; display: inline-flex; align-items: center; justify-content: center; }
   .seal-mark { font-size: 9.5pt; color: var(--p-muted); white-space: nowrap; }
   .seal-stamp { height: 15mm; width: auto; max-width: 22mm; object-fit: contain; }
 

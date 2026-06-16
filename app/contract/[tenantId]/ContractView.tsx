@@ -649,15 +649,17 @@ export default function ContractView({ data }: { data: ContractData }) {
         /* 서명 */
         .contract-paper .sign-wrap { margin-top: auto; }
         .contract-paper .sign-date { text-align: center; font-size: 11pt; font-weight: 600; letter-spacing: .04em; margin-bottom: 3mm; }
-        .contract-paper .sign-grid { display: flex; justify-content: space-between; gap: 14mm; margin-bottom: 4mm; }
-        .contract-paper .sign-col { flex: 1; min-width: 0; }
+        /* 두 칸 같은 높이로 늘여 밑줄 좌우 정렬(서명/도장으로 한쪽이 커지면 반대쪽도 따라감). 긴 이름 줄바꿈. */
+        .contract-paper .sign-grid { display: flex; align-items: stretch; gap: 14mm; margin-bottom: 4mm; }
+        .contract-paper .sign-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
         .contract-paper .sign-role { font-size: 8.5pt; color: var(--p-muted); margin-bottom: 3mm; letter-spacing: .06em; }
-        .contract-paper .sign-line { display: flex; align-items: center; gap: 3mm; font-size: 10pt; border-bottom: 0.5pt solid var(--p-rule); padding-bottom: 2mm; min-height: 13mm; }
+        .contract-paper .sign-line { flex: 1; display: flex; align-items: flex-end; gap: 3mm; font-size: 10pt; border-bottom: 0.5pt solid var(--p-rule); padding-bottom: 2mm; min-height: 16mm; }
         .contract-paper .sign-line .lbl { color: var(--p-muted); font-size: 8.5pt; flex-shrink: 0; white-space: nowrap; }
-        .contract-paper .sign-line .val { font-weight: 500; letter-spacing: .04em; white-space: nowrap; }
-        .contract-paper .signame-input input { padding: 0 2px; font-size: 10pt; border: 0; border-bottom: 1px dashed #b9ac9a; width: 6em; text-align: center; font-weight: 500; background: transparent; color: var(--p-ink); font-family: inherit; }
-        .contract-paper .sign-img { height: 11mm; width: auto; max-width: 42mm; object-fit: contain; }
-        .contract-paper .seal-wrap { margin-left: auto; position: relative; display: inline-flex; align-items: center; justify-content: center; }
+        .contract-paper .sign-line .val { font-weight: 500; letter-spacing: .04em; flex: 1; min-width: 0; word-break: keep-all; }
+        .contract-paper .signame-input { flex: 1; min-width: 0; }
+        .contract-paper .signame-input input { padding: 0 2px; font-size: 10pt; border: 0; border-bottom: 1px dashed #b9ac9a; width: 100%; text-align: left; font-weight: 500; background: transparent; color: var(--p-ink); font-family: inherit; }
+        .contract-paper .sign-img { height: 11mm; width: auto; max-width: 42mm; object-fit: contain; flex-shrink: 0; }
+        .contract-paper .seal-wrap { flex-shrink: 0; position: relative; display: inline-flex; align-items: center; justify-content: center; }
         .contract-paper .seal-mark { font-size: 9.5pt; color: var(--p-muted); white-space: nowrap; }
         .contract-paper .seal-stamp { height: 15mm; width: auto; max-width: 22mm; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .contract-paper .signature-clear { margin-left: 4px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid #d6cdbb; background: #fff; color: #6b6258; font-size: 11px; cursor: pointer; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
