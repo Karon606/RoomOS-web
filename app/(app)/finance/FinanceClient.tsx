@@ -55,6 +55,7 @@ type Expense = {
   specValue: number | null; specUnit: string | null
   qtyValue: number | null; qtyUnit: string | null
   orderId: string | null; isShipping: boolean
+  allocationGroupId: string | null   // 한 품목 방별 분배 묶음 — 목록에서 한 줄로 묶어 표시
   excludeFromInventory: boolean   // 재고 계산 제외 — 상세에서 '다시 포함' 제공
   order: { id: string; code: string; shippingType: string | null; shippingMemo: string | null } | null
   createdAt: Date  // 같은 날짜 정렬 보조 (최근 입력 우선)
@@ -158,6 +159,16 @@ export function fmtItemListDetail(items: ItemPickState[]): string {
   if (items.length === 0) return ''
   if (items.length === 1) return fmtItemDetail(items[0])
   return items.map(d => fmtItemDetail(d)).join(', ')
+}
+
+// 방별 분배 묶음의 방 목록 라벨 — '101·102·103호' / 많으면 '101호 외 N곳' / 미지정 포함
+function roomsLabel(rows: { room: { roomNo: string } | null }[]): string {
+  const fmt = (no: string) => /^\d+$/.test(no) ? `${no}호` : no
+  const named = rows.map(r => r.room?.roomNo).filter(Boolean) as string[]
+  const unassigned = rows.length - named.length
+  const parts = named.length <= 3 ? named.map(fmt) : [fmt(named[0]), `외 ${named.length - 1}곳`]
+  if (unassigned > 0) parts.push('미지정')
+  return parts.join('·')
 }
 
 function UnitCombobox({ value, onChange, options, placeholder }: {
@@ -1266,6 +1277,8 @@ export default function FinanceClient({
   const [addExpDate, setAddExpDate]       = useState(() => kstYmdStr())
   const [detailExp, setDetailExp]         = useState<Expense | null>(null)
   const [detailExpEdit, setDetailExpEdit] = useState(false)
+  // 방별 분배 묶음 펼침 — 멤버 행 목록(각 방별 금액). null 이면 닫힘.
+  const [groupDetail, setGroupDetail]     = useState<Expense[] | null>(null)
   // 합배송 배송비 — 수정 폼의 '별도 지출로 묶기' 입력값
   const [attachShipAmount, setAttachShipAmount] = useState<number | undefined>(undefined)
   const [attachShipType, setAttachShipType] = useState<'선불' | '착불' | '신용'>('선불')
@@ -2112,14 +2125,30 @@ export default function FinanceClient({
             const hiddenRecsTotal = hiddenRecs.reduce((s, r) => s + (r.pendingAmount ?? r.amount), 0)
 
             type ListItem =
-              | { kind: 'expense'; exp: Expense; dateStr: string }
+              | { kind: 'expense'; exp: Expense; dateStr: string; groupRows?: Expense[] }
               | { kind: 'recurring'; rec: RecurringExpenseWithStatus; dateStr: string }
 
+            // 방별 분배 묶음 병합 — 같은 allocationGroupId 행을 대표 1행(금액 합산)으로, 멤버 행 부착.
+            const groupedExpenseRows: { exp: Expense; groupRows?: Expense[] }[] = (() => {
+              const seen = new Set<string>()
+              const out: { exp: Expense; groupRows?: Expense[] }[] = []
+              for (const e of filteredExpenses) {
+                if (!e.allocationGroupId) { out.push({ exp: e }); continue }
+                if (seen.has(e.allocationGroupId)) continue
+                seen.add(e.allocationGroupId)
+                const rows = filteredExpenses.filter(x => x.allocationGroupId === e.allocationGroupId)
+                const total = rows.reduce((s, r) => s + r.amount, 0)
+                out.push({ exp: { ...e, amount: total }, groupRows: rows })
+              }
+              return out
+            })()
+
             const items: ListItem[] = [
-              ...filteredExpenses.map(e => ({
+              ...groupedExpenseRows.map(g => ({
                 kind: 'expense' as const,
-                exp: e,
-                dateStr: kstYmdStr(new Date(e.date)),
+                exp: g.exp,
+                dateStr: kstYmdStr(new Date(g.exp.date)),
+                groupRows: g.groupRows,
               })),
               ...unconfirmedRecs.map(r => ({
                 kind: 'recurring' as const,
@@ -2171,21 +2200,24 @@ export default function FinanceClient({
                     {items.map(item => {
                       if (item.kind === 'expense') {
                         const e = item.exp
+                        const grp = item.groupRows
                         const isUnsettled = e.settleStatus === 'UNSETTLED'
                         const isFixed = !!e.recurringExpenseId
                         const meta = [e.payMethod, e.financialAccount ? accName(e.financialAccount) : null].filter(Boolean).join(' · ')
                         return (
                           <div key={e.id}
-                            onClick={() => { setDetailExp(e); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }}
+                            onClick={() => { if (grp) { setGroupDetail(grp) } else { setDetailExp(e); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') } }}
                             className={`bg-[var(--cream)] border rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity ${isUnsettled ? 'border-[var(--danger-ring)]' : 'border-[var(--warm-border)]'}`}>
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5 mb-0.5">
                                   {isFixed && <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)] shrink-0 mt-0.5" />}
                                   <span className="text-[0.625rem] text-[var(--coral)] font-medium">{e.category}</span>
+                                  {grp && <span className="text-[0.625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded">방 {grp.length}개</span>}
                                   {isUnsettled && <span className="text-[0.625rem] text-[var(--danger-fg)] font-medium">· 미정산</span>}
                                 </div>
                                 <p className="text-sm text-[var(--warm-dark)] truncate">{[e.vendor, e.detail].filter(Boolean).join(' · ') || '—'}</p>
+                                {grp && <p className="text-[0.6875rem] text-[var(--coral)] truncate mt-0.5">{roomsLabel(grp)}</p>}
                                 {(() => { const c = orderChip(e); return c ? (
                                   <span title={c.title} className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-md bg-[var(--honey)]/15 border border-[var(--honey)]/40 text-[0.5625rem] text-[var(--warm-dark)] font-medium max-w-full truncate">
                                     {c.text}
@@ -2258,9 +2290,10 @@ export default function FinanceClient({
                         {items.map(item => {
                           if (item.kind === 'expense') {
                             const e = item.exp
+                            const grp = item.groupRows
                             return (
                               <tr key={e.id}
-                                onClick={() => { setDetailExp(e); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }}
+                                onClick={() => { if (grp) { setGroupDetail(grp) } else { setDetailExp(e); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') } }}
                                 className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer">
                                 <td className="px-4 py-3 text-xs text-[var(--warm-mid)] overflow-hidden"><span className="truncate block">{fmtDate(e.date)}</span></td>
                                 <td className="px-4 py-3 overflow-hidden">
@@ -2277,8 +2310,10 @@ export default function FinanceClient({
                                 <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
                                   <div className="flex items-center gap-1.5">
                                     <span className="truncate">{e.detail ?? '—'}</span>
+                                    {grp && <span className="text-[0.5625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">방 {grp.length}개</span>}
                                     {e.receiptUrl && <span className="text-[0.5625rem] text-[var(--coral)] shrink-0">영수증</span>}
                                   </div>
+                                  {grp && <p className="text-[0.625rem] text-[var(--coral)] truncate mt-0.5">{roomsLabel(grp)}</p>}
                                   {(() => { const c = orderChip(e); return c ? (
                                     <span title={c.title} className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-md bg-[var(--honey)]/15 border border-[var(--honey)]/40 text-[0.5625rem] text-[var(--warm-dark)] font-medium max-w-full truncate">
                                       {c.text}
@@ -2819,6 +2854,41 @@ export default function FinanceClient({
                 })}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════
+          모달: 방별 분배 묶음 — 방별 금액 펼침
+      ══════════════════════════════════════════════════════════ */}
+      {groupDetail && (
+        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
+          onClick={() => setGroupDetail(null)}>
+          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-2 px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-[var(--warm-dark)] truncate">{groupDetail[0]?.detail || groupDetail[0]?.itemLabel || '방별 지출'}</h3>
+                <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">방 {groupDetail.length}개 · 합계 {groupDetail.reduce((s, r) => s + r.amount, 0).toLocaleString()}원</p>
+              </div>
+              <button onClick={() => setGroupDetail(null)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-lg leading-none shrink-0">✕</button>
+            </div>
+            <ul className="overflow-y-auto px-4 py-3 space-y-1.5">
+              {groupDetail.map(r => (
+                <li key={r.id}>
+                  <button type="button"
+                    onClick={() => { setGroupDetail(null); setDetailExp(r); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[var(--canvas)] hover:bg-[var(--warm-border)]/30 transition-colors text-left">
+                    <span className="text-sm text-[var(--warm-dark)] truncate">
+                      {r.room ? (/^\d+$/.test(r.room.roomNo) ? `${r.room.roomNo}호` : r.room.roomNo) : '방 미지정'}
+                      {r.qtyValue ? <span className="text-[var(--warm-muted)]"> · {r.qtyValue}{r.qtyUnit ?? ''}</span> : null}
+                    </span>
+                    <span className="text-sm font-semibold text-[var(--danger-fg)] shrink-0 tabular-nums">{r.amount.toLocaleString()}원</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="px-6 pb-4 text-[0.625rem] text-[var(--warm-muted)] shrink-0">각 방 항목을 누르면 개별 수정·삭제할 수 있습니다.</p>
           </div>
         </div>
       )}

@@ -1,5 +1,6 @@
 'use server'
 
+import { randomUUID } from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
@@ -156,7 +157,7 @@ type ItemPick = {
 // 품목 목록 → 실제 지출 행으로 확장. 방별 분배(allocations)가 있으면 방별로 쪼개고,
 // 배정 안 한 나머지 수량은 '방 미지정' 행으로 남긴다(예: 6개 중 2개만 방 배정, 4개 예비).
 // 금액은 수량 비례 배분(반올림 잔여는 마지막 행이 흡수). allocations 없으면 폼 전체 방(formRoomId) 1행.
-type ExpandedRow = { it: ItemPick; amount: number; qtyValue: string | undefined; roomId: string | null }
+type ExpandedRow = { it: ItemPick; amount: number; qtyValue: string | undefined; roomId: string | null; groupId: string | null }
 function expandExpenseRows(items: ItemPick[], formRoomId: string | null): ExpandedRow[] {
   const rows: ExpandedRow[] = []
   for (const it of items) {
@@ -164,9 +165,12 @@ function expandExpenseRows(items: ItemPick[], formRoomId: string | null): Expand
     const itemQty = Number(it.qtyValue) || 0
     const allocs = (Array.isArray(it.allocations) ? it.allocations : []).filter(a => a && (a.roomId || a.qty))
     if (allocs.length === 0) {
-      rows.push({ it, amount: itAmount, qtyValue: it.qtyValue, roomId: formRoomId })
+      rows.push({ it, amount: itAmount, qtyValue: it.qtyValue, roomId: formRoomId, groupId: null })
       continue
     }
+    // 한 품목이 방별로 여러 행으로 쪼개지면 공통 묶음 ID 부여 → 목록에서 한 줄로 묶어 표시.
+    const groupId = randomUUID()
+    const startLen = rows.length
     const allocSum = allocs.reduce((s, a) => s + (Number(a.qty) || 0), 0)
     const denom = Math.max(itemQty, allocSum) || allocs.length
     let usedAmt = 0
@@ -174,16 +178,18 @@ function expandExpenseRows(items: ItemPick[], formRoomId: string | null): Expand
       const aq = Number(a.qty) || 0
       const amt = Math.round(itAmount * (aq / denom))
       usedAmt += amt
-      rows.push({ it, amount: amt, qtyValue: String(aq), roomId: a.roomId || null })
+      rows.push({ it, amount: amt, qtyValue: String(aq), roomId: a.roomId || null, groupId })
     }
     const remQty = denom - allocSum
     if (remQty > 0.001) {
       // 배정 안 한 나머지 — 방 미지정 행
-      rows.push({ it, amount: itAmount - usedAmt, qtyValue: String(Math.round(remQty * 100) / 100), roomId: null })
+      rows.push({ it, amount: itAmount - usedAmt, qtyValue: String(Math.round(remQty * 100) / 100), roomId: null, groupId })
     } else if (rows.length > 0) {
       // 반올림 잔여는 마지막 행에 흡수
       rows[rows.length - 1].amount += (itAmount - usedAmt)
     }
+    // 결과적으로 한 행뿐이면 묶을 필요 없음 → groupId 제거
+    if (rows.length - startLen <= 1) for (let i = startLen; i < rows.length; i++) rows[i].groupId = null
   }
   return rows
 }
@@ -433,6 +439,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
           qtyUnit:   r.it.qtyUnit  || null,
           specValue: r.it.specValue ? parseFloat(r.it.specValue) : null,
           qtyValue:  r.qtyValue ? parseFloat(r.qtyValue) : null,
+          allocationGroupId: r.groupId,
         },
       }))
       const ops = [...itemCreates]
@@ -550,6 +557,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
             qtyUnit:   firstRow.it.qtyUnit  || null,
             specValue: firstRow.it.specValue ? parseFloat(firstRow.it.specValue) : null,
             qtyValue:  firstRow.qtyValue  ? parseFloat(firstRow.qtyValue)  : null,
+            allocationGroupId: firstRow.groupId,
             ...(receiptUrl !== null && receiptUrl !== undefined ? { receiptUrl: receiptUrl || null } : {}),
           },
         }),
@@ -573,6 +581,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
             qtyUnit:   r.it.qtyUnit  || null,
             specValue: r.it.specValue ? parseFloat(r.it.specValue) : null,
             qtyValue:  r.qtyValue  ? parseFloat(r.qtyValue)  : null,
+            allocationGroupId: r.groupId,
           },
         })),
         // 합산형 배송비 — 품목 단가 왜곡 방지를 위해 별도 행(재고 제외)으로 분리 (addExpense 와 동일)

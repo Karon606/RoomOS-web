@@ -494,6 +494,9 @@ model Expense {
   qtyUnit      String?
   receivedAt   DateTime?    // null = 수령 대기, not null = 수령 완료 (재고 계산에 반영)
   excludeFromInventory Boolean @default(false) // true면 재고 계산에서 제외 (지출 기록은 유지)
+  // 한 품목을 방별로 분배해 여러 행으로 쪼갠 경우, 그 행들을 한 묶음으로 표시하기 위한 공통 ID.
+  // null = 단일 행. 지출 목록에서 같은 값끼리 한 줄로 묶고 펼치면 방별 상세.
+  allocationGroupId String? @db.Uuid
   // 합배송 주문 묶음: 한 주문(ExpenseOrder)에 속한 여러 지출(품목별·방별 분할 포함)을 묶는다.
   // isShipping=true 면 이 행이 그 주문의 '배송비' 별도 지출 라인.
   orderId      String?      @db.Uuid

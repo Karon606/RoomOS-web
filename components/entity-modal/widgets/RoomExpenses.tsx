@@ -30,15 +30,21 @@ export function RoomExpenses({ roomId }: { roomId: string }) {
       </button>
       {open && (
         <ul className="mt-2 space-y-1.5 border-t border-[var(--warm-border)]/60 pt-2">
-          {data.items.map(it => (
-            <li key={it.id} className="flex items-baseline justify-between gap-2 text-[0.6875rem]">
-              <span className="text-[var(--warm-muted)] shrink-0 tabular-nums">{it.date.slice(5)}</span>
-              <span className="flex-1 min-w-0 truncate text-[var(--warm-mid)]">
-                {it.category}{it.vendor ? ` · ${it.vendor}` : ''}{it.memo ? ` · ${it.memo}` : ''}
-              </span>
-              <span className="shrink-0 tabular-nums text-[var(--warm-dark)]">{won(it.amount)}</span>
-            </li>
-          ))}
+          {data.items.map(it => {
+            // 품목명 우선 표시 — detail('[슬라이드바 거치대] x 1개') 또는 itemLabel, 없으면 카테고리.
+            const name = it.detail || it.itemLabel || it.category
+            const sub = [(it.detail || it.itemLabel) ? it.category : null, it.vendor, it.memo].filter(Boolean).join(' · ')
+            return (
+              <li key={it.id} className="flex items-baseline justify-between gap-2 text-[0.6875rem]">
+                <span className="text-[var(--warm-muted)] shrink-0 tabular-nums">{it.date.slice(5)}</span>
+                <span className="flex-1 min-w-0 truncate">
+                  <span className="text-[var(--warm-dark)]">{name}</span>
+                  {sub && <span className="text-[var(--warm-muted)]"> · {sub}</span>}
+                </span>
+                <span className="shrink-0 tabular-nums text-[var(--warm-dark)]">{won(it.amount)}</span>
+              </li>
+            )
+          })}
         </ul>
       )}
     </section>
