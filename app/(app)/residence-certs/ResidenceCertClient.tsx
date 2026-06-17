@@ -9,6 +9,7 @@ import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { deleteResidenceCertFile, type ResidenceCertListRow, type IssuableTenant } from './actions'
+import { ShareDocButton } from '@/components/ui/ShareDocButton'
 
 const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
 const fmtDate = (d: Date | string) => {
@@ -130,6 +131,8 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                     className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
                     보기
                   </a>
+                  <ShareDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_실거주확인서.pdf`}
+                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
                   <Link href={`/residence-cert/${c.tenantId}`}
                     className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
                     재발급

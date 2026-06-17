@@ -22,6 +22,7 @@ export type RentReceiptListRow = {
   fileName: string
   issuedAt: Date
   viewUrl: string
+  driveFileId: string
   tenantId: string
   tenantName: string
   roomNo: string | null
@@ -44,6 +45,7 @@ export async function getAllRentReceiptFiles(): Promise<RentReceiptListRow[]> {
     fileName: r.fileName,
     issuedAt: r.issuedAt,
     viewUrl: `https://drive.google.com/file/d/${r.driveFileId}/view`,
+    driveFileId: r.driveFileId,
     tenantId: r.tenant.id,
     tenantName: r.tenant.name,
     roomNo: r.leaseTerm?.room?.roomNo ?? null,

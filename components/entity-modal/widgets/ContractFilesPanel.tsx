@@ -10,6 +10,7 @@ import {
   type ContractFileRow,
 } from '@/app/(app)/tenants/actions'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
+import { ShareDocButton } from '@/components/ui/ShareDocButton'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
@@ -87,6 +88,7 @@ export function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string;
                 <a href={f.viewUrl} target="_blank" rel="noreferrer" className="flex-1 min-w-0 text-xs text-[var(--warm-dark)] hover:text-[var(--coral)] truncate">
                   {tenantName} · {dateLabel}
                 </a>
+                <ShareDocButton driveFileId={f.driveFileId} fileName={`${tenantName}_계약서_${dateLabel}.pdf`} label="공유" />
                 <button onClick={() => handleDelete(f.id)} className="text-[0.6875rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)]">
                   삭제
                 </button>

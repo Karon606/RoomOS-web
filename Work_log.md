@@ -178,6 +178,11 @@ Claude Design 의뢰([docs/design-brief-v1.3-request.md](docs/design-brief-v1.3-
 - **모달·네비(`e289e69`)**: 알림벨 같은 페이지 무반응(push+refresh). 페이지 이동 시 전역 모달 정리(뒤로가기 잔존·스크롤 점프). openCheckoutProration 시드 1회성. 공용 Modal Esc 닫기(중첩 시 최상단만). useUrlState 스테일 params 레이스. accrual-check 귀속월 이동 revalidate.
 - **보류(다음 작업 후보)**: ① [미납][퇴실 예정] 2뱃지 C안을 호실관리·대시보드 방현황에 확산(수납 상태 데이터 파이프 필요) ② 대시보드 상태색 hex → StatusBadge 토큰 통일(차트 연동 검토) ③ 이종현 락인 교정 실행 여부 ④ 감사 보고서의 나머지 low 항목.
 
+## 2026-06-10 (이어서) — 모바일 연결(전화/문자/메일) + 서류 공유(파일 첨부) [main 배포, SQL 불필요]
+- **#2A 연락처 바로 연결**: 고객 상세 연락처에 전화(tel)/문자(sms)/메일(mailto) 바로가기 버튼([TenantContactInfo](components/entity-modal/widgets/TenantContactInfo.tsx), email prop 추가), 입주자 목록 카드 전화번호 탭→전화.
+- **#2B 서류 공유(첨부)**: 저장된 서류 PDF를 모바일 '공유'로 메일/메시지에 **파일 첨부** 전송(자동발송 X). 신규 [api/doc-file](app/api/doc-file/route.ts)(Drive 바이트 같은도메인 스트리밍, 영업장 소유 검증) + [ShareDocButton](components/ui/ShareDocButton.tsx)(navigator.share files, 미지원 시 다운로드 폴백). 계약서 파일 패널·입실료 확인서·실거주 확인서 목록에 '공유' 버튼. (PNG 옵션은 추후 — PDF만)
+- tsc·build 통과. (#3 캘린더 연동 다음)
+
 ## 2026-06-10 (이어서) — 비품·자재 수령대기 기능 [main 배포, SQL 불필요]
 사용자: 비품도 (온라인 주문 등) 수령대기 필요. 모델 `Expense.receivedAt`(null=대기) 이미 있으나 assets 뷰가 무시했음(실데이터 비품 대기 37·완료 47 혼재).
 - getDurableItems: `receivedAt` 반영 — **수령 대기(null) 최우선 버킷**으로 분리, 나머지(방/공용부/공용/미배정)는 수령완료만. AssetsData에 `pending`/`pendingTotal`.

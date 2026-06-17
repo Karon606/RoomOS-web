@@ -9,6 +9,7 @@ import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { deleteRentReceiptFile, type RentReceiptListRow, type IssuableTenant } from './actions'
+import { ShareDocButton } from '@/components/ui/ShareDocButton'
 
 const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
 const fmtDate = (d: Date | string) => {
@@ -111,6 +112,8 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
                 <div className="flex items-center gap-1.5 shrink-0">
                   <a href={c.viewUrl} target="_blank" rel="noreferrer"
                     className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">보기</a>
+                  <ShareDocButton driveFileId={c.driveFileId} fileName={`${c.tenantName}_입실료확인서.pdf`}
+                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors disabled:opacity-50" />
                   <Link href={`/rent-receipt/${c.tenantId}`}
                     className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">재발급</Link>
                   <button type="button" onClick={() => handleDelete(c.id, c.tenantName)} disabled={pending && deletingId === c.id}
