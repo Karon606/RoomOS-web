@@ -47,11 +47,14 @@ export type AssetItem = {
   roomNo: string | null
   locationId: string | null     // 공용부(StorageLocation) 배정 시
   locationName: string | null
+  isCommon: boolean             // 공용 자재(페인트 등) 표시
 }
 
 export type AssetsData = {
   rooms: { roomId: string; roomNo: string; total: number; items: AssetItem[] }[]
   locations: { locationId: string; name: string; total: number; items: AssetItem[] }[]   // 공용부별
+  common: AssetItem[]           // 공용 자재(방/공용부 배분 안 함)
+  commonTotal: number
   unassigned: AssetItem[]
   unassignedTotal: number
 }
@@ -61,13 +64,14 @@ type RawAsset = {
   qtyValue: number | null; qtyUnit: string | null; specValue: number | null; specUnit: string | null
   category: string; vendor: string | null
   roomId: string | null; roomNo: string | null; locationId: string | null; locationName: string | null
+  isCommon: boolean
 }
 
 // 한 버킷의 행들을 동일 품목끼리 묶어 AssetItem[] 로 집계
 function aggregateAssets(list: RawAsset[]): AssetItem[] {
   const map = new Map<string, { spec: number | null; specUnit: string | null; rows: RawAsset[] }>()
   for (const r of list) {
-    const key = [r.itemLabel, r.specValue ?? '', r.specUnit ?? '', r.qtyUnit ?? '', r.category].join('␟')
+    const key = [r.itemLabel, r.specValue ?? '', r.specUnit ?? '', r.qtyUnit ?? '', r.category, r.isCommon ? 'C' : ''].join('␟')
     const g = map.get(key) ?? { spec: r.specValue, specUnit: r.specUnit, rows: [] }
     g.rows.push(r); map.set(key, g)
   }
@@ -85,6 +89,7 @@ function aggregateAssets(list: RawAsset[]): AssetItem[] {
       detail: buildAssetDetail({ itemLabel: rep.itemLabel, specValue: g.spec, specUnit: g.specUnit, qtyValue, qtyUnit: rep.qtyUnit }),
       amount, qtyValue, qtyUnit: rep.qtyUnit, category: rep.category, vendor: rep.vendor,
       roomId: rep.roomId, roomNo: rep.roomNo, locationId: rep.locationId, locationName: rep.locationName,
+      isCommon: rep.isCommon,
     })
   }
   return out.sort((a, b) => b.date.localeCompare(a.date))
@@ -112,6 +117,7 @@ export async function getDurableItems(): Promise<AssetsData> {
       room: { select: { roomNo: true } },
       assignedLocationId: true,
       assignedLocation: { select: { name: true } },
+      isCommonAsset: true,
     },
   })
 
@@ -121,14 +127,17 @@ export async function getDurableItems(): Promise<AssetsData> {
     category: r.category, vendor: r.vendor,
     roomId: r.roomId, roomNo: r.room?.roomNo ?? null,
     locationId: r.assignedLocationId, locationName: r.assignedLocation?.name ?? null,
+    isCommon: r.isCommonAsset,
   }))
 
   const roomBuckets = new Map<string, RawAsset[]>()
   const locBuckets = new Map<string, RawAsset[]>()
+  const commonRaw: RawAsset[] = []
   const unassignedRaw: RawAsset[] = []
   for (const r of raws) {
     if (r.roomId && r.roomNo) (roomBuckets.get(r.roomId) ?? roomBuckets.set(r.roomId, []).get(r.roomId)!).push(r)
     else if (r.locationId && r.locationName) (locBuckets.get(r.locationId) ?? locBuckets.set(r.locationId, []).get(r.locationId)!).push(r)
+    else if (r.isCommon) commonRaw.push(r)
     else unassignedRaw.push(r)
   }
 
@@ -142,8 +151,31 @@ export async function getDurableItems(): Promise<AssetsData> {
     return { locationId, name: list[0].locationName!, total: items.reduce((s, i) => s + i.amount, 0), items }
   }).sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }))
 
+  const common = aggregateAssets(commonRaw)
   const unassigned = aggregateAssets(unassignedRaw)
-  return { rooms, locations, unassigned, unassignedTotal: unassigned.reduce((s, i) => s + i.amount, 0) }
+  return {
+    rooms, locations,
+    common, commonTotal: common.reduce((s, i) => s + i.amount, 0),
+    unassigned, unassignedTotal: unassigned.reduce((s, i) => s + i.amount, 0),
+  }
+}
+
+// 공용 자재 표시/해제 — value=true 면 방·공용부 배정 해제하고 공용 자재로 마킹, false 면 일반 미배정으로.
+export async function setCommonAsset(expenseIds: string[], value: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (!expenseIds.length) return { ok: false, error: '대상 항목이 없습니다.' }
+    await prisma.expense.updateMany({
+      where: { id: { in: expenseIds }, propertyId },
+      data: value ? { isCommonAsset: true, roomId: null, assignedLocationId: null } : { isCommonAsset: false },
+    })
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }
 
 export async function getAssignableRooms(): Promise<{ id: string; roomNo: string }[]> {
@@ -206,7 +238,7 @@ export async function assignAggregateToTarget(
     if (!exps.length) return { ok: false, error: '지출 항목을 찾을 수 없습니다.' }
 
     if (target.kind === 'none') {
-      await prisma.$transaction(exps.map(e => prisma.expense.update({ where: { id: e.id }, data: { roomId: null, assignedLocationId: null } })))
+      await prisma.$transaction(exps.map(e => prisma.expense.update({ where: { id: e.id }, data: { roomId: null, assignedLocationId: null, isCommonAsset: false } })))
       const groups = [...new Set(exps.map(e => e.allocationGroupId).filter(Boolean) as string[])]
       for (const g of groups) await mergeUnassignedGroup(propertyId, g)
       revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
@@ -223,7 +255,7 @@ export async function assignAggregateToTarget(
       if (need <= 1e-9) break
       const eq = e.qtyValue ?? 1
       if (eq <= need + 1e-9) {
-        ops.push(prisma.expense.update({ where: { id: e.id }, data: tData }))
+        ops.push(prisma.expense.update({ where: { id: e.id }, data: { ...tData, isCommonAsset: false } }))
         need -= eq
       } else {
         const assignedAmount = Math.round(e.amount * (need / eq))

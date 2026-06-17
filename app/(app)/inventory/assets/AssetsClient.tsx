@@ -8,7 +8,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { pushToast } from '@/lib/saveStatus'
-import { assignAggregateToTarget, type AssetsData, type AssetItem } from './actions'
+import { assignAggregateToTarget, setCommonAsset, type AssetsData, type AssetItem } from './actions'
 
 const won = (n: number) => n.toLocaleString('ko-KR') + '원'
 const fmtRoomNo = (no: string) => (/^\d+$/.test(no) ? `${no}호` : no)
@@ -79,6 +79,16 @@ export default function AssetsClient({ data, rooms, locations }: {
     })
   }
 
+  // 공용 자재 표시/해제
+  const markCommon = (it: AssetItem, value: boolean) => {
+    startTransition(async () => {
+      const res = await setCommonAsset(it.ids, value)
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', value ? '공용 자재로 표시됨' : '공용 자재 해제됨')
+      router.refresh()
+    })
+  }
+
   const currentValue = (it: AssetItem) =>
     it.roomId ? `room:${it.roomId}` : it.locationId ? `loc:${it.locationId}` : ''
 
@@ -127,16 +137,25 @@ export default function AssetsClient({ data, rooms, locations }: {
             <button type="button" onClick={() => setPicking(null)} className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
           </>
         ) : (
-          <button type="button" onClick={() => setPicking(it.id)} disabled={pending}
-            className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
-            {placed ? '배정 변경' : '배정'}
-          </button>
+          <>
+            {/* 공용 자재 토글 — 미배정/공용 자재에서만 (방·공용부 배정된 건 제외) */}
+            {!placed && (
+              <button type="button" onClick={() => markCommon(it, !it.isCommon)} disabled={pending}
+                className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
+                {it.isCommon ? '공용 해제' : '공용 자재로'}
+              </button>
+            )}
+            <button type="button" onClick={() => setPicking(it.id)} disabled={pending}
+              className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
+              {placed ? '배정 변경' : '배정'}
+            </button>
+          </>
         )}
       </div>
     </li>
   )
 
-  const isEmpty = data.rooms.length === 0 && data.locations.length === 0 && data.unassigned.length === 0
+  const isEmpty = data.rooms.length === 0 && data.locations.length === 0 && data.unassigned.length === 0 && data.common.length === 0
 
   return (
     <div className="space-y-5 px-4 sm:px-6 py-5">
@@ -173,6 +192,18 @@ export default function AssetsClient({ data, rooms, locations }: {
               </ul>
             )}
           </section>
+
+          {/* 공용 자재 — 페인트·공구 등 방/공용부 배분 안 하는 공용 비품 */}
+          {data.common.length > 0 && (
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">
+                공용 자재 <span className="text-[0.625rem] text-[var(--coral)] font-normal">배분 안 함</span> <span className="text-[var(--warm-muted)] font-normal">{data.common.length}건 · {won(data.commonTotal)}</span>
+              </h2>
+              <ul className="space-y-1.5">
+                {data.common.map(it => <ItemRow key={it.id} it={it} placed={false} />)}
+              </ul>
+            </section>
+          )}
 
           {/* 방별 */}
           {data.rooms.map(g => (
