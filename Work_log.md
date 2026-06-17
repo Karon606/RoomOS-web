@@ -178,6 +178,14 @@ Claude Design 의뢰([docs/design-brief-v1.3-request.md](docs/design-brief-v1.3-
 - **모달·네비(`e289e69`)**: 알림벨 같은 페이지 무반응(push+refresh). 페이지 이동 시 전역 모달 정리(뒤로가기 잔존·스크롤 점프). openCheckoutProration 시드 1회성. 공용 Modal Esc 닫기(중첩 시 최상단만). useUrlState 스테일 params 레이스. accrual-check 귀속월 이동 revalidate.
 - **보류(다음 작업 후보)**: ① [미납][퇴실 예정] 2뱃지 C안을 호실관리·대시보드 방현황에 확산(수납 상태 데이터 파이프 필요) ② 대시보드 상태색 hex → StatusBadge 토큰 통일(차트 연동 검토) ③ 이종현 락인 교정 실행 여부 ④ 감사 보고서의 나머지 low 항목.
 
+## 2026-06-10 (이어서) — 비품 배정에 공용부(위치) 추가 [코드 완료, ⚠️SQL 선적용 후 배포]
+사용자: 비품을 방뿐 아니라 공용부(4·5층 주방·공용화장실·복도 등)에도 배정해야 함. 공용부는 재고관리>위치 관리(StorageLocation)에 이미 있으니 활용.
+- **⚠️ 배포 전 필수**: `prisma/migrate_expense_assigned_location.sql` Supabase 실행(없으면 getDurableItems 의 assignedLocation select 런타임 에러).
+- **스키마**: `Expense.assignedLocationId`(FK StorageLocation, onDelete SetNull, roomId와 상호배타). 관계 충돌로 receivedLocation 관계에 이름 부여(`ExpenseReceivedLocation`) + 신규 `ExpenseAssignedLocation`. StorageLocation 역관계 2개.
+- **액션 일반화** [assets/actions.ts](app/(app)/inventory/assets/actions.ts): `assignExpenseToRoom`/`...PartialToRoom` → `assignExpenseToTarget`/`assignExpensePartialToTarget`(target = none|room|location). `getDurableItems` 가 방·공용부·미배정 3그룹 반환. 신규 `getAssignableLocations`(위치 중 허브=창고 제외 = 공용부). mergeUnassignedGroup 미배정 조건 = roomId·assignedLocationId 모두 null.
+- **UI** [AssetsClient.tsx](app/(app)/inventory/assets/AssetsClient.tsx): 배정 select 를 optgroup(방 / 공용부)로. 공용부별 섹션 표시. 수량 분할·재병합(적용취소)은 방·공용부 동일.
+- 공용부 등록은 기존 '위치 관리' 재사용(신규 UI 없음). tsc·build 통과.
+
 ## 2026-06-10 — 비품·자재 방배정 수량 분할 [main 배포, SQL 불필요]
 사용자: 비품·자재(assets)에서 수량 2개 이상 품목을 방배정하면 **전량**이 그 방으로 가버림. 몇 개 배정할지 물어보게(기본 1) + 나머지는 여분 유지.
 - 기존 `assignExpenseToRoom`은 `expense.roomId`만 바꿔 통째 이동. → 신규 **`assignExpensePartialToRoom(expenseId, roomId, qty)`**([assets/actions.ts](app/(app)/inventory/assets/actions.ts)): qty<전체면 분할 — 배정분은 새 Expense 행(금액 수량비례, roomId=그 방), 나머지는 원본 유지(roomId 그대로). 같은 `allocationGroupId`로 묶음(finance 목록서 한 줄 표시·재사용). qty≥전체/수량없음이면 통째 이동.

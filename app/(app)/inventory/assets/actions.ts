@@ -40,16 +40,19 @@ export type AssetItem = {
   vendor: string | null
   roomId: string | null
   roomNo: string | null
+  locationId: string | null     // 공용부(StorageLocation) 배정 시
+  locationName: string | null
 }
 
 export type AssetsData = {
   rooms: { roomId: string; roomNo: string; total: number; items: AssetItem[] }[]
+  locations: { locationId: string; name: string; total: number; items: AssetItem[] }[]   // 공용부별
   unassigned: AssetItem[]
   unassignedTotal: number
 }
 
 // 비품·자재 = 품목으로 입력된 지출 중 소모품(재고 추적 카테고리)·배송비를 제외한 내구재.
-// (의자·거치대·수선유지 자재 등) 방 배정 여부로 나눠서 보여준다.
+// (의자·거치대·수선유지 자재 등) 방/공용부 배정 여부로 나눠서 보여준다.
 export async function getDurableItems(): Promise<AssetsData> {
   const propertyId = await getPropertyId()
   const trackedCats = await getTrackedCategories(propertyId)
@@ -67,6 +70,8 @@ export async function getDurableItems(): Promise<AssetsData> {
       id: true, date: true, itemLabel: true, detail: true, amount: true,
       qtyValue: true, qtyUnit: true, category: true, vendor: true, roomId: true,
       room: { select: { roomNo: true } },
+      assignedLocationId: true,
+      assignedLocation: { select: { name: true } },
     },
   })
 
@@ -82,23 +87,32 @@ export async function getDurableItems(): Promise<AssetsData> {
     vendor: r.vendor,
     roomId: r.roomId,
     roomNo: r.room?.roomNo ?? null,
+    locationId: r.assignedLocationId,
+    locationName: r.assignedLocation?.name ?? null,
   }))
 
   const roomMap = new Map<string, { roomId: string; roomNo: string; total: number; items: AssetItem[] }>()
+  const locMap = new Map<string, { locationId: string; name: string; total: number; items: AssetItem[] }>()
   const unassigned: AssetItem[] = []
   for (const it of items) {
     if (it.roomId && it.roomNo) {
       const cur = roomMap.get(it.roomId) ?? { roomId: it.roomId, roomNo: it.roomNo, total: 0, items: [] }
       cur.total += it.amount; cur.items.push(it)
       roomMap.set(it.roomId, cur)
+    } else if (it.locationId && it.locationName) {
+      const cur = locMap.get(it.locationId) ?? { locationId: it.locationId, name: it.locationName, total: 0, items: [] }
+      cur.total += it.amount; cur.items.push(it)
+      locMap.set(it.locationId, cur)
     } else {
       unassigned.push(it)
     }
   }
   const rooms = [...roomMap.values()].sort((a, b) =>
     a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true }))
+  const locations = [...locMap.values()].sort((a, b) =>
+    a.name.localeCompare(b.name, 'ko', { numeric: true }))
 
-  return { rooms, unassigned, unassignedTotal: unassigned.reduce((s, i) => s + i.amount, 0) }
+  return { rooms, locations, unassigned, unassignedTotal: unassigned.reduce((s, i) => s + i.amount, 0) }
 }
 
 export async function getAssignableRooms(): Promise<{ id: string; roomNo: string }[]> {
@@ -111,21 +125,52 @@ export async function getAssignableRooms(): Promise<{ id: string; roomNo: string
   return rooms
 }
 
-// 미배정(여분) 비품을 특정 방에 배정 → 해당 호실 지출로 이동. roomId=null 이면 배정 해제.
-// 배정 해제 시: 분할(allocationGroupId)된 항목이면 같은 묶음의 미배정 행을 자동 재병합(분할 적용취소).
-export async function assignExpenseToRoom(expenseId: string, roomId: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
+// 공용부 배정 후보 = 위치 관리의 StorageLocation 중 창고(허브) 제외(허브=여분 보관 = 미배정 성격).
+export async function getAssignableLocations(): Promise<{ id: string; name: string }[]> {
+  const propertyId = await getPropertyId()
+  return prisma.storageLocation.findMany({
+    where: { propertyId, isHub: false },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    select: { id: true, name: true },
+  })
+}
+
+// 배정 대상 — 방 / 공용부(위치) / 해제(none)
+export type AssignTarget =
+  | { kind: 'none' }
+  | { kind: 'room'; id: string }
+  | { kind: 'location'; id: string }
+
+// 대상 → Expense 의 roomId/assignedLocationId (상호배타)
+function targetData(t: AssignTarget): { roomId: string | null; assignedLocationId: string | null } {
+  if (t.kind === 'room') return { roomId: t.id, assignedLocationId: null }
+  if (t.kind === 'location') return { roomId: null, assignedLocationId: t.id }
+  return { roomId: null, assignedLocationId: null }
+}
+
+async function validateTarget(t: AssignTarget, propertyId: string): Promise<string | null> {
+  if (t.kind === 'room') {
+    const room = await prisma.room.findFirst({ where: { id: t.id, propertyId }, select: { id: true } })
+    if (!room) return '호실을 찾을 수 없습니다.'
+  } else if (t.kind === 'location') {
+    const loc = await prisma.storageLocation.findFirst({ where: { id: t.id, propertyId }, select: { id: true } })
+    if (!loc) return '위치(공용부)를 찾을 수 없습니다.'
+  }
+  return null
+}
+
+// 비품을 방/공용부에 배정(통째) 또는 해제(none). 해제 시: 분할(allocationGroupId)이면 같은 묶음 미배정 행 자동 재병합.
+export async function assignExpenseToTarget(expenseId: string, target: AssignTarget): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const exp = await prisma.expense.findFirst({ where: { id: expenseId, propertyId }, select: { id: true, allocationGroupId: true } })
     if (!exp) return { ok: false, error: '지출 항목을 찾을 수 없습니다.' }
-    if (roomId) {
-      const room = await prisma.room.findFirst({ where: { id: roomId, propertyId }, select: { id: true } })
-      if (!room) return { ok: false, error: '호실을 찾을 수 없습니다.' }
-    }
-    await prisma.expense.update({ where: { id: expenseId }, data: { roomId: roomId || null } })
-    // 배정 해제(=미배정 복귀)면 같은 분할 묶음의 미배정 행끼리 재병합 → 6→[2방][4여분] 에서 2를 해제하면 다시 [6여분]
-    if (!roomId && exp.allocationGroupId) await mergeUnassignedGroup(propertyId, exp.allocationGroupId)
+    const err = await validateTarget(target, propertyId)
+    if (err) return { ok: false, error: err }
+    await prisma.expense.update({ where: { id: expenseId }, data: targetData(target) })
+    // 해제(=미배정 복귀)면 같은 분할 묶음의 미배정 행끼리 재병합
+    if (target.kind === 'none' && exp.allocationGroupId) await mergeUnassignedGroup(propertyId, exp.allocationGroupId)
     revalidatePath('/inventory/assets')
     revalidatePath('/inventory')
     revalidatePath('/finance')
@@ -136,13 +181,15 @@ export async function assignExpenseToRoom(expenseId: string, roomId: string | nu
   }
 }
 
-// 같은 분할 묶음(allocationGroupId)의 '미배정(roomId=null)' 행들을 하나로 재병합.
+// 같은 분할 묶음(allocationGroupId)의 '미배정(방·위치 모두 없음)' 행들을 하나로 재병합.
 async function mergeUnassignedGroup(propertyId: string, groupId: string): Promise<void> {
   const unassigned = await prisma.expense.findMany({
-    where: { propertyId, allocationGroupId: groupId, roomId: null },
+    where: { propertyId, allocationGroupId: groupId, roomId: null, assignedLocationId: null },
     orderBy: { createdAt: 'asc' },
   })
-  const assignedCount = await prisma.expense.count({ where: { propertyId, allocationGroupId: groupId, roomId: { not: null } } })
+  const assignedCount = await prisma.expense.count({
+    where: { propertyId, allocationGroupId: groupId, OR: [{ roomId: { not: null } }, { assignedLocationId: { not: null } }] },
+  })
   if (unassigned.length <= 1) {
     // 묶음에 남은 행이 1개뿐이면 묶음 의미 없음 → groupId 정리(단독 행 복귀)
     if (unassigned.length === 1 && assignedCount === 0) {
@@ -166,19 +213,20 @@ async function mergeUnassignedGroup(propertyId: string, groupId: string): Promis
   ])
 }
 
-// 미배정(여분) 비품 중 일부 수량만 특정 방에 배정 → 그 수량만큼 새 행으로 분할(금액 비례),
-// 나머지는 원래 자리(미배정/원래 방) 유지. 같은 allocationGroupId 로 묶어 표시·재병합.
-// qty >= 전체수량 또는 수량 정보 없으면 통째 이동(assignExpenseToRoom 과 동일).
-export async function assignExpensePartialToRoom(
-  expenseId: string, roomId: string, qty: number,
+// 비품 중 일부 수량만 방/공용부에 배정 → 그 수량만큼 새 행으로 분할(금액 비례),
+// 나머지는 원래 자리 유지. 같은 allocationGroupId 로 묶어 표시·재병합.
+// qty >= 전체수량 또는 수량 정보 없으면 통째 이동.
+export async function assignExpensePartialToTarget(
+  expenseId: string, target: { kind: 'room' | 'location'; id: string }, qty: number,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const exp = await prisma.expense.findFirst({ where: { id: expenseId, propertyId } })
     if (!exp) return { ok: false, error: '지출 항목을 찾을 수 없습니다.' }
-    const room = await prisma.room.findFirst({ where: { id: roomId, propertyId }, select: { id: true } })
-    if (!room) return { ok: false, error: '호실을 찾을 수 없습니다.' }
+    const verr = await validateTarget(target, propertyId)
+    if (verr) return { ok: false, error: verr }
+    const tData = targetData(target)
 
     const totalQty = exp.qtyValue ?? 0
     let q = qty
@@ -187,7 +235,7 @@ export async function assignExpensePartialToRoom(
 
     // 수량 정보 없거나 전량 배정 → 통째 이동
     if (totalQty <= 1 || q >= totalQty) {
-      await prisma.expense.update({ where: { id: expenseId }, data: { roomId } })
+      await prisma.expense.update({ where: { id: expenseId }, data: tData })
       revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
       return { ok: true }
     }
@@ -199,12 +247,12 @@ export async function assignExpensePartialToRoom(
     const groupId = exp.allocationGroupId ?? randomUUID()
 
     await prisma.$transaction([
-      // 원본 = 나머지 (roomId 유지: 미배정이면 미배정, 다른 방이면 그 방)
+      // 원본 = 나머지 (배정 위치 유지: 미배정이면 미배정, 다른 방/공용부면 그대로)
       prisma.expense.update({
         where: { id: expenseId },
         data: { qtyValue: remainQty, amount: remainAmount, allocationGroupId: groupId, detail: buildAssetDetail({ ...exp, qtyValue: remainQty }) },
       }),
-      // 신규 = 배정분 (그 방으로)
+      // 신규 = 배정분 (그 방/공용부로)
       prisma.expense.create({
         data: {
           date: exp.date, amount: assignedAmount, category: exp.category,
@@ -216,7 +264,7 @@ export async function assignExpensePartialToRoom(
           qtyValue: q, qtyUnit: exp.qtyUnit,
           receivedAt: exp.receivedAt, excludeFromInventory: exp.excludeFromInventory,
           allocationGroupId: groupId, orderId: exp.orderId, isShipping: exp.isShipping,
-          propertyId, roomId,
+          propertyId, roomId: tData.roomId, assignedLocationId: tData.assignedLocationId,
           financialAccountId: exp.financialAccountId, recurringExpenseId: exp.recurringExpenseId,
           receivedLocationId: exp.receivedLocationId,
         },

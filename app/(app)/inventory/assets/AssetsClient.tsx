@@ -1,46 +1,66 @@
 'use client'
 
 // 비품·자재 — 소모품 재고와 별개로, 품목으로 산 내구재(의자·거치대·수선유지 자재 등)를
-// 방별/미배정(여분)으로 보여주고, 미배정 아이템을 방에 배정하면 그 호실 지출로 넘어간다.
+// 방별 / 공용부(위치)별 / 미배정(여분)으로 보여주고, 미배정 아이템을 방·공용부에 배정한다.
+// 수량 2개 이상이면 몇 개 배정할지 물어 분할(나머지 여분 유지). 배정해제 시 같은 묶음 재병합.
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { pushToast } from '@/lib/saveStatus'
-import { assignExpenseToRoom, assignExpensePartialToRoom, type AssetsData, type AssetItem } from './actions'
+import { assignExpenseToTarget, assignExpensePartialToTarget, type AssetsData, type AssetItem } from './actions'
 
 const won = (n: number) => n.toLocaleString('ko-KR') + '원'
 const fmtRoomNo = (no: string) => (/^\d+$/.test(no) ? `${no}호` : no)
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
 
-export default function AssetsClient({ data, rooms }: { data: AssetsData; rooms: { id: string; roomNo: string }[] }) {
+type Target = { kind: 'room' | 'location'; id: string }
+
+export default function AssetsClient({ data, rooms, locations }: {
+  data: AssetsData
+  rooms: { id: string; roomNo: string }[]
+  locations: { id: string; name: string }[]
+}) {
   const router = useRouter()
   const [picking, setPicking] = useState<string | null>(null)   // 배정 picker 가 열린 항목 id
-  const [qtyAsk, setQtyAsk] = useState<{ it: AssetItem; roomId: string; roomNo: string } | null>(null)  // 수량 분할 프롬프트
+  const [qtyAsk, setQtyAsk] = useState<{ it: AssetItem; target: Target; label: string } | null>(null)
   const [qtyVal, setQtyVal] = useState('1')
   const [pending, startTransition] = useTransition()
 
-  const assign = (expenseId: string, roomId: string | null) => {
+  // 배정 해제(미배정으로)
+  const unassign = (expenseId: string) => {
     startTransition(async () => {
-      const res = await assignExpenseToRoom(expenseId, roomId)
+      const res = await assignExpenseToTarget(expenseId, { kind: 'none' })
       setPicking(null)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', roomId ? '호실에 배정됨' : '배정 해제됨')
+      pushToast('success', '배정 해제됨')
       router.refresh()
     })
   }
 
-  // 방 선택 시 — 수량 2개 이상이면 몇 개 배정할지 물어봄(기본 1), 아니면 통째 배정
-  const onPickRoom = (it: AssetItem, roomId: string) => {
+  // 통째 배정
+  const assignWhole = (expenseId: string, target: Target, label: string) => {
+    startTransition(async () => {
+      const res = await assignExpenseToTarget(expenseId, target)
+      setPicking(null)
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', `${label}에 배정됨`)
+      router.refresh()
+    })
+  }
+
+  // 대상 선택 — 수량 2개 이상이면 몇 개 배정할지 물어봄(기본 1), 아니면 통째
+  const onPickTarget = (it: AssetItem, value: string) => {
     setPicking(null)
-    if (!roomId) { assign(it.id, null); return }   // 미배정(여분)으로
+    if (!value) { unassign(it.id); return }
+    const [kind, id] = value.split(':')
+    const target: Target = { kind: kind === 'room' ? 'room' : 'location', id }
+    const label = kind === 'room'
+      ? fmtRoomNo(rooms.find(r => r.id === id)?.roomNo ?? '')
+      : (locations.find(l => l.id === id)?.name ?? '공용부')
     const qty = it.qtyValue ?? 0
-    if (qty >= 2) {
-      setQtyVal('1')
-      setQtyAsk({ it, roomId, roomNo: rooms.find(r => r.id === roomId)?.roomNo ?? '' })
-    } else {
-      assign(it.id, roomId)
-    }
+    if (qty >= 2) { setQtyVal('1'); setQtyAsk({ it, target, label }) }
+    else assignWhole(it.id, target, label)
   }
 
   const confirmPartial = () => {
@@ -49,17 +69,20 @@ export default function AssetsClient({ data, rooms }: { data: AssetsData; rooms:
     let q = Number(qtyVal)
     if (!(q > 0)) q = 1
     if (q > max) q = max
-    const { it, roomId } = qtyAsk
+    const { it, target, label } = qtyAsk
     startTransition(async () => {
-      const res = await assignExpensePartialToRoom(it.id, roomId, q)
+      const res = await assignExpensePartialToTarget(it.id, target, q)
       setQtyAsk(null)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', q >= (it.qtyValue ?? 0) ? '전체 배정됨' : `${fmtQty(q)}${it.qtyUnit ?? '개'} 배정됨`)
+      pushToast('success', q >= (it.qtyValue ?? 0) ? `${label}에 전체 배정됨` : `${label}에 ${fmtQty(q)}${it.qtyUnit ?? '개'} 배정됨`)
       router.refresh()
     })
   }
 
-  const ItemRow = ({ it, assigned }: { it: AssetItem; assigned: boolean }) => (
+  const currentValue = (it: AssetItem) =>
+    it.roomId ? `room:${it.roomId}` : it.locationId ? `loc:${it.locationId}` : ''
+
+  const ItemRow = ({ it, placed }: { it: AssetItem; placed: boolean }) => (
     <li className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3.5 py-2.5">
       <div className="flex items-baseline justify-between gap-2">
         <div className="min-w-0 flex-1">
@@ -74,7 +97,7 @@ export default function AssetsClient({ data, rooms }: { data: AssetsData; rooms:
         {qtyAsk?.it.id === it.id ? (
           <>
             <span className="text-[0.6875rem] text-[var(--warm-muted)]">
-              {fmtRoomNo(qtyAsk.roomNo)}에 (전체 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'} 중)
+              {qtyAsk.label}에 (전체 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'} 중)
             </span>
             <input autoFocus type="number" min={1} max={it.qtyValue ?? undefined} step="any"
               value={qtyVal} disabled={pending}
@@ -88,25 +111,32 @@ export default function AssetsClient({ data, rooms }: { data: AssetsData; rooms:
           </>
         ) : picking === it.id ? (
           <>
-            <select autoFocus disabled={pending} defaultValue={it.roomId ?? ''}
-              onChange={e => onPickRoom(it, e.target.value)}
-              className="text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-[var(--warm-dark)] outline-none">
+            <select autoFocus disabled={pending} defaultValue={currentValue(it)}
+              onChange={e => onPickTarget(it, e.target.value)}
+              className="text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-[var(--warm-dark)] outline-none max-w-[60vw]">
               <option value="">미배정(여분)</option>
-              {rooms.map(r => <option key={r.id} value={r.id}>{fmtRoomNo(r.roomNo)}</option>)}
+              <optgroup label="방">
+                {rooms.map(r => <option key={r.id} value={`room:${r.id}`}>{fmtRoomNo(r.roomNo)}</option>)}
+              </optgroup>
+              {locations.length > 0 && (
+                <optgroup label="공용부">
+                  {locations.map(l => <option key={l.id} value={`loc:${l.id}`}>{l.name}</option>)}
+                </optgroup>
+              )}
             </select>
             <button type="button" onClick={() => setPicking(null)} className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
           </>
         ) : (
           <button type="button" onClick={() => setPicking(it.id)} disabled={pending}
             className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
-            {assigned ? '방 변경' : '방 배정'}
+            {placed ? '배정 변경' : '배정'}
           </button>
         )}
       </div>
     </li>
   )
 
-  const isEmpty = data.rooms.length === 0 && data.unassigned.length === 0
+  const isEmpty = data.rooms.length === 0 && data.locations.length === 0 && data.unassigned.length === 0
 
   return (
     <div className="space-y-5 px-4 sm:px-6 py-5">
@@ -119,7 +149,7 @@ export default function AssetsClient({ data, rooms }: { data: AssetsData; rooms:
       <div>
         <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재</h1>
         <p className="text-xs text-[var(--warm-muted)] mt-0.5">
-          품목으로 산 내구재(의자·거치대·수선유지 자재 등)를 방별로 모아 봅니다. 여분으로 둔 미배정 항목은 나중에 방에 배정하면 그 호실 지출로 넘어갑니다.
+          품목으로 산 내구재(의자·거치대·수선유지 자재 등)를 방·공용부별로 모아 봅니다. 여분(미배정)은 방이나 공용부(주방·화장실·복도 등)에 배정할 수 있습니다. <span className="text-[var(--warm-mid)]">공용부는 ‘위치 관리’에서 추가합니다.</span>
         </p>
       </div>
 
@@ -139,7 +169,7 @@ export default function AssetsClient({ data, rooms }: { data: AssetsData; rooms:
               <p className="text-xs text-[var(--warm-muted)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-3 text-center">미배정 비품이 없습니다.</p>
             ) : (
               <ul className="space-y-1.5">
-                {data.unassigned.map(it => <ItemRow key={it.id} it={it} assigned={false} />)}
+                {data.unassigned.map(it => <ItemRow key={it.id} it={it} placed={false} />)}
               </ul>
             )}
           </section>
@@ -151,7 +181,19 @@ export default function AssetsClient({ data, rooms }: { data: AssetsData; rooms:
                 {fmtRoomNo(g.roomNo)} <span className="text-[var(--warm-muted)] font-normal">{g.items.length}건 · {won(g.total)}</span>
               </h2>
               <ul className="space-y-1.5">
-                {g.items.map(it => <ItemRow key={it.id} it={it} assigned />)}
+                {g.items.map(it => <ItemRow key={it.id} it={it} placed />)}
+              </ul>
+            </section>
+          ))}
+
+          {/* 공용부별 */}
+          {data.locations.map(g => (
+            <section key={g.locationId} className="space-y-2">
+              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">
+                {g.name} <span className="text-[0.625rem] text-[var(--coral)] font-normal">공용부</span> <span className="text-[var(--warm-muted)] font-normal">{g.items.length}건 · {won(g.total)}</span>
+              </h2>
+              <ul className="space-y-1.5">
+                {g.items.map(it => <ItemRow key={it.id} it={it} placed />)}
               </ul>
             </section>
           ))}

@@ -523,7 +523,11 @@ model Expense {
   order                ExpenseOrder?      @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   receivedLocationId   String?            @db.Uuid
-  receivedLocation     StorageLocation?   @relation(fields: [receivedLocationId], references: [id], onDelete: SetNull)
+  receivedLocation     StorageLocation?   @relation("ExpenseReceivedLocation", fields: [receivedLocationId], references: [id], onDelete: SetNull)
+
+  // 비품·자재 배정 위치(공용부 — 주방·화장실·복도 등 StorageLocation). 방(roomId)과 상호배타.
+  assignedLocationId   String?            @db.Uuid
+  assignedLocation     StorageLocation?   @relation("ExpenseAssignedLocation", fields: [assignedLocationId], references: [id], onDelete: SetNull)
 
   reserveSettlements   ReserveTransaction[] @relation("ExpenseReserveSettlement")
 
@@ -987,7 +991,8 @@ model StorageLocation {
   trackedItems        TrackedItemLocation[]
   stockCheckLocations StockCheckLocation[]
   transferSources     StockCheckLocation[] @relation("StockTransferSource")
-  receivedExpenses    Expense[]
+  receivedExpenses    Expense[]            @relation("ExpenseReceivedLocation")
+  assignedExpenses    Expense[]            @relation("ExpenseAssignedLocation")
   stockAdditions      StockAddition[]
 
   @@unique([propertyId, name])
