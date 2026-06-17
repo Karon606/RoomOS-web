@@ -1315,6 +1315,7 @@ export default function FinanceClient({
   const scanTargetRef                         = useRef<'add' | 'edit'>('add')
   const [editExpCategory, setEditExpCategory] = useState('')
   const [addItems, setAddItems]   = useState<ItemPickState[]>([])
+  const [addIsService, setAddIsService] = useState(false)   // #2 서비스·무형(시공·인건비 등) — 품목 없이 금액만
   const [editItems, setEditItems] = useState<ItemPickState[]>([])
   const [editExpAmount, setEditExpAmount]     = useState<number | undefined>(undefined)  // 품목 없을 때 controlled 금액
   const [editExpDetail, setEditExpDetail]     = useState('')
@@ -1676,13 +1677,18 @@ export default function FinanceClient({
 
   const handleAddExp = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
+    // #2 물품 구매는 품목 필수(재고/비품 누락 방지). 시공비·인건비 등 무형이면 '서비스·무형' 으로 전환.
+    if (!addIsService && addItems.length === 0) {
+      const msg = '품목을 1개 이상 추가하세요. (물품이 아닌 시공비·인건비 등이면 유형을 \'서비스·무형\'으로 바꾸세요)'
+      setError(msg); pushToast('error', msg); return
+    }
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
       const release = trackSave()
       try {
         const res = await addExpense(fd)
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-        setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
+        setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddIsService(false); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
         pushToast('success', '지출 등록됨')
       } finally { release() }
     })
@@ -2054,7 +2060,7 @@ export default function FinanceClient({
             <Btn variant="secondary" size="md" onClick={() => setShowVendorMgmt(true)}>
               구매처 관리
             </Btn>
-            <Btn variant="primary" size="md" onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
+            <Btn variant="primary" size="md" onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddIsService(false); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
               + 지출 등록
             </Btn>
           </div>
@@ -3456,6 +3462,19 @@ export default function FinanceClient({
                     })()}
                   </div>
                 </div>
+                {/* #2 유형 — 물품 구매(품목 필수) vs 서비스·무형(품목 없이 금액만) */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">유형 *</label>
+                  <div className="inline-flex w-full rounded-lg border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
+                    <button type="button" onClick={() => setAddIsService(false)}
+                      className={`flex-1 px-3 py-2 transition-colors ${!addIsService ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>물품 구매</button>
+                    <button type="button" onClick={() => { setAddIsService(true); setAddItems([]); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined) }}
+                      className={`flex-1 px-3 py-2 transition-colors ${addIsService ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>서비스·무형</button>
+                  </div>
+                  <p className="text-[0.625rem] text-[var(--warm-muted)]">
+                    {addIsService ? '시공비·인건비·공과금 등 — 품목 없이 금액만. 재고/비품에 안 잡힙니다.' : '실물 구매 — 품목을 입력해야 재고/비품에 잡힙니다.'}
+                  </p>
+                </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                   <select name="category" value={addExpCategory}
@@ -3470,13 +3489,14 @@ export default function FinanceClient({
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   <datalist id="add-exp-vendors">{vendorSuggestions.map(v => <option key={v} value={v} />)}</datalist>
                 </div>
-                {(
+                {!addIsService && (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택 <span className="text-[var(--warm-muted)] font-normal">(여러 품목 추가 가능)</span></label>
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택 * <span className="text-[var(--warm-muted)] font-normal">(여러 품목 추가 가능)</span></label>
                     <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={rooms} detailSuggestions={detailSuggestions} />
                   </div>
                 )}
-                {/* 배송비 — 수정 폼과 동일한 단일 섹션(두 방식 상호배타). 용어·구조·기본값 통일 */}
+                {/* 배송비 — 수정 폼과 동일한 단일 섹션(두 방식 상호배타). 용어·구조·기본값 통일. 서비스·무형이면 숨김 */}
+                {!addIsService && (
                 <div className="space-y-2 rounded-xl border border-[var(--warm-border)]/60 bg-[var(--canvas)]/40 px-3 py-2.5">
                   <p className="text-xs font-semibold text-[var(--warm-mid)]">배송비 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></p>
                   <label className="flex items-center gap-1.5 text-xs text-[var(--warm-dark)] cursor-pointer">
@@ -3522,6 +3542,7 @@ export default function FinanceClient({
                     </div>
                   )}
                 </div>
+                )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                   {addItems.length > 0
