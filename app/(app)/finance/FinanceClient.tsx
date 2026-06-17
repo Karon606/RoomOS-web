@@ -2214,7 +2214,16 @@ export default function FinanceClient({
                   seenAlloc.add(e.allocationGroupId)
                   const rows = filteredExpenses.filter(x => x.allocationGroupId === e.allocationGroupId)
                   const total = rows.reduce((s, r) => s + r.amount, 0)
-                  out.push({ exp: { ...e, amount: total }, groupRows: rows, groupKind: 'room' })
+                  // 같은 품목을 방별로 나눈 묶음 — 대표 라벨은 전체 수량 합산으로 표기(방배정분 + 미지정분 모두)
+                  const fmtQ = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
+                  let repDetail = e.detail ?? ''
+                  if (e.itemLabel) {
+                    const sumQty = rows.reduce((s, r) => s + (r.qtyValue ?? 0), 0)
+                    const specPart = e.specValue != null ? ` ${fmtQ(e.specValue)}${e.specUnit ?? ''}` : ''
+                    const qtyPart = sumQty > 0 ? ` x ${fmtQ(sumQty)}${e.qtyUnit ?? '개'}` : ''
+                    repDetail = `[${e.itemLabel}]${specPart}${qtyPart}`
+                  }
+                  out.push({ exp: { ...e, amount: total, detail: repDetail }, groupRows: rows, groupKind: 'room' })
                   continue
                 }
                 out.push({ exp: e })
