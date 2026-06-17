@@ -1279,6 +1279,10 @@ export default function FinanceClient({
   const [detailExpEdit, setDetailExpEdit] = useState(false)
   // 방별 분배 묶음 펼침 — 멤버 행 목록(각 방별 금액). null 이면 닫힘.
   const [groupDetail, setGroupDetail]     = useState<Expense[] | null>(null)
+  // 지출내역 보기 — '아이템별'(기본) / '주문별'(같은 주문 묶음 + 배송비 포함, 쇼핑몰 주문내역처럼). 선택 기억.
+  const [expView, setExpView] = useState<'item' | 'order'>(() =>
+    typeof window !== 'undefined' && localStorage.getItem('stayeum-finance-expview') === 'order' ? 'order' : 'item')
+  const changeExpView = (v: 'item' | 'order') => { setExpView(v); if (typeof window !== 'undefined') localStorage.setItem('stayeum-finance-expview', v) }
   // 합배송 배송비 — 수정 폼의 '별도 지출로 묶기' 입력값
   const [attachShipAmount, setAttachShipAmount] = useState<number | undefined>(undefined)
   const [attachShipType, setAttachShipType] = useState<'선불' | '착불' | '신용'>('선불')
@@ -2131,20 +2135,35 @@ export default function FinanceClient({
             const hiddenRecsTotal = hiddenRecs.reduce((s, r) => s + (r.pendingAmount ?? r.amount), 0)
 
             type ListItem =
-              | { kind: 'expense'; exp: Expense; dateStr: string; groupRows?: Expense[] }
+              | { kind: 'expense'; exp: Expense; dateStr: string; groupRows?: Expense[]; groupKind?: 'room' | 'order' }
               | { kind: 'recurring'; rec: RecurringExpenseWithStatus; dateStr: string }
 
-            // 방별 분배 묶음 병합 — 같은 allocationGroupId 행을 대표 1행(금액 합산)으로, 멤버 행 부착.
-            const groupedExpenseRows: { exp: Expense; groupRows?: Expense[] }[] = (() => {
-              const seen = new Set<string>()
-              const out: { exp: Expense; groupRows?: Expense[] }[] = []
+            // 아이템별: 방별 분배 묶음(allocationGroupId)만 한 줄로 병합.
+            // 주문별: 같은 주문(orderId) 전체를 한 줄로 병합(배송비 포함), 주문 없는 건은 allocationGroup 병합.
+            const groupedExpenseRows: { exp: Expense; groupRows?: Expense[]; groupKind?: 'room' | 'order' }[] = (() => {
+              const out: { exp: Expense; groupRows?: Expense[]; groupKind?: 'room' | 'order' }[] = []
+              const seenOrder = new Set<string>()
+              const seenAlloc = new Set<string>()
               for (const e of filteredExpenses) {
-                if (!e.allocationGroupId) { out.push({ exp: e }); continue }
-                if (seen.has(e.allocationGroupId)) continue
-                seen.add(e.allocationGroupId)
-                const rows = filteredExpenses.filter(x => x.allocationGroupId === e.allocationGroupId)
-                const total = rows.reduce((s, r) => s + r.amount, 0)
-                out.push({ exp: { ...e, amount: total }, groupRows: rows })
+                if (expView === 'order' && e.orderId) {
+                  if (seenOrder.has(e.orderId)) continue
+                  seenOrder.add(e.orderId)
+                  const rows = filteredExpenses.filter(x => x.orderId === e.orderId)
+                  // 대표 = 비배송 최대금액 행(없으면 첫 행)
+                  const rep = rows.filter(r => !r.isShipping).sort((a, b) => b.amount - a.amount)[0] ?? rows[0]
+                  const total = rows.reduce((s, r) => s + r.amount, 0)
+                  out.push({ exp: { ...rep, amount: total }, groupRows: rows, groupKind: 'order' })
+                  continue
+                }
+                if (e.allocationGroupId) {
+                  if (seenAlloc.has(e.allocationGroupId)) continue
+                  seenAlloc.add(e.allocationGroupId)
+                  const rows = filteredExpenses.filter(x => x.allocationGroupId === e.allocationGroupId)
+                  const total = rows.reduce((s, r) => s + r.amount, 0)
+                  out.push({ exp: { ...e, amount: total }, groupRows: rows, groupKind: 'room' })
+                  continue
+                }
+                out.push({ exp: e })
               }
               return out
             })()
@@ -2155,6 +2174,7 @@ export default function FinanceClient({
                 exp: g.exp,
                 dateStr: kstYmdStr(new Date(g.exp.date)),
                 groupRows: g.groupRows,
+                groupKind: g.groupKind,
               })),
               ...unconfirmedRecs.map(r => ({
                 kind: 'recurring' as const,
@@ -2175,6 +2195,19 @@ export default function FinanceClient({
 
             return (
               <>
+                {/* 보기 토글 — 아이템별 / 주문별(같은 주문 묶음 + 배송비) */}
+                <div className="flex items-center justify-end">
+                  <SegmentedControl
+                    size="sm"
+                    ariaLabel="지출 보기"
+                    value={expView}
+                    onChange={changeExpView}
+                    options={[
+                      { value: 'item',  label: '아이템별' },
+                      { value: 'order', label: '주문별' },
+                    ]}
+                  />
+                </div>
                 {/* 고정지출 가시성 토글 + 숨김 요약 */}
                 {isThisMonth && unconfirmedRecsFiltered.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
@@ -2219,12 +2252,16 @@ export default function FinanceClient({
                                 <div className="flex items-center gap-1.5 mb-0.5">
                                   {isFixed && <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)] shrink-0 mt-0.5" />}
                                   <span className="text-[0.625rem] text-[var(--coral)] font-medium">{e.category}</span>
-                                  {grp && <span className="text-[0.625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded">방 {grp.length}개</span>}
+                                  {grp && (item.groupKind === 'order'
+                                    ? <span className="text-[0.625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded">주문 {grp.filter(r => !r.isShipping).length}품목</span>
+                                    : <span className="text-[0.625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded">방 {grp.length}개</span>)}
                                   {isUnsettled && <span className="text-[0.625rem] text-[var(--danger-fg)] font-medium">· 미정산</span>}
                                 </div>
                                 <p className="text-sm text-[var(--warm-dark)] truncate">{[e.vendor, e.detail].filter(Boolean).join(' · ') || '—'}</p>
-                                {grp && <p className="text-[0.6875rem] text-[var(--coral)] truncate mt-0.5">{roomsLabel(grp)}</p>}
-                                {(() => { const c = orderChip(e); return c ? (
+                                {grp && (item.groupKind === 'order'
+                                  ? <p className="text-[0.6875rem] text-[var(--coral)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
+                                  : <p className="text-[0.6875rem] text-[var(--coral)] truncate mt-0.5">{roomsLabel(grp)}</p>)}
+                                {item.groupKind !== 'order' && (() => { const c = orderChip(e); return c ? (
                                   <span title={c.title} className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-md bg-[var(--honey)]/15 border border-[var(--honey)]/40 text-[0.5625rem] text-[var(--warm-dark)] font-medium max-w-full truncate">
                                     {c.text}
                                   </span>
@@ -2316,11 +2353,15 @@ export default function FinanceClient({
                                 <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
                                   <div className="flex items-center gap-1.5">
                                     <span className="truncate">{e.detail ?? '—'}</span>
-                                    {grp && <span className="text-[0.5625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">방 {grp.length}개</span>}
+                                    {grp && (item.groupKind === 'order'
+                                      ? <span className="text-[0.5625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">주문 {grp.filter(r => !r.isShipping).length}품목</span>
+                                      : <span className="text-[0.5625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">방 {grp.length}개</span>)}
                                     {e.receiptUrl && <span className="text-[0.5625rem] text-[var(--coral)] shrink-0">영수증</span>}
                                   </div>
-                                  {grp && <p className="text-[0.625rem] text-[var(--coral)] truncate mt-0.5">{roomsLabel(grp)}</p>}
-                                  {(() => { const c = orderChip(e); return c ? (
+                                  {grp && (item.groupKind === 'order'
+                                    ? <p className="text-[0.625rem] text-[var(--coral)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
+                                    : <p className="text-[0.625rem] text-[var(--coral)] truncate mt-0.5">{roomsLabel(grp)}</p>)}
+                                  {item.groupKind !== 'order' && (() => { const c = orderChip(e); return c ? (
                                     <span title={c.title} className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-md bg-[var(--honey)]/15 border border-[var(--honey)]/40 text-[0.5625rem] text-[var(--warm-dark)] font-medium max-w-full truncate">
                                       {c.text}
                                     </span>
@@ -2874,8 +2915,8 @@ export default function FinanceClient({
             onClick={e => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-2 px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
               <div className="min-w-0">
-                <h3 className="text-sm font-bold text-[var(--warm-dark)] truncate">{groupDetail[0]?.detail || groupDetail[0]?.itemLabel || '방별 지출'}</h3>
-                <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">방 {groupDetail.length}개 · 합계 {groupDetail.reduce((s, r) => s + r.amount, 0).toLocaleString()}원</p>
+                <h3 className="text-sm font-bold text-[var(--warm-dark)] truncate">{groupDetail[0]?.order?.code ? `주문 ${groupDetail[0].order.code}` : (groupDetail[0]?.detail || groupDetail[0]?.itemLabel || '묶음 지출')}</h3>
+                <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">{groupDetail.length}건 · 합계 {groupDetail.reduce((s, r) => s + r.amount, 0).toLocaleString()}원</p>
               </div>
               <button onClick={() => setGroupDetail(null)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-lg leading-none shrink-0">✕</button>
             </div>
@@ -2886,7 +2927,7 @@ export default function FinanceClient({
                     onClick={() => { setGroupDetail(null); setDetailExp(r); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }}
                     className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[var(--canvas)] hover:bg-[var(--warm-border)]/30 transition-colors text-left">
                     <span className="text-sm text-[var(--warm-dark)] truncate">
-                      {r.room ? (/^\d+$/.test(r.room.roomNo) ? `${r.room.roomNo}호` : r.room.roomNo) : '방 미지정'}
+                      {r.isShipping ? '배송비' : (r.room ? (/^\d+$/.test(r.room.roomNo) ? `${r.room.roomNo}호` : r.room.roomNo) : (r.detail || r.itemLabel || '방 미지정'))}
                       {r.qtyValue ? <span className="text-[var(--warm-muted)]"> · {r.qtyValue}{r.qtyUnit ?? ''}</span> : null}
                     </span>
                     <span className="text-sm font-semibold text-[var(--danger-fg)] shrink-0 tabular-nums">{r.amount.toLocaleString()}원</span>

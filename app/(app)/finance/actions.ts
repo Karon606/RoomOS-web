@@ -372,13 +372,21 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
       }
     }
 
-    // 합배송이면 주문(ExpenseOrder)을 먼저 만들어 모든 라인에 orderId 부여
+    // 주문(ExpenseOrder) 부여:
+    //  - 합배송(isOrderMode): 배송비 결제구분 포함 주문 생성.
+    //  - 그 외 다품목 구매(multiItems ≥ 2): 배송비 없는 주문 자동 생성 → 지출내역 '주문별 보기'에서 한 묶음.
+    //  (단일 품목은 주문 불필요 — 그 자체가 한 건)
     let orderId: string | null = null
     if (isOrderMode) {
       const shipType = orderShippingType && (SHIPPING_TYPES as readonly string[]).includes(orderShippingType)
         ? orderShippingType : null
       const order = await prisma.expenseOrder.create({
         data: { propertyId, code: await genOrderCode(propertyId), shippingType: shipType, shippingMemo: orderShippingMemo },
+      })
+      orderId = order.id
+    } else if (multiItems && multiItems.length > 1) {
+      const order = await prisma.expenseOrder.create({
+        data: { propertyId, code: await genOrderCode(propertyId), shippingType: null, shippingMemo: null },
       })
       orderId = order.id
     }

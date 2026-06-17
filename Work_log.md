@@ -178,6 +178,12 @@ Claude Design 의뢰([docs/design-brief-v1.3-request.md](docs/design-brief-v1.3-
 - **모달·네비(`e289e69`)**: 알림벨 같은 페이지 무반응(push+refresh). 페이지 이동 시 전역 모달 정리(뒤로가기 잔존·스크롤 점프). openCheckoutProration 시드 1회성. 공용 Modal Esc 닫기(중첩 시 최상단만). useUrlState 스테일 params 레이스. accrual-check 귀속월 이동 revalidate.
 - **보류(다음 작업 후보)**: ① [미납][퇴실 예정] 2뱃지 C안을 호실관리·대시보드 방현황에 확산(수납 상태 데이터 파이프 필요) ② 대시보드 상태색 hex → StatusBadge 토큰 통일(차트 연동 검토) ③ 이종현 락인 교정 실행 여부 ④ 감사 보고서의 나머지 low 항목.
 
+## 2026-06-10 (이어서) — 지출내역 '주문별/아이템별' 보기 토글 [main 배포, SQL 불필요]
+사용자 #1 후속 아이디어: 쇼핑몰 주문내역처럼 같은 주문끼리(배송비 포함) 묶어보기 ↔ 아이템별로 보기 토글.
+- **토대**: [finance/actions.ts](app/(app)/finance/actions.ts) addExpense — 다품목 구매(multiItems≥2)면 합배송이 아니어도 **ExpenseOrder 자동 생성**(앱 번호 YYMMDD-NNN, genOrderCode)해 모든 라인에 orderId 부여. 단일 품목은 미부여. (외부 쇼핑몰 번호는 추후 OCR 메모 보조 — 미착수)
+- **UI**: [FinanceClient.tsx](app/(app)/finance/FinanceClient.tsx) 지출내역 상단 SegmentedControl '아이템별'(기본)/'주문별'(localStorage 기억). 주문별이면 같은 orderId 행을 한 줄로(대표=비배송 최대금액, 금액=배송 포함 합계, '주문 N품목'·주문코드·'배송비 포함' 표기), 주문 없으면 기존 allocationGroup 병합. 클릭 시 groupDetail 모달이 품목/배송비 나열(모달 일반화: 제목 주문코드, 행 라벨 배송비/방/품목).
+- 아이템별은 기존 동작 그대로(회귀 없음). 과거 데이터(orderId 없음)는 주문별에서도 개별 표시(신규 구매부터 묶임). tsc·build 통과.
+
 ## 2026-06-10 (이어서) — 지출 유형 토글(물품/서비스·무형) [main 배포, SQL 불필요]
 - **#2**: 지출 등록 폼에 '유형' 토글 — **물품 구매**(기본, 품목 필수 → 재고/비품 누락 방지) ↔ **서비스·무형**(시공·인건비 등, 품목 없이 금액만). 서비스 선택 시 품목·배송비 섹션 숨김+초기화. 물품인데 품목 0개면 저장 차단(안내). [FinanceClient.tsx](app/(app)/finance/FinanceClient.tsx) handleAddExp 검증 + addIsService 상태.
 - 논의 정리: **#4** 페인트류=공용 자재로 **방 배분 안 함**(운영자가 비품·자재 화면에서 미배정/공용부로 둠 — 자동판정·전용 플래그 없음, 기존 기능으로 충분). **#1 후속(아이디어)**: 지출내역 '주문별 묶음/아이템별' 보기 토글 + 주문번호 — 기존 ExpenseOrder(앱생성 YYMMDD-NNN) 재사용 권장, 외부 쇼핑몰 주문번호는 OCR로 메모 보조. (미착수)
