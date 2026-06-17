@@ -10,6 +10,7 @@ import { requireEdit } from '@/lib/role'
 import { uploadToDrive } from '@/lib/google-drive'
 import type { SettleStatus } from '@prisma/client'
 import { FINANCE_DETAIL_SUGGESTIONS_LIMIT } from '@/lib/appConfig'
+import { getInventoryCategoryConfig } from '@/app/(app)/inventory/categoryConfig'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -23,6 +24,13 @@ async function getPropertyId() {
 
 function parseAmount(raw: FormDataEntryValue | null): number {
   return Number(String(raw ?? '').replace(/[^0-9]/g, '')) || 0
+}
+
+// 재고에서 추적하는 지출 카테고리(부식·소모품·폐기물 등). 이 카테고리의 '물품 구매'는 소모품이고,
+// 이 외 카테고리의 물품은 '비품·자재'(내구재)라 수령 후 비품 탭에서 방·공용부에 배정한다.
+export async function getTrackedCategories(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  return (await getInventoryCategoryConfig(propertyId)).map(c => c.cat)
 }
 
 export async function getExpenseCategoryTotals(targetMonth: string): Promise<{ category: string; total: number }[]> {
@@ -341,6 +349,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const specValueRaw = formData.get('specValue') as string
     const qtyValueRaw  = formData.get('qtyValue') as string
     const itemsJsonRaw = formData.get('itemsJson') as string
+    const svcAllocsRaw = formData.get('serviceAllocsJson') as string  // 서비스·무형 방별 분배 [{roomId, amount}]
     // 합배송(주문 묶음 + 배송비 별도 지출) 필드
     const orderShipping     = parseAmount(formData.get('orderShipping'))
     const orderShippingType = (formData.get('orderShippingType') as string) || null
@@ -463,6 +472,41 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
       await prisma.$transaction(ops)
       revalidatePath('/finance')
       return { ok: true }
+    }
+
+    // 서비스·무형 방별 분배 — 품목 없이 금액만 여러 방으로 나눔. 행을 쪼개 allocationGroupId 로 묶음.
+    // (방배정 합계 < 총액이면 나머지는 미지정(roomId=null) 행으로.)
+    if (svcAllocsRaw && !multiItems) {
+      let svcAllocs: { roomId: string | null; amount: number }[] = []
+      try {
+        const parsed = JSON.parse(svcAllocsRaw)
+        if (Array.isArray(parsed)) {
+          svcAllocs = parsed
+            .map((a: { roomId?: string; amount?: unknown }) => ({
+              roomId: a.roomId || null,
+              amount: Number(String(a.amount ?? '').replace(/[^0-9]/g, '')) || 0,
+            }))
+            .filter(a => a.roomId || a.amount > 0)
+        }
+      } catch { /* fallthrough → 단일 row */ }
+      if (svcAllocs.length > 0) {
+        const allocSum = svcAllocs.reduce((s, a) => s + a.amount, 0)
+        if (allocSum > amount + 1) {
+          return { ok: false, error: `방 배정 금액 합계(${allocSum.toLocaleString()}원)가 총 금액(${amount.toLocaleString()}원)을 초과합니다.` }
+        }
+        const rows = [...svcAllocs]
+        const rem = amount - allocSum
+        if (rem > 0) rows.push({ roomId: null, amount: rem })
+        const groupId = rows.length > 1 ? randomUUID() : null
+        const svcCreates = rows.map(r => prisma.expense.create({
+          data: { ...baseRow, roomId: r.roomId, amount: r.amount, detail: detail || null, allocationGroupId: groupId },
+        }))
+        const ops = [...svcCreates]
+        if (shippingCreate) ops.push(shippingCreate)
+        await prisma.$transaction(ops)
+        revalidatePath('/finance')
+        return { ok: true }
+      }
     }
 
     const singleCreate = prisma.expense.create({

@@ -3,6 +3,17 @@
 마지막 업데이트: 2026-06-18
 브랜치: main
 
+## 2026-06-18 (이어서) — 지출↔재고 방별 배정 정리 + 서비스 방별 분배 + 규격 cm·mm [SQL 0]
+**배경**: 지출 등록/수정 폼(대상 호실·품목 방별 나누기)과 재고 비품·자재 탭(방 배정)이 같은 `Expense.roomId`를 따로 건드려 꼬임. 특히 `updateExpense`가 `roomId`만 덮고 `assignedLocationId`(공용부)·`isCommonAsset`(공용자재)은 안 건드려, 공용부 배정 비품을 지출 폼에서 방 지정하면 방+공용부 동시 설정(상호배타 위반)되던 구조. 분할/병합 엔진도 폼(`expandExpenseRows`)·비품탭(`assignAggregateToTarget`+`mergeUnassignedGroup`) 두 벌.
+**결정(사용자)**: 비품은 "수령 후 비품 탭에서 배정"이 맞음 — 구매 단계 선배정은 실제 배정 때 중복 위험. → 지출 폼에서 **비품(재고 비추적 카테고리의 물품)** 방 배정 UI 제거. 소모품·서비스는 폼 배정 유지.
+**변경**:
+- 추적 카테고리(`getTrackedCategories` 신설) → page.tsx Promise.all → FinanceClient `trackedCategories` prop. `addIsDurable`/`editIsDurable` = 물품 & 비추적 카테고리.
+- 비품: 등록·수정 폼에서 대상호실 드롭다운·품목 방별 나누기(ItemSelector rooms=[]) 숨김 + "수령 후 재고>비품·자재에서 배정" 안내. itemsJson에서 allocations 제거(누수 차단). **수정 시 기존 roomId·공용부·공용자재 배정 보존**(드롭다운만 숨김, 값 그대로 제출 / updateExpense가 assign 필드 미터치).
+- **서비스·무형 방별 분배 추가**: 대상호실 옆 '방별로 나누기' 토글 → {방, 금액} 행. 서버 addExpense `serviceAllocsJson` 파싱 → 금액 합계 검증(초과 차단) 후 방별 N행 + 미지정 나머지(roomId=null), `allocationGroupId`로 묶음. 단일 방·전액이면 묶음 없이 1행. 목록 그룹 표시는 itemLabel 없으면 detail로 대표명(기존 로직 호환).
+- **규격 단위에 cm·mm 추가**(SPEC_UNITS — 등록·수정 공유).
+**파일**: app/(app)/finance/{FinanceClient.tsx, actions.ts, page.tsx}. tsc·build 통과. **SQL 불필요**(기존 roomId/allocationGroupId 재사용).
+**남은 것**: 분할/병합 엔진 완전 통합(공용 위젯화)은 추후 — 이번엔 폼에서 비품 배정을 빼 충돌 원천 제거하는 선까지.
+
 ## 2026-06-18 (이어서) — 지출 방별 분배 묶음 대표 수량 합산 [SQL 0]
 **증상**: 같은 품목을 방별로 나눠 묶었을 때(예: 506호 1개 + 미지정 3개 = 총 4개), 지출 카드 대표 제목이 대표 행 하나의 수량만 가져와 `[하수구 트랩] x 1개`로 표시됨. 묶음 상세 팝업 제목도 동일.
 **원인**: FinanceClient `groupedExpenseRows` 의 **주문별(order)** 분기에는 같은 품목 수량 합산 로직이 있었으나, **방별(room, allocationGroupId)** 분기는 `{ ...e, amount: total }`로 대표 행 detail을 그대로 써서 수량 미합산.

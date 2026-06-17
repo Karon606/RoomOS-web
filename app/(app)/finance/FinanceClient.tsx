@@ -110,7 +110,7 @@ const ITEM_PRESETS: Record<string, string[]> = {
   ],
 }
 
-const SPEC_UNITS = ['kg', 'g', 'ml', 'L', '매', 'm', '장', '개', '인분', '봉지', '알', '권']
+const SPEC_UNITS = ['kg', 'g', 'ml', 'L', '매', 'm', 'cm', 'mm', '장', '개', '인분', '봉지', '알', '권']
 const QTY_UNITS  = ['개', '박스', '롤', '팩', '포대', '망', '단', '봉', '포기', '병', '통', '세트']
 
 const ITEM_DEFAULTS: Record<string, { specUnit: string; qtyUnit: string }> = {
@@ -1216,7 +1216,7 @@ type CategoryTotal = { category: string; total: number }
 export default function FinanceClient({
   expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions, vendorSuggestions,
   reserveBalance, reserveMonthly, reserveTxns, settleableExpenses,
-  depositSummary, depositLedger,
+  depositSummary, depositLedger, trackedCategories,
   initialTab,
 }: {
   expenses: Expense[]
@@ -1243,6 +1243,7 @@ export default function FinanceClient({
   settleableExpenses: SettleableExpense[]
   depositSummary: DepositPerTenant[]
   depositLedger: DepositLedgerEntry[]
+  trackedCategories: string[]   // 재고 추적 카테고리(부식·소모품·폐기물 등). 그 외 물품은 비품·자재(수령 후 배정)
   initialTab?: Tab
 }) {
   const router = useRouter()
@@ -1332,6 +1333,8 @@ export default function FinanceClient({
   const [editExpAccName, setEditExpAccName] = useState('')
   const [editExpDate, setEditExpDate]       = useState('')
   const [addExpRoomId, setAddExpRoomId]     = useState('')
+  // 서비스·무형 방별 분배 — null=단일 대상 호실(기본), 배열=방별로 금액 나눔
+  const [addSvcAllocs, setAddSvcAllocs]     = useState<{ roomId: string; amount: string }[] | null>(null)
   const [editExpRoomId, setEditExpRoomId]   = useState('')
   const [addReceiptUrl, setAddReceiptUrl]   = useState('')
   const [editReceiptUrl, setEditReceiptUrl] = useState('')
@@ -1363,6 +1366,12 @@ export default function FinanceClient({
   const [editHasShipping, setEditHasShipping] = useState(false)   // 배송비를 이 지출 금액에 합산
   const [editShipping, setEditShipping]       = useState<number | undefined>(undefined)
   const [editShipSeparate, setEditShipSeparate] = useState(false) // 배송비를 별도 지출(합배송)로 묶기
+
+  // 비품·자재(내구재) 판정 — 재고 비추적 카테고리의 '물품'. 수령 후 비품 탭에서 방·공용부에 배정하므로
+  // 지출 등록/수정 폼에서는 방 배정 UI를 숨긴다(구매 단계 선배정이 실제 배정 때 중복되는 것 방지).
+  const isTrackedCat = (cat: string) => trackedCategories.includes(cat)
+  const addIsDurable = !addIsService && !isTrackedCat(addExpCategory)
+  const editIsDurable = editItems.length > 0 && !isTrackedCat(editExpCategory)
 
   // 파일 선택 → 이미지면 스캔 모달, PDF면 바로 업로드
   const handleOpenScan = async (file: File, target: 'add' | 'edit') => {
@@ -1730,7 +1739,7 @@ export default function FinanceClient({
       try {
         const res = await addExpense(fd)
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-        setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddIsService(false); setAddExtOrderNo(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
+        setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddIsService(false); setAddSvcAllocs(null); setAddExpRoomId(''); setAddExtOrderNo(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
         pushToast('success', '지출 등록됨')
       } finally { release() }
     })
@@ -2103,7 +2112,7 @@ export default function FinanceClient({
             <Btn variant="secondary" size="md" onClick={() => setShowVendorMgmt(true)}>
               구매처 관리
             </Btn>
-            <Btn variant="primary" size="md" onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddIsService(false); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
+            <Btn variant="primary" size="md" onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddIsService(false); setAddSvcAllocs(null); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
               + 지출 등록
             </Btn>
           </div>
@@ -3234,9 +3243,12 @@ export default function FinanceClient({
                         category={editExpCategory}
                         value={editItems}
                         onChange={setEditItems}
-                        rooms={rooms}
+                        rooms={editIsDurable ? [] : rooms}
                         detailSuggestions={detailSuggestions}
                       />
+                      {editIsDurable && (
+                        <p className="text-[0.625rem] text-[var(--warm-muted)]">비품·자재는 <strong className="text-[var(--warm-mid)]">재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
+                      )}
                     </div>
                   )}
                   {/* 배송비 — 두 방식(합산 / 별도 묶기)을 한 곳에 모아 명확히 구분.
@@ -3316,7 +3328,7 @@ export default function FinanceClient({
                     {/* 제출 detail = 표시 내용 + 배송비 표기(있으면) */}
                     <input type="hidden" name="detail" value={`${editItems.length > 0 ? fmtItemListDetail(editItems) : editExpDetail}${editHasShipping && (editShipping ?? 0) > 0 ? `${(editItems.length > 0 || editExpDetail) ? ' · ' : ''}배송비 ${(editShipping ?? 0).toLocaleString()}원` : ''}`} />
                     {editItems.length > 0 && <>
-                      <input type="hidden" name="itemsJson" value={JSON.stringify(editItems)} />
+                      <input type="hidden" name="itemsJson" value={JSON.stringify(editIsDurable ? editItems.map(it => ({ ...it, allocations: undefined })) : editItems)} />
                       {editItems.length === 1 && (
                         <>
                           <input type="hidden" name="itemLabel" value={editItems[0].label} />
@@ -3370,7 +3382,9 @@ export default function FinanceClient({
                     </div>
                   )}
                   {rooms.length > 0 && (
-                    editItems.some(it => (it.allocations?.length ?? 0) > 0) ? (
+                    editIsDurable ? (
+                      <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">비품·자재의 방·공용부 배정은 <strong className="text-[var(--warm-mid)]">재고 &gt; 비품·자재</strong> 탭에서 합니다. {detailExp.roomId ? '(현재 배정은 그대로 유지됩니다.)' : ''}</p>
+                    ) : editItems.some(it => (it.allocations?.length ?? 0) > 0) ? (
                       <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">대상 호실은 품목별 <strong className="text-[var(--warm-mid)]">'방별로 나누기'</strong>로 지정됩니다.</p>
                     ) : (
                       <div className="space-y-1.5">
@@ -3552,7 +3566,10 @@ export default function FinanceClient({
             <form onSubmit={handleAddExp} className="flex flex-col flex-1 overflow-hidden">
               <input type="hidden" name="financialAccountId" value={addExpAccId} />
               <input type="hidden" name="financeName" value={addExpAccName} />
-              <input type="hidden" name="roomId" value={addItems.some(it => (it.allocations?.length ?? 0) > 0) ? '' : addExpRoomId} />
+              <input type="hidden" name="roomId" value={(addIsDurable || addSvcAllocs || addItems.some(it => (it.allocations?.length ?? 0) > 0)) ? '' : addExpRoomId} />
+              {addIsService && addSvcAllocs && addSvcAllocs.length > 0 && (
+                <input type="hidden" name="serviceAllocsJson" value={JSON.stringify(addSvcAllocs.filter(a => a.roomId || a.amount))} />
+              )}
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -3592,9 +3609,9 @@ export default function FinanceClient({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">유형 *</label>
                   <div className="inline-flex w-full rounded-lg border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
-                    <button type="button" onClick={() => setAddIsService(false)}
+                    <button type="button" onClick={() => { setAddIsService(false); setAddSvcAllocs(null) }}
                       className={`flex-1 px-3 py-2 transition-colors ${!addIsService ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>물품 구매</button>
-                    <button type="button" onClick={() => { setAddIsService(true); setAddItems([]); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined) }}
+                    <button type="button" onClick={() => { setAddIsService(true); setAddItems([]); setAddSvcAllocs(null); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined) }}
                       className={`flex-1 px-3 py-2 transition-colors ${addIsService ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>서비스·무형</button>
                   </div>
                   <p className="text-[0.625rem] text-[var(--warm-muted)]">
@@ -3626,7 +3643,10 @@ export default function FinanceClient({
                 {!addIsService && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택 * <span className="text-[var(--warm-muted)] font-normal">(여러 품목 추가 가능)</span></label>
-                    <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={rooms} detailSuggestions={detailSuggestions} />
+                    <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={addIsDurable ? [] : rooms} detailSuggestions={detailSuggestions} />
+                    {addIsDurable && (
+                      <p className="text-[0.625rem] text-[var(--warm-muted)]">비품·자재는 <strong className="text-[var(--warm-mid)]">수령 후 재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
+                    )}
                   </div>
                 )}
                 {/* 배송비 — 수정 폼과 동일한 단일 섹션(두 방식 상호배타). 용어·구조·기본값 통일. 서비스·무형이면 숨김 */}
@@ -3688,7 +3708,7 @@ export default function FinanceClient({
                   {/* 제출 detail = 표시 내용 + 배송비 표기(있으면) */}
                   <input type="hidden" name="detail" value={`${addItems.length > 0 ? fmtItemListDetail(addItems) : addExpDetail}${addHasShipping && (addShipping ?? 0) > 0 ? `${(addItems.length > 0 || addExpDetail) ? ' · ' : ''}배송비 ${(addShipping ?? 0).toLocaleString()}원` : ''}`} />
                   {addItems.length > 0 && <>
-                    <input type="hidden" name="itemsJson" value={JSON.stringify(addItems)} />
+                    <input type="hidden" name="itemsJson" value={JSON.stringify(addIsDurable ? addItems.map(it => ({ ...it, allocations: undefined })) : addItems)} />
                     {addItems.length === 1 && (
                       <>
                         <input type="hidden" name="itemLabel" value={addItems[0].label} />
@@ -3742,16 +3762,62 @@ export default function FinanceClient({
                   </div>
                 )}
                 {rooms.length > 0 && (
-                  addItems.some(it => (it.allocations?.length ?? 0) > 0) ? (
+                  addIsDurable ? (
+                    <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">비품·자재는 수령 후 <strong className="text-[var(--warm-mid)]">재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
+                  ) : addItems.some(it => (it.allocations?.length ?? 0) > 0) ? (
                     <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">대상 호실은 품목별 <strong className="text-[var(--warm-mid)]">'방별로 나누기'</strong>로 지정됩니다.</p>
                   ) : (
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-[var(--warm-mid)]">대상 호실 (선택)</label>
-                      <select value={addExpRoomId} onChange={e => setAddExpRoomId(e.target.value)}
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                        <option value="">선택 안함</option>
-                        {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
-                      </select>
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="text-xs font-medium text-[var(--warm-mid)]">대상 호실 (선택)</label>
+                        {addIsService && (
+                          <button type="button" onClick={() => setAddSvcAllocs(addSvcAllocs ? null : [{ roomId: '', amount: '' }])}
+                            className={`text-[0.625rem] px-1.5 py-0.5 rounded-md border transition-colors ${addSvcAllocs ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--coral)]'}`}>
+                            {addSvcAllocs ? '방별 분배 끄기' : '방별로 나누기'}
+                          </button>
+                        )}
+                      </div>
+                      {addIsService && addSvcAllocs ? (
+                        (() => {
+                          const total = addExpAmount ?? 0
+                          const allocSum = addSvcAllocs.reduce((s, a) => s + (Number(a.amount) || 0), 0)
+                          const remain = total - allocSum
+                          const over = allocSum > total
+                          return (
+                            <div className="space-y-1 border-t border-[var(--coral)]/20 pt-1.5">
+                              {addSvcAllocs.map((a, ai) => (
+                                <div key={ai} className="flex items-center gap-1.5">
+                                  <select value={a.roomId}
+                                    onChange={e => setAddSvcAllocs(addSvcAllocs.map((x, i) => i === ai ? { ...x, roomId: e.target.value } : x))}
+                                    className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-1 text-xs text-[var(--warm-dark)] outline-none">
+                                    <option value="">방 선택…</option>
+                                    {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
+                                  </select>
+                                  <input type="text" inputMode="numeric" value={a.amount ? Number(a.amount).toLocaleString() : ''} placeholder="금액"
+                                    onChange={e => setAddSvcAllocs(addSvcAllocs.map((x, i) => i === ai ? { ...x, amount: e.target.value.replace(/[^0-9]/g, '') } : x))}
+                                    className="w-24 bg-[var(--cream)] border border-[var(--coral)]/30 rounded-sm px-1.5 py-1 text-xs text-right tabular-nums text-[var(--warm-dark)] outline-none" />
+                                  <button type="button" onClick={() => setAddSvcAllocs(addSvcAllocs.filter((_, i) => i !== ai))}
+                                    className="text-[var(--warm-muted)] hover:text-[var(--danger-fg)] text-sm shrink-0">×</button>
+                                </div>
+                              ))}
+                              <div className="flex items-center justify-between">
+                                <button type="button" onClick={() => setAddSvcAllocs([...addSvcAllocs, { roomId: '', amount: '' }])}
+                                  className="text-[0.625rem] text-[var(--coral)] hover:underline">+ 방 추가</button>
+                                <span className={`text-[0.5625rem] ${over ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}`}>
+                                  방 배정 {allocSum.toLocaleString()} / 전체 {total.toLocaleString()}원
+                                  {over ? ' ⚠ 금액 초과' : remain > 0 ? ` · 나머지 ${remain.toLocaleString()}원 미지정` : ''}
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        })()
+                      ) : (
+                        <select value={addExpRoomId} onChange={e => setAddExpRoomId(e.target.value)}
+                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                          <option value="">선택 안함</option>
+                          {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
+                        </select>
+                      )}
                     </div>
                   )
                 )}
