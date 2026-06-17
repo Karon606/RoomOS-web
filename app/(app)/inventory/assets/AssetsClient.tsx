@@ -8,7 +8,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { pushToast } from '@/lib/saveStatus'
-import { assignAggregateToTarget, setCommonAsset, type AssetsData, type AssetItem } from './actions'
+import { assignAggregateToTarget, setCommonAsset, setAssetReceived, type AssetsData, type AssetItem } from './actions'
 
 const won = (n: number) => n.toLocaleString('ko-KR') + '원'
 const fmtRoomNo = (no: string) => (/^\d+$/.test(no) ? `${no}호` : no)
@@ -89,10 +89,20 @@ export default function AssetsClient({ data, rooms, locations }: {
     })
   }
 
+  // 수령 상태 토글 (수령 완료 / 수령 대기로)
+  const markReceived = (it: AssetItem, value: boolean) => {
+    startTransition(async () => {
+      const res = await setAssetReceived(it.ids, value)
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', value ? '수령 완료' : '수령 대기로 변경됨')
+      router.refresh()
+    })
+  }
+
   const currentValue = (it: AssetItem) =>
     it.roomId ? `room:${it.roomId}` : it.locationId ? `loc:${it.locationId}` : ''
 
-  const ItemRow = ({ it, placed }: { it: AssetItem; placed: boolean }) => (
+  const ItemRow = ({ it, placed, awaitingReceipt }: { it: AssetItem; placed: boolean; awaitingReceipt?: boolean }) => (
     <li className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3.5 py-2.5">
       <div className="flex items-baseline justify-between gap-2">
         <div className="min-w-0 flex-1">
@@ -104,7 +114,12 @@ export default function AssetsClient({ data, rooms, locations }: {
         <span className="shrink-0 text-sm font-semibold text-[var(--danger-fg)] tabular-nums">{won(it.amount)}</span>
       </div>
       <div className="mt-1.5 flex items-center justify-end gap-1.5 flex-wrap">
-        {qtyAsk?.it.id === it.id ? (
+        {awaitingReceipt ? (
+          <button type="button" onClick={() => markReceived(it, true)} disabled={pending}
+            className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
+            수령 완료
+          </button>
+        ) : qtyAsk?.it.id === it.id ? (
           <>
             <span className="text-[0.6875rem] text-[var(--warm-muted)]">
               {qtyAsk.label}에 (전체 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'} 중)
@@ -138,6 +153,11 @@ export default function AssetsClient({ data, rooms, locations }: {
           </>
         ) : (
           <>
+            {/* 수령대기로 되돌리기 (적용취소) */}
+            <button type="button" onClick={() => markReceived(it, false)} disabled={pending}
+              className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
+              수령대기로
+            </button>
             {/* 공용 자재 토글 — 미배정/공용 자재에서만 (방·공용부 배정된 건 제외) */}
             {!placed && (
               <button type="button" onClick={() => markCommon(it, !it.isCommon)} disabled={pending}
@@ -155,7 +175,7 @@ export default function AssetsClient({ data, rooms, locations }: {
     </li>
   )
 
-  const isEmpty = data.rooms.length === 0 && data.locations.length === 0 && data.unassigned.length === 0 && data.common.length === 0
+  const isEmpty = data.rooms.length === 0 && data.locations.length === 0 && data.unassigned.length === 0 && data.common.length === 0 && data.pending.length === 0
 
   return (
     <div className="space-y-5 px-4 sm:px-6 py-5">
@@ -179,6 +199,18 @@ export default function AssetsClient({ data, rooms, locations }: {
         />
       ) : (
         <>
+          {/* 수령 대기 — 주문했지만 아직 안 받은 비품 (맨 위) */}
+          {data.pending.length > 0 && (
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">
+                수령 대기 <span className="text-[0.625rem] text-[var(--coral)] font-normal">도착 전</span> <span className="text-[var(--warm-muted)] font-normal">{data.pending.length}건 · {won(data.pendingTotal)}</span>
+              </h2>
+              <ul className="space-y-1.5">
+                {data.pending.map(it => <ItemRow key={it.id} it={it} placed={false} awaitingReceipt />)}
+              </ul>
+            </section>
+          )}
+
           {/* 미배정(여분) — 먼저 */}
           <section className="space-y-2">
             <h2 className="text-sm font-semibold text-[var(--warm-dark)]">

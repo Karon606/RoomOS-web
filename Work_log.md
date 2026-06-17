@@ -178,6 +178,13 @@ Claude Design 의뢰([docs/design-brief-v1.3-request.md](docs/design-brief-v1.3-
 - **모달·네비(`e289e69`)**: 알림벨 같은 페이지 무반응(push+refresh). 페이지 이동 시 전역 모달 정리(뒤로가기 잔존·스크롤 점프). openCheckoutProration 시드 1회성. 공용 Modal Esc 닫기(중첩 시 최상단만). useUrlState 스테일 params 레이스. accrual-check 귀속월 이동 revalidate.
 - **보류(다음 작업 후보)**: ① [미납][퇴실 예정] 2뱃지 C안을 호실관리·대시보드 방현황에 확산(수납 상태 데이터 파이프 필요) ② 대시보드 상태색 hex → StatusBadge 토큰 통일(차트 연동 검토) ③ 이종현 락인 교정 실행 여부 ④ 감사 보고서의 나머지 low 항목.
 
+## 2026-06-10 (이어서) — 비품·자재 수령대기 기능 [main 배포, SQL 불필요]
+사용자: 비품도 (온라인 주문 등) 수령대기 필요. 모델 `Expense.receivedAt`(null=대기) 이미 있으나 assets 뷰가 무시했음(실데이터 비품 대기 37·완료 47 혼재).
+- getDurableItems: `receivedAt` 반영 — **수령 대기(null) 최우선 버킷**으로 분리, 나머지(방/공용부/공용/미배정)는 수령완료만. AssetsData에 `pending`/`pendingTotal`.
+- 신규 `setAssetReceived(ids, received)` — 비품은 재고추적 아니라 자동점검 없이 receivedAt만. 
+- AssetsClient: 맨 위 '수령 대기' 섹션 + '수령 완료' 버튼. 수령완료 항목엔 '수령대기로'(적용취소). 신규 비품은 기본 수령대기(addExpense가 receivedAt 미설정)→도착 시 완료 처리.
+- tsc·build 통과. (#2 모바일 연결·#3 캘린더 연동은 답변 후 진행)
+
 ## 2026-06-10 (이어서) — 지출 꾹눌러 다중선택 → 한번에 묶기 + 주문 대표라벨 수량합산 [main 배포, SQL 불필요]
 - **다중선택 묶기**: 지출내역 카드/행을 **꾹 누르면(450ms) 선택 모드** 진입·하이라이트, 탭으로 추가 선택(주문/방 묶음 행은 멤버 전체 선택), 하단 바 '한 주문으로 묶기'로 한번에. `mergeExpensesIntoOrder(ids)` 신설(이미 다른 주문이면 가장 오래된 주문 재사용·이동, 비워진 주문은 배송비 라인 이전 후 삭제). 롱프레스 후 클릭 오작동 방지(lpFired 가드). 모바일 카드·데스크톱 행 공통.
 - **주문 대표 라벨 수량합산**: 주문별 보기에서 대표 행이 같은 품목 수량 합산('매트리스 커버 x 2개'), 다른 품목 섞이면 '... 외'.

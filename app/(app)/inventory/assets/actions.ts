@@ -51,6 +51,8 @@ export type AssetItem = {
 }
 
 export type AssetsData = {
+  pending: AssetItem[]          // 수령 대기(receivedAt 없음) — 배정 전
+  pendingTotal: number
   rooms: { roomId: string; roomNo: string; total: number; items: AssetItem[] }[]
   locations: { locationId: string; name: string; total: number; items: AssetItem[] }[]   // 공용부별
   common: AssetItem[]           // 공용 자재(방/공용부 배분 안 함)
@@ -64,7 +66,7 @@ type RawAsset = {
   qtyValue: number | null; qtyUnit: string | null; specValue: number | null; specUnit: string | null
   category: string; vendor: string | null
   roomId: string | null; roomNo: string | null; locationId: string | null; locationName: string | null
-  isCommon: boolean
+  isCommon: boolean; received: boolean
 }
 
 // 한 버킷의 행들을 동일 품목끼리 묶어 AssetItem[] 로 집계
@@ -117,7 +119,7 @@ export async function getDurableItems(): Promise<AssetsData> {
       room: { select: { roomNo: true } },
       assignedLocationId: true,
       assignedLocation: { select: { name: true } },
-      isCommonAsset: true,
+      isCommonAsset: true, receivedAt: true,
     },
   })
 
@@ -127,15 +129,17 @@ export async function getDurableItems(): Promise<AssetsData> {
     category: r.category, vendor: r.vendor,
     roomId: r.roomId, roomNo: r.room?.roomNo ?? null,
     locationId: r.assignedLocationId, locationName: r.assignedLocation?.name ?? null,
-    isCommon: r.isCommonAsset,
+    isCommon: r.isCommonAsset, received: r.receivedAt != null,
   }))
 
   const roomBuckets = new Map<string, RawAsset[]>()
   const locBuckets = new Map<string, RawAsset[]>()
+  const pendingRaw: RawAsset[] = []
   const commonRaw: RawAsset[] = []
   const unassignedRaw: RawAsset[] = []
   for (const r of raws) {
-    if (r.roomId && r.roomNo) (roomBuckets.get(r.roomId) ?? roomBuckets.set(r.roomId, []).get(r.roomId)!).push(r)
+    if (!r.received) pendingRaw.push(r)              // 수령 대기 — 배정 전, 최우선 분리
+    else if (r.roomId && r.roomNo) (roomBuckets.get(r.roomId) ?? roomBuckets.set(r.roomId, []).get(r.roomId)!).push(r)
     else if (r.locationId && r.locationName) (locBuckets.get(r.locationId) ?? locBuckets.set(r.locationId, []).get(r.locationId)!).push(r)
     else if (r.isCommon) commonRaw.push(r)
     else unassignedRaw.push(r)
@@ -151,12 +155,33 @@ export async function getDurableItems(): Promise<AssetsData> {
     return { locationId, name: list[0].locationName!, total: items.reduce((s, i) => s + i.amount, 0), items }
   }).sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }))
 
+  const pending = aggregateAssets(pendingRaw)
   const common = aggregateAssets(commonRaw)
   const unassigned = aggregateAssets(unassignedRaw)
   return {
+    pending, pendingTotal: pending.reduce((s, i) => s + i.amount, 0),
     rooms, locations,
     common, commonTotal: common.reduce((s, i) => s + i.amount, 0),
     unassigned, unassignedTotal: unassigned.reduce((s, i) => s + i.amount, 0),
+  }
+}
+
+// 비품 수령 상태 토글 — received=true 면 수령 완료(receivedAt=지금), false 면 수령 대기로.
+// (비품은 재고추적 대상이 아니라 자동 점검 생성 없이 receivedAt 만 설정)
+export async function setAssetReceived(expenseIds: string[], received: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (!expenseIds.length) return { ok: false, error: '대상 항목이 없습니다.' }
+    await prisma.expense.updateMany({
+      where: { id: { in: expenseIds }, propertyId },
+      data: { receivedAt: received ? new Date() : null },
+    })
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
 
