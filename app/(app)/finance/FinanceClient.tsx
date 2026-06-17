@@ -1710,8 +1710,9 @@ export default function FinanceClient({
         // 배송비 '별도 지출로 묶기(합배송)' — 수정 저장 후 주문 묶기/해제 처리.
         // 배송비 라인 자체는 제외(자기 자신을 묶으려다 오류 + 반쪽 저장이 되던 문제).
         if (detailExp && !detailExp.isShipping) {
-          if (editShipSeparate && (attachShipAmount ?? 0) > 0) {
-            const sres = await attachShippingToOrder({ expenseIds: [detailExp.id, ...attachShipSiblings], amount: attachShipAmount!, shippingType: attachShipType, shippingMemo: attachShipMemo || null })
+          if (editShipSeparate) {
+            // 배송비 0이면 '주문으로만 묶기'(2건 이상 선택 필요), 0 초과면 배송비 라인도 생성.
+            const sres = await attachShippingToOrder({ expenseIds: [detailExp.id, ...attachShipSiblings], amount: attachShipAmount ?? 0, shippingType: attachShipType, shippingMemo: attachShipMemo || null })
             if (!sres.ok) { setError(sres.error); pushToast('error', sres.error); return }
           } else if (!editShipSeparate && detailExp.orderId) {
             // 체크 해제 = 묶기 해제(적용취소) — 이전엔 조용한 무동작이라 풀린 줄 알게 만들던 문제
@@ -3178,11 +3179,11 @@ export default function FinanceClient({
                       <input type="checkbox" checked={editShipSeparate}
                         onChange={e => { setEditShipSeparate(e.target.checked); if (e.target.checked) { setEditHasShipping(false); setEditShipping(undefined) } }}
                         className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                      <span><strong>별도 지출로 묶기 (합배송)</strong> · 배송비 1건 + 주문번호로 묶음</span>
+                      <span><strong>다른 지출과 한 주문으로 묶기</strong> · 같은 날 항목 선택. 배송비 있으면 입력(없으면 묶기만)</span>
                     </label>
                     {editShipSeparate && detailExp && (
                       <div className="pl-5 space-y-2">
-                        <MoneyInput value={attachShipAmount} onChange={setAttachShipAmount} placeholder="배송비 0원" />
+                        <MoneyInput value={attachShipAmount} onChange={setAttachShipAmount} placeholder="배송비 0원 (없으면 비워두기)" />
                         <div className="flex items-center gap-1.5">
                           {(['선불', '착불', '신용'] as const).map(t => (
                             <button key={t} type="button" onClick={() => setAttachShipType(t)}
@@ -3218,7 +3219,7 @@ export default function FinanceClient({
                             </div>
                           )
                         })()}
-                        <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">저장하면 배송비가 별도 지출로 기록되고 같은 주문번호로 묶입니다. 신용(후불)은 미정산. 체크를 해제하고 저장하면 묶음이 해제됩니다.</p>
+                        <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">아래에서 같은 주문 항목을 선택하면 같은 주문번호로 묶입니다. 배송비를 입력하면 배송비 1건도 함께 기록(신용=미정산), 비워두면 묶기만 됩니다. 체크 해제 후 저장하면 묶음 해제.</p>
                       </div>
                     )}
                   </div>

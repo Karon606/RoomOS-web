@@ -723,7 +723,9 @@ export async function attachShippingToOrder(input: {
     const propertyId = await getPropertyId()
     const ids = (input.expenseIds ?? []).filter(Boolean)
     if (ids.length === 0) return { ok: false, error: '묶을 지출을 선택해주세요.' }
-    if (!input.amount || input.amount <= 0) return { ok: false, error: '배송비 금액을 입력해주세요.' }
+    // 배송비 0(또는 음수→0)이면 배송비 라인 없이 '주문으로만 묶기'. 0 초과면 배송비 라인도 생성.
+    const amount = Math.max(0, Math.round(input.amount || 0))
+    if (ids.length < 2 && amount === 0) return { ok: false, error: '묶을 지출을 2건 이상 선택하거나 배송비를 입력해주세요.' }
     const shipType = input.shippingType && (SHIPPING_TYPES as readonly string[]).includes(input.shippingType)
       ? input.shippingType : null
 
@@ -738,13 +740,16 @@ export async function attachShippingToOrder(input: {
     let orderId: string
     if (existingOrderId) {
       orderId = existingOrderId
-      await prisma.expenseOrder.update({
-        where: { id: orderId },
-        data: { shippingType: shipType, shippingMemo: input.shippingMemo || null },
-      })
+      // 배송비가 있을 때만 배송 메타 갱신(0=묶기만이면 기존 배송정보 보존)
+      if (amount > 0) {
+        await prisma.expenseOrder.update({
+          where: { id: orderId },
+          data: { shippingType: shipType, shippingMemo: input.shippingMemo || null },
+        })
+      }
     } else {
       const order = await prisma.expenseOrder.create({
-        data: { propertyId, code: await genOrderCode(propertyId), shippingType: shipType, shippingMemo: input.shippingMemo || null },
+        data: { propertyId, code: await genOrderCode(propertyId), shippingType: amount > 0 ? shipType : null, shippingMemo: amount > 0 ? (input.shippingMemo || null) : null },
       })
       orderId = order.id
     }
@@ -755,52 +760,54 @@ export async function attachShippingToOrder(input: {
       data: { orderId },
     })
 
-    // 대표(최대 금액) 지출 기준으로 배송비 라인 메타 결정
-    const rep = expenses[0]
-    // 배송비 라인을 주문 항목 '바로 위'에 정렬되도록 — 목록은 date desc, createdAt desc 순.
-    //   사후 묶기는 배송비 createdAt 이 '지금'이라 목록 맨 위로 떠버림 → 주문 항목들의
-    //   최신 createdAt 보다 1초 뒤로 맞춰 그 주문 묶음 바로 위에 붙게 한다(2026-06-10 사용자 보고).
-    const anchorMs = expenses.reduce((m, e) => Math.max(m, new Date(e.createdAt).getTime()), 0)
-    const shipCreatedAt = new Date(anchorMs + 1000)
-    const shipData = {
-      amount:             Math.round(input.amount),
-      detail:             `배송비${shipType ? ` (${shipType})` : ''}`,
-      // 배송비는 대표 지출의 결제수단을 따름 — 카드결제(신용카드)면 미정산, 후불('신용')이어도 미정산.
-      //   (예전엔 배송 구분만 보고 카드결제인데도 자동 정산완료되던 버그)
-      settleStatus:       ((rep.payMethod === '신용카드' || shipType === '신용') ? 'UNSETTLED' : 'SETTLED') as SettleStatus,
-      shippingMemo:       input.shippingMemo || null,
-    }
-
-    // 주문에 이미 배송비 라인이 있으면 갱신, 없으면 생성
-    const existingShip = await prisma.expense.findFirst({ where: { orderId, isShipping: true, propertyId } })
-    if (existingShip) {
-      await prisma.expense.update({
-        where: { id: existingShip.id },
-        data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipData.settleStatus, memo: shipData.shippingMemo, category: rep.category, date: rep.date, createdAt: shipCreatedAt },
-      })
-    } else {
-      await prisma.expense.create({
-        data: {
-          propertyId,
-          date:               rep.date,
-          category:           rep.category,
-          amount:             shipData.amount,
-          detail:             shipData.detail,
-          vendor:             rep.vendor,
-          memo:               shipData.shippingMemo,
-          payMethod:          rep.payMethod || '계좌이체',
-          financialAccountId: rep.financialAccountId,
-          financeName:        rep.financeName,
-          settleStatus:       shipData.settleStatus,
-          orderId,
-          isShipping:         true,
-          excludeFromInventory: true,
-          createdAt:          shipCreatedAt,
-        },
-      })
+    // 배송비(>0)일 때만 배송비 라인 생성/갱신. 0이면 위 updateMany로 '묶기'만 완료.
+    if (amount > 0) {
+      // 대표(최대 금액) 지출 기준으로 배송비 라인 메타 결정
+      const rep = expenses[0]
+      // 배송비 라인을 주문 항목 '바로 위'에 정렬되도록 — 목록은 date desc, createdAt desc 순.
+      //   사후 묶기는 배송비 createdAt 이 '지금'이라 목록 맨 위로 떠버림 → 주문 항목들의
+      //   최신 createdAt 보다 1초 뒤로 맞춰 그 주문 묶음 바로 위에 붙게 한다(2026-06-10 사용자 보고).
+      const anchorMs = expenses.reduce((m, e) => Math.max(m, new Date(e.createdAt).getTime()), 0)
+      const shipCreatedAt = new Date(anchorMs + 1000)
+      const shipData = {
+        amount,
+        detail:             `배송비${shipType ? ` (${shipType})` : ''}`,
+        // 배송비는 대표 지출의 결제수단을 따름 — 카드결제(신용카드)면 미정산, 후불('신용')이어도 미정산.
+        settleStatus:       ((rep.payMethod === '신용카드' || shipType === '신용') ? 'UNSETTLED' : 'SETTLED') as SettleStatus,
+        shippingMemo:       input.shippingMemo || null,
+      }
+      // 주문에 이미 배송비 라인이 있으면 갱신, 없으면 생성
+      const existingShip = await prisma.expense.findFirst({ where: { orderId, isShipping: true, propertyId } })
+      if (existingShip) {
+        await prisma.expense.update({
+          where: { id: existingShip.id },
+          data: { amount: shipData.amount, detail: shipData.detail, settleStatus: shipData.settleStatus, memo: shipData.shippingMemo, category: rep.category, date: rep.date, createdAt: shipCreatedAt },
+        })
+      } else {
+        await prisma.expense.create({
+          data: {
+            propertyId,
+            date:               rep.date,
+            category:           rep.category,
+            amount:             shipData.amount,
+            detail:             shipData.detail,
+            vendor:             rep.vendor,
+            memo:               shipData.shippingMemo,
+            payMethod:          rep.payMethod || '계좌이체',
+            financialAccountId: rep.financialAccountId,
+            financeName:        rep.financeName,
+            settleStatus:       shipData.settleStatus,
+            orderId,
+            isShipping:         true,
+            excludeFromInventory: true,
+            createdAt:          shipCreatedAt,
+          },
+        })
+      }
     }
 
     revalidatePath('/finance')
+    revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
