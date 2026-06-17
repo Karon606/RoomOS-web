@@ -54,7 +54,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
     // 퇴실 예정일
     if (l.status === 'CHECKOUT_PENDING' && l.expectedMoveOut) {
       const mo = new Date(l.expectedMoveOut)
-      ev(`checkout-${l.id}`, mo.getFullYear(), mo.getMonth() + 1, mo.getDate(), `🚪 ${who} 퇴실 예정`, '')
+      ev(`checkout-${l.id}`, mo.getFullYear(), mo.getMonth() + 1, mo.getDate(), `${who} 퇴실 예정`, '')
     }
     // 납부 예정일 — 이번 달부터 6개월. 퇴실 달 이후는 제외.
     if (l.rentAmount > 0 && l.dueDay) {
@@ -67,7 +67,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
         const lastDay = new Date(y, m, 0).getDate()
         const day = l.dueDay.includes('말') ? lastDay : Math.min(Math.max(parseInt(l.dueDay, 10) || 1, 1), lastDay)
         const amount = discountedRent(l.discounts, monthStr, l.rentAmount)
-        ev(`rent-${l.id}-${monthStr}`, y, m, day, `💰 ${who} 월세 ${amount.toLocaleString()}원`, '납부 예정일')
+        ev(`rent-${l.id}-${monthStr}`, y, m, day, `${who} 월세 ${amount.toLocaleString()}원`, '납부 예정일')
       }
     }
   }
