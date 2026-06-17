@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
-  addExpense, updateExpense, deleteExpense, attachShippingToOrder, detachShippingFromOrder,
+  addExpense, updateExpense, deleteExpense, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder,
   addExtraIncome, updateExtraIncome, deleteExtraIncome,
   settleCardExpenses, unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
@@ -1283,6 +1283,42 @@ export default function FinanceClient({
   const [expView, setExpView] = useState<'item' | 'order'>(() =>
     typeof window !== 'undefined' && localStorage.getItem('stayeum-finance-expview') === 'order' ? 'order' : 'item')
   const changeExpView = (v: 'item' | 'order') => { setExpView(v); if (typeof window !== 'undefined') localStorage.setItem('stayeum-finance-expview', v) }
+
+  // 다중선택 묶기 — 카드 꾹 누르면 선택 모드 진입, 탭으로 추가 선택, 하단 바에서 '한 주문으로 묶기'
+  const [mergeMode, setMergeMode] = useState(false)
+  const [mergeSel, setMergeSel] = useState<Set<string>>(new Set())
+  const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lpFired = useRef(false)
+  const cancelLongPress = () => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null } }
+  // 그룹(주문/방 묶음)이면 멤버 id 전부, 아니면 단일 id
+  const expIdsOf = (exp: Expense, groupRows?: Expense[]) => (groupRows && groupRows.length ? groupRows.filter(r => !r.isShipping).map(r => r.id) : [exp.id])
+  const isExpSelected = (exp: Expense, groupRows?: Expense[]) => { const ids = expIdsOf(exp, groupRows); return ids.length > 0 && ids.every(id => mergeSel.has(id)) }
+  const toggleExpSel = (exp: Expense, groupRows?: Expense[]) => {
+    setMergeSel(prev => {
+      const n = new Set(prev); const ids = expIdsOf(exp, groupRows); const all = ids.every(id => n.has(id))
+      ids.forEach(id => all ? n.delete(id) : n.add(id)); return n
+    })
+  }
+  const startLongPress = (exp: Expense, groupRows?: Expense[]) => {
+    if (mergeMode) return
+    lpFired.current = false
+    cancelLongPress()
+    lpTimer.current = setTimeout(() => { lpFired.current = true; setMergeMode(true); toggleExpSel(exp, groupRows) }, 450)
+  }
+  const exitMergeMode = () => { setMergeMode(false); setMergeSel(new Set()) }
+  const handleMergeSelected = () => {
+    const ids = [...mergeSel]
+    if (ids.length < 2) { pushToast('error', '2건 이상 선택해주세요.'); return }
+    startTransition(async () => {
+      const release = trackSave()
+      try {
+        const res = await mergeExpensesIntoOrder(ids)
+        if (!res.ok) { pushToast('error', res.error); return }
+        pushToast('success', `${ids.length}건을 한 주문으로 묶었습니다`)
+        exitMergeMode(); setExpView('order'); router.refresh()
+      } finally { release() }
+    })
+  }
   // 합배송 배송비 — 수정 폼의 '별도 지출로 묶기' 입력값
   const [attachShipAmount, setAttachShipAmount] = useState<number | undefined>(undefined)
   const [attachShipType, setAttachShipType] = useState<'선불' | '착불' | '신용'>('선불')
@@ -2261,11 +2297,23 @@ export default function FinanceClient({
                         const isUnsettled = e.settleStatus === 'UNSETTLED'
                         const isFixed = !!e.recurringExpenseId
                         const meta = [e.payMethod, e.financialAccount ? accName(e.financialAccount) : null].filter(Boolean).join(' · ')
+                        const sel = mergeMode && isExpSelected(e, grp)
                         return (
                           <div key={e.id}
-                            onClick={() => { if (grp) { setGroupDetail(grp) } else { setDetailExp(e); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') } }}
-                            className={`bg-[var(--cream)] border rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity ${isUnsettled ? 'border-[var(--danger-ring)]' : 'border-[var(--warm-border)]'}`}>
+                            onClick={() => {
+                              if (lpFired.current) { lpFired.current = false; return }
+                              if (mergeMode) { toggleExpSel(e, grp); return }
+                              if (grp) { setGroupDetail(grp) } else { setDetailExp(e); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }
+                            }}
+                            onPointerDown={() => startLongPress(e, grp)}
+                            onPointerMove={cancelLongPress}
+                            onPointerUp={cancelLongPress}
+                            onPointerLeave={cancelLongPress}
+                            className={`bg-[var(--cream)] border rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity select-none ${sel ? 'border-[var(--coral)] ring-2 ring-[var(--coral)]/40 bg-[var(--coral-pale)]' : isUnsettled ? 'border-[var(--danger-ring)]' : 'border-[var(--warm-border)]'}`}>
                             <div className="flex items-start justify-between gap-2">
+                              {mergeMode && (
+                                <span className={`mt-0.5 shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[0.5rem] ${sel ? 'bg-[var(--coral)] border-[var(--coral)] text-white' : 'border-[var(--warm-border)]'}`}>{sel ? '✓' : ''}</span>
+                              )}
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5 mb-0.5">
                                   {isFixed && <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)] shrink-0 mt-0.5" />}
@@ -2352,11 +2400,20 @@ export default function FinanceClient({
                           if (item.kind === 'expense') {
                             const e = item.exp
                             const grp = item.groupRows
+                            const selRow = mergeMode && isExpSelected(e, grp)
                             return (
                               <tr key={e.id}
-                                onClick={() => { if (grp) { setGroupDetail(grp) } else { setDetailExp(e); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') } }}
-                                className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer">
-                                <td className="px-4 py-3 text-xs text-[var(--warm-mid)] overflow-hidden"><span className="truncate block">{fmtDate(e.date)}</span></td>
+                                onClick={() => {
+                                  if (lpFired.current) { lpFired.current = false; return }
+                                  if (mergeMode) { toggleExpSel(e, grp); return }
+                                  if (grp) { setGroupDetail(grp) } else { setDetailExp(e); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }
+                                }}
+                                onPointerDown={() => startLongPress(e, grp)}
+                                onPointerMove={cancelLongPress}
+                                onPointerUp={cancelLongPress}
+                                onPointerLeave={cancelLongPress}
+                                className={`border-b border-[var(--warm-border)]/50 transition-colors cursor-pointer select-none ${selRow ? 'bg-[var(--coral-pale)] ring-1 ring-inset ring-[var(--coral)]/40' : 'hover:bg-[var(--canvas)]/40'}`}>
+                                <td className="px-4 py-3 text-xs text-[var(--warm-mid)] overflow-hidden"><span className="truncate block">{mergeMode ? (selRow ? '☑ ' : '☐ ') : ''}{fmtDate(e.date)}</span></td>
                                 <td className="px-4 py-3 overflow-hidden">
                                   <p className="text-xs text-[var(--warm-dark)] truncate">{e.payMethod ?? '—'}</p>
                                   {e.financialAccount && <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">{accName(e.financialAccount)}</p>}
@@ -4219,6 +4276,19 @@ export default function FinanceClient({
             </div>
           </div>
         </div>
+      </div>
+    )}
+
+    {/* 다중선택 묶기 — 하단 액션 바 */}
+    {mergeMode && (
+      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+16px)] left-1/2 -translate-x-1/2 z-[var(--z-modal)] flex items-center gap-2 bg-[var(--ink)] text-[var(--canvas)] rounded-2xl pl-4 pr-2 py-2 shadow-lift max-w-[calc(100vw-24px)]">
+        <span className="text-sm font-medium whitespace-nowrap">{mergeSel.size}건 선택</span>
+        <button type="button" onClick={handleMergeSelected} disabled={isPending || mergeSel.size < 2}
+          className="text-sm font-semibold px-3.5 py-1.5 rounded-xl bg-[var(--coral)] text-white disabled:opacity-50">
+          한 주문으로 묶기
+        </button>
+        <button type="button" onClick={exitMergeMode}
+          className="text-sm px-3 py-1.5 rounded-xl bg-white/15 text-[var(--canvas)] hover:bg-white/25 transition-colors">취소</button>
       </div>
     )}
 

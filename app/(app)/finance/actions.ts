@@ -709,6 +709,46 @@ export async function detachShippingFromOrder(expenseId: string): Promise<{ ok: 
   }
 }
 
+// 다중선택 병합 — 선택한 지출들을 한 주문으로 묶기(꾹 눌러 선택 UX용).
+// 이미 다른 주문에 속한 것도 대상 주문으로 이동, 비워진 주문은 배송비 라인을 옮긴 뒤 삭제.
+export async function mergeExpensesIntoOrder(expenseIds: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const ids = [...new Set((expenseIds ?? []).filter(Boolean))]
+    if (ids.length < 2) return { ok: false, error: '묶을 지출을 2건 이상 선택해주세요.' }
+    const selected = await prisma.expense.findMany({ where: { id: { in: ids }, propertyId, isShipping: false } })
+    if (selected.length < 2) return { ok: false, error: '묶을 지출을 2건 이상 선택해주세요.' }
+
+    const sourceOrderIds = [...new Set(selected.map(e => e.orderId).filter(Boolean) as string[])]
+    let targetOrderId: string
+    if (sourceOrderIds.length > 0) {
+      const orders = await prisma.expenseOrder.findMany({ where: { id: { in: sourceOrderIds }, propertyId }, orderBy: { createdAt: 'asc' }, select: { id: true } })
+      targetOrderId = orders[0]?.id ?? sourceOrderIds[0]
+    } else {
+      const order = await prisma.expenseOrder.create({ data: { propertyId, code: await genOrderCode(propertyId), shippingType: null, shippingMemo: null } })
+      targetOrderId = order.id
+    }
+
+    await prisma.expense.updateMany({ where: { id: { in: selected.map(e => e.id) }, propertyId }, data: { orderId: targetOrderId } })
+
+    // 비워진 source 주문 정리(배송비 라인은 대상으로 이동 후 빈 주문 삭제)
+    for (const oid of sourceOrderIds) {
+      if (oid === targetOrderId) continue
+      const remain = await prisma.expense.count({ where: { orderId: oid, isShipping: false, propertyId } })
+      if (remain === 0) {
+        await prisma.expense.updateMany({ where: { orderId: oid, isShipping: true, propertyId }, data: { orderId: targetOrderId } })
+        await prisma.expenseOrder.delete({ where: { id: oid } }).catch(() => {})
+      }
+    }
+    revalidatePath('/finance'); revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '묶기에 실패했습니다.' }
+  }
+}
+
 // ── 합배송 Phase 2: 기존 지출(들)에 배송비를 묶기 ──
 //  주문(ExpenseOrder)을 만들거나 기존 주문을 재사용해 expenseIds 를 묶고,
 //  배송비 별도 지출 라인을 생성(또는 그 주문에 이미 있으면 갱신).
