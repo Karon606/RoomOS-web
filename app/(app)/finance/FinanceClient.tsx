@@ -57,7 +57,7 @@ type Expense = {
   orderId: string | null; isShipping: boolean
   allocationGroupId: string | null   // 한 품목 방별 분배 묶음 — 목록에서 한 줄로 묶어 표시
   excludeFromInventory: boolean   // 재고 계산 제외 — 상세에서 '다시 포함' 제공
-  order: { id: string; code: string; shippingType: string | null; shippingMemo: string | null } | null
+  order: { id: string; code: string; externalOrderNo?: string | null; shippingType: string | null; shippingMemo: string | null } | null
   createdAt: Date  // 같은 날짜 정렬 보조 (최근 입력 우선)
 }
 
@@ -1320,6 +1320,7 @@ export default function FinanceClient({
   const [editExpCategory, setEditExpCategory] = useState('')
   const [addItems, setAddItems]   = useState<ItemPickState[]>([])
   const [addIsService, setAddIsService] = useState(false)   // #2 서비스·무형(시공·인건비 등) — 품목 없이 금액만
+  const [addExtOrderNo, setAddExtOrderNo] = useState('')    // #1 쇼핑몰 주문번호(쿠팡 등) — OCR 프리필/수동
   const [editItems, setEditItems] = useState<ItemPickState[]>([])
   const [editExpAmount, setEditExpAmount]     = useState<number | undefined>(undefined)  // 품목 없을 때 controlled 금액
   const [editExpDetail, setEditExpDetail]     = useState('')
@@ -1363,6 +1364,7 @@ export default function FinanceClient({
         const d = res.data
         if (d.date) setAddExpDate(d.date)
         if (d.vendor) setAddExpVendor(d.vendor)
+        if (d.orderNo) setAddExtOrderNo(d.orderNo)
         if (d.category && EXPENSE_CATEGORIES.includes(d.category)) setAddExpCategory(d.category)
         if (d.items.length > 0 && ITEM_PRESETS[d.category ?? '']) {
           setAddItems(d.items.map(it => ({ label: it.label, specValue: it.specValue ?? '', specUnit: it.specUnit ?? '', qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '', amount: it.amount, unitPrice: it.amount != null ? Math.round(it.amount / (Number(it.qtyValue) || 1)) : undefined })))
@@ -1692,7 +1694,7 @@ export default function FinanceClient({
       try {
         const res = await addExpense(fd)
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-        setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddIsService(false); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
+        setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddIsService(false); setAddExtOrderNo(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
         pushToast('success', '지출 등록됨')
       } finally { release() }
     })
@@ -2064,7 +2066,7 @@ export default function FinanceClient({
             <Btn variant="secondary" size="md" onClick={() => setShowVendorMgmt(true)}>
               구매처 관리
             </Btn>
-            <Btn variant="primary" size="md" onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddIsService(false); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
+            <Btn variant="primary" size="md" onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddIsService(false); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
               + 지출 등록
             </Btn>
           </div>
@@ -2259,7 +2261,7 @@ export default function FinanceClient({
                                 </div>
                                 <p className="text-sm text-[var(--warm-dark)] truncate">{[e.vendor, e.detail].filter(Boolean).join(' · ') || '—'}</p>
                                 {grp && (item.groupKind === 'order'
-                                  ? <p className="text-[0.6875rem] text-[var(--coral)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
+                                  ? <p className="text-[0.6875rem] text-[var(--coral)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{e.order?.externalOrderNo ? ` · 쇼핑몰 ${e.order.externalOrderNo}` : ''}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
                                   : <p className="text-[0.6875rem] text-[var(--coral)] truncate mt-0.5">{roomsLabel(grp)}</p>)}
                                 {item.groupKind !== 'order' && (() => { const c = orderChip(e); return c ? (
                                   <span title={c.title} className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-md bg-[var(--honey)]/15 border border-[var(--honey)]/40 text-[0.5625rem] text-[var(--warm-dark)] font-medium max-w-full truncate">
@@ -2359,7 +2361,7 @@ export default function FinanceClient({
                                     {e.receiptUrl && <span className="text-[0.5625rem] text-[var(--coral)] shrink-0">영수증</span>}
                                   </div>
                                   {grp && (item.groupKind === 'order'
-                                    ? <p className="text-[0.625rem] text-[var(--coral)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
+                                    ? <p className="text-[0.625rem] text-[var(--coral)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{e.order?.externalOrderNo ? ` · 쇼핑몰 ${e.order.externalOrderNo}` : ''}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
                                     : <p className="text-[0.625rem] text-[var(--coral)] truncate mt-0.5">{roomsLabel(grp)}</p>)}
                                   {item.groupKind !== 'order' && (() => { const c = orderChip(e); return c ? (
                                     <span title={c.title} className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-md bg-[var(--honey)]/15 border border-[var(--honey)]/40 text-[0.5625rem] text-[var(--warm-dark)] font-medium max-w-full truncate">
@@ -2916,7 +2918,7 @@ export default function FinanceClient({
             <div className="flex items-start justify-between gap-2 px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
               <div className="min-w-0">
                 <h3 className="text-sm font-bold text-[var(--warm-dark)] truncate">{groupDetail[0]?.order?.code ? `주문 ${groupDetail[0].order.code}` : (groupDetail[0]?.detail || groupDetail[0]?.itemLabel || '묶음 지출')}</h3>
-                <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">{groupDetail.length}건 · 합계 {groupDetail.reduce((s, r) => s + r.amount, 0).toLocaleString()}원</p>
+                <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">{groupDetail[0]?.order?.externalOrderNo ? `쇼핑몰 ${groupDetail[0].order.externalOrderNo} · ` : ''}{groupDetail.length}건 · 합계 {groupDetail.reduce((s, r) => s + r.amount, 0).toLocaleString()}원</p>
               </div>
               <button onClick={() => setGroupDetail(null)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-lg leading-none shrink-0">✕</button>
             </div>
@@ -2999,6 +3001,7 @@ export default function FinanceClient({
                         {(() => { const s = orderSummaries.get(detailExp.order!.id); return s ? s.label : detailExp.order!.code })()}
                         {detailExp.order.shippingType && <span className="ml-1 text-[var(--warm-muted)]">· 배송 {detailExp.order.shippingType}</span>}
                         <span className="ml-1 text-[0.625rem] text-[var(--warm-muted)]">({detailExp.order.code})</span>
+                        {detailExp.order.externalOrderNo && <span className="ml-1 text-[0.625rem] text-[var(--warm-muted)]">· 쇼핑몰 {detailExp.order.externalOrderNo}</span>}
                       </span>
                     } />
                   )}
@@ -3530,6 +3533,14 @@ export default function FinanceClient({
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   <datalist id="add-exp-vendors">{vendorSuggestions.map(v => <option key={v} value={v} />)}</datalist>
                 </div>
+                {/* #1 쇼핑몰 주문번호 — 영수증 OCR로 자동입력되며 수동 수정 가능. 진위확인·재주문 참조용(보조). */}
+                {!addIsService && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">쇼핑몰 주문번호 <span className="text-[var(--warm-muted)] font-normal">(선택 · 쿠팡 등)</span></label>
+                    <input type="text" name="externalOrderNo" value={addExtOrderNo} onChange={e => setAddExtOrderNo(e.target.value)} placeholder="영수증 분석 시 자동 입력"
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)] tabular-nums" />
+                  </div>
+                )}
                 {!addIsService && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">품목 선택 * <span className="text-[var(--warm-muted)] font-normal">(여러 품목 추가 가능)</span></label>

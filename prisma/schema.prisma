@@ -549,6 +549,7 @@ model ExpenseOrder {
   propertyId   String   @db.Uuid
   property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   code         String   // 자동 생성 'YYMMDD-NNN' (propertyId·일자별 순번)
+  externalOrderNo String? // 쇼핑몰(쿠팡 등) 실제 주문번호 — 영수증 OCR/수동 입력. 진위확인·재주문 참조용(보조)
   shippingType String?  // 배송비 결제구분: '선불' | '착불' | '신용'
   shippingMemo String?  // 결제수단·비고 등 자유 메모
   createdAt    DateTime @default(now())

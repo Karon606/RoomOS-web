@@ -178,6 +178,12 @@ Claude Design 의뢰([docs/design-brief-v1.3-request.md](docs/design-brief-v1.3-
 - **모달·네비(`e289e69`)**: 알림벨 같은 페이지 무반응(push+refresh). 페이지 이동 시 전역 모달 정리(뒤로가기 잔존·스크롤 점프). openCheckoutProration 시드 1회성. 공용 Modal Esc 닫기(중첩 시 최상단만). useUrlState 스테일 params 레이스. accrual-check 귀속월 이동 revalidate.
 - **보류(다음 작업 후보)**: ① [미납][퇴실 예정] 2뱃지 C안을 호실관리·대시보드 방현황에 확산(수납 상태 데이터 파이프 필요) ② 대시보드 상태색 hex → StatusBadge 토큰 통일(차트 연동 검토) ③ 이종현 락인 교정 실행 여부 ④ 감사 보고서의 나머지 low 항목.
 
+## 2026-06-10 (이어서) — 보류분 마무리: 공용 자재 + 외부 주문번호(OCR) [⚠️SQL 2건 선적용]
+보류했던 2건 구현.
+- **#4-2 공용 자재**(SQL: `migrate_expense_common_asset.sql`): `Expense.isCommonAsset`. 비품·자재에 '공용 자재' 섹션(페인트·공구 등 방/공용부 배분 안 함, 미배정과 구분). 미배정/공용자재 행에 '공용 자재로'/'공용 해제' 토글(`setCommonAsset`), 배정 시 자동 해제. 집계 키에 isCommon 포함(공용/일반 분리).
+- **#1-외부주문번호**(SQL: `migrate_expense_order_external_no.sql`): `ExpenseOrder.externalOrderNo`. 영수증 OCR(analyzeReceiptWithGemini 프롬프트에 orderNo 추가)이 쿠팡 등 주문번호 추출→지출 등록 폼 '쇼핑몰 주문번호' 칸 자동입력(수동 수정 가능). 앱번호(YYMMDD-NNN)는 묶음 기준, 외부번호는 보조(진위·재주문 참조). 외부번호 입력 시 단일품목도 주문 생성. 주문별 보기/상세/모달에 '쇼핑몰 {번호}' 표기.
+- tsc·build 통과. ⚠️ 두 SQL 모두 Supabase 적용 후 배포.
+
 ## 2026-06-10 (이어서) — 지출내역 '주문별/아이템별' 보기 토글 [main 배포, SQL 불필요]
 사용자 #1 후속 아이디어: 쇼핑몰 주문내역처럼 같은 주문끼리(배송비 포함) 묶어보기 ↔ 아이템별로 보기 토글.
 - **토대**: [finance/actions.ts](app/(app)/finance/actions.ts) addExpense — 다품목 구매(multiItems≥2)면 합배송이 아니어도 **ExpenseOrder 자동 생성**(앱 번호 YYMMDD-NNN, genOrderCode)해 모든 라인에 orderId 부여. 단일 품목은 미부여. (외부 쇼핑몰 번호는 추후 OCR 메모 보조 — 미착수)

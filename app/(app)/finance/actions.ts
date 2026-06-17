@@ -64,7 +64,7 @@ export async function getExpenses(targetMonth: string) {
       financialAccount: { select: { brand: true, alias: true } },
       room: { select: { id: true, roomNo: true } },
       recurringExpense: { select: { isVariable: true } },
-      order: { select: { id: true, code: true, shippingType: true, shippingMemo: true } },
+      order: { select: { id: true, code: true, externalOrderNo: true, shippingType: true, shippingMemo: true } },
     },
   })
 }
@@ -220,6 +220,7 @@ export type ReceiptOcrResult = {
   totalAmount?: number
   items: ReceiptOcrItem[]
   category?: string     // AI 추천 카테고리 (보수적)
+  orderNo?: string      // 쇼핑몰 주문번호(쿠팡 등) — 보이면 추출
 }
 
 export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: string): Promise<{ ok: true; data: ReceiptOcrResult } | { ok: false; error: string }> {
@@ -236,6 +237,7 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
   "date": "YYYY-MM-DD",          // 결제일. 안 보이면 생략
   "vendor": "상호명",              // 안 보이면 생략
   "totalAmount": 12345,           // 합계 금액 (정수, 원)
+  "orderNo": "1234567890",        // 쇼핑몰 주문번호(쿠팡 등). 영수증/주문서에 '주문번호'가 보이면. 없으면 생략
   "category": "부식비|소모품비|폐기물 처리비|수선유지비|공과금|마케팅/광고비|인건비|청소용역비|관리비|임대료|통신/렌탈/보험료|세금/수수료|보증금 반환",  // 가장 적합한 1개. 애매하면 생략
   "items": [
     {
@@ -308,6 +310,7 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
         vendor:      typeof parsed.vendor === 'string' ? parsed.vendor : undefined,
         totalAmount: typeof parsed.totalAmount === 'number' ? parsed.totalAmount : undefined,
         category:    typeof parsed.category === 'string' ? parsed.category : undefined,
+        orderNo:     typeof parsed.orderNo === 'string' && parsed.orderNo.trim() ? parsed.orderNo.trim() : undefined,
         items,
       },
     }
@@ -342,6 +345,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const orderShipping     = parseAmount(formData.get('orderShipping'))
     const orderShippingType = (formData.get('orderShippingType') as string) || null
     const orderShippingMemo = (formData.get('orderShippingMemo') as string) || null
+    const externalOrderNo   = ((formData.get('externalOrderNo') as string) || '').trim() || null
     const isOrderMode       = !!orderShipping && orderShipping > 0
     // 합산형 배송비('배송비 포함') — amount 에 이미 더해져 제출됨. 품목합 검증 시 이만큼 차감.
     // (이전엔 이 필드가 없어 '품목 2개+ + 배송비 포함' 조합이 합계 불일치로 항상 저장 실패)
@@ -381,12 +385,12 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
       const shipType = orderShippingType && (SHIPPING_TYPES as readonly string[]).includes(orderShippingType)
         ? orderShippingType : null
       const order = await prisma.expenseOrder.create({
-        data: { propertyId, code: await genOrderCode(propertyId), shippingType: shipType, shippingMemo: orderShippingMemo },
+        data: { propertyId, code: await genOrderCode(propertyId), externalOrderNo, shippingType: shipType, shippingMemo: orderShippingMemo },
       })
       orderId = order.id
-    } else if (multiItems && multiItems.length > 1) {
+    } else if ((multiItems && multiItems.length > 1) || externalOrderNo) {
       const order = await prisma.expenseOrder.create({
-        data: { propertyId, code: await genOrderCode(propertyId), shippingType: null, shippingMemo: null },
+        data: { propertyId, code: await genOrderCode(propertyId), externalOrderNo, shippingType: null, shippingMemo: null },
       })
       orderId = order.id
     }
