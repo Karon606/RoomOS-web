@@ -80,7 +80,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
     headers: {
       'Content-Type': 'text/calendar; charset=utf-8',
       'Content-Disposition': 'inline; filename="stayeum.ics"',
-      'Cache-Control': 'public, max-age=3600',
+      // 캘린더 앱이 다시 가져갈 때 항상 최신본을 받도록(CDN 캐시 방지)
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
     },
   })
 }
