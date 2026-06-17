@@ -56,7 +56,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       )}
 
       <TenantBasicInfo tenant={tenant} />
-      <TenantContactInfo contacts={tenant.contacts} />
+      <TenantContactInfo contacts={tenant.contacts} email={tenant.email} />
       {lease && <TenantContractInfo lease={lease} />}
       {lease && <TenantAdditionalInfo lease={lease} />}
 

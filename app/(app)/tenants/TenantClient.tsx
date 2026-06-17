@@ -1296,9 +1296,10 @@ export default function TenantClient({
                   </div>
                   {(() => { const ex = statusException(status); return ex && <StatusBadge tone={ex.tone}>{ex.label}</StatusBadge> })()}
                 </div>
-                {/* 연락처 */}
+                {/* 연락처 — 탭하면 바로 전화 */}
                 {cardFields.contact && primary && (
-                  <p className="text-xs text-[var(--warm-muted)] mb-2">{formatPhone(primary.contactValue)}</p>
+                  <a href={`tel:${primary.contactValue.replace(/[^0-9+]/g, '')}`} onClick={e => e.stopPropagation()}
+                    className="text-xs text-[var(--coral)] mb-2 inline-block hover:underline underline-offset-2">{formatPhone(primary.contactValue)}</a>
                 )}
                 {/* 이용료 · 납부일 */}
                 {cardFields.payment && (
