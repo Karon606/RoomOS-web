@@ -6,6 +6,7 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { randomUUID } from 'crypto'
+import { Prisma } from '@prisma/client'
 import { requireEdit } from '@/lib/role'
 import { getTrackedCategories } from '../categoryConfig'
 
@@ -28,13 +29,17 @@ async function getPropertyId() {
   return propertyId
 }
 
+// 화면 표시용 — 같은 버킷(미배정/방/공용부) 안에서 동일 품목(라벨·규격·단위·카테고리)을
+// 하나로 합쳐 표시. 장부(Expense)는 개별 구매 기록 그대로 유지하고 화면만 집계한다.
 export type AssetItem = {
-  id: string
-  date: string
+  id: string                    // 대표(React key) = ids[0]
+  ids: string[]                 // 묶인 지출 id 전부
+  count: number                 // 묶인 구매 건수
+  date: string                  // 대표(최신) 일자
   itemLabel: string
-  detail: string | null
-  amount: number
-  qtyValue: number | null
+  detail: string | null         // 합계 수량으로 재구성
+  amount: number                // 합계 금액
+  qtyValue: number | null       // 합계 수량
   qtyUnit: string | null
   category: string
   vendor: string | null
@@ -51,8 +56,42 @@ export type AssetsData = {
   unassignedTotal: number
 }
 
+type RawAsset = {
+  id: string; date: string; itemLabel: string; amount: number
+  qtyValue: number | null; qtyUnit: string | null; specValue: number | null; specUnit: string | null
+  category: string; vendor: string | null
+  roomId: string | null; roomNo: string | null; locationId: string | null; locationName: string | null
+}
+
+// 한 버킷의 행들을 동일 품목끼리 묶어 AssetItem[] 로 집계
+function aggregateAssets(list: RawAsset[]): AssetItem[] {
+  const map = new Map<string, { spec: number | null; specUnit: string | null; rows: RawAsset[] }>()
+  for (const r of list) {
+    const key = [r.itemLabel, r.specValue ?? '', r.specUnit ?? '', r.qtyUnit ?? '', r.category].join('␟')
+    const g = map.get(key) ?? { spec: r.specValue, specUnit: r.specUnit, rows: [] }
+    g.rows.push(r); map.set(key, g)
+  }
+  const out: AssetItem[] = []
+  for (const g of map.values()) {
+    const rows = g.rows
+    const hasQty = rows.some(r => r.qtyValue != null)
+    const qtyValue = hasQty ? rows.reduce((s, r) => s + (r.qtyValue ?? 0), 0) : null
+    const amount = rows.reduce((s, r) => s + r.amount, 0)
+    const date = rows.reduce((d, r) => (r.date > d ? r.date : d), rows[0].date)
+    const rep = rows[0]
+    out.push({
+      id: rep.id, ids: rows.map(r => r.id), count: rows.length, date,
+      itemLabel: rep.itemLabel,
+      detail: buildAssetDetail({ itemLabel: rep.itemLabel, specValue: g.spec, specUnit: g.specUnit, qtyValue, qtyUnit: rep.qtyUnit }),
+      amount, qtyValue, qtyUnit: rep.qtyUnit, category: rep.category, vendor: rep.vendor,
+      roomId: rep.roomId, roomNo: rep.roomNo, locationId: rep.locationId, locationName: rep.locationName,
+    })
+  }
+  return out.sort((a, b) => b.date.localeCompare(a.date))
+}
+
 // 비품·자재 = 품목으로 입력된 지출 중 소모품(재고 추적 카테고리)·배송비를 제외한 내구재.
-// (의자·거치대·수선유지 자재 등) 방/공용부 배정 여부로 나눠서 보여준다.
+// (의자·거치대·수선유지 자재 등) 방/공용부 배정 여부로 나눠서 보여준다. 동일 품목은 합쳐서 표시.
 export async function getDurableItems(): Promise<AssetsData> {
   const propertyId = await getPropertyId()
   const trackedCats = await getTrackedCategories(propertyId)
@@ -67,51 +106,43 @@ export async function getDurableItems(): Promise<AssetsData> {
     },
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     select: {
-      id: true, date: true, itemLabel: true, detail: true, amount: true,
-      qtyValue: true, qtyUnit: true, category: true, vendor: true, roomId: true,
+      id: true, date: true, itemLabel: true, amount: true,
+      qtyValue: true, qtyUnit: true, specValue: true, specUnit: true,
+      category: true, vendor: true, roomId: true,
       room: { select: { roomNo: true } },
       assignedLocationId: true,
       assignedLocation: { select: { name: true } },
     },
   })
 
-  const items: AssetItem[] = rows.map(r => ({
-    id: r.id,
-    date: r.date.toISOString().slice(0, 10),
-    itemLabel: r.itemLabel ?? '',
-    detail: r.detail,
-    amount: r.amount,
-    qtyValue: r.qtyValue,
-    qtyUnit: r.qtyUnit,
-    category: r.category,
-    vendor: r.vendor,
-    roomId: r.roomId,
-    roomNo: r.room?.roomNo ?? null,
-    locationId: r.assignedLocationId,
-    locationName: r.assignedLocation?.name ?? null,
+  const raws: RawAsset[] = rows.map(r => ({
+    id: r.id, date: r.date.toISOString().slice(0, 10), itemLabel: r.itemLabel ?? '',
+    amount: r.amount, qtyValue: r.qtyValue, qtyUnit: r.qtyUnit, specValue: r.specValue, specUnit: r.specUnit,
+    category: r.category, vendor: r.vendor,
+    roomId: r.roomId, roomNo: r.room?.roomNo ?? null,
+    locationId: r.assignedLocationId, locationName: r.assignedLocation?.name ?? null,
   }))
 
-  const roomMap = new Map<string, { roomId: string; roomNo: string; total: number; items: AssetItem[] }>()
-  const locMap = new Map<string, { locationId: string; name: string; total: number; items: AssetItem[] }>()
-  const unassigned: AssetItem[] = []
-  for (const it of items) {
-    if (it.roomId && it.roomNo) {
-      const cur = roomMap.get(it.roomId) ?? { roomId: it.roomId, roomNo: it.roomNo, total: 0, items: [] }
-      cur.total += it.amount; cur.items.push(it)
-      roomMap.set(it.roomId, cur)
-    } else if (it.locationId && it.locationName) {
-      const cur = locMap.get(it.locationId) ?? { locationId: it.locationId, name: it.locationName, total: 0, items: [] }
-      cur.total += it.amount; cur.items.push(it)
-      locMap.set(it.locationId, cur)
-    } else {
-      unassigned.push(it)
-    }
+  const roomBuckets = new Map<string, RawAsset[]>()
+  const locBuckets = new Map<string, RawAsset[]>()
+  const unassignedRaw: RawAsset[] = []
+  for (const r of raws) {
+    if (r.roomId && r.roomNo) (roomBuckets.get(r.roomId) ?? roomBuckets.set(r.roomId, []).get(r.roomId)!).push(r)
+    else if (r.locationId && r.locationName) (locBuckets.get(r.locationId) ?? locBuckets.set(r.locationId, []).get(r.locationId)!).push(r)
+    else unassignedRaw.push(r)
   }
-  const rooms = [...roomMap.values()].sort((a, b) =>
-    a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true }))
-  const locations = [...locMap.values()].sort((a, b) =>
-    a.name.localeCompare(b.name, 'ko', { numeric: true }))
 
+  const rooms = [...roomBuckets.entries()].map(([roomId, list]) => {
+    const items = aggregateAssets(list)
+    return { roomId, roomNo: list[0].roomNo!, total: items.reduce((s, i) => s + i.amount, 0), items }
+  }).sort((a, b) => a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true }))
+
+  const locations = [...locBuckets.entries()].map(([locationId, list]) => {
+    const items = aggregateAssets(list)
+    return { locationId, name: list[0].locationName!, total: items.reduce((s, i) => s + i.amount, 0), items }
+  }).sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }))
+
+  const unassigned = aggregateAssets(unassignedRaw)
   return { rooms, locations, unassigned, unassignedTotal: unassigned.reduce((s, i) => s + i.amount, 0) }
 }
 
@@ -159,21 +190,64 @@ async function validateTarget(t: AssignTarget, propertyId: string): Promise<stri
   return null
 }
 
-// 비품을 방/공용부에 배정(통째) 또는 해제(none). 해제 시: 분할(allocationGroupId)이면 같은 묶음 미배정 행 자동 재병합.
-export async function assignExpenseToTarget(expenseId: string, target: AssignTarget): Promise<{ ok: true } | { ok: false; error: string }> {
+// 비품(집계 묶음 = expenseIds)을 방/공용부에 배정하거나(qty 만큼 분배) 해제(none). 장부는 개별 행 유지.
+// - none: 묶인 행 전부 미배정 + 분할 묶음(allocationGroupId) 재병합(적용취소).
+// - 배정: qty(null=전체) 만큼 수량 큰 행부터 통째 소진, 마지막 부분만 분할(금액 비례).
+export async function assignAggregateToTarget(
+  expenseIds: string[], target: AssignTarget, qty: number | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const exp = await prisma.expense.findFirst({ where: { id: expenseId, propertyId }, select: { id: true, allocationGroupId: true } })
-    if (!exp) return { ok: false, error: '지출 항목을 찾을 수 없습니다.' }
+    if (!expenseIds.length) return { ok: false, error: '대상 항목이 없습니다.' }
     const err = await validateTarget(target, propertyId)
     if (err) return { ok: false, error: err }
-    await prisma.expense.update({ where: { id: expenseId }, data: targetData(target) })
-    // 해제(=미배정 복귀)면 같은 분할 묶음의 미배정 행끼리 재병합
-    if (target.kind === 'none' && exp.allocationGroupId) await mergeUnassignedGroup(propertyId, exp.allocationGroupId)
-    revalidatePath('/inventory/assets')
-    revalidatePath('/inventory')
-    revalidatePath('/finance')
+    const exps = await prisma.expense.findMany({ where: { id: { in: expenseIds }, propertyId } })
+    if (!exps.length) return { ok: false, error: '지출 항목을 찾을 수 없습니다.' }
+
+    if (target.kind === 'none') {
+      await prisma.$transaction(exps.map(e => prisma.expense.update({ where: { id: e.id }, data: { roomId: null, assignedLocationId: null } })))
+      const groups = [...new Set(exps.map(e => e.allocationGroupId).filter(Boolean) as string[])]
+      for (const g of groups) await mergeUnassignedGroup(propertyId, g)
+      revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+      return { ok: true }
+    }
+
+    const tData = targetData(target)
+    const totalQty = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
+    let need = (qty == null || qty >= totalQty) ? totalQty : Math.max(1, qty)
+    // 수량 큰 행부터 통째 소진 → 분할 최소화. 마지막 부분만 쪼갬.
+    const sorted = [...exps].sort((a, b) => (b.qtyValue ?? 1) - (a.qtyValue ?? 1))
+    const ops: Prisma.PrismaPromise<unknown>[] = []
+    for (const e of sorted) {
+      if (need <= 1e-9) break
+      const eq = e.qtyValue ?? 1
+      if (eq <= need + 1e-9) {
+        ops.push(prisma.expense.update({ where: { id: e.id }, data: tData }))
+        need -= eq
+      } else {
+        const assignedAmount = Math.round(e.amount * (need / eq))
+        const remainAmount = e.amount - assignedAmount
+        const remainQty = Math.round((eq - need) * 1000) / 1000
+        const groupId = e.allocationGroupId ?? randomUUID()
+        ops.push(prisma.expense.update({ where: { id: e.id }, data: { qtyValue: remainQty, amount: remainAmount, allocationGroupId: groupId, detail: buildAssetDetail({ ...e, qtyValue: remainQty }) } }))
+        ops.push(prisma.expense.create({ data: {
+          date: e.date, amount: assignedAmount, category: e.category,
+          detail: buildAssetDetail({ ...e, qtyValue: need }),
+          vendor: e.vendor, memo: e.memo, payMethod: e.payMethod, settleStatus: e.settleStatus,
+          receiptUrl: e.receiptUrl, receiptUrls: e.receiptUrls, financeName: e.financeName,
+          itemLabel: e.itemLabel, specValue: e.specValue, specUnit: e.specUnit,
+          qtyValue: need, qtyUnit: e.qtyUnit,
+          receivedAt: e.receivedAt, excludeFromInventory: e.excludeFromInventory,
+          allocationGroupId: groupId, orderId: e.orderId, isShipping: e.isShipping,
+          propertyId, roomId: tData.roomId, assignedLocationId: tData.assignedLocationId,
+          financialAccountId: e.financialAccountId, recurringExpenseId: e.recurringExpenseId, receivedLocationId: e.receivedLocationId,
+        } }))
+        need = 0
+      }
+    }
+    await prisma.$transaction(ops)
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -213,67 +287,3 @@ async function mergeUnassignedGroup(propertyId: string, groupId: string): Promis
   ])
 }
 
-// 비품 중 일부 수량만 방/공용부에 배정 → 그 수량만큼 새 행으로 분할(금액 비례),
-// 나머지는 원래 자리 유지. 같은 allocationGroupId 로 묶어 표시·재병합.
-// qty >= 전체수량 또는 수량 정보 없으면 통째 이동.
-export async function assignExpensePartialToTarget(
-  expenseId: string, target: { kind: 'room' | 'location'; id: string }, qty: number,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    await requireEdit()
-    const propertyId = await getPropertyId()
-    const exp = await prisma.expense.findFirst({ where: { id: expenseId, propertyId } })
-    if (!exp) return { ok: false, error: '지출 항목을 찾을 수 없습니다.' }
-    const verr = await validateTarget(target, propertyId)
-    if (verr) return { ok: false, error: verr }
-    const tData = targetData(target)
-
-    const totalQty = exp.qtyValue ?? 0
-    let q = qty
-    if (!(q > 0)) q = 1
-    if (q > totalQty) q = totalQty
-
-    // 수량 정보 없거나 전량 배정 → 통째 이동
-    if (totalQty <= 1 || q >= totalQty) {
-      await prisma.expense.update({ where: { id: expenseId }, data: tData })
-      revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
-      return { ok: true }
-    }
-
-    // 부분 분할 — 금액은 수량 비례, 잔여는 원본이 흡수
-    const assignedAmount = Math.round(exp.amount * (q / totalQty))
-    const remainAmount = exp.amount - assignedAmount
-    const remainQty = Math.round((totalQty - q) * 1000) / 1000
-    const groupId = exp.allocationGroupId ?? randomUUID()
-
-    await prisma.$transaction([
-      // 원본 = 나머지 (배정 위치 유지: 미배정이면 미배정, 다른 방/공용부면 그대로)
-      prisma.expense.update({
-        where: { id: expenseId },
-        data: { qtyValue: remainQty, amount: remainAmount, allocationGroupId: groupId, detail: buildAssetDetail({ ...exp, qtyValue: remainQty }) },
-      }),
-      // 신규 = 배정분 (그 방/공용부로)
-      prisma.expense.create({
-        data: {
-          date: exp.date, amount: assignedAmount, category: exp.category,
-          detail: buildAssetDetail({ ...exp, qtyValue: q }),
-          vendor: exp.vendor, memo: exp.memo, payMethod: exp.payMethod,
-          settleStatus: exp.settleStatus, receiptUrl: exp.receiptUrl, receiptUrls: exp.receiptUrls,
-          financeName: exp.financeName,
-          itemLabel: exp.itemLabel, specValue: exp.specValue, specUnit: exp.specUnit,
-          qtyValue: q, qtyUnit: exp.qtyUnit,
-          receivedAt: exp.receivedAt, excludeFromInventory: exp.excludeFromInventory,
-          allocationGroupId: groupId, orderId: exp.orderId, isShipping: exp.isShipping,
-          propertyId, roomId: tData.roomId, assignedLocationId: tData.assignedLocationId,
-          financialAccountId: exp.financialAccountId, recurringExpenseId: exp.recurringExpenseId,
-          receivedLocationId: exp.receivedLocationId,
-        },
-      }),
-    ])
-    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
-    return { ok: true }
-  } catch (err) {
-    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
-    return { ok: false, error: (err as Error).message ?? '배정에 실패했습니다.' }
-  }
-}

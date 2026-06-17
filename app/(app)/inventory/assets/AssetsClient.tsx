@@ -8,7 +8,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { pushToast } from '@/lib/saveStatus'
-import { assignExpenseToTarget, assignExpensePartialToTarget, type AssetsData, type AssetItem } from './actions'
+import { assignAggregateToTarget, type AssetsData, type AssetItem } from './actions'
 
 const won = (n: number) => n.toLocaleString('ko-KR') + '원'
 const fmtRoomNo = (no: string) => (/^\d+$/.test(no) ? `${no}호` : no)
@@ -27,10 +27,10 @@ export default function AssetsClient({ data, rooms, locations }: {
   const [qtyVal, setQtyVal] = useState('1')
   const [pending, startTransition] = useTransition()
 
-  // 배정 해제(미배정으로)
-  const unassign = (expenseId: string) => {
+  // 배정 해제(미배정으로) — 묶음(ids) 전체
+  const unassign = (it: AssetItem) => {
     startTransition(async () => {
-      const res = await assignExpenseToTarget(expenseId, { kind: 'none' })
+      const res = await assignAggregateToTarget(it.ids, { kind: 'none' }, null)
       setPicking(null)
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', '배정 해제됨')
@@ -38,10 +38,10 @@ export default function AssetsClient({ data, rooms, locations }: {
     })
   }
 
-  // 통째 배정
-  const assignWhole = (expenseId: string, target: Target, label: string) => {
+  // 통째 배정 — 묶음 전체
+  const assignWhole = (it: AssetItem, target: Target, label: string) => {
     startTransition(async () => {
-      const res = await assignExpenseToTarget(expenseId, target)
+      const res = await assignAggregateToTarget(it.ids, target, null)
       setPicking(null)
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', `${label}에 배정됨`)
@@ -52,7 +52,7 @@ export default function AssetsClient({ data, rooms, locations }: {
   // 대상 선택 — 수량 2개 이상이면 몇 개 배정할지 물어봄(기본 1), 아니면 통째
   const onPickTarget = (it: AssetItem, value: string) => {
     setPicking(null)
-    if (!value) { unassign(it.id); return }
+    if (!value) { unassign(it); return }
     const [kind, id] = value.split(':')
     const target: Target = { kind: kind === 'room' ? 'room' : 'location', id }
     const label = kind === 'room'
@@ -60,7 +60,7 @@ export default function AssetsClient({ data, rooms, locations }: {
       : (locations.find(l => l.id === id)?.name ?? '공용부')
     const qty = it.qtyValue ?? 0
     if (qty >= 2) { setQtyVal('1'); setQtyAsk({ it, target, label }) }
-    else assignWhole(it.id, target, label)
+    else assignWhole(it, target, label)
   }
 
   const confirmPartial = () => {
@@ -71,7 +71,7 @@ export default function AssetsClient({ data, rooms, locations }: {
     if (q > max) q = max
     const { it, target, label } = qtyAsk
     startTransition(async () => {
-      const res = await assignExpensePartialToTarget(it.id, target, q)
+      const res = await assignAggregateToTarget(it.ids, target, q)
       setQtyAsk(null)
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', q >= (it.qtyValue ?? 0) ? `${label}에 전체 배정됨` : `${label}에 ${fmtQty(q)}${it.qtyUnit ?? '개'} 배정됨`)
@@ -88,7 +88,7 @@ export default function AssetsClient({ data, rooms, locations }: {
         <div className="min-w-0 flex-1">
           <p className="text-sm text-[var(--warm-dark)] truncate">{it.detail || it.itemLabel}</p>
           <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">
-            {it.date.slice(2)} · {it.category}{it.vendor ? ` · ${it.vendor}` : ''}
+            {it.date.slice(2)} · {it.category}{it.vendor ? ` · ${it.vendor}` : ''}{it.count > 1 ? ` · 구매 ${it.count}건 합산` : ''}
           </p>
         </div>
         <span className="shrink-0 text-sm font-semibold text-[var(--danger-fg)] tabular-nums">{won(it.amount)}</span>

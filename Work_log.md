@@ -178,6 +178,12 @@ Claude Design 의뢰([docs/design-brief-v1.3-request.md](docs/design-brief-v1.3-
 - **모달·네비(`e289e69`)**: 알림벨 같은 페이지 무반응(push+refresh). 페이지 이동 시 전역 모달 정리(뒤로가기 잔존·스크롤 점프). openCheckoutProration 시드 1회성. 공용 Modal Esc 닫기(중첩 시 최상단만). useUrlState 스테일 params 레이스. accrual-check 귀속월 이동 revalidate.
 - **보류(다음 작업 후보)**: ① [미납][퇴실 예정] 2뱃지 C안을 호실관리·대시보드 방현황에 확산(수납 상태 데이터 파이프 필요) ② 대시보드 상태색 hex → StatusBadge 토큰 통일(차트 연동 검토) ③ 이종현 락인 교정 실행 여부 ④ 감사 보고서의 나머지 low 항목.
 
+## 2026-06-10 (이어서) — 비품 동일품목 합산 표시 + 규격없음 단위 디폴트 [main 배포, SQL 불필요]
+- **#1 동일 품목 합산**: 비품·자재에서 같은 품목이 별개 구매로 각각(예: 매트리스커버 1개×2줄) 뜨던 것 → 각 버킷(미배정/방/공용부) 안에서 **라벨·규격·단위·카테고리 동일하면 한 줄로 합산**(수량·금액 합계, '구매 N건 합산' 표기). **장부(Expense)는 개별 구매 기록 그대로 — 화면만 집계**(서로 다른 날짜·단가 보존). [assets/actions.ts](app/(app)/inventory/assets/actions.ts) `aggregateAssets`, AssetItem 에 `ids[]`·`count`.
+  - 배정 액션 통합 `assignAggregateToTarget(expenseIds, target, qty)`: 묶음에 분배(수량 큰 행부터 통째 소진, 마지막만 분할). 해제(none)=묶음 전체 미배정 + 분할 재병합. (기존 단일 assignExpenseToTarget/PartialToTarget 대체)
+- **#3 규격없음 단위 디폴트**: 지출 등록서 '규격 없음' 체크 시 수량 단위가 비어있으면 **'개'** 자동(여전히 수정 가능). [FinanceClient.tsx](app/(app)/finance/FinanceClient.tsx).
+- tsc·build 통과. (#2 품목 필수·무형 처리, #4 페인트/장판 분배는 논의 후 진행)
+
 ## 2026-06-10 (이어서) — 비품 배정에 공용부(위치) 추가 [코드 완료, ⚠️SQL 선적용 후 배포]
 사용자: 비품을 방뿐 아니라 공용부(4·5층 주방·공용화장실·복도 등)에도 배정해야 함. 공용부는 재고관리>위치 관리(StorageLocation)에 이미 있으니 활용.
 - **⚠️ 배포 전 필수**: `prisma/migrate_expense_assigned_location.sql` Supabase 실행(없으면 getDurableItems 의 assignedLocation select 런타임 에러).

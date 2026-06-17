@@ -330,7 +330,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
       {/* 규격 없음(수량만) — 켜면 규격 입력을 숨겨 빈 칸 혼동을 없앤다 */}
       <label className="flex items-center gap-1.5 text-[0.625rem] text-[var(--warm-muted)] cursor-pointer">
         <input type="checkbox" checked={noSpec}
-          onChange={e => { setNoSpec(e.target.checked); if (e.target.checked) { setSpecValue(''); setSpecUnit('') } }}
+          onChange={e => { setNoSpec(e.target.checked); if (e.target.checked) { setSpecValue(''); setSpecUnit(''); if (!qtyUnit.trim()) setQtyUnit('개') } }}
           className="w-3 h-3 accent-[var(--coral)]" />
         규격 없음 (수량만 입력)
       </label>
