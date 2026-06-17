@@ -2152,10 +2152,25 @@ export default function FinanceClient({
                   if (seenOrder.has(e.orderId)) continue
                   seenOrder.add(e.orderId)
                   const rows = filteredExpenses.filter(x => x.orderId === e.orderId)
+                  const nonShip = rows.filter(r => !r.isShipping)
                   // 대표 = 비배송 최대금액 행(없으면 첫 행)
-                  const rep = rows.filter(r => !r.isShipping).sort((a, b) => b.amount - a.amount)[0] ?? rows[0]
+                  const rep = [...nonShip].sort((a, b) => b.amount - a.amount)[0] ?? rows[0]
                   const total = rows.reduce((s, r) => s + r.amount, 0)
-                  out.push({ exp: { ...rep, amount: total }, groupRows: rows, groupKind: 'order' })
+                  // 대표 라벨: 같은 품목 수량 합산 + 다른 품목 섞이면 '외'
+                  const keyOf = (r: Expense) => `${r.itemLabel ?? ''}|${r.specValue ?? ''}|${r.specUnit ?? ''}|${r.qtyUnit ?? ''}`
+                  const repKey = keyOf(rep)
+                  const sameRows = nonShip.filter(r => keyOf(r) === repKey)
+                  const hasOther = nonShip.some(r => keyOf(r) !== repKey)
+                  const fmtQ = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
+                  let repDetail = rep.detail ?? ''
+                  if (rep.itemLabel) {
+                    const sumQty = sameRows.reduce((s, r) => s + (r.qtyValue ?? 0), 0)
+                    const specPart = rep.specValue != null ? ` ${fmtQ(rep.specValue)}${rep.specUnit ?? ''}` : ''
+                    const qtyPart = sumQty > 0 ? ` x ${fmtQ(sumQty)}${rep.qtyUnit ?? '개'}` : ''
+                    repDetail = `[${rep.itemLabel}]${specPart}${qtyPart}`
+                  }
+                  if (hasOther) repDetail = `${repDetail} 외`
+                  out.push({ exp: { ...rep, amount: total, detail: repDetail }, groupRows: rows, groupKind: 'order' })
                   continue
                 }
                 if (e.allocationGroupId) {
