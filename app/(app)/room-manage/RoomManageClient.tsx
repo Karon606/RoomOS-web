@@ -1197,7 +1197,7 @@ function ZoomableImage({ src, alt, onImgLoad }: {
       applyScale(pinch.current.scale * (Math.hypot(a.x - b.x, a.y - b.y) / pinch.current.dist))
       return
     }
-    if (tap.current && Math.hypot(e.clientX - tap.current.x, e.clientY - tap.current.y) > 10) tap.current.moved = true
+    if (tap.current && Math.hypot(e.clientX - tap.current.x, e.clientY - tap.current.y) > 16) tap.current.moved = true
     if (drag.current) setOffset(clamp({ x: drag.current.ox + (e.clientX - drag.current.x), y: drag.current.oy + (e.clientY - drag.current.y) }, scale))
   }
   const onPointerUp = (e: React.PointerEvent) => {
@@ -1205,9 +1205,9 @@ function ZoomableImage({ src, alt, onImgLoad }: {
     if (pointers.current.size < 2) pinch.current = null
     if (pointers.current.size === 0) drag.current = null
     const t = tap.current
-    if (t && !t.moved && Date.now() - t.t < 250) {
+    if (t && !t.moved && Date.now() - t.t < 400) {
       const now = Date.now()
-      if (now - lastTap.current < 300) { toggleZoom(); lastTap.current = 0 }
+      if (now - lastTap.current < 400) { toggleZoom(); lastTap.current = 0 }
       else lastTap.current = now
     }
     tap.current = null

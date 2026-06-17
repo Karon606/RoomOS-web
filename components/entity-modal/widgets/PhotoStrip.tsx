@@ -138,7 +138,7 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
       return
     }
     if (multiRef.current) return
-    if (tapRef.current && Math.hypot(e.clientX - tapRef.current.x, e.clientY - tapRef.current.y) > 10) tapRef.current.moved = true
+    if (tapRef.current && Math.hypot(e.clientX - tapRef.current.x, e.clientY - tapRef.current.y) > 16) tapRef.current.moved = true
     if (panRef.current) {
       setOffset(clampOffset({ x: panRef.current.ox + (e.clientX - panRef.current.x), y: panRef.current.oy + (e.clientY - panRef.current.y) }, scale))
     } else if (swipeRef.current) {
@@ -158,8 +158,8 @@ function Lightbox({ photos, index, onIndexChange, onClose }: {
         setDrag(0)
       }
       const t = tapRef.current
-      if (t && !t.moved && Date.now() - t.t < 250) {
-        if (Date.now() - lastTap.current < 300) { toggleZoom(); lastTap.current = 0 }
+      if (t && !t.moved && Date.now() - t.t < 400) {
+        if (Date.now() - lastTap.current < 400) { toggleZoom(); lastTap.current = 0 }
         else lastTap.current = Date.now()
       }
       panRef.current = null; swipeRef.current = null; tapRef.current = null; multiRef.current = false
