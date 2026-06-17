@@ -3,14 +3,26 @@
 마지막 업데이트: 2026-06-18
 브랜치: main
 
-## 2026-06-18 — 캘린더 연동(.ics 구독 피드) [⚠️ SQL 1건 적용 후 배포]
+## 2026-06-18 (이어서) — 지출 방별 분배 묶음 대표 수량 합산 [SQL 0]
+**증상**: 같은 품목을 방별로 나눠 묶었을 때(예: 506호 1개 + 미지정 3개 = 총 4개), 지출 카드 대표 제목이 대표 행 하나의 수량만 가져와 `[하수구 트랩] x 1개`로 표시됨. 묶음 상세 팝업 제목도 동일.
+**원인**: FinanceClient `groupedExpenseRows` 의 **주문별(order)** 분기에는 같은 품목 수량 합산 로직이 있었으나, **방별(room, allocationGroupId)** 분기는 `{ ...e, amount: total }`로 대표 행 detail을 그대로 써서 수량 미합산.
+**수정**: 방별 분기도 `rows`(방배정분+미지정분) 전체의 `qtyValue` 합산 → `[품목] (스펙) x 합계수량단위`로 repDetail 재구성. 카드·상세 팝업 제목 모두 `x 4개`로 표기. 팝업 안 개별 방 내역(개별 수정·삭제)은 그대로.
+**파일**: app/(app)/finance/FinanceClient.tsx. tsc·build 통과.
+
+## 2026-06-18 (이어서) — 캘린더 피드 후속 수정 (이모지 제거·캐시) [SQL 0]
+- **이모지 제거**: 일정 제목의 💰·🚪 삭제 → `101호 홍길동 월세 450,000원` / `101호 홍길동 퇴실 예정`. UID 동일이라 다음 동기화 때 기존 일정 제목도 자동 갱신.
+- **CDN 캐시 제거**: 피드 응답 `Cache-Control`을 `public, max-age=3600` → `no-store, no-cache, must-revalidate, max-age=0`. 1시간 캐시 때문에 **구독 취소 후 재구독해도 캐시된 옛 복사본(이모지 포함)**이 내려오던 문제 해결. 이제 가져갈 때마다 최신본.
+- **파일**: app/api/calendar/[token]/route.ts.
+- **⚠️ 캘린더 연동 SQL 적용 완료**(아래 6/18 캘린더 연동 항목의 SQL 1건은 사용자가 Supabase에 반영함).
+
+## 2026-06-18 — 캘린더 연동(.ics 구독 피드) [SQL 1건 — 적용 완료]
 구글·애플·아웃룩 캘린더에서 구독하면 **월세 납부 예정일·퇴실 예정일**이 자동 동기화(읽기전용).
 **구조**: 영업장별 비밀 토큰(`Property.calendarToken`) → 공개 .ics 엔드포인트 `/api/calendar/[token]`. 캘린더 앱은 쿠키 없이 가져가므로 토큰이 곧 보안. 유출 시 재발급으로 무효화.
-**피드 내용**(KST 기준): ① 납부 예정일 — ACTIVE·CHECKOUT_PENDING·NON_RESIDENT 계약 중 rentAmount>0 & dueDay 있는 건, 이번 달부터 6개월(퇴실 달 이후 제외), 금액은 `discountedRent`로 할인 반영(`💰 101호 홍길동 월세 450,000원`). dueDay '말' → 그 달 말일. ② 퇴실 예정일 — CHECKOUT_PENDING & expectedMoveOut(`🚪 101호 홍길동 퇴실 예정`). 모두 종일(VALUE=DATE) 이벤트.
+**피드 내용**(KST 기준): ① 납부 예정일 — ACTIVE·CHECKOUT_PENDING·NON_RESIDENT 계약 중 rentAmount>0 & dueDay 있는 건, 이번 달부터 6개월(퇴실 달 이후 제외), 금액은 `discountedRent`로 할인 반영(`101호 홍길동 월세 450,000원`). dueDay '말' → 그 달 말일. ② 퇴실 예정일 — CHECKOUT_PENDING & expectedMoveOut(`101호 홍길동 퇴실 예정`). 모두 종일(VALUE=DATE) 이벤트. (이모지·캐시 후속 수정은 위 6/18 항목 참고)
 **설정 UI**(환경설정 기본정보 탭, '알림(푸시)' 아래): '캘린더 연동(구독)' 카드 — 구독 주소 만들기 → 주소 복사 / 구글 캘린더에 추가 / 애플 캘린더에 추가(webcal://) / 주소 재발급 + 플랫폼별 구독 방법 안내(details).
 **신규 파일**: prisma/migrate_property_calendar_token.sql · app/api/calendar/[token]/route.ts · app/(app)/settings/CalendarSubscribeCard.tsx. **수정**: prisma/schema.prisma(Property.calendarToken @unique) · settings/actions.ts(getOrCreateCalendarToken·resetCalendarToken) · settings/SettingsForm.tsx.
 **검증**: tsc·build 통과.
-**⚠️ SQL (적용 후 배포)**:
+**SQL (적용 완료 ✅)**:
 ```sql
 ALTER TABLE "properties" ADD COLUMN IF NOT EXISTS "calendarToken" TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS "properties_calendarToken_key" ON "properties" ("calendarToken");
