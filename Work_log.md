@@ -178,6 +178,13 @@ Claude Design 의뢰([docs/design-brief-v1.3-request.md](docs/design-brief-v1.3-
 - **모달·네비(`e289e69`)**: 알림벨 같은 페이지 무반응(push+refresh). 페이지 이동 시 전역 모달 정리(뒤로가기 잔존·스크롤 점프). openCheckoutProration 시드 1회성. 공용 Modal Esc 닫기(중첩 시 최상단만). useUrlState 스테일 params 레이스. accrual-check 귀속월 이동 revalidate.
 - **보류(다음 작업 후보)**: ① [미납][퇴실 예정] 2뱃지 C안을 호실관리·대시보드 방현황에 확산(수납 상태 데이터 파이프 필요) ② 대시보드 상태색 hex → StatusBadge 토큰 통일(차트 연동 검토) ③ 이종현 락인 교정 실행 여부 ④ 감사 보고서의 나머지 low 항목.
 
+## 2026-06-10 — 비품·자재 방배정 수량 분할 [main 배포, SQL 불필요]
+사용자: 비품·자재(assets)에서 수량 2개 이상 품목을 방배정하면 **전량**이 그 방으로 가버림. 몇 개 배정할지 물어보게(기본 1) + 나머지는 여분 유지.
+- 기존 `assignExpenseToRoom`은 `expense.roomId`만 바꿔 통째 이동. → 신규 **`assignExpensePartialToRoom(expenseId, roomId, qty)`**([assets/actions.ts](app/(app)/inventory/assets/actions.ts)): qty<전체면 분할 — 배정분은 새 Expense 행(금액 수량비례, roomId=그 방), 나머지는 원본 유지(roomId 그대로). 같은 `allocationGroupId`로 묶음(finance 목록서 한 줄 표시·재사용). qty≥전체/수량없음이면 통째 이동.
+- **적용취소**(사용자 원칙): `assignExpenseToRoom` 배정해제(roomId=null) 시 `mergeUnassignedGroup` — 같은 묶음의 미배정 행들을 자동 재병합(6→[2방][4여분]에서 2 해제하면 다시 [6여분], 배정행 없으면 groupId 정리·단독 복귀).
+- **UI**([AssetsClient.tsx](app/(app)/inventory/assets/AssetsClient.tsx)): 방 선택 후 수량 2↑이면 인라인 수량 입력(기본 1, max=전체수량, Enter 확정) + '배정'. 1개·수량없음이면 바로 통째. 미배정 선택은 기존대로 해제(+재병합).
+- detail 재구성 `buildAssetDetail`(addExpense 포맷). tsc·build 통과.
+
 ## 2026-06-10 (이어서) — 계약서 화면/인쇄(ContractView)도 §20로 통일 [main 배포, SQL 불필요]
 배포 후 사용자: "예전 양식으로 나오는데?" → 원인: 계약서 출력 경로가 **둘**. PDF '발급'(=contractPrintHtml, §20 적용됨)과 **화면+'인쇄' 버튼(=ContractView.tsx, 옛 양식 그대로)**. 1차엔 PDF만 바꿔서 화면/인쇄는 옛날 그대로였음.
 - **[ContractView.tsx](app/contract/[tenantId]/ContractView.tsx) 전면 §20 재작성**: contractPrintHtml 과 동일 클래스·토큰(`--p-*`, doc-header/tc-rule/info/emerg/clauses 2단/pledge/sign-grid/doc-footer/wordmark). 편집(섹션 인라인·서약 input)·서명패드·흡연·비상연락 입력·모바일 scale·인쇄 CSS 전부 보존. 조항 항목 `renderClauseItem`(글머리 제거 + **강조**→hl).
