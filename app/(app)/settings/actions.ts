@@ -27,6 +27,39 @@ async function getPropertyId() {
   return propertyId
 }
 
+// ── 캘린더 구독(.ics) 토큰 ────────────────────────────────────────
+const genCalToken = () => `${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
+
+// 구독 토큰 조회(없으면 생성). 구독 URL = {origin}/api/calendar/{token}
+export async function getOrCreateCalendarToken(): Promise<{ ok: true; token: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { calendarToken: true } })
+    if (p?.calendarToken) return { ok: true, token: p.calendarToken }
+    const token = genCalToken()
+    await prisma.property.update({ where: { id: propertyId }, data: { calendarToken: token } })
+    return { ok: true, token }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 토큰 재발급 — 기존 구독 링크 무효화(유출 시).
+export async function resetCalendarToken(): Promise<{ ok: true; token: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const token = genCalToken()
+    await prisma.property.update({ where: { id: propertyId }, data: { calendarToken: token } })
+    return { ok: true, token }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 async function getMyUserId() {
   const supabase = await createClient()
   const { data } = await supabase.auth.getClaims()

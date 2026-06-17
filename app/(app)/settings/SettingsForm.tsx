@@ -28,6 +28,7 @@ import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { ImageCropModal } from '@/components/ui/ImageCropModal'
 import { PushToggle } from './PushToggle'
+import { CalendarSubscribeCard } from './CalendarSubscribeCard'
 import DataButtons from '@/components/DataButtons'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { useTheme, type ThemeMode } from '@/components/theme/ThemeProvider'
@@ -777,6 +778,9 @@ export default function SettingsForm({
           <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-3">알림 (푸시)</h2>
           <PushToggle />
         </div>
+
+        {/* 캘린더 연동 — .ics 구독 (납부예정·퇴실예정 자동 동기화) */}
+        <CalendarSubscribeCard />
 
         {/* 데이터 점검 — 발생주의 진단 페이지 링크 */}
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">

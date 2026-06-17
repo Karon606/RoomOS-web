@@ -1,7 +1,20 @@
 # 스테이음 작업 로그
 
-마지막 업데이트: 2026-06-15
+마지막 업데이트: 2026-06-18
 브랜치: main
+
+## 2026-06-18 — 캘린더 연동(.ics 구독 피드) [⚠️ SQL 1건 적용 후 배포]
+구글·애플·아웃룩 캘린더에서 구독하면 **월세 납부 예정일·퇴실 예정일**이 자동 동기화(읽기전용).
+**구조**: 영업장별 비밀 토큰(`Property.calendarToken`) → 공개 .ics 엔드포인트 `/api/calendar/[token]`. 캘린더 앱은 쿠키 없이 가져가므로 토큰이 곧 보안. 유출 시 재발급으로 무효화.
+**피드 내용**(KST 기준): ① 납부 예정일 — ACTIVE·CHECKOUT_PENDING·NON_RESIDENT 계약 중 rentAmount>0 & dueDay 있는 건, 이번 달부터 6개월(퇴실 달 이후 제외), 금액은 `discountedRent`로 할인 반영(`💰 101호 홍길동 월세 450,000원`). dueDay '말' → 그 달 말일. ② 퇴실 예정일 — CHECKOUT_PENDING & expectedMoveOut(`🚪 101호 홍길동 퇴실 예정`). 모두 종일(VALUE=DATE) 이벤트.
+**설정 UI**(환경설정 기본정보 탭, '알림(푸시)' 아래): '캘린더 연동(구독)' 카드 — 구독 주소 만들기 → 주소 복사 / 구글 캘린더에 추가 / 애플 캘린더에 추가(webcal://) / 주소 재발급 + 플랫폼별 구독 방법 안내(details).
+**신규 파일**: prisma/migrate_property_calendar_token.sql · app/api/calendar/[token]/route.ts · app/(app)/settings/CalendarSubscribeCard.tsx. **수정**: prisma/schema.prisma(Property.calendarToken @unique) · settings/actions.ts(getOrCreateCalendarToken·resetCalendarToken) · settings/SettingsForm.tsx.
+**검증**: tsc·build 통과.
+**⚠️ SQL (적용 후 배포)**:
+```sql
+ALTER TABLE "properties" ADD COLUMN IF NOT EXISTS "calendarToken" TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS "properties_calendarToken_key" ON "properties" ("calendarToken");
+```
 
 ## 2026-06-15 (이어서) — 실거주 확인서 발급 기능 (서류 메뉴 1탄) [⚠️ SQL 2건 적용 후 배포]
 입실자 서류 작성·발급 트랙의 첫 실물 기능. 계약서 시스템을 본떠 자동채움 + 도장 + Drive 저장 + 발급 이력.
