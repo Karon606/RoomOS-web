@@ -349,7 +349,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const specValueRaw = formData.get('specValue') as string
     const qtyValueRaw  = formData.get('qtyValue') as string
     const itemsJsonRaw = formData.get('itemsJson') as string
-    const svcAllocsRaw = formData.get('serviceAllocsJson') as string  // 서비스·무형 방별 분배 [{roomId, amount}]
+    const excludeFromInventory = formData.get('excludeFromInventory') === '1'  // 서비스·무형 = 재고/비품 제외
     // 합배송(주문 묶음 + 배송비 별도 지출) 필드
     const orderShipping     = parseAmount(formData.get('orderShipping'))
     const orderShippingType = (formData.get('orderShippingType') as string) || null
@@ -416,6 +416,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
       receiptUrl:         receiptUrl || null,
       settleStatus:       baseSettleStatus,
       roomId:             roomId || null,
+      excludeFromInventory,
       orderId,
     }
 
@@ -474,41 +475,6 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
       return { ok: true }
     }
 
-    // 서비스·무형 방별 분배 — 품목 없이 금액만 여러 방으로 나눔. 행을 쪼개 allocationGroupId 로 묶음.
-    // (방배정 합계 < 총액이면 나머지는 미지정(roomId=null) 행으로.)
-    if (svcAllocsRaw && !multiItems) {
-      let svcAllocs: { roomId: string | null; amount: number }[] = []
-      try {
-        const parsed = JSON.parse(svcAllocsRaw)
-        if (Array.isArray(parsed)) {
-          svcAllocs = parsed
-            .map((a: { roomId?: string; amount?: unknown }) => ({
-              roomId: a.roomId || null,
-              amount: Number(String(a.amount ?? '').replace(/[^0-9]/g, '')) || 0,
-            }))
-            .filter(a => a.roomId || a.amount > 0)
-        }
-      } catch { /* fallthrough → 단일 row */ }
-      if (svcAllocs.length > 0) {
-        const allocSum = svcAllocs.reduce((s, a) => s + a.amount, 0)
-        if (allocSum > amount + 1) {
-          return { ok: false, error: `방 배정 금액 합계(${allocSum.toLocaleString()}원)가 총 금액(${amount.toLocaleString()}원)을 초과합니다.` }
-        }
-        const rows = [...svcAllocs]
-        const rem = amount - allocSum
-        if (rem > 0) rows.push({ roomId: null, amount: rem })
-        const groupId = rows.length > 1 ? randomUUID() : null
-        const svcCreates = rows.map(r => prisma.expense.create({
-          data: { ...baseRow, roomId: r.roomId, amount: r.amount, detail: detail || null, allocationGroupId: groupId },
-        }))
-        const ops = [...svcCreates]
-        if (shippingCreate) ops.push(shippingCreate)
-        await prisma.$transaction(ops)
-        revalidatePath('/finance')
-        return { ok: true }
-      }
-    }
-
     const singleCreate = prisma.expense.create({
       data: {
         ...baseRow,
@@ -556,6 +522,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
     const itemsJsonRaw = formData.get('itemsJson') as string
     // 합산형 배송비('배송비 포함') — amount 에 이미 더해져 제출됨 (addExpense 와 동일)
     const shippingIncluded = parseAmount(formData.get('shippingIncluded')) || 0
+    const excludeFromInventory = formData.get('excludeFromInventory') === '1'  // 서비스·무형 = 재고/비품 제외 (수정 시 보존, 새 분할 행에도 전파)
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
@@ -614,6 +581,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
             specValue: firstRow.it.specValue ? parseFloat(firstRow.it.specValue) : null,
             qtyValue:  firstRow.qtyValue  ? parseFloat(firstRow.qtyValue)  : null,
             allocationGroupId: firstRow.groupId,
+            excludeFromInventory,
             ...(receiptUrl !== null && receiptUrl !== undefined ? { receiptUrl: receiptUrl || null } : {}),
           },
         }),
@@ -638,6 +606,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
             specValue: r.it.specValue ? parseFloat(r.it.specValue) : null,
             qtyValue:  r.qtyValue  ? parseFloat(r.qtyValue)  : null,
             allocationGroupId: r.groupId,
+            excludeFromInventory,
           },
         })),
         // 합산형 배송비 — 품목 단가 왜곡 방지를 위해 별도 행(재고 제외)으로 분리 (addExpense 와 동일)
@@ -675,6 +644,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
         financeName:        financeName || null,
         settleStatus:       baseSettleStatus,
         roomId:             roomId || null,
+        excludeFromInventory,
         itemLabel:          itemLabel || null,
         specUnit:           specUnit || null,
         qtyUnit:            qtyUnit || null,
