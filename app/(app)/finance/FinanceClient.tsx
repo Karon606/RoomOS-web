@@ -165,13 +165,23 @@ export function fmtItemListDetail(items: ItemPickState[]): string {
   return items.map(d => fmtItemDetail(d)).join(', ')
 }
 
-// 방별 분배 묶음의 방 목록 라벨 — '101·102·103호' / 많으면 '101호 외 N곳' / 미지정 포함
-function roomsLabel(rows: { room: { roomNo: string } | null }[]): string {
+// 방별 분배 묶음의 '방' 개수 칩 — 실제 배정된 방만 셈(미배정 행은 방으로 세지 않음)
+function roomChipText(rows: { room: { roomNo: string } | null }[]): string {
+  const n = new Set(rows.filter(r => r.room).map(r => r.room!.roomNo)).size
+  return n > 0 ? `방 ${n}개` : '미배정'
+}
+
+// 방별 분배 묶음의 방 목록 라벨 — '101·102·103호' / 많으면 '101호 외 N곳' / 미배정은 수량과 함께
+function roomsLabel(rows: { room: { roomNo: string } | null; qtyValue?: number | null; qtyUnit?: string | null }[]): string {
   const fmt = (no: string) => /^\d+$/.test(no) ? `${no}호` : no
-  const named = rows.map(r => r.room?.roomNo).filter(Boolean) as string[]
-  const unassigned = rows.length - named.length
+  const named = [...new Set(rows.filter(r => r.room).map(r => r.room!.roomNo))]
   const parts = named.length <= 3 ? named.map(fmt) : [fmt(named[0]), `외 ${named.length - 1}곳`]
-  if (unassigned > 0) parts.push('미지정')
+  const unassigned = rows.filter(r => !r.room)
+  if (unassigned.length > 0) {
+    const qty = unassigned.reduce((s, r) => s + (r.qtyValue ?? 0), 0)
+    const unit = unassigned.find(r => r.qtyUnit)?.qtyUnit ?? '개'
+    parts.push(qty > 0 ? `미배정 ${qty}${unit}` : '미배정')
+  }
   return parts.join('·')
 }
 
@@ -445,7 +455,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                             className="text-[0.625rem] text-[var(--coral)] hover:underline">+ 방 추가</button>
                           <span className={`text-[0.5625rem] ${allocOver ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}`}>
                             방 배정 {allocSum} / 전체 {it.qtyValue || 0}
-                            {allocOver ? ' ⚠ 수량 초과' : allocRemain > 0.001 ? ` · 나머지 ${allocRemain}개 미지정` : ''}
+                            {allocOver ? ' ⚠ 수량 초과' : allocRemain > 0.001 ? ` · 나머지 ${allocRemain}개 미배정` : ''}
                           </span>
                         </div>
                       </div>
@@ -2350,7 +2360,7 @@ export default function FinanceClient({
                                   <span className="text-[0.625rem] text-[var(--coral)] font-medium">{e.category}</span>
                                   {grp && (item.groupKind === 'order'
                                     ? <span className="text-[0.625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded">주문 {grp.filter(r => !r.isShipping).length}품목</span>
-                                    : <span className="text-[0.625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded">방 {grp.length}개</span>)}
+                                    : <span className="text-[0.625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded">{roomChipText(grp)}</span>)}
                                   {isUnsettled && <span className="text-[0.625rem] text-[var(--danger-fg)] font-medium">· 미정산</span>}
                                 </div>
                                 <p className="text-sm text-[var(--warm-dark)] truncate">{[e.vendor, e.detail].filter(Boolean).join(' · ') || '—'}</p>
@@ -2460,7 +2470,7 @@ export default function FinanceClient({
                                     <span className="truncate">{e.detail ?? '—'}</span>
                                     {grp && (item.groupKind === 'order'
                                       ? <span className="text-[0.5625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">주문 {grp.filter(r => !r.isShipping).length}품목</span>
-                                      : <span className="text-[0.5625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">방 {grp.length}개</span>)}
+                                      : <span className="text-[0.5625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded shrink-0">{roomChipText(grp)}</span>)}
                                     {e.receiptUrl && <span className="text-[0.5625rem] text-[var(--coral)] shrink-0">영수증</span>}
                                   </div>
                                   {grp && (item.groupKind === 'order'
@@ -3032,7 +3042,7 @@ export default function FinanceClient({
                     onClick={() => { setGroupDetail(null); setDetailExp(r); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }}
                     className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[var(--canvas)] hover:bg-[var(--warm-border)]/30 transition-colors text-left">
                     <span className="text-sm text-[var(--warm-dark)] truncate">
-                      {r.isShipping ? '배송비' : (r.room ? (/^\d+$/.test(r.room.roomNo) ? `${r.room.roomNo}호` : r.room.roomNo) : (r.detail || r.itemLabel || '방 미지정'))}
+                      {r.isShipping ? '배송비' : (r.room ? (/^\d+$/.test(r.room.roomNo) ? `${r.room.roomNo}호` : r.room.roomNo) : (r.allocationGroupId ? '미배정' : (r.detail || r.itemLabel || '방 미배정')))}
                       {r.qtyValue ? <span className="text-[var(--warm-muted)]"> · {r.qtyValue}{r.qtyUnit ?? ''}</span> : null}
                     </span>
                     <span className="text-sm font-semibold text-[var(--danger-fg)] shrink-0 tabular-nums">{r.amount.toLocaleString()}원</span>
@@ -3398,7 +3408,7 @@ export default function FinanceClient({
                     editIsDurable ? (
                       <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">비품·자재의 방·공용부 배정은 <strong className="text-[var(--warm-mid)]">재고 &gt; 비품·자재</strong> 탭에서 합니다. {detailExp.roomId ? '(현재 배정은 그대로 유지됩니다.)' : ''}</p>
                     ) : editItems.some(it => (it.allocations?.length ?? 0) > 0) ? (
-                      <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">대상 호실은 품목별 <strong className="text-[var(--warm-mid)]">'방별로 나누기'</strong>로 지정됩니다.</p>
+                      <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">대상 호실은 품목별 <strong className="text-[var(--warm-mid)]">방별로 나누기</strong>로 지정됩니다.</p>
                     ) : (
                       <div className="space-y-1.5">
                         <label className="text-xs font-medium text-[var(--warm-mid)]">대상 호실 (선택)</label>
@@ -3774,7 +3784,7 @@ export default function FinanceClient({
                   addIsDurable ? (
                     <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">비품·자재는 수령 후 <strong className="text-[var(--warm-mid)]">재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
                   ) : addItems.some(it => (it.allocations?.length ?? 0) > 0) ? (
-                    <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">대상 호실은 품목별 <strong className="text-[var(--warm-mid)]">'방별로 나누기'</strong>로 지정됩니다.</p>
+                    <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">대상 호실은 품목별 <strong className="text-[var(--warm-mid)]">방별로 나누기</strong>로 지정됩니다.</p>
                   ) : (
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-[var(--warm-mid)]">대상 호실 <span className="font-normal text-[var(--warm-muted)]">(선택)</span></label>
