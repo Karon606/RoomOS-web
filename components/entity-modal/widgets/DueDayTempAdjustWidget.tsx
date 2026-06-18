@@ -51,7 +51,13 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
   const [overrideMonth, setOverrideMonth] = useState(defaultMonth)
   const [showMonthOpt, setShowMonthOpt] = useState(false)
 
-  const isActive = !!room.overrideDueDay && !!room.overrideDueDayMonth
+  // #4 임시조정은 '대상 월 납부가 완료되면' 화면에서 숨긴다(데이터·계산은 보존).
+  //   - 과거 달이면서 납부 완료(미납목록에서 빠짐)된 조정만 숨김.
+  //   - 현재·미래 달 조정(사전 조정) 또는 과거라도 아직 미납(연체)인 조정은 계속 표시.
+  const nowMonth = kstYmdStr().slice(0, 7)
+  const ovrMonth = room.overrideDueDayMonth
+  const overrideSettled = !!ovrMonth && ovrMonth < nowMonth && (!firstUnpaidMonth || ovrMonth < firstUnpaidMonth)
+  const isActive = !!room.overrideDueDay && !!ovrMonth && !overrideSettled
   const overrideLabel = fmtOvr(room.overrideDueDay)
 
   // 대상 월 선택지 — 미납월·보는 달·향후 2개월 (중복 제거·정렬)

@@ -96,6 +96,10 @@ type SettleGroup = {
 
 const EXPENSE_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비', '수선유지비', '공과금', '마케팅/광고비', '인건비', '청소용역비', '관리비', '임대료', '통신/렌탈/보험료', '세금/수수료', '보증금 반환']
 
+// #1·#3 세부항목 필수 면제 카테고리 — 임대료·세금 등 무형은 품목/세부가 부자연(강제 시 등록 막힘).
+// 그 외 서비스·무형은 세부항목 필수(방별 투자금을 무엇에 썼는지 추적용). 물품 구매는 품목이 곧 세부항목.
+const DETAIL_OPTIONAL_CATEGORIES = ['공과금', '관리비', '임대료', '세금/수수료', '보증금 반환']
+
 // ── 품목 선택기 설정 ─────────────────────────────────────────────
 
 const ITEM_PRESETS: Record<string, string[]> = {
@@ -1733,6 +1737,11 @@ export default function FinanceClient({
       const msg = '품목을 1개 이상 추가하세요. (물품이 아닌 시공비·인건비 등이면 유형을 \'서비스·무형\'으로 바꾸세요)'
       setError(msg); pushToast('error', msg); return
     }
+    // #1·#3 서비스·무형은 세부항목 필수(방별 투자금을 무엇에 썼는지 추적). 임대료·세금 등 무형 카테고리는 면제.
+    if (addIsService && !DETAIL_OPTIONAL_CATEGORIES.includes(addExpCategory) && !addExpDetail.trim()) {
+      const msg = '세부 항목을 입력하세요. (임대료·세금·공과금·관리비·보증금 반환은 비워도 됩니다)'
+      setError(msg); pushToast('error', msg); return
+    }
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
       const release = trackSave()
@@ -1746,6 +1755,11 @@ export default function FinanceClient({
   }
   const handleUpdateExp = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
+    // #1·#3 세부항목 필수(품목 없는 서비스·무형 행). 임대료·세금 등 무형 카테고리는 면제.
+    if (editItems.length === 0 && !DETAIL_OPTIONAL_CATEGORIES.includes(editExpCategory) && !editExpDetail.trim()) {
+      const msg = '세부 항목을 입력하세요. (임대료·세금·공과금·관리비·보증금 반환은 비워도 됩니다)'
+      setError(msg); pushToast('error', msg); return
+    }
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
       const release = trackSave()
@@ -3764,20 +3778,16 @@ export default function FinanceClient({
                 {rooms.length > 0 && (
                   addIsDurable ? (
                     <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">비품·자재는 수령 후 <strong className="text-[var(--warm-mid)]">재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
-                  ) : addItems.some(it => (it.allocations?.length ?? 0) > 0) ? (
-                    <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">대상 호실은 품목별 <strong className="text-[var(--warm-mid)]">'방별로 나누기'</strong>로 지정됩니다.</p>
-                  ) : (
+                  ) : addIsService ? (
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
-                        <label className="text-xs font-medium text-[var(--warm-mid)]">대상 호실 (선택)</label>
-                        {addIsService && (
-                          <button type="button" onClick={() => setAddSvcAllocs(addSvcAllocs ? null : [{ roomId: '', amount: '' }])}
-                            className={`text-[0.625rem] px-1.5 py-0.5 rounded-md border transition-colors ${addSvcAllocs ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--coral)]'}`}>
-                            {addSvcAllocs ? '방별 분배 끄기' : '방별로 나누기'}
-                          </button>
-                        )}
+                        <label className="text-xs font-medium text-[var(--warm-mid)]">방별 배정 <span className="font-normal text-[var(--warm-muted)]">(선택)</span></label>
+                        <button type="button" onClick={() => setAddSvcAllocs(addSvcAllocs ? null : [{ roomId: '', amount: '' }])}
+                          className={`text-[0.625rem] px-1.5 py-0.5 rounded-md border transition-colors ${addSvcAllocs ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/5' : 'border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--coral)]'}`}>
+                          {addSvcAllocs ? '방별 분배 끄기' : '방별로 나누기'}
+                        </button>
                       </div>
-                      {addIsService && addSvcAllocs ? (
+                      {addSvcAllocs ? (
                         (() => {
                           const total = addExpAmount ?? 0
                           const allocSum = addSvcAllocs.reduce((s, a) => s + (Number(a.amount) || 0), 0)
@@ -3812,13 +3822,11 @@ export default function FinanceClient({
                           )
                         })()
                       ) : (
-                        <select value={addExpRoomId} onChange={e => setAddExpRoomId(e.target.value)}
-                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                          <option value="">선택 안함</option>
-                          {rooms.map(r => <option key={r.id} value={r.id}>{r.roomNo}호</option>)}
-                        </select>
+                        <p className="text-[0.625rem] text-[var(--warm-muted)]"><strong className="text-[var(--warm-mid)]">방별로 나누기</strong>를 켜면 방마다 금액을 나눠 배정할 수 있습니다. 비우면 영업장 공통 지출로 기록됩니다.</p>
                       )}
                     </div>
+                  ) : (
+                    <p className="text-[0.6875rem] text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">방 배정은 품목의 <strong className="text-[var(--warm-mid)]">방별로 나누기</strong>로 지정합니다.</p>
                   )
                 )}
                 <div className="space-y-1.5">
