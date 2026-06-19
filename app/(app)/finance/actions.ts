@@ -498,6 +498,33 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
   }
 }
 
+// 지출에서 품목명을 바꾸면 재고 품목(TrackedItem) 카드·형제 지출의 itemLabel까지 함께 바꾼다(진짜 이름변경).
+// 새 이름이 같은 카테고리의 다른 기존 품목과 겹치면 전파하지 않음(병합이 필요한 상황) → false.
+// (재고관리 쪽 updateTrackedItem 의 라벨 전파와 동일 규칙 — 지출 편집에서도 동기화되게)
+async function propagateItemLabelRename(
+  propertyId: string, category: string, oldLabel: string, newLabel: string,
+): Promise<boolean> {
+  if (!oldLabel || !newLabel || oldLabel === newLabel) return false
+  const tracked = await prisma.trackedItem.findUnique({
+    where: { propertyId_category_label: { propertyId, category, label: oldLabel } },
+    select: { id: true, qtyUnit: true },
+  })
+  if (!tracked) return false   // 추적 품목 아님 — 바꿀 재고 카드 없음
+  const dup = await prisma.trackedItem.findUnique({
+    where: { propertyId_category_label: { propertyId, category, label: newLabel } },
+    select: { id: true },
+  })
+  if (dup && dup.id !== tracked.id) return false   // 새 이름이 이미 다른 카드 — 전파 안 함(병합 필요)
+  await prisma.$transaction([
+    prisma.trackedItem.update({ where: { id: tracked.id }, data: { label: newLabel } }),
+    prisma.expense.updateMany({
+      where: { propertyId, category, itemLabel: oldLabel, ...(tracked.qtyUnit ? { qtyUnit: tracked.qtyUnit } : {}) },
+      data: { itemLabel: newLabel },
+    }),
+  ])
+  return true
+}
+
 export async function updateExpense(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -528,7 +555,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
 
     const existing = await prisma.expense.findUnique({
       where: { id },
-      select: { isShipping: true, settleStatus: true },
+      select: { isShipping: true, settleStatus: true, itemLabel: true, category: true },
     })
     // 배송비 라인은 결제구분(선불/착불/신용)에 따라 settleStatus 가 별도 관리됨 —
     // 일반 수정 저장이 payMethod 기준으로 재계산해 '신용(미정산)'을 조용히 정산완료로 뒤집지 않게 보존.
@@ -653,6 +680,13 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
         ...(receiptUrl !== null && receiptUrl !== undefined ? { receiptUrl: receiptUrl || null } : {}),
       },
     })
+    // 추적 소모품(부식·소모품·폐기물)의 품목명을 바꾸면 재고 카드·형제 지출까지 함께 변경(진짜 이름변경).
+    // 카테고리가 그대로일 때만. 전파 실패는 지출 저장을 막지 않음(재고관리에서 수동 정리 가능).
+    if (itemLabel && existing?.itemLabel && existing.category === category && itemLabel !== existing.itemLabel) {
+      try {
+        if (await propagateItemLabelRename(propertyId, category, existing.itemLabel, itemLabel)) revalidatePath('/inventory')
+      } catch { /* 재고 전파 실패 무시 — 지출 저장은 이미 완료 */ }
+    }
     revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
