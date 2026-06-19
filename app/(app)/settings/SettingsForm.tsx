@@ -54,6 +54,10 @@ type Property = {
   defaultCleaningFee: number | null
   defaultAreaM2: number | null
   bankAccount: string | null
+  refundPenaltyWithinDays: number | null
+  refundPenaltyPct: number | null
+  refundDailyRate: number | null
+  refundDeductCleaning: boolean
   publicSlug: string | null
   logoDriveFileId: string | null
   logoThumbnailUrl: string | null
@@ -743,6 +747,33 @@ export default function SettingsForm({
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-mid)] pointer-events-none">㎡</span>
                 )}
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 환불 규정</label>
+              <p className="text-xs text-[var(--warm-muted)]">조기 퇴실 시 환불액 = 잔 입실료 − 위약금 − (청소비). 퇴실 정산에서 자동 산출되고 직접 수정할 수 있습니다.</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[0.6875rem] text-[var(--warm-muted)]">위약금 — 입주 후 N일 이내 퇴실</label>
+                  <input type="text" inputMode="numeric" name="refundPenaltyWithinDays"
+                    defaultValue={property?.refundPenaltyWithinDays ?? ''} placeholder="예: 7 (비우면 없음)"
+                    className="w-full px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[0.6875rem] text-[var(--warm-muted)]">위약금율 — 잔 입실료의 %</label>
+                  <input type="text" inputMode="numeric" name="refundPenaltyPct"
+                    defaultValue={property?.refundPenaltyPct ?? ''} placeholder="예: 20"
+                    className="w-full px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[0.6875rem] text-[var(--warm-muted)]">1일당 입실료(사용분 차감) — 비우면 월 이용료 ÷ 30 자동</label>
+                <MoneyInput name="refundDailyRate" defaultValue={property?.refundDailyRate ?? undefined} placeholder="예: 20,000원 (비우면 월÷30)" />
+              </div>
+              <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer pt-0.5">
+                <input type="checkbox" name="refundDeductCleaning" value="1" defaultChecked={property?.refundDeductCleaning ?? false}
+                  className="w-4 h-4 accent-[var(--coral)]" />
+                환불 시 청소비 차감
+              </label>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">입금 계좌번호</label>

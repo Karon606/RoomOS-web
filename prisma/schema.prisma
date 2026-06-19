@@ -148,6 +148,11 @@ model Property {
   defaultCleaningFee Int?    // 기본 청소비
   defaultAreaM2    Float?    // 기본 전용면적(㎡) — 실거주 확인서 등 서류 기본값. 호실별 areaM2 가 비었을 때 사용
   bankAccount      String?   // 입금 계좌번호 (월세 영수증 납부방법에 자동 반영). 예 "○○은행 123-456 (예금주)"
+  // 퇴실 환불 규정 (영업장별) — 조기 퇴실 시 환불액 산정. 비면 위약금/고정 1일당 없음.
+  refundPenaltyWithinDays Int?     // 입주 후 N일 이내 퇴실 시 위약금 적용 (null/0 = 위약금 없음)
+  refundPenaltyPct        Int?     // 위약금율 — 잔 입실료의 P%
+  refundDailyRate         Int?     // 1일당 입실료 차감액(고정). null = 월 이용료 ÷ 30 자동
+  refundDeductCleaning    Boolean  @default(false)  // 환불 시 청소비(lease.cleaningFee) 차감
   // 계약서 (영업장별 별도 운영)
   contractTemplate Json?     // 섹션 본문 + 추가 표시 옵션. shape: { title, sections: [{ title, items: string[] }], oathText }
   businessInfo     Json?     // 사업자 정보. shape: { name, registrationNo, ceoName, address }

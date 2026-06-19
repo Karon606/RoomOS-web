@@ -97,3 +97,46 @@ export function shouldOfferCheckoutProration(
   // 퇴실일이 '오늘+1달' 이내(과거 포함 — 늦은 정산 케이스). 그보다 먼 미래면 묻지 않음.
   return mo.getTime() <= limit.getTime()
 }
+
+// ── 퇴실 환불 계산(환경설정 '퇴실 환불 규정') ───────────────────────────
+// 선납 모델: 선납액에서 사용분(사용일수×1일당)을 빼 '잔 입실료'를 구하고,
+// 조기 퇴실(입주 후 N일 이내)이면 위약금(잔 입실료×P%), 옵션이면 청소비를 차감한 환불액.
+// 1일당 = 규정의 고정액(있으면) ?? 월 이용료 ÷ 30. (계산은 순수 — 데이터는 호출부에서 모아 넘김)
+export type RefundPolicy = {
+  penaltyWithinDays: number | null   // 입주 후 N일 이내 퇴실 시 위약금 (null/0 = 없음)
+  penaltyPct: number | null          // 위약금율 — 잔 입실료의 %
+  dailyRate: number | null           // 1일당 입실료(고정). null/0 = monthlyRent ÷ 30
+  deductCleaning: boolean            // 청소비 차감 여부
+}
+export type CheckoutRefundResult = {
+  daysUsed: number          // 사용일수 (납부일~퇴실일, 양끝 포함)
+  dailyRate: number         // 적용된 1일당
+  usedAmount: number        // 사용액 = daysUsed × dailyRate
+  remaining: number         // 잔 입실료 = max(0, 선납액 − 사용액)
+  penalty: number           // 위약금
+  cleaning: number          // 차감 청소비
+  refund: number            // 최종 환불액 = max(0, remaining − penalty − cleaning)
+  withinPenaltyWindow: boolean
+}
+export function calcCheckoutRefund(input: {
+  prepaidAmount: number      // 선납액 (그 기간에 낸 금액)
+  monthlyRent: number        // 월 이용료 (1일당 자동 산정용)
+  daysUsed: number           // 사용일수
+  daysSinceMoveIn: number    // 입주 후 경과일 (위약금 창 판정)
+  cleaningFee: number        // 입주자 청소비
+  policy: RefundPolicy
+}): CheckoutRefundResult {
+  const { prepaidAmount, monthlyRent, daysUsed, daysSinceMoveIn, cleaningFee, policy } = input
+  const dailyRate = (policy.dailyRate != null && policy.dailyRate > 0)
+    ? policy.dailyRate
+    : Math.round(monthlyRent / PRORATE_BASE_DAYS)
+  const usedAmount = Math.round(dailyRate * Math.max(0, daysUsed))
+  const remaining = Math.max(0, prepaidAmount - usedAmount)
+  const withinPenaltyWindow = !!policy.penaltyWithinDays && policy.penaltyWithinDays > 0 && daysSinceMoveIn <= policy.penaltyWithinDays
+  const penalty = (withinPenaltyWindow && policy.penaltyPct && policy.penaltyPct > 0)
+    ? Math.round((remaining * policy.penaltyPct) / 100)
+    : 0
+  const cleaning = policy.deductCleaning ? Math.max(0, cleaningFee || 0) : 0
+  const refund = Math.max(0, remaining - penalty - cleaning)
+  return { daysUsed, dailyRate, usedAmount, remaining, penalty, cleaning, refund, withinPenaltyWindow }
+}
