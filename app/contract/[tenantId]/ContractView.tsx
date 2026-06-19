@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
 import { saveContractOverride, resetContractOverride } from './actions'
-import { renderContractText, type ContractTemplate, type ContractSection } from '@/lib/contract'
+import { renderContractText, buildRefundClause, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -112,6 +112,7 @@ export default function ContractView({ data }: { data: ContractData }) {
     roomNo:           roomNoLabel,
     rentFee:          data.lease ? data.lease.rentAmount.toLocaleString() : '',
     emergencyContact: emergencyContactText,
+    환불규정:          buildRefundClause(data.refundPolicy),
   }), [data, smoking, emergencyContactText, roomNoLabel])
 
   const handlePrint = () => window.print()

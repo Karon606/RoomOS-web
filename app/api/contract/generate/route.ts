@@ -68,6 +68,7 @@ export async function POST(req: Request) {
           contractTemplate: true, businessInfo: true,
           stampDriveFileId: true, logoDriveFileId: true,
           phone: true,
+          refundPenaltyWithinDays: true, refundPenaltyPct: true, refundDailyRate: true, refundDeductCleaning: true,
         },
       }),
     ])
@@ -100,6 +101,12 @@ export async function POST(req: Request) {
       contractNo,
       logoImageUrl: property?.logoDriveFileId ? buildDriveThumbnailUrl(property.logoDriveFileId, 600) : null,
       stampImageUrl: property?.stampDriveFileId ? buildDriveThumbnailUrl(property.stampDriveFileId, 800) : null,
+      refundPolicy: {
+        penaltyWithinDays: property?.refundPenaltyWithinDays ?? null,
+        penaltyPct: property?.refundPenaltyPct ?? null,
+        dailyRate: property?.refundDailyRate ?? null,
+        deductCleaning: property?.refundDeductCleaning ?? false,
+      },
       pretendardBase64,
       tenant: {
         name: tenant.name,

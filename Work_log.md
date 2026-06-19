@@ -3,6 +3,14 @@
 마지막 업데이트: 2026-06-19
 브랜치: main
 
+## 2026-06-19 (이어서) — 계약서에 환불 조항 자동 생성 ({{환불규정}} 변수) [SQL 0]
+**설정값으로 계약서 환불 조항 자동 동기화** — 환경설정 '퇴실 환불 규정'을 계약서 `{{환불규정}}` 변수로 노출 → 설정값으로 문구 생성, **화면·PDF 모두 반영**. 한 곳(설정) 수정으로 계산·계약서가 항상 일치.
+- [lib/contract.ts](lib/contract.ts): `buildRefundClause`(정책→문구), `renderContractText` 정규식을 한글 키 허용(`[^}]+` trim)으로 확장. 기본 템플릿 '2. 퇴실 및 환불'의 하드코딩 환불 줄 → `{{환불규정}}`.
+- 전 경로에 refundPolicy 전달: contract actions(ContractData)·[ContractView](app/contract/[tenantId]/ContractView.tsx)(vars)·[contractPrintHtml](lib/contractPrintHtml.ts)(PrintContractData·vars)·[generate route](app/api/contract/generate/route.ts)(printData). 화면·PDF 동일 문구.
+- 문구: 위약금(N일·P%) 있으면 "입실 후 N일 이내 퇴실 시 잔 입실료 P% 위약금과 1일당 D원 입실료[ 및 청소비] 차감 후 환불". 1일당 비면 '월 이용료의 30분의 1', 위약금 없으면 간략형.
+**주의**: 기본 템플릿(미커스텀) 영업장은 자동 반영. **이미 계약서를 편집·저장한 영업장은 계약서 편집에서 환불 줄을 `{{환불규정}}`으로 바꿔야** 동기화됨.
+**검증**: tsc·build 통과.
+
 ## 2026-06-19 (이어서) — 2단계: 퇴실 환불 미리보기 위젯 통합 [SQL 0]
 **퇴실 정산 위젯(CheckoutProrationWidget)에 환불 미리보기 추가** — 퇴실일 선택 시 `previewCheckoutRefund`로 산출:
 - 선납액 = 퇴실 달 수납액(보증금·양도인 제외, PaymentRecord 합) · 사용분 = 일할 daysUsed × 1일당 · 위약금(입주 후 N일 이내면 잔액×P%) · 청소비(옵션).

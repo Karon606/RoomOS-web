@@ -7,7 +7,7 @@
 // Vercel @sparticuz/chromium 바이너리에는 한글 폰트가 없어 CDN <link>로는 한글이 깨짐.
 // 임베드 방식이라 네트워크 의존성 zero, document.fonts.ready로 로딩 보장.
 
-import { type ContractTemplate, type BusinessInfo, renderContractText } from '@/lib/contract'
+import { type ContractTemplate, type BusinessInfo, type RefundPolicyValues, renderContractText, buildRefundClause } from '@/lib/contract'
 
 // 모듈 레벨 캐시 — cold start 후 첫 PDF 생성 때만 jsdelivr CDN에서 폰트 다운로드 (~570KB).
 // 이후 요청은 메모리 캐시 사용.
@@ -31,6 +31,7 @@ export type PrintContractData = {
   // 이미지들은 Drive thumbnail URL — puppeteer에서 외부 fetch 가능
   logoImageUrl: string | null
   stampImageUrl: string | null
+  refundPolicy: RefundPolicyValues   // 퇴실 환불 규정 — {{환불규정}} 변수 생성용
   // 입실자 + 계약 정보
   tenant: {
     name: string
@@ -105,6 +106,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     roomNo: fmtRoom(d.lease?.roomNo),
     rentFee: d.lease ? d.lease.rentAmount.toLocaleString() : '',
     emergencyContact: d.emergencyContactText,
+    환불규정: buildRefundClause(d.refundPolicy),
   }
 
   const clausesHtml = d.template.sections.map(sec => {

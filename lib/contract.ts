@@ -46,7 +46,7 @@ export const DEFAULT_CONTRACT_TEMPLATE: ContractTemplate = {
       id: 'checkout',
       title: '2. 퇴실 및 환불',
       items: [
-        '- 1개월 미만 퇴실 시 입실료 환불 불가합니다. (단, 소비자보호원 규정에 의거 입실 후 7일이내 퇴실할 경우 잔 입실료의 20%에 해당하는 위약금과 1일당 2만원의 입실료 및 청소비 차감 후 환불됩니다.)',
+        '- 1개월 미만 퇴실 시 입실료 환불 불가합니다. (단, 소비자보호원 규정에 의거 {{환불규정}})',
         '- 퇴실 7일 전 본 사업자에게 알려주어야 합니다. 퇴실의사 전달 시 1개월 자동연장 됩니다. (구두 불가, 문자로)',
         '- 퇴실 후 실내 청소 상태와 입실 시 상태 동일해야 합니다.',
         '- 퇴실 시 보증금 중 청소비 2만원 공제하며, 집기파손, 기물파손, 오물 시 책임 소재가 분명한 경우 차후 3만원이 더 청구됩니다.',
@@ -83,5 +83,22 @@ export const DEFAULT_CONTRACT_TEMPLATE: ContractTemplate = {
 // 변수 치환: {{key}} 형태를 실제 값으로 교체.
 // 본문 섹션 items, title, oathText 모두에 적용 가능.
 export function renderContractText(text: string, vars: Record<string, string>): string {
-  return text.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`)
+  // {{key}} — key 는 영문/한글 모두 허용(공백 trim). 매칭 없으면 원문 유지.
+  return text.replace(/\{\{([^}]+)\}\}/g, (_, key) => vars[String(key).trim()] ?? `{{${String(key).trim()}}}`)
+}
+
+// 퇴실 환불 규정(환경설정 값)으로 계약서 환불 조항 문구 생성 — {{환불규정}} 변수에 사용.
+export type RefundPolicyValues = {
+  penaltyWithinDays: number | null
+  penaltyPct: number | null
+  dailyRate: number | null   // null = 월 이용료 ÷ 30
+  deductCleaning: boolean
+}
+export function buildRefundClause(p: RefundPolicyValues): string {
+  const daily = p.dailyRate ? `1일당 ${p.dailyRate.toLocaleString()}원의 입실료` : '1일당 입실료(월 이용료의 30분의 1)'
+  const cleaning = p.deductCleaning ? ' 및 청소비' : ''
+  if (p.penaltyWithinDays && p.penaltyPct) {
+    return `입실 후 ${p.penaltyWithinDays}일 이내 퇴실할 경우 잔 입실료의 ${p.penaltyPct}%에 해당하는 위약금과 ${daily}${cleaning}를 차감한 후 환불됩니다.`
+  }
+  return `퇴실 시 사용한 ${daily}${cleaning}를 차감한 후 잔 입실료를 환불합니다.`
 }
