@@ -40,17 +40,18 @@ export function CheckoutProrationWidget({
   const [date, setDate] = useState(expectedMoveOut ?? '')
   const [calc, setCalc] = useState<CheckoutProrationResult | null>(null)
   const [calcErr, setCalcErr] = useState<string | null>(null)
+  const [amountInput, setAmountInput] = useState('')   // 적용 금액 — 자동 일할액 기본, 운영자가 수정 가능
 
   const isApplied = checkoutProratedAmount != null && !!checkoutProratedMonth
 
   // 퇴실일 선택 → 서버 미리보기 (할인까지 반영한 정확한 일할액)
   const handleDate = (v: string) => {
-    setDate(v); setCalc(null); setCalcErr(null)
+    setDate(v); setCalc(null); setCalcErr(null); setAmountInput('')
     if (!v || v.length < 10) return
     startTransition(async () => {
       const res = await previewCheckoutProration(leaseTermId, v)
-      if (res.ok) { setCalc(res.calc); setCalcErr(null) }
-      else { setCalc(null); setCalcErr(res.error) }
+      if (res.ok) { setCalc(res.calc); setCalcErr(null); setAmountInput(String(res.calc.amount)) }
+      else { setCalc(null); setCalcErr(res.error); setAmountInput('') }
     })
   }
 
@@ -65,13 +66,16 @@ export function CheckoutProrationWidget({
 
   const handleApply = () => {
     if (!date || !calc) return
+    const digits = amountInput.replace(/[^0-9]/g, '')
+    const manualAmount = digits ? parseInt(digits, 10) : calc.amount
     startTransition(async () => {
       const release = trackSave()
       try {
-        const res = await setCheckoutProration(leaseTermId, date)
+        const res = await setCheckoutProration(leaseTermId, date, manualAmount)
         if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('success', `퇴실 정산 적용 — ${fmtWon(res.calc.amount)} (${res.calc.daysUsed}일치)`)
-        setShowForm(false); setCalc(null); onChange?.()
+        const adjusted = manualAmount !== res.calc.amount
+        pushToast('success', `퇴실 정산 적용 — ${fmtWon(manualAmount)}${adjusted ? ' (수동 조정)' : ` (${res.calc.daysUsed}일치)`}`)
+        setShowForm(false); setCalc(null); setAmountInput(''); onChange?.()
       } finally { release() }
     })
   }
@@ -145,6 +149,18 @@ export function CheckoutProrationWidget({
             <span className="block mt-0.5 font-normal" style={{ color: 'var(--warm-muted)' }}>
               한 달 {fmtWon(calc.fullAmount)} ÷ {PRORATE_BASE_DAYS}일 × {calc.daysUsed}일 · 감액 {fmtWon(calc.reduction)}
             </span>
+          </div>
+        )}
+        {calc && (
+          <div className="space-y-1">
+            <label className="text-xs text-[var(--warm-muted)]">적용 금액 <span className="text-[0.625rem]">(자동 일할 {fmtWon(calc.amount)} — 필요시 수정)</span></label>
+            <div className="flex items-center gap-1.5">
+              <input type="text" inputMode="numeric" value={amountInput ? Number(amountInput.replace(/[^0-9]/g, '')).toLocaleString() : ''}
+                onChange={e => setAmountInput(e.target.value.replace(/[^0-9]/g, ''))}
+                className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-right tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+              <span className="text-xs text-[var(--warm-muted)]">원</span>
+            </div>
+            <p className="text-[0.5625rem] text-[var(--warm-muted)]">하루 더 봐주기·위약금·청소비 차감 등은 이 금액을 직접 조정하세요.</p>
           </div>
         )}
         {calcErr && (

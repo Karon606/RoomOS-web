@@ -1517,6 +1517,7 @@ function prorationDataForChange(
 export async function setCheckoutProration(
   leaseTermId: string,
   expectedMoveOut: string,  // 'YYYY-MM-DD'
+  manualAmount?: number,    // 운영자 수동 조정값 — 없으면 자동 일할액 사용 (봐주기·특이 케이스)
 ): Promise<{ ok: true; calc: CheckoutProrationResult } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -1535,6 +1536,8 @@ export async function setCheckoutProration(
     const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
     const calc = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut)
     if (!calc) return { ok: false, error: '퇴실일이 납부일 이전이라 마지막 기간을 사용하지 않습니다 — 별도 정산 없이 그 달 청구가 자동으로 0원 처리되므로 일할 적용이 필요 없습니다.' }
+    // 수동 조정값이 있으면 그 값으로(0 이상 정수), 없으면 자동 일할액. undo 의 appliedAmount 도 이 값으로 기록.
+    const finalAmount = (manualAmount != null && Number.isFinite(manualAmount) && manualAmount >= 0) ? Math.round(manualAmount) : calc.amount
 
     // 적용취소용 직전 스냅샷 — 이미 정산이 적용돼 있으면(재정산) 기존 스냅샷(최초 적용 직전)을 유지해
     // '적용취소' 한 번으로 정산 이전(거주중 등) 원상태까지 되돌아가게 한다.
@@ -1545,14 +1548,14 @@ export async function setCheckoutProration(
       prevMonth: lease.checkoutProratedMonth ?? null,
     }
     // 적용이 설정한 값 기록 — 이후 수동 수정 감지(적용취소가 수동 수정을 덮어쓰지 않게)
-    const undo: CheckoutProrationUndo = { ...undoBase, appliedMoveOut: expectedMoveOut, appliedAmount: calc.amount }
+    const undo: CheckoutProrationUndo = { ...undoBase, appliedMoveOut: expectedMoveOut, appliedAmount: finalAmount }
 
     await prisma.leaseTerm.update({
       where: { id: leaseTermId },
       data: {
         status: 'CHECKOUT_PENDING',
         expectedMoveOut: new Date(expectedMoveOut),
-        checkoutProratedAmount: calc.amount,
+        checkoutProratedAmount: finalAmount,
         checkoutProratedMonth: calc.moveOutMonth,
         checkoutProrationUndo: undo,
       },

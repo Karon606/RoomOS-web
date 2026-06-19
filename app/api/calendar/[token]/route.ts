@@ -9,6 +9,14 @@ export const dynamic = 'force-dynamic'
 const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')
 const ymd = (y: number, m: number, d: number) => `${y}${String(m).padStart(2, '0')}${String(d).padStart(2, '0')}`
 const fmtRoom = (no?: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
+// 금액을 만/억 단위 한글 표기 — 1,503,500 → '150만3500원', 1,500,000 → '150만원'
+const manWon = (n: number): string => {
+  if (n < 10000) return `${n}원`
+  const eok = Math.floor(n / 100000000)
+  const man = Math.floor((n % 100000000) / 10000)
+  const rest = n % 10000
+  return `${eok ? `${eok}억` : ''}${man ? `${man}만` : ''}${rest ? rest : ''}원`
+}
 
 export async function GET(_req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params
@@ -67,7 +75,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
         const lastDay = new Date(y, m, 0).getDate()
         const day = l.dueDay.includes('말') ? lastDay : Math.min(Math.max(parseInt(l.dueDay, 10) || 1, 1), lastDay)
         const amount = discountedRent(l.discounts, monthStr, l.rentAmount)
-        ev(`rent-${l.id}-${monthStr}`, y, m, day, `${who} 월세 ${amount.toLocaleString()}원`, '납부 예정일')
+        ev(`rent-${l.id}-${monthStr}`, y, m, day, `${who} 이용료 ${manWon(amount)}`, '납부 예정일')
       }
     }
   }

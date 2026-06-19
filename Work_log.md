@@ -3,6 +3,16 @@
 마지막 업데이트: 2026-06-19
 브랜치: main
 
+## 2026-06-19 (이어서) — 퇴실 정산 수동 조정 + 캘린더 '이용료'·만단위 표기 [SQL 0]
+사용자 보고: 503호 오늘 퇴실인데 '퇴실 예정'·'월세 미납' 알림이 동시에 뜨고 예상매출에도 잡힘.
+**원인 진단(버그 아님, 모델 빈틈)**: 선납+일할 모델([lib/prorate.ts](lib/prorate.ts)·[lib/billing.ts](lib/billing.ts)). 퇴실일이 그 달 납부일 **이전/같음**→`isCheckoutNoBillingMonth`로 자동 0(알림·예상매출 제외 이미 동작). 퇴실일이 납부일 **이후**면 일할 정산(`checkoutProratedAmount`)이 적용돼야 하나 **자동이 아니라 위젯에서 수동 적용**해야 함 → 미적용이면 한 달치 풀로 잡힘(503호). 알림·예상매출·예상순이익은 `billForLeaseMonth` 한 엔진을 공유해 정산값이 셋에 동시 반영됨.
+**이번 반영(사용자 결정: 1단계 = 자동 일할 + 수동 조정 중 '수동 조정' 우선 구현)**:
+- **퇴실 정산 수동 조정**: `setCheckoutProration(leaseTermId, date, manualAmount?)` — 자동 일할액 위에 운영자가 금액 직접 수정(하루 더 봐주기·위약금·청소비 차감 등). **0으로 두면 퇴실월 면제**(청구 0). `undo.appliedAmount`도 적용값 기준이라 적용취소·수동수정 감지 정합 유지. [CheckoutProrationWidget](components/entity-modal/widgets/CheckoutProrationWidget.tsx)에 '적용 금액' 편집칸(자동 일할 기본값) 추가.
+- **503호 즉시 처치**: 퇴실 정산 위젯에서 적용(자동/수정/0) → 알림·예상매출·예상순이익 즉시 반영.
+- **캘린더(.ics)**: 납부 예정 제목 '월세'→**'이용료'**, 금액 '1,503,500원'→**'150만3500원'**(만/억 단위 `manWon`). UID 동일 → 재구독 없이 다음 동기화 때 제목 자동 갱신. ([route.ts](app/api/calendar/[token]/route.ts))
+**검증**: tsc 클린·build ✓·변경분 lint 신규에러 0.
+**⏳ 남은 1단계 — 퇴실일 지정 시 일할 자동 적용**(지금은 위젯서 수동 적용 필요). 설계: `prorationDataForChange`를 '미적용→자동 적용'으로 확장(applyStatusTransition·updateTenant·changeDueDay 공유, undo 스냅샷 포함). **일할 계산 적용 로직 변경(loop.md 4번)이라 확정 후 착수.** **2단계**: 환경설정 환불규정(위약금 N일·P%·1일당 입실료·청소비 차감 — 여러 계산법) + Property 스키마 추가.
+
 ## 2026-06-19 — 지출 방별 분배 묶음: 미배정을 '방'으로 세던 버그 [SQL 0]
 **증상(사용자 스크린샷)**: 의자 4개를 418호 1개 + 미배정 3개로 나눴는데 카드가 '방 2개'로 표시. 미배정(roomId=null) 행을 방 1개로 카운트하던 문제. 펼침 팝업도 미배정 행을 품목 detail('[의자] x 3개')로 보여 줌.
 **수정(FinanceClient.tsx)**:
