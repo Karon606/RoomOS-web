@@ -3,6 +3,17 @@
 마지막 업데이트: 2026-06-19
 브랜치: main
 
+## 2026-06-19 (이어서) — 계약서 환불 조항 표시 토글 [⚠️ SQL 1건]
+**환경설정 환불 규정 카드에 '계약서에 환불 규정 자동 표시' 토글(기본 ON)** — 계산용 규정과 계약서 표시를 분리(규정으로 계산은 하되 계약서엔 안 넣을 수 있게). 끄면 `{{환불규정}}` 변수가 빈 값으로 치환돼 조항이 사라짐. (전체 커스텀은 계약서 자유편집으로 이미 가능 — 토글은 자동 조항 끄기용.)
+- Property `refundClauseInContract Boolean @default(true)`. settings/actions·SettingsForm 토글 연결.
+- 화면·PDF vars: `refundClauseInContract`면 `' '+buildRefundClause(정책)`, 아니면 `''`. ContractData·PrintContractData·contract actions·generate route 전 경로 전달.
+- 기본 템플릿 환불 줄을 `'…불가합니다.{{환불규정}}'`로(ON시 앞 공백+조항 이어붙고, OFF시 깔끔히 사라짐 — 빈 괄호/빈 줄 없음).
+**⚠️ SQL**:
+```sql
+ALTER TABLE properties ADD COLUMN "refundClauseInContract" BOOLEAN NOT NULL DEFAULT true;
+```
+**검증**: prisma generate·tsc·build 통과.
+
 ## 2026-06-19 (이어서) — 계약서에 환불 조항 자동 생성 ({{환불규정}} 변수) [SQL 0]
 **설정값으로 계약서 환불 조항 자동 동기화** — 환경설정 '퇴실 환불 규정'을 계약서 `{{환불규정}}` 변수로 노출 → 설정값으로 문구 생성, **화면·PDF 모두 반영**. 한 곳(설정) 수정으로 계산·계약서가 항상 일치.
 - [lib/contract.ts](lib/contract.ts): `buildRefundClause`(정책→문구), `renderContractText` 정규식을 한글 키 허용(`[^}]+` trim)으로 확장. 기본 템플릿 '2. 퇴실 및 환불'의 하드코딩 환불 줄 → `{{환불규정}}`.

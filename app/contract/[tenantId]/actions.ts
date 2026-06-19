@@ -21,6 +21,7 @@ export type ContractData = {
   stampImageUrl: string | null         // 인쇄에 쓰일 큰 사이즈
   logoImageUrl: string | null          // 영업장 로고 (헤더 좌측)
   refundPolicy: RefundPolicyValues     // 퇴실 환불 규정 — {{환불규정}} 변수 생성용
+  refundClauseInContract: boolean      // 계약서에 환불 조항 자동 표시 여부
   tenant: {
     id: string
     name: string
@@ -83,6 +84,7 @@ export async function getContractData(tenantId: string): Promise<ContractData | 
         stampDriveFileId: true, logoDriveFileId: true,
         phone: true,
         refundPenaltyWithinDays: true, refundPenaltyPct: true, refundDailyRate: true, refundDeductCleaning: true,
+        refundClauseInContract: true,
       },
     }),
   ])
@@ -121,6 +123,7 @@ export async function getContractData(tenantId: string): Promise<ContractData | 
       dailyRate: property?.refundDailyRate ?? null,
       deductCleaning: property?.refundDeductCleaning ?? false,
     },
+    refundClauseInContract: property?.refundClauseInContract ?? true,
     tenant: {
       id: tenant.id,
       name: tenant.name,

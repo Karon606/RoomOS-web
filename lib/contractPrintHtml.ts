@@ -32,6 +32,7 @@ export type PrintContractData = {
   logoImageUrl: string | null
   stampImageUrl: string | null
   refundPolicy: RefundPolicyValues   // 퇴실 환불 규정 — {{환불규정}} 변수 생성용
+  refundClauseInContract: boolean    // 계약서에 환불 조항 자동 표시 여부
   // 입실자 + 계약 정보
   tenant: {
     name: string
@@ -106,7 +107,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     roomNo: fmtRoom(d.lease?.roomNo),
     rentFee: d.lease ? d.lease.rentAmount.toLocaleString() : '',
     emergencyContact: d.emergencyContactText,
-    환불규정: buildRefundClause(d.refundPolicy),
+    환불규정: d.refundClauseInContract ? ' ' + buildRefundClause(d.refundPolicy) : '',
   }
 
   const clausesHtml = d.template.sections.map(sec => {

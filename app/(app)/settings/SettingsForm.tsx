@@ -58,6 +58,7 @@ type Property = {
   refundPenaltyPct: number | null
   refundDailyRate: number | null
   refundDeductCleaning: boolean
+  refundClauseInContract: boolean
   publicSlug: string | null
   logoDriveFileId: string | null
   logoThumbnailUrl: string | null
@@ -773,6 +774,11 @@ export default function SettingsForm({
                 <input type="checkbox" name="refundDeductCleaning" value="1" defaultChecked={property?.refundDeductCleaning ?? false}
                   className="w-4 h-4 accent-[var(--coral)]" />
                 환불 시 청소비 차감
+              </label>
+              <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer">
+                <input type="checkbox" name="refundClauseInContract" value="1" defaultChecked={property?.refundClauseInContract ?? true}
+                  className="w-4 h-4 accent-[var(--coral)]" />
+                계약서에 환불 규정 자동 표시 <span className="text-[0.625rem] text-[var(--warm-muted)]">(끄면 계약서의 {'{{환불규정}}'} 자리가 비워짐)</span>
               </label>
             </div>
             <div className="space-y-1.5">

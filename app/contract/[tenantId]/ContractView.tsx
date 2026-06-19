@@ -112,7 +112,7 @@ export default function ContractView({ data }: { data: ContractData }) {
     roomNo:           roomNoLabel,
     rentFee:          data.lease ? data.lease.rentAmount.toLocaleString() : '',
     emergencyContact: emergencyContactText,
-    환불규정:          buildRefundClause(data.refundPolicy),
+    환불규정:          data.refundClauseInContract ? ' ' + buildRefundClause(data.refundPolicy) : '',
   }), [data, smoking, emergencyContactText, roomNoLabel])
 
   const handlePrint = () => window.print()

@@ -69,6 +69,7 @@ export async function POST(req: Request) {
           stampDriveFileId: true, logoDriveFileId: true,
           phone: true,
           refundPenaltyWithinDays: true, refundPenaltyPct: true, refundDailyRate: true, refundDeductCleaning: true,
+          refundClauseInContract: true,
         },
       }),
     ])
@@ -107,6 +108,7 @@ export async function POST(req: Request) {
         dailyRate: property?.refundDailyRate ?? null,
         deductCleaning: property?.refundDeductCleaning ?? false,
       },
+      refundClauseInContract: property?.refundClauseInContract ?? true,
       pretendardBase64,
       tenant: {
         name: tenant.name,

@@ -86,6 +86,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       refundPenaltyPct: true,
       refundDailyRate: true,
       refundDeductCleaning: true,
+      refundClauseInContract: true,
       publicSlug: true,
       logoDriveFileId: true,
       appLogoDriveFileId: true,
@@ -541,6 +542,7 @@ export async function updatePropertySettings(formData: FormData) {
   const refundPenaltyPct        = formData.get('refundPenaltyPct')
   const refundDailyRate         = formData.get('refundDailyRate')
   const refundDeductCleaning    = formData.get('refundDeductCleaning') === '1'
+  const refundClauseInContract  = formData.get('refundClauseInContract') === '1'
   const publicSlugRaw     = formData.get('publicSlug') as string | null
   const publicSlug = publicSlugRaw
     ? publicSlugRaw.trim().toLowerCase().replace(/[^a-z0-9-]/g, '')
@@ -562,6 +564,7 @@ export async function updatePropertySettings(formData: FormData) {
       refundPenaltyPct:        refundPenaltyPct && String(refundPenaltyPct).trim() ? Number(String(refundPenaltyPct).replace(/[^0-9]/g, '')) || null : null,
       refundDailyRate:         refundDailyRate && String(refundDailyRate).trim() ? Number(String(refundDailyRate).replace(/[^0-9]/g, '')) || null : null,
       refundDeductCleaning,
+      refundClauseInContract,
       publicSlug:       publicSlug || null,
     },
   })
