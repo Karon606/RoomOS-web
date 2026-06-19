@@ -262,12 +262,11 @@ export function buildContractPrintHtml(d: PrintContractData): string {
           <th>퇴실 예정일<span class="en">Check-out</span></th><td class="num">${escape(fmtDate(d.lease?.expectedMoveOut ?? null)) || '—'}</td>
         </tr>
         <tr>
-          <th>${escape(depositLabel)}<span class="en">${depositEn}</span></th><td class="amt">${depositValue}</td>
-          <th>입실료<span class="en">Rent / month</span></th><td class="amt">${d.lease ? `${d.lease.rentAmount.toLocaleString()}원` : ''}</td>
+          <th>${escape(depositLabel)}<span class="en">${depositEn}</span></th><td class="amt" colspan="3">${depositValue}</td>
         </tr>
         <tr>
-          <th>매월 납부일<span class="en">Payment Day</span></th>
-          <td class="num" colspan="3">${d.lease?.dueDay ? (d.lease.dueDay.includes('말') ? '매월 말일' : `매월 ${parseInt(d.lease.dueDay, 10)}일`) : '—'}</td>
+          <th>입실료<span class="en">Rent / month</span></th><td class="amt">${d.lease ? `${d.lease.rentAmount.toLocaleString()}원` : ''}</td>
+          <th>매월 납부일<span class="en">Payment Day</span></th><td class="num">${d.lease?.dueDay ? (d.lease.dueDay.includes('말') ? '매월 말일' : `매월 ${parseInt(d.lease.dueDay, 10)}일`) : '—'}</td>
         </tr>
       </tbody>
     </table>

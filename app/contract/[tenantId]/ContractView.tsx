@@ -393,12 +393,11 @@ export default function ContractView({ data }: { data: ContractData }) {
               <th>퇴실 예정일<span className="en">Check-out</span></th><td className="num">{fmtDate(data.lease?.expectedMoveOut ?? null) || '—'}</td>
             </tr>
             <tr>
-              <th>{depositLabel}<span className="en">{depositEn}</span></th><td className="amt">{depositNode}</td>
-              <th>입실료<span className="en">Rent / month</span></th><td className="amt">{data.lease ? `${data.lease.rentAmount.toLocaleString()}원` : ''}</td>
+              <th>{depositLabel}<span className="en">{depositEn}</span></th><td className="amt" colSpan={3}>{depositNode}</td>
             </tr>
             <tr>
-              <th>매월 납부일<span className="en">Payment Day</span></th>
-              <td className="num" colSpan={3}>{data.lease?.dueDay ? (data.lease.dueDay.includes('말') ? '매월 말일' : `매월 ${parseInt(data.lease.dueDay, 10)}일`) : '—'}</td>
+              <th>입실료<span className="en">Rent / month</span></th><td className="amt">{data.lease ? `${data.lease.rentAmount.toLocaleString()}원` : ''}</td>
+              <th>매월 납부일<span className="en">Payment Day</span></th><td className="num">{data.lease?.dueDay ? (data.lease.dueDay.includes('말') ? '매월 말일' : `매월 ${parseInt(data.lease.dueDay, 10)}일`) : '—'}</td>
             </tr>
           </tbody>
         </table>
