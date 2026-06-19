@@ -3,6 +3,9 @@
 마지막 업데이트: 2026-06-20
 브랜치: main
 
+## 2026-06-20 — 계약서에 '매월 납부일' 항목 추가 [SQL 0]
+입실계약서 헤더에 **'매월 납부일'** 행 추가(입실료 행 아래, colspan으로 한 줄 차지). `lease.dueDay` → '매월 14일'/'매월 말일'/'—'. ContractData·PrintContractData 타입 + contract actions·generate route 데이터 + ContractView·contractPrintHtml 렌더 — 화면·PDF 전 경로. (dueDay는 lease `include`라 추가 쿼리 없음.) 검증: tsc·build 통과.
+
 ## 2026-06-20 — 예상 지출: 홈·지출 화면 추정식 통일 [SQL 0]
 **증상**: 홈(대시보드) 예상 지출과 지출/기타수익 화면의 '전체 예상 지출'이 달랐음(사용자: 1,005만 vs 988만, 차 174,995원).
 **원인**: 둘 다 '발생 지출 + 미발생(미기록) 고정지출' 구조인데, **미발생 고정지출 추정값**이 달랐음 — 홈은 `pendingAmount(임시조정) ?? amount`, 지출 화면은 `historicalAvg(과거평균) ?? amount`. 변동성 고정지출(공과금 등)에서 갈림.

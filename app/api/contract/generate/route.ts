@@ -123,6 +123,7 @@ export async function POST(req: Request) {
         rentAmount: lease.rentAmount,
         depositAmount: lease.depositAmount,
         cleaningFee: lease.cleaningFee,
+        dueDay: lease.dueDay,
         roomNo: lease.room?.roomNo ?? null,
         registrationStatus: REGISTRATION_LABEL[lease.registrationStatus] ?? '미신고',
       } : null,

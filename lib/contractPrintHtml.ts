@@ -47,6 +47,7 @@ export type PrintContractData = {
     rentAmount: number
     depositAmount: number
     cleaningFee: number
+    dueDay: string | null
     roomNo: string | null
     registrationStatus: string
   } | null
@@ -263,6 +264,10 @@ export function buildContractPrintHtml(d: PrintContractData): string {
         <tr>
           <th>${escape(depositLabel)}<span class="en">${depositEn}</span></th><td class="amt">${depositValue}</td>
           <th>입실료<span class="en">Rent / month</span></th><td class="amt">${d.lease ? `${d.lease.rentAmount.toLocaleString()}원` : ''}</td>
+        </tr>
+        <tr>
+          <th>매월 납부일<span class="en">Payment Day</span></th>
+          <td class="num" colspan="3">${d.lease?.dueDay ? (d.lease.dueDay.includes('말') ? '매월 말일' : `매월 ${parseInt(d.lease.dueDay, 10)}일`) : '—'}</td>
         </tr>
       </tbody>
     </table>
