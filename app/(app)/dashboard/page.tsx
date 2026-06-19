@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import DashboardClient, { type DashboardData } from './DashboardClient'
 import { getPaymentMethods } from '@/app/(app)/settings/actions'
+import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
@@ -993,10 +994,12 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   //              · totalExpected 는 page 앞쪽에서 billableLeases 기반 계산됨 (양도인 제외)
   //   예상 지출 = 발생 지출 + 이번 달 미발생 고정지출 (사용자 정의: 검증식 totalExpense+projectedRecurring)
   //   예상 순이익 = 예상 매출 - 예상 지출
-  const recurringDoneIds = new Set(recurringExpensesThisMonth.map(r => r.recurringExpenseId))
-  const projectedRecurringExpense = recurringExpenses
-    .filter(r => !recurringDoneIds.has(r.id))
-    .reduce((s, r) => s + (r.pendingAmount ?? r.amount), 0)
+  // 지출 화면과 동일한 추정식으로 통일: 임시조정 → 과거평균(변동) → 기본액.
+  // (getRecurringExpensesWithStatus 재사용 — 두 화면이 같은 데이터·식을 써 금액이 일치)
+  const recurringWithStatus = await getRecurringExpensesWithStatus(targetMonth)
+  const projectedRecurringExpense = recurringWithStatus
+    .filter(r => !r.isPending && !r.recordedExpenseId)
+    .reduce((s, r) => s + (r.pendingAmount ?? r.historicalAvg ?? r.amount), 0)
   const projectedRevenue = totalExpected + extraRevenue
   expectedExpense = totalExpense + projectedRecurringExpense
   const projectedNetProfit = projectedRevenue - expectedExpense

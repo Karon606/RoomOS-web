@@ -1906,7 +1906,7 @@ export default function FinanceClient({
   // ── 상단 요약 위젯 계산 ──────────────────────────────────────
   const normalExpTotal   = expenses.filter(e => !e.recurringExpenseId).reduce((s, e) => s + e.amount, 0)
   const recRecordedTotal = activeRecs.filter(r => r.recordedExpenseId).reduce((s, r) => s + (r.recordedAmount ?? 0), 0)
-  const recPendingTotal  = activeRecs.filter(r => !r.recordedExpenseId).reduce((s, r) => s + (r.historicalAvg ?? r.amount), 0)
+  const recPendingTotal  = activeRecs.filter(r => !r.recordedExpenseId).reduce((s, r) => s + (r.pendingAmount ?? r.historicalAvg ?? r.amount), 0)
   const totalExpectedExp = normalExpTotal + recRecordedTotal + recPendingTotal
   const totalIncomeSum   = incomes.reduce((s, i) => s + i.amount, 0)
 
