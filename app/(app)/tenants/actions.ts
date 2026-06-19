@@ -302,9 +302,9 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
     where: { id: leaseTermId },
     select: {
       roomId: true, status: true, reservationConfirmedAt: true,
-      // 퇴실 일할 정산 일관 유지용 — 폼으로 퇴실일/납부일 변경 시 재계산·해제 판단
+      // 퇴실 일할 정산 일관 유지용 — 폼으로 퇴실일/납부일 변경 시 재계산·해제·자동적용 판단
       expectedMoveOut: true, dueDay: true,
-      checkoutProratedAmount: true, checkoutProrationUndo: true,
+      checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
     },
   })
@@ -320,24 +320,28 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
   const newMoveOutIso  = expectedMoveOut || null
   let prorationPatch: Record<string, unknown> = {}
   let prorationNotice: string | null = null
-  if (currentLease.checkoutProratedAmount != null) {
-    if (status === 'ACTIVE' && prevStatus === 'CHECKOUT_PENDING') {
-      // 거주중 복귀 — 퇴실예정일·정산·스냅샷 정리 (전환 버튼과 동일)
-      prorationPatch = { expectedMoveOut: null, checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull }
-      prorationNotice = '거주중 복귀 — 퇴실 예정일과 적용돼 있던 퇴실 일할 정산을 해제했습니다.'
-    } else if (newMoveOutIso !== prevMoveOutIso || (dueDay || null) !== (currentLease.dueDay ?? null)) {
-      const pr = prorationDataForChange(
-        {
-          rentAmount,
-          checkoutProratedAmount: currentLease.checkoutProratedAmount,
-          checkoutProrationUndo: currentLease.checkoutProrationUndo,
-          discounts: currentLease.discounts,
-        },
-        dueDay || null, newMoveOutIso,
-      )
-      prorationPatch = pr.data
-      prorationNotice = pr.notice
-    }
+  if (status === 'ACTIVE' && prevStatus === 'CHECKOUT_PENDING' && currentLease.checkoutProratedAmount != null) {
+    // 거주중 복귀 — 적용돼 있던 퇴실예정일·정산·스냅샷 정리 (전환 버튼과 동일)
+    prorationPatch = { expectedMoveOut: null, checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull }
+    prorationNotice = '거주중 복귀 — 퇴실 예정일과 적용돼 있던 퇴실 일할 정산을 해제했습니다.'
+  } else if (newMoveOutIso !== prevMoveOutIso || (dueDay || null) !== (currentLease.dueDay ?? null)) {
+    // 퇴실일/납부일이 바뀐 경우에만 — 적용 중이면 재계산, 미적용+퇴실예정이면 자동 적용.
+    // (변동 없는 저장은 이 블록을 안 타므로 수동 조정 금액이 보존됨)
+    const pr = prorationDataForChange(
+      {
+        status: prevStatus,
+        expectedMoveOut: currentLease.expectedMoveOut,
+        rentAmount,
+        checkoutProratedAmount: currentLease.checkoutProratedAmount,
+        checkoutProratedMonth: currentLease.checkoutProratedMonth,
+        checkoutProrationUndo: currentLease.checkoutProrationUndo,
+        discounts: currentLease.discounts,
+      },
+      dueDay || null, newMoveOutIso,
+      status === 'CHECKOUT_PENDING',   // 퇴실 예정 상태로 저장할 때만 자동 적용
+    )
+    prorationPatch = pr.data
+    prorationNotice = pr.notice
   }
 
   // 입주자 정보 수정
@@ -848,7 +852,7 @@ export async function applyStatusTransition(input: {
       where: { id: input.leaseTermId },
       select: {
         roomId: true, status: true, dueDay: true, rentAmount: true,
-        checkoutProratedAmount: true, checkoutProrationUndo: true,
+        expectedMoveOut: true, checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       },
     })
@@ -874,6 +878,7 @@ export async function applyStatusTransition(input: {
       const pr = prorationDataForChange(
         { ...lease, rentAmount: input.rentAmount ?? lease.rentAmount },
         lease.dueDay, input.expectedMoveOut || null,
+        input.toStatus === 'CHECKOUT_PENDING',   // 퇴실 예정으로 전환할 때만 자동 적용
       )
       Object.assign(data, pr.data)
       notice = pr.notice
@@ -1368,19 +1373,21 @@ export async function changeDueDay(
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: leaseTermId },
       select: {
-        dueDay: true, rentAmount: true, tenantId: true,
+        dueDay: true, rentAmount: true, tenantId: true, status: true,
         // 퇴실 일할 정산 재계산용 — 납부일이 바뀌면 일할 기간(납부일~퇴실일)도 달라짐
-        expectedMoveOut: true, checkoutProratedAmount: true, checkoutProrationUndo: true,
+        expectedMoveOut: true, checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
 
-    // 적용된 퇴실 일할 정산이 있으면 새 납부일 기준으로 재계산 (updateTenant·전환 버튼과 동일 정책)
+    // 적용된 퇴실 일할 정산이 있으면 새 납부일 기준으로 재계산 (updateTenant·전환 버튼과 동일 정책).
+    // 납입일 변경은 '자동 적용' 대상이 아님(false) — 이미 적용된 정산만 새 납부일로 재계산.
     const pr = prorationDataForChange(
       lease,
       newDueDay.trim() || null,
       lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
+      false,
     )
 
     await prisma.leaseTerm.update({
@@ -1476,41 +1483,61 @@ type CheckoutProrationUndo = {
 // 반환: leaseTerm.update 에 합칠 data 조각 + 사용자 안내문.
 function prorationDataForChange(
   lease: {
+    status: LeaseStatus
+    expectedMoveOut: Date | string | null
     rentAmount: number
     checkoutProratedAmount: number | null
+    checkoutProratedMonth: string | null
     checkoutProrationUndo: unknown
     discounts: { discountType: string; value: number; scope: string; startMonth: string | null; endMonth: string | null }[]
   },
   newDueDay: string | null,
   newExpectedMoveOut: string | null,   // 'YYYY-MM-DD' | null
+  autoApply: boolean,                  // 미적용 상태에서도 자동 적용(퇴실 예정 전환·편집)일 때 true
 ): { data: Record<string, unknown>; notice: string | null } {
-  if (lease.checkoutProratedAmount == null) return { data: {}, notice: null }   // 정산 미적용
+  const wasApplied = lease.checkoutProratedAmount != null
+  // 퇴실 예정 해제 — 적용분 있으면 정산도 함께 해제
   if (!newExpectedMoveOut) {
+    if (!wasApplied) return { data: {}, notice: null }
     return {
       data: { checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull },
       notice: '퇴실 예정이 해제되어 적용돼 있던 퇴실 일할 정산도 함께 해제했습니다.',
     }
   }
+  // 미적용 + 자동적용 대상 아님(거주중 납입일 변경 등) → 손대지 않음
+  if (!wasApplied && !autoApply) return { data: {}, notice: null }
+
   const moveOutMonth = newExpectedMoveOut.slice(0, 7)
   const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
   const calc = calcCheckoutProration(monthlyRent, newDueDay, newExpectedMoveOut)
   if (!calc) {
+    // 퇴실일 ≤ 납부일 → 그 달 자동 0원(일할 불필요). 기존 적용분만 해제.
+    if (!wasApplied) return { data: {}, notice: null }
     return {
       data: { checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull },
       notice: '퇴실일이 납부일 이전이 되어 마지막 달 청구가 자동으로 0원 처리됩니다 — 기존 일할 정산은 해제했습니다.',
     }
   }
+  // 적용취소 스냅샷 — 이미 적용 중이면 기존 스냅샷(최초 적용 직전) 유지, 신규 자동적용이면 현재 상태 기록.
   const prevUndo = lease.checkoutProrationUndo
-  const undo = prevUndo && typeof prevUndo === 'object'
-    ? { ...(prevUndo as CheckoutProrationUndo), appliedMoveOut: newExpectedMoveOut, appliedAmount: calc.amount }
-    : undefined
+  const undoBase: CheckoutProrationUndo = (prevUndo && typeof prevUndo === 'object')
+    ? (prevUndo as CheckoutProrationUndo)
+    : {
+        prevStatus: lease.status,
+        prevExpectedMoveOut: lease.expectedMoveOut ? new Date(lease.expectedMoveOut).toISOString().slice(0, 10) : null,
+        prevAmount: lease.checkoutProratedAmount ?? null,
+        prevMonth: lease.checkoutProratedMonth ?? null,
+      }
+  const undo: CheckoutProrationUndo = { ...undoBase, appliedMoveOut: newExpectedMoveOut, appliedAmount: calc.amount }
   return {
     data: {
       checkoutProratedAmount: calc.amount,
       checkoutProratedMonth: calc.moveOutMonth,
-      ...(undo ? { checkoutProrationUndo: undo } : {}),
+      checkoutProrationUndo: undo,
     },
-    notice: `적용돼 있던 퇴실 일할 정산을 변경된 조건으로 재계산했습니다 — ${calc.daysUsed}일치 ${calc.amount.toLocaleString()}원.`,
+    notice: wasApplied
+      ? `적용돼 있던 퇴실 일할 정산을 변경된 조건으로 재계산했습니다 — ${calc.daysUsed}일치 ${calc.amount.toLocaleString()}원.`
+      : `퇴실 일할 정산을 자동 적용했습니다 — ${calc.daysUsed}일치 ${calc.amount.toLocaleString()}원. (금액 조정은 '퇴실 정산'에서)`,
   }
 }
 

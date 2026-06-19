@@ -3,6 +3,15 @@
 마지막 업데이트: 2026-06-19
 브랜치: main
 
+## 2026-06-19 (이어서) — 퇴실 일할 정산 '자동 적용' (1단계 나머지) [SQL 0]
+퇴실 예정으로 전환/편집하면 일할 정산을 **자동 적용**(이전엔 위젯서 수동 적용해야 해 503호처럼 풀 청구로 남던 문제 해소).
+- `prorationDataForChange`에 **autoApply** 파라미터 추가 — 미적용 상태라도 'CHECKOUT_PENDING으로 설정'일 때 자동 계산·적용(undo 스냅샷 포함). 거주중 납입일 변경(changeDueDay)은 autoApply=false(이미 적용분만 재계산).
+- 3경로 연결: `applyStatusTransition`(toStatus===CHECKOUT_PENDING), `updateTenant`(status===CHECKOUT_PENDING & 퇴실일/납부일 변경 시), `changeDueDay`(false).
+- **수동 조정 보존**: 퇴실일·납부일이 안 바뀐 저장은 재계산 안 함 → 위젯에서 조정한 금액(봐주기 등) 유지.
+- 알림·예상매출·예상순이익은 `billForLeaseMonth` 한 엔진 공유 → 자동 적용분이 셋에 동시 반영.
+**주의**: ① 기존 CHECKOUT_PENDING(이미 퇴실예정인 503호 등)은 **소급 자동적용 안 됨** — 퇴실 전환 재저장 또는 위젯 1회 적용 필요. ② 자동 적용분 적용취소는 '적용 직전(거주중)'으로 복원(ConfirmDialog 문구에 명시됨). **2단계 남음**: 환경설정 환불규정.
+**검증(loop.md 1)**: tsc 클린·build ✓·lint 신규에러 0. 적대적 정적추적 10개 시나리오 청구 정확성 이상 0. ⚠️결제 핵심이라 실기기 검증 권장.
+
 ## 2026-06-19 (이어서) — 퇴실 정산 수동 조정 + 캘린더 '이용료'·만단위 표기 [SQL 0]
 사용자 보고: 503호 오늘 퇴실인데 '퇴실 예정'·'월세 미납' 알림이 동시에 뜨고 예상매출에도 잡힘.
 **원인 진단(버그 아님, 모델 빈틈)**: 선납+일할 모델([lib/prorate.ts](lib/prorate.ts)·[lib/billing.ts](lib/billing.ts)). 퇴실일이 그 달 납부일 **이전/같음**→`isCheckoutNoBillingMonth`로 자동 0(알림·예상매출 제외 이미 동작). 퇴실일이 납부일 **이후**면 일할 정산(`checkoutProratedAmount`)이 적용돼야 하나 **자동이 아니라 위젯에서 수동 적용**해야 함 → 미적용이면 한 달치 풀로 잡힘(503호). 알림·예상매출·예상순이익은 `billForLeaseMonth` 한 엔진을 공유해 정산값이 셋에 동시 반영됨.
