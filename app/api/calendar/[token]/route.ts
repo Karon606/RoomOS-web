@@ -2,6 +2,7 @@
 // 토큰만으로 접근(공개) — 캘린더 앱은 쿠키 없이 가져가므로 비밀 토큰이 보안.
 import prisma from '@/lib/prisma'
 import { discountedRent } from '@/lib/rentDiscount'
+import { isCheckoutNoBillingMonth } from '@/lib/billing'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -31,6 +32,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
     where: { propertyId: property.id, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
     select: {
       id: true, dueDay: true, rentAmount: true, expectedMoveOut: true, status: true,
+      checkoutProratedAmount: true, checkoutProratedMonth: true,
       room: { select: { roomNo: true } },
       tenant: { select: { name: true } },
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
@@ -74,7 +76,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
         const monthStr = `${y}-${String(m).padStart(2, '0')}`
         const lastDay = new Date(y, m, 0).getDate()
         const day = l.dueDay.includes('말') ? lastDay : Math.min(Math.max(parseInt(l.dueDay, 10) || 1, 1), lastDay)
-        const amount = discountedRent(l.discounts, monthStr, l.rentAmount)
+        // 퇴실월: 퇴실일이 납부일 이전이면 그 기간 미사용 → 청구 없음(이용료 일정 생략)
+        if (isCheckoutNoBillingMonth(l.expectedMoveOut, monthStr, new Date(y, m - 1, day))) continue
+        // 청구액 = 그 달에 적용된 퇴실 일할 정산 > 할인 반영 이용료 (알림·예상매출과 동일 규칙)
+        const amount = (l.checkoutProratedAmount != null && l.checkoutProratedMonth === monthStr)
+          ? l.checkoutProratedAmount
+          : discountedRent(l.discounts, monthStr, l.rentAmount)
+        if (amount <= 0) continue
         ev(`rent-${l.id}-${monthStr}`, y, m, day, `${who} 이용료 ${manWon(amount)}`, '납부 예정일')
       }
     }
