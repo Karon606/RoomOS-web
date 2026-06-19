@@ -3,6 +3,13 @@
 마지막 업데이트: 2026-06-19
 브랜치: main
 
+## 2026-06-19 (이어서) — 2단계: 퇴실 환불 미리보기 위젯 통합 [SQL 0]
+**퇴실 정산 위젯(CheckoutProrationWidget)에 환불 미리보기 추가** — 퇴실일 선택 시 `previewCheckoutRefund`로 산출:
+- 선납액 = 퇴실 달 수납액(보증금·양도인 제외, PaymentRecord 합) · 사용분 = 일할 daysUsed × 1일당 · 위약금(입주 후 N일 이내면 잔액×P%) · 청소비(옵션).
+- 항목별 내역(선납−사용−위약금−청소비=환불액) 표시. 환불 규정 미설정이면 '월÷30 기준' 안내. **참고용**(보증금 환불에서 함께 정산).
+- 신규 서버 액션 `previewCheckoutRefund`([tenants/actions.ts](app/(app)/tenants/actions.ts)) — 일할 미리보기와 병렬 호출.
+**검증**: tsc·build 통과. (선납액=퇴실 달 targetMonth 수납 기준 — 선납 귀속이 다른 케이스는 운영자가 금액 확인. 다음 개선 여지.)
+
 ## 2026-06-19 (이어서) — 2단계: 퇴실 환불 규정 (환경설정) [⚠️ SQL 4건 — 적용 후 배포]
 **환경설정에 '퇴실 환불 규정' 카드 신설** — 조기 퇴실 환불액 산정 파라미터(영업장별). (사용자 결정: 1일당=고정액 입력·비면 월÷30, 설계대로 진행)
 - **Property 4필드**: `refundPenaltyWithinDays`(입주 후 N일 이내 퇴실 시 위약금)·`refundPenaltyPct`(잔 입실료의 P%)·`refundDailyRate`(1일당 고정, 비면 월÷30)·`refundDeductCleaning`(청소비 차감).

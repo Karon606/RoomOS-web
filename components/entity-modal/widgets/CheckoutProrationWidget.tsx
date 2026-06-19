@@ -7,10 +7,11 @@
 import { useState, useTransition, useEffect, useRef } from 'react'
 import {
   previewCheckoutProration,
+  previewCheckoutRefund,
   setCheckoutProration,
   clearCheckoutProration,
 } from '@/app/(app)/tenants/actions'
-import type { CheckoutProrationResult } from '@/lib/prorate'
+import type { CheckoutProrationResult, CheckoutRefundResult } from '@/lib/prorate'
 import { PRORATE_BASE_DAYS } from '@/lib/prorate'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -41,17 +42,22 @@ export function CheckoutProrationWidget({
   const [calc, setCalc] = useState<CheckoutProrationResult | null>(null)
   const [calcErr, setCalcErr] = useState<string | null>(null)
   const [amountInput, setAmountInput] = useState('')   // 적용 금액 — 자동 일할액 기본, 운영자가 수정 가능
+  const [refund, setRefund] = useState<{ refund: CheckoutRefundResult; prepaidAmount: number; hasPolicy: boolean } | null>(null)
 
   const isApplied = checkoutProratedAmount != null && !!checkoutProratedMonth
 
   // 퇴실일 선택 → 서버 미리보기 (할인까지 반영한 정확한 일할액)
   const handleDate = (v: string) => {
-    setDate(v); setCalc(null); setCalcErr(null); setAmountInput('')
+    setDate(v); setCalc(null); setCalcErr(null); setAmountInput(''); setRefund(null)
     if (!v || v.length < 10) return
     startTransition(async () => {
-      const res = await previewCheckoutProration(leaseTermId, v)
+      const [res, refRes] = await Promise.all([
+        previewCheckoutProration(leaseTermId, v),
+        previewCheckoutRefund(leaseTermId, v),
+      ])
       if (res.ok) { setCalc(res.calc); setCalcErr(null); setAmountInput(String(res.calc.amount)) }
       else { setCalc(null); setCalcErr(res.error); setAmountInput('') }
+      setRefund(refRes.ok ? { refund: refRes.refund, prepaidAmount: refRes.prepaidAmount, hasPolicy: refRes.hasPolicy } : null)
     })
   }
 
@@ -167,8 +173,23 @@ export function CheckoutProrationWidget({
           <p className="text-xs" style={{ color: 'var(--coral)' }}>{calcErr}</p>
         )}
 
+        {refund && refund.prepaidAmount > 0 && (
+          <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+            <p className="font-semibold text-[var(--warm-mid)] mb-1">환불 미리보기{!refund.hasPolicy ? ' (환불 규정 미설정 · 월÷30 기준)' : ''}</p>
+            <div className="space-y-0.5 text-[var(--warm-muted)]">
+              <div className="flex justify-between"><span>선납액</span><span className="tabular-nums">{fmtWon(refund.prepaidAmount)}</span></div>
+              <div className="flex justify-between"><span>− 사용분 ({refund.refund.daysUsed}일 × {fmtWon(refund.refund.dailyRate)})</span><span className="tabular-nums">{fmtWon(refund.refund.usedAmount)}</span></div>
+              {refund.refund.penalty > 0 && <div className="flex justify-between"><span>− 위약금</span><span className="tabular-nums">{fmtWon(refund.refund.penalty)}</span></div>}
+              {refund.refund.cleaning > 0 && <div className="flex justify-between"><span>− 청소비</span><span className="tabular-nums">{fmtWon(refund.refund.cleaning)}</span></div>}
+            </div>
+            <div className="flex justify-between font-bold mt-1 pt-1 border-t" style={{ borderColor: 'var(--warm-border)', color: '#4e6834' }}>
+              <span>환불액</span><span className="tabular-nums">{fmtWon(refund.refund.refund)}</span>
+            </div>
+            <p className="text-[0.5625rem] text-[var(--warm-muted)] mt-1">참고용 — 보증금 환불(퇴실 처리)에서 이 금액을 함께 정산하세요.</p>
+          </div>
+        )}
         <div className="flex gap-2">
-          <Btn type="button" variant="secondary" size="sm" onClick={() => { setShowForm(false); setCalc(null); setCalcErr(null) }} className="flex-1">취소</Btn>
+          <Btn type="button" variant="secondary" size="sm" onClick={() => { setShowForm(false); setCalc(null); setCalcErr(null); setRefund(null) }} className="flex-1">취소</Btn>
           <Btn type="button" variant="primary" size="sm" disabled={pending || !calc} onClick={handleApply} className="flex-1 font-semibold">
             {pending ? '처리 중...' : '정산 적용'}
           </Btn>
