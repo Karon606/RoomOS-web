@@ -246,8 +246,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
           <th>연락처<span class="en">Mobile Phone</span></th><td class="num">${escape(d.tenant.primaryPhone ?? '')}</td>
         </tr>
         <tr>
-          <th>생년월일<span class="en">Date of Birth</span></th><td class="num">${escape(fmtDate(d.tenant.birthdate))}</td>
-          <th>직업<span class="en">Occupation</span></th><td>${escape(d.tenant.job ?? '')}</td>
+          <th>생년월일<span class="en">Date of Birth</span></th><td class="num" colspan="3">${escape(fmtDate(d.tenant.birthdate))}</td>
         </tr>
         <tr>
           <th>성별<span class="en">Gender</span></th><td>${escape(d.tenant.gender)}</td>

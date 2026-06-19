@@ -377,8 +377,7 @@ export default function ContractView({ data }: { data: ContractData }) {
               <th>연락처<span className="en">Mobile Phone</span></th><td className="num">{data.tenant.primaryPhone ?? ''}</td>
             </tr>
             <tr>
-              <th>생년월일<span className="en">Date of Birth</span></th><td className="num">{fmtDate(data.tenant.birthdate)}</td>
-              <th>직업<span className="en">Occupation</span></th><td>{data.tenant.job ?? ''}</td>
+              <th>생년월일<span className="en">Date of Birth</span></th><td className="num" colSpan={3}>{fmtDate(data.tenant.birthdate)}</td>
             </tr>
             <tr>
               <th>성별<span className="en">Gender</span></th><td>{data.tenant.gender}</td>
