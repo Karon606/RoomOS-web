@@ -48,6 +48,7 @@ export type AssetItem = {
   locationId: string | null     // 공용부(StorageLocation) 배정 시
   locationName: string | null
   isCommon: boolean             // 공용 자재(페인트 등) 표시
+  breakdown: { date: string; qty: number | null; amount: number }[]   // 합산 펼치기 — 개별 구매 내역
 }
 
 export type AssetsData = {
@@ -92,6 +93,8 @@ function aggregateAssets(list: RawAsset[]): AssetItem[] {
       amount, qtyValue, qtyUnit: rep.qtyUnit, category: rep.category, vendor: rep.vendor,
       roomId: rep.roomId, roomNo: rep.roomNo, locationId: rep.locationId, locationName: rep.locationName,
       isCommon: rep.isCommon,
+      breakdown: rows.map(r => ({ date: r.date, qty: r.qtyValue, amount: r.amount }))
+        .sort((a, b) => b.date.localeCompare(a.date)),
     })
   }
   return out.sort((a, b) => b.date.localeCompare(a.date))

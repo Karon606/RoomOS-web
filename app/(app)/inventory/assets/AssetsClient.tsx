@@ -26,6 +26,10 @@ export default function AssetsClient({ data, rooms, locations }: {
   const [qtyAsk, setQtyAsk] = useState<{ it: AssetItem; target: Target; label: string } | null>(null)
   const [qtyVal, setQtyVal] = useState('1')
   const [pending, startTransition] = useTransition()
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())   // 합산 펼친 항목 id
+  const toggleExpand = (id: string) => setExpanded(prev => {
+    const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
+  })
 
   // 배정 해제(미배정으로) — 묶음(ids) 전체
   const unassign = (it: AssetItem) => {
@@ -108,11 +112,27 @@ export default function AssetsClient({ data, rooms, locations }: {
         <div className="min-w-0 flex-1">
           <p className="text-sm text-[var(--warm-dark)] truncate">{it.detail || it.itemLabel}</p>
           <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">
-            {it.date.slice(2)} · {it.category}{it.vendor ? ` · ${it.vendor}` : ''}{it.count > 1 ? ` · 구매 ${it.count}건 합산` : ''}
+            {it.date.slice(2)} · {it.category}{it.vendor ? ` · ${it.vendor}` : ''}
           </p>
+          {it.count > 1 && (
+            <button type="button" onClick={() => toggleExpand(it.id)}
+              className="mt-0.5 text-[0.625rem] text-[var(--coral)] hover:underline">
+              구매 {it.count}건 합산 {expanded.has(it.id) ? '▾ 접기' : '▸ 펼치기'}
+            </button>
+          )}
         </div>
         <span className="shrink-0 text-sm font-semibold text-[var(--danger-fg)] tabular-nums">{won(it.amount)}</span>
       </div>
+      {it.count > 1 && expanded.has(it.id) && (
+        <ul className="mt-1.5 pl-2.5 border-l-2 border-[var(--warm-border)] space-y-0.5">
+          {it.breakdown.map((b, i) => (
+            <li key={i} className="flex items-baseline justify-between gap-2 text-[0.6875rem] text-[var(--warm-muted)]">
+              <span className="tabular-nums">{b.date.slice(2)}{b.qty != null ? ` · ${fmtQty(b.qty)}${it.qtyUnit ?? '개'}` : ''}</span>
+              <span className="tabular-nums">{won(b.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="mt-1.5 flex items-center justify-end gap-1.5 flex-wrap">
         {awaitingReceipt ? (
           <button type="button" onClick={() => markReceived(it, true)} disabled={pending}
