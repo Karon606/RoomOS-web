@@ -1924,28 +1924,43 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           })()}
         </div>
 
-        {/* Row 2 Right: 현재 순이익 — 전문적 다크. 예비비 이체분이 있으면 운영 가용 자금 보조 표시 */}
+        {/* Row 2 Right: 예상 순이익 + 달성도 — 매출 위젯과 동일 방식(예상 큰 숫자 + 현재/예상 달성 bar).
+            다크 카드 유지(순이익 구분). 예비비 이체분 있으면 운영 가용 자금 보조 표시. */}
         {(() => {
-          const net = data.netProfit
-          const isPos = net >= 0
+          const expectedNet = data.projectedNetProfit   // 예상 매출 − 예상 지출
+          const currentNet  = data.netProfit            // 현재(수납 − 실제 지출)
+          const isPosExp = expectedNet >= 0
+          const pct = expectedNet > 0 ? Math.max(0, Math.min(100, Math.round((currentNet / expectedNet) * 100))) : 0
           const hasReserveOut = data.reserveAccrualFromThisMonth > 0
           return (
-            // §19-2-1: 표면·텍스트 페어 토큰 — 라이트=잉크 다크 카드(현행), 다크=--d-card+--d-success 팁.
-            // 이전엔 --ink 를 배경으로 써서 다크모드에서 크림 카드+연청 라벨로 뒤집혔음(절대규칙 2 위반).
             <div className="rounded-xl" style={{
               background: 'var(--np-card-bg)', padding: '18px 20px',
               boxShadow: 'inset 3px 0 0 var(--np-tip), inset 0 0 0 1px var(--np-card-bd)',
             }}>
               <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--np-label)', marginBottom: 8 }}>
-                현재 순이익
+                예상 순이익
+                <span style={{ fontSize: '0.5625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'var(--np-cap)' }}>(이번 달)</span>
               </p>
-              <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: isPos ? 'var(--np-pos)' : 'var(--np-neg)' }}>
-                {isPos ? '+' : ''}{net.toLocaleString()}
+              <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: isPosExp ? 'var(--np-pos)' : 'var(--np-neg)' }}>
+                {isPosExp ? '+' : ''}{expectedNet.toLocaleString()}
                 <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--np-unit)', marginLeft: 2 }}>원</small>
               </p>
-              <p style={{ fontSize: '0.65625rem', color: 'var(--np-cap)', marginBottom: hasReserveOut ? 4 : 0 }}>수납 − 실제 지출</p>
+              {expectedNet > 0 ? (
+                <>
+                  <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.18)', overflow: 'hidden', margin: '2px 0 6px' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: 'var(--np-pos)', borderRadius: 3 }} />
+                  </div>
+                  <p style={{ fontSize: '0.65625rem', color: 'var(--np-cap)', lineHeight: 1.5 }}>
+                    현재 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{currentNet.toLocaleString()}원</em> · 달성 <em style={{ fontStyle: 'normal', color: 'var(--np-pos)', fontWeight: 700 }}>{pct}%</em>
+                  </p>
+                </>
+              ) : (
+                <p style={{ fontSize: '0.65625rem', color: 'var(--np-cap)', lineHeight: 1.5 }}>
+                  현재 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{currentNet.toLocaleString()}원</em> · 수납 − 실제 지출
+                </p>
+              )}
               {hasReserveOut && (
-                <p style={{ fontSize: '0.625rem', color: 'var(--np-cap2)' }}>
+                <p style={{ fontSize: '0.625rem', color: 'var(--np-cap2)', marginTop: 4 }}>
                   예비비 −{data.reserveAccrualFromThisMonth.toLocaleString()}원 이체 · 운영 가용 <span style={{ color: 'var(--np-cash)', fontWeight: 600 }}>{data.operatingCashAvailable.toLocaleString()}원</span>
                 </p>
               )}
