@@ -555,7 +555,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
 
     const existing = await prisma.expense.findUnique({
       where: { id },
-      select: { isShipping: true, settleStatus: true, itemLabel: true, category: true },
+      // receivedAt: 방별 분배로 갈라지는 새 조각이 '수령완료'를 물려받게(미수령으로 되돌아가는 것 방지)
+      select: { isShipping: true, settleStatus: true, itemLabel: true, category: true, receivedAt: true },
     })
     // 배송비 라인은 결제구분(선불/착불/신용)에 따라 settleStatus 가 별도 관리됨 —
     // 일반 수정 저장이 payMethod 기준으로 재계산해 '신용(미정산)'을 조용히 정산완료로 뒤집지 않게 보존.
@@ -634,6 +635,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
             qtyValue:  r.qtyValue  ? parseFloat(r.qtyValue)  : null,
             allocationGroupId: r.groupId,
             excludeFromInventory,
+            receivedAt:         existing?.receivedAt ?? null,   // 원본이 수령완료면 분배 조각도 수령완료 유지
           },
         })),
         // 합산형 배송비 — 품목 단가 왜곡 방지를 위해 별도 행(재고 제외)으로 분리 (addExpense 와 동일)
