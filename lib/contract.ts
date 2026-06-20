@@ -102,3 +102,32 @@ export function buildRefundClause(p: RefundPolicyValues): string {
   }
   return `퇴실 시 사용한 ${daily}${cleaning}를 차감한 후 잔 입실료를 환불합니다.`
 }
+
+// ── 잔여 소지품 임의처분 동의서 — 계약서와 함께 출력되는 별도 서류 ──────────
+// body 는 {{성명}} {{호실}} {{연락처}} {{미납일수}} {{영업장명}} {{대표}} 등 변수 사용.
+export type DisposalConsentTemplate = {
+  enabled: boolean      // 계약서와 함께 출력할지
+  days: number          // 미납 기준일 ({{미납일수}})
+  title: string
+  body: string          // 동의 내용 (줄바꿈으로 문단 구분)
+}
+export const DEFAULT_DISPOSAL_CONSENT: DisposalConsentTemplate = {
+  enabled: false,
+  days: 7,
+  title: '잔여 소지품 임의처분 동의서',
+  body:
+    "본인(입실자)은 '{{영업장명}}' 이용 중, 입실료 납부일로부터 ({{미납일수}})일 이상 미납하고 사전 연락 없이 통신이 두절될 경우, 본 시설의 이용 계약을 포기한 것으로 간주함에 명시적으로 동의합니다.\n" +
+    "또한, 타 입실자의 피해 예방 및 원활한 시설 운영을 위하여, 위 조건에 해당할 시 관리자가 임의로 호실을 개방하는 것에 동의합니다. 아울러 호실 내부에 남겨진 본인의 모든 잔여 물품을 관리자가 임의로 반출, 보관(보관료 1일 3만 원 청구), 처분 및 폐기하는 것에 일체 동의하며, 추후 이와 관련하여 민사상 손해배상 청구나 형사상 고소(절도, 주거침입, 재물손괴 등) 등 어떠한 이의도 제기하지 않을 것을 서약합니다.\n" +
+    "본인은 위 특약의 의미와 법적 효력을 관리자로부터 충분히 설명을 듣고 이해하였으며, 자유로운 의사에 따라 본 서약에 동의합니다.",
+}
+
+// 저장된 JSON(부분/구버전 가능)을 안전하게 DisposalConsentTemplate 로 해석(기본값 폴백).
+export function resolveDisposalConsent(raw: unknown): DisposalConsentTemplate {
+  const d = (raw && typeof raw === 'object' ? raw : null) as Partial<DisposalConsentTemplate> | null
+  return {
+    enabled: d?.enabled ?? DEFAULT_DISPOSAL_CONSENT.enabled,
+    days:    typeof d?.days === 'number' ? d.days : DEFAULT_DISPOSAL_CONSENT.days,
+    title:   d?.title ?? DEFAULT_DISPOSAL_CONSENT.title,
+    body:    d?.body ?? DEFAULT_DISPOSAL_CONSENT.body,
+  }
+}

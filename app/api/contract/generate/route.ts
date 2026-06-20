@@ -8,7 +8,7 @@ import { requireEdit } from '@/lib/role'
 import { uploadToDrive, buildDriveThumbnailUrl } from '@/lib/google-drive'
 import { buildContractPrintHtml, getPretendardBase64, type PrintContractData } from '@/lib/contractPrintHtml'
 import {
-  type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE,
+  type ContractTemplate, type BusinessInfo, DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
 } from '@/lib/contract'
 
 // puppeteer + chromium은 nodejs runtime 필수 (edge 불가).
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
           stampDriveFileId: true, logoDriveFileId: true,
           phone: true,
           refundPenaltyWithinDays: true, refundPenaltyPct: true, refundDailyRate: true, refundDeductCleaning: true,
-          refundClauseInContract: true,
+          refundClauseInContract: true, disposalConsentTemplate: true,
         },
       }),
     ])
@@ -109,6 +109,7 @@ export async function POST(req: Request) {
         deductCleaning: property?.refundDeductCleaning ?? false,
       },
       refundClauseInContract: property?.refundClauseInContract ?? true,
+      disposalConsent: resolveDisposalConsent(property?.disposalConsentTemplate),
       pretendardBase64,
       tenant: {
         name: tenant.name,

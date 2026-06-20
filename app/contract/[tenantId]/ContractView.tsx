@@ -115,6 +115,12 @@ export default function ContractView({ data }: { data: ContractData }) {
     환불규정:          data.refundClauseInContract ? ' ' + buildRefundClause(data.refundPolicy) : '',
   }), [data, smoking, emergencyContactText, roomNoLabel])
 
+  // 잔여 소지품 임의처분 동의서 — 본문 변수(한글 키)
+  const dcVars: Record<string, string> = {
+    성명: data.tenant.name, 호실: roomNoLabel, 연락처: data.tenant.primaryPhone ?? '',
+    미납일수: String(data.disposalConsent.days), 영업장명: biz.name || '', 대표: biz.ceoName || '',
+  }
+
   const handlePrint = () => window.print()
 
   const handleSaveOverride = () => {
@@ -513,6 +519,26 @@ export default function ContractView({ data }: { data: ContractData }) {
           <div className="wordmark">made with <span className="wm"><span className="wm-stay">stay</span><span className="wm-eum">eum</span></span></div>
         </div>
       </main>
+      {data.disposalConsent.enabled && (
+        <main className="contract-paper disposal-paper">
+          <div className="dc-title">{data.disposalConsent.title}</div>
+          <div className="dc-sec-h">1. 입실자 정보</div>
+          <table className="info dc-info"><tbody>
+            <tr><th>성명<span className="en">Name</span></th><td>{data.tenant.name}</td></tr>
+            <tr><th>호실<span className="en">Room</span></th><td className="num">{roomNoLabel}</td></tr>
+            <tr><th>연락처<span className="en">Phone</span></th><td className="num">{data.tenant.primaryPhone ?? ''}</td></tr>
+          </tbody></table>
+          <div className="dc-sec-h">2. 동의 내용</div>
+          <div className="dc-body">
+            {data.disposalConsent.body.split('\n').map(p => p.trim()).filter(Boolean).map((p, i) => (
+              <p key={i} className="dc-p">{renderContractText(p, dcVars)}</p>
+            ))}
+          </div>
+          <div className="dc-date num">{signDateLabel}</div>
+          <div className="dc-sign"><span className="dc-sign-lbl">동의자(입실자) 성명</span><span className="dc-sign-line">{signatureName || data.tenant.name}</span><span className="dc-sign-seal">(서명 또는 인)</span></div>
+          <div className="dc-to">{biz.name || ''} 대표 귀하</div>
+        </main>
+      )}
       </div>
 
       {/* 서명 받기 모달 — 아이패드/모바일에서 입실자 손글씨 서명 캡처 */}
@@ -676,6 +702,19 @@ export default function ContractView({ data }: { data: ContractData }) {
         .contract-paper .wordmark .wm { font-weight: 600; }
         .contract-paper .wordmark .wm-stay { color: var(--p-ink); }
         .contract-paper .wordmark .wm-eum { color: var(--p-tc); }
+        /* 잔여 소지품 임의처분 동의서 */
+        .contract-paper.disposal-paper { margin-top: 8mm; }
+        .contract-paper .dc-title { font-size: 15pt; font-weight: 800; text-align: center; letter-spacing: -.02em; margin: 2mm 0 7mm; }
+        .contract-paper .dc-sec-h { font-size: 10.5pt; font-weight: 700; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); margin: 5mm 0 2.5mm; }
+        .contract-paper .dc-info { width: 65%; }
+        .contract-paper .dc-body { font-size: 9.4pt; line-height: 1.75; color: var(--p-ink); }
+        .contract-paper .dc-p { margin-bottom: 2.6mm; word-break: keep-all; }
+        .contract-paper .dc-date { text-align: center; font-size: 10pt; margin: 9mm 0 5mm; }
+        .contract-paper .dc-sign { display: flex; align-items: baseline; justify-content: flex-end; gap: 3mm; font-size: 10pt; }
+        .contract-paper .dc-sign-lbl { color: var(--p-muted); }
+        .contract-paper .dc-sign-line { min-width: 42mm; border-bottom: 0.5pt solid var(--p-rule); padding: 0 2mm 1mm; font-weight: 600; text-align: center; }
+        .contract-paper .dc-sign-seal { color: var(--p-muted); font-size: 9pt; }
+        .contract-paper .dc-to { text-align: center; font-size: 11pt; font-weight: 700; margin: 8mm 0 4mm; }
 
         .only-print { display: none; }
 
@@ -720,6 +759,7 @@ export default function ContractView({ data }: { data: ContractData }) {
           .contract-paper .info, .contract-paper .emerg,
           .contract-paper .pledge, .contract-paper .sign-wrap, .contract-paper .doc-footer { page-break-inside: avoid; }
           .contract-paper .doc-footer { page-break-before: avoid; }
+          .contract-paper.disposal-paper { page-break-before: always; margin-top: 0; }
           body { widows: 2; orphans: 2; }
           .seal-stamp, .sign-img, .biz-logo img, img { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }

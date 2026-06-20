@@ -7,7 +7,7 @@
 // Vercel @sparticuz/chromium 바이너리에는 한글 폰트가 없어 CDN <link>로는 한글이 깨짐.
 // 임베드 방식이라 네트워크 의존성 zero, document.fonts.ready로 로딩 보장.
 
-import { type ContractTemplate, type BusinessInfo, type RefundPolicyValues, renderContractText, buildRefundClause } from '@/lib/contract'
+import { type ContractTemplate, type BusinessInfo, type RefundPolicyValues, type DisposalConsentTemplate, renderContractText, buildRefundClause } from '@/lib/contract'
 
 // 모듈 레벨 캐시 — cold start 후 첫 PDF 생성 때만 jsdelivr CDN에서 폰트 다운로드 (~570KB).
 // 이후 요청은 메모리 캐시 사용.
@@ -33,6 +33,7 @@ export type PrintContractData = {
   stampImageUrl: string | null
   refundPolicy: RefundPolicyValues   // 퇴실 환불 규정 — {{환불규정}} 변수 생성용
   refundClauseInContract: boolean    // 계약서에 환불 조항 자동 표시 여부
+  disposalConsent: DisposalConsentTemplate   // 잔여 소지품 임의처분 동의서
   // 입실자 + 계약 정보
   tenant: {
     name: string
@@ -125,6 +126,34 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   const bizMeta1 = [biz.registrationNo ? `사업자등록번호 ${escape(biz.registrationNo)}` : '', biz.ceoName ? `대표 ${escape(biz.ceoName)}` : ''].filter(Boolean).join(' · ')
   const bizMeta2 = [biz.address ? escape(biz.address) : '', d.phone ? escape(d.phone) : ''].filter(Boolean).join(' · ')
 
+  // 잔여 소지품 임의처분 동의서 — enabled 일 때만 별도 페이지로 이어 출력
+  const dc = d.disposalConsent
+  const dcVars: Record<string, string> = {
+    성명: d.tenant.name, 호실: fmtRoom(d.lease?.roomNo), 연락처: d.tenant.primaryPhone ?? '',
+    미납일수: String(dc.days), 영업장명: biz.name || '', 대표: biz.ceoName || '',
+  }
+  const dcBodyHtml = dc.body.split('\n').map(p => p.trim()).filter(Boolean)
+    .map(p => `<p class="dc-p">${escape(renderContractText(p, dcVars))}</p>`).join('')
+  const disposalHtml = dc.enabled ? `
+    <div class="paper disposal">
+      <div class="dc-title">${escape(dc.title)}</div>
+      <div class="dc-sec-h">1. 입실자 정보</div>
+      <table class="info dc-info"><tbody>
+        <tr><th>성명<span class="en">Name</span></th><td>${escape(d.tenant.name)}</td></tr>
+        <tr><th>호실<span class="en">Room</span></th><td class="num">${escape(fmtRoom(d.lease?.roomNo))}</td></tr>
+        <tr><th>연락처<span class="en">Phone</span></th><td class="num">${escape(d.tenant.primaryPhone ?? '')}</td></tr>
+      </tbody></table>
+      <div class="dc-sec-h">2. 동의 내용</div>
+      <div class="dc-body">${dcBodyHtml}</div>
+      <div class="dc-date num">${escape(d.signDate)}</div>
+      <div class="dc-sign"><span class="dc-sign-lbl">동의자(입실자) 성명</span><span class="dc-sign-line">${escape(d.signatureName || d.tenant.name)}</span><span class="dc-sign-seal">(서명 또는 인)</span></div>
+      <div class="dc-to">${escape(biz.name || '')} 대표 귀하</div>
+      <div class="doc-footer">
+        <div class="foot-biz"><span class="nm">${escape(biz.name || '')}</span>${biz.registrationNo ? ` · 사업자등록번호 ${escape(biz.registrationNo)}` : ''}${biz.ceoName ? ` · 대표 ${escape(biz.ceoName)}` : ''}${bizMeta2 ? `<br>${bizMeta2}` : ''}</div>
+        <div class="wordmark">made with <span class="wm"><span class="wm-stay">stay</span><span class="wm-eum">eum</span></span></div>
+      </div>
+    </div>` : ''
+
   return `<!doctype html>
 <html lang="ko">
 <head>
@@ -207,6 +236,19 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .foot-biz { font-size: 8pt; color: var(--p-muted); line-height: 1.55; }
   .foot-biz .nm { color: var(--p-ink); font-weight: 600; }
   .wordmark { font-size: 8pt; color: var(--p-muted); white-space: nowrap; }
+  /* 잔여 소지품 임의처분 동의서 */
+  .paper.disposal { page-break-before: always; padding-top: 4mm; }
+  .dc-title { font-size: 15pt; font-weight: 800; text-align: center; letter-spacing: -.02em; margin: 2mm 0 7mm; }
+  .dc-sec-h { font-size: 10.5pt; font-weight: 700; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); margin: 5mm 0 2.5mm; }
+  .dc-info { width: 65%; }
+  .dc-body { font-size: 9.4pt; line-height: 1.75; color: var(--p-ink); }
+  .dc-p { margin-bottom: 2.6mm; word-break: keep-all; }
+  .dc-date { text-align: center; font-size: 10pt; margin: 9mm 0 5mm; }
+  .dc-sign { display: flex; align-items: baseline; justify-content: flex-end; gap: 3mm; font-size: 10pt; }
+  .dc-sign-lbl { color: var(--p-muted); }
+  .dc-sign-line { min-width: 42mm; border-bottom: 0.5pt solid var(--p-rule); padding: 0 2mm 1mm; font-weight: 600; text-align: center; }
+  .dc-sign-seal { color: var(--p-muted); font-size: 9pt; }
+  .dc-to { text-align: center; font-size: 11pt; font-weight: 700; margin: 8mm 0 4mm; }
   .wordmark .wm { font-weight: 600; }
   .wordmark .wm-stay { color: var(--p-ink); }
   .wordmark .wm-eum { color: var(--p-tc); }
@@ -307,6 +349,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
       <div class="wordmark">made with <span class="wm"><span class="wm-stay">stay</span><span class="wm-eum">eum</span></span></div>
     </div>
   </div>
+  ${disposalHtml}
 </body>
 </html>`
 }

@@ -8,7 +8,8 @@ import { createClient } from '@/lib/supabase/server'
 import { buildDriveThumbnailUrl } from '@/lib/google-drive'
 import { requireEdit } from '@/lib/role'
 import {
-  type ContractTemplate, type BusinessInfo, type RefundPolicyValues, DEFAULT_CONTRACT_TEMPLATE,
+  type ContractTemplate, type BusinessInfo, type RefundPolicyValues, type DisposalConsentTemplate,
+  DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
 } from '@/lib/contract'
 
 const EMPTY_BUSINESS_INFO: BusinessInfo = { name: '', registrationNo: '', ceoName: '', address: '' }
@@ -22,6 +23,7 @@ export type ContractData = {
   logoImageUrl: string | null          // 영업장 로고 (헤더 좌측)
   refundPolicy: RefundPolicyValues     // 퇴실 환불 규정 — {{환불규정}} 변수 생성용
   refundClauseInContract: boolean      // 계약서에 환불 조항 자동 표시 여부
+  disposalConsent: DisposalConsentTemplate   // 잔여 소지품 임의처분 동의서 (계약서와 함께 출력)
   tenant: {
     id: string
     name: string
@@ -85,7 +87,7 @@ export async function getContractData(tenantId: string): Promise<ContractData | 
         stampDriveFileId: true, logoDriveFileId: true,
         phone: true,
         refundPenaltyWithinDays: true, refundPenaltyPct: true, refundDailyRate: true, refundDeductCleaning: true,
-        refundClauseInContract: true,
+        refundClauseInContract: true, disposalConsentTemplate: true,
       },
     }),
   ])
@@ -125,6 +127,7 @@ export async function getContractData(tenantId: string): Promise<ContractData | 
       deductCleaning: property?.refundDeductCleaning ?? false,
     },
     refundClauseInContract: property?.refundClauseInContract ?? true,
+    disposalConsent: resolveDisposalConsent(property?.disposalConsentTemplate),
     tenant: {
       id: tenant.id,
       name: tenant.name,

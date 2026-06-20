@@ -3,6 +3,15 @@
 마지막 업데이트: 2026-06-20
 브랜치: main
 
+## 2026-06-20 (이어서) — 잔여 소지품 임의처분 동의서 (계약서와 함께 출력) [⚠️ SQL 1건]
+새 별도 서류 — **계약서 PDF 뒤에 이어 출력**(enabled 시). 환경설정에서 편집, 입실자 정보·날짜·서명란 자동. (옵션 미지정분은 추천대로: 본문 textarea 편집 + 계약서와 한 PDF, 서명은 동의서 전용 별도 서명란 '___ (서명 또는 인)'.)
+- Property `disposalConsentTemplate Json?` = `{ enabled, days, title, body }`. [lib/contract](lib/contract.ts) 타입·기본값(보내준 문구 시드)·`resolveDisposalConsent`.
+- 환경설정 카드(출력 토글·미납 기준일·제목·본문 textarea). 본문 변수: `{{성명}} {{호실}} {{연락처}} {{미납일수}} {{영업장명}} {{대표}}`.
+- 렌더: [contractPrintHtml](lib/contractPrintHtml.ts) 동의서 페이지(`page-break-before: always`) + [ContractView](app/contract/[tenantId]/ContractView.tsx) 화면 미리보기. 입실자 정보표·동의 내용(변수 치환·문단)·날짜·동의자 서명란.
+- 데이터: ContractData·PrintContractData·contract actions·generate route 전 경로.
+**⚠️ SQL**: `ALTER TABLE properties ADD COLUMN "disposalConsentTemplate" JSONB;`
+**검증**: prisma generate·tsc·build 통과. (기본 `enabled=false` — 환경설정에서 켜야 출력됨.)
+
 ## 2026-06-20 — 계약서에 '매월 납부일' 항목 추가 [SQL 0]
 입실계약서 헤더에 **'매월 납부일'** 행 추가(입실료 행 아래, colspan으로 한 줄 차지). `lease.dueDay` → '매월 14일'/'매월 말일'/'—'. ContractData·PrintContractData 타입 + contract actions·generate route 데이터 + ContractView·contractPrintHtml 렌더 — 화면·PDF 전 경로. (dueDay는 lease `include`라 추가 쿼리 없음.) 검증: tsc·build 통과.
 

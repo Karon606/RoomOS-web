@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { DEFAULT_DISPOSAL_CONSENT, type DisposalConsentTemplate } from '@/lib/contract'
 import {
   updatePropertySettings,
   getRoomTypeOptions, addRoomTypeOption, deleteRoomTypeOption,
@@ -59,6 +60,7 @@ type Property = {
   refundDailyRate: number | null
   refundDeductCleaning: boolean
   refundClauseInContract: boolean
+  disposalConsentTemplate: unknown
   publicSlug: string | null
   logoDriveFileId: string | null
   logoThumbnailUrl: string | null
@@ -223,6 +225,14 @@ export default function SettingsForm({
     : ''
   const [acqDateVal, setAcqDateVal]         = useState(acqDate)
   const [cutoffDateVal, setCutoffDateVal]   = useState(cutoffDate)
+  // 잔여 소지품 임의처분 동의서 — 저장값(JSON) 폴백
+  const dcRaw = (property?.disposalConsentTemplate as Partial<DisposalConsentTemplate> | null) ?? null
+  const dc = {
+    enabled: dcRaw?.enabled ?? DEFAULT_DISPOSAL_CONSENT.enabled,
+    days:    dcRaw?.days    ?? DEFAULT_DISPOSAL_CONSENT.days,
+    title:   dcRaw?.title   ?? DEFAULT_DISPOSAL_CONSENT.title,
+    body:    dcRaw?.body    ?? DEFAULT_DISPOSAL_CONSENT.body,
+  }
   const [areaVal, setAreaVal]               = useState(property?.defaultAreaM2 != null ? String(property.defaultAreaM2) : '')
 
   // ── 방타입 ─────────────────────────────────────────────────────
@@ -780,6 +790,31 @@ export default function SettingsForm({
                   className="w-4 h-4 accent-[var(--coral)]" />
                 계약서에 환불 규정 자동 표시 <span className="text-[0.625rem] text-[var(--warm-muted)]">(끄면 계약서의 {'{{환불규정}}'} 자리가 비워짐)</span>
               </label>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">잔여 소지품 임의처분 동의서</label>
+              <p className="text-xs text-[var(--warm-muted)]">계약서와 함께 출력되는 별도 서류. 입실자 정보·날짜·서명란은 자동입니다. 본문에 변수 사용 가능: <span className="num">{'{{성명}} {{호실}} {{연락처}} {{미납일수}} {{영업장명}} {{대표}}'}</span></p>
+              <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer">
+                <input type="checkbox" name="disposalEnabled" value="1" defaultChecked={dc.enabled} className="w-4 h-4 accent-[var(--coral)]" />
+                계약서와 함께 출력
+              </label>
+              <div className="grid grid-cols-[1fr_auto] gap-2">
+                <div className="space-y-1">
+                  <label className="text-[0.6875rem] text-[var(--warm-muted)]">제목</label>
+                  <input type="text" name="disposalTitle" defaultValue={dc.title}
+                    className="w-full px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[0.6875rem] text-[var(--warm-muted)]">미납 기준일</label>
+                  <input type="text" inputMode="numeric" name="disposalDays" defaultValue={String(dc.days)} placeholder="7"
+                    className="w-20 px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[0.6875rem] text-[var(--warm-muted)]">동의 내용 (본문)</label>
+                <textarea name="disposalBody" defaultValue={dc.body} rows={9}
+                  className="w-full px-3 py-2.5 rounded-xl text-sm leading-relaxed outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors resize-y" />
+              </div>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">입금 계좌번호</label>

@@ -87,6 +87,7 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       refundDailyRate: true,
       refundDeductCleaning: true,
       refundClauseInContract: true,
+      disposalConsentTemplate: true,
       publicSlug: true,
       logoDriveFileId: true,
       appLogoDriveFileId: true,
@@ -543,6 +544,11 @@ export async function updatePropertySettings(formData: FormData) {
   const refundDailyRate         = formData.get('refundDailyRate')
   const refundDeductCleaning    = formData.get('refundDeductCleaning') === '1'
   const refundClauseInContract  = formData.get('refundClauseInContract') === '1'
+  // 잔여 소지품 임의처분 동의서
+  const disposalEnabled = formData.get('disposalEnabled') === '1'
+  const disposalDaysRaw = formData.get('disposalDays')
+  const disposalTitle   = (formData.get('disposalTitle') as string) ?? ''
+  const disposalBody    = (formData.get('disposalBody') as string) ?? ''
   const publicSlugRaw     = formData.get('publicSlug') as string | null
   const publicSlug = publicSlugRaw
     ? publicSlugRaw.trim().toLowerCase().replace(/[^a-z0-9-]/g, '')
@@ -565,6 +571,12 @@ export async function updatePropertySettings(formData: FormData) {
       refundDailyRate:         refundDailyRate && String(refundDailyRate).trim() ? Number(String(refundDailyRate).replace(/[^0-9]/g, '')) || null : null,
       refundDeductCleaning,
       refundClauseInContract,
+      disposalConsentTemplate: {
+        enabled: disposalEnabled,
+        days: disposalDaysRaw && String(disposalDaysRaw).trim() ? Number(String(disposalDaysRaw).replace(/[^0-9]/g, '')) || 7 : 7,
+        title: disposalTitle.trim() || '잔여 소지품 임의처분 동의서',
+        body: disposalBody,
+      },
       publicSlug:       publicSlug || null,
     },
   })

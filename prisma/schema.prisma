@@ -156,6 +156,8 @@ model Property {
   refundClauseInContract  Boolean  @default(true)   // 계약서에 환불 규정 조항({{환불규정}})을 자동 표시할지
   // 계약서 (영업장별 별도 운영)
   contractTemplate Json?     // 섹션 본문 + 추가 표시 옵션. shape: { title, sections: [{ title, items: string[] }], oathText }
+  // 잔여 소지품 임의처분 동의서 — 계약서와 함께 출력되는 별도 서류. shape: { enabled, days, title, body }
+  disposalConsentTemplate Json?
   businessInfo     Json?     // 사업자 정보. shape: { name, registrationNo, ceoName, address }
   stampDriveFileId String?   // 도장 PNG (Drive 파일 ID, 투명 배경 권장)
   calendarToken    String?   @unique  // 캘린더 구독(.ics) 피드 비밀 토큰 — 납부예정·퇴실예정 자동 동기화
