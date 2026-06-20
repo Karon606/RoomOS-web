@@ -162,14 +162,20 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const [showCatSettings, setShowCatSettings] = useState(false)
 
   // 수령 대기 — 비품·자재와 동일하게 상단 섹션에서 인라인 '수령 완료'로 통일 (#2)
-  const [receivingId, setReceivingId] = useState<string | null>(null)
-  const handleQuickReceive = (expenseId: string) => {
-    setReceivingId(expenseId)
+  // 같은 품목 다건은 비품의 '합산 N건'처럼 묶어 한 번에 수령(키 = label|category).
+  const [receivingKey, setReceivingKey] = useState<string | null>(null)
+  const [pendExpanded, setPendExpanded] = useState<Set<string>>(new Set())
+  const togglePendExpand = (key: string) => setPendExpanded(prev => {
+    const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n
+  })
+  const handleQuickReceive = (key: string, expenseIds: string[]) => {
+    setReceivingKey(key)
     const release = trackSave()
-    confirmReceipt(expenseId).then(res => {
-      if (res.ok) { router.refresh(); pushToast('success', '수령 확인 완료') }
-      else pushToast('error', res.error)
-    }).finally(() => { setReceivingId(null); release() })
+    Promise.all(expenseIds.map(id => confirmReceipt(id))).then(results => {
+      const bad = results.find(r => !r.ok) as { ok: false; error: string } | undefined
+      if (bad) pushToast('error', bad.error)
+      else { router.refresh(); pushToast('success', '수령 확인 완료') }
+    }).finally(() => { setReceivingKey(null); release() })
   }
 
   const toggleSelect = (id: string) => setSelected(prev => {
@@ -267,28 +273,60 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       ) : (
         <>
         {(() => {
-          const pendingAll = rows.flatMap(r => r.pendingPurchases.map(p => ({ p, label: r.label, category: r.category })))
-          if (pendingAll.length === 0) return null
+          const flat = rows.flatMap(r => r.pendingPurchases.map(p => ({ p, label: r.label, category: r.category, qtyUnit: r.qtyUnit })))
+          if (flat.length === 0) return null
+          // 같은 품목(label|category)끼리 묶기 — 비품의 '합산 N건'과 동일 패턴
+          const groupMap = new Map<string, { key: string; label: string; category: string; qtyUnit: string | null; items: typeof flat }>()
+          for (const f of flat) {
+            const key = `${f.label}␟${f.category}`
+            const g = groupMap.get(key) ?? { key, label: f.label, category: f.category, qtyUnit: f.qtyUnit, items: [] as typeof flat }
+            g.items.push(f); groupMap.set(key, g)
+          }
+          const groups = [...groupMap.values()]
           return (
             <section className="space-y-2">
               <div className="flex items-center gap-2">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)]" />
                 <h2 className="text-sm font-semibold text-[var(--warm-dark)]">수령 대기</h2>
-                <span className="text-[0.6875rem] text-[var(--warm-muted)]">{pendingAll.length}건 · 도착 전</span>
+                <span className="text-[0.6875rem] text-[var(--warm-muted)]">{flat.length}건 · 도착 전</span>
               </div>
               <ul className="space-y-1.5">
-                {pendingAll.map(({ p, label, category }) => {
-                  const d = new Date(p.date)
+                {groups.map(g => {
+                  const totalQty = g.items.reduce((s, f) => s + (f.p.qtyValue || 0), 0)
+                  const latest = g.items.reduce((dt, f) => (f.p.date > dt ? f.p.date : dt), g.items[0].p.date)
+                  const ld = new Date(latest)
+                  const ids = g.items.map(f => f.p.id)
+                  const expanded = pendExpanded.has(g.key)
                   return (
-                    <li key={p.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3.5 py-2.5 flex items-baseline justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-[var(--warm-dark)] truncate">{label}{p.qtyValue ? ` · ${p.qtyValue}${p.qtyUnit ?? '개'}` : ''}</p>
-                        <p className="text-[0.625rem] text-[var(--warm-muted)] truncate">{d.getMonth() + 1}/{d.getDate()} · {category}{p.vendor ? ` · ${p.vendor}` : ''}</p>
+                    <li key={g.key} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3.5 py-2.5">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-[var(--warm-dark)] truncate">{g.label}{totalQty ? ` · ${totalQty}${g.qtyUnit ?? '개'}` : ''}</p>
+                          <p className="text-[0.625rem] text-[var(--warm-muted)] truncate">{ld.getMonth() + 1}/{ld.getDate()} · {g.category}</p>
+                          {g.items.length > 1 && (
+                            <button type="button" onClick={() => togglePendExpand(g.key)} className="mt-0.5 text-[0.625rem] text-[var(--coral)] hover:underline">
+                              구매 {g.items.length}건 합산 {expanded ? '▾ 접기' : '▸ 펼치기'}
+                            </button>
+                          )}
+                        </div>
+                        <button type="button" onClick={() => handleQuickReceive(g.key, ids)} disabled={receivingKey === g.key}
+                          className="shrink-0 text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
+                          {receivingKey === g.key ? '처리 중' : '수령 완료'}
+                        </button>
                       </div>
-                      <button type="button" onClick={() => handleQuickReceive(p.id)} disabled={receivingId === p.id}
-                        className="shrink-0 text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
-                        {receivingId === p.id ? '처리 중' : '수령 완료'}
-                      </button>
+                      {g.items.length > 1 && expanded && (
+                        <ul className="mt-1.5 pl-2.5 border-l-2 border-[var(--warm-border)] space-y-0.5">
+                          {g.items.map(f => {
+                            const fd = new Date(f.p.date)
+                            return (
+                              <li key={f.p.id} className="flex items-baseline justify-between gap-2 text-[0.6875rem] text-[var(--warm-muted)]">
+                                <span className="tabular-nums">{fd.getMonth() + 1}/{fd.getDate()}{f.p.qtyValue ? ` · ${f.p.qtyValue}${f.qtyUnit ?? '개'}` : ''}{f.p.vendor ? ` · ${f.p.vendor}` : ''}</span>
+                                <span className="tabular-nums">{(f.p.amount ?? 0).toLocaleString()}원</span>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
                     </li>
                   )
                 })}
