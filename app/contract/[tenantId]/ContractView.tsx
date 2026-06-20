@@ -373,22 +373,20 @@ export default function ContractView({ data }: { data: ContractData }) {
               <th>연락처<span className="en">Mobile Phone</span></th><td className="num">{data.tenant.primaryPhone ?? ''}</td>
             </tr>
             <tr>
-              <th>생년월일<span className="en">Date of Birth</span></th><td className="num" colSpan={3}>{fmtDate(data.tenant.birthdate)}</td>
-            </tr>
-            <tr>
+              <th>생년월일<span className="en">Date of Birth</span></th><td className="num">{fmtDate(data.tenant.birthdate)}</td>
               <th>성별<span className="en">Gender</span></th><td>{data.tenant.gender}</td>
-              <th>흡연 여부<span className="en">Smoking</span></th><td>{smoking}</td>
             </tr>
             <tr>
-              <th>호실<span className="en">Room Number</span></th><td className="num">{roomNoLabel}</td>
+              <th>흡연 여부<span className="en">Smoking</span></th><td>{smoking}</td>
               <th>전입신고<span className="en">Resident Reg.</span></th><td>{data.lease?.registrationStatus ?? '미신고'}</td>
             </tr>
             <tr>
+              <th>호실<span className="en">Room Number</span></th><td className="num">{roomNoLabel}</td>
               <th>입실일<span className="en">Check-in</span></th><td className="num">{fmtDate(data.lease?.moveInDate ?? null)}</td>
-              <th>퇴실 예정일<span className="en">Check-out</span></th><td className="num">{fmtDate(data.lease?.expectedMoveOut ?? null) || '—'}</td>
             </tr>
             <tr>
-              <th>{depositLabel}<span className="en">{depositEn}</span></th><td className="amt" colSpan={3}>{depositNode}</td>
+              <th>퇴실 예정일<span className="en">Check-out</span></th><td className="num">{fmtDate(data.lease?.expectedMoveOut ?? null) || '—'}</td>
+              <th>{depositLabel}<span className="en">{depositEn}</span></th><td className="amt">{depositNode}</td>
             </tr>
             <tr>
               <th>입실료<span className="en">Rent / month</span></th><td className="amt">{data.lease ? `${data.lease.rentAmount.toLocaleString()}원` : ''}</td>
@@ -639,11 +637,11 @@ export default function ContractView({ data }: { data: ContractData }) {
         .contract-paper .emerg-input input { width: 100%; min-width: 60mm; padding: 1mm 2mm; font-size: 9pt; border: 1px dashed #b9ac9a; border-radius: 4px; background: #fff; color: var(--p-ink); font-family: inherit; }
 
         /* 조항 — 2단 */
-        .contract-paper .clauses { column-count: 2; column-gap: 7mm; margin-bottom: 3mm; }
-        .contract-paper .clause-group { break-inside: avoid; margin-bottom: 2.6mm; }
-        .contract-paper .clause-h { font-size: 10.5pt; font-weight: 700; letter-spacing: -.01em; margin-bottom: 1.6mm; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); line-height: 1.2; }
+        .contract-paper .clauses { column-count: 2; column-gap: 7mm; column-fill: balance; margin-bottom: 3mm; }
+        .contract-paper .clause-group { margin-bottom: 2.6mm; }
+        .contract-paper .clause-h { font-size: 10.5pt; font-weight: 700; letter-spacing: -.01em; margin-bottom: 1.6mm; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); line-height: 1.2; break-after: avoid; }
         .contract-paper .clause-list { list-style: none; margin: 0; padding: 0; }
-        .contract-paper .clause-list li { font-size: 8.7pt; line-height: 1.42; color: var(--p-ink); padding-left: 3mm; text-indent: -3mm; margin-bottom: 0.8mm; word-break: keep-all; }
+        .contract-paper .clause-list li { font-size: 8.7pt; line-height: 1.42; color: var(--p-ink); padding-left: 3mm; text-indent: -3mm; margin-bottom: 0.8mm; word-break: keep-all; break-inside: avoid; }
         .contract-paper .clause-list li::before { content: "·"; color: var(--p-muted); margin-right: 1.5mm; }
         .contract-paper .clause-list li .hl { color: var(--p-tc); font-weight: 600; }
 
@@ -719,7 +717,7 @@ export default function ContractView({ data }: { data: ContractData }) {
             min-height: 0 !important; padding: 0 !important; margin: 0 !important;
           }
           /* 페이지 split 보호 */
-          .contract-paper .info, .contract-paper .emerg, .contract-paper .clause-group,
+          .contract-paper .info, .contract-paper .emerg,
           .contract-paper .pledge, .contract-paper .sign-wrap, .contract-paper .doc-footer { page-break-inside: avoid; }
           .contract-paper .doc-footer { page-break-before: avoid; }
           body { widows: 2; orphans: 2; }

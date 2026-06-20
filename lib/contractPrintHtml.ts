@@ -178,10 +178,10 @@ export function buildContractPrintHtml(d: PrintContractData): string {
 
   /* 조항 — 2단 */
   .clauses { column-count: 2; column-gap: 7mm; column-fill: balance; margin-bottom: 3mm; }
-  .clause-group { break-inside: avoid; margin-bottom: 2.2mm; }
-  .clause-h { font-size: 10.5pt; font-weight: 700; letter-spacing: -.01em; margin-bottom: 1.4mm; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); line-height: 1.2; }
+  .clause-group { margin-bottom: 2.2mm; }
+  .clause-h { font-size: 10.5pt; font-weight: 700; letter-spacing: -.01em; margin-bottom: 1.4mm; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); line-height: 1.2; break-after: avoid; }
   .clause-list { list-style: none; }
-  .clause-list li { font-size: 8.7pt; line-height: 1.38; color: var(--p-ink); padding-left: 3mm; text-indent: -3mm; margin-bottom: 0.6mm; white-space: pre-line; word-break: keep-all; }
+  .clause-list li { font-size: 8.7pt; line-height: 1.38; color: var(--p-ink); padding-left: 3mm; text-indent: -3mm; margin-bottom: 0.6mm; white-space: pre-line; word-break: keep-all; break-inside: avoid; }
   .clause-list li::before { content: "·"; color: var(--p-muted); margin-right: 1.5mm; }
   .clause-list li .hl { color: var(--p-tc); font-weight: 600; }
 
@@ -213,7 +213,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
 
   /* 페이지 분할 보호 */
   body { widows: 2; orphans: 2; }
-  .info, .emerg, .clause-group, .pledge, .sign-wrap, .doc-footer { page-break-inside: avoid; }
+  .info, .emerg, .pledge, .sign-wrap, .doc-footer { page-break-inside: avoid; }
   .doc-footer { page-break-before: avoid; }
 </style>
 </head>
@@ -246,22 +246,20 @@ export function buildContractPrintHtml(d: PrintContractData): string {
           <th>연락처<span class="en">Mobile Phone</span></th><td class="num">${escape(d.tenant.primaryPhone ?? '')}</td>
         </tr>
         <tr>
-          <th>생년월일<span class="en">Date of Birth</span></th><td class="num" colspan="3">${escape(fmtDate(d.tenant.birthdate))}</td>
-        </tr>
-        <tr>
+          <th>생년월일<span class="en">Date of Birth</span></th><td class="num">${escape(fmtDate(d.tenant.birthdate))}</td>
           <th>성별<span class="en">Gender</span></th><td>${escape(d.tenant.gender)}</td>
-          <th>흡연 여부<span class="en">Smoking</span></th><td>${escape(d.smoking)}</td>
         </tr>
         <tr>
-          <th>호실<span class="en">Room Number</span></th><td class="num">${escape(fmtRoom(d.lease?.roomNo))}</td>
+          <th>흡연 여부<span class="en">Smoking</span></th><td>${escape(d.smoking)}</td>
           <th>전입신고<span class="en">Resident Reg.</span></th><td>${escape(d.lease?.registrationStatus ?? '미신고')}</td>
         </tr>
         <tr>
+          <th>호실<span class="en">Room Number</span></th><td class="num">${escape(fmtRoom(d.lease?.roomNo))}</td>
           <th>입실일<span class="en">Check-in</span></th><td class="num">${escape(fmtDate(d.lease?.moveInDate ?? null))}</td>
-          <th>퇴실 예정일<span class="en">Check-out</span></th><td class="num">${escape(fmtDate(d.lease?.expectedMoveOut ?? null)) || '—'}</td>
         </tr>
         <tr>
-          <th>${escape(depositLabel)}<span class="en">${depositEn}</span></th><td class="amt" colspan="3">${depositValue}</td>
+          <th>퇴실 예정일<span class="en">Check-out</span></th><td class="num">${escape(fmtDate(d.lease?.expectedMoveOut ?? null)) || '—'}</td>
+          <th>${escape(depositLabel)}<span class="en">${depositEn}</span></th><td class="amt">${depositValue}</td>
         </tr>
         <tr>
           <th>입실료<span class="en">Rent / month</span></th><td class="amt">${d.lease ? `${d.lease.rentAmount.toLocaleString()}원` : ''}</td>
