@@ -196,6 +196,10 @@ export default function ContractView({ data }: { data: ContractData }) {
   // 캡처된 서명 PNG dataURL — 화면 서명란에 즉시 표시.
   // #8: 이전에 저장된 앱서명이 있으면 초기값으로 불러와 표시(출력 시 (인) 대신 서명 보이게).
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(data.lease?.signatureImageUrl ?? null)
+  // 동의서(잔여 소지품 임의처분)는 별도 서명 — 같은 패드 모달을 target 으로 구분해 재사용
+  const [disposalSignatureDataUrl, setDisposalSignatureDataUrl] = useState<string | null>(null)
+  const [signTarget, setSignTarget] = useState<'contract' | 'disposal'>('contract')
+  const openSign = (target: 'contract' | 'disposal') => { setSignTarget(target); setSignOpen(true) }
   const sigCanvasRef = useRef<HTMLCanvasElement>(null)
   const sigPadRef    = useRef<import('signature_pad').default | null>(null)
 
@@ -237,9 +241,15 @@ export default function ContractView({ data }: { data: ContractData }) {
       pushToast('error', '서명을 입력해주세요.')
       return
     }
-    setSignatureDataUrl(pad.toDataURL('image/png'))
+    const url = pad.toDataURL('image/png')
     setSignOpen(false)
-    pushToast('info', '서명 적용됨 — 확인 후 \'계약서 저장\' 을 눌러주세요')
+    if (signTarget === 'disposal') {
+      setDisposalSignatureDataUrl(url)
+      pushToast('info', '동의서 서명 적용됨 — 확인 후 \'계약서 저장\' 을 눌러주세요')
+    } else {
+      setSignatureDataUrl(url)
+      pushToast('info', '서명 적용됨 — 확인 후 \'계약서 저장\' 을 눌러주세요')
+    }
   }
 
   // 툴바 "계약서 저장" — PDF 생성 + Drive 업로드 + 입실자 정보로 이동
@@ -261,6 +271,7 @@ export default function ContractView({ data }: { data: ContractData }) {
           signDate,
           signatureName,
           signatureImageDataUrl: signatureDataUrl,
+          disposalSignatureImageDataUrl: disposalSignatureDataUrl ?? '',
           smoking,
           emergencyContactText,
         }),
@@ -301,13 +312,7 @@ export default function ContractView({ data }: { data: ContractData }) {
               <span>서명일</span>
               <input type="date" value={signDate} onChange={e => setSignDate(e.target.value)} />
             </label>
-            <label className="toolbar-field">
-              <span>흡연</span>
-              <select value={smoking} onChange={e => setSmoking(e.target.value)}>
-                <option value="비흡연">비흡연</option>
-                <option value="흡연">흡연</option>
-              </select>
-            </label>
+            {/* 흡연 여부는 아래 '입실자 정보' 표의 항목에서 직접 선택 (#4) */}
             <button onClick={() => setEditing(true)} className="toolbar-btn-secondary">
               본문 편집
             </button>
@@ -383,7 +388,15 @@ export default function ContractView({ data }: { data: ContractData }) {
               <th>성별<span className="en">Gender</span></th><td>{data.tenant.gender}</td>
             </tr>
             <tr>
-              <th>흡연 여부<span className="en">Smoking</span></th><td>{smoking}</td>
+              <th>흡연 여부<span className="en">Smoking</span></th>
+              <td>
+                <select className="no-print smoke-select" value={smoking} onChange={e => setSmoking(e.target.value)}
+                  style={{ font: 'inherit', color: 'inherit', border: '1px solid #d6cdbb', borderRadius: 4, padding: '1px 4px', background: '#fff', cursor: 'pointer' }}>
+                  <option value="비흡연">비흡연</option>
+                  <option value="흡연">흡연</option>
+                </select>
+                <span className="only-print">{smoking}</span>
+              </td>
               <th>전입신고<span className="en">Resident Reg.</span></th><td>{data.lease?.registrationStatus ?? '미신고'}</td>
             </tr>
             <tr>
@@ -476,12 +489,12 @@ export default function ContractView({ data }: { data: ContractData }) {
                 <span className="seal-wrap">
                   {signatureDataUrl ? (
                     <>
-                      <img className="sign-img" src={signatureDataUrl} alt="서명" onClick={() => setSignOpen(true)} style={{ cursor: 'pointer' }} title="다시 서명하려면 클릭" />
+                      <img className="sign-img" src={signatureDataUrl} alt="서명" onClick={() => openSign('contract')} style={{ cursor: 'pointer' }} title="다시 서명하려면 클릭" />
                       <button type="button" onClick={() => setSignatureDataUrl(null)} className="signature-clear no-print" title="서명 지우기">✕</button>
                     </>
                   ) : (
                     <>
-                      <button type="button" onClick={() => setSignOpen(true)} className="no-print"
+                      <button type="button" onClick={() => openSign('contract')} className="no-print"
                         style={{ border: '1.5px dashed var(--coral, #a03c2e)', borderRadius: 6, padding: '6px 14px', color: 'var(--coral, #a03c2e)', background: 'transparent', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>
                         여기를 눌러 서명
                       </button>
@@ -535,7 +548,26 @@ export default function ContractView({ data }: { data: ContractData }) {
             ))}
           </div>
           <div className="dc-date num">{signDateLabel}</div>
-          <div className="dc-sign"><span className="dc-sign-lbl">동의자(입실자) 성명</span><span className="dc-sign-line">{signatureName || data.tenant.name}</span><span className="dc-sign-seal">(서명 또는 인)</span></div>
+          <div className="dc-sign">
+            <span className="dc-sign-lbl">동의자(입실자) 성명</span>
+            <span className="dc-sign-line">{signatureName || data.tenant.name}</span>
+            <span className="dc-sign-seal">
+              {disposalSignatureDataUrl ? (
+                <>
+                  <img className="sign-img" src={disposalSignatureDataUrl} alt="동의서 서명" onClick={() => openSign('disposal')} style={{ cursor: 'pointer', height: '11mm', maxWidth: '38mm' }} title="다시 서명하려면 클릭" />
+                  <button type="button" onClick={() => setDisposalSignatureDataUrl(null)} className="signature-clear no-print" title="서명 지우기">✕</button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={() => openSign('disposal')} className="no-print"
+                    style={{ border: '1.5px dashed var(--coral, #a03c2e)', borderRadius: 6, padding: '5px 12px', color: 'var(--coral, #a03c2e)', background: 'transparent', cursor: 'pointer', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    여기를 눌러 서명
+                  </button>
+                  <span className="only-print">(서명 또는 인)</span>
+                </>
+              )}
+            </span>
+          </div>
           <div className="dc-to">{biz.name || ''} 대표 귀하</div>
         </main>
       )}
@@ -547,8 +579,8 @@ export default function ContractView({ data }: { data: ContractData }) {
           <div className="sig-modal" onClick={e => e.stopPropagation()}>
             <div className="sig-head">
               <div>
-                <div className="sig-title">입실자 서명</div>
-                <div className="sig-sub">아래 영역에 서명해주세요. 확인을 누르면 계약서에 서명이 표시됩니다 (PDF 저장은 다음 단계).</div>
+                <div className="sig-title">{signTarget === 'disposal' ? '동의서 서명' : '입실자 서명'}</div>
+                <div className="sig-sub">아래 영역에 서명해주세요. 확인을 누르면 {signTarget === 'disposal' ? '동의서' : '계약서'}에 서명이 표시됩니다 (PDF 저장은 다음 단계).</div>
               </div>
               <button onClick={() => setSignOpen(false)} className="sig-close" aria-label="닫기">✕</button>
             </div>

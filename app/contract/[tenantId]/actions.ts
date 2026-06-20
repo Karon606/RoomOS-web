@@ -73,7 +73,8 @@ export async function getContractData(tenantId: string): Promise<ContractData | 
       include: {
         contacts: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] },
         leaseTerms: {
-          where: { status: { in: ['ACTIVE', 'RESERVED'] } },
+          // 퇴실 예정(CHECKOUT_PENDING)도 아직 거주 중 → 계약서·동의서 호실 등 채워지도록 포함
+          where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
           orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
           take: 1,
           include: { room: { select: { roomNo: true } } },

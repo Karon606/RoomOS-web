@@ -34,6 +34,7 @@ export type PrintContractData = {
   refundPolicy: RefundPolicyValues   // 퇴실 환불 규정 — {{환불규정}} 변수 생성용
   refundClauseInContract: boolean    // 계약서에 환불 조항 자동 표시 여부
   disposalConsent: DisposalConsentTemplate   // 잔여 소지품 임의처분 동의서
+  disposalSignatureImageDataUrl?: string | null  // 동의서 별도 서명 (없으면 '(서명 또는 인)')
   // 입실자 + 계약 정보
   tenant: {
     name: string
@@ -146,7 +147,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
       <div class="dc-sec-h">2. 동의 내용</div>
       <div class="dc-body">${dcBodyHtml}</div>
       <div class="dc-date num">${escape(d.signDate)}</div>
-      <div class="dc-sign"><span class="dc-sign-lbl">동의자(입실자) 성명</span><span class="dc-sign-line">${escape(d.signatureName || d.tenant.name)}</span><span class="dc-sign-seal">(서명 또는 인)</span></div>
+      <div class="dc-sign"><span class="dc-sign-lbl">동의자(입실자) 성명</span><span class="dc-sign-line">${escape(d.signatureName || d.tenant.name)}</span><span class="dc-sign-seal">${d.disposalSignatureImageDataUrl ? `<img class="dc-sign-img" src="${d.disposalSignatureImageDataUrl}" alt="서명" />` : '(서명 또는 인)'}</span></div>
       <div class="dc-to">${escape(biz.name || '')} 대표 귀하</div>
       <div class="doc-footer">
         <div class="foot-biz"><span class="nm">${escape(biz.name || '')}</span>${biz.registrationNo ? ` · 사업자등록번호 ${escape(biz.registrationNo)}` : ''}${biz.ceoName ? ` · 대표 ${escape(biz.ceoName)}` : ''}${bizMeta2 ? `<br>${bizMeta2}` : ''}</div>
@@ -174,7 +175,9 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: #fff; color: var(--p-ink); font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif; word-break: keep-all; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .num { font-variant-numeric: tabular-nums; }
-  .paper { position: relative; display: flex; flex-direction: column; }
+  /* 인쇄 페이지 분할 안전: flex 컨테이너는 페이지 경계에서 클리핑되므로 일반 블록 흐름 사용
+     (동의서가 이어 붙어 2페이지가 될 때 계약서 본문이 통째로 사라지던 버그 방지) */
+  .paper { position: relative; }
 
   /* 헤더 */
   .doc-header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 3mm; gap: 6mm; }
@@ -237,7 +240,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .foot-biz .nm { color: var(--p-ink); font-weight: 600; }
   .wordmark { font-size: 8pt; color: var(--p-muted); white-space: nowrap; }
   /* 잔여 소지품 임의처분 동의서 */
-  .paper.disposal { page-break-before: always; padding-top: 4mm; }
+  .paper.disposal { page-break-before: always; break-before: page; padding-top: 4mm; }
   .dc-title { font-size: 15pt; font-weight: 800; text-align: center; letter-spacing: -.02em; margin: 2mm 0 7mm; }
   .dc-sec-h { font-size: 10.5pt; font-weight: 700; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); margin: 5mm 0 2.5mm; }
   .dc-info { width: 65%; }
@@ -248,6 +251,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .dc-sign-lbl { color: var(--p-muted); }
   .dc-sign-line { min-width: 42mm; border-bottom: 0.5pt solid var(--p-rule); padding: 0 2mm 1mm; font-weight: 600; text-align: center; }
   .dc-sign-seal { color: var(--p-muted); font-size: 9pt; }
+  .dc-sign-img { height: 11mm; width: auto; max-width: 38mm; object-fit: contain; vertical-align: middle; }
   .dc-to { text-align: center; font-size: 11pt; font-weight: 700; margin: 8mm 0 4mm; }
   .wordmark .wm { font-weight: 600; }
   .wordmark .wm-stay { color: var(--p-ink); }

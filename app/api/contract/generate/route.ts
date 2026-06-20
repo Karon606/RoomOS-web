@@ -27,6 +27,7 @@ type Body = {
   signDate: string                  // YYYY-MM-DD
   signatureName: string
   signatureImageDataUrl: string     // base64 PNG dataURL
+  disposalSignatureImageDataUrl?: string  // 잔여 소지품 임의처분 동의서 별도 서명 (선택)
   smoking: '비흡연' | '흡연'
   emergencyContactText: string
 }
@@ -55,7 +56,8 @@ export async function POST(req: Request) {
         include: {
           contacts: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] },
           leaseTerms: {
-            where: { status: { in: ['ACTIVE', 'RESERVED'] } },
+            // 퇴실 예정(CHECKOUT_PENDING)도 거주 중 → 계약서·동의서 호실 채워지도록 포함
+            where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
             orderBy: [{ moveInDate: 'desc' }, { createdAt: 'desc' }],
             take: 1,
             include: { room: { select: { roomNo: true } } },
@@ -110,6 +112,7 @@ export async function POST(req: Request) {
       },
       refundClauseInContract: property?.refundClauseInContract ?? true,
       disposalConsent: resolveDisposalConsent(property?.disposalConsentTemplate),
+      disposalSignatureImageDataUrl: body.disposalSignatureImageDataUrl?.startsWith('data:image/') ? body.disposalSignatureImageDataUrl : null,
       pretendardBase64,
       tenant: {
         name: tenant.name,
