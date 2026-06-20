@@ -1927,10 +1927,14 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         {/* Row 2 Right: 예상 순이익 + 달성도 — 매출 위젯과 동일 방식(예상 큰 숫자 + 현재/예상 달성 bar).
             다크 카드 유지(순이익 구분). 예비비 이체분 있으면 운영 가용 자금 보조 표시. */}
         {(() => {
-          const expectedNet = data.projectedNetProfit   // 예상 매출 − 예상 지출
-          const currentNet  = data.netProfit            // 현재(수납 − 실제 지출)
+          const expectedNet = data.projectedNetProfit   // 예상 매출 − 예상 지출 (월말 전망)
+          const currentNet  = data.netProfit            // 현재 장부(수납 − 실제 지출) — 지출 덜 빠져 과대평가됨
           const isPosExp = expectedNet >= 0
-          const pct = expectedNet > 0 ? Math.max(0, Math.min(100, Math.round((currentNet / expectedNet) * 100))) : 0
+          // 순이익엔 '달성율'(현재/예상)이 안 맞음: 수납은 월초에 몰리고 지출은 月내내 빠져
+          // 현재 장부가 부풀려져 100%에 박힘. 대신 '지출이 얼마나 확정됐나'(실제/예상)를 보여
+          // 다 채워지면 예상치로 수렴함을 표시.
+          const expenseBooked = data.expectedExpense > 0 ? Math.min(100, Math.round((data.totalExpense / data.expectedExpense) * 100)) : 100
+          const remainExp = Math.max(0, data.expectedExpense - data.totalExpense)
           const hasReserveOut = data.reserveAccrualFromThisMonth > 0
           return (
             <div className="rounded-xl" style={{
@@ -1945,18 +1949,15 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                 {isPosExp ? '+' : ''}{expectedNet.toLocaleString()}
                 <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--np-unit)', marginLeft: 2 }}>원</small>
               </p>
-              {expectedNet > 0 ? (
-                <>
-                  <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.18)', overflow: 'hidden', margin: '2px 0 6px' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: 'var(--np-pos)', borderRadius: 3 }} />
-                  </div>
-                  <p style={{ fontSize: '0.65625rem', color: 'var(--np-cap)', lineHeight: 1.5 }}>
-                    현재 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{currentNet.toLocaleString()}원</em> · 달성 <em style={{ fontStyle: 'normal', color: 'var(--np-pos)', fontWeight: 700 }}>{pct}%</em>
-                  </p>
-                </>
-              ) : (
-                <p style={{ fontSize: '0.65625rem', color: 'var(--np-cap)', lineHeight: 1.5 }}>
-                  현재 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{currentNet.toLocaleString()}원</em> · 수납 − 실제 지출
+              <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.18)', overflow: 'hidden', margin: '2px 0 6px' }}>
+                <div style={{ height: '100%', width: `${expenseBooked}%`, background: 'var(--np-pos)', borderRadius: 3 }} />
+              </div>
+              <p style={{ fontSize: '0.65625rem', color: 'var(--np-cap)', lineHeight: 1.5 }}>
+                지출 <em style={{ fontStyle: 'normal', color: 'var(--np-pos)', fontWeight: 700 }}>{expenseBooked}%</em> 반영 · 현재 장부 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{fmtKorMoney(currentNet)}</em>
+              </p>
+              {remainExp > 0 && (
+                <p style={{ fontSize: '0.625rem', color: 'var(--np-cap2)', marginTop: 2 }}>
+                  남은 예상 지출 −{fmtKorMoney(remainExp)} 반영 시 확정
                 </p>
               )}
               {hasReserveOut && (
