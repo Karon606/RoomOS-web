@@ -3,6 +3,10 @@
 마지막 업데이트: 2026-06-20
 브랜치: main
 
+## 2026-06-20 (이어서) — 동의서 화면 겹침 수정 + 흡연 여부 고객관리 항목화 [⚠️ SQL 1건]
+- **동의서 화면 겹침**(913a5d4): 계약서·동의서 두 종이가 한 `paper-cage`에 모두 `position:absolute top:0`이라 화면에서 겹쳐 계약서가 안 보임(단일 페이지 전제 설계). 동의서를 자체 cage(자체 측정 높이 `disposalHeight`)로 분리해 계약서 아래 배치. 간격은 `.disposal-cage margin-top`. 인쇄는 기존대로(cage `display:contents`+`page-break-before`).
+- **흡연 여부 고객관리 항목화**(bd965eb)[⚠️SQL]: #4가 계약서 안에서만 이동했던 것 보완 — `Tenant.smoking Boolean` 추가. 입실자 등록/수정 폼에 '흡연 여부' 셀렉터, 상세 기본정보 표시, create/update 저장. 계약서 흡연란 기본값을 입실자 설정에서 자동(`ContractData.tenant.smoking`→ContractView init). **SQL**: `ALTER TABLE tenants ADD COLUMN "smoking" BOOLEAN NOT NULL DEFAULT false;`
+
 ## 2026-06-20 (이어서) — 계약서/동의서 보정·흡연란 이동·환불 공정위化·환경설정 정리 (7건) [SQL 0]
 사용자 7개 요청 일괄 처리. 3개 커밋(2b812a7·37d53ec·428cb27).
 - **#1 동의서 출력 시 계약서 누락 버그**: 계약서 `.paper`가 `display:flex` 컨테이너라 동의서가 붙어 2페이지가 되면 인쇄 분할에서 본문이 통째로 클리핑됨 → 일반 블록 흐름으로([contractPrintHtml](lib/contractPrintHtml.ts)). 동의서 break에 `break-before:page` 병행.
