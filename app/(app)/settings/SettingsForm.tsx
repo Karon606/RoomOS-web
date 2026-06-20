@@ -72,7 +72,7 @@ function windowLabel(val: string) {
   return WINDOW_TYPE_LABEL[val] ?? val
 }
 
-type Tab = 'basic' | 'room' | 'finance' | 'members' | 'contract' | 'appearance'
+type Tab = 'basic' | 'room' | 'finance' | 'members' | 'contract' | 'appearance' | 'data'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'basic',      label: '기본정보' },
@@ -80,6 +80,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'finance',    label: '수익·지출' },
   { key: 'members',    label: '멤버 관리' },
   { key: 'contract',   label: '계약서' },
+  { key: 'data',       label: '데이터·도구' },
   { key: 'appearance', label: '화면' },
 ]
 
@@ -755,6 +756,10 @@ export default function SettingsForm({
                 )}
               </div>
             </div>
+            <div className="pt-3 mt-1 border-t border-[var(--warm-border)]">
+              <h3 className="text-xs font-semibold text-[var(--warm-dark)]">계약·서류</h3>
+              <p className="text-[0.625rem] text-[var(--warm-muted)]">계약서와 함께 적용·출력되는 환불 규정·동의서 설정입니다.</p>
+            </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 환불 규정</label>
               <p className="text-xs text-[var(--warm-muted)]">공정거래위원회 기준 고정: 환불액 = 총 결제금액 − (1일 이용요금 × 실제 이용일수) − 위약금(10%). 1일 이용요금 = 월 이용료 ÷ 30. <span className="text-[var(--warm-muted)]">위약금율·기간은 법적으로 임의 설정이 불가해 고정됩니다.</span> 퇴실 정산에서 법정/선의(일할) 모드를 선택할 수 있습니다.</p>
@@ -817,9 +822,14 @@ export default function SettingsForm({
             </Btn>
           </form>
         </div>
+        </>
+      )}
 
+      {/* 데이터·도구 탭 — 알림·캘린더·점검·엑셀·백업 (기본정보에서 분리) */}
+      {tab === 'data' && (
+        <>
         {/* 알림 — PWA 푸시 (홈 화면 설치 시 폰으로 알림 + 아이콘 뱃지) */}
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6">
           <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-3">알림 (푸시)</h2>
           <PushToggle />
         </div>
