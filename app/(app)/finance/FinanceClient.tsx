@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
 import {
   addExpense, updateExpense, deleteExpense, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder,
   addExtraIncome, updateExtraIncome, deleteExtraIncome,
@@ -2330,7 +2330,15 @@ export default function FinanceClient({
                   </div>
                 ) : (
                   <div className="sm:hidden space-y-1.5">
-                    {items.map(item => {
+                    {items.map((item, idx) => {
+                      // 날짜 그룹 구분 — 정렬이 날짜 내림차순이라 날짜가 바뀌는 첫 항목 위에 헤더
+                      const showDate = idx === 0 || items[idx - 1].dateStr !== item.dateStr
+                      const dateHead = showDate ? (() => {
+                        const [yy, mm, dd] = item.dateStr.split('-').map(Number)
+                        const DAYS = ['일', '월', '화', '수', '목', '금', '토']
+                        const wd = DAYS[new Date(yy, mm - 1, dd).getDay()]
+                        return <div className="px-1 pt-2 pb-0.5 text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{mm}월 {dd}일 ({wd})</div>
+                      })() : null
                       if (item.kind === 'expense') {
                         const e = item.exp
                         const grp = item.groupRows
@@ -2339,6 +2347,7 @@ export default function FinanceClient({
                         const meta = [e.payMethod, e.financialAccount ? accName(e.financialAccount) : null].filter(Boolean).join(' · ')
                         const sel = mergeMode && isExpSelected(e, grp)
                         return (
+                          <Fragment key={e.id}>{dateHead}
                           <div key={e.id}
                             onClick={() => {
                               if (lpFired.current) { lpFired.current = false; return }
@@ -2383,12 +2392,14 @@ export default function FinanceClient({
                               </div>
                             </div>
                           </div>
+                          </Fragment>
                         )
                       }
                       // 미확인 고정 지출 카드
                       const r = item.rec
                       const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
                       return (
+                        <Fragment key={`rec-${r.id}`}>{dateHead}
                         <div key={`rec-${r.id}`}
                           onClick={() => { setRecordingRec(r); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
                           className="border border-[var(--warning-ring)] rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity bg-[var(--warning-bg)]/30">
@@ -2411,6 +2422,7 @@ export default function FinanceClient({
                             </div>
                           </div>
                         </div>
+                        </Fragment>
                       )
                     })}
                   </div>
