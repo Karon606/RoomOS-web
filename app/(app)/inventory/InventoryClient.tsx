@@ -161,6 +161,17 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const [showReconcile, setShowReconcile]   = useState(false)
   const [showCatSettings, setShowCatSettings] = useState(false)
 
+  // 수령 대기 — 비품·자재와 동일하게 상단 섹션에서 인라인 '수령 완료'로 통일 (#2)
+  const [receivingId, setReceivingId] = useState<string | null>(null)
+  const handleQuickReceive = (expenseId: string) => {
+    setReceivingId(expenseId)
+    const release = trackSave()
+    confirmReceipt(expenseId).then(res => {
+      if (res.ok) { router.refresh(); pushToast('success', '수령 확인 완료') }
+      else pushToast('error', res.error)
+    }).finally(() => { setReceivingId(null); release() })
+  }
+
   const toggleSelect = (id: string) => setSelected(prev => {
     const next = new Set(prev)
     next.has(id) ? next.delete(id) : next.add(id)
@@ -254,7 +265,38 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
           description="'지출에서 자동 등록' 버튼을 누르면 부식·소모품·폐기물 카테고리에서 입력된 품목이 자동 등록됩니다."
         />
       ) : (
-        grouped.map(g => g.rows.length > 0 && (
+        <>
+        {(() => {
+          const pendingAll = rows.flatMap(r => r.pendingPurchases.map(p => ({ p, label: r.label, category: r.category })))
+          if (pendingAll.length === 0) return null
+          return (
+            <section className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)]" />
+                <h2 className="text-sm font-semibold text-[var(--warm-dark)]">수령 대기</h2>
+                <span className="text-[0.6875rem] text-[var(--warm-muted)]">{pendingAll.length}건 · 도착 전</span>
+              </div>
+              <ul className="space-y-1.5">
+                {pendingAll.map(({ p, label, category }) => {
+                  const d = new Date(p.date)
+                  return (
+                    <li key={p.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3.5 py-2.5 flex items-baseline justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-[var(--warm-dark)] truncate">{label}{p.qtyValue ? ` · ${p.qtyValue}${p.qtyUnit ?? '개'}` : ''}</p>
+                        <p className="text-[0.625rem] text-[var(--warm-muted)] truncate">{d.getMonth() + 1}/{d.getDate()} · {category}{p.vendor ? ` · ${p.vendor}` : ''}</p>
+                      </div>
+                      <button type="button" onClick={() => handleQuickReceive(p.id)} disabled={receivingId === p.id}
+                        className="shrink-0 text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
+                        {receivingId === p.id ? '처리 중' : '수령 완료'}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+          )
+        })()}
+        {grouped.map(g => g.rows.length > 0 && (
           <section key={g.cat} className="space-y-2">
             <div className="flex items-center gap-2">
               <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: tintOf(g.cat).fg }} />
@@ -280,7 +322,8 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
               ))}
             </div>
           </section>
-        ))
+        ))}
+        </>
       )}
 
       {showExcluded  && <ExcludedItemsModal onClose={() => { setShowExcluded(false); refreshArchivedCount(); router.refresh() }} />}
