@@ -11,8 +11,8 @@ import {
   setCheckoutProration,
   clearCheckoutProration,
 } from '@/app/(app)/tenants/actions'
-import type { CheckoutProrationResult, CheckoutRefundResult } from '@/lib/prorate'
-import { PRORATE_BASE_DAYS } from '@/lib/prorate'
+import type { CheckoutProrationResult, CheckoutRefundResult, RefundMode } from '@/lib/prorate'
+import { PRORATE_BASE_DAYS, LEGAL_PENALTY_PCT } from '@/lib/prorate'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn } from '@/components/ui/Btn'
@@ -41,24 +41,38 @@ export function CheckoutProrationWidget({
   const [date, setDate] = useState(expectedMoveOut ?? '')
   const [calc, setCalc] = useState<CheckoutProrationResult | null>(null)
   const [calcErr, setCalcErr] = useState<string | null>(null)
-  const [amountInput, setAmountInput] = useState('')   // 적용 금액 — 자동 일할액 기본, 운영자가 수정 가능
-  const [refund, setRefund] = useState<{ refund: CheckoutRefundResult; prepaidAmount: number; hasPolicy: boolean } | null>(null)
+  const [amountInput, setAmountInput] = useState('')   // 적용 금액(퇴실월 회사 귀속) — 모드별 기본, 운영자가 수정 가능
+  const [refund, setRefund] = useState<{ refund: CheckoutRefundResult; prepaidAmount: number } | null>(null)
+  // 환불 모드: 법정(공정위: 위약금 10% + 잔여 환불) / 선의(일할만, 위약금 없음). 기본=법정.
+  const [refundMode, setRefundMode] = useState<RefundMode>('legal')
 
   const isApplied = checkoutProratedAmount != null && !!checkoutProratedMonth
 
-  // 퇴실일 선택 → 서버 미리보기 (할인까지 반영한 정확한 일할액)
-  const handleDate = (v: string) => {
+  // 퇴실일 선택 → 서버 미리보기 (할인까지 반영한 정확한 일할액 + 모드별 환불)
+  const handleDate = (v: string, mode: RefundMode = refundMode) => {
     setDate(v); setCalc(null); setCalcErr(null); setAmountInput(''); setRefund(null)
     if (!v || v.length < 10) return
     startTransition(async () => {
       const [res, refRes] = await Promise.all([
         previewCheckoutProration(leaseTermId, v),
-        previewCheckoutRefund(leaseTermId, v),
+        previewCheckoutRefund(leaseTermId, v, mode),
       ])
-      if (res.ok) { setCalc(res.calc); setCalcErr(null); setAmountInput(String(res.calc.amount)) }
-      else { setCalc(null); setCalcErr(res.error); setAmountInput('') }
-      setRefund(refRes.ok ? { refund: refRes.refund, prepaidAmount: refRes.prepaidAmount, hasPolicy: refRes.hasPolicy } : null)
+      if (res.ok) { setCalc(res.calc); setCalcErr(null) }
+      else { setCalc(null); setCalcErr(res.error) }
+      if (refRes.ok) {
+        setRefund({ refund: refRes.refund, prepaidAmount: refRes.prepaidAmount })
+        // 적용 금액 = 회사 귀속(사용분 + 위약금). 선납 없으면 일할 청구액.
+        setAmountInput(String(refRes.prepaidAmount > 0 ? refRes.refund.companyKeeps : (res.ok ? res.calc.amount : refRes.refund.usedAmount)))
+      } else if (res.ok) {
+        setAmountInput(String(res.calc.amount))
+      }
     })
+  }
+
+  // 모드 전환 → 같은 퇴실일로 환불 미리보기·적용 금액 재계산
+  const handleMode = (mode: RefundMode) => {
+    setRefundMode(mode)
+    if (date && date.length >= 10) handleDate(date, mode)
   }
 
   // autoOpen — 진입 직후 1회: 폼 펼치고 저장된 퇴실일로 미리보기 자동 실행
@@ -158,36 +172,62 @@ export function CheckoutProrationWidget({
           </div>
         )}
         {calc && (
-          <div className="space-y-1">
-            <label className="text-xs text-[var(--warm-muted)]">적용 금액 <span className="text-[0.625rem]">(자동 일할 {fmtWon(calc.amount)} — 필요시 수정)</span></label>
-            <div className="flex items-center gap-1.5">
-              <input type="text" inputMode="numeric" value={amountInput ? Number(amountInput.replace(/[^0-9]/g, '')).toLocaleString() : ''}
-                onChange={e => setAmountInput(e.target.value.replace(/[^0-9]/g, ''))}
-                className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-right tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-              <span className="text-xs text-[var(--warm-muted)]">원</span>
+          <div className="space-y-1.5">
+            {/* 정산 방식 — 법정(공정위: 위약금 10% + 잔여 환불) / 선의(일할만) */}
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--warm-muted)]">정산 방식</label>
+              <div className="flex gap-1">
+                {([['legal', '법정(공정위)'], ['goodwill', '선의(일할)']] as [RefundMode, string][]).map(([m, lbl]) => (
+                  <button key={m} type="button" onClick={() => handleMode(m)}
+                    className="flex-1 text-[0.6875rem] px-2 py-1.5 rounded-lg border transition-colors"
+                    style={refundMode === m
+                      ? { background: 'var(--coral)', color: '#fff', borderColor: 'var(--coral)' }
+                      : { background: 'var(--canvas)', color: 'var(--warm-mid)', borderColor: 'var(--warm-border)' }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[0.5625rem] text-[var(--warm-muted)]">
+                {refundMode === 'legal'
+                  ? `원칙(공정위) — 위약금 ${LEGAL_PENALTY_PCT}%를 제하고 남은 일수를 환불합니다.`
+                  : '선의 — 위약금 없이 사용한 일수만 청구하고 나머지를 환불합니다.'}
+              </p>
             </div>
-            <p className="text-[0.5625rem] text-[var(--warm-muted)]">하루 더 봐주기·위약금·청소비 차감 등은 이 금액을 직접 조정하세요.</p>
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--warm-muted)]">적용 금액 <span className="text-[0.625rem]">(퇴실월 청구 = 사용분{refundMode === 'legal' ? ' + 위약금' : ''} — 필요시 수정)</span></label>
+              <div className="flex items-center gap-1.5">
+                <input type="text" inputMode="numeric" value={amountInput ? Number(amountInput.replace(/[^0-9]/g, '')).toLocaleString() : ''}
+                  onChange={e => setAmountInput(e.target.value.replace(/[^0-9]/g, ''))}
+                  className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-right tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                <span className="text-xs text-[var(--warm-muted)]">원</span>
+              </div>
+              <p className="text-[0.5625rem] text-[var(--warm-muted)]">하루 더 봐주기 등 예외는 이 금액을 직접 조정하세요. (환불액 = 총 결제금액 − 이 금액)</p>
+            </div>
           </div>
         )}
         {calcErr && (
           <p className="text-xs" style={{ color: 'var(--coral)' }}>{calcErr}</p>
         )}
 
-        {refund && refund.prepaidAmount > 0 && (
-          <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
-            <p className="font-semibold text-[var(--warm-mid)] mb-1">환불 미리보기{!refund.hasPolicy ? ' (환불 규정 미설정 · 월÷30 기준)' : ''}</p>
-            <div className="space-y-0.5 text-[var(--warm-muted)]">
-              <div className="flex justify-between"><span>선납액</span><span className="tabular-nums">{fmtWon(refund.prepaidAmount)}</span></div>
-              <div className="flex justify-between"><span>− 사용분 ({refund.refund.daysUsed}일 × {fmtWon(refund.refund.dailyRate)})</span><span className="tabular-nums">{fmtWon(refund.refund.usedAmount)}</span></div>
-              {refund.refund.penalty > 0 && <div className="flex justify-between"><span>− 위약금</span><span className="tabular-nums">{fmtWon(refund.refund.penalty)}</span></div>}
-              {refund.refund.cleaning > 0 && <div className="flex justify-between"><span>− 청소비</span><span className="tabular-nums">{fmtWon(refund.refund.cleaning)}</span></div>}
+        {refund && refund.prepaidAmount > 0 && (() => {
+          const applied = amountInput ? (parseInt(amountInput.replace(/[^0-9]/g, ''), 10) || 0) : refund.refund.companyKeeps
+          const penalty = refundMode === 'legal' ? Math.round(refund.prepaidAmount * LEGAL_PENALTY_PCT / 100) : 0
+          const refundAmt = Math.max(0, refund.prepaidAmount - applied)
+          return (
+            <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
+              <p className="font-semibold text-[var(--warm-mid)] mb-1">환불 미리보기 <span className="font-normal text-[0.625rem] text-[var(--warm-muted)]">({refundMode === 'legal' ? '법정·공정위' : '선의·일할'})</span></p>
+              <div className="space-y-0.5 text-[var(--warm-muted)]">
+                <div className="flex justify-between"><span>총 결제금액</span><span className="tabular-nums">{fmtWon(refund.prepaidAmount)}</span></div>
+                <div className="flex justify-between"><span>− 사용분 ({refund.refund.daysUsed}일 × {fmtWon(refund.refund.dailyRate)})</span><span className="tabular-nums">{fmtWon(refund.refund.usedAmount)}</span></div>
+                {penalty > 0 && <div className="flex justify-between"><span>− 위약금 (총 결제금액의 {LEGAL_PENALTY_PCT}%)</span><span className="tabular-nums">{fmtWon(penalty)}</span></div>}
+              </div>
+              <div className="flex justify-between font-bold mt-1 pt-1 border-t" style={{ borderColor: 'var(--warm-border)', color: '#4e6834' }}>
+                <span>환불액</span><span className="tabular-nums">{fmtWon(refundAmt)}</span>
+              </div>
+              <p className="text-[0.5625rem] text-[var(--warm-muted)] mt-1">참고용 — 보증금 환불(퇴실 처리)에서 이 금액을 함께 정산하세요.</p>
             </div>
-            <div className="flex justify-between font-bold mt-1 pt-1 border-t" style={{ borderColor: 'var(--warm-border)', color: '#4e6834' }}>
-              <span>환불액</span><span className="tabular-nums">{fmtWon(refund.refund.refund)}</span>
-            </div>
-            <p className="text-[0.5625rem] text-[var(--warm-muted)] mt-1">참고용 — 보증금 환불(퇴실 처리)에서 이 금액을 함께 정산하세요.</p>
-          </div>
-        )}
+          )
+        })()}
         <div className="flex gap-2">
           <Btn type="button" variant="secondary" size="sm" onClick={() => { setShowForm(false); setCalc(null); setCalcErr(null); setRefund(null) }} className="flex-1">취소</Btn>
           <Btn type="button" variant="primary" size="sm" disabled={pending || !calc} onClick={handleApply} className="flex-1 font-semibold">

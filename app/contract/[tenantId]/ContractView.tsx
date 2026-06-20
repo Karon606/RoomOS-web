@@ -112,7 +112,7 @@ export default function ContractView({ data }: { data: ContractData }) {
     roomNo:           roomNoLabel,
     rentFee:          data.lease ? data.lease.rentAmount.toLocaleString() : '',
     emergencyContact: emergencyContactText,
-    환불규정:          data.refundClauseInContract ? ' ' + buildRefundClause(data.refundPolicy) : '',
+    환불규정:          data.refundClauseInContract ? ' ' + buildRefundClause() : '',
   }), [data, smoking, emergencyContactText, roomNoLabel])
 
   // 잔여 소지품 임의처분 동의서 — 본문 변수(한글 키)

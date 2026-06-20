@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { buildDriveThumbnailUrl } from '@/lib/google-drive'
 import { requireEdit } from '@/lib/role'
 import {
-  type ContractTemplate, type BusinessInfo, type RefundPolicyValues, type DisposalConsentTemplate,
+  type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate,
   DEFAULT_CONTRACT_TEMPLATE, resolveDisposalConsent,
 } from '@/lib/contract'
 
@@ -21,8 +21,7 @@ export type ContractData = {
   phone: string | null                 // 영업장 전화 — §20 헤더/푸터 메타
   stampImageUrl: string | null         // 인쇄에 쓰일 큰 사이즈
   logoImageUrl: string | null          // 영업장 로고 (헤더 좌측)
-  refundPolicy: RefundPolicyValues     // 퇴실 환불 규정 — {{환불규정}} 변수 생성용
-  refundClauseInContract: boolean      // 계약서에 환불 조항 자동 표시 여부
+  refundClauseInContract: boolean      // 계약서에 환불 조항(공정위 고정 문구) 자동 표시 여부
   disposalConsent: DisposalConsentTemplate   // 잔여 소지품 임의처분 동의서 (계약서와 함께 출력)
   tenant: {
     id: string
@@ -87,7 +86,6 @@ export async function getContractData(tenantId: string): Promise<ContractData | 
         contractTemplate: true, businessInfo: true,
         stampDriveFileId: true, logoDriveFileId: true,
         phone: true,
-        refundPenaltyWithinDays: true, refundPenaltyPct: true, refundDailyRate: true, refundDeductCleaning: true,
         refundClauseInContract: true, disposalConsentTemplate: true,
       },
     }),
@@ -121,12 +119,6 @@ export async function getContractData(tenantId: string): Promise<ContractData | 
     stampImageUrl: property?.stampDriveFileId ? buildDriveThumbnailUrl(property.stampDriveFileId, 800) : null,
     // 로고는 헤더 좌측 14mm 높이 슬롯 — 인쇄 화질 위해 width 600px 썸네일
     logoImageUrl: property?.logoDriveFileId ? buildDriveThumbnailUrl(property.logoDriveFileId, 600) : null,
-    refundPolicy: {
-      penaltyWithinDays: property?.refundPenaltyWithinDays ?? null,
-      penaltyPct: property?.refundPenaltyPct ?? null,
-      dailyRate: property?.refundDailyRate ?? null,
-      deductCleaning: property?.refundDeductCleaning ?? false,
-    },
     refundClauseInContract: property?.refundClauseInContract ?? true,
     disposalConsent: resolveDisposalConsent(property?.disposalConsentTemplate),
     tenant: {

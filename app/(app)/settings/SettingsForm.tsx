@@ -55,10 +55,6 @@ type Property = {
   defaultCleaningFee: number | null
   defaultAreaM2: number | null
   bankAccount: string | null
-  refundPenaltyWithinDays: number | null
-  refundPenaltyPct: number | null
-  refundDailyRate: number | null
-  refundDeductCleaning: boolean
   refundClauseInContract: boolean
   disposalConsentTemplate: unknown
   publicSlug: string | null
@@ -761,31 +757,8 @@ export default function SettingsForm({
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 환불 규정</label>
-              <p className="text-xs text-[var(--warm-muted)]">조기 퇴실 시 환불액 = 잔 입실료 − 위약금 − (청소비). 퇴실 정산에서 자동 산출되고 직접 수정할 수 있습니다.</p>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[0.6875rem] text-[var(--warm-muted)]">위약금 — 입주 후 N일 이내 퇴실</label>
-                  <input type="text" inputMode="numeric" name="refundPenaltyWithinDays"
-                    defaultValue={property?.refundPenaltyWithinDays ?? ''} placeholder="예: 7 (비우면 없음)"
-                    className="w-full px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[0.6875rem] text-[var(--warm-muted)]">위약금율 — 잔 입실료의 %</label>
-                  <input type="text" inputMode="numeric" name="refundPenaltyPct"
-                    defaultValue={property?.refundPenaltyPct ?? ''} placeholder="예: 20"
-                    className="w-full px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[0.6875rem] text-[var(--warm-muted)]">1일당 입실료(사용분 차감) — 비우면 월 이용료 ÷ 30 자동</label>
-                <MoneyInput name="refundDailyRate" defaultValue={property?.refundDailyRate ?? undefined} placeholder="예: 20,000원 (비우면 월÷30)" />
-              </div>
+              <p className="text-xs text-[var(--warm-muted)]">공정거래위원회 기준 고정: 환불액 = 총 결제금액 − (1일 이용요금 × 실제 이용일수) − 위약금(10%). 1일 이용요금 = 월 이용료 ÷ 30. <span className="text-[var(--warm-muted)]">위약금율·기간은 법적으로 임의 설정이 불가해 고정됩니다.</span> 퇴실 정산에서 법정/선의(일할) 모드를 선택할 수 있습니다.</p>
               <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer pt-0.5">
-                <input type="checkbox" name="refundDeductCleaning" value="1" defaultChecked={property?.refundDeductCleaning ?? false}
-                  className="w-4 h-4 accent-[var(--coral)]" />
-                환불 시 청소비 차감
-              </label>
-              <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer">
                 <input type="checkbox" name="refundClauseInContract" value="1" defaultChecked={property?.refundClauseInContract ?? true}
                   className="w-4 h-4 accent-[var(--coral)]" />
                 계약서에 환불 규정 자동 표시 <span className="text-[0.625rem] text-[var(--warm-muted)]">(끄면 계약서의 {'{{환불규정}}'} 자리가 비워짐)</span>

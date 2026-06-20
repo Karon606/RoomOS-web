@@ -82,10 +82,6 @@ export const getPropertySettings = cache(async function getPropertySettings() {
       defaultCleaningFee: true,
       defaultAreaM2: true,
       bankAccount: true,
-      refundPenaltyWithinDays: true,
-      refundPenaltyPct: true,
-      refundDailyRate: true,
-      refundDeductCleaning: true,
       refundClauseInContract: true,
       disposalConsentTemplate: true,
       publicSlug: true,
@@ -539,10 +535,7 @@ export async function updatePropertySettings(formData: FormData) {
   const defaultCleaningFee = formData.get('defaultCleaningFee')
   const defaultAreaM2     = formData.get('defaultAreaM2')
   const bankAccount       = formData.get('bankAccount') as string
-  const refundPenaltyWithinDays = formData.get('refundPenaltyWithinDays')
-  const refundPenaltyPct        = formData.get('refundPenaltyPct')
-  const refundDailyRate         = formData.get('refundDailyRate')
-  const refundDeductCleaning    = formData.get('refundDeductCleaning') === '1'
+  // 퇴실 환불 규정의 위약금율·기간·1일당·청소비 차감은 법적으로 임의 설정 불가 → 입력 제거(컬럼은 보존, 미사용).
   const refundClauseInContract  = formData.get('refundClauseInContract') === '1'
   // 잔여 소지품 임의처분 동의서
   const disposalEnabled = formData.get('disposalEnabled') === '1'
@@ -566,10 +559,6 @@ export async function updatePropertySettings(formData: FormData) {
       defaultCleaningFee: defaultCleaningFee ? Number(String(defaultCleaningFee).replace(/[^0-9]/g, '')) : null,
       defaultAreaM2:    defaultAreaM2 && String(defaultAreaM2).trim() ? Number(String(defaultAreaM2).replace(/[^0-9.]/g, '')) || null : null,
       bankAccount:      bankAccount?.trim() || null,
-      refundPenaltyWithinDays: refundPenaltyWithinDays && String(refundPenaltyWithinDays).trim() ? Number(String(refundPenaltyWithinDays).replace(/[^0-9]/g, '')) || null : null,
-      refundPenaltyPct:        refundPenaltyPct && String(refundPenaltyPct).trim() ? Number(String(refundPenaltyPct).replace(/[^0-9]/g, '')) || null : null,
-      refundDailyRate:         refundDailyRate && String(refundDailyRate).trim() ? Number(String(refundDailyRate).replace(/[^0-9]/g, '')) || null : null,
-      refundDeductCleaning,
       refundClauseInContract,
       disposalConsentTemplate: {
         enabled: disposalEnabled,

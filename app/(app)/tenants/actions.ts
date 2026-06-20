@@ -9,7 +9,7 @@ import { LeaseStatus, ContactType, Gender, PaymentTiming, RegistrationStatus, Pr
 import { requireEdit } from '@/lib/role'
 import { recordDepositReceived } from '@/app/(app)/rooms/actions'
 import { discountedRent } from '@/lib/rentDiscount'
-import { calcCheckoutProration, calcCheckoutRefund, type CheckoutProrationResult, type CheckoutRefundResult, type RefundPolicy } from '@/lib/prorate'
+import { calcCheckoutProration, calcCheckoutRefund, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -1544,21 +1544,21 @@ function prorationDataForChange(
 // 퇴실 환불 미리보기 — 환경설정 '퇴실 환불 규정'으로 환불액 내역 산출(읽기전용 표시용).
 // 선납액 = 퇴실 달에 낸 금액(보증금·양도인 제외). 사용일수 = 일할 daysUsed(퇴실일<납부일이면 0).
 export type CheckoutRefundPreview =
-  | { ok: true; refund: CheckoutRefundResult; prepaidAmount: number; hasPolicy: boolean }
+  | { ok: true; refund: CheckoutRefundResult; prepaidAmount: number }
   | { ok: false; error: string }
 
 export async function previewCheckoutRefund(
   leaseTermId: string,
   expectedMoveOut: string,  // 'YYYY-MM-DD'
+  mode: RefundMode = 'legal',
 ): Promise<CheckoutRefundPreview> {
   try {
     const { propertyId } = await getPropertyId()
     const lease = await prisma.leaseTerm.findFirst({
       where: { id: leaseTermId, propertyId },
       select: {
-        dueDay: true, rentAmount: true, moveInDate: true, cleaningFee: true,
+        dueDay: true, rentAmount: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-        property: { select: { refundPenaltyWithinDays: true, refundPenaltyPct: true, refundDailyRate: true, refundDeductCleaning: true } },
       },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
@@ -1571,18 +1571,8 @@ export async function previewCheckoutRefund(
     const prepaidAmount = Math.max(0, paidAgg._sum.actualAmount ?? 0)
     const prorate = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut)
     const daysUsed = prorate ? prorate.daysUsed : 0   // 퇴실일 < 납부일이면 그 기간 미사용 = 0
-    const moveOutDate = new Date(expectedMoveOut + 'T00:00:00')
-    const daysSinceMoveIn = lease.moveInDate
-      ? Math.max(1, Math.floor((moveOutDate.getTime() - new Date(lease.moveInDate).getTime()) / 86400000) + 1)
-      : Number.MAX_SAFE_INTEGER   // 입주일 모르면 위약금 창 밖으로 간주
-    const p = lease.property
-    const policy: RefundPolicy = {
-      penaltyWithinDays: p.refundPenaltyWithinDays, penaltyPct: p.refundPenaltyPct,
-      dailyRate: p.refundDailyRate, deductCleaning: p.refundDeductCleaning,
-    }
-    const hasPolicy = p.refundPenaltyWithinDays != null || p.refundPenaltyPct != null || p.refundDailyRate != null || p.refundDeductCleaning
-    const refund = calcCheckoutRefund({ prepaidAmount, monthlyRent, daysUsed, daysSinceMoveIn, cleaningFee: lease.cleaningFee, policy })
-    return { ok: true, refund, prepaidAmount, hasPolicy }
+    const refund = calcCheckoutRefund({ prepaidAmount, monthlyRent, daysUsed, mode })
+    return { ok: true, refund, prepaidAmount }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
