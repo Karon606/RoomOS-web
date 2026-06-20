@@ -189,3 +189,23 @@ export async function resetContractOverride(leaseTermId: string): Promise<{ ok: 
     return { ok: false, error: (err as Error).message ?? '초기화에 실패했습니다.' }
   }
 }
+
+// 계약서 화면에서 흡연 여부를 바꾸면 입실자(고객정보)에 바로 저장 — 고객정보가 단일 출처.
+export async function setTenantSmoking(
+  tenantId: string,
+  smoking: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await requireAuthAndProperty()
+    const t = await prisma.tenant.findFirst({ where: { id: tenantId, propertyId }, select: { id: true } })
+    if (!t) return { ok: false, error: '입실자를 찾을 수 없습니다.' }
+    await prisma.tenant.update({ where: { id: tenantId }, data: { smoking } })
+    revalidatePath('/contract')
+    revalidatePath('/tenants')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '저장에 실패했습니다.' }
+  }
+}

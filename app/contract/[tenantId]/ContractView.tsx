@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useTransition, useRef, useLayoutEffect } 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
-import { saveContractOverride, resetContractOverride } from './actions'
+import { saveContractOverride, resetContractOverride, setTenantSmoking } from './actions'
 import { renderContractText, buildRefundClause, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -29,6 +29,14 @@ export default function ContractView({ data }: { data: ContractData }) {
   const [signDate, setSignDate]       = useState(today)
   const [signatureName, setSignatureName] = useState(data.tenant.name ?? '')
   const [smoking, setSmoking]         = useState(data.tenant.smoking ? '흡연' : '비흡연')
+  // 계약서에서 흡연 여부를 바꾸면 입실자(고객정보)에 즉시 저장 — 출력용 일회성이 아니라 영구 반영
+  const handleSmokingChange = (v: string) => {
+    setSmoking(v)
+    setTenantSmoking(data.tenant.id, v === '흡연').then(res => {
+      if (res.ok) pushToast('success', '흡연 여부 저장됨 (고객정보 반영)')
+      else pushToast('error', res.error)
+    })
+  }
   const [emergencyContactText, setEmergencyContactText] = useState(() => {
     if (data.tenant.emergencyContacts.length === 0) return ''
     return data.tenant.emergencyContacts
@@ -403,7 +411,7 @@ export default function ContractView({ data }: { data: ContractData }) {
             <tr>
               <th>흡연 여부<span className="en">Smoking</span></th>
               <td>
-                <select className="no-print smoke-select" value={smoking} onChange={e => setSmoking(e.target.value)}
+                <select className="no-print smoke-select" value={smoking} onChange={e => handleSmokingChange(e.target.value)}
                   style={{ font: 'inherit', color: 'inherit', border: '1px solid #d6cdbb', borderRadius: 4, padding: '1px 4px', background: '#fff', cursor: 'pointer' }}>
                   <option value="비흡연">비흡연</option>
                   <option value="흡연">흡연</option>
