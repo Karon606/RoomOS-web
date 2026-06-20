@@ -285,6 +285,7 @@ model Tenant {
   job              String?
   memo             String?
   isBasicRecipient Boolean   @default(false)
+  smoking          Boolean   @default(false)   // 흡연 여부 (true=흡연) — 고객관리 입력, 계약서 자동반영
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

@@ -77,7 +77,7 @@ type Tenant = {
   email: string | null
   birthdate: string | Date | null; memo: string | null
   nationality: string | null; gender: string; job: string | null
-  isBasicRecipient: boolean; contacts: Contact[]; leaseTerms: LeaseTerm[]
+  isBasicRecipient: boolean; smoking: boolean; contacts: Contact[]; leaseTerms: LeaseTerm[]
 }
 
 type SortKey =
@@ -2593,7 +2593,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             <option value="true">예/대상자</option>
           </SelectField>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">국적</label>
             <CountrySelect name="nationality" defaultValue={tenant?.nationality} />
@@ -2602,6 +2602,10 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
             <label className="text-xs font-medium text-[var(--warm-mid)]">직업</label>
             <JobSelect name="job" defaultValue={tenant?.job} />
           </div>
+          <SelectField label="흡연 여부" name="smoking" defaultValue={tenant?.smoking ? 'true' : 'false'}>
+            <option value="false">비흡연</option>
+            <option value="true">흡연</option>
+          </SelectField>
         </div>
       </FormSection>
 

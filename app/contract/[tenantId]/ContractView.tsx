@@ -28,7 +28,7 @@ export default function ContractView({ data }: { data: ContractData }) {
   const today = kstYmdStr()
   const [signDate, setSignDate]       = useState(today)
   const [signatureName, setSignatureName] = useState(data.tenant.name ?? '')
-  const [smoking, setSmoking]         = useState('비흡연')
+  const [smoking, setSmoking]         = useState(data.tenant.smoking ? '흡연' : '비흡연')
   const [emergencyContactText, setEmergencyContactText] = useState(() => {
     if (data.tenant.emergencyContacts.length === 0) return ''
     return data.tenant.emergencyContacts

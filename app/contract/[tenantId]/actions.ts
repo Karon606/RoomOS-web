@@ -29,6 +29,7 @@ export type ContractData = {
     birthdate: string | null   // YYYY-MM-DD
     gender: string             // '남' | '여' | ''
     job: string | null
+    smoking: boolean             // 흡연 여부 — 계약서 흡연란 기본값 (고객관리에서 설정)
     primaryPhone: string | null
     emergencyContacts: Array<{ name: string; phone: string; relation: string | null }>
   }
@@ -127,6 +128,7 @@ export async function getContractData(tenantId: string): Promise<ContractData | 
       birthdate: tenant.birthdate ? new Date(tenant.birthdate).toISOString().slice(0, 10) : null,
       gender: GENDER_LABEL[tenant.gender] ?? '',
       job: tenant.job,
+      smoking: (tenant as { smoking?: boolean }).smoking ?? false,
       primaryPhone: primaryContact?.contactValue ?? null,
       emergencyContacts,
     },

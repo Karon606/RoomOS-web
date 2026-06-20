@@ -83,6 +83,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const email            = formData.get('email') as string
   const birthdate        = formData.get('birthdate') as string
   const isBasicRecipient = formData.get('isBasicRecipient') === 'true'
+  const smoking = formData.get('smoking') === 'true'
   const roomId           = formData.get('roomId') as string
   const status           = (formData.get('status') as LeaseStatus) || 'ACTIVE'
   const rentAmount       = Number(formData.get('rentAmount')) || 0
@@ -177,6 +178,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
       email: email || null,
       birthdate: birthdate ? new Date(birthdate) : null,
       isBasicRecipient,
+      smoking,
       memo: memo || null,
       nationality: nationality || null,
       gender,
@@ -251,6 +253,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
   const email            = formData.get('email') as string
   const birthdate        = formData.get('birthdate') as string
   const isBasicRecipient = formData.get('isBasicRecipient') === 'true'
+  const smoking = formData.get('smoking') === 'true'
   const memo             = formData.get('memo') as string
   const nationality      = formData.get('nationality') as string
   const gender           = (formData.get('gender') as Gender) || 'UNKNOWN'
@@ -353,6 +356,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
       email: email || null,
       birthdate: birthdate ? new Date(birthdate) : null,
       isBasicRecipient,
+      smoking,
       memo: memo || null,
       nationality: nationality || null,
       gender,

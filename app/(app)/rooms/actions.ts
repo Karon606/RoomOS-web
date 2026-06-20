@@ -1268,7 +1268,7 @@ export async function getTenantDetail(tenantId: string) {
     select: {
       id: true, name: true, englishName: true, email: true,
       gender: true, nationality: true, job: true,
-      birthdate: true, isBasicRecipient: true, memo: true,
+      birthdate: true, isBasicRecipient: true, smoking: true, memo: true,
       contacts: {
         select: {
           id: true, contactType: true, contactValue: true,

@@ -12,6 +12,7 @@ type Tenant = {
   job: string | null
   birthdate: Date | string | null
   isBasicRecipient: boolean
+  smoking: boolean
   leaseTerms: { room: { roomNo: string } | null }[]
 }
 
@@ -39,6 +40,7 @@ export function TenantBasicInfo({ tenant }: { tenant: Tenant }) {
         <Item label="성별"       value={GENDER_LABEL[tenant.gender] ?? tenant.gender} />
         <Item label="국적"       value={tenant.nationality ? `${natFlag} ${tenant.nationality}` : '—'} />
         <Item label="직업"       value={tenant.job ?? '—'} />
+        <Item label="흡연 여부"  value={tenant.smoking ? '흡연' : '비흡연'} />
         <Item label="생년월일"   value={fmtDate(tenant.birthdate)} />
         <Item label="기초수급자" value={tenant.isBasicRecipient ? '예/대상자' : '아니오/해당없음'} />
       </Grid>
