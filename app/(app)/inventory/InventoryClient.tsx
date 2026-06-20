@@ -228,7 +228,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리</h1>
+            <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리 · 소모품·부식</h1>
             <p className="text-xs text-[var(--warm-muted)] mt-0.5">부식·소모품·폐기물 사용량을 점검 기록 기반으로 추적합니다.</p>
           </div>
           {/* 점검 진입 방식 토글 — 모드 전환과 무관하게 항상 우측 상단 고정 (위치 점프 방지) */}
@@ -283,13 +283,13 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             g.items.push(f); groupMap.set(key, g)
           }
           const groups = [...groupMap.values()]
+          const totalAmt = flat.reduce((s, f) => s + (f.p.amount || 0), 0)
           return (
             <section className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--warning-fg)]" />
-                <h2 className="text-sm font-semibold text-[var(--warm-dark)]">수령 대기</h2>
-                <span className="text-[0.6875rem] text-[var(--warm-muted)]">{flat.length}건 · 도착 전</span>
-              </div>
+              {/* 헤더 스타일 — 비품·자재 '수령 대기'와 동일 (#2 통일) */}
+              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">
+                수령 대기 <span className="text-[0.625rem] text-[var(--coral)] font-normal">도착 전</span> <span className="text-[var(--warm-muted)] font-normal">{flat.length}건{totalAmt > 0 ? ` · ${totalAmt.toLocaleString()}원` : ''}</span>
+              </h2>
               <ul className="space-y-1.5">
                 {groups.map(g => {
                   const totalQty = g.items.reduce((s, f) => s + (f.p.qtyValue || 0), 0)
