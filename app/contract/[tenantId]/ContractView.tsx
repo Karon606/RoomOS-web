@@ -46,8 +46,10 @@ export default function ContractView({ data }: { data: ContractData }) {
   // ── 모바일 횡스크롤 방지: 210mm 종이를 viewport 폭에 맞춰 scale ──
   // 인쇄 시에는 @media print 에서 scale 1로 리셋되므로 실제 출력은 영향 없음
   const paperRef = useRef<HTMLElement>(null)
+  const disposalRef = useRef<HTMLElement>(null)   // 동의서 종이(별도 cage) 높이 측정용
   const [scale, setScale]       = useState(1)
   const [paperHeight, setPaperHeight] = useState<number | null>(null)
+  const [disposalHeight, setDisposalHeight] = useState<number | null>(null)
   const PAPER_W_PX = 210 * 3.7795275591  // 210mm in CSS px (≈ 793.7)
 
   useEffect(() => {
@@ -72,6 +74,17 @@ export default function ContractView({ data }: { data: ContractData }) {
     const update = () => setPaperHeight(node.offsetHeight)
     update()
     const ro = new ResizeObserver(update)
+    ro.observe(node)
+    return () => ro.disconnect()
+  }, [editing, draft, data])
+
+  // 동의서 종이(별도 cage) 높이 측정 — 활성화/서명/내용 변화 시 갱신
+  useLayoutEffect(() => {
+    const node = disposalRef.current
+    if (!node) { setDisposalHeight(null); return }
+    const update = () => setDisposalHeight(node.offsetHeight)
+    update()
+    const ro = new ResizeObserver(update)   // 서명 추가 등 내용 높이 변화는 옵저버가 잡음
     ro.observe(node)
     return () => ro.disconnect()
   }, [editing, draft, data])
@@ -532,8 +545,16 @@ export default function ContractView({ data }: { data: ContractData }) {
           <div className="wordmark">made with <span className="wm"><span className="wm-stay">stay</span><span className="wm-eum">eum</span></span></div>
         </div>
       </main>
+      </div>
       {data.disposalConsent.enabled && (
-        <main className="contract-paper disposal-paper">
+      <div
+        className="paper-cage disposal-cage"
+        style={{
+          ['--paper-scale' as string]: scale,
+          ['--paper-h' as string]: disposalHeight != null ? `${disposalHeight}px` : '297mm',
+        }}
+      >
+        <main ref={disposalRef} className="contract-paper disposal-paper">
           <div className="dc-title">{data.disposalConsent.title}</div>
           <div className="dc-sec-h">1. 입실자 정보</div>
           <table className="info dc-info"><tbody>
@@ -570,8 +591,8 @@ export default function ContractView({ data }: { data: ContractData }) {
           </div>
           <div className="dc-to">{biz.name || ''} 대표 귀하</div>
         </main>
-      )}
       </div>
+      )}
 
       {/* 서명 받기 모달 — 아이패드/모바일에서 입실자 손글씨 서명 캡처 */}
       {signOpen && (
@@ -734,8 +755,8 @@ export default function ContractView({ data }: { data: ContractData }) {
         .contract-paper .wordmark .wm { font-weight: 600; }
         .contract-paper .wordmark .wm-stay { color: var(--p-ink); }
         .contract-paper .wordmark .wm-eum { color: var(--p-tc); }
-        /* 잔여 소지품 임의처분 동의서 */
-        .contract-paper.disposal-paper { margin-top: 8mm; }
+        /* 잔여 소지품 임의처분 동의서 — 화면에선 계약서 cage 아래 별도 페이지 cage로 배치 */
+        .disposal-cage { margin-top: 24px; }
         .contract-paper .dc-title { font-size: 15pt; font-weight: 800; text-align: center; letter-spacing: -.02em; margin: 2mm 0 7mm; }
         .contract-paper .dc-sec-h { font-size: 10.5pt; font-weight: 700; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); margin: 5mm 0 2.5mm; }
         .contract-paper .dc-info { width: 65%; }
