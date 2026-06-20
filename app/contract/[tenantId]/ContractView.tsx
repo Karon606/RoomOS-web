@@ -311,15 +311,11 @@ export default function ContractView({ data }: { data: ContractData }) {
               </button>
             )}
             <button onClick={handlePrint} className="toolbar-btn-secondary">인쇄</button>
-            {!signatureDataUrl ? (
-              <button onClick={() => setSignOpen(true)} className="toolbar-print">서명 받기</button>
-            ) : (
-              <>
-                <button onClick={() => setSignOpen(true)} className="toolbar-btn-secondary">서명 다시</button>
-                <button onClick={handleContractSave} disabled={contractSaving} className="toolbar-print">
-                  {contractSaving ? '저장 중... (5~15초)' : '계약서 저장'}
-                </button>
-              </>
+            {/* 서명은 본문 하단 서명란을 직접 눌러서 — 계약서를 끝까지 본 뒤 서명하도록 유도(상단 즉시서명 버튼 제거) */}
+            {signatureDataUrl && (
+              <button onClick={handleContractSave} disabled={contractSaving} className="toolbar-print">
+                {contractSaving ? '저장 중... (5~15초)' : '계약서 저장'}
+              </button>
             )}
           </>
         )}
@@ -476,11 +472,17 @@ export default function ContractView({ data }: { data: ContractData }) {
                 <span className="seal-wrap">
                   {signatureDataUrl ? (
                     <>
-                      <img className="sign-img" src={signatureDataUrl} alt="서명" />
+                      <img className="sign-img" src={signatureDataUrl} alt="서명" onClick={() => setSignOpen(true)} style={{ cursor: 'pointer' }} title="다시 서명하려면 클릭" />
                       <button type="button" onClick={() => setSignatureDataUrl(null)} className="signature-clear no-print" title="서명 지우기">✕</button>
                     </>
                   ) : (
-                    <span className="seal-mark">(서명)</span>
+                    <>
+                      <button type="button" onClick={() => setSignOpen(true)} className="no-print"
+                        style={{ border: '1.5px dashed var(--coral, #a03c2e)', borderRadius: 6, padding: '6px 14px', color: 'var(--coral, #a03c2e)', background: 'transparent', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        여기를 눌러 서명
+                      </button>
+                      <span className="seal-mark only-print">(서명)</span>
+                    </>
                   )}
                 </span>
               </div>
