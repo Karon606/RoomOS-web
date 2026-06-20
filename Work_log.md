@@ -3,6 +3,17 @@
 마지막 업데이트: 2026-06-20
 브랜치: main
 
+## 2026-06-20 (이어서) — 계약서/동의서 보정·흡연란 이동·환불 공정위化·환경설정 정리 (7건) [SQL 0]
+사용자 7개 요청 일괄 처리. 3개 커밋(2b812a7·37d53ec·428cb27).
+- **#1 동의서 출력 시 계약서 누락 버그**: 계약서 `.paper`가 `display:flex` 컨테이너라 동의서가 붙어 2페이지가 되면 인쇄 분할에서 본문이 통째로 클리핑됨 → 일반 블록 흐름으로([contractPrintHtml](lib/contractPrintHtml.ts)). 동의서 break에 `break-before:page` 병행.
+- **#2 동의서 별도 서명패드**: '(서명 또는 인)' 자리 클릭→서명패드. 같은 모달을 `signTarget`('contract'|'disposal')으로 재사용([ContractView](app/contract/[tenantId]/ContractView.tsx)). PDF dc-sign에 이미지 렌더, POST 바디·route·PrintContractData에 `disposalSignatureImageDataUrl` 추가. (영구 저장은 안 함 — 매 출력 시 캡처.)
+- **#3 퇴실예정 호실 빈칸**: 계약서/동의서 lease 조회 `status in (ACTIVE,RESERVED)` → CHECKOUT_PENDING 포함(actions·route).
+- **#4 흡연 여부 위치**: 상단 툴바 셀렉터 제거 → '입실자 정보' 표 항목에 인라인 셀렉터(화면)·값(인쇄).
+- **#6 임의 환불 설정 제거**: 위약금율·기간은 법적으로 임의설정 불가 → 환경설정 입력 4종 제거(토글만 유지), 계약서 `{{환불규정}}`을 공정위 고정문구로(`buildRefundClause()` 무인자). RefundPolicyValues 플러밍 전부 제거. **DB 컬럼은 보존(미사용, SQL 없음)**.
+- **#7 공정위 환불식 + 모드**: `calcCheckoutRefund` 재작성 — 환불 = 총결제액 − 사용분(월÷30×이용일수) − 위약금. **법정(공정위)=위약금 10% / 선의(일할)=0**. 퇴실 위젯([CheckoutProrationWidget](components/entity-modal/widgets/CheckoutProrationWidget.tsx))에 정산방식 토글(기본=법정). 적용 금액(퇴실월 청구)=사용분+위약금, 환불=총결제액−적용금액. 사용분은 일할 청구(floor)와 동일하게 맞춰 매출 정합.
+- **#5 환경설정 탭 재분류**: 과밀한 기본정보 → 새 '데이터·도구' 탭(알림·캘린더·데이터점검·엑셀·백업 5카드 이동) + 기본정보 폼에 '계약·서류' 소제목 그룹. (폼 저장 경로 불변 — 무위험)
+**검증**: tsc·build 통과. §4(결제·DB·기획) 해당 #6·#7은 사전 운영자 확인(2026-06-20: 컬럼 보존·1일요금 월÷30·기본 법정) 후 구현.
+
 ## 2026-06-20 (이어서) — 홈 '예상 매출' 위젯 (당월 매출 자리 교체) + 신규 예약확정 매출 반영 [SQL 0]
 고시원 특성상(유지되면 매출이 거의 안 늚) **'현재까지'보다 '예상 매출 대비 수납 달성도'가 유효** → KPI 카드 **'당월 매출' → '예상 매출 + 달성도'로 교체**.
 - 위젯([DashboardClient.tsx](app/(app)/dashboard/DashboardClient.tsx)): 큰 숫자=예상 매출(projectedRevenue), 달성도 막대(수납완료/예상 %), 캡션 "수납 X · 달성 N% · 예정 Y". 미사용된 `revChange/prev/cur` 정리.
