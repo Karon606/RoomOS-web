@@ -677,11 +677,25 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 그 달 귀속 paymentRecord 합계만 인식. paidRevenue 의 CHECKED_OUT 포함 정책과 통일.
   const checkedOutRecognized = await getCheckedOutRecognizedRevenue(prisma, propertyId, targetMonth)
 
+  // 신규 입실자(예약확정 RESERVED)의 이번 달 예상 매출 — 입주 예정월이 이 달 이내면 전액(할인 반영) 가산.
+  // (사용자 결정 2026-06-20: RESERVED 이상은 그 달 전액으로 예상 매출에 반영. 입주 후엔 ACTIVE 로 일반 청구.)
+  const reservedLeases = await prisma.leaseTerm.findMany({
+    where: { propertyId, status: 'RESERVED', rentAmount: { gt: 0 } },
+    select: {
+      id: true, rentAmount: true, moveInDate: true, expectedMoveOut: true,
+      checkoutProratedAmount: true, checkoutProratedMonth: true,
+      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+    },
+  })
+  const reservedExpected = reservedLeases
+    .filter(l => billableInTargetMonth(l))
+    .reduce((s, l) => s + billForLeaseMonth(l, targetMonth, null), 0)
+
   // 양도인 몫 제외 — 수납완료 + 미수납과 합산이 맞도록
   const totalExpected  = billableLeases
     .filter(l => !prevOwnerLeaseIds.has(l.id))
     .reduce((s, l) => s + billThisMonth(l), 0)
-    + checkedOutRecognized
+    + checkedOutRecognized + reservedExpected
 
   const categoryBreakdown = expByCategory.map(c => ({
     category: c.category,

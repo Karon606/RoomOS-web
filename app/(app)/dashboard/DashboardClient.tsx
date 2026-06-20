@@ -1870,14 +1870,6 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
     setRoomDims(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
   }
 
-  const prev = data.trend[data.trend.length - 2]
-  const cur  = data.trend[data.trend.length - 1]
-  const revChange = prev && prev.revenue > 0
-    ? Math.round((cur.revenue - prev.revenue) / prev.revenue * 100)
-    : null
-
-
-
   // 미수납 정렬: 체납 오래된 순 → 납부일 임박 순
   const sortedUnpaid = [...data.unpaidLeases].sort((a, b) => {
     const ao = a.daysOverdue ?? -999
@@ -1905,23 +1897,31 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
       {/* ── KPI 카드 (2×3 grid) ──────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3.5">
 
-        {/* Row 2 Left: 당월 매출 (당월 매출 + 예상 매출 작게 함께) */}
+        {/* Row 2 Left: 예상 매출 + 달성도 — 고시원 특성상 유지되면 매출이 거의 안 늘어 '현재까지'보다
+            '예상 매출 대비 성과(수납 달성도)'가 유효. 예상엔 퇴실예정(일할/0)·신규 예약확정(전액) 반영됨. */}
         <div className="rounded-xl" style={{ background: 'var(--coral)', padding: '18px 20px' }}>
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,252,247,0.55)', marginBottom: 8 }}>
-            당월 매출
-            <span style={{ fontSize: '0.5625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'rgba(255,252,247,0.5)' }}>(귀속 기준)</span>
+            예상 매출
+            <span style={{ fontSize: '0.5625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'rgba(255,252,247,0.5)' }}>(이번 달)</span>
           </p>
           <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
-            {data.totalRevenue.toLocaleString()}
+            {data.projectedRevenue.toLocaleString()}
             <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'rgba(255,252,247,0.5)', marginLeft: 3 }}>원</small>
           </p>
-          <p style={{ fontSize: '0.65625rem', color: 'rgba(255,252,247,0.5)', lineHeight: 1.5 }}>
-            수납액+기타수익
-            {revChange != null && (
-              /* §19-2-2: 테라코타 solid 위 텍스트는 cream/sand 계열만 — 강조는 색이 아니라 weight */
-              <em style={{ fontStyle: 'normal', color: 'var(--rev-change)', fontWeight: 700, marginLeft: 6 }}>{revChange >= 0 ? '+' : ''}{revChange}%</em>
-            )}
-          </p>
+          {(() => {
+            const pct = data.projectedRevenue > 0 ? Math.min(100, Math.round((data.totalRevenue / data.projectedRevenue) * 100)) : 0
+            return (
+              <>
+                <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.22)', overflow: 'hidden', margin: '2px 0 6px' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: '#fff', borderRadius: 3 }} />
+                </div>
+                <p style={{ fontSize: '0.65625rem', color: 'rgba(255,252,247,0.55)', lineHeight: 1.5 }}>
+                  수납 {data.totalRevenue.toLocaleString()}원 · 달성 <em style={{ fontStyle: 'normal', color: 'var(--rev-change)', fontWeight: 700 }}>{pct}%</em>
+                  {data.pendingRevenue > 0 && <span> · 예정 {fmtKorMoney(data.pendingRevenue)}</span>}
+                </p>
+              </>
+            )
+          })()}
         </div>
 
         {/* Row 2 Right: 현재 순이익 — 전문적 다크. 예비비 이체분이 있으면 운영 가용 자금 보조 표시 */}

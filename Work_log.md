@@ -3,6 +3,13 @@
 마지막 업데이트: 2026-06-20
 브랜치: main
 
+## 2026-06-20 (이어서) — 홈 '예상 매출' 위젯 (당월 매출 자리 교체) + 신규 예약확정 매출 반영 [SQL 0]
+고시원 특성상(유지되면 매출이 거의 안 늚) **'현재까지'보다 '예상 매출 대비 수납 달성도'가 유효** → KPI 카드 **'당월 매출' → '예상 매출 + 달성도'로 교체**.
+- 위젯([DashboardClient.tsx](app/(app)/dashboard/DashboardClient.tsx)): 큰 숫자=예상 매출(projectedRevenue), 달성도 막대(수납완료/예상 %), 캡션 "수납 X · 달성 N% · 예정 Y". 미사용된 `revChange/prev/cur` 정리.
+- **신규 입실자(예약확정 RESERVED 이상)를 예상 매출에 전액 반영**([page.tsx](app/(app)/dashboard/page.tsx)) — 사용자 결정: 일할 아닌 **그 달 전액**(할인 반영, `billForLeaseMonth(l, mon, null)`). 입주 예정월이 대상월 이내인 RESERVED만(`billableInTargetMonth`). RESERVED는 미입주라 수납완료엔 안 잡히고 → 자동으로 '수납 예정'으로 들어감. projectedRevenue→예상 순이익까지 일관 반영.
+- 더블카운트 없음(RESERVED는 activeLeases·paid 합산 대상 아님). 퇴실예정 방은 기존대로 일할/0.
+**검증**: tsc·build 통과.
+
 ## 2026-06-20 (이어서) — 잔여 소지품 임의처분 동의서 (계약서와 함께 출력) [⚠️ SQL 1건]
 새 별도 서류 — **계약서 PDF 뒤에 이어 출력**(enabled 시). 환경설정에서 편집, 입실자 정보·날짜·서명란 자동. (옵션 미지정분은 추천대로: 본문 textarea 편집 + 계약서와 한 PDF, 서명은 동의서 전용 별도 서명란 '___ (서명 또는 인)'.)
 - Property `disposalConsentTemplate Json?` = `{ enabled, days, title, body }`. [lib/contract](lib/contract.ts) 타입·기본값(보내준 문구 시드)·`resolveDisposalConsent`.
