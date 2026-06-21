@@ -1017,6 +1017,15 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const projectedRevenue = totalExpected + extraRevenue
   expectedExpense = totalExpense + projectedRecurringExpense
   const projectedNetProfit = projectedRevenue - expectedExpense
+  // 지출 통제가능성 3단계 (홈 월지출 위젯) — 노력으로 줄일 수 있는 정도 순:
+  //   ① 불변 고정(월임대료 등 isVariable=false) — 못 줄임
+  //   ② 변동 고정(전기·수도 등 isVariable=true) — 노력하면 줄임
+  //   ③ 세이브 가능(비고정 지출) = 예상 지출 − 고정 합 — 가장 줄이기 쉬움
+  const recMonthAmt = (r: { pendingAmount: number | null; historicalAvg: number | null; amount: number }) =>
+    r.pendingAmount ?? r.historicalAvg ?? r.amount
+  const tierImmovable = recurringWithStatus.filter(r => !(r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + recMonthAmt(r), 0)
+  const tierVariable  = recurringWithStatus.filter(r => (r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + recMonthAmt(r), 0)
+  const tierSavable   = Math.max(0, expectedExpense - tierImmovable - tierVariable)
   // 수납 예정 = 이번 달 청구 중 아직 안 들어온 매출 = 예상 매출 − 수납완료(귀속).
   // 이렇게 정의해야 손익 패널이 정합: 예상매출 = 수납완료 + 수납예정,
   // 예상순이익 = 현재순이익 + 수납예정 − 예정고정지출.
@@ -1472,6 +1481,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     projectedRevenue,
     projectedRecurringExpense,
     projectedNetProfit,
+    expenseTiers: { immovable: tierImmovable, variable: tierVariable, savable: tierSavable },
     totalExpense,
     netProfit: totalRevenue - totalExpense,
     totalDeposit,
