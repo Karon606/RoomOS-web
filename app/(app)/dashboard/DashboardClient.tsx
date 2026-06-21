@@ -2022,7 +2022,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                   <span style={{ color: 'var(--ink-2)' }}>●</span> 고정(정액) {fmtKorMoney(t.immovable)} · <span style={{ color: 'var(--warm-mid)' }}>●</span> 고정(변동) {fmtKorMoney(t.variable)} · <span style={{ color: 'var(--coral)' }}>●</span> 수시 {fmtKorMoney(t.savable)}
                 </p>
                 <p style={{ fontSize: '0.625rem', color: 'var(--warm-muted)', marginTop: 1 }}>
-                  실제 {fmtKorMoney(data.totalExpense)} · 예정 고정 {fmtKorMoney(data.projectedRecurringExpense)}
+                  현재까지 {fmtKorMoney(data.totalExpense)} + 남은 고정비 {fmtKorMoney(data.projectedRecurringExpense)}
                 </p>
                 {(lmDiff !== null || lyDiff !== null) && (
                   <p style={{ fontSize: '0.625rem', color: 'var(--warm-muted)', marginTop: 1 }}>
