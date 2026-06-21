@@ -1917,7 +1917,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                 </div>
                 <p style={{ fontSize: '0.65625rem', color: 'rgba(255,252,247,0.55)', lineHeight: 1.5 }}>
                   수납 {data.totalRevenue.toLocaleString()}원 · 달성 <em style={{ fontStyle: 'normal', color: 'var(--rev-change)', fontWeight: 700 }}>{pct}%</em>
-                  {data.pendingRevenue > 0 && <span> · 예정 {fmtKorMoney(data.pendingRevenue)}</span>}
+                  {data.extraRevenue > 0 && <span style={{ color: 'rgba(255,252,247,0.42)' }}> · 기타수익 {fmtKorMoney(data.extraRevenue)} 포함</span>}
+                </p>
+                <p style={{ fontSize: '0.625rem', color: 'rgba(255,252,247,0.5)', lineHeight: 1.45, marginTop: 1 }}>
+                  완료 {data.paidCount}건 · 예정 {data.upcomingCount}건{data.pendingRevenue > 0 ? ` ${fmtKorMoney(data.pendingRevenue)}` : ''} · 미납 {data.unpaidCount}건{data.unpaidAmount > 0 ? ` ${fmtKorMoney(data.unpaidAmount)}` : ''}
                 </p>
               </>
             )
