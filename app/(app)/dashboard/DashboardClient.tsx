@@ -37,7 +37,9 @@ export type DashboardData = {
   extraRevenue:      number
   projectedRevenue:  number     // 이번 달 입주자 모두 납부 완료 가정 (CHECKOUT_PENDING 제외)
   projectedRecurringExpense: number  // 이번 달 미발생 고정지출 합
-  expenseTiers: { immovable: number; variable: number; savable: number }  // 지출 통제가능성 3단계(불변고정/변동고정/세이브)
+  expenseTiers: { immovable: number; variable: number; savable: number }  // 지출 통제가능성 3단계(고정정액/고정변동/수시)
+  lastMonthExpense:  number     // 지난달 실제 지출 합계 (예상 지출 비교용)
+  lastYearExpense:   number     // 전년동월 실제 지출 합계 (예상 지출 비교용)
   projectedNetProfit: number    // 예상 매출 - totalExpense - 예상 고정지출
   totalExpense:      number
   netProfit:         number
@@ -1957,7 +1959,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                 <div style={{ height: '100%', width: `${expenseBooked}%`, background: 'var(--np-pos)', borderRadius: 3 }} />
               </div>
               <p style={{ fontSize: '0.65625rem', color: 'var(--np-cap)', lineHeight: 1.5 }}>
-                지출 <em style={{ fontStyle: 'normal', color: 'var(--np-pos)', fontWeight: 700 }}>{expenseBooked}%</em> 반영 · 현재 장부 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{fmtKorMoney(currentNet)}</em>
+                현재 장부 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{fmtKorMoney(currentNet)}</em> · 지출 <em style={{ fontStyle: 'normal', color: 'var(--np-pos)', fontWeight: 700 }}>{expenseBooked}%</em> 반영
               </p>
               {remainExp > 0 && (
                 <p style={{ fontSize: '0.625rem', color: 'var(--np-cap2)', marginTop: 2 }}>
@@ -1994,7 +1996,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         </Link>
 
         {/* Row 3 Right: 예상 지출 — 통제가능성 3단계 스택 막대(줄일 수 있는 정도 순).
-            색(디자인 토큰): 불변 고정=ink-2(단단·못 줄임) · 변동 고정=warm-mid(노력시 줄임) · 세이브=coral(가장 줄이기 쉬움). */}
+            색(디자인 토큰): 고정(정액)=ink-2(임대료 등·못 줄임) · 고정(변동)=warm-mid(공과금 등·노력시 줄임) · 수시=coral(비고정·가장 줄이기 쉬움). */}
         <Link href="/finance?tab=expense" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             예상 지출 <span style={{ fontSize: '0.5625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 4, color: 'var(--warm-muted)' }}>(이번 달)</span>
@@ -2006,6 +2008,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           {(() => {
             const t = data.expenseTiers
             const tot = (t.immovable + t.variable + t.savable) || 1
+            // 예상 지출이 지난달·전년동월보다 더(+)/덜(−) 쓰는지 — 덜 쓰면 좋음(success), 더 쓰면 주의(tc)
+            const lmDiff = data.lastMonthExpense > 0 ? Math.round((data.expectedExpense - data.lastMonthExpense) / data.lastMonthExpense * 100) : null
+            const lyDiff = data.lastYearExpense  > 0 ? Math.round((data.expectedExpense - data.lastYearExpense)  / data.lastYearExpense  * 100) : null
             return (
               <>
                 <div style={{ display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden', margin: '2px 0 5px', background: 'var(--warm-border)' }}>
@@ -2014,11 +2019,18 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                   {t.savable   > 0 && <div style={{ width: `${(t.savable   / tot) * 100}%`, background: 'var(--coral)' }} />}
                 </div>
                 <p style={{ fontSize: '0.625rem', color: 'var(--warm-muted)', lineHeight: 1.5 }}>
-                  <span style={{ color: 'var(--ink-2)' }}>●</span> 불변 {fmtKorMoney(t.immovable)} · <span style={{ color: 'var(--warm-mid)' }}>●</span> 변동 {fmtKorMoney(t.variable)} · <span style={{ color: 'var(--coral)' }}>●</span> 세이브 {fmtKorMoney(t.savable)}
+                  <span style={{ color: 'var(--ink-2)' }}>●</span> 고정(정액) {fmtKorMoney(t.immovable)} · <span style={{ color: 'var(--warm-mid)' }}>●</span> 고정(변동) {fmtKorMoney(t.variable)} · <span style={{ color: 'var(--coral)' }}>●</span> 수시 {fmtKorMoney(t.savable)}
                 </p>
                 <p style={{ fontSize: '0.625rem', color: 'var(--warm-muted)', marginTop: 1 }}>
                   실제 {fmtKorMoney(data.totalExpense)} · 예정 고정 {fmtKorMoney(data.projectedRecurringExpense)}
                 </p>
+                {(lmDiff !== null || lyDiff !== null) && (
+                  <p style={{ fontSize: '0.625rem', color: 'var(--warm-muted)', marginTop: 1 }}>
+                    예상 기준 {lmDiff !== null && <>지난달 <em style={{ fontStyle: 'normal', fontWeight: 700, color: lmDiff > 0 ? 'var(--tc)' : 'var(--success)' }}>{lmDiff > 0 ? '+' : ''}{lmDiff}%</em></>}
+                    {lmDiff !== null && lyDiff !== null && <span> · </span>}
+                    {lyDiff !== null && <>전년동월 <em style={{ fontStyle: 'normal', fontWeight: 700, color: lyDiff > 0 ? 'var(--tc)' : 'var(--success)' }}>{lyDiff > 0 ? '+' : ''}{lyDiff}%</em></>}
+                  </p>
+                )}
               </>
             )
           })()}

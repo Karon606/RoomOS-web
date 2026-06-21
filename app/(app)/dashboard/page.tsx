@@ -1026,6 +1026,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const tierImmovable = recurringWithStatus.filter(r => !(r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + recMonthAmt(r), 0)
   const tierVariable  = recurringWithStatus.filter(r => (r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + recMonthAmt(r), 0)
   const tierSavable   = Math.max(0, expectedExpense - tierImmovable - tierVariable)
+  // 지난달·전년동월 지출(실제 합계) — 예상 지출이 더/덜 쓰는지 비교용 (trend는 6개월뿐이라 전년동월은 별도 집계)
+  const [tcY, tcM] = targetMonth.split('-').map(Number)
+  const [lastMonthExpAgg, lastYearExpAgg] = await Promise.all([
+    prisma.expense.aggregate({ where: { propertyId, date: { gte: new Date(tcY, tcM - 2, 1), lte: new Date(tcY, tcM - 1, 0) } }, _sum: { amount: true } }),
+    prisma.expense.aggregate({ where: { propertyId, date: { gte: new Date(tcY - 1, tcM - 1, 1), lte: new Date(tcY - 1, tcM, 0) } }, _sum: { amount: true } }),
+  ])
+  const lastMonthExpense = lastMonthExpAgg._sum.amount ?? 0
+  const lastYearExpense  = lastYearExpAgg._sum.amount ?? 0
   // 수납 예정 = 이번 달 청구 중 아직 안 들어온 매출 = 예상 매출 − 수납완료(귀속).
   // 이렇게 정의해야 손익 패널이 정합: 예상매출 = 수납완료 + 수납예정,
   // 예상순이익 = 현재순이익 + 수납예정 − 예정고정지출.
@@ -1482,6 +1490,8 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     projectedRecurringExpense,
     projectedNetProfit,
     expenseTiers: { immovable: tierImmovable, variable: tierVariable, savable: tierSavable },
+    lastMonthExpense,
+    lastYearExpense,
     totalExpense,
     netProfit: totalRevenue - totalExpense,
     totalDeposit,
