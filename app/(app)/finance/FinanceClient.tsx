@@ -2237,7 +2237,11 @@ export default function FinanceClient({
                     repDetail = `[${rep.itemLabel}]${specPart}${qtyPart}`
                   }
                   if (hasOther) repDetail = `${repDetail} 외`
-                  out.push({ exp: { ...rep, amount: total, detail: repDetail }, groupRows: rows, groupKind: 'order' })
+                  // 판매처 — 같은 주문번호여도 판매처는 다를 수 있음(쿠팡 직접판매/중개판매 등).
+                  // 묶을 때 대표행 판매처로 통일하지 말고, 여러 곳이면 '외 N'으로 표기(펼치면 개별 판매처 그대로).
+                  const vendors = [...new Set(nonShip.map(r => r.vendor).filter((v): v is string => !!v))]
+                  const vendorLabel = vendors.length > 1 ? `${vendors[0]} 외 ${vendors.length - 1}` : (vendors[0] ?? rep.vendor ?? null)
+                  out.push({ exp: { ...rep, amount: total, detail: repDetail, vendor: vendorLabel }, groupRows: rows, groupKind: 'order' })
                   continue
                 }
                 if (e.allocationGroupId) {
