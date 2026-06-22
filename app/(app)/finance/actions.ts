@@ -959,11 +959,23 @@ export async function getExpenseDetailSuggestions(): Promise<string[]> {
     orderBy: { createdAt: 'desc' },
     take: FINANCE_DETAIL_SUGGESTIONS_LIMIT,
   })
+  // 별칭(통일) 반영 (#C) — 병합/통일된 옛 명칭은 제안에서 빼고 통일명으로 치환.
+  // 통일명 자체도 제안에 포함(아직 그 이름의 지출이 없어도 선택 가능).
+  let aliasMap = new Map<string, string>()
+  try {
+    const aliasRows = await prisma.itemNameAlias.findMany({ where: { propertyId }, select: { aliasKey: true, preferredLabel: true } })
+    aliasMap = new Map(aliasRows.map(a => [a.aliasKey, a.preferredLabel]))
+  } catch { /* 별칭 테이블 미적용 시 그냥 원본 제안 */ }
   const seen = new Set<string>()
   const result: string[] = []
   for (const r of rows) {
     const v = r.itemLabel?.trim()
-    if (v && !seen.has(v)) { seen.add(v); result.push(v) }
+    if (!v) continue
+    const canon = aliasMap.get(normalizeItemName(v)) ?? v   // 옛 명칭 → 통일명
+    if (!seen.has(canon)) { seen.add(canon); result.push(canon) }
+  }
+  for (const pref of aliasMap.values()) {
+    if (!seen.has(pref)) { seen.add(pref); result.push(pref) }
   }
   return result
 }
