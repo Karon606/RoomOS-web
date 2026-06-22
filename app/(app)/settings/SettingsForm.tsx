@@ -30,6 +30,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { ImageCropModal } from '@/components/ui/ImageCropModal'
 import { PushToggle } from './PushToggle'
 import { CalendarSubscribeCard } from './CalendarSubscribeCard'
+import { ItemNameMergePanel } from './ItemNameMergePanel'
 import DataButtons from '@/components/DataButtons'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { useTheme, type ThemeMode } from '@/components/theme/ThemeProvider'
@@ -869,6 +870,9 @@ export default function SettingsForm({
           </p>
           <BackupButton />
         </div>
+
+        {/* 품명 병합 (AI) — 비품·자재·소모품·부식 유사 품명 통일 */}
+        <ItemNameMergePanel />
         </>
       )}
 

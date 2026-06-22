@@ -980,6 +980,145 @@ export async function getExpenseDetailSuggestions(): Promise<string[]> {
   return result
 }
 
+// ── AI 품명 병합 (환경설정) (A) ───────────────────────────────────
+export type ItemNameCluster = { canonical: string; members: string[] }
+
+// 저장된 품목명(지출 itemLabel 전체)을 AI로 유사끼리 묶어 대표명 추천. 2개 이상 그룹만 반환.
+export async function clusterItemNamesWithAI(): Promise<{ ok: true; clusters: ItemNameCluster[] } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const rows = await prisma.expense.findMany({
+      where: { propertyId, itemLabel: { not: null }, isShipping: false },
+      select: { itemLabel: true }, distinct: ['itemLabel'],
+    })
+    const names = [...new Set(rows.map(r => (r.itemLabel ?? '').trim()).filter(Boolean))]
+    if (names.length < 2) return { ok: true, clusters: [] }
+    const apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
+    const prompt = `다음은 한 매장 지출 품목명 목록입니다. 같은 물건을 가리키는 것으로 보이는 이름끼리 그룹으로 묶고 각 그룹 대표명을 추천하세요.
+규칙:
+- 표기·띄어쓰기·줄임말·용량표기 차이로 같은 물건이면 한 그룹 (예: "코카콜라 500","코카콜라500ml","코크500" → 한 그룹)
+- 확실히 다른 물건은 묶지 말 것(애매하면 묶지 않음)
+- 2개 이상 묶이는 그룹만 출력(혼자인 이름 제외)
+- canonical(대표명)은 목록의 이름 중 하나 또는 더 표준적인 이름
+순수 JSON만 출력: {"clusters":[{"canonical":"대표명","members":["이름1","이름2"]}]}
+
+목록:
+${names.map(n => `- ${n}`).join('\n')}`
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 4000, responseMimeType: 'application/json' } }),
+    })
+    if (!res.ok) return { ok: false, error: `AI 오류 (${res.status})` }
+    const json = await res.json()
+    const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
+    let parsed: any
+    try { parsed = JSON.parse(cleaned) } catch { return { ok: false, error: 'AI 응답을 해석하지 못했습니다.' } }
+    const nameSet = new Set(names)
+    const clusters: ItemNameCluster[] = Array.isArray(parsed.clusters) ? parsed.clusters
+      .map((c: any) => ({
+        canonical: String(c?.canonical ?? '').trim(),
+        members: Array.isArray(c?.members) ? [...new Set((c.members as any[]).map(m => String(m).trim()).filter((m: string) => nameSet.has(m)))] as string[] : [],
+      }))
+      .filter((c: ItemNameCluster) => c.canonical && c.members.length >= 2)
+    : []
+    return { ok: true, clusters }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? 'AI 분류에 실패했습니다.' }
+  }
+}
+
+// 한 그룹 병합 — members(옛명) 지출·소모품 카드 라벨을 canonical 로 변경 + 별칭 생성 + 이력 저장(undo용).
+export async function mergeItemNames(canonical: string, members: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const canon = canonical.trim()
+    if (!canon) return { ok: false, error: '대표명이 비어 있습니다.' }
+    const olds = [...new Set(members.map(m => m.trim()).filter(m => m && m !== canon))]
+    if (olds.length === 0) return { ok: false, error: '병합할 이름이 없습니다.' }
+
+    // 되돌리기용 — 변경 전 지출/소모품 라벨 기록
+    const affExp = await prisma.expense.findMany({ where: { propertyId, itemLabel: { in: olds } }, select: { id: true, itemLabel: true } })
+    const trackedToRename: { id: string; oldLabel: string }[] = []
+    for (const old of olds) {
+      const t = await prisma.trackedItem.findFirst({ where: { propertyId, label: old }, select: { id: true, category: true } })
+      if (t) {
+        const conflict = await prisma.trackedItem.findUnique({ where: { propertyId_category_label: { propertyId, category: t.category, label: canon } }, select: { id: true } })
+        if (!conflict) trackedToRename.push({ id: t.id, oldLabel: old })  // 충돌 시 카드 병합은 재고관리 병합 사용
+      }
+    }
+    // 새로 만들 별칭(기존에 없던 키만 — undo 때만 삭제, 기존 별칭은 보존)
+    const newAliasKeys: string[] = []
+    for (const old of olds) {
+      const key = normalizeItemName(old)
+      const ex = await prisma.itemNameAlias.findUnique({ where: { propertyId_aliasKey: { propertyId, aliasKey: key } }, select: { id: true } })
+      if (!ex && !newAliasKeys.includes(key)) newAliasKeys.push(key)
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.expense.updateMany({ where: { propertyId, itemLabel: { in: olds } }, data: { itemLabel: canon } })
+      for (const t of trackedToRename) await tx.trackedItem.update({ where: { id: t.id }, data: { label: canon } })
+      for (const old of olds) {
+        const key = normalizeItemName(old)
+        await tx.itemNameAlias.upsert({
+          where: { propertyId_aliasKey: { propertyId, aliasKey: key } },
+          update: { preferredLabel: canon, aliasLabel: old, source: 'merge' },
+          create: { propertyId, aliasKey: key, aliasLabel: old, preferredLabel: canon, source: 'merge', hitCount: 0 },
+        })
+      }
+      await tx.itemNameMergeRun.create({
+        data: {
+          propertyId, canonical: canon, memberCount: olds.length, newAliasKeys,
+          affected: { expenses: affExp.map(e => ({ id: e.id, oldLabel: e.itemLabel })), tracked: trackedToRename },
+        },
+      })
+    })
+    revalidatePath('/finance'); revalidatePath('/inventory'); revalidatePath('/settings')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '병합에 실패했습니다.' }
+  }
+}
+
+export type ItemNameMergeRunRow = { id: string; canonical: string; memberCount: number; createdAt: Date }
+export async function getItemNameMergeRuns(): Promise<ItemNameMergeRunRow[]> {
+  const propertyId = await getPropertyId()
+  try {
+    return await prisma.itemNameMergeRun.findMany({
+      where: { propertyId, undoneAt: null },
+      orderBy: { createdAt: 'desc' }, take: 30,
+      select: { id: true, canonical: true, memberCount: true, createdAt: true },
+    })
+  } catch { return [] }
+}
+
+// 병합 1건 적용취소 — 지출·소모품 라벨을 옛명으로 원복 + 이 병합이 새로 만든 별칭만 삭제.
+export async function undoItemNameMerge(runId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const run = await prisma.itemNameMergeRun.findFirst({ where: { id: runId, propertyId, undoneAt: null } })
+    if (!run) return { ok: false, error: '되돌릴 병합을 찾을 수 없습니다.' }
+    const aff = run.affected as { expenses?: { id: string; oldLabel: string }[]; tracked?: { id: string; oldLabel: string }[] } | null
+    await prisma.$transaction(async (tx) => {
+      for (const e of aff?.expenses ?? []) { try { await tx.expense.update({ where: { id: e.id }, data: { itemLabel: e.oldLabel } }) } catch { /* 삭제된 행 무시 */ } }
+      for (const t of aff?.tracked ?? []) { try { await tx.trackedItem.update({ where: { id: t.id }, data: { label: t.oldLabel } }) } catch { /* skip */ } }
+      if (run.newAliasKeys.length) await tx.itemNameAlias.deleteMany({ where: { propertyId, aliasKey: { in: run.newAliasKeys } } })
+      await tx.itemNameMergeRun.update({ where: { id: run.id }, data: { undoneAt: new Date() } })
+    })
+    revalidatePath('/finance'); revalidatePath('/inventory'); revalidatePath('/settings')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '적용취소에 실패했습니다.' }
+  }
+}
+
 export async function settleCardExpenses(ids: string[]) {
   await requireEdit()
   await prisma.expense.updateMany({

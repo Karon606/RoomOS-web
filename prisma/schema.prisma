@@ -193,6 +193,7 @@ model Property {
   residenceCertFiles  ResidenceCertFile[]
   rentReceiptFiles    RentReceiptFile[]
   itemNameAliases     ItemNameAlias[]
+  itemNameMergeRuns   ItemNameMergeRun[]
 
   @@map("properties")
 }
@@ -213,6 +214,22 @@ model ItemNameAlias {
 
   @@unique([propertyId, aliasKey])
   @@map("item_name_aliases")
+}
+
+// 품명 병합 이력 — 환경설정 'AI 품명 병합' 1회 실행 단위. 적용취소(undo) 시 완전 원복용.
+model ItemNameMergeRun {
+  id          String   @id @default(uuid()) @db.Uuid
+  propertyId  String   @db.Uuid
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  canonical   String   // 통일된 대표명
+  affected    Json     // [{ expenseId, oldLabel }] — 라벨 변경된 지출(되돌릴 때 원복)
+  newAliasKeys String[] // 이 병합으로 새로 생성한 별칭 키(되돌릴 때만 삭제, 기존 별칭은 보존)
+  memberCount Int      @default(0)
+  undoneAt    DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([propertyId])
+  @@map("item_name_merge_runs")
 }
 
 // ============================================================
