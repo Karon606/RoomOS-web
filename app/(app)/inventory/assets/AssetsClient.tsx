@@ -4,11 +4,12 @@
 // 방별 / 공용부(위치)별 / 미배정(여분)으로 보여주고, 미배정 아이템을 방·공용부에 배정한다.
 // 수량 2개 이상이면 몇 개 배정할지 물어 분할(나머지 여분 유지). 배정해제 시 같은 묶음 재병합.
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { pushToast } from '@/lib/saveStatus'
 import { assignAggregateToTarget, setCommonAsset, setAssetReceived, type AssetsData, type AssetItem } from './actions'
+import { mergeItemNames } from '@/app/(app)/finance/actions'   // 비품 품명 병합(통일) — 환경설정 AI 병합과 동일 엔진
 
 const won = (n: number) => n.toLocaleString('ko-KR') + '원'
 const fmtRoomNo = (no: string) => (/^\d+$/.test(no) ? `${no}호` : no)
@@ -30,6 +31,33 @@ export default function AssetsClient({ data, rooms, locations }: {
   const toggleExpand = (id: string) => setExpanded(prev => {
     const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
   })
+
+  // 품명 병합 모드 — 실제 같은 품목인데 이름이 달라 따로 잡힌 것들을 선택해 한 이름으로 통일.
+  const [mergeMode, setMergeMode] = useState(false)
+  const [mergeSel, setMergeSel]   = useState<Set<string>>(new Set())   // 선택된 AssetItem id
+  const [mergeCanon, setMergeCanon] = useState('')
+  const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setMergeCanon('') }
+  const toggleMergeSel = (id: string) => setMergeSel(prev => {
+    const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
+  })
+  const allItems = useMemo(() => [
+    ...data.pending, ...data.unassigned, ...data.common,
+    ...data.rooms.flatMap(r => r.items), ...data.locations.flatMap(l => l.items),
+  ], [data])
+  const mergeLabels = useMemo(
+    () => [...new Set(allItems.filter(it => mergeSel.has(it.id)).map(it => it.itemLabel).filter(Boolean))],
+    [allItems, mergeSel],
+  )
+  const doMerge = () => {
+    if (mergeLabels.length < 2) { pushToast('error', '서로 다른 이름의 품목을 2개 이상 선택하세요.'); return }
+    const canon = mergeCanon.trim() || mergeLabels[0]
+    startTransition(async () => {
+      const res = await mergeItemNames(canon, mergeLabels)
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', `'${canon}'(으)로 통일됨 · ${mergeLabels.length}개 이름`)
+      exitMerge(); router.refresh()
+    })
+  }
 
   // 배정 해제(미배정으로) — 묶음(ids) 전체
   const unassign = (it: AssetItem) => {
@@ -107,23 +135,29 @@ export default function AssetsClient({ data, rooms, locations }: {
     it.roomId ? `room:${it.roomId}` : it.locationId ? `loc:${it.locationId}` : ''
 
   const ItemRow = ({ it, placed, awaitingReceipt }: { it: AssetItem; placed: boolean; awaitingReceipt?: boolean }) => (
-    <li className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3.5 py-2.5">
+    <li
+      className={`bg-[var(--cream)] border rounded-xl px-3.5 py-2.5 transition-colors ${mergeMode ? (mergeSel.has(it.id) ? 'cursor-pointer border-[var(--coral)] ring-2 ring-[var(--coral)]/30' : 'cursor-pointer border-[var(--warm-border)] hover:border-[var(--coral)]/50') : 'border-[var(--warm-border)]'}`}
+      onClick={mergeMode ? () => toggleMergeSel(it.id) : undefined}>
       <div className="flex items-baseline justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-sm text-[var(--warm-dark)] truncate">{it.detail || it.itemLabel}</p>
           <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">
             {it.date.slice(2)} · {it.category}{it.vendor ? ` · ${it.vendor}` : ''}
           </p>
-          {it.count > 1 && (
+          {!mergeMode && it.count > 1 && (
             <button type="button" onClick={() => toggleExpand(it.id)}
               className="mt-0.5 text-[0.625rem] text-[var(--coral)] hover:underline">
               구매 {it.count}건 합산 {expanded.has(it.id) ? '▾ 접기' : '▸ 펼치기'}
             </button>
           )}
         </div>
-        <span className="shrink-0 text-sm font-semibold text-[var(--danger-fg)] tabular-nums">{won(it.amount)}</span>
+        {mergeMode ? (
+          <span className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-[0.6875rem] ${mergeSel.has(it.id) ? 'bg-[var(--coral)] border-[var(--coral)] text-white' : 'border-[var(--warm-border)] text-transparent'}`}>✓</span>
+        ) : (
+          <span className="shrink-0 text-sm font-semibold text-[var(--danger-fg)] tabular-nums">{won(it.amount)}</span>
+        )}
       </div>
-      {it.count > 1 && expanded.has(it.id) && (
+      {!mergeMode && it.count > 1 && expanded.has(it.id) && (
         <ul className="mt-1.5 pl-2.5 border-l-2 border-[var(--warm-border)] space-y-0.5">
           {it.breakdown.map((b, i) => (
             <li key={i} className="flex items-baseline justify-between gap-2 text-[0.6875rem] text-[var(--warm-muted)]">
@@ -133,6 +167,7 @@ export default function AssetsClient({ data, rooms, locations }: {
           ))}
         </ul>
       )}
+      {!mergeMode && (
       <div className="mt-1.5 flex items-center justify-end gap-1.5 flex-wrap">
         {awaitingReceipt ? (
           <button type="button" onClick={() => markReceived(it, true)} disabled={pending}
@@ -192,6 +227,7 @@ export default function AssetsClient({ data, rooms, locations }: {
           </>
         )}
       </div>
+      )}
     </li>
   )
 
@@ -205,11 +241,20 @@ export default function AssetsClient({ data, rooms, locations }: {
           className="px-4 py-2 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">소모품·부식</button>
         <button type="button" className="px-4 py-2 bg-[var(--coral)] text-white">비품·자재</button>
       </div>
-      <div>
-        <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재</h1>
-        <p className="text-xs text-[var(--warm-muted)] mt-0.5">
-          품목으로 산 내구재(의자·거치대·수선유지 자재 등)를 방·공용부별로 모아 봅니다. 여분(미배정)은 방이나 공용부(주방·화장실·복도 등)에 배정할 수 있습니다. <span className="text-[var(--warm-mid)]">공용부는 ‘위치 관리’에서 추가합니다.</span>
-        </p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재</h1>
+          <p className="text-xs text-[var(--warm-muted)] mt-0.5">
+            품목으로 산 내구재(의자·거치대·수선유지 자재 등)를 방·공용부별로 모아 봅니다. 여분(미배정)은 방이나 공용부(주방·화장실·복도 등)에 배정할 수 있습니다. <span className="text-[var(--warm-mid)]">공용부는 ‘위치 관리’에서 추가합니다.</span>
+            {mergeMode && <span className="text-[var(--coral)]"> · 같은 품목끼리 눌러 선택 → 한 이름으로 통일하세요.</span>}
+          </p>
+        </div>
+        {!isEmpty && (
+          <button type="button" onClick={() => mergeMode ? exitMerge() : setMergeMode(true)}
+            className={`shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-colors ${mergeMode ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>
+            {mergeMode ? '병합 취소' : '품명 병합'}
+          </button>
+        )}
       </div>
 
       {isEmpty ? (
@@ -281,6 +326,35 @@ export default function AssetsClient({ data, rooms, locations }: {
             </section>
           ))}
         </>
+      )}
+
+      {/* 병합 바 — 선택한 품목들을 한 이름으로 통일 (mergeItemNames). 적용취소는 환경설정 '품명 병합'에서 */}
+      {mergeMode && (
+        <div className="sticky bottom-3 z-10 bg-[var(--cream)] border border-[var(--coral)]/40 rounded-xl p-3 space-y-2"
+          style={{ boxShadow: '0 6px 24px -6px rgba(61,36,24,.28)' }}>
+          <p className="text-[0.6875rem] text-[var(--warm-mid)]">
+            서로 다른 이름의 같은 품목을 골라 한 이름으로 통일합니다. <span className="text-[var(--warm-dark)] font-medium">{mergeLabels.length}개 이름</span> 선택됨.
+          </p>
+          {mergeLabels.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {mergeLabels.map(l => (
+                <button key={l} type="button" onClick={() => setMergeCanon(l)}
+                  className={`text-[0.6875rem] px-2 py-1 rounded-md border transition-colors ${(mergeCanon.trim() || mergeLabels[0]) === l ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-1.5">
+            <input value={mergeCanon} onChange={e => setMergeCanon(e.target.value)} placeholder={mergeLabels[0] ?? '통일할 이름'}
+              className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+            <button type="button" onClick={doMerge} disabled={pending || mergeLabels.length < 2}
+              className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
+              {pending ? '통일 중…' : `${mergeLabels.length}개 통일`}
+            </button>
+            <button type="button" onClick={exitMerge} className="shrink-0 text-xs px-2 py-1.5 text-[var(--warm-muted)]">취소</button>
+          </div>
+        </div>
       )}
     </div>
   )
