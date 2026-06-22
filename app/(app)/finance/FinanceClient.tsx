@@ -145,6 +145,7 @@ const ITEM_DEFAULTS: Record<string, { specUnit: string; qtyUnit: string }> = {
 
 export type ItemPickState = {
   label: string
+  ocrRaw?: string   // OCR 인식 원문 — 사용자가 이름을 바꿔 저장하면 별칭 학습(다음 영수증 자동 치환)
   specValue: string; specUnit: string
   qtyValue: string; qtyUnit: string
   amount?: number   // 이 품목에 할당된 총 금액
@@ -1426,7 +1427,7 @@ export default function FinanceClient({
         if (d.items.length > 0) {
           // 인식된 품목은 항상 '품목 선택'(ItemSelector)으로 — 등록 폼은 모든 카테고리에서 품목 모듈을 쓰므로.
           // (이전엔 ITEM_PRESETS 있는 카테고리만 품목으로, 나머진 세부 항목 텍스트로 빠지던 문제)
-          setAddItems(d.items.map(it => ({ label: it.label, specValue: it.specValue ?? '', specUnit: it.specUnit ?? '', qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '', amount: it.amount, unitPrice: it.amount != null ? Math.round(it.amount / (Number(it.qtyValue) || 1)) : undefined })))
+          setAddItems(d.items.map(it => ({ label: it.label, ocrRaw: it.rawLabel ?? it.label, specValue: it.specValue ?? '', specUnit: it.specUnit ?? '', qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '', amount: it.amount, unitPrice: it.amount != null ? Math.round(it.amount / (Number(it.qtyValue) || 1)) : undefined })))
           setAddExpAmount(d.items.reduce((s, it) => s + it.amount, 0))
         } else {
           setAddItems([])

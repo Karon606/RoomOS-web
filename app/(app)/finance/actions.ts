@@ -155,6 +155,7 @@ export async function getLastItemUnits(
 
 type ItemPick = {
   label: string
+  ocrRaw?: string   // OCR 인식 원문 — 최종 label 과 다르면 별칭 학습(다음 영수증 자동 치환)
   specValue?: string; specUnit?: string
   qtyValue?: string;  qtyUnit?: string
   amount?: number
@@ -215,9 +216,17 @@ async function genOrderCode(propertyId: string): Promise<string> {
   return `${prefix}-${String(used + 1).padStart(3, '0')}`
 }
 
+// ── 품명 정규화 (별칭 매칭 키) ─────────────────────────────────────
+// 영수증 OCR 학습·자동완성·병합이 공유하는 키. 공백 정리 + 소문자 → 사소한 변형 흡수.
+// ('use server' 파일이라 export 불가 — 공유 필요 시 별도 util로 분리 예정)
+function normalizeItemName(s: string): string {
+  return s.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
 // ── 영수증 OCR (Gemini Vision) ────────────────────────────────────
 export type ReceiptOcrItem = {
   label: string
+  rawLabel?: string   // 별칭 적용 전 원문(사용자 수정 학습 캡처용)
   specValue?: string; specUnit?: string
   qtyValue?: string;  qtyUnit?: string
   amount: number
@@ -234,7 +243,7 @@ export type ReceiptOcrResult = {
 export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: string): Promise<{ ok: true; data: ReceiptOcrResult } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    await getPropertyId()
+    const ocrPropertyId = await getPropertyId()
     if (!imageBase64) return { ok: false, error: '이미지 데이터가 비어있습니다.' }
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
@@ -311,6 +320,17 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
       }))
     : []
 
+    // 학습된 별칭 적용 — 정규화 원문이 별칭에 있으면 선호명으로 치환(원문은 rawLabel 로 보존해 저장 시 재학습 판단).
+    let aliasMap = new Map<string, string>()
+    try {
+      const aliasRows = await prisma.itemNameAlias.findMany({ where: { propertyId: ocrPropertyId }, select: { aliasKey: true, preferredLabel: true } })
+      aliasMap = new Map(aliasRows.map(a => [a.aliasKey, a.preferredLabel]))
+    } catch { /* 별칭 테이블 미적용(SQL 전)이어도 OCR 자체는 정상 동작 */ }
+    const aliasedItems: ReceiptOcrItem[] = items.map(it => {
+      const pref = aliasMap.get(normalizeItemName(it.label))
+      return { ...it, rawLabel: it.label, label: pref ?? it.label }
+    })
+
     return {
       ok: true,
       data: {
@@ -319,12 +339,29 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
         totalAmount: typeof parsed.totalAmount === 'number' ? parsed.totalAmount : undefined,
         category:    typeof parsed.category === 'string' ? parsed.category : undefined,
         orderNo:     typeof parsed.orderNo === 'string' && parsed.orderNo.trim() ? parsed.orderNo.trim() : undefined,
-        items,
+        items: aliasedItems,
       },
     }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 저장 시 품명 학습 — itemsJson 품목 중 OCR 원문(ocrRaw)과 사용자 최종 입력 label 이 다르면 별칭 upsert.
+// → 다음 영수증에서 같은 원문이 인식되면 자동으로 선호명으로 치환됨. (best-effort — 실패해도 저장 유지)
+async function captureItemNameAliases(propertyId: string, items: ItemPick[]): Promise<void> {
+  for (const it of items) {
+    const raw = (it.ocrRaw ?? '').trim()
+    const label = (it.label ?? '').trim()
+    if (!raw || !label) continue
+    const key = normalizeItemName(raw)
+    if (key === normalizeItemName(label)) continue   // 안 고쳤거나 같은 이름 — 학습 불필요
+    await prisma.itemNameAlias.upsert({
+      where: { propertyId_aliasKey: { propertyId, aliasKey: key } },
+      update: { preferredLabel: label, aliasLabel: raw, hitCount: { increment: 1 } },
+      create: { propertyId, aliasKey: key, aliasLabel: raw, preferredLabel: label, source: 'ocr', hitCount: 1 },
+    })
   }
 }
 
@@ -349,6 +386,11 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const specValueRaw = formData.get('specValue') as string
     const qtyValueRaw  = formData.get('qtyValue') as string
     const itemsJsonRaw = formData.get('itemsJson') as string
+    // 품명 학습용 — itemsJson 품목 전체(단일/다품목 무관). 저장 후 ocrRaw≠label 인 것만 별칭 upsert.
+    const ocrCaptureItems: ItemPick[] = (() => {
+      if (!itemsJsonRaw) return []
+      try { const p = JSON.parse(itemsJsonRaw); return Array.isArray(p) ? p : [] } catch { return [] }
+    })()
     const excludeFromInventory = formData.get('excludeFromInventory') === '1'  // 서비스·무형 = 재고/비품 제외
     // 합배송(주문 묶음 + 배송비 별도 지출) 필드
     const orderShipping     = parseAmount(formData.get('orderShipping'))
@@ -471,6 +513,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
         data: { ...baseRow, amount: shippingIncluded, detail: '배송비', isShipping: true, excludeFromInventory: true },
       }))
       await prisma.$transaction(ops)
+      await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
       revalidatePath('/finance')
       return { ok: true }
     }
@@ -490,6 +533,7 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const ops = [singleCreate]
     if (shippingCreate) ops.push(shippingCreate)
     await prisma.$transaction(ops)
+    await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
     revalidatePath('/finance')
     return { ok: true }
   } catch (err) {

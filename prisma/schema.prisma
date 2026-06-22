@@ -192,8 +192,27 @@ model Property {
   contractFiles       ContractFile[]
   residenceCertFiles  ResidenceCertFile[]
   rentReceiptFiles    RentReceiptFile[]
+  itemNameAliases     ItemNameAlias[]
 
   @@map("properties")
+}
+
+// 품명 별칭/통일 — 영수증 OCR 학습·자동완성·환경설정 품명 병합이 공유.
+// aliasKey(정규화된 원문) → preferredLabel(통일명). 같은 영업장 내 유일.
+model ItemNameAlias {
+  id             String   @id @default(uuid()) @db.Uuid
+  propertyId     String   @db.Uuid
+  property       Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  aliasKey       String   // 정규화된 원문(소문자·공백정리) — 매칭 키
+  aliasLabel     String   // 원문 표시값(그대로)
+  preferredLabel String   // 통일된 선호명
+  source         String   @default("ocr")  // ocr | merge | manual
+  hitCount       Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([propertyId, aliasKey])
+  @@map("item_name_aliases")
 }
 
 // ============================================================
