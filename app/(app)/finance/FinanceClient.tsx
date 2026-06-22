@@ -228,6 +228,39 @@ function UnitCombobox({ value, onChange, options, placeholder }: {
   )
 }
 
+// 품명 유사도 (B) — 신규 입력 시 비슷한 기존 품명이 있으면 확인받기. 문자열 기반(공백 제거·소문자).
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length
+  if (m === 0) return n
+  if (n === 0) return m
+  const dp = Array.from({ length: m + 1 }, (_, i) => i)
+  for (let j = 1; j <= n; j++) {
+    let prev = dp[0]; dp[0] = j
+    for (let i = 1; i <= m; i++) {
+      const tmp = dp[i]
+      dp[i] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[i], dp[i - 1])
+      prev = tmp
+    }
+  }
+  return dp[m]
+}
+function findSimilarItemName(input: string, candidates: string[]): string | null {
+  const norm = (s: string) => s.trim().replace(/\s+/g, '').toLowerCase()
+  const a = norm(input)
+  if (a.length < 2) return null
+  let best: { name: string; score: number } | null = null
+  for (const c of candidates) {
+    const b = norm(c)
+    if (!b) continue
+    if (b === a) return null   // 정규화상 동일 → 이미 같은 이름, 확인 불필요
+    const score = (a.includes(b) || b.includes(a))
+      ? 0.85 + 0.15 * (Math.min(a.length, b.length) / Math.max(a.length, b.length))
+      : 1 - levenshtein(a, b) / Math.max(a.length, b.length)
+    if (score >= 0.6 && score < 1 && (!best || score > best.score)) best = { name: c, score }
+  }
+  return best?.name ?? null
+}
+
 function ItemSelector({ category, value, onChange, allowMulti = true, rooms = [], detailSuggestions = [] }: {
   category: string
   value: ItemPickState[]
@@ -278,7 +311,19 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     } finally { setFetching(false) }
   }
 
-  function confirmAdd(label: string) {
+  async function confirmAdd(label: string) {
+    // 유사한 기존 품명이 있으면 같은 품목인지 확인 (다른 제품일 수 있어 승인받기) (#B)
+    let finalLabel = label
+    const similar = findSimilarItemName(label, detailSuggestions)
+    if (similar) {
+      const useExisting = await confirmDialog({
+        title: '비슷한 품목이 있어요',
+        message: `이미 '${similar}'(으)로 쓰신 적이 있어요. 같은 품목인가요?\n(다른 제품이면 '새 품목으로' — 입력한 '${label}' 그대로 등록)`,
+        confirmLabel: `'${similar}'로`,
+        cancelLabel: '새 품목으로',
+      })
+      if (useExisting) finalLabel = similar
+    }
     const amount = amountStr ? Number(amountStr.replace(/[^0-9]/g, '')) : undefined
     // 수량 미입력 → 자동 1개 (화면·detail·DB 표기 일관: "x 1개"). 단위도 비었으면 '개'.
     const noQty = qtyValue.trim() === ''
@@ -286,7 +331,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     const resolvedUnit = noQty && qtyUnit.trim() === '' ? '개' : qtyUnit
     const q = Number(resolvedQty) || 1
     const unitPrice = amount != null && q > 0 ? Math.round(amount / q) : undefined
-    const data: ItemPickState = { label, specValue, specUnit, qtyValue: resolvedQty, qtyUnit: resolvedUnit, amount, unitPrice }
+    const data: ItemPickState = { label: finalLabel, specValue, specUnit, qtyValue: resolvedQty, qtyUnit: resolvedUnit, amount, unitPrice }
     onChange([...items, data])
     setActiveLabel(null)
     setSpecValue(''); setQtyValue(''); setAmountStr(''); setCustomLabel('')
