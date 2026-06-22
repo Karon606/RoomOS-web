@@ -7,6 +7,7 @@
 import { useState, useTransition, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { assignAggregateToTarget, setCommonAsset, setAssetReceived, type AssetsData, type AssetItem } from './actions'
 import { mergeItemNames } from '@/app/(app)/finance/actions'   // 비품 품명 병합(통일) — 환경설정 AI 병합과 동일 엔진
@@ -250,10 +251,9 @@ export default function AssetsClient({ data, rooms, locations }: {
           </p>
         </div>
         {!isEmpty && (
-          <button type="button" onClick={() => mergeMode ? exitMerge() : setMergeMode(true)}
-            className={`shrink-0 text-xs px-3 py-1.5 rounded-lg border transition-colors ${mergeMode ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>
-            {mergeMode ? '병합 취소' : '품명 병합'}
-          </button>
+          <Btn variant="secondary" size="sm" onClick={() => mergeMode ? exitMerge() : setMergeMode(true)}>
+            {mergeMode ? `병합 취소${mergeLabels.length > 0 ? ` (${mergeLabels.length})` : ''}` : '품명 병합'}
+          </Btn>
         )}
       </div>
 
@@ -328,31 +328,20 @@ export default function AssetsClient({ data, rooms, locations }: {
         </>
       )}
 
-      {/* 병합 바 — 선택한 품목들을 한 이름으로 통일 (mergeItemNames). 적용취소는 환경설정 '품명 병합'에서 */}
-      {mergeMode && (
-        <div className="sticky bottom-3 z-10 bg-[var(--cream)] border border-[var(--coral)]/40 rounded-xl p-3 space-y-2"
-          style={{ boxShadow: '0 6px 24px -6px rgba(61,36,24,.28)' }}>
-          <p className="text-[0.6875rem] text-[var(--warm-mid)]">
-            서로 다른 이름의 같은 품목을 골라 한 이름으로 통일합니다. <span className="text-[var(--warm-dark)] font-medium">{mergeLabels.length}개 이름</span> 선택됨.
-          </p>
-          {mergeLabels.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {mergeLabels.map(l => (
-                <button key={l} type="button" onClick={() => setMergeCanon(l)}
-                  className={`text-[0.6875rem] px-2 py-1 rounded-md border transition-colors ${(mergeCanon.trim() || mergeLabels[0]) === l ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>
-                  {l}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="flex items-center gap-1.5">
+      {/* 병합 바 — 소모품·지출 선택 바와 동일한 다크 플로팅 알약. 선택한 품목을 한 이름으로 통일(mergeItemNames).
+          적용취소는 환경설정 '품명 병합'의 최근 병합에서. */}
+      {mergeMode && mergeLabels.length > 0 && (
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
+          <div className="flex items-center gap-2 bg-[var(--ink)] text-[var(--canvas)] rounded-xl px-4 py-3 shadow-lift pointer-events-auto mx-4 max-w-[calc(100vw-24px)]">
+            <span className="text-sm font-medium whitespace-nowrap">{mergeLabels.length}개 선택</span>
             <input value={mergeCanon} onChange={e => setMergeCanon(e.target.value)} placeholder={mergeLabels[0] ?? '통일할 이름'}
-              className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+              className="w-28 sm:w-36 bg-white/15 text-[var(--canvas)] placeholder-white/50 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:bg-white/20" />
             <button type="button" onClick={doMerge} disabled={pending || mergeLabels.length < 2}
-              className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
-              {pending ? '통일 중…' : `${mergeLabels.length}개 통일`}
+              className="text-sm font-semibold px-3.5 py-1.5 rounded-xl bg-[var(--coral)] text-white disabled:opacity-50 whitespace-nowrap">
+              {pending ? '통일 중…' : '이름 통일'}
             </button>
-            <button type="button" onClick={exitMerge} className="shrink-0 text-xs px-2 py-1.5 text-[var(--warm-muted)]">취소</button>
+            <button type="button" onClick={exitMerge}
+              className="text-sm px-3 py-1.5 rounded-xl bg-white/15 text-[var(--canvas)] hover:bg-white/25 transition-colors">취소</button>
           </div>
         </div>
       )}
