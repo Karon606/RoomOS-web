@@ -1423,13 +1423,14 @@ export default function FinanceClient({
         if (d.vendor) setAddExpVendor(d.vendor)
         if (d.orderNo) setAddExtOrderNo(d.orderNo)
         if (d.category && EXPENSE_CATEGORIES.includes(d.category)) setAddExpCategory(d.category)
-        if (d.items.length > 0 && ITEM_PRESETS[d.category ?? '']) {
+        if (d.items.length > 0) {
+          // 인식된 품목은 항상 '품목 선택'(ItemSelector)으로 — 등록 폼은 모든 카테고리에서 품목 모듈을 쓰므로.
+          // (이전엔 ITEM_PRESETS 있는 카테고리만 품목으로, 나머진 세부 항목 텍스트로 빠지던 문제)
           setAddItems(d.items.map(it => ({ label: it.label, specValue: it.specValue ?? '', specUnit: it.specUnit ?? '', qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '', amount: it.amount, unitPrice: it.amount != null ? Math.round(it.amount / (Number(it.qtyValue) || 1)) : undefined })))
           setAddExpAmount(d.items.reduce((s, it) => s + it.amount, 0))
         } else {
           setAddItems([])
           if (d.totalAmount) setAddExpAmount(d.totalAmount)
-          if (d.items.length > 0) setAddExpDetail(d.items.map(it => `[${it.label}] ${it.amount.toLocaleString()}원`).join(', '))
         }
       }
       await uploadCropped(cropped)
