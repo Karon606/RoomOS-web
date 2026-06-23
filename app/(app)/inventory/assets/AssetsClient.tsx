@@ -14,6 +14,7 @@ import { assignAggregateToTarget, setCommonAsset, setAssetReceived, combineAsset
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
+import { InventoryCard } from '@/components/ui/inventory/InventoryCard'
 
 // 비품 위치 섹션 마커 — §21.2 위치 아이콘(핀) 14px
 const PinMarker = () => (
@@ -201,119 +202,110 @@ export default function AssetsClient({ data, rooms, locations }: {
     it.roomId ? `room:${it.roomId}` : it.locationId ? `loc:${it.locationId}` : ''
 
   const ItemRow = ({ it, placed, awaitingReceipt, siblings = [] }: { it: AssetItem; placed: boolean; awaitingReceipt?: boolean; siblings?: AssetItem[] }) => (
-    <li
-      className={`bg-[var(--cream)] border rounded-xl px-3.5 py-2.5 transition-colors ${mergeMode ? (mergeSel.has(it.id) ? 'cursor-pointer border-[var(--coral)] ring-2 ring-[var(--coral)]/30' : 'cursor-pointer border-[var(--warm-border)] hover:border-[var(--coral)]/50') : 'border-[var(--warm-border)]'}`}
-      onClick={mergeMode ? () => toggleMergeSel(it.id) : undefined}>
-      <div className="flex items-baseline justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm text-[var(--warm-dark)] truncate">{it.detail || it.itemLabel}</p>
-          <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">
-            {it.date.slice(2)} · {it.category}{it.vendor ? ` · ${it.vendor}` : ''}
-          </p>
-          {!mergeMode && it.count > 1 && (
-            <button type="button" onClick={() => toggleExpand(it.id)}
-              className="mt-0.5 text-[0.625rem] text-[var(--coral)] hover:underline">
-              구매 {it.count}건 합산 {expanded.has(it.id) ? '▾ 접기' : '▸ 펼치기'}
-            </button>
-          )}
-        </div>
-        {mergeMode ? (
-          <span className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-[0.6875rem] ${mergeSel.has(it.id) ? 'bg-[var(--coral)] border-[var(--coral)] text-white' : 'border-[var(--warm-border)] text-transparent'}`}>✓</span>
-        ) : (
-          <span className="shrink-0 text-sm font-semibold text-[var(--danger-fg)] tabular-nums">{won(it.amount)}</span>
-        )}
-      </div>
-      {!mergeMode && it.count > 1 && expanded.has(it.id) && (
-        <ul className="mt-1.5 pl-2.5 border-l-2 border-[var(--warm-border)] space-y-0.5">
-          {it.breakdown.map((b, i) => (
-            <li key={i} className="flex items-baseline justify-between gap-2 text-[0.6875rem] text-[var(--warm-muted)]">
-              <span className="tabular-nums">{b.date.slice(2)}{b.qty != null ? ` · ${fmtQty(b.qty)}${it.qtyUnit ?? '개'}` : ''}</span>
-              <span className="tabular-nums">{won(b.amount)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {!mergeMode && (
-      <div className="mt-1.5 flex items-center justify-end gap-1.5 flex-wrap">
-        {awaitingReceipt ? (
-          <button type="button" onClick={() => markReceived(it, true)} disabled={pending}
-            className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
-            수령 완료
-          </button>
-        ) : qtyAsk?.it.id === it.id ? (
+    <li className="list-none">
+      <InventoryCard
+        selectable={mergeMode}
+        selected={mergeSel.has(it.id)}
+        onToggleSelect={() => toggleMergeSel(it.id)}
+        title={it.detail || it.itemLabel}
+        meta={`${it.date.slice(2)} · ${it.category}${it.vendor ? ` · ${it.vendor}` : ''}`}
+        value={won(it.amount)}
+        expanded={!mergeMode && it.count > 1 && expanded.has(it.id)}
+        expand={
+          <ul className="space-y-0.5 border-l-2 border-[var(--warm-border)] pl-2.5">
+            {it.breakdown.map((b, i) => (
+              <li key={i} className="flex items-baseline justify-between gap-2 text-[0.6875rem] text-[var(--warm-muted)]">
+                <span className="tabular-nums">{b.date.slice(2)}{b.qty != null ? ` · ${fmtQty(b.qty)}${it.qtyUnit ?? '개'}` : ''}</span>
+                <span className="tabular-nums">{won(b.amount)}</span>
+              </li>
+            ))}
+          </ul>
+        }
+        actions={mergeMode ? undefined : (
           <>
-            <span className="text-[0.6875rem] text-[var(--warm-muted)]">
-              {qtyAsk.label}에 (전체 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'} 중)
-            </span>
-            <input autoFocus type="number" min={1} max={it.qtyValue ?? undefined} step="any"
-              value={qtyVal} disabled={pending}
-              onChange={e => setQtyVal(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') confirmPartial() }}
-              className="w-16 text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums" />
-            <span className="text-[0.6875rem] text-[var(--warm-muted)]">{it.qtyUnit ?? '개'}</span>
-            <button type="button" onClick={confirmPartial} disabled={pending}
-              className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">배정</button>
-            <button type="button" onClick={() => setQtyAsk(null)} disabled={pending} className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
-          </>
-        ) : picking === it.id ? (
-          <>
-            <select autoFocus disabled={pending} defaultValue={currentValue(it)}
-              onChange={e => onPickTarget(it, e.target.value)}
-              className="text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-[var(--warm-dark)] outline-none max-w-[60vw]">
-              <option value="">미배정(여분)</option>
-              <optgroup label="방">
-                {rooms.map(r => <option key={r.id} value={`room:${r.id}`}>{fmtRoomNo(r.roomNo)}</option>)}
-              </optgroup>
-              {locations.length > 0 && (
-                <optgroup label="공용부">
-                  {locations.map(l => <option key={l.id} value={`loc:${l.id}`}>{l.name}</option>)}
-                </optgroup>
-              )}
-            </select>
-            <button type="button" onClick={() => setPicking(null)} className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
-          </>
-        ) : combining === it.id ? (
-          <>
-            <select autoFocus disabled={pending} value={combineDest}
-              onChange={e => setCombineDest(e.target.value)}
-              className="text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-[var(--warm-dark)] outline-none max-w-[60vw]">
-              <option value="">합칠 대상(남길 품목)…</option>
-              {siblings.map(s => <option key={s.id} value={s.id}>{s.detail || s.itemLabel}</option>)}
-            </select>
-            <button type="button" disabled={pending || !combineDest}
-              onClick={() => { const dest = siblings.find(s => s.id === combineDest); if (dest) askCombine(it, dest) }}
-              className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">합치기</button>
-            <button type="button" onClick={() => { setCombining(null); setCombineDest('') }} className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
-          </>
-        ) : (
-          <>
-            {/* 수령대기로 되돌리기 (적용취소) */}
-            <button type="button" onClick={() => markReceived(it, false)} disabled={pending}
-              className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
-              수령대기로
-            </button>
-            {/* 공용 자재 토글 — 미배정/공용 자재에서만 (방·공용부 배정된 건 제외) */}
-            {!placed && (
-              <button type="button" onClick={() => markCommon(it, !it.isCommon)} disabled={pending}
-                className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
-                {it.isCommon ? '공용 해제' : '공용 자재로'}
+            {it.count > 1 && (
+              <button type="button" onClick={() => toggleExpand(it.id)}
+                className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                구매 {it.count}건 {expanded.has(it.id) ? '접기' : '합산'}
               </button>
             )}
-            <button type="button" onClick={() => setPicking(it.id)} disabled={pending}
-              className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
-              {placed ? '배정 변경' : '배정'}
-            </button>
-            {/* 같은 구역·분류의 다른 카드로 합치기 (소모품 '다른 카드와 병합'과 동일) */}
-            {siblings.length > 0 && (
-              <button type="button" onClick={() => { setCombining(it.id); setCombineDest('') }} disabled={pending}
-                className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
-                합치기
+            {awaitingReceipt ? (
+              <button type="button" onClick={() => markReceived(it, true)} disabled={pending}
+                className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
+                수령 완료
               </button>
+            ) : qtyAsk?.it.id === it.id ? (
+              <>
+                <span className="text-[0.6875rem] text-[var(--warm-muted)]">
+                  {qtyAsk.label}에 (전체 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'} 중)
+                </span>
+                <input autoFocus type="number" min={1} max={it.qtyValue ?? undefined} step="any"
+                  value={qtyVal} disabled={pending}
+                  onChange={e => setQtyVal(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') confirmPartial() }}
+                  className="w-16 text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums" />
+                <span className="text-[0.6875rem] text-[var(--warm-muted)]">{it.qtyUnit ?? '개'}</span>
+                <button type="button" onClick={confirmPartial} disabled={pending}
+                  className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">배정</button>
+                <button type="button" onClick={() => setQtyAsk(null)} disabled={pending} className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
+              </>
+            ) : picking === it.id ? (
+              <>
+                <select autoFocus disabled={pending} defaultValue={currentValue(it)}
+                  onChange={e => onPickTarget(it, e.target.value)}
+                  className="text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-[var(--warm-dark)] outline-none max-w-[60vw]">
+                  <option value="">미배정(여분)</option>
+                  <optgroup label="방">
+                    {rooms.map(r => <option key={r.id} value={`room:${r.id}`}>{fmtRoomNo(r.roomNo)}</option>)}
+                  </optgroup>
+                  {locations.length > 0 && (
+                    <optgroup label="공용부">
+                      {locations.map(l => <option key={l.id} value={`loc:${l.id}`}>{l.name}</option>)}
+                    </optgroup>
+                  )}
+                </select>
+                <button type="button" onClick={() => setPicking(null)} className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
+              </>
+            ) : combining === it.id ? (
+              <>
+                <select autoFocus disabled={pending} value={combineDest}
+                  onChange={e => setCombineDest(e.target.value)}
+                  className="text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-[var(--warm-dark)] outline-none max-w-[60vw]">
+                  <option value="">합칠 대상(남길 품목)…</option>
+                  {siblings.map(s => <option key={s.id} value={s.id}>{s.detail || s.itemLabel}</option>)}
+                </select>
+                <button type="button" disabled={pending || !combineDest}
+                  onClick={() => { const dest = siblings.find(s => s.id === combineDest); if (dest) askCombine(it, dest) }}
+                  className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">합치기</button>
+                <button type="button" onClick={() => { setCombining(null); setCombineDest('') }} className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={() => markReceived(it, false)} disabled={pending}
+                  className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
+                  수령대기로
+                </button>
+                {!placed && (
+                  <button type="button" onClick={() => markCommon(it, !it.isCommon)} disabled={pending}
+                    className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
+                    {it.isCommon ? '공용 해제' : '공용 자재로'}
+                  </button>
+                )}
+                <button type="button" onClick={() => setPicking(it.id)} disabled={pending}
+                  className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
+                  {placed ? '배정 변경' : '배정'}
+                </button>
+                {siblings.length > 0 && (
+                  <button type="button" onClick={() => { setCombining(it.id); setCombineDest('') }} disabled={pending}
+                    className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
+                    합치기
+                  </button>
+                )}
+              </>
             )}
           </>
         )}
-      </div>
-      )}
+      />
     </li>
   )
 
