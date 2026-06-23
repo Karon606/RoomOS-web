@@ -133,6 +133,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   }
   const [isPending, startTransition] = useTransition()
   const [showAdd, setShowAdd]             = useState(false)
+  const [showMore, setShowMore]           = useState(false)   // 헤더 ⋯ 더보기
   const [showLocations, setShowLocations] = useState(false)
   const [detailId, setDetailId]           = useState<string | null>(null)
   const [error, setError]                 = useState('')
@@ -251,14 +252,32 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             <Btn variant="secondary" size="sm" onClick={() => { selectMode ? exitSelectMode() : setSelectMode(true) }}>
               {selectMode ? `선택 취소${selected.size > 0 ? ` (${selected.size})` : ''}` : '선택'}
             </Btn>
-            <Btn variant="secondary" size="sm" onClick={() => setShowLocations(true)}>위치 관리</Btn>
-            <Btn variant="secondary" size="sm" onClick={() => setShowExcluded(true)}>
-              숨김 품목{archivedCount > 0 ? ` (${archivedCount})` : ''}
-            </Btn>
-            <Btn variant="secondary" size="sm" onClick={() => setShowMergeRules(true)}>병합 적용취소·규칙</Btn>
-            <Btn variant="secondary" size="sm" onClick={() => setShowReconcile(true)}>전체 재고 보정</Btn>
-            <Btn variant="secondary" size="sm" onClick={() => setShowCatSettings(true)}>카테고리 설정</Btn>
-            <Btn variant="secondary" size="sm" onClick={handleSeed} disabled={seedPending || isPending}>{seedPending ? '처리 중...' : '지출에서 자동 등록'}</Btn>
+            {/* 6+개 헤더 버튼 → 주요 1개(품목 추가) + ⋯ 더보기(점검·입력 / 관리·설정 그룹) */}
+            <div className="relative">
+              <Btn variant="secondary" size="sm" onClick={() => setShowMore(v => !v)}>⋯ 더보기</Btn>
+              {showMore && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowMore(false)} />
+                  <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-1.5 shadow-lift">
+                    <p className="px-2 pt-1 pb-1 text-[0.625rem] font-semibold text-[var(--warm-muted)]">입력·점검</p>
+                    <button type="button" disabled={seedPending || isPending} onClick={() => { setShowMore(false); handleSeed() }}
+                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)] disabled:opacity-50">{seedPending ? '처리 중…' : '지출에서 자동 등록'}</button>
+                    <button type="button" onClick={() => { setShowMore(false); setShowReconcile(true) }}
+                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">전체 재고 보정</button>
+                    <div className="my-1 border-t border-[var(--warm-border)]" />
+                    <p className="px-2 pt-0.5 pb-1 text-[0.625rem] font-semibold text-[var(--warm-muted)]">관리·설정</p>
+                    <button type="button" onClick={() => { setShowMore(false); setShowLocations(true) }}
+                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">위치 관리</button>
+                    <button type="button" onClick={() => { setShowMore(false); setShowCatSettings(true) }}
+                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">카테고리 설정</button>
+                    <button type="button" onClick={() => { setShowMore(false); setShowExcluded(true) }}
+                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">숨김 품목{archivedCount > 0 ? ` (${archivedCount})` : ''}</button>
+                    <button type="button" onClick={() => { setShowMore(false); setShowMergeRules(true) }}
+                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">병합 적용취소·규칙</button>
+                  </div>
+                </>
+              )}
+            </div>
             <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
           </div>
         )}
