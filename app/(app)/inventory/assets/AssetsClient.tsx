@@ -9,8 +9,8 @@ import { useRouter } from 'next/navigation'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
-import { assignAggregateToTarget, setCommonAsset, setAssetReceived, type AssetsData, type AssetItem } from './actions'
-import { mergeItemNames } from '@/app/(app)/finance/actions'   // 비품 품명 병합(통일) — 환경설정 AI 병합과 동일 엔진
+import { assignAggregateToTarget, setCommonAsset, setAssetReceived, combineAssets, type AssetsData, type AssetItem } from './actions'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 const won = (n: number) => n.toLocaleString('ko-KR') + '원'
 const fmtRoomNo = (no: string) => (/^\d+$/.test(no) ? `${no}호` : no)
@@ -33,12 +33,12 @@ export default function AssetsClient({ data, rooms, locations }: {
     const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
   })
 
-  // 선택 모드 — 여러 비품을 골라 ① 방·공용부에 일괄 배정 ② 같은 품목 이름 통일(병합). 소모품 '선택'과 동일 패턴.
+  // 선택 모드 — 여러 비품을 골라 방·공용부에 일괄 배정. (소모품 '선택 → 위치 일괄 할당'과 동일 패턴.)
+  // 같은 품목 합치기(병합)는 소모품과 동일하게 '카드별 합치기'(아래 ItemRow)로 한다.
   const [mergeMode, setMergeMode] = useState(false)
   const [mergeSel, setMergeSel]   = useState<Set<string>>(new Set())   // 선택된 AssetItem id
-  const [mergeCanon, setMergeCanon] = useState('')
-  const [pillMode, setPillMode] = useState<'menu' | 'assign' | 'merge'>('menu')   // 하단 바 단계
-  const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setMergeCanon(''); setPillMode('menu') }
+  const [pillMode, setPillMode] = useState<'menu' | 'assign'>('menu')   // 하단 바 단계
+  const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setPillMode('menu') }
   const toggleMergeSel = (id: string) => setMergeSel(prev => {
     const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
   })
@@ -47,20 +47,29 @@ export default function AssetsClient({ data, rooms, locations }: {
     ...data.rooms.flatMap(r => r.items), ...data.locations.flatMap(l => l.items),
   ], [data])
   const selItems = useMemo(() => allItems.filter(it => mergeSel.has(it.id)), [allItems, mergeSel])
-  const mergeLabels = useMemo(
-    () => [...new Set(selItems.map(it => it.itemLabel).filter(Boolean))],
-    [selItems],
-  )
-  const doMerge = () => {
-    if (mergeLabels.length < 2) { pushToast('error', '서로 다른 이름의 품목을 2개 이상 선택하세요.'); return }
-    const canon = mergeCanon.trim() || mergeLabels[0]
+
+  // 카드별 합치기 — 같은 구역·분류의 다른 카드(대상=남길 카드)로 이 품목을 통일(병합). 소모품 '다른 카드와 병합'과 동일.
+  const [combining, setCombining] = useState<string | null>(null)   // 합치기 picker 열린 항목 id
+  const [combineDest, setCombineDest] = useState('')                // 선택된 대상 카드 id
+  const doCombine = (src: AssetItem, dest: AssetItem) => {
     startTransition(async () => {
-      const res = await mergeItemNames(canon, mergeLabels)
+      const res = await combineAssets(dest.id, src.ids)
+      setCombining(null); setCombineDest('')
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', `'${canon}'(으)로 통일됨 · ${mergeLabels.length}개 이름`)
-      exitMerge(); router.refresh()
+      pushToast('success', `'${dest.itemLabel}'(으)로 합쳐짐`)
+      router.refresh()
     })
   }
+  const askCombine = async (src: AssetItem, dest: AssetItem) => {
+    const ok = await confirmDialog({
+      title: '이 비품을 합칠까요?',
+      message: `'${src.itemLabel}' 카드를 '${dest.detail || dest.itemLabel}'(으)로 합칩니다. 이름·사양이 대상 기준으로 통일돼 한 카드가 됩니다. (환경설정 '품명 병합'에서 적용취소)`,
+      confirmLabel: '합치기',
+    })
+    if (ok) doCombine(src, dest)
+  }
+  // 같은 구역·분류의 다른 카드(합치기 대상 후보)
+  const siblingsOf = (list: AssetItem[], it: AssetItem) => list.filter(s => s.id !== it.id && s.category === it.category)
   // 선택한 비품들을 한 방·공용부에 일괄 배정(각 품목 전체 수량). 부분 수량은 개별 '배정'에서.
   const doBatchAssign = (target: Target, label: string) => {
     if (selItems.length === 0) return
@@ -159,7 +168,7 @@ export default function AssetsClient({ data, rooms, locations }: {
   const currentValue = (it: AssetItem) =>
     it.roomId ? `room:${it.roomId}` : it.locationId ? `loc:${it.locationId}` : ''
 
-  const ItemRow = ({ it, placed, awaitingReceipt }: { it: AssetItem; placed: boolean; awaitingReceipt?: boolean }) => (
+  const ItemRow = ({ it, placed, awaitingReceipt, siblings = [] }: { it: AssetItem; placed: boolean; awaitingReceipt?: boolean; siblings?: AssetItem[] }) => (
     <li
       className={`bg-[var(--cream)] border rounded-xl px-3.5 py-2.5 transition-colors ${mergeMode ? (mergeSel.has(it.id) ? 'cursor-pointer border-[var(--coral)] ring-2 ring-[var(--coral)]/30' : 'cursor-pointer border-[var(--warm-border)] hover:border-[var(--coral)]/50') : 'border-[var(--warm-border)]'}`}
       onClick={mergeMode ? () => toggleMergeSel(it.id) : undefined}>
@@ -231,6 +240,19 @@ export default function AssetsClient({ data, rooms, locations }: {
             </select>
             <button type="button" onClick={() => setPicking(null)} className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
           </>
+        ) : combining === it.id ? (
+          <>
+            <select autoFocus disabled={pending} value={combineDest}
+              onChange={e => setCombineDest(e.target.value)}
+              className="text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-[var(--warm-dark)] outline-none max-w-[60vw]">
+              <option value="">합칠 대상(남길 품목)…</option>
+              {siblings.map(s => <option key={s.id} value={s.id}>{s.detail || s.itemLabel}</option>)}
+            </select>
+            <button type="button" disabled={pending || !combineDest}
+              onClick={() => { const dest = siblings.find(s => s.id === combineDest); if (dest) askCombine(it, dest) }}
+              className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">합치기</button>
+            <button type="button" onClick={() => { setCombining(null); setCombineDest('') }} className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
+          </>
         ) : (
           <>
             {/* 수령대기로 되돌리기 (적용취소) */}
@@ -249,6 +271,13 @@ export default function AssetsClient({ data, rooms, locations }: {
               className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
               {placed ? '배정 변경' : '배정'}
             </button>
+            {/* 같은 구역·분류의 다른 카드로 합치기 (소모품 '다른 카드와 병합'과 동일) */}
+            {siblings.length > 0 && (
+              <button type="button" onClick={() => { setCombining(it.id); setCombineDest('') }} disabled={pending}
+                className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
+                합치기
+              </button>
+            )}
           </>
         )}
       </div>
@@ -271,7 +300,7 @@ export default function AssetsClient({ data, rooms, locations }: {
           <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">
             품목으로 산 내구재(의자·거치대·수선유지 자재 등)를 방·공용부별로 모아 봅니다. 여분(미배정)은 방이나 공용부(주방·화장실·복도 등)에 배정할 수 있습니다. <span className="text-[var(--warm-mid)]">공용부는 ‘위치 관리’에서 추가합니다.</span>
-            {mergeMode && <span className="text-[var(--coral)]"> · 비품을 눌러 선택 → 방 배정 또는 이름 통일.</span>}
+            {mergeMode && <span className="text-[var(--coral)]"> · 비품을 눌러 선택 → 방·공용부에 일괄 배정. (같은 품목 합치기는 각 카드의 ‘합치기’)</span>}
           </p>
         </div>
         {!isEmpty && (
@@ -295,7 +324,7 @@ export default function AssetsClient({ data, rooms, locations }: {
                 수령 대기 <span className="text-[0.625rem] text-[var(--coral)] font-normal">도착 전</span> <span className="text-[var(--warm-muted)] font-normal">{data.pending.length}건 · {won(data.pendingTotal)}</span>
               </h2>
               <ul className="space-y-1.5">
-                {data.pending.map(it => <ItemRow key={it.id} it={it} placed={false} awaitingReceipt />)}
+                {data.pending.map(it => <ItemRow key={it.id} it={it} placed={false} awaitingReceipt siblings={siblingsOf(data.pending, it)} />)}
               </ul>
             </section>
           )}
@@ -309,7 +338,7 @@ export default function AssetsClient({ data, rooms, locations }: {
               <p className="text-xs text-[var(--warm-muted)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-3 text-center">미배정 비품이 없습니다.</p>
             ) : (
               <ul className="space-y-1.5">
-                {data.unassigned.map(it => <ItemRow key={it.id} it={it} placed={false} />)}
+                {data.unassigned.map(it => <ItemRow key={it.id} it={it} placed={false} siblings={siblingsOf(data.unassigned, it)} />)}
               </ul>
             )}
           </section>
@@ -321,7 +350,7 @@ export default function AssetsClient({ data, rooms, locations }: {
                 공용 자재 <span className="text-[0.625rem] text-[var(--coral)] font-normal">배분 안 함</span> <span className="text-[var(--warm-muted)] font-normal">{data.common.length}건 · {won(data.commonTotal)}</span>
               </h2>
               <ul className="space-y-1.5">
-                {data.common.map(it => <ItemRow key={it.id} it={it} placed={false} />)}
+                {data.common.map(it => <ItemRow key={it.id} it={it} placed={false} siblings={siblingsOf(data.common, it)} />)}
               </ul>
             </section>
           )}
@@ -333,7 +362,7 @@ export default function AssetsClient({ data, rooms, locations }: {
                 {fmtRoomNo(g.roomNo)} <span className="text-[var(--warm-muted)] font-normal">{g.items.length}건 · {won(g.total)}</span>
               </h2>
               <ul className="space-y-1.5">
-                {g.items.map(it => <ItemRow key={it.id} it={it} placed />)}
+                {g.items.map(it => <ItemRow key={it.id} it={it} placed siblings={siblingsOf(g.items, it)} />)}
               </ul>
             </section>
           ))}
@@ -345,29 +374,23 @@ export default function AssetsClient({ data, rooms, locations }: {
                 {g.name} <span className="text-[0.625rem] text-[var(--coral)] font-normal">공용부</span> <span className="text-[var(--warm-muted)] font-normal">{g.items.length}건 · {won(g.total)}</span>
               </h2>
               <ul className="space-y-1.5">
-                {g.items.map(it => <ItemRow key={it.id} it={it} placed />)}
+                {g.items.map(it => <ItemRow key={it.id} it={it} placed siblings={siblingsOf(g.items, it)} />)}
               </ul>
             </section>
           ))}
         </>
       )}
 
-      {/* 선택 바 — 소모품·지출과 동일한 다크 플로팅 알약. 방 일괄 배정 / 이름 통일(병합).
-          배정 적용취소는 각 품목에서, 병합 적용취소는 환경설정 '품명 병합'에서. */}
+      {/* 선택 바 — 소모품 '선택 → 위치 일괄 할당'과 동일한 다크 플로팅 알약(방·공용부 일괄 배정 단일 액션).
+          배정 적용취소는 각 품목에서. 같은 품목 합치기는 각 카드의 '합치기'(적용취소: 환경설정 '품명 병합'). */}
       {mergeMode && mergeSel.size > 0 && (
         <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
           <div className="flex items-center gap-2 bg-[var(--ink)] text-[var(--canvas)] rounded-xl px-4 py-3 shadow-lift pointer-events-auto mx-4 max-w-[calc(100vw-24px)]">
             <span className="text-sm font-medium whitespace-nowrap">{mergeSel.size}개 선택</span>
             <div className="w-px h-4 bg-[var(--canvas)]/20" />
             {pillMode === 'menu' && (
-              <>
-                <button type="button" onClick={() => setPillMode('assign')}
-                  className="text-sm font-semibold text-[var(--coral)] hover:text-[var(--coral-dark)] transition-colors whitespace-nowrap">방 배정</button>
-                {mergeSel.size >= 2 && (
-                  <button type="button" onClick={() => setPillMode('merge')}
-                    className="text-sm font-semibold text-[var(--canvas)] hover:text-white transition-colors whitespace-nowrap">이름 통일</button>
-                )}
-              </>
+              <button type="button" onClick={() => setPillMode('assign')}
+                className="text-sm font-semibold text-[var(--coral)] hover:text-[var(--coral-dark)] transition-colors whitespace-nowrap">방·공용부 일괄 배정</button>
             )}
             {pillMode === 'assign' && (
               <>
@@ -384,21 +407,6 @@ export default function AssetsClient({ data, rooms, locations }: {
                     </optgroup>
                   )}
                 </select>
-                <button type="button" onClick={() => setPillMode('menu')} className="text-sm px-2 py-1.5 text-[var(--canvas)]/70 hover:text-[var(--canvas)]">뒤로</button>
-              </>
-            )}
-            {pillMode === 'merge' && (
-              <>
-                {mergeLabels.length >= 2 ? (
-                  <>
-                    <input value={mergeCanon} onChange={e => setMergeCanon(e.target.value)} placeholder={mergeLabels[0] ?? '통일할 이름'}
-                      className="w-28 sm:w-36 bg-white/15 text-[var(--canvas)] placeholder-white/50 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:bg-white/20" />
-                    <button type="button" onClick={doMerge} disabled={pending}
-                      className="text-sm font-semibold px-3 py-1.5 rounded-xl bg-[var(--coral)] text-white disabled:opacity-50 whitespace-nowrap">통일</button>
-                  </>
-                ) : (
-                  <span className="text-xs text-[var(--canvas)]/70 max-w-[52vw] leading-snug">선택한 비품이 모두 같은 이름이에요. 서로 다른 이름을 포함해 고르면 하나로 통일됩니다.</span>
-                )}
                 <button type="button" onClick={() => setPillMode('menu')} className="text-sm px-2 py-1.5 text-[var(--canvas)]/70 hover:text-[var(--canvas)]">뒤로</button>
               </>
             )}

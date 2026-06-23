@@ -206,6 +206,54 @@ export async function setCommonAsset(expenseIds: string[], value: boolean): Prom
   }
 }
 
+// 비품 카드 합치기 — 선택 카드(src)의 지출들을 대상 카드(dest)의 이름·사양·단위로 통일해 한 카드로 병합.
+// (소모품 '다른 카드와 병합'과 동일 개념. 비품은 TrackedItem 이 아니라 Expense 집계라, 라벨·사양을 대상값으로 맞춰 재집계.)
+// 장부 금액·구매기록은 유지(이름/사양만 변경). 환경설정 '품명 병합'에서 적용취소(완전 원복) 가능.
+export async function combineAssets(
+  destExpenseId: string, srcExpenseIds: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const dest = await prisma.expense.findFirst({
+      where: { id: destExpenseId, propertyId },
+      select: { itemLabel: true, specValue: true, specUnit: true, qtyUnit: true },
+    })
+    if (!dest) return { ok: false, error: '대상 품목을 찾을 수 없습니다.' }
+    const srcIds = [...new Set(srcExpenseIds)].filter(id => id !== destExpenseId)
+    if (!srcIds.length) return { ok: false, error: '합칠 항목이 없습니다.' }
+    const srcs = await prisma.expense.findMany({
+      where: { id: { in: srcIds }, propertyId },
+      select: { id: true, itemLabel: true, specValue: true, specUnit: true, qtyValue: true, qtyUnit: true, detail: true },
+    })
+    if (!srcs.length) return { ok: false, error: '합칠 항목을 찾을 수 없습니다.' }
+
+    await prisma.$transaction(async (tx) => {
+      for (const e of srcs) {
+        await tx.expense.update({
+          where: { id: e.id },
+          data: {
+            itemLabel: dest.itemLabel, specValue: dest.specValue, specUnit: dest.specUnit, qtyUnit: dest.qtyUnit,
+            detail: buildAssetDetail({ itemLabel: dest.itemLabel, specValue: dest.specValue, specUnit: dest.specUnit, qtyValue: e.qtyValue, qtyUnit: dest.qtyUnit }),
+          },
+        })
+      }
+      const oldLabels = [...new Set(srcs.map(s => s.itemLabel).filter(Boolean))]
+      await tx.itemNameMergeRun.create({
+        data: {
+          propertyId, canonical: dest.itemLabel ?? '', memberCount: oldLabels.length || srcs.length, newAliasKeys: [],
+          affected: { assets: srcs.map(s => ({ id: s.id, oldLabel: s.itemLabel, oldSpecValue: s.specValue, oldSpecUnit: s.specUnit, oldQtyUnit: s.qtyUnit, oldDetail: s.detail })) },
+        },
+      })
+    })
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance'); revalidatePath('/settings')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '합치기에 실패했습니다.' }
+  }
+}
+
 export async function getAssignableRooms(): Promise<{ id: string; roomNo: string }[]> {
   const propertyId = await getPropertyId()
   const rooms = await prisma.room.findMany({

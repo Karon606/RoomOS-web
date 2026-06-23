@@ -1104,14 +1104,20 @@ export async function undoItemNameMerge(runId: string): Promise<{ ok: true } | {
     const propertyId = await getPropertyId()
     const run = await prisma.itemNameMergeRun.findFirst({ where: { id: runId, propertyId, undoneAt: null } })
     if (!run) return { ok: false, error: '되돌릴 병합을 찾을 수 없습니다.' }
-    const aff = run.affected as { expenses?: { id: string; oldLabel: string }[]; tracked?: { id: string; oldLabel: string }[] } | null
+    const aff = run.affected as {
+      expenses?: { id: string; oldLabel: string }[]
+      tracked?: { id: string; oldLabel: string }[]
+      assets?: { id: string; oldLabel: string | null; oldSpecValue: number | null; oldSpecUnit: string | null; oldQtyUnit: string | null; oldDetail: string | null }[]
+    } | null
     await prisma.$transaction(async (tx) => {
       for (const e of aff?.expenses ?? []) { try { await tx.expense.update({ where: { id: e.id }, data: { itemLabel: e.oldLabel } }) } catch { /* 삭제된 행 무시 */ } }
       for (const t of aff?.tracked ?? []) { try { await tx.trackedItem.update({ where: { id: t.id }, data: { label: t.oldLabel } }) } catch { /* skip */ } }
+      // 비품 합치기(combineAssets) 원복 — 이름·사양·단위·detail 통째 복구
+      for (const a of aff?.assets ?? []) { try { await tx.expense.update({ where: { id: a.id }, data: { itemLabel: a.oldLabel, specValue: a.oldSpecValue, specUnit: a.oldSpecUnit, qtyUnit: a.oldQtyUnit, detail: a.oldDetail } }) } catch { /* skip */ } }
       if (run.newAliasKeys.length) await tx.itemNameAlias.deleteMany({ where: { propertyId, aliasKey: { in: run.newAliasKeys } } })
       await tx.itemNameMergeRun.update({ where: { id: run.id }, data: { undoneAt: new Date() } })
     })
-    revalidatePath('/finance'); revalidatePath('/inventory'); revalidatePath('/settings')
+    revalidatePath('/finance'); revalidatePath('/inventory'); revalidatePath('/inventory/assets'); revalidatePath('/settings')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
