@@ -33,11 +33,12 @@ export default function AssetsClient({ data, rooms, locations }: {
     const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
   })
 
-  // 품명 병합 모드 — 실제 같은 품목인데 이름이 달라 따로 잡힌 것들을 선택해 한 이름으로 통일.
+  // 선택 모드 — 여러 비품을 골라 ① 방·공용부에 일괄 배정 ② 같은 품목 이름 통일(병합). 소모품 '선택'과 동일 패턴.
   const [mergeMode, setMergeMode] = useState(false)
   const [mergeSel, setMergeSel]   = useState<Set<string>>(new Set())   // 선택된 AssetItem id
   const [mergeCanon, setMergeCanon] = useState('')
-  const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setMergeCanon('') }
+  const [pillMode, setPillMode] = useState<'menu' | 'assign' | 'merge'>('menu')   // 하단 바 단계
+  const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setMergeCanon(''); setPillMode('menu') }
   const toggleMergeSel = (id: string) => setMergeSel(prev => {
     const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
   })
@@ -45,9 +46,10 @@ export default function AssetsClient({ data, rooms, locations }: {
     ...data.pending, ...data.unassigned, ...data.common,
     ...data.rooms.flatMap(r => r.items), ...data.locations.flatMap(l => l.items),
   ], [data])
+  const selItems = useMemo(() => allItems.filter(it => mergeSel.has(it.id)), [allItems, mergeSel])
   const mergeLabels = useMemo(
-    () => [...new Set(allItems.filter(it => mergeSel.has(it.id)).map(it => it.itemLabel).filter(Boolean))],
-    [allItems, mergeSel],
+    () => [...new Set(selItems.map(it => it.itemLabel).filter(Boolean))],
+    [selItems],
   )
   const doMerge = () => {
     if (mergeLabels.length < 2) { pushToast('error', '서로 다른 이름의 품목을 2개 이상 선택하세요.'); return }
@@ -58,6 +60,28 @@ export default function AssetsClient({ data, rooms, locations }: {
       pushToast('success', `'${canon}'(으)로 통일됨 · ${mergeLabels.length}개 이름`)
       exitMerge(); router.refresh()
     })
+  }
+  // 선택한 비품들을 한 방·공용부에 일괄 배정(각 품목 전체 수량). 부분 수량은 개별 '배정'에서.
+  const doBatchAssign = (target: Target, label: string) => {
+    if (selItems.length === 0) return
+    startTransition(async () => {
+      let ok = 0
+      for (const it of selItems) {
+        const res = await assignAggregateToTarget(it.ids, target, null)
+        if (res.ok) ok++
+      }
+      pushToast(ok === selItems.length ? 'success' : 'error', `${label}에 ${ok}/${selItems.length}개 배정됨`)
+      exitMerge(); router.refresh()
+    })
+  }
+  // 하단 바 방 선택 — 'room:id' | 'loc:id'
+  const onBatchPick = (v: string) => {
+    if (!v) return
+    const [k, id] = v.split(':')
+    const label = k === 'room'
+      ? fmtRoomNo(rooms.find(r => r.id === id)?.roomNo ?? '')
+      : (locations.find(l => l.id === id)?.name ?? '')
+    doBatchAssign({ kind: k === 'room' ? 'room' : 'location', id }, label)
   }
 
   // 배정 해제(미배정으로) — 묶음(ids) 전체
@@ -247,12 +271,12 @@ export default function AssetsClient({ data, rooms, locations }: {
           <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">
             품목으로 산 내구재(의자·거치대·수선유지 자재 등)를 방·공용부별로 모아 봅니다. 여분(미배정)은 방이나 공용부(주방·화장실·복도 등)에 배정할 수 있습니다. <span className="text-[var(--warm-mid)]">공용부는 ‘위치 관리’에서 추가합니다.</span>
-            {mergeMode && <span className="text-[var(--coral)]"> · 같은 품목끼리 눌러 선택 → 한 이름으로 통일하세요.</span>}
+            {mergeMode && <span className="text-[var(--coral)]"> · 비품을 눌러 선택 → 방 배정 또는 이름 통일.</span>}
           </p>
         </div>
         {!isEmpty && (
           <Btn variant="secondary" size="sm" onClick={() => mergeMode ? exitMerge() : setMergeMode(true)}>
-            {mergeMode ? `병합 취소${mergeLabels.length > 0 ? ` (${mergeLabels.length})` : ''}` : '품명 병합'}
+            {mergeMode ? `선택 취소${mergeSel.size > 0 ? ` (${mergeSel.size})` : ''}` : '선택'}
           </Btn>
         )}
       </div>
@@ -328,18 +352,50 @@ export default function AssetsClient({ data, rooms, locations }: {
         </>
       )}
 
-      {/* 병합 바 — 소모품·지출 선택 바와 동일한 다크 플로팅 알약. 선택한 품목을 한 이름으로 통일(mergeItemNames).
-          적용취소는 환경설정 '품명 병합'의 최근 병합에서. */}
-      {mergeMode && mergeLabels.length > 0 && (
+      {/* 선택 바 — 소모품·지출과 동일한 다크 플로팅 알약. 방 일괄 배정 / 이름 통일(병합).
+          배정 적용취소는 각 품목에서, 병합 적용취소는 환경설정 '품명 병합'에서. */}
+      {mergeMode && mergeSel.size > 0 && (
         <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
           <div className="flex items-center gap-2 bg-[var(--ink)] text-[var(--canvas)] rounded-xl px-4 py-3 shadow-lift pointer-events-auto mx-4 max-w-[calc(100vw-24px)]">
-            <span className="text-sm font-medium whitespace-nowrap">{mergeLabels.length}개 선택</span>
-            <input value={mergeCanon} onChange={e => setMergeCanon(e.target.value)} placeholder={mergeLabels[0] ?? '통일할 이름'}
-              className="w-28 sm:w-36 bg-white/15 text-[var(--canvas)] placeholder-white/50 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:bg-white/20" />
-            <button type="button" onClick={doMerge} disabled={pending || mergeLabels.length < 2}
-              className="text-sm font-semibold px-3.5 py-1.5 rounded-xl bg-[var(--coral)] text-white disabled:opacity-50 whitespace-nowrap">
-              {pending ? '통일 중…' : '이름 통일'}
-            </button>
+            <span className="text-sm font-medium whitespace-nowrap">{mergeSel.size}개 선택</span>
+            <div className="w-px h-4 bg-[var(--canvas)]/20" />
+            {pillMode === 'menu' && (
+              <>
+                <button type="button" onClick={() => setPillMode('assign')}
+                  className="text-sm font-semibold text-[var(--coral)] hover:text-[var(--coral-dark)] transition-colors whitespace-nowrap">방 배정</button>
+                {mergeLabels.length >= 2 && (
+                  <button type="button" onClick={() => setPillMode('merge')}
+                    className="text-sm font-semibold text-[var(--canvas)] hover:text-white transition-colors whitespace-nowrap">이름 통일</button>
+                )}
+              </>
+            )}
+            {pillMode === 'assign' && (
+              <>
+                <select autoFocus defaultValue="" disabled={pending}
+                  onChange={e => onBatchPick(e.target.value)}
+                  className="bg-white/15 text-[var(--canvas)] rounded-lg px-2 py-1.5 text-sm outline-none max-w-[44vw]">
+                  <option value="" disabled>방·공용부 선택…</option>
+                  <optgroup label="방">
+                    {rooms.map(r => <option key={r.id} value={'room:' + r.id}>{fmtRoomNo(r.roomNo)}</option>)}
+                  </optgroup>
+                  {locations.length > 0 && (
+                    <optgroup label="공용부">
+                      {locations.map(l => <option key={l.id} value={'loc:' + l.id}>{l.name}</option>)}
+                    </optgroup>
+                  )}
+                </select>
+                <button type="button" onClick={() => setPillMode('menu')} className="text-sm px-2 py-1.5 text-[var(--canvas)]/70 hover:text-[var(--canvas)]">뒤로</button>
+              </>
+            )}
+            {pillMode === 'merge' && (
+              <>
+                <input value={mergeCanon} onChange={e => setMergeCanon(e.target.value)} placeholder={mergeLabels[0] ?? '통일할 이름'}
+                  className="w-28 sm:w-36 bg-white/15 text-[var(--canvas)] placeholder-white/50 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:bg-white/20" />
+                <button type="button" onClick={doMerge} disabled={pending || mergeLabels.length < 2}
+                  className="text-sm font-semibold px-3 py-1.5 rounded-xl bg-[var(--coral)] text-white disabled:opacity-50 whitespace-nowrap">통일</button>
+                <button type="button" onClick={() => setPillMode('menu')} className="text-sm px-2 py-1.5 text-[var(--canvas)]/70 hover:text-[var(--canvas)]">뒤로</button>
+              </>
+            )}
             <button type="button" onClick={exitMerge}
               className="text-sm px-3 py-1.5 rounded-xl bg-white/15 text-[var(--canvas)] hover:bg-white/25 transition-colors">취소</button>
           </div>
