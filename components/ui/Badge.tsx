@@ -5,7 +5,8 @@ import React from 'react'
 // M7 가이드 정식 4톤 (솔리드, 강조용 — 미납·완료·경고·중립)
 type SemanticTone = 'success' | 'warn' | 'danger' | 'neutral'
 // 페일 톤 (부드러운 라벨용 — 거주중·예약·요청 등 상태 표시)
-type PaleTone = 'pale-coral' | 'pale-green' | 'pale-amber' | 'pale-blue' | 'pale-red' | 'pale-teal' | 'pale-purple'
+// inspect = §14.4 in-progress(점검·처리 중) b-inspect — §21 재고 카드 전용 과정 상태
+type PaleTone = 'pale-coral' | 'pale-green' | 'pale-amber' | 'pale-blue' | 'pale-red' | 'pale-teal' | 'pale-purple' | 'inspect'
 // 호환 alias (기존 코드)
 type LegacyTone = 'coral' | 'green' | 'amber' | 'blue' | 'red' | 'teal' | 'purple'
 
@@ -28,6 +29,7 @@ const PALE_CLS: Record<string, string> = {
   'pale-red':    'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]',
   'pale-teal':   'bg-[var(--reserve-bg)] text-[var(--reserve-fg)] ring-[var(--reserve-ring)]',
   'pale-purple': 'bg-[var(--deposit-bg)] text-[var(--deposit-fg)] ring-[var(--deposit-ring)]',
+  'inspect':     'bg-[var(--inspect-bg)] text-[var(--inspect-fg)] ring-[var(--inspect-ring)]',
   // legacy alias — 기존 코드 호환
   'coral':       'bg-[var(--persimmon-l)] text-[var(--persimmon-d)] ring-[var(--persimmon)]/20',
   'green':       'bg-[#eef2e5] text-[#4e6834] ring-[var(--viz-3)]/30',
