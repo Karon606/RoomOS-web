@@ -6,6 +6,7 @@
 
 import { useState, useTransition, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
@@ -310,9 +311,9 @@ export default function AssetsClient({ data, rooms, locations }: {
     <div className="space-y-5 px-4 sm:px-6 py-5">
       {/* 동일 레벨 탭 — 소모품·부식 / 비품·자재(현재) */}
       <div className="inline-flex rounded-xl border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
-        <button type="button" onClick={() => router.push('/inventory')}
-          className="px-4 py-2 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">소모품·부식</button>
-        <button type="button" className="px-4 py-2 bg-[var(--coral)] text-white">비품·자재</button>
+        <Link href="/inventory" prefetch
+          className="px-4 py-2 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">소모품·부식</Link>
+        <span className="px-4 py-2 bg-[var(--coral)] text-white">비품·자재</span>
       </div>
       <div className="flex items-start justify-between gap-2">
         <div>

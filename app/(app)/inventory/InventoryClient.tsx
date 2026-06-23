@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -220,10 +221,9 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
     <div className="space-y-4 px-4 sm:px-6 py-5">
       {/* 동일 레벨 탭 — 소모품·부식(기본) / 비품·자재 */}
       <div className="inline-flex rounded-xl border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
-        <button type="button"
-          className="px-4 py-2 bg-[var(--coral)] text-white">소모품·부식</button>
-        <button type="button" onClick={() => router.push('/inventory/assets')}
-          className="px-4 py-2 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">비품·자재</button>
+        <span className="px-4 py-2 bg-[var(--coral)] text-white">소모품·부식</span>
+        <Link href="/inventory/assets" prefetch
+          className="px-4 py-2 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">비품·자재</Link>
       </div>
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-2">
