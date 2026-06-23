@@ -4,13 +4,13 @@
 // 방별 / 공용부(위치)별 / 미배정(여분)으로 보여주고, 미배정 아이템을 방·공용부에 배정한다.
 // 수량 2개 이상이면 몇 개 배정할지 물어 분할(나머지 여분 유지). 배정해제 시 같은 묶음 재병합.
 
-import { useState, useTransition, useMemo, type ReactNode } from 'react'
+import { useState, useTransition, useMemo, useEffect, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
-import { assignAggregateToTarget, setCommonAsset, setAssetReceived, combineAssets, type AssetsData, type AssetItem } from './actions'
+import { assignAggregateToTarget, setCommonAsset, setAssetReceived, combineAssets, getAssetAssignmentLog, type AssetsData, type AssetItem, type AssetAssignmentLogRow } from './actions'
 import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // §10 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
@@ -57,8 +57,15 @@ export default function AssetsClient({ data, rooms, locations }: {
   const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setPillMode('menu') }
   // 합치기 바텀시트 — §21.4 MergeSheet 단일 통일(카드별·선택 공용)
   const [sheet, setSheet] = useState<{ sourceLabel: string; targets: MergeTarget[]; onConfirm: (destId: string) => void } | null>(null)
-  // 비품 상세 풀화면 — §21.5 본문 탭 진입(구매 내역·현재 상태·합치기)
+  // 비품 상세 풀화면 — §21.5 본문 탭 진입(구매 내역·배정 변경 이력·현재 상태·합치기)
   const [detailItem, setDetailItem] = useState<AssetItem | null>(null)
+  const [logRows, setLogRows] = useState<AssetAssignmentLogRow[]>([])
+  useEffect(() => {
+    if (!detailItem) { setLogRows([]); return }
+    let alive = true
+    getAssetAssignmentLog(detailItem.itemLabel).then(r => { if (alive) setLogRows(r) }).catch(() => {})
+    return () => { alive = false }
+  }, [detailItem])
   const toggleMergeSel = (id: string) => setMergeSel(prev => {
     const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
   })
@@ -445,6 +452,19 @@ export default function AssetsClient({ data, rooms, locations }: {
                   ))}
                 </ul>
               </div>
+              {logRows.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">배정 변경 이력</p>
+                  <ul className="space-y-1">
+                    {logRows.map(r => (
+                      <li key={r.id} className="flex items-baseline justify-between gap-2 text-xs">
+                        <span className="text-[var(--warm-dark)]">{r.fromLabel ?? '미배정'} <span className="text-[var(--warm-muted)]">→</span> {r.toLabel ?? '미배정'}</span>
+                        <span className="tabular-nums text-[var(--warm-muted)]">{r.qty != null ? `${fmtQty(r.qty)}${it.qtyUnit ?? '개'} · ` : ''}{r.createdAt.slice(2)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {sibs.length > 0 && (
                 <button type="button" onClick={() => { setDetailItem(null); openCardMerge(it, sibs) }}
                   className="w-full rounded-xl border border-[var(--warm-border)] py-2.5 text-sm font-semibold text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">

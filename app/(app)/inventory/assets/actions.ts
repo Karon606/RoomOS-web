@@ -303,6 +303,46 @@ async function validateTarget(t: AssignTarget, propertyId: string): Promise<stri
 // 비품(집계 묶음 = expenseIds)을 방/공용부에 배정하거나(qty 만큼 분배) 해제(none). 장부는 개별 행 유지.
 // - none: 묶인 행 전부 미배정 + 분할 묶음(allocationGroupId) 재병합(적용취소).
 // - 배정: qty(null=전체) 만큼 수량 큰 행부터 통째 소진, 마지막 부분만 분할(금액 비례).
+// 배정 상태(roomId/locId/공용) → 표시 종류·명칭
+async function placeLabel(propertyId: string, roomId: string | null, locId: string | null, isCommon: boolean): Promise<{ kind: string; label: string | null }> {
+  if (roomId) {
+    const r = await prisma.room.findFirst({ where: { id: roomId, propertyId }, select: { roomNo: true } })
+    const no = r?.roomNo ?? ''
+    return { kind: 'room', label: no ? (/^\d+$/.test(no) ? `${no}호` : no) : '방' }
+  }
+  if (locId) {
+    const l = await prisma.storageLocation.findFirst({ where: { id: locId, propertyId }, select: { name: true } })
+    return { kind: 'location', label: l?.name ?? '공용부' }
+  }
+  if (isCommon) return { kind: 'common', label: '공용 자재' }
+  return { kind: 'none', label: '미배정' }
+}
+
+// 배정 변경 이력 기록 — 테이블 미적용(SQL 전)이면 조용히 무시(앱 정상 동작)
+async function logAssignment(
+  propertyId: string, itemLabel: string | null,
+  from: { kind: string; label: string | null }, to: { kind: string; label: string | null }, qty: number | null,
+) {
+  if (from.kind === to.kind && from.label === to.label) return   // 변화 없음
+  try {
+    await prisma.assetAssignmentLog.create({
+      data: { propertyId, itemLabel, fromKind: from.kind, fromLabel: from.label, toKind: to.kind, toLabel: to.label, qty },
+    })
+  } catch { /* asset_assignment_log 미적용 — 무시 */ }
+}
+
+// 비품 한 품목의 배정 변경 이력(최근순). 테이블 미적용 시 빈 배열.
+export type AssetAssignmentLogRow = { id: string; itemLabel: string | null; fromKind: string; fromLabel: string | null; toKind: string; toLabel: string | null; qty: number | null; createdAt: string }
+export async function getAssetAssignmentLog(itemLabel: string): Promise<AssetAssignmentLogRow[]> {
+  try {
+    const propertyId = await getPropertyId()
+    const rows = await prisma.assetAssignmentLog.findMany({
+      where: { propertyId, itemLabel }, orderBy: { createdAt: 'desc' }, take: 30,
+    })
+    return rows.map(r => ({ id: r.id, itemLabel: r.itemLabel, fromKind: r.fromKind, fromLabel: r.fromLabel, toKind: r.toKind, toLabel: r.toLabel, qty: r.qty, createdAt: r.createdAt.toISOString().slice(0, 10) }))
+  } catch { return [] }
+}
+
 export async function assignAggregateToTarget(
   expenseIds: string[], target: AssignTarget, qty: number | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -315,16 +355,21 @@ export async function assignAggregateToTarget(
     const exps = await prisma.expense.findMany({ where: { id: { in: expenseIds }, propertyId } })
     if (!exps.length) return { ok: false, error: '지출 항목을 찾을 수 없습니다.' }
 
+    const rep0 = exps[0]
+    const fromState = await placeLabel(propertyId, rep0.roomId, rep0.assignedLocationId, rep0.isCommonAsset)
+
     if (target.kind === 'none') {
       await prisma.$transaction(exps.map(e => prisma.expense.update({ where: { id: e.id }, data: { roomId: null, assignedLocationId: null, isCommonAsset: false } })))
       const groups = [...new Set(exps.map(e => e.allocationGroupId).filter(Boolean) as string[])]
       for (const g of groups) await mergeUnassignedGroup(propertyId, g)
+      await logAssignment(propertyId, rep0.itemLabel, fromState, { kind: 'none', label: '미배정' }, exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0))
       revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
       return { ok: true }
     }
 
     const tData = targetData(target)
     const totalQty = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
+    const movedQty = (qty == null || qty >= totalQty) ? totalQty : Math.max(1, qty)
     let need = (qty == null || qty >= totalQty) ? totalQty : Math.max(1, qty)
     // 수량 큰 행부터 통째 소진 → 분할 최소화. 마지막 부분만 쪼갬.
     const sorted = [...exps].sort((a, b) => (b.qtyValue ?? 1) - (a.qtyValue ?? 1))
@@ -357,6 +402,7 @@ export async function assignAggregateToTarget(
       }
     }
     await prisma.$transaction(ops)
+    await logAssignment(propertyId, rep0.itemLabel, fromState, await placeLabel(propertyId, tData.roomId, tData.assignedLocationId, false), movedQty)
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
     return { ok: true }
   } catch (err) {

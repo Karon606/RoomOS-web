@@ -194,6 +194,7 @@ model Property {
   rentReceiptFiles    RentReceiptFile[]
   itemNameAliases     ItemNameAlias[]
   itemNameMergeRuns   ItemNameMergeRun[]
+  assetAssignmentLogs AssetAssignmentLog[]
 
   @@map("properties")
 }
@@ -230,6 +231,24 @@ model ItemNameMergeRun {
 
   @@index([propertyId])
   @@map("item_name_merge_runs")
+}
+
+// 비품 배정 변경 이력 — 어느 방/공용부 ↔ 어디로 옮겼는지 타임라인(상세 풀화면 §21.5).
+// 재집계·라벨변경과 무관하게 이력 보존을 위해 itemLabel·표시명을 당시 값으로 박아둔다.
+model AssetAssignmentLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  propertyId  String   @db.Uuid
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  itemLabel   String?  // 당시 품목명(이력 조회 키)
+  fromKind    String   // none | room | location | common
+  fromLabel   String?  // 당시 표시명(방번호·공용부명)
+  toKind      String
+  toLabel     String?
+  qty         Float?   // 이동 수량(있으면)
+  createdAt   DateTime @default(now())
+
+  @@index([propertyId, itemLabel])
+  @@map("asset_assignment_log")
 }
 
 // ============================================================
