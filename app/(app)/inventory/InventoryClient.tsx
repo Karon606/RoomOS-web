@@ -1196,86 +1196,38 @@ function SettingsForm({ row, onCancel, onDone }: {
   )
 }
 
-function MergeSection({ currentId, currentLabel, category, onDone }: {
+function MergeSection({ currentId, currentLabel, onDone }: {
   currentId: string; currentLabel: string; category: string; onDone: () => void
 }) {
   const [siblings, setSiblings] = useState<{ id: string; label: string }[]>([])
-  const [targetId, setTargetId] = useState('')
-  const [reversed, setReversed] = useState(false)
-  const [showConfirm, setShowConfirm] = useState(false)
+  const [open, setOpen] = useState(false)
   const [pending, setPending] = useState(false)
   useEffect(() => { getSameCategoryItems(currentId).then(setSiblings) }, [currentId])
   if (siblings.length === 0) return null
 
-  const target = siblings.find(s => s.id === targetId)
-  const srcLabel  = reversed ? target?.label : currentLabel
-  const destLabel = reversed ? currentLabel   : target?.label
-  const srcId     = reversed ? targetId       : currentId
-  const destId    = reversed ? currentId      : targetId
-
-  const handleMerge = async () => {
+  // 이 카드를 대상(남을 카드)으로 합침 — 기록 이전 후 이 카드 삭제. (§21.4 MergeSheet 단일)
+  const handleMerge = async (destId: string) => {
     setPending(true)
-    const res = await mergeTrackedItems(srcId, destId, true)
+    const res = await mergeTrackedItems(currentId, destId, true)
     setPending(false)
-    if (!res.ok) { alert(res.error); return }
-    setShowConfirm(false)
+    if (!res.ok) { pushToast('error', res.error); return }
+    setOpen(false)
     pushToast('success', `병합 완료 — 지출 ${res.movedExpenses}건, 점검 ${res.movedChecks}건, 무상입수 ${res.movedAdditions}건`)
     onDone()
   }
 
   return (
     <div className="space-y-1.5 pt-2 border-t border-[var(--warm-border)]/60">
-      <label className="text-xs font-medium text-[var(--warm-mid)]">다른 카드와 병합</label>
-      <div className="flex gap-2">
-        <select value={targetId} onChange={e => { setTargetId(e.target.value); setReversed(false) }}
-          className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none">
-          <option value="">병합 대상 선택…</option>
-          {siblings.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-        </select>
-        <Btn type="button" variant="danger" size="md" onClick={() => setShowConfirm(true)} disabled={!target || pending}>
-          병합
-        </Btn>
-      </div>
+      <label className="text-xs font-medium text-[var(--warm-mid)]">다른 카드와 합치기</label>
+      <Btn type="button" variant="secondary" size="md" fullWidth onClick={() => setOpen(true)}>다른 카드와 합치기…</Btn>
       <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
         예: 라면처럼 봉지·박스가 섞여도 한 카드로 합쳐 추적하고 싶을 때. 사이즈가 의미 있는 폐기물 봉투는 분리 유지 권장.
       </p>
-
-      {/* 병합 방향 확인 모달 */}
-      {showConfirm && target && (
-        <Modal open onClose={() => setShowConfirm(false)} width="sm" z={260} title="병합 방향 확인"
-          footer={
-            <div className="flex gap-2">
-              <Btn type="button" variant="secondary" fullWidth onClick={() => setShowConfirm(false)}>취소</Btn>
-              <Btn type="button" variant="danger" fullWidth onClick={handleMerge} disabled={pending}>
-                {pending ? '병합 중...' : '확인'}
-              </Btn>
-            </div>
-          }>
-          <div className="p-5 space-y-4">
-            {/* 방향 표시 + 스왑 버튼 */}
-            <div className="flex items-center gap-2">
-              <div className="flex-1 text-center">
-                <p className="text-[0.625rem] text-[var(--warm-muted)] mb-0.5">삭제될 카드</p>
-                <p className="text-sm font-semibold text-[var(--warm-dark)] truncate">{srcLabel}</p>
-              </div>
-              <button type="button" onClick={() => setReversed(r => !r)}
-                className="shrink-0 w-8 h-8 rounded-full border border-[var(--warm-border)] flex items-center justify-center text-[var(--warm-mid)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors text-base">
-                ⇄
-              </button>
-              <div className="flex-1 text-center">
-                <p className="text-[0.625rem] text-[var(--warm-muted)] mb-0.5">기록이 합쳐질 카드</p>
-                <p className="text-sm font-semibold text-[var(--coral)] truncate">{destLabel}</p>
-              </div>
-            </div>
-
-            <ul className="text-[0.6875rem] text-[var(--warm-muted)] space-y-1 leading-relaxed">
-              <li>· <strong className="text-[var(--warm-dark)]">{srcLabel}</strong>의 지출·점검·무상입수 기록이 모두 <strong className="text-[var(--warm-dark)]">{destLabel}</strong>로 이전됩니다.</li>
-              <li>· <strong className="text-[var(--warm-dark)]">{srcLabel}</strong> 카드는 삭제됩니다.</li>
-              <li>· 대상 카드의 수량 단위 필터는 해제(다양한 포장 합산)됩니다.</li>
-            </ul>
-
-          </div>
-        </Modal>
+      {open && (
+        <MergeSheet open onClose={() => setOpen(false)}
+          sourceLabel={currentLabel} targets={siblings}
+          description="대표(남을 카드)로 지출·점검·무상입수 기록이 이동하고 이 카드는 사라집니다. 적용취소는 ‘병합 적용취소·규칙’."
+          confirmLabel="합치기" onConfirm={handleMerge} pending={pending} />
       )}
     </div>
   )
