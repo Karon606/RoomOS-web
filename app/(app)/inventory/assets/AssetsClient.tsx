@@ -363,7 +363,7 @@ export default function AssetsClient({ data, rooms, locations }: {
               <>
                 <button type="button" onClick={() => setPillMode('assign')}
                   className="text-sm font-semibold text-[var(--coral)] hover:text-[var(--coral-dark)] transition-colors whitespace-nowrap">방 배정</button>
-                {mergeLabels.length >= 2 && (
+                {mergeSel.size >= 2 && (
                   <button type="button" onClick={() => setPillMode('merge')}
                     className="text-sm font-semibold text-[var(--canvas)] hover:text-white transition-colors whitespace-nowrap">이름 통일</button>
                 )}
@@ -389,10 +389,16 @@ export default function AssetsClient({ data, rooms, locations }: {
             )}
             {pillMode === 'merge' && (
               <>
-                <input value={mergeCanon} onChange={e => setMergeCanon(e.target.value)} placeholder={mergeLabels[0] ?? '통일할 이름'}
-                  className="w-28 sm:w-36 bg-white/15 text-[var(--canvas)] placeholder-white/50 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:bg-white/20" />
-                <button type="button" onClick={doMerge} disabled={pending || mergeLabels.length < 2}
-                  className="text-sm font-semibold px-3 py-1.5 rounded-xl bg-[var(--coral)] text-white disabled:opacity-50 whitespace-nowrap">통일</button>
+                {mergeLabels.length >= 2 ? (
+                  <>
+                    <input value={mergeCanon} onChange={e => setMergeCanon(e.target.value)} placeholder={mergeLabels[0] ?? '통일할 이름'}
+                      className="w-28 sm:w-36 bg-white/15 text-[var(--canvas)] placeholder-white/50 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:bg-white/20" />
+                    <button type="button" onClick={doMerge} disabled={pending}
+                      className="text-sm font-semibold px-3 py-1.5 rounded-xl bg-[var(--coral)] text-white disabled:opacity-50 whitespace-nowrap">통일</button>
+                  </>
+                ) : (
+                  <span className="text-xs text-[var(--canvas)]/70 max-w-[52vw] leading-snug">선택한 비품이 모두 같은 이름이에요. 서로 다른 이름을 포함해 고르면 하나로 통일됩니다.</span>
+                )}
                 <button type="button" onClick={() => setPillMode('menu')} className="text-sm px-2 py-1.5 text-[var(--canvas)]/70 hover:text-[var(--canvas)]">뒤로</button>
               </>
             )}
