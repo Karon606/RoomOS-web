@@ -11,10 +11,10 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { assignAggregateToTarget, setCommonAsset, setAssetReceived, combineAssets, type AssetsData, type AssetItem } from './actions'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { InventoryCard } from '@/components/ui/inventory/InventoryCard'
+import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
 
 // 비품 위치 섹션 마커 — §21.2 위치 아이콘(핀) 14px
 const PinMarker = () => (
@@ -47,12 +47,13 @@ export default function AssetsClient({ data, rooms, locations }: {
     const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
   })
 
-  // 선택 모드 — 여러 비품을 골라 ① 방·공용부 일괄 배정 ② 대표 골라 합치기. 카드별 '합치기'(아래 ItemRow)도 병행.
+  // 선택 모드 — 여러 비품을 골라 ① 방·공용부 일괄 배정 ② 대표 골라 합치기(MergeSheet). 카드별 '합치기'도 병행.
   const [mergeMode, setMergeMode] = useState(false)
   const [mergeSel, setMergeSel]   = useState<Set<string>>(new Set())   // 선택된 AssetItem id
-  const [pillMode, setPillMode] = useState<'menu' | 'assign' | 'combine'>('menu')   // 하단 바 단계
-  const [pillCombineDest, setPillCombineDest] = useState('')           // 선택 합치기 — 대표(남길) 카드 id
-  const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setPillMode('menu'); setPillCombineDest('') }
+  const [pillMode, setPillMode] = useState<'menu' | 'assign'>('menu')   // 하단 바 단계
+  const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setPillMode('menu') }
+  // 합치기 바텀시트 — §21.4 MergeSheet 단일 통일(카드별·선택 공용)
+  const [sheet, setSheet] = useState<{ sourceLabel: string; targets: MergeTarget[]; onConfirm: (destId: string) => void } | null>(null)
   const toggleMergeSel = (id: string) => setMergeSel(prev => {
     const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
   })
@@ -62,26 +63,29 @@ export default function AssetsClient({ data, rooms, locations }: {
   ], [data])
   const selItems = useMemo(() => allItems.filter(it => mergeSel.has(it.id)), [allItems, mergeSel])
 
-  // 카드별 합치기 — 같은 구역·분류의 다른 카드(대상=남길 카드)로 이 품목을 통일(병합). 소모품 '다른 카드와 병합'과 동일.
-  const [combining, setCombining] = useState<string | null>(null)   // 합치기 picker 열린 항목 id
-  const [combineDest, setCombineDest] = useState('')                // 선택된 대상 카드 id
-  const doCombine = (src: AssetItem, dest: AssetItem) => {
+  // 합치기 실행 — combineAssets(대상=남는 카드, src=합쳐질 지출들). 적용취소는 환경설정 '품명 병합'.
+  const runCombine = (destId: string, srcIds: string[], destLabel: string) => {
+    if (srcIds.length === 0) { pushToast('error', '대표 외 합칠 비품을 더 선택하세요.'); return }
     startTransition(async () => {
-      const res = await combineAssets(dest.id, src.ids)
-      setCombining(null); setCombineDest('')
+      const res = await combineAssets(destId, srcIds)
+      setSheet(null)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', `'${dest.itemLabel}'(으)로 합쳐짐`)
-      router.refresh()
+      pushToast('success', `'${destLabel}'(으)로 합쳐짐`)
+      exitMerge(); router.refresh()
     })
   }
-  const askCombine = async (src: AssetItem, dest: AssetItem) => {
-    const ok = await confirmDialog({
-      title: '이 비품을 합칠까요?',
-      message: `'${src.itemLabel}' 카드를 '${dest.detail || dest.itemLabel}'(으)로 합칩니다. 이름·사양이 대상 기준으로 통일돼 한 카드가 됩니다. (환경설정 '품명 병합'에서 적용취소)`,
-      confirmLabel: '합치기',
-    })
-    if (ok) doCombine(src, dest)
-  }
+  // 카드별 합치기 — 이 카드를 같은 구역·분류 다른 카드(대표)로 통일
+  const openCardMerge = (it: AssetItem, siblings: AssetItem[]) => setSheet({
+    sourceLabel: it.detail || it.itemLabel,
+    targets: siblings.map(s => ({ id: s.id, label: s.detail || s.itemLabel })),
+    onConfirm: destId => runCombine(destId, it.ids, siblings.find(s => s.id === destId)?.itemLabel ?? ''),
+  })
+  // 선택 합치기 — 고른 비품들을 대표로 통일
+  const openSelectionMerge = () => setSheet({
+    sourceLabel: `선택 ${selItems.length}개`,
+    targets: selItems.map(s => ({ id: s.id, label: s.detail || s.itemLabel })),
+    onConfirm: destId => runCombine(destId, selItems.filter(s => s.id !== destId).flatMap(s => s.ids), selItems.find(s => s.id === destId)?.itemLabel ?? ''),
+  })
   // 같은 구역·분류의 다른 카드(합치기 대상 후보)
   const siblingsOf = (list: AssetItem[], it: AssetItem) => list.filter(s => s.id !== it.id && s.category === it.category)
   // 선택한 비품들을 한 방·공용부에 일괄 배정(각 품목 전체 수량). 부분 수량은 개별 '배정'에서.
@@ -105,25 +109,6 @@ export default function AssetsClient({ data, rooms, locations }: {
       ? fmtRoomNo(rooms.find(r => r.id === id)?.roomNo ?? '')
       : (locations.find(l => l.id === id)?.name ?? '')
     doBatchAssign({ kind: k === 'room' ? 'room' : 'location', id }, label)
-  }
-  // 선택 합치기 — 고른 비품들을 대표(남길) 카드의 이름·사양으로 통일해 한 카드로.
-  const askBatchCombine = async () => {
-    const dest = selItems.find(it => it.id === pillCombineDest)
-    if (!dest) return
-    const srcIds = selItems.filter(it => it.id !== dest.id).flatMap(it => it.ids)
-    if (srcIds.length === 0) { pushToast('error', '대표 외 합칠 비품을 더 선택하세요.'); return }
-    const ok = await confirmDialog({
-      title: `${selItems.length}개를 합칠까요?`,
-      message: `선택한 비품을 '${dest.detail || dest.itemLabel}'(으)로 통일해 한 카드로 합칩니다. 이름·사양이 대표 기준으로 바뀝니다. (환경설정 '품명 병합'에서 적용취소)`,
-      confirmLabel: '합치기',
-    })
-    if (!ok) return
-    startTransition(async () => {
-      const res = await combineAssets(dest.id, srcIds)
-      if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', `'${dest.itemLabel}'(으)로 ${selItems.length}개 합쳐짐`)
-      exitMerge(); router.refresh()
-    })
   }
 
   // 배정 해제(미배정으로) — 묶음(ids) 전체
@@ -266,19 +251,6 @@ export default function AssetsClient({ data, rooms, locations }: {
                 </select>
                 <button type="button" onClick={() => setPicking(null)} className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
               </>
-            ) : combining === it.id ? (
-              <>
-                <select autoFocus disabled={pending} value={combineDest}
-                  onChange={e => setCombineDest(e.target.value)}
-                  className="text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-[var(--warm-dark)] outline-none max-w-[60vw]">
-                  <option value="">합칠 대상(남길 품목)…</option>
-                  {siblings.map(s => <option key={s.id} value={s.id}>{s.detail || s.itemLabel}</option>)}
-                </select>
-                <button type="button" disabled={pending || !combineDest}
-                  onClick={() => { const dest = siblings.find(s => s.id === combineDest); if (dest) askCombine(it, dest) }}
-                  className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">합치기</button>
-                <button type="button" onClick={() => { setCombining(null); setCombineDest('') }} className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
-              </>
             ) : (
               <>
                 <button type="button" onClick={() => markReceived(it, false)} disabled={pending}
@@ -296,7 +268,7 @@ export default function AssetsClient({ data, rooms, locations }: {
                   {placed ? '배정 변경' : '배정'}
                 </button>
                 {siblings.length > 0 && (
-                  <button type="button" onClick={() => { setCombining(it.id); setCombineDest('') }} disabled={pending}
+                  <button type="button" onClick={() => openCardMerge(it, siblings)} disabled={pending}
                     className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
                     합치기
                   </button>
@@ -401,18 +373,7 @@ export default function AssetsClient({ data, rooms, locations }: {
           {pillMode === 'menu' && (
             <>
               <PillButton primary onClick={() => setPillMode('assign')}>방·공용부 일괄 배정</PillButton>
-              {mergeSel.size >= 2 && <PillButton onClick={() => { setPillCombineDest(''); setPillMode('combine') }}>합치기</PillButton>}
-            </>
-          )}
-          {pillMode === 'combine' && (
-            <>
-              <select autoFocus value={pillCombineDest} disabled={pending} onChange={e => setPillCombineDest(e.target.value)}
-                className="h-9 max-w-[44vw] rounded-[9px] bg-white/[0.13] px-2 text-sm text-white outline-none">
-                <option value="" disabled>대표(남길 품목) 선택…</option>
-                {selItems.map(it => <option key={it.id} value={it.id}>{it.detail || it.itemLabel}</option>)}
-              </select>
-              <PillButton primary onClick={askBatchCombine} disabled={pending || !pillCombineDest}>합치기</PillButton>
-              <PillButton onClick={() => setPillMode('menu')}>뒤로</PillButton>
+              {mergeSel.size >= 2 && <PillButton onClick={openSelectionMerge}>합치기</PillButton>}
             </>
           )}
           {pillMode === 'assign' && (
@@ -433,6 +394,14 @@ export default function AssetsClient({ data, rooms, locations }: {
             </>
           )}
         </SelectionPillBar>
+      )}
+
+      {/* 합치기 — §21.4 MergeSheet 단일(카드별·선택 공용). 방향 고지 + 적용취소는 환경설정 '품명 병합' */}
+      {sheet && (
+        <MergeSheet open onClose={() => setSheet(null)}
+          sourceLabel={sheet.sourceLabel} targets={sheet.targets}
+          description="대표(남을 품목) 기준으로 이름·사양이 통일돼 한 카드가 됩니다. 적용취소는 환경설정 ‘품명 병합’."
+          onConfirm={sheet.onConfirm} pending={pending} />
       )}
     </div>
   )
