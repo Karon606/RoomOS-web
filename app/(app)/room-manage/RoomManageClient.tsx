@@ -76,6 +76,22 @@ function getRoomStatus(r: Room): RoomStatus {
   return { label: '거주중', kind: 'resident', badge: null }
 }
 
+// 상태 빠른 필터 키 — 공실/예약/거주중/퇴실예정. getRoomStatus 와 동일한 분기.
+type RoomStatusKey = 'vacant' | 'reserved' | 'active' | 'checkout'
+function roomStatusKey(r: Room): RoomStatusKey {
+  const lease = r.leaseTerms[0]
+  if (!lease) return 'vacant'
+  if (lease.status === 'RESERVED') return 'reserved'
+  if (lease.status === 'CHECKOUT_PENDING') return 'checkout'
+  return 'active'
+}
+const STATUS_FILTERS: { key: RoomStatusKey; label: string }[] = [
+  { key: 'vacant', label: '공실' },
+  { key: 'reserved', label: '예약' },
+  { key: 'active', label: '거주중' },
+  { key: 'checkout', label: '퇴실 예정' },
+]
+
 // 카드 표시 항목 — 이용자가 켜고 끌 수 있는 필드 (호실번호·상태는 항상 표시)
 const RM_CARD_FIELDS: FieldDef[] = [
   { key: 'floor',     label: '층' },
@@ -141,6 +157,7 @@ export default function RoomManageClient({
   // 필터
   type AreaPyeongRange  = '' | '<1' | '1-2' | '2-3' | '3+'
   type AreaM2Range      = '' | '<3.3' | '3.3-6.6' | '6.6-9.9' | '9.9+'
+  const [filterStatus, setFilterStatus]       = useState<RoomStatusKey | ''>('')
   const [showFilters, setShowFilters]         = useState(false)
   const [filterRoomNo, setFilterRoomNo]       = useState('')
   const [filterType, setFilterType]           = useState('')
@@ -259,6 +276,7 @@ export default function RoomManageClient({
           (r.type ?? '').toLowerCase().includes(q)
         if (!ok) return false
       }
+      if (filterStatus && roomStatusKey(r) !== filterStatus) return false
       if (roomNoQ && !r.roomNo.toLowerCase().includes(roomNoQ)) return false
       if (filterType && r.type !== filterType) return false
       if (filterTier && r.tier !== filterTier) return false
@@ -540,6 +558,31 @@ export default function RoomManageClient({
         >
           필터{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
         </button>
+      </div>
+
+      {/* 상태 빠른 필터 — 공실/예약/거주중/퇴실예정. 누르면 해당 상태만, 다시 누르면 전체. */}
+      <div className="flex gap-2 overflow-x-auto pb-0.5 -mb-0.5">
+        {(() => {
+          const counts = rooms.reduce((acc, r) => { const k = roomStatusKey(r); acc[k] = (acc[k] ?? 0) + 1; return acc }, {} as Record<RoomStatusKey, number>)
+          const chip = (active: boolean) =>
+            `shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              active ? 'bg-[var(--coral)] text-white' : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-mid)] hover:border-[var(--coral)]'
+            }`
+          return (
+            <>
+              <button type="button" onClick={() => setFilterStatus('')} className={chip(filterStatus === '')}>
+                전체 {rooms.length}
+              </button>
+              {STATUS_FILTERS.map(s => (
+                <button key={s.key} type="button"
+                  onClick={() => setFilterStatus(prev => prev === s.key ? '' : s.key)}
+                  className={chip(filterStatus === s.key)}>
+                  {s.label} {counts[s.key] ?? 0}
+                </button>
+              ))}
+            </>
+          )
+        })()}
       </div>
 
       {/* 필터 패널 */}
