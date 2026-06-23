@@ -211,7 +211,7 @@ export async function setCommonAsset(expenseIds: string[], value: boolean): Prom
 // 장부 금액·구매기록은 유지(이름/사양만 변경). 환경설정 '품명 병합'에서 적용취소(완전 원복) 가능.
 export async function combineAssets(
   destExpenseId: string, srcExpenseIds: string[],
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; runId: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -228,6 +228,7 @@ export async function combineAssets(
     })
     if (!srcs.length) return { ok: false, error: '합칠 항목을 찾을 수 없습니다.' }
 
+    let runId = ''
     await prisma.$transaction(async (tx) => {
       for (const e of srcs) {
         await tx.expense.update({
@@ -239,15 +240,16 @@ export async function combineAssets(
         })
       }
       const oldLabels = [...new Set(srcs.map(s => s.itemLabel).filter(Boolean))]
-      await tx.itemNameMergeRun.create({
+      const run = await tx.itemNameMergeRun.create({
         data: {
           propertyId, canonical: dest.itemLabel ?? '', memberCount: oldLabels.length || srcs.length, newAliasKeys: [],
           affected: { assets: srcs.map(s => ({ id: s.id, oldLabel: s.itemLabel, oldSpecValue: s.specValue, oldSpecUnit: s.specUnit, oldQtyUnit: s.qtyUnit, oldDetail: s.detail })) },
         },
       })
+      runId = run.id
     })
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance'); revalidatePath('/settings')
-    return { ok: true }
+    return { ok: true, runId }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '합치기에 실패했습니다.' }

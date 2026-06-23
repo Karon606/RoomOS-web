@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { assignAggregateToTarget, setCommonAsset, setAssetReceived, combineAssets, type AssetsData, type AssetItem } from './actions'
+import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // §10 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { InventoryCard } from '@/components/ui/inventory/InventoryCard'
@@ -67,14 +68,21 @@ export default function AssetsClient({ data, rooms, locations }: {
   ], [data])
   const selItems = useMemo(() => allItems.filter(it => mergeSel.has(it.id)), [allItems, mergeSel])
 
-  // 합치기 실행 — combineAssets(대상=남는 카드, src=합쳐질 지출들). 적용취소는 환경설정 '품명 병합'.
+  // §10 적용취소 — 토스트 액션·환경설정 '품명 병합' 둘 다(사용자 결정)
+  const undoCombine = (runId: string) => startTransition(async () => {
+    const res = await undoItemNameMerge(runId)
+    if (!res.ok) { pushToast('error', res.error); return }
+    pushToast('success', '합치기를 적용취소했습니다')
+    router.refresh()
+  })
+  // 합치기 실행 — combineAssets(대상=남는 카드, src=합쳐질 지출들). 적용취소는 토스트 + 환경설정 '품명 병합'.
   const runCombine = (destId: string, srcIds: string[], destLabel: string) => {
     if (srcIds.length === 0) { pushToast('error', '대표 외 합칠 비품을 더 선택하세요.'); return }
     startTransition(async () => {
       const res = await combineAssets(destId, srcIds)
       setSheet(null)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', `'${destLabel}'(으)로 합쳐짐`)
+      pushToast('success', `'${destLabel}'(으)로 합쳐짐`, { action: { label: '적용취소', run: () => undoCombine(res.runId) } })
       exitMerge(); router.refresh()
     })
   }
