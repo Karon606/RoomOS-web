@@ -15,6 +15,8 @@ import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { InventoryCard } from '@/components/ui/inventory/InventoryCard'
 import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
+import { Modal } from '@/components/ui/Modal'
+import { Badge } from '@/components/ui/Badge'
 
 // 비품 위치 섹션 마커 — §21.2 위치 아이콘(핀) 14px
 const PinMarker = () => (
@@ -54,6 +56,8 @@ export default function AssetsClient({ data, rooms, locations }: {
   const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setPillMode('menu') }
   // 합치기 바텀시트 — §21.4 MergeSheet 단일 통일(카드별·선택 공용)
   const [sheet, setSheet] = useState<{ sourceLabel: string; targets: MergeTarget[]; onConfirm: (destId: string) => void } | null>(null)
+  // 비품 상세 풀화면 — §21.5 본문 탭 진입(구매 내역·현재 상태·합치기)
+  const [detailItem, setDetailItem] = useState<AssetItem | null>(null)
   const toggleMergeSel = (id: string) => setMergeSel(prev => {
     const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
   })
@@ -192,6 +196,7 @@ export default function AssetsClient({ data, rooms, locations }: {
         selectable={mergeMode}
         selected={mergeSel.has(it.id)}
         onToggleSelect={() => toggleMergeSel(it.id)}
+        onClick={() => setDetailItem(it)}
         title={it.detail || it.itemLabel}
         meta={`${it.date.slice(2)} · ${it.category}${it.vendor ? ` · ${it.vendor}` : ''}`}
         value={won(it.amount)}
@@ -403,6 +408,45 @@ export default function AssetsClient({ data, rooms, locations }: {
           description="대표(남을 품목) 기준으로 이름·사양이 통일돼 한 카드가 됩니다. 적용취소는 환경설정 ‘품명 병합’."
           onConfirm={sheet.onConfirm} pending={pending} />
       )}
+
+      {/* 비품 상세 풀화면 — §21.5 본문 탭 진입. 구매 내역(영수증별)·현재 상태·합치기 */}
+      {detailItem && (() => {
+        const it = detailItem
+        const loc = it.roomNo ? fmtRoomNo(it.roomNo) : it.locationName ? it.locationName : it.isCommon ? '공용 자재' : '미배정(여분)'
+        const sibs = allItems.filter(s => s.id !== it.id && s.category === it.category)
+        return (
+          <Modal open onClose={() => setDetailItem(null)} title={it.itemLabel} width="md">
+            <div className="space-y-4 p-5">
+              <div>
+                <p className="text-sm text-[var(--warm-dark)]">{it.detail || it.itemLabel}</p>
+                <p className="mt-0.5 text-xs text-[var(--warm-muted)]">{it.category}{it.vendor ? ` · ${it.vendor}` : ''}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone={it.roomNo || it.locationName ? 'pale-green' : 'neutral'}>{loc}</Badge>
+                {it.isCommon && <Badge tone="inspect">공용 자재</Badge>}
+                <span className="text-xs text-[var(--warm-muted)]">총 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'} · {won(it.amount)} · 구매 {it.count}건</span>
+              </div>
+              <div>
+                <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">구매 내역</p>
+                <ul className="space-y-1">
+                  {it.breakdown.map((b, i) => (
+                    <li key={i} className="flex items-baseline justify-between gap-2 text-xs">
+                      <span className="tabular-nums text-[var(--warm-mid)]">{b.date}{b.qty != null ? ` · ${fmtQty(b.qty)}${it.qtyUnit ?? '개'}` : ''}</span>
+                      <span className="tabular-nums text-[var(--warm-dark)]">{won(b.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              {sibs.length > 0 && (
+                <button type="button" onClick={() => { setDetailItem(null); openCardMerge(it, sibs) }}
+                  className="w-full rounded-xl border border-[var(--warm-border)] py-2.5 text-sm font-semibold text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">
+                  다른 품목과 합치기
+                </button>
+              )}
+            </div>
+          </Modal>
+        )
+      })()}
     </div>
   )
 }
