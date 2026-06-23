@@ -4,7 +4,7 @@
 // 방별 / 공용부(위치)별 / 미배정(여분)으로 보여주고, 미배정 아이템을 방·공용부에 배정한다.
 // 수량 2개 이상이면 몇 개 배정할지 물어 분할(나머지 여분 유지). 배정해제 시 같은 묶음 재병합.
 
-import { useState, useTransition, useMemo } from 'react'
+import { useState, useTransition, useMemo, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -12,6 +12,18 @@ import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { assignAggregateToTarget, setCommonAsset, setAssetReceived, combineAssets, type AssetsData, type AssetItem } from './actions'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
+import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
+
+// 비품 위치 섹션 마커 — §21.2 위치 아이콘(핀) 14px
+const PinMarker = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M12 21s-7-6.5-7-11a7 7 0 0 1 14 0c0 4.5-7 11-7 11z" /><circle cx="12" cy="10" r="2.5" />
+  </svg>
+)
+const CoralTag = ({ children }: { children: ReactNode }) => (
+  <span className="text-[0.625rem] font-normal text-[var(--coral)]">{children}</span>
+)
 
 const won = (n: number) => n.toLocaleString('ko-KR') + '원'
 const fmtRoomNo = (no: string) => (/^\d+$/.test(no) ? `${no}호` : no)
@@ -340,9 +352,7 @@ export default function AssetsClient({ data, rooms, locations }: {
           {/* 수령 대기 — 주문했지만 아직 안 받은 비품 (맨 위) */}
           {data.pending.length > 0 && (
             <section className="space-y-2">
-              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">
-                수령 대기 <span className="text-[0.625rem] text-[var(--coral)] font-normal">도착 전</span> <span className="text-[var(--warm-muted)] font-normal">{data.pending.length}건 · {won(data.pendingTotal)}</span>
-              </h2>
+              <SectionHeader name={<>수령 대기 <CoralTag>도착 전</CoralTag></>} count={`${data.pending.length}건 · ${won(data.pendingTotal)}`} />
               <ul className="space-y-1.5">
                 {data.pending.map(it => <ItemRow key={it.id} it={it} placed={false} awaitingReceipt siblings={siblingsOf(data.pending, it)} />)}
               </ul>
@@ -351,9 +361,7 @@ export default function AssetsClient({ data, rooms, locations }: {
 
           {/* 미배정(여분) — 먼저 */}
           <section className="space-y-2">
-            <h2 className="text-sm font-semibold text-[var(--warm-dark)]">
-              미배정 (여분) <span className="text-[var(--warm-muted)] font-normal">{data.unassigned.length}건 · {won(data.unassignedTotal)}</span>
-            </h2>
+            <SectionHeader name="미배정 (여분)" count={`${data.unassigned.length}건 · ${won(data.unassignedTotal)}`} />
             {data.unassigned.length === 0 ? (
               <p className="text-xs text-[var(--warm-muted)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-3 text-center">미배정 비품이 없습니다.</p>
             ) : (
@@ -366,9 +374,7 @@ export default function AssetsClient({ data, rooms, locations }: {
           {/* 공용 자재 — 페인트·공구 등 방/공용부 배분 안 하는 공용 비품 */}
           {data.common.length > 0 && (
             <section className="space-y-2">
-              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">
-                공용 자재 <span className="text-[0.625rem] text-[var(--coral)] font-normal">배분 안 함</span> <span className="text-[var(--warm-muted)] font-normal">{data.common.length}건 · {won(data.commonTotal)}</span>
-              </h2>
+              <SectionHeader name={<>공용 자재 <CoralTag>배분 안 함</CoralTag></>} count={`${data.common.length}건 · ${won(data.commonTotal)}`} />
               <ul className="space-y-1.5">
                 {data.common.map(it => <ItemRow key={it.id} it={it} placed={false} siblings={siblingsOf(data.common, it)} />)}
               </ul>
@@ -378,9 +384,7 @@ export default function AssetsClient({ data, rooms, locations }: {
           {/* 방별 */}
           {data.rooms.map(g => (
             <section key={g.roomId} className="space-y-2">
-              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">
-                {fmtRoomNo(g.roomNo)} <span className="text-[var(--warm-muted)] font-normal">{g.items.length}건 · {won(g.total)}</span>
-              </h2>
+              <SectionHeader marker={<PinMarker />} name={fmtRoomNo(g.roomNo)} count={`${g.items.length}건 · ${won(g.total)}`} />
               <ul className="space-y-1.5">
                 {g.items.map(it => <ItemRow key={it.id} it={it} placed siblings={siblingsOf(g.items, it)} />)}
               </ul>
@@ -390,9 +394,7 @@ export default function AssetsClient({ data, rooms, locations }: {
           {/* 공용부별 */}
           {data.locations.map(g => (
             <section key={g.locationId} className="space-y-2">
-              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">
-                {g.name} <span className="text-[0.625rem] text-[var(--coral)] font-normal">공용부</span> <span className="text-[var(--warm-muted)] font-normal">{g.items.length}건 · {won(g.total)}</span>
-              </h2>
+              <SectionHeader marker={<PinMarker />} name={<>{g.name} <CoralTag>공용부</CoralTag></>} count={`${g.items.length}건 · ${won(g.total)}`} />
               <ul className="space-y-1.5">
                 {g.items.map(it => <ItemRow key={it.id} it={it} placed siblings={siblingsOf(g.items, it)} />)}
               </ul>
@@ -401,58 +403,44 @@ export default function AssetsClient({ data, rooms, locations }: {
         </>
       )}
 
-      {/* 선택 바 — 다크 플로팅 알약. ① 방·공용부 일괄 배정 ② 합치기(대표로 통일). 카드별 '합치기'도 병행.
-          배정 적용취소는 각 품목에서. 합치기 적용취소는 환경설정 '품명 병합'. */}
+      {/* 선택 모드 하단 알약 — §21.3 SelectionPillBar(탭 공용). ① 방·공용부 일괄 배정 ② 합치기(대표로 통일). */}
       {mergeMode && mergeSel.size > 0 && (
-        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
-          <div className="flex items-center gap-2 bg-[var(--ink)] text-[var(--canvas)] rounded-xl px-4 py-3 shadow-lift pointer-events-auto mx-4 max-w-[calc(100vw-24px)]">
-            <span className="text-sm font-medium whitespace-nowrap">{mergeSel.size}개 선택</span>
-            <div className="w-px h-4 bg-[var(--canvas)]/20" />
-            {pillMode === 'menu' && (
-              <>
-                <button type="button" onClick={() => setPillMode('assign')}
-                  className="text-sm font-semibold text-[var(--coral)] hover:text-[var(--coral-dark)] transition-colors whitespace-nowrap">방·공용부 일괄 배정</button>
-                {mergeSel.size >= 2 && (
-                  <button type="button" onClick={() => { setPillCombineDest(''); setPillMode('combine') }}
-                    className="text-sm font-semibold text-[var(--canvas)] hover:text-white transition-colors whitespace-nowrap">합치기</button>
-                )}
-              </>
-            )}
-            {pillMode === 'combine' && (
-              <>
-                <select autoFocus value={pillCombineDest} disabled={pending}
-                  onChange={e => setPillCombineDest(e.target.value)}
-                  className="bg-white/15 text-[var(--canvas)] rounded-lg px-2 py-1.5 text-sm outline-none max-w-[44vw]">
-                  <option value="" disabled>대표(남길 품목) 선택…</option>
-                  {selItems.map(it => <option key={it.id} value={it.id}>{it.detail || it.itemLabel}</option>)}
-                </select>
-                <button type="button" onClick={askBatchCombine} disabled={pending || !pillCombineDest}
-                  className="text-sm font-semibold px-3 py-1.5 rounded-xl bg-[var(--coral)] text-white disabled:opacity-50 whitespace-nowrap">합치기</button>
-                <button type="button" onClick={() => setPillMode('menu')} className="text-sm px-2 py-1.5 text-[var(--canvas)]/70 hover:text-[var(--canvas)]">뒤로</button>
-              </>
-            )}
-            {pillMode === 'assign' && (
-              <>
-                <select autoFocus defaultValue="" disabled={pending}
-                  onChange={e => onBatchPick(e.target.value)}
-                  className="bg-white/15 text-[var(--canvas)] rounded-lg px-2 py-1.5 text-sm outline-none max-w-[44vw]">
-                  <option value="" disabled>방·공용부 선택…</option>
-                  <optgroup label="방">
-                    {rooms.map(r => <option key={r.id} value={'room:' + r.id}>{fmtRoomNo(r.roomNo)}</option>)}
+        <SelectionPillBar count={mergeSel.size} onClose={exitMerge}>
+          {pillMode === 'menu' && (
+            <>
+              <PillButton primary onClick={() => setPillMode('assign')}>방·공용부 일괄 배정</PillButton>
+              {mergeSel.size >= 2 && <PillButton onClick={() => { setPillCombineDest(''); setPillMode('combine') }}>합치기</PillButton>}
+            </>
+          )}
+          {pillMode === 'combine' && (
+            <>
+              <select autoFocus value={pillCombineDest} disabled={pending} onChange={e => setPillCombineDest(e.target.value)}
+                className="h-9 max-w-[44vw] rounded-[9px] bg-white/[0.13] px-2 text-sm text-white outline-none">
+                <option value="" disabled>대표(남길 품목) 선택…</option>
+                {selItems.map(it => <option key={it.id} value={it.id}>{it.detail || it.itemLabel}</option>)}
+              </select>
+              <PillButton primary onClick={askBatchCombine} disabled={pending || !pillCombineDest}>합치기</PillButton>
+              <PillButton onClick={() => setPillMode('menu')}>뒤로</PillButton>
+            </>
+          )}
+          {pillMode === 'assign' && (
+            <>
+              <select autoFocus defaultValue="" disabled={pending} onChange={e => onBatchPick(e.target.value)}
+                className="h-9 max-w-[44vw] rounded-[9px] bg-white/[0.13] px-2 text-sm text-white outline-none">
+                <option value="" disabled>방·공용부 선택…</option>
+                <optgroup label="방">
+                  {rooms.map(r => <option key={r.id} value={'room:' + r.id}>{fmtRoomNo(r.roomNo)}</option>)}
+                </optgroup>
+                {locations.length > 0 && (
+                  <optgroup label="공용부">
+                    {locations.map(l => <option key={l.id} value={'loc:' + l.id}>{l.name}</option>)}
                   </optgroup>
-                  {locations.length > 0 && (
-                    <optgroup label="공용부">
-                      {locations.map(l => <option key={l.id} value={'loc:' + l.id}>{l.name}</option>)}
-                    </optgroup>
-                  )}
-                </select>
-                <button type="button" onClick={() => setPillMode('menu')} className="text-sm px-2 py-1.5 text-[var(--canvas)]/70 hover:text-[var(--canvas)]">뒤로</button>
-              </>
-            )}
-            <button type="button" onClick={exitMerge}
-              className="text-sm px-3 py-1.5 rounded-xl bg-white/15 text-[var(--canvas)] hover:bg-white/25 transition-colors">취소</button>
-          </div>
-        </div>
+                )}
+              </select>
+              <PillButton onClick={() => setPillMode('menu')}>뒤로</PillButton>
+            </>
+          )}
+        </SelectionPillBar>
       )}
     </div>
   )
