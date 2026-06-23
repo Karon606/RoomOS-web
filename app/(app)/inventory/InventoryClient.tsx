@@ -10,6 +10,8 @@ import { Loading } from '@/components/ui/Loading'
 import { Modal, ModalFooterActions } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { SectionHeader, DotMarker } from '@/components/ui/inventory/SectionHeader'
+import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { convertSpecValue, listCompatibleUnits, unitFactor } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -336,11 +338,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         })()}
         {grouped.map(g => g.rows.length > 0 && (
           <section key={g.cat} className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: tintOf(g.cat).fg }} />
-              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">{g.alias}</h2>
-              <span className="text-[0.6875rem] text-[var(--warm-muted)]">{g.rows.length}품목</span>
-            </div>
+            <SectionHeader marker={<DotMarker color={tintOf(g.cat).fg} />} name={g.alias} count={`${g.rows.length}품목`} />
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {g.rows.map(r => (
                 <InventoryCard
@@ -385,18 +383,11 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         />
       )}
 
-      {/* 배치 액션 바 */}
+      {/* 선택 모드 하단 알약 — §21.3 SelectionPillBar (탭 공용) */}
       {selectMode && selected.size > 0 && (
-        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
-          <div className="flex items-center gap-3 bg-[var(--ink)] text-[var(--canvas)] rounded-xl px-4 py-3 shadow-lift pointer-events-auto mx-4">
-            <span className="text-sm font-medium">{selected.size}개 선택됨</span>
-            <div className="w-px h-4 bg-[var(--canvas)]/20" />
-            <button type="button" onClick={() => setShowBatchLoc(true)}
-              className="text-sm font-semibold text-[var(--coral)] hover:text-[var(--coral-dark)] transition-colors">
-              위치 일괄 할당
-            </button>
-          </div>
-        </div>
+        <SelectionPillBar count={selected.size} onClose={exitSelectMode}>
+          <PillButton primary onClick={() => setShowBatchLoc(true)}>위치 일괄 할당</PillButton>
+        </SelectionPillBar>
       )}
 
       {detailId && (
