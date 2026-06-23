@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SectionHeader, DotMarker } from '@/components/ui/inventory/SectionHeader'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
+import { InventoryCard as InvCard } from '@/components/ui/inventory/InventoryCard'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { convertSpecValue, listCompatibleUnits, unitFactor } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -405,6 +406,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
 }
 
 function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraft }: { row: InventoryRow; onOpen: () => void; onArchive?: () => void; selectMode?: boolean; isSelected?: boolean; hasDraft?: boolean }) {
+  const [open, setOpen] = useState(false)   // 지표·추이 펼치기
   const tint = tintOf(row.category)
   const lowStock = row.daysUntilEmpty != null && row.daysUntilEmpty <= row.alertThresholdDays
   // 당분간 사용 안 함 후보: 현재 잔량 0 + 수령 대기 0 + 점검 기록 있음(신규는 제외)
@@ -413,30 +415,34 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
   const stockUnit = row.trackUnit === 'qty' ? row.qtyUnit : (row.specUnit ?? row.qtyUnit)
   const priceUnit = row.trackUnit === 'qty' ? row.qtyUnit : (row.specUnit ?? row.qtyUnit)
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={`w-full bg-[var(--cream)] rounded-xl p-4 space-y-3 text-left transition-colors ${isSelected ? 'border-2 border-[var(--coral)] ring-2 ring-[var(--coral)]/20' : 'border border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-sm font-bold text-[var(--warm-dark)] truncate">{row.label}</p>
-          <p className="text-[0.625rem] mt-0.5" style={{ color: tint?.fg }}>{row.category}</p>
-        </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          {hasDraft && (
-            <span className="text-[0.5625rem] font-medium text-[var(--coral)] bg-[var(--coral)]/10 rounded-full px-2 py-0.5 whitespace-nowrap">점검 중</span>
-          )}
-          {lowStock && <Badge tone="danger" mono>소진 임박</Badge>}
-          {row.pendingPurchases.length > 0 && (
-            <Badge tone="warn" mono>{row.pendingPurchases.length}건 수령대기</Badge>
-          )}
-        </div>
-      </div>
+    <InvCard
+      selectable={selectMode} selected={isSelected}
+      onToggleSelect={onOpen} onClick={onOpen} attn={lowStock}
+      title={row.label}
+      badges={<>
+        {hasDraft && <Badge tone="inspect">점검 중</Badge>}
+        {lowStock && <Badge tone="danger" mono>소진 임박</Badge>}
+        {row.pendingPurchases.length > 0 && <Badge tone="warn" mono>{row.pendingPurchases.length}건 수령대기</Badge>}
+      </>}
+      meta={<span style={{ color: tint?.fg }}>{row.category}</span>}
+      value={fmtQty(row.currentStock, stockUnit)}
+      valueDanger={lowStock}
+      valueSub={row.daysUntilEmpty != null ? `소진 D-${row.daysUntilEmpty}` : undefined}
+      expanded={open}
+      actions={<>
+        <button type="button" onClick={() => setOpen(v => !v)}
+          className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+          {open ? '지표 접기' : '지표·추이'}
+        </button>
+        {suggestHide && onArchive && (
+          <button type="button" onClick={onArchive}
+            className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors">
+            숨기기
+          </button>
+        )}
+      </>}
+      expand={<div className="space-y-3">
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-        <div>
-          <p className="text-[0.625rem] text-[var(--warm-muted)]">현재 잔량</p>
-          <p className="text-sm font-semibold text-[var(--warm-dark)]">{fmtQty(row.currentStock, stockUnit)}</p>
-        </div>
         <div>
           <p className="text-[0.625rem] text-[var(--warm-muted)]">평균 소모/일</p>
           <p className="text-sm font-medium text-[var(--warm-mid)]">
@@ -555,20 +561,8 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
           })()}
         </div>
       )}
-      {suggestHide && onArchive && (
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={e => { e.stopPropagation(); onArchive() }}
-          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); onArchive() } }}
-          className="mt-1 flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg bg-[var(--coral)]/5 border border-[var(--coral)]/30 hover:bg-[var(--coral)]/10 cursor-pointer transition-colors">
-          <span className="text-[0.6875rem] text-[var(--coral)] leading-snug">
-            잔량 0 · 수령 대기 없음 — 당분간 안 쓰면 숨길까요?
-          </span>
-          <span className="text-[0.6875rem] font-semibold text-[var(--coral)] whitespace-nowrap">숨기기 →</span>
-        </div>
-      )}
-    </button>
+      </div>}
+    />
   )
 }
 
