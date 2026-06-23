@@ -18,6 +18,7 @@
 
   /* Ink — 구조·텍스트 */
   --ink:          #3d2418;   /* primary 텍스트·차트 디폴트 */
+  --pill-bg:      #3d2418;   /* §21.3 선택 알약 등 다크 플로팅 표면 — 양 모드 어둡게 고정(--ink는 다크에서 밝아져 부적합) */
   --ink-2:        #3d2418;   /* 본문 (이전 --warm-dark) */
   --ink-3:        #7a6553;   /* 보조 텍스트 (이전 --warm-mid) */
   --ink-mute:     #a89380;   /* placeholder·메타 (이전 --warm-muted) */
@@ -363,6 +364,7 @@ html.dark {
 
   /* Text */
   --ink:          var(--d-ink);
+  --pill-bg:      #2a1e15;   /* 다크: #000 페이지 위에서 대비되는 어두운 브라운 표면(흰 글자) */
   --ink-2:        var(--d-ink);
   --ink-3:        var(--d-ink-s);
   --ink-mute:     var(--d-ink-m);
