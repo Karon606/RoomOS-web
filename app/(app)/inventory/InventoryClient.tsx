@@ -13,6 +13,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { SectionHeader, DotMarker } from '@/components/ui/inventory/SectionHeader'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { InventoryCard as InvCard } from '@/components/ui/inventory/InventoryCard'
+import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { convertSpecValue, listCompatibleUnits, unitFactor } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -189,6 +190,27 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
     return next
   })
   const exitSelectMode = () => { setSelectMode(false); setSelected(new Set()) }
+
+  // 합치기 — §21.4 MergeSheet 단일. 선택한 품목들을 대표(남는 카드)로 합침(mergeTrackedItems).
+  const [sheet, setSheet] = useState<{ sourceLabel: string; targets: MergeTarget[]; onConfirm: (destId: string) => void } | null>(null)
+  const runMergeTracked = (destId: string, srcIds: string[], destLabel: string) => {
+    if (srcIds.length === 0) { pushToast('error', '대표 외 합칠 품목을 더 선택하세요.'); return }
+    startTransition(async () => {
+      let ok = 0
+      for (const srcId of srcIds) { const res = await mergeTrackedItems(srcId, destId, true); if (res.ok) ok++ }
+      setSheet(null); exitSelectMode()
+      pushToast(ok === srcIds.length ? 'success' : 'error', `'${destLabel}'(으)로 ${ok}개 합쳐짐`)
+      router.refresh()
+    })
+  }
+  const openSelectionMerge = () => {
+    const sel = rows.filter(r => selected.has(r.id))
+    setSheet({
+      sourceLabel: `선택 ${sel.length}개`,
+      targets: sel.map(r => ({ id: r.id, label: r.label })),
+      onConfirm: destId => runMergeTracked(destId, sel.filter(r => r.id !== destId).map(r => r.id), sel.find(r => r.id === destId)?.label ?? ''),
+    })
+  }
 
   const [seedPending, setSeedPending] = useState(false)
   const handleSeed = async () => {
@@ -407,7 +429,16 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       {selectMode && selected.size > 0 && (
         <SelectionPillBar count={selected.size} onClose={exitSelectMode}>
           <PillButton primary onClick={() => setShowBatchLoc(true)}>위치 일괄 할당</PillButton>
+          {selected.size >= 2 && <PillButton onClick={openSelectionMerge}>합치기</PillButton>}
         </SelectionPillBar>
+      )}
+
+      {/* 합치기 — §21.4 MergeSheet 단일(선택 알약·상세 공용). 방향 고지 + §10 적용취소 */}
+      {sheet && (
+        <MergeSheet open onClose={() => setSheet(null)}
+          sourceLabel={sheet.sourceLabel} targets={sheet.targets}
+          description="대표(남을 카드) 기준으로 합쳐집니다. 지출·점검·무상입수 기록이 대표로 이동하고 나머지 카드는 사라집니다. 적용취소는 ‘병합 적용취소·규칙’."
+          onConfirm={sheet.onConfirm} pending={isPending} />
       )}
 
       {detailId && (
