@@ -8,6 +8,7 @@
 // 임베드 방식이라 네트워크 의존성 zero, document.fonts.ready로 로딩 보장.
 
 import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, renderContractText, buildRefundClause } from '@/lib/contract'
+import { PRINT_HEX } from '@/lib/printTokens'   // §20.2 인쇄 토큰 단일 출처
 
 // 모듈 레벨 캐시 — cold start 후 첫 PDF 생성 때만 jsdelivr CDN에서 폰트 다운로드 (~570KB).
 // 이후 요청은 메모리 캐시 사용.
@@ -168,8 +169,8 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     src: url(data:font/woff2;base64,${d.pretendardBase64}) format('woff2-variations');
   }
   :root{
-    --p-ink:#1F1A17; --p-muted:#6B5D4F; --p-tc:#A03C2E;
-    --p-label-bg:#F2ECE3; --p-rule:#D8CFC4; --p-rule-strong:#9A8A78; --p-amt-bg:#FCFAF6;
+    --p-ink:${PRINT_HEX.ink}; --p-muted:${PRINT_HEX.inkMuted}; --p-tc:${PRINT_HEX.tc};
+    --p-label-bg:${PRINT_HEX.labelBg}; --p-rule:${PRINT_HEX.rule}; --p-rule-strong:${PRINT_HEX.ruleStrong}; --p-amt-bg:${PRINT_HEX.amtBg};
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: #fff; color: var(--p-ink); font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif; word-break: keep-all; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -231,7 +232,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .sign-img { height: 11mm; width: auto; max-width: 42mm; object-fit: contain; flex-shrink: 0; }
   .seal-wrap { flex-shrink: 0; position: relative; display: inline-flex; align-items: center; justify-content: center; }
   .seal-mark { font-size: 9.5pt; color: var(--p-muted); white-space: nowrap; }
-  .seal-stamp { height: 15mm; width: auto; max-width: 22mm; object-fit: contain; }
+  .seal-stamp { height: 18mm; width: auto; max-width: 22mm; object-fit: contain; }
 
   /* 푸터 */
   .doc-footer { border-top: 0.6pt solid var(--p-rule); padding-top: 3mm; display: flex; justify-content: space-between; align-items: flex-end; gap: 6mm; }

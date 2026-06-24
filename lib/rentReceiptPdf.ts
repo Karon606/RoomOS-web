@@ -6,8 +6,9 @@
 //     (cidXXXX 글리프명이 남으면 pdf-lib이 CID 폰트로 오인해 하이픈/물결 폭이 깨짐)
 //   읽기 실패 시 나눔고딕(§20.1 폴백) + faux-bold.
 
-import { PDFDocument, rgb, type PDFFont } from 'pdf-lib'
+import { PDFDocument, type PDFFont } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
+import { PRINT_RGB, SEAL_MM } from './printTokens'   // §20.2 인쇄 토큰 단일 출처 · §20.9 도장 18mm
 import path from 'path'
 import { readFile } from 'fs/promises'
 import { getNanumGothic } from './residenceCertOverlay'
@@ -36,13 +37,14 @@ const MM = 2.83465
 const PAGE_W = 148 * MM, PAGE_H = 210 * MM
 const L = 14 * MM, R = PAGE_W - 14 * MM
 
-const P_INK = rgb(0.122, 0.102, 0.090)
-const P_MUTED = rgb(0.420, 0.365, 0.310)
-const P_TC = rgb(0.627, 0.235, 0.176)
-const P_LABEL_BG = rgb(0.949, 0.925, 0.890)
-const P_RULE = rgb(0.847, 0.812, 0.769)
-const P_RULE_STRONG = rgb(0.604, 0.541, 0.471)
-const P_AMOUNT_BG = rgb(0.988, 0.980, 0.965)
+// §20.2 인쇄 토큰 — lib/printTokens.ts 단일 출처 참조(값 동일, 시각 변화 0)
+const P_INK = PRINT_RGB.ink
+const P_MUTED = PRINT_RGB.inkMuted
+const P_TC = PRINT_RGB.tc
+const P_LABEL_BG = PRINT_RGB.labelBg
+const P_RULE = PRINT_RGB.rule
+const P_RULE_STRONG = PRINT_RGB.ruleStrong
+const P_AMOUNT_BG = PRINT_RGB.amountBg
 
 const issueKor = (d: string) => { const [y, m, dd] = (d ?? '').split('-').map(Number); return Number.isFinite(y) ? `${y}년 ${m}월 ${dd}일` : (d ?? '') }
 const onlyDigits = (s: string) => (s ?? '').replace(/[^0-9]/g, '')
@@ -172,7 +174,7 @@ export async function buildRentReceiptPdf(
   T('위 입실료의 납부 사실을 확인함', R - 84 * MM, signLineY + 11 * MM, 8, P_MUTED)
   const sigText = `임대인  ${brand.businessName}  대표  ${f.recipientName}`
   if (stampBytes && stampBytes.length > 0) {
-    const SEAL = 16 * MM, sealLeft = R - SEAL, sealCx = R - SEAL / 2
+    const SEAL = SEAL_MM * MM, sealLeft = R - SEAL, sealCx = R - SEAL / 2
     TR(sigText, sealLeft - 2 * MM, signLineY, 9.5, P_INK)            // 이름 — 도장 왼쪽(가려지지 않게)
     T('(인)', sealCx - W('(인)', 9.5) / 2, signLineY, 9.5, P_INK)     // (인) — 도장이 덮음 (§20.9)
     try {
