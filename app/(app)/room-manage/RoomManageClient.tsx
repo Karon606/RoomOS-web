@@ -17,6 +17,7 @@ import { SortSelect } from '@/components/ui/SortSelect'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { RoomCard, type CardKind } from '@/components/ui/RoomCard'
 import { SearchBar } from '@/components/ui/SearchBar'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { Panorama360 } from '@/components/Panorama360'
@@ -715,15 +716,13 @@ export default function RoomManageClient({
         </div>
       )}
 
-      {/* 호실 그리드 */}
+      {/* 호실 그리드 — 빈 상태는 §16 공용 EmptyState */}
       {filteredRooms.length === 0 ? (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-12 text-center">
-          <svg className="mx-auto mb-3" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M3 12 L12 4 L21 12 M5 10 V20 H19 V10" />
-          </svg>
-          <p className="text-[var(--warm-dark)] font-medium">{search ? '검색 결과가 없습니다' : '등록된 호실이 없습니다'}</p>
-          {!search && <p className="text-sm text-[var(--warm-muted)] mt-1">호실 등록 버튼을 눌러 시작하세요</p>}
-        </div>
+        <EmptyState
+          icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12 L12 4 L21 12 M5 10 V20 H19 V10" /></svg>}
+          title={search ? '검색 결과가 없습니다' : '등록된 호실이 없습니다'}
+          description={search ? '다른 검색어로 시도해 보세요.' : '호실 등록 버튼을 눌러 시작하세요.'}
+        />
       ) : (
         <div className="space-y-2">
           {filteredRooms.map(room => {

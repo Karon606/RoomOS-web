@@ -27,6 +27,7 @@ import { useUrlState } from '@/lib/useUrlState'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SearchBar } from '@/components/ui/SearchBar'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { SortSelect } from '@/components/ui/SortSelect'
 import { STATUS_LABEL, leaseCardKind, statusException, leaseTipTone } from '@/lib/statusColors'
 import { RoomCard } from '@/components/ui/RoomCard'
@@ -1227,17 +1228,14 @@ export default function TenantClient({
       })()}
 
 
-      {/* 모바일 카드 뷰 */}
+      {/* 모바일 카드 뷰 — 빈 상태는 §16 공용 EmptyState */}
       {sorted.length === 0 ? (
-        <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-12 text-center">
-          <svg className="mx-auto mb-3" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="12" cy="9" r="4" />
-            <path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" />
-          </svg>
-          <p className="text-[var(--warm-dark)] font-medium">
-            {search.trim() ? '검색 결과가 없습니다' : '고객이 없습니다'}
-          </p>
-        </div>
+        <EmptyState
+          className="sm:hidden"
+          icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4" /><path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" /></svg>}
+          title={search.trim() ? '검색 결과가 없습니다' : '고객이 없습니다'}
+          description={search.trim() ? '다른 검색어로 시도해 보세요.' : '고객을 등록하면 이곳에 표시됩니다.'}
+        />
       ) : (
         <div className="sm:hidden space-y-2">
           {sorted.map(tenant => {
@@ -1336,17 +1334,14 @@ export default function TenantClient({
         </div>
       )}
 
-      {/* 데스크탑 테이블 */}
+      {/* 데스크탑 테이블 — 빈 상태는 §16 공용 EmptyState */}
       {sorted.length === 0 ? (
-        <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-12 text-center">
-          <svg className="mx-auto mb-3" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="12" cy="9" r="4" />
-            <path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" />
-          </svg>
-          <p className="text-[var(--warm-dark)] font-medium">
-            {search.trim() ? '검색 결과가 없습니다' : '고객이 없습니다'}
-          </p>
-        </div>
+        <EmptyState
+          className="hidden sm:block"
+          icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4" /><path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" /></svg>}
+          title={search.trim() ? '검색 결과가 없습니다' : '고객이 없습니다'}
+          description={search.trim() ? '다른 검색어로 시도해 보세요.' : '고객을 등록하면 이곳에 표시됩니다.'}
+        />
       ) : (
         <div className="hidden sm:block relative bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-auto max-h-[calc(100dvh-310px)]">
           {/* 저장 후 서버 재요청 완료 전 클릭 차단 오버레이 */}

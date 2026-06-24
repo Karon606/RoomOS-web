@@ -729,7 +729,11 @@ export default function RoomsClient({
           )
         })}
         {displayed.length === 0 && (
-          <EmptyState title={search ? '검색 결과가 없습니다' : '해당하는 호실이 없습니다'} />
+          <EmptyState
+            icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12 L12 4 L21 12 M5 10 V20 H19 V10" /></svg>}
+            title={search ? '검색 결과가 없습니다' : '해당하는 호실이 없습니다'}
+            description={search ? '다른 검색어로 시도해 보세요.' : '필터를 바꾸면 다른 호실이 표시됩니다.'}
+          />
         )}
       </div>
 
