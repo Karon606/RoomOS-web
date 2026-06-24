@@ -894,7 +894,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               <XAxis dataKey="label" tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
               <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} width={52} />
               <Tooltip
-                contentStyle={{ background: '#fff', border: '1px solid var(--cream-3)', borderRadius: 8, fontSize: '0.75rem' }}
+                contentStyle={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)', borderRadius: 8, fontSize: '0.75rem' }}
                 formatter={(v, name) => [`${Number(v).toLocaleString()}만원`, String(name)]}
               />
               <Area type="monotone" dataKey="revenue" name="수입" stroke="var(--coral)" strokeWidth={2} fill="url(#gradRev)" dot={false} activeDot={{ r: 4, fill: 'var(--coral)' }} />
@@ -909,7 +909,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
               <XAxis dataKey="label" tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
               <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} width={52} />
               <Tooltip
-                contentStyle={{ background: '#fff', border: '1px solid var(--cream-3)', borderRadius: 8, fontSize: '0.75rem' }}
+                contentStyle={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)', borderRadius: 8, fontSize: '0.75rem' }}
                 formatter={(v, name) => [`${Number(v).toLocaleString()}만원`, String(name)]}
               />
               <Bar dataKey="revenue" name="수입" fill="var(--coral)" radius={[3, 3, 0, 0]} maxBarSize={28} />

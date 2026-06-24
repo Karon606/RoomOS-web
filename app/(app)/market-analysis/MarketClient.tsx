@@ -292,7 +292,7 @@ function CompetitorModal({
       footer={
         <div className="flex flex-col gap-2">
           {saveError && (
-            <div style={{ fontSize: '0.8125rem', color: '#b91c1c', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 10, padding: '8px 12px' }}>
+            <div style={{ fontSize: '0.8125rem', color: 'var(--danger-fg)', background: 'var(--danger-bg)', border: '1px solid var(--danger-ring)', borderRadius: 10, padding: '8px 12px' }}>
               {saveError}
             </div>
           )}
@@ -392,7 +392,7 @@ function CompetitorModal({
                     <button
                       type="button"
                       onClick={() => removePriceRow(i)}
-                      style={{ color: '#b91c1c', fontSize: '1.125rem', lineHeight: 1, flexShrink: 0 }}
+                      style={{ color: 'var(--danger-fg)', fontSize: '1.125rem', lineHeight: 1, flexShrink: 0 }}
                     >
                       ×
                     </button>
@@ -1146,10 +1146,10 @@ export default function MarketClient({
                     style={{
                       marginTop: 12,
                       padding: '10px 14px',
-                      background: '#fee2e2',
-                      color: '#b91c1c',
+                      background: 'var(--danger-bg)',
+                      color: 'var(--danger-fg)',
                       fontSize: '0.8125rem',
-                      border: '1px solid #fca5a5',
+                      border: '1px solid var(--danger-ring)',
                     }}
                   >
                     {aiError}
@@ -1442,10 +1442,10 @@ export default function MarketClient({
                         style={{
                           marginBottom: 10,
                           padding: '8px 12px',
-                          background: '#fee2e2',
-                          color: '#b91c1c',
+                          background: 'var(--danger-bg)',
+                          color: 'var(--danger-fg)',
                           fontSize: '0.75rem',
-                          border: '1px solid #fca5a5',
+                          border: '1px solid var(--danger-ring)',
                         }}
                       >
                         {historyErrorMap[survey.id]}

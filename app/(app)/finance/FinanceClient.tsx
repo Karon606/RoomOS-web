@@ -3387,7 +3387,7 @@ export default function FinanceClient({
                               <p className="text-[0.625rem] font-medium text-[var(--warm-mid)]">같은 날 다른 지출도 함께 묶기 (선택)</p>
                               <div className="space-y-1 max-h-28 overflow-auto">
                                 {sibs.map(s => (
-                                  <label key={s.id} className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer px-1.5 py-1 rounded-md hover:bg-white">
+                                  <label key={s.id} className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer px-1.5 py-1 rounded-md hover:bg-[var(--cream)]">
                                     <input type="checkbox" checked={attachShipSiblings.includes(s.id)} onChange={() => toggle(s.id)}
                                       className="w-3.5 h-3.5 accent-[var(--coral)] shrink-0" />
                                     <span className="truncate flex-1">{[s.vendor, s.detail].filter(Boolean).join(' · ') || s.category}</span>
