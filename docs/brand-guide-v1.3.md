@@ -835,3 +835,89 @@ A의 상세 속 MergeSection·전용 규칙 모달과 B의 인라인 합치기�
 - **가벼운 합산**(구매 N건)은 카드 내 펼치기 토글로 즉시.
 - **적용취소는 항상 §10 undo 토스트** — 위치·라벨·아이콘·지속시간 모두 §10 정본. "되돌릴 수 없는 동작"만 §09 다이얼로그.
 
+---
+
+## §22 리스트·테이블 화면 (List & Table Screens)
+
+> **범위**: 호실 관리(`/room-manage`)·수납 관리(`/rooms`)·고객 관리(`/tenants`) 3종을 하나의 화면 IA로 통일.
+> 아래는 **구현·배포 완료된 확정 정본**(2026-06-24). §21(재고)과 시각 언어가 이어진다.
+
+### 22.1 ListPageShell — 골격 순서
+
+`헤더(제목 + 우측 1~2 CTA/월선택) → 풀폭 SearchBar → 1차 필터(SegmentedControl) → (정렬·표시항목) → 본문(모바일 카드 / ≥768px sticky 테이블) → 빈상태(EmptyState)`.
+모바일·데스크탑 공통, 섹션 간격 12px 고정.
+
+### 22.2–22.5 핵심 정본
+
+| 항목 | 정본 | 비고 |
+|---|---|---|
+| **SearchBar** (`components/ui/SearchBar.tsx`) | 좌 돋보기 SVG + cream 배경 + 우 ×(지우기) + 풀폭 ~40px | 모바일 포함 항상 노출. 이모지🔍 금지 |
+| **식별자 스타일** | 호실번호·입주자명 = `--warm-dark` bold + tnum | 테라코타는 OVERDUE·`.attn`에만(연체 행 좌측 3px 보더) |
+| **1차 필터** | `SegmentedControl`(라디오·단일) | '전체'가 해제. 토글 칩 금지. 다중조건 고급필터는 별도 '필터' 패널 |
+| **빈상태** | 공용 `EmptyState`(아이콘+제목+설명, CTA≤1) | 검색 무결과는 "다른 검색어로 시도" 분기 |
+
+### 22.6 선택 모드 + 배치 액션
+
+`'선택' 토글 → 체크박스(모바일 카드 좌 prepend / 데스크탑 sticky 호실셀 prepend, 선택 시 coral ✓) → 하단 공용 SelectionPillBar(unit 개/명/실) + PillButton → 배치 액션`.
+
+- **수납 일괄 처리**: 이번 달 미수 호실만 자동필터 → 확인 Modal(미수 합계 tnum + 납부일 DatePicker + 방법 SegmentedControl[계좌이체/현금/신용카드]) → 성공 토스트에 **[적용취소]**(§10, 생성분 일괄 삭제).
+- 금액은 서버 권위(`getRoomPaymentStatus`)로 재계산 — 클라이언트 balance 불신뢰. 기존 `savePayment` 재사용(스키마 변경 0).
+
+### 22.7 sticky 테이블 정본
+
+`thead` sticky top-0 z-30 cream · 식별자 열(호실·입주자명) sticky-left z-20 cream · 호실셀 좌 3px 상태색 보더 · 열 리사이즈 · 768px 카드↔표 전환(정렬·필터 상태 공유, §17).
+
+### 22.8 모달 아키텍처 규칙
+
+- **복잡한 다중탭 엔터티 상세(수납·입주자 통합)** = 전역 Prism 셸(`EntityModal`)
+- **단순 추가/수정 폼(호실·고객 등록)** = 페이지 `Modal`(width sm·md·lg)
+- **Do**: 세 페이지 섹션 순서·검색·필터를 1px도 다르지 않게. **Don't**: 같은 의미 필터를 페이지마다 다른 컴포넌트로.
+
+---
+
+## §23 대시보드·위젯 (Dashboard & Widgets)
+
+> **범위**: 홈(`/dashboard`, `DashboardClient.tsx`). KPI·차트·위젯·진입·반응형·빈로딩을 §21·§22와 같은 언어로 묶는다.
+> 새 hue 없음 — raw hex는 §14.4 토큰으로 1:1 치환.
+
+### 23.1 KpiCard — 수치 1개 + 보조 1줄
+
+- 카드 1개 = **핵심 수치 1개** + 보조 1줄(라벨/비율/건수). 한 카드에 핵심 수치 2~3개 나열 금지.
+- 타입 3종: **강조**(bg `--tc`, 한 화면 1~2장만) · **일반**(cream + border) · **경고**(`.attn` 좌측 3px + `--danger`).
+
+### 23.2 차트·개념 색 매핑
+
+개념별 **고정 토큰 1:1** — `recharts`와 자체 `DonutChart`가 같은 개념에 같은 색. `lib/chartColors.ts`(`CONCEPT_COLORS`) 단일 출처.
+
+| 개념 | 토큰 | 개념 | 토큰 |
+|---|---|---|---|
+| 수입 | `--tc` | 완납 | `--success-fg` |
+| 지출 | `--ink-s` | 예정 | `--info-fg` |
+| 기타수익 | `--camel` | 미납 | `--warning-fg` |
+| 보증금 | `--deposit-fg` | 연체 | `--overdue-solid` |
+| 예비비 | `--reserve-fg` | | |
+
+raw hex 8종(`#22c55e·#eab308·#6366f1·#dc2626·#a855f7·#f59e0b·#64748b·#d4a847`) → 의미색/viz 토큰 치환.
+
+### 23.3 위젯 카드 셸
+
+위젯 공통 컨테이너(bg `--cream`·border 1px `--warm-border`·radius `r-xl`·padding·헤더·진입 표시)를 §21 InventoryCard·§22 카드와 정합. 그림자 없음(§05).
+
+### 23.4 진입(네비) 규칙
+
+페이지 이동 = `<Link>` / 엔터티 상세 = `entityModal.open()` / 폼 = `Modal`(width sm·md·lg). `window.location.href`·`router.push` 혼용 제거.
+
+### 23.5 반응형 그리드
+
+모바일 1열 기준 → KPI·차트·방현황에 `sm/md/lg` 분기. (현재 KPI 항상 2열·방현황 5열 고정 → 협소.) 같은 데이터 카드/표는 정렬·필터 공유(§17).
+
+### 23.6 빈·로딩 정본
+
+위젯별 Skeleton(§16·§18, 실제 레이아웃 모양). `app/(app)/dashboard/loading.tsx` 추가. 인라인 "불러오는 중…" 금지.
+
+### 23.7 상태·연체 배지
+
+완납/예정/미납/연체/공실 5단계(§03·§14.2). 경과일 표기: **미납**(dueDay 경과 1~6일, `--warning`) → **연체**(7일 초과, `--overdue-solid` "연체 D+N"). §03 OVERDUE=7일 초과 정의와 정합.
+
+- **Do**: 모든 위젯이 같은 카드 셸·색 매핑·진입 규칙. **Don't**: 위젯마다 raw hex·다른 진입 방식.
+
