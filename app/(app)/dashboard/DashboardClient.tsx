@@ -2296,7 +2296,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                           return (
                             <div
                               key={n.tenantId}
-                              onClick={() => window.location.href = `/tenants?tenantId=${n.tenantId}`}
+                              onClick={() => entityModal.open({ kind: 'tenant', tenantId: n.tenantId })}
                               className="rounded-[8px] flex flex-col items-center justify-center px-1 py-2.5 gap-[3px] cursor-pointer transition-opacity hover:opacity-75 overflow-hidden"
                               style={cellStyle}
                             >
