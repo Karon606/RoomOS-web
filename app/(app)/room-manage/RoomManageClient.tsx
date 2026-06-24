@@ -14,6 +14,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { useUrlState } from '@/lib/useUrlState'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SortSelect } from '@/components/ui/SortSelect'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { RoomCard, type CardKind } from '@/components/ui/RoomCard'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
@@ -547,30 +548,23 @@ export default function RoomManageClient({
         </button>
       </div>
 
-      {/* 상태 빠른 필터 — 공실/예약/거주중/퇴실예정. 누르면 해당 상태만, 다시 누르면 전체. */}
-      <div className="flex gap-2 overflow-x-auto pb-0.5 -mb-0.5">
-        {(() => {
-          const counts = rooms.reduce((acc, r) => { const k = roomStatusKey(r); acc[k] = (acc[k] ?? 0) + 1; return acc }, {} as Record<RoomStatusKey, number>)
-          const chip = (active: boolean) =>
-            `shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-              active ? 'bg-[var(--coral)] text-white' : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-mid)] hover:border-[var(--coral)]'
-            }`
-          return (
-            <>
-              <button type="button" onClick={() => setFilterStatus('')} className={chip(filterStatus === '')}>
-                전체 {rooms.length}
-              </button>
-              {STATUS_FILTERS.map(s => (
-                <button key={s.key} type="button"
-                  onClick={() => setFilterStatus(prev => prev === s.key ? '' : s.key)}
-                  className={chip(filterStatus === s.key)}>
-                  {s.label} {counts[s.key] ?? 0}
-                </button>
-              ))}
-            </>
-          )
-        })()}
-      </div>
+      {/* 상태 빠른 필터 — §22 공용 SegmentedControl(수납·고객과 동일). '전체'가 곧 해제. */}
+      {(() => {
+        const counts = rooms.reduce((acc, r) => { const k = roomStatusKey(r); acc[k] = (acc[k] ?? 0) + 1; return acc }, {} as Record<RoomStatusKey, number>)
+        return (
+          <SegmentedControl<RoomStatusKey | ''>
+            size="sm"
+            scroll
+            ariaLabel="호실 상태 필터"
+            value={filterStatus}
+            onChange={setFilterStatus}
+            options={[
+              { value: '', label: `전체 ${rooms.length}` },
+              ...STATUS_FILTERS.map(s => ({ value: s.key, label: `${s.label} ${counts[s.key] ?? 0}` })),
+            ]}
+          />
+        )
+      })()}
 
       {/* 필터 패널 */}
       {showFilters && (
