@@ -8,14 +8,14 @@ import type { DashboardData } from '../dashboard/DashboardClient'
 // ── 상수 ────────────────────────────────────────────────────────
 
 const CATEGORY_COLORS: Record<string, string> = {
-  관리비:   'var(--persimmon)',
-  수선유지: '#f97316',
-  세금:     '#ef4444',
-  인건비:   '#a855f7',
-  소모품:   '#22c55e',
-  기타:     '#a89888',
+  관리비:   'var(--viz-1)',
+  수선유지: 'var(--viz-2)',
+  세금:     'var(--viz-3)',
+  인건비:   'var(--viz-4)',
+  소모품:   'var(--viz-5)',
+  기타:     'var(--viz-8)',
 }
-const FALLBACK_COLORS = ['var(--persimmon)','#f97316','#ef4444','#a855f7','#22c55e','#a89888','#3b82f6','#eab308']
+const FALLBACK_COLORS = ['var(--viz-1)','var(--viz-2)','var(--viz-3)','var(--viz-4)','var(--viz-5)','var(--viz-6)','var(--viz-7)','var(--viz-8)']
 
 // ── 도넛 차트 ───────────────────────────────────────────────────
 
@@ -49,7 +49,7 @@ function DonutChart({
         })
       )}
       {centerLabel && <text x={cx} y={cy + 6} textAnchor="middle" fontSize="15" fontWeight="700" fill="var(--ink-2)">{centerLabel}</text>}
-      {centerSub && <text x={cx} y={cy + 22} textAnchor="middle" fontSize="10" fill="#a89888">{centerSub}</text>}
+      {centerSub && <text x={cx} y={cy + 22} textAnchor="middle" fontSize="10" fill="var(--neutral-fg)">{centerSub}</text>}
     </svg>
   )
 }
@@ -115,8 +115,8 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
   }))
 
   const paymentSegments = [
-    { value: data.paidCount,   color: '#22c55e' },
-    { value: data.unpaidCount, color: '#ef4444' },
+    { value: data.paidCount,   color: 'var(--success-fg)' },
+    { value: data.unpaidCount, color: 'var(--danger-fg)' },
   ]
   const paymentRate = (data.paidCount + data.unpaidCount) > 0
     ? Math.round((data.paidCount / (data.paidCount + data.unpaidCount)) * 100)
@@ -126,9 +126,9 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="이달 수입"   value={<MoneyDisplay amount={data.totalRevenue} />} sub="납부액+기타수익"  colorStyle={{ color: 'var(--coral)' }} />
-        <StatCard label="이달 지출"   value={<MoneyDisplay amount={data.totalExpense} />} sub="이달 지출 합계"  colorStyle={{ color: '#ef4444' }} />
-        <StatCard label="순수익"      value={<MoneyDisplay amount={Math.abs(data.netProfit)} prefix={data.netProfit < 0 ? '-' : ''} />} sub="수입 − 지출" colorStyle={{ color: data.netProfit >= 0 ? '#22c55e' : '#ef4444' }} />
-        <StatCard label="보유 보증금" value={<MoneyDisplay amount={data.totalDeposit} />} sub="현재 계약 기준"  colorStyle={{ color: '#a855f7' }} />
+        <StatCard label="이달 지출"   value={<MoneyDisplay amount={data.totalExpense} />} sub="이달 지출 합계"  colorStyle={{ color: 'var(--danger-fg)' }} />
+        <StatCard label="순수익"      value={<MoneyDisplay amount={Math.abs(data.netProfit)} prefix={data.netProfit < 0 ? '-' : ''} />} sub="수입 − 지출" colorStyle={{ color: data.netProfit >= 0 ? 'var(--success-fg)' : 'var(--danger-fg)' }} />
+        <StatCard label="보유 보증금" value={<MoneyDisplay amount={data.totalDeposit} />} sub="현재 계약 기준"  colorStyle={{ color: 'var(--deposit-fg)' }} />
       </div>
 
       <div className="rounded-xl p-5" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
@@ -136,7 +136,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
           <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>추이</h3>
           <div className="flex gap-4 text-xs" style={{ color: 'var(--warm-muted)' }}>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block" style={{ background: 'var(--coral)' }} />수입</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block" style={{ background: '#ef4444' }} />지출</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block" style={{ background: 'var(--danger-fg)' }} />지출</span>
           </div>
         </div>
         <div className="flex gap-1 mb-4 flex-wrap">
@@ -163,12 +163,12 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                 const expPct = Math.round((t.expense / trendMax) * 100)
                 return (
                   <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0" style={{ minWidth: trendPoints.length > 14 ? '28px' : undefined }}>
-                    <p className="text-xs font-medium whitespace-nowrap" style={{ color: t.profit >= 0 ? '#22c55e' : '#ef4444' }}>
+                    <p className="text-xs font-medium whitespace-nowrap" style={{ color: t.profit >= 0 ? 'var(--success-fg)' : 'var(--danger-fg)' }}>
                       {t.profit !== 0 ? `${t.profit >= 0 ? '+' : ''}${Math.round(t.profit / 10000)}만` : ''}
                     </p>
                     <div className="w-full flex items-end gap-0.5 h-28">
                       <div className="flex-1 rounded-t-sm" style={{ background: 'var(--coral)', opacity: isLast ? 1 : 0.5, height: `${revPct}%`, minHeight: t.revenue > 0 ? '2px' : '0' }} />
-                      <div className="flex-1 rounded-t-sm" style={{ background: '#ef4444', opacity: isLast ? 1 : 0.5, height: `${expPct}%`, minHeight: t.expense > 0 ? '2px' : '0' }} />
+                      <div className="flex-1 rounded-t-sm" style={{ background: 'var(--danger-fg)', opacity: isLast ? 1 : 0.5, height: `${expPct}%`, minHeight: t.expense > 0 ? '2px' : '0' }} />
                     </div>
                     <p className="text-xs truncate w-full text-center" style={{ color: isLast ? 'var(--warm-dark)' : 'var(--warm-muted)', fontWeight: isLast ? 600 : 400 }}>
                       {t.label}
@@ -212,14 +212,14 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             </div>
             <div className="flex-1 space-y-3">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-green-500" />
+                <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-[var(--success-fg)]" />
                 <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>완납</span>
-                <span className="text-sm font-semibold text-green-500">{data.paidCount}건</span>
+                <span className="text-sm font-semibold text-[var(--success-fg)]">{data.paidCount}건</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-red-500" />
+                <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-[var(--danger-fg)]" />
                 <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>미납</span>
-                <span className="text-sm font-semibold text-red-500">{data.unpaidCount}건</span>
+                <span className="text-sm font-semibold text-[var(--danger-fg)]">{data.unpaidCount}건</span>
               </div>
               <div className="pt-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
                 <Row label="이달 수납액" value={<MoneyDisplay amount={data.paidRevenue} />} />
@@ -235,8 +235,8 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
 // ── 입주자 통계 탭 ──────────────────────────────────────────────
 
 const GENDER_LABEL: Record<string, string> = { MALE: '남성', FEMALE: '여성', OTHER: '기타', UNKNOWN: '미기재' }
-const GENDER_COLOR: Record<string, string> = { MALE: '#3b82f6', FEMALE: '#ec4899', OTHER: '#a855f7', UNKNOWN: '#a89888' }
-const DIST_COLORS = ['var(--persimmon)', '#22c55e', '#f97316', '#a855f7', '#eab308', '#a89888']
+const GENDER_COLOR: Record<string, string> = { MALE: 'var(--viz-1)', FEMALE: 'var(--viz-6)', OTHER: 'var(--viz-8)', UNKNOWN: 'var(--neutral-fg)' }
+const DIST_COLORS = ['var(--viz-1)', 'var(--viz-2)', 'var(--viz-3)', 'var(--viz-4)', 'var(--viz-5)', 'var(--viz-6)']
 
 function DistList({ items, colors }: { items: { label: string; count: number; percent: number }[]; colors: string[] }) {
   if (items.length === 0) return <p className="text-sm py-4 text-center" style={{ color: 'var(--warm-muted)' }}>데이터 없음</p>
@@ -265,21 +265,21 @@ function TenantsTab({ data }: { data: DashboardData }) {
   const statusTotal = data.statusCounts.active + data.statusCounts.reserved + data.statusCounts.checkout + data.statusCounts.nonResident
   const occupancySegments = [{ value: data.occupiedRooms, color: 'var(--persimmon)' }, { value: data.vacantRooms, color: 'var(--cream-3)' }]
   const statusSegments = [
-    { value: data.statusCounts.active,      color: '#22c55e' },
-    { value: data.statusCounts.reserved,    color: '#3b82f6' },
-    { value: data.statusCounts.checkout,    color: '#eab308' },
-    { value: data.statusCounts.nonResident, color: '#f59e0b' },
+    { value: data.statusCounts.active,      color: 'var(--success-fg)' },
+    { value: data.statusCounts.reserved,    color: 'var(--info-fg)' },
+    { value: data.statusCounts.checkout,    color: 'var(--warning-fg)' },
+    { value: data.statusCounts.nonResident, color: 'var(--warning-fg)' },
   ]
-  const genderSegments = data.genderDist.map(d => ({ value: d.count, color: GENDER_COLOR[d.label] ?? '#a89888' }))
+  const genderSegments = data.genderDist.map(d => ({ value: d.count, color: GENDER_COLOR[d.label] ?? 'var(--neutral-fg)' }))
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard label="전체 입주자"  value={`${data.totalTenants}명`}               sub="현재 계약 기준" />
-        <StatCard label="거주중"       value={`${data.statusCounts.active}명`}         sub="ACTIVE"        colorStyle={{ color: '#22c55e' }} />
-        <StatCard label="입실 예정"    value={`${data.statusCounts.reserved}명`}       sub="RESERVED"      colorStyle={{ color: '#3b82f6' }} />
-        <StatCard label="퇴실 예정"    value={`${data.statusCounts.checkout}명`}       sub="CHECKOUT"      colorStyle={{ color: '#eab308' }} />
-        <StatCard label="비거주자"     value={`${data.statusCounts.nonResident}명`}    sub="NON_RESIDENT"  colorStyle={{ color: '#f59e0b' }} />
+        <StatCard label="거주중"       value={`${data.statusCounts.active}명`}         sub="ACTIVE"        colorStyle={{ color: 'var(--success-fg)' }} />
+        <StatCard label="입실 예정"    value={`${data.statusCounts.reserved}명`}       sub="RESERVED"      colorStyle={{ color: 'var(--info-fg)' }} />
+        <StatCard label="퇴실 예정"    value={`${data.statusCounts.checkout}명`}       sub="CHECKOUT"      colorStyle={{ color: 'var(--warning-fg)' }} />
+        <StatCard label="비거주자"     value={`${data.statusCounts.nonResident}명`}    sub="NON_RESIDENT"  colorStyle={{ color: 'var(--warning-fg)' }} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -304,7 +304,7 @@ function TenantsTab({ data }: { data: DashboardData }) {
           <div className="flex items-center gap-4">
             <DonutChart segments={statusSegments} centerLabel={`${statusTotal}명`} centerSub="입주자" />
             <div className="space-y-2.5 flex-1">
-              {[{ label: '거주중', count: data.statusCounts.active, color: '#22c55e' }, { label: '입실 예정', count: data.statusCounts.reserved, color: '#3b82f6' }, { label: '퇴실 예정', count: data.statusCounts.checkout, color: '#eab308' }].map(s => (
+              {[{ label: '거주중', count: data.statusCounts.active, color: 'var(--success-fg)' }, { label: '입실 예정', count: data.statusCounts.reserved, color: 'var(--info-fg)' }, { label: '퇴실 예정', count: data.statusCounts.checkout, color: 'var(--warning-fg)' }].map(s => (
                 <div key={s.label} className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} />
                   <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{s.label}</span>
@@ -322,7 +322,7 @@ function TenantsTab({ data }: { data: DashboardData }) {
             <div className="space-y-2.5 flex-1">
               {data.genderDist.map((d, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: GENDER_COLOR[d.label] ?? '#a89888' }} />
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: GENDER_COLOR[d.label] ?? 'var(--neutral-fg)' }} />
                   <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{GENDER_LABEL[d.label] ?? d.label}</span>
                   <span className="text-xs font-semibold" style={{ color: 'var(--warm-dark)' }}>{d.count}명</span>
                 </div>
@@ -390,7 +390,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
             Gemini가 재무 데이터를 분석하고 있습니다...
           </div>
         )}
-        {error && <p className="text-red-500 text-sm py-4 text-center">{error}</p>}
+        {error && <p className="text-[var(--danger-fg)] text-sm py-4 text-center">{error}</p>}
         {aiText && !isPending && (
           <div className="rounded-xl p-4" style={{ background: 'var(--coral-pale)', border: '1px solid rgba(244,98,58,0.2)' }}>
             <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--warm-dark)' }}>{aiText}</div>

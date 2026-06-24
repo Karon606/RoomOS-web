@@ -727,7 +727,7 @@ function DonutChart({
         })
       )}
       {centerLabel && <text x={cx} y={cy + 6} textAnchor="middle" fontSize="15" fontWeight="700" fill="var(--ink-2)">{centerLabel}</text>}
-      {centerSub && <text x={cx} y={cy + 22} textAnchor="middle" fontSize="10" fill="#a89888">{centerSub}</text>}
+      {centerSub && <text x={cx} y={cy + 22} textAnchor="middle" fontSize="10" fill="var(--neutral-fg)">{centerSub}</text>}
     </svg>
   )
 }
@@ -886,8 +886,8 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                   <stop offset="95%" stopColor="var(--coral)" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="gradExp" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="#64748b" stopOpacity={0.14} />
-                  <stop offset="95%" stopColor="#64748b" stopOpacity={0} />
+                  <stop offset="5%"  stopColor="var(--neutral-fg)" stopOpacity={0.14} />
+                  <stop offset="95%" stopColor="var(--neutral-fg)" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
@@ -898,7 +898,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                 formatter={(v, name) => [`${Number(v).toLocaleString()}만원`, String(name)]}
               />
               <Area type="monotone" dataKey="revenue" name="수입" stroke="var(--coral)" strokeWidth={2} fill="url(#gradRev)" dot={false} activeDot={{ r: 4, fill: 'var(--coral)' }} />
-              <Area type="monotone" dataKey="expense" name="지출" stroke="#64748b" strokeWidth={1.5} strokeDasharray="4 2" fill="url(#gradExp)" dot={false} activeDot={{ r: 4, fill: 'var(--ink-m)' }} />
+              <Area type="monotone" dataKey="expense" name="지출" stroke="var(--neutral-fg)" strokeWidth={1.5} strokeDasharray="4 2" fill="url(#gradExp)" dot={false} activeDot={{ r: 4, fill: 'var(--ink-m)' }} />
             </AreaChart>
           </ResponsiveContainer>
         ) : (
@@ -913,7 +913,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
                 formatter={(v, name) => [`${Number(v).toLocaleString()}만원`, String(name)]}
               />
               <Bar dataKey="revenue" name="수입" fill="var(--coral)" radius={[3, 3, 0, 0]} maxBarSize={28} />
-              <Bar dataKey="expense" name="지출" fill="#64748b"       radius={[3, 3, 0, 0]} maxBarSize={28} />
+              <Bar dataKey="expense" name="지출" fill="var(--neutral-fg)"       radius={[3, 3, 0, 0]} maxBarSize={28} />
             </BarChart>
           </ResponsiveContainer>
         )}

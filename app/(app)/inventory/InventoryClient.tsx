@@ -977,7 +977,7 @@ function MonthlyInflowList({ rows, stockUnit }: { rows: MonthlyInflowRow[]; stoc
                   <div className="flex items-center gap-2">
                     <span className="text-[0.625rem] text-[var(--warm-muted)] w-8 shrink-0">무상</span>
                     <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, additionPct)}%`, background: '#d4a847' }} />
+                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, additionPct)}%`, background: 'var(--inspect-fg)' }} />
                     </div>
                     <span className="text-[0.625rem] text-[var(--warm-muted)] w-24 text-right shrink-0 tabular-nums">
                       {Math.round(r.additionQty * 100) / 100}{u}

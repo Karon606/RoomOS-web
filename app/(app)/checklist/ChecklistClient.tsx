@@ -59,10 +59,10 @@ function dueChip(row: ChecklistRow) {
     return { label: `${Math.abs(row.daysUntilDue)}일 경과`, color: 'var(--danger-fg)', bg: 'var(--danger-bg)' }
   }
   if (row.daysUntilDue === 0) {
-    return { label: '오늘 점검', color: '#ea580c', bg: 'rgba(234,88,12,0.12)' }
+    return { label: '오늘 점검', color: 'var(--warning-fg)', bg: 'var(--warning-bg)' }
   }
   if (row.daysUntilDue <= row.alertDaysBefore) {
-    return { label: `D-${row.daysUntilDue}`, color: '#d4a847', bg: 'rgba(212,168,71,0.18)' }
+    return { label: `D-${row.daysUntilDue}`, color: 'var(--inspect-fg)', bg: 'var(--inspect-bg)' }
   }
   return { label: `D-${row.daysUntilDue}`, color: 'var(--success-fg)', bg: 'var(--success-bg)' }
 }

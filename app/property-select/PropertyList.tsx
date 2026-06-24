@@ -7,7 +7,7 @@ import { selectProperty, signOut, createProperty, requestJoinByCode } from './ac
 const ROLE_STYLE: Record<string, { bg: string; color: string }> = {
   OWNER:   { bg: 'rgba(244,98,58,0.12)', color: 'var(--persimmon-d)' },
   MANAGER: { bg: 'rgba(122,106,90,0.12)', color: 'var(--ink-3)' },
-  STAFF:   { bg: 'rgba(168,152,136,0.12)', color: '#a89888' },
+  STAFF:   { bg: 'var(--neutral-bg)', color: 'var(--neutral-fg)' },
 }
 const ROLE_LABEL: Record<string, string> = {
   OWNER: '오너', MANAGER: '매니저', STAFF: '스태프',

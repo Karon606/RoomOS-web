@@ -803,7 +803,7 @@ function DonutChart({
         })
       )}
       {centerLabel && <text x={cx} y={cy + 5} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--ink-2)">{centerLabel}</text>}
-      {centerSub && <text x={cx} y={cy + 19} textAnchor="middle" fontSize="10" fill="#a89888">{centerSub}</text>}
+      {centerSub && <text x={cx} y={cy + 19} textAnchor="middle" fontSize="10" fill="var(--neutral-fg)">{centerSub}</text>}
     </svg>
   )
 }
