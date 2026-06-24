@@ -15,6 +15,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn } from '@/components/ui/Btn'
+import { SearchBar } from '@/components/ui/SearchBar'
 import { kstYmdStr } from '@/lib/kstDate'
 
 type Request = Awaited<ReturnType<typeof getAllRequestsForProperty>>[number]
@@ -153,13 +154,7 @@ export default function RequestsClient({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="입주자/내용 검색..."
-            className="text-sm px-3 py-2 rounded-sm bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] min-w-[180px]"
-          />
+          <SearchBar value={search} onChange={setSearch} placeholder="입주자/내용 검색" className="flex-1 min-w-[180px]" />
           <button
             onClick={() => setShowAddForm(v => !v)}
             className={`px-4 py-2 text-sm font-semibold rounded-xl transition-colors ${

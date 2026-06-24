@@ -10,6 +10,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { deleteRentReceiptFile, type RentReceiptListRow, type IssuableTenant } from './actions'
 import { ShareDocButton } from '@/components/ui/ShareDocButton'
+import { SearchBar } from '@/components/ui/SearchBar'
 
 const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
 const fmtDate = (d: Date | string) => {
@@ -58,9 +59,7 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-[var(--warm-dark)]">새 영수증 발급</h2>
-        <input type="text" value={tenantQuery} onChange={e => setTenantQuery(e.target.value)}
-          placeholder="이름·호실로 입실자 찾기"
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)]" />
+        <SearchBar value={tenantQuery} onChange={setTenantQuery} placeholder="이름·호실로 입실자 찾기" />
         {tenants.length === 0 ? (
           <p className="text-xs text-[var(--warm-muted)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-4 text-center">거주중인 입실자가 없습니다.</p>
         ) : tenantRows.length === 0 ? (
@@ -85,9 +84,7 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-[var(--warm-dark)]">발급 이력 <span className="text-[var(--warm-muted)] font-normal">{files.length}건</span></h2>
         {files.length > 0 && (
-          <input type="text" value={fileQuery} onChange={e => setFileQuery(e.target.value)}
-            placeholder="이름·호실·파일명 검색"
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)]" />
+          <SearchBar value={fileQuery} onChange={setFileQuery} placeholder="이름·호실·파일명 검색" />
         )}
         {fileRows.length === 0 ? (
           <EmptyState

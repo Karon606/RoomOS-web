@@ -11,6 +11,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { STATUS_LABEL } from '@/lib/statusColors'
 import { deleteContractFile } from '@/app/(app)/tenants/actions'
 import type { ContractListRow } from './actions'
+import { SearchBar } from '@/components/ui/SearchBar'
 
 const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
 const fmtDate = (d: Date | string) => {
@@ -74,13 +75,7 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
           <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">계약서</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">앱 서명·스캔 업로드된 계약서를 한곳에서 봅니다. 거주중 {contracts.length - departedCount}건 · 퇴실 {departedCount}건.</p>
         </div>
-        <input
-          type="text"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="이름·호실·파일명 검색"
-          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)]"
-        />
+        <SearchBar value={query} onChange={setQuery} placeholder="이름·호실·파일명 검색" />
         <div className="flex flex-wrap gap-2">
           <SegmentedControl
             size="sm"
