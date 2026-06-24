@@ -1156,6 +1156,96 @@ export async function deletePayment(paymentId: string): Promise<{ ok: true } | {
   }
 }
 
+// ============================================================
+// 일괄 수납 — 선택한 호실의 '이번 달' 미수액을 한 번에 전액 수납 처리 (§22 선택모드)
+// 결제 로직: 각 호실은 기존 savePayment 재사용(FIFO·할인·재계산 동일). 이번 달 한정(forcedTargetMonth).
+//   금액은 클라이언트 balance 를 신뢰하지 않고 서버 권위(getRoomPaymentStatus)로 재계산.
+//   대상 자동 필터: 비공실 + 미래월 아님 + leaseTermId·tenantId 有 + 이번 달 미수(balance<0).
+//   생성된 paymentRecord id 를 모아 반환 → 토스트 '적용취소'에서 batchDeletePayments 로 일괄 취소(§10).
+// ============================================================
+export async function batchRecordRentPayment(input: {
+  targetMonth: string
+  roomIds: string[]
+  payDate: string      // 'YYYY-MM-DD'
+  payMethod: string
+}): Promise<
+  | { ok: true; paidRoomNos: string[]; skippedRoomNos: string[]; totalAmount: number; createdIds: string[] }
+  | { ok: false; error: string }
+> {
+  try {
+    await requireEdit()
+    if (!input.roomIds?.length) return { ok: false, error: '선택된 호실이 없습니다.' }
+
+    const rows = await getRoomPaymentStatus(input.targetMonth)
+    const sel = new Set(input.roomIds)
+    const selected = rows.filter(r => sel.has(r.roomId))
+
+    const paidRoomNos: string[] = []
+    const skippedRoomNos: string[] = []
+    const createdIds: string[] = []
+    let totalAmount = 0
+
+    for (const r of selected) {
+      const owed = Math.max(0, Math.round(-r.balance))   // 이번 달 미수액(balance<0 → 양수)
+      const eligible = !r.isVacant && !r.isFutureMonth && !!r.leaseTermId && !!r.tenantId && owed > 0
+      if (!eligible) { skippedRoomNos.push(r.roomNo); continue }
+
+      // 생성 전 이번 달 record id 스냅샷 — owed 가 이번 달 미수와 일치하므로 이월 없음(targetMonth만 본다)
+      const before = await prisma.paymentRecord.findMany({
+        where: { leaseTermId: r.leaseTermId!, targetMonth: input.targetMonth },
+        select: { id: true },
+      })
+      const beforeIds = new Set(before.map(b => b.id))
+
+      await savePayment({
+        leaseTermId: r.leaseTermId!,
+        tenantId: r.tenantId!,
+        targetMonth: input.targetMonth,
+        expectedAmount: r.expected,
+        actualAmount: owed,
+        payDate: input.payDate,
+        payMethod: input.payMethod,
+        forcedTargetMonth: input.targetMonth,
+        memo: '일괄 수납',
+      })
+
+      const after = await prisma.paymentRecord.findMany({
+        where: { leaseTermId: r.leaseTermId!, targetMonth: input.targetMonth },
+        select: { id: true },
+      })
+      for (const a of after) if (!beforeIds.has(a.id)) createdIds.push(a.id)
+
+      paidRoomNos.push(r.roomNo)
+      totalAmount += owed
+    }
+
+    revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/tenants'); revalidatePath('/finance')
+    return { ok: true, paidRoomNos, skippedRoomNos, totalAmount, createdIds }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '일괄 수납 중 오류가 발생했습니다.' }
+  }
+}
+
+// 일괄 수납 적용취소 — batchRecordRentPayment 가 만든 record 들을 한 번에 삭제(§10 적용취소)
+export async function batchDeletePayments(
+  ids: string[],
+): Promise<{ ok: true; deleted: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    if (!ids?.length) return { ok: true, deleted: 0 }
+    let deleted = 0
+    for (const id of ids) {
+      const res = await deletePayment(id)
+      if (res.ok) deleted++
+    }
+    return { ok: true, deleted }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '일괄 취소 중 오류가 발생했습니다.' }
+  }
+}
+
 // 납부일 임시 조정
 export async function setDueDayOverride(
   leaseTermId: string,

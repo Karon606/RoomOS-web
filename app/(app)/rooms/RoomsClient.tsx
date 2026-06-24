@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import MonthSelector from '@/components/layout/MonthSelector'
@@ -12,6 +12,13 @@ import { SortSelect } from '@/components/ui/SortSelect'
 import { RoomCard } from '@/components/ui/RoomCard'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SearchBar } from '@/components/ui/SearchBar'
+import { Modal } from '@/components/ui/Modal'
+import { DatePicker } from '@/components/ui/DatePicker'
+import { Btn } from '@/components/ui/Btn'
+import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
+import { pushToast } from '@/lib/saveStatus'
+import { kstYmdStr } from '@/lib/kstDate'
+import { batchRecordRentPayment, batchDeletePayments } from './actions'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
 
 const fmtRoomNo = (no: string | null | undefined) =>
@@ -243,6 +250,21 @@ export default function RoomsClient({
   const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_WIDTHS)
   const colWidthsRef              = useRef<Record<string, number>>(DEFAULT_WIDTHS)
 
+  // ── 선택 모드 + 일괄 수납 (§22 선택모드 · §10 적용취소) ──────────────
+  const router = useRouter()
+  const [selectMode, setSelectMode]   = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [batchOpen, setBatchOpen]     = useState(false)
+  const [batchMethod, setBatchMethod] = useState('계좌이체')
+  const [batchDate, setBatchDate]     = useState('')      // 열 때 오늘(KST)로 채움
+  const [batchBusy, setBatchBusy]     = useState(false)
+  const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
+  const toggleSelect = (id: string) =>
+    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  // 일괄 수납 대상 — 비공실 + 미래월 아님 + 이번 달 미수(balance<0)
+  const isBatchEligible = (r: RoomStatus) =>
+    !r.isVacant && !r.isFutureMonth && !!r.leaseTermId && r.balance < 0
+
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -392,6 +414,49 @@ export default function RoomsClient({
     })
   }
 
+  // 일괄 수납 — 선택된 호실 중 '대상'만, 이번 달 미수 합계
+  const batchTargets = displayed.filter(r => selectedIds.has(r.roomId) && isBatchEligible(r))
+  const batchTotal   = batchTargets.reduce((s, r) => s + Math.max(0, Math.round(-r.balance)), 0)
+
+  const openBatchPay = () => {
+    setBatchDate(kstYmdStr())
+    try { const m = localStorage.getItem('stayeum-last-pay-method'); if (m) setBatchMethod(m) } catch {}
+    setBatchOpen(true)
+  }
+
+  const runBatchPay = async () => {
+    if (batchBusy) return
+    const ids = batchTargets.map(r => r.roomId)
+    if (!ids.length) { setBatchOpen(false); return }
+    setBatchBusy(true)
+    try {
+      const res = await batchRecordRentPayment({
+        targetMonth, roomIds: ids, payDate: batchDate || kstYmdStr(), payMethod: batchMethod,
+      })
+      if (!res.ok) { pushToast('error', res.error); return }
+      try { localStorage.setItem('stayeum-last-pay-method', batchMethod) } catch {}
+      setBatchOpen(false)
+      exitSelectMode()
+      const created = res.createdIds
+      pushToast('success', `${res.paidRoomNos.length}개 호실 일괄 수납 완료`, {
+        detail: res.skippedRoomNos.length
+          ? `${res.skippedRoomNos.length}개 호실은 대상 아님(완납·미래월 등)으로 제외`
+          : undefined,
+        action: created.length ? {
+          label: '적용취소',
+          run: async () => {
+            const u = await batchDeletePayments(created)
+            if (u.ok) pushToast('info', '일괄 수납을 취소했습니다')
+            router.refresh()
+          },
+        } : undefined,
+      })
+      router.refresh()
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
   // ?roomNo=xxx 딥링크 — 대시보드 등에서 넘어올 때 해당 호실 셸 자동 오픈
   useEffect(() => {
     const roomNo = searchParams.get('roomNo')
@@ -531,6 +596,15 @@ export default function RoomsClient({
             잘리던 문제 해결, 사용자 피드백 2026-06-01) */}
         <div className="ml-auto flex gap-2 items-center">
 
+        {/* 선택 모드 토글 — 일괄 수납 (§22 선택모드) */}
+        <button
+          onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}
+          className={`px-3 py-1.5 text-xs font-medium rounded-xl transition-colors
+            ${selectMode ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
+        >
+          {selectMode ? '선택 취소' : '선택'}
+        </button>
+
         {/* 공실 카드 항목 설정 — 항상 노출 (공실 0실에도). 카드 칩 ON/OFF */}
         <div className="relative" ref={vacantColMenuRef}>
           <button
@@ -621,13 +695,28 @@ export default function RoomsClient({
               kind="neutral"
               tipColor={statusTipColor(tone)}
               tipBg={statusRowTint(tone)}
-              onClick={room.isFutureMonth ? undefined : () => openPayModal(room)}
-              className={`px-4 py-3.5 ${room.isFutureMonth ? 'opacity-50' : ''}`}>
+              selected={selectMode && selectedIds.has(room.roomId)}
+              onClick={
+                selectMode
+                  ? (isBatchEligible(room) ? () => toggleSelect(room.roomId) : undefined)
+                  : (room.isFutureMonth ? undefined : () => openPayModal(room))
+              }
+              className={`px-4 py-3.5 ${(room.isFutureMonth || (selectMode && !isBatchEligible(room))) ? 'opacity-50' : ''}`}>
               {/* 첫 줄: 호실 + 수납상태. 표시 항목 메뉴(colVis)로 타입 ON/OFF. */}
-              <div className="flex items-start justify-between">
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-base font-bold tnum text-[var(--warm-dark)]">{fmtRoomNo(room.roomNo)}</span>
-                  {colVis.type && room.type && <span className="text-xs text-[var(--warm-muted)]">{room.type}</span>}
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  {selectMode && isBatchEligible(room) && (
+                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-[5px] border transition-colors
+                      ${selectedIds.has(room.roomId) ? 'bg-[var(--coral)] border-[var(--coral)] text-white' : 'border-[var(--warm-border)] bg-[var(--cream)]'}`}>
+                      {selectedIds.has(room.roomId) && (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>
+                      )}
+                    </span>
+                  )}
+                  <div className="flex items-baseline gap-1.5 min-w-0">
+                    <span className="text-base font-bold tnum text-[var(--warm-dark)]">{fmtRoomNo(room.roomNo)}</span>
+                    {colVis.type && room.type && <span className="text-xs text-[var(--warm-muted)]">{room.type}</span>}
+                  </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   {room.status === 'NON_RESIDENT' && <StatusBadge tone="info">비거주</StatusBadge>}
@@ -764,14 +853,26 @@ export default function RoomsClient({
                 const tone = roomStatusTone(room, targetMonth)
                 return (
                 <tr key={room.roomId}
-                  onClick={() => !room.isFutureMonth && openPayModal(room)}
+                  onClick={
+                    selectMode
+                      ? (isBatchEligible(room) ? () => toggleSelect(room.roomId) : undefined)
+                      : () => { if (!room.isFutureMonth) openPayModal(room) }
+                  }
                   className={`border-b border-[var(--warm-border)]/50 transition-colors
-                    ${room.isFutureMonth ? 'opacity-50' : 'cursor-pointer hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:scale-[0.995] active:opacity-80'}`}>
+                    ${(room.isFutureMonth || (selectMode && !isBatchEligible(room))) ? 'opacity-50' : 'cursor-pointer hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:scale-[0.995] active:opacity-80'}
+                    ${selectMode && selectedIds.has(room.roomId) ? 'bg-[var(--coral)]/5' : ''}`}>
 
-                  {/* sticky — 호실 */}
-                  <td className="px-4 py-4 text-sm font-bold text-[var(--coral)] overflow-hidden sticky left-0 z-20 bg-[var(--cream)]"
+                  {/* sticky — 호실 (식별자 §22.2: 기본 ink, 연체만 coral · 선택모드 시 체크박스) */}
+                  <td className={`py-4 text-sm font-bold tnum overflow-hidden sticky left-0 z-20 bg-[var(--cream)] ${selectMode ? 'px-2' : 'px-4'} ${tone === 'overdue' ? 'text-[var(--coral)]' : 'text-[var(--warm-dark)]'}`}
                     style={{ width: colWidths.roomNo, minWidth: colWidths.roomNo, maxWidth: colWidths.roomNo, borderLeft: `3px solid ${statusTipColor(tone)}` }}>
-                    <span className="truncate block">{fmtRoomNo(room.roomNo)}</span>
+                    <span className="flex items-center gap-2 min-w-0">
+                      {selectMode && isBatchEligible(room) && (
+                        <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border ${selectedIds.has(room.roomId) ? 'bg-[var(--coral)] border-[var(--coral)] text-white' : 'border-[var(--warm-border)] bg-[var(--cream)]'}`}>
+                          {selectedIds.has(room.roomId) && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>}
+                        </span>
+                      )}
+                      <span className="truncate">{fmtRoomNo(room.roomNo)}</span>
+                    </span>
                   </td>
                   {/* sticky — 입주자 */}
                   <td className="px-4 py-4 text-sm font-medium text-[var(--warm-dark)] overflow-hidden sticky z-20 bg-[var(--cream)]"
@@ -990,6 +1091,67 @@ export default function RoomsClient({
       )}
 
       {/* 수납 모달은 전역 Prism 셸 (EntityModal/PaymentBody) 가 담당 */}
+
+      {/* 선택 모드 하단 바 — §21.3 공용 SelectionPillBar */}
+      {selectMode && selectedIds.size > 0 && (
+        <SelectionPillBar count={selectedIds.size} unit="실" onClose={exitSelectMode}>
+          <PillButton primary disabled={batchTargets.length === 0} onClick={openBatchPay}>
+            일괄 수납 처리
+          </PillButton>
+        </SelectionPillBar>
+      )}
+
+      {/* 일괄 수납 확인 모달 — §06 Modal · §13 세그먼트 · §15 금액 · §09② 되돌리기 가능 */}
+      <Modal
+        open={batchOpen}
+        onClose={() => { if (!batchBusy) setBatchOpen(false) }}
+        title="일괄 수납 처리"
+        subtitle={`${targetMonth.replace('-', '년 ') + '월'} · ${batchTargets.length}개 호실`}
+        width="sm"
+        footer={
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" size="md" onClick={() => setBatchOpen(false)} disabled={batchBusy}>취소</Btn>
+            <Btn variant="primary" size="md" onClick={runBatchPay} disabled={batchBusy || batchTargets.length === 0}>
+              {batchBusy ? '처리 중…' : '수납 처리'}
+            </Btn>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          {/* 미수 합계 — §13 자동합산 강조 + §15 금액 */}
+          <div className="rounded-md bg-[var(--sand)]/40 border border-[var(--warm-border)] px-4 py-3 flex items-center justify-between">
+            <span className="text-xs font-medium text-[var(--warm-mid)]">이번 달 미수 합계</span>
+            <span className="text-lg font-bold tnum text-[var(--warm-dark)]"><MoneyDisplay amount={batchTotal} /></span>
+          </div>
+
+          {/* 납부일 — §13 */}
+          <div>
+            <label className="block text-xs font-medium text-[var(--warm-mid)] mb-1.5">납부일</label>
+            <DatePicker value={batchDate} onChange={setBatchDate} />
+          </div>
+
+          {/* 수납 방법 — §13 상호배타는 세그먼트 */}
+          <div>
+            <label className="block text-xs font-medium text-[var(--warm-mid)] mb-1.5">수납 방법</label>
+            <SegmentedControl
+              size="md"
+              ariaLabel="수납 방법"
+              value={batchMethod}
+              onChange={setBatchMethod}
+              options={[
+                { value: '계좌이체', label: '계좌이체' },
+                { value: '현금',     label: '현금' },
+                { value: '신용카드', label: '신용카드' },
+              ]}
+            />
+          </div>
+
+          <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
+            선택한 호실의 <span className="font-medium text-[var(--warm-dark)]">이번 달 미수액을 전액</span> 수납 처리합니다.
+            완납·미래월 등 대상이 아닌 호실은 자동 제외됩니다. 처리 후 토스트의 <span className="font-medium text-[var(--warm-dark)]">적용취소</span>로 되돌릴 수 있습니다.
+          </p>
+        </div>
+      </Modal>
 
     </div>
   )
