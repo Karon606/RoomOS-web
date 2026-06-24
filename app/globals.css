@@ -292,7 +292,7 @@
   --color-warm-dark:    var(--warm-dark);
   --color-warm-border:  var(--warm-border);
   --color-warm-muted:   var(--warm-muted);
-  /* M7: 한글·Display는 Pretendard, 숫자·코드는 DM Mono */
+  /* §04 타이포 / §15: 한글·Display·숫자 전부 Pretendard (숫자는 tnum). DM Mono 미사용 */
   --font-sans: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   /* v1.3.2 §15 정정 — 제품 UI 에서 DM Mono 제거(사선 0 금지). 숫자는 Pretendard + tnum.
      잔존 font-mono/mono 사용처가 모노스페이스로 빠지지 않게 본문 폰트로 매핑. */
