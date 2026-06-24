@@ -10,6 +10,7 @@ import { useUrlState } from '@/lib/useUrlState'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SortSelect } from '@/components/ui/SortSelect'
 import { RoomCard } from '@/components/ui/RoomCard'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
 
 const fmtRoomNo = (no: string | null | undefined) =>
@@ -742,9 +743,7 @@ export default function RoomsClient({
           )
         })}
         {displayed.length === 0 && (
-          <p className="text-sm text-[var(--warm-muted)] text-center py-6">
-            {search ? '검색 결과가 없습니다.' : '해당하는 호실이 없습니다.'}
-          </p>
+          <EmptyState title={search ? '검색 결과가 없습니다' : '해당하는 호실이 없습니다'} />
         )}
       </div>
 

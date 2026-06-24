@@ -1264,7 +1264,7 @@ export default function TenantClient({
                   <div className="flex items-center gap-2">
                     {lease?.room?.roomNo ? (
                       <>
-                        <span className="text-sm font-bold text-[var(--coral)]">{fmtRoomNo(lease.room.roomNo)}</span>
+                        <span className="text-sm font-bold tnum text-[var(--warm-dark)]">{fmtRoomNo(lease.room.roomNo)}</span>
                         {lease.room.floor && <span className="text-[0.625rem] px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">{lease.room.floor}층</span>}
                       </>
                     ) : (() => {
