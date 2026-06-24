@@ -16,6 +16,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn } from '@/components/ui/Btn'
 import { SearchBar } from '@/components/ui/SearchBar'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { kstYmdStr } from '@/lib/kstDate'
 
 type Request = Awaited<ReturnType<typeof getAllRequestsForProperty>>[number]
@@ -342,9 +343,11 @@ export default function RequestsClient({
 
       {/* 리스트 */}
       {filtered.length === 0 ? (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-10 text-center text-sm text-[var(--warm-muted)]">
-          조건에 맞는 요청이 없습니다.
-        </div>
+        <EmptyState
+          icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5 H20 M4 12 H20 M4 19 H14" /></svg>}
+          title={search.trim() ? '검색 결과가 없습니다' : '조건에 맞는 요청이 없습니다'}
+          description={search.trim() ? '다른 검색어로 시도해 보세요.' : '필터를 바꾸거나 새 요청을 등록해 보세요.'}
+        />
       ) : (
         <ul className="space-y-2">
           {filtered.map(r => {
