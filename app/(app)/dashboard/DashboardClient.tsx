@@ -1898,8 +1898,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
       {/* ── 찍어 올리기 + 등록 대기 (영수증/물품 AI 분류) ─────────────────────────── */}
       <PendingReceiptSection />
 
-      {/* ── KPI 카드 (2×3 grid) ──────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-3.5">
+      {/* ── KPI 카드 (§23.5 반응형: 모바일 2 → sm 3 → lg 4) ──────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
 
         {/* Row 2 Left: 예상 매출 + 달성도 — 고시원 특성상 유지되면 매출이 거의 안 늘어 '현재까지'보다
             '예상 매출 대비 성과(수납 달성도)'가 유효. 예상엔 퇴실예정(일할/0)·신규 예약확정(전액) 반영됨. */}
@@ -2255,7 +2255,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                             // 차원 0개 = 한 덩어리(헤더 없이) 표시
                             if (roomDims.length === 0) {
                               return (
-                                <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+                                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-[6px]">
                                   {data.rooms.map(r => renderCell(r))}
                                 </div>
                               )
@@ -2266,7 +2266,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   {g.label}
                                   <span style={{ fontWeight: 400, marginLeft: 4 }}>({g.rooms.length})</span>
                                 </p>
-                                <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+                                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-[6px]">
                                   {g.rooms.map(r => renderCell(r))}
                                 </div>
                               </div>
@@ -2283,7 +2283,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         비거주자 현황
                         <span style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 6 }}>{data.nonResidentItems.length}명</span>
                       </p>
-                      <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-[6px]">
                         {data.nonResidentItems.map(n => {
                           const rentMan = n.rentAmount > 0 ? `${Math.round(n.rentAmount / 10000)}만` : null
                           const nameParts = n.tenantName.split(' ')
@@ -2349,11 +2349,16 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 <div className="flex-1 min-w-0">
                                   <p className="text-xs font-semibold truncate flex items-center gap-1" style={{ color: 'var(--ink-2)' }}>
                                     {fmtRoomNo(l.roomNo)} {l.tenantName}
-                                    {l.daysOverdue != null && l.daysOverdue >= 7 && (
+                                    {/* §23.7 — 1~6일 경과=미납(warning), 7일↑=연체 D+N(overdue). §03 OVERDUE=7일 초과 */}
+                                    {l.daysOverdue != null && l.daysOverdue >= 7 ? (
                                       <span className="rounded-full text-[0.5625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--badge-overdue-bg)', color: 'var(--badge-overdue-fg)' }}>
                                         연체 D+{l.daysOverdue}
                                       </span>
-                                    )}
+                                    ) : l.daysOverdue != null && l.daysOverdue >= 1 ? (
+                                      <span className="rounded-full text-[0.5625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--warning-bg)', color: 'var(--warning-fg)' }}>
+                                        미납
+                                      </span>
+                                    ) : null}
                                   </p>
                                   <p className="text-[0.625rem] font-medium mt-0.5" style={{ color: dl.color }}>{dl.text}</p>
                                 </div>
