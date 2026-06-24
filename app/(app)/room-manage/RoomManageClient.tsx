@@ -15,6 +15,7 @@ import { useUrlState } from '@/lib/useUrlState'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SortSelect } from '@/components/ui/SortSelect'
 import { RoomCard, type CardKind } from '@/components/ui/RoomCard'
+import { SearchBar } from '@/components/ui/SearchBar'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { Panorama360 } from '@/components/Panorama360'
@@ -530,23 +531,9 @@ export default function RoomManageClient({
         </div>
       </div>
 
-      {/* 검색바 + 필터 토글 */}
+      {/* 검색바 + 필터 토글 — §22 공용 SearchBar */}
       <div className="flex gap-2">
-        <div className="relative flex-1">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="M16 16 L21 21" />
-          </svg>
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="호실 번호, 입주자 이름, 방 타입 검색"
-            className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm pl-9 pr-8 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
-          />
-          {search && (
-            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-base leading-none">×</button>
-          )}
-        </div>
+        <SearchBar value={search} onChange={setSearch} placeholder="호실 번호, 입주자 이름, 방 타입 검색" className="flex-1" />
         <button
           type="button"
           onClick={() => setShowFilters(v => !v)}

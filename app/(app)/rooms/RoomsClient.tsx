@@ -11,6 +11,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SortSelect } from '@/components/ui/SortSelect'
 import { RoomCard } from '@/components/ui/RoomCard'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { SearchBar } from '@/components/ui/SearchBar'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
 
 const fmtRoomNo = (no: string | null | undefined) =>
@@ -491,23 +492,8 @@ export default function RoomsClient({
         <MonthSelector />
       </div>
 
-      {/* 검색창 */}
-      <div className="relative">
-        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] pointer-events-none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" /><path d="M16 16 L21 21" />
-        </svg>
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="호실 번호 또는 입주자 이름 검색"
-          className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm pl-9 pr-4 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
-        />
-        {search && (
-          <button onClick={() => setSearch('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-lg leading-none">×</button>
-        )}
-      </div>
+      {/* 검색창 — §22 공용 SearchBar */}
+      <SearchBar value={search} onChange={setSearch} placeholder="호실 번호 또는 입주자 이름 검색" />
 
       {/* 빠른 필터 + 열 설정 */}
       <div className="flex gap-2 flex-wrap items-center">

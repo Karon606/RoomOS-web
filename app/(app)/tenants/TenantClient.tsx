@@ -26,6 +26,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { SearchBar } from '@/components/ui/SearchBar'
 import { SortSelect } from '@/components/ui/SortSelect'
 import { STATUS_LABEL, leaseCardKind, statusException, leaseTipTone } from '@/lib/statusColors'
 import { RoomCard } from '@/components/ui/RoomCard'
@@ -937,6 +938,9 @@ export default function TenantClient({
         </div>
       </div>
 
+      {/* 검색 — §22 공용 SearchBar (모바일 포함 항상 노출) */}
+      <SearchBar value={search} onChange={setSearch} placeholder="이름, 호실, 국적, 직업 검색" />
+
       {/* 탭 */}
       <div>
         <SegmentedControl
@@ -993,14 +997,6 @@ export default function TenantClient({
 
         {/* 구분선 */}
         <div className="flex-1" />
-
-        {/* 검색 — 데스크탑 */}
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="이름, 호실, 국적, 직업 검색..."
-          className="hidden sm:block bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-4 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors w-56"
-        />
 
         {/* 열 설정 — 데스크탑 */}
         <div className="relative hidden sm:block">
