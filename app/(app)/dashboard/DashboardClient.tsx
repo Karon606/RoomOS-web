@@ -1919,12 +1919,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                 <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.22)', overflow: 'hidden', margin: '2px 0 6px' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: '#fff', borderRadius: 3 }} />
                 </div>
+                {/* §23.1 — 보조 1줄(달성도). 완료/예정/미납 건 상세는 수납 관리로 이동 */}
                 <p style={{ fontSize: '0.65625rem', color: 'rgba(255,252,247,0.55)', lineHeight: 1.5 }}>
                   수납 {data.totalRevenue.toLocaleString()}원 · 달성 <em style={{ fontStyle: 'normal', color: 'var(--rev-change)', fontWeight: 700 }}>{pct}%</em>
-                  {data.extraRevenue > 0 && <span style={{ color: 'rgba(255,252,247,0.42)' }}> · 기타수익 {fmtKorMoney(data.extraRevenue)} 포함</span>}
-                </p>
-                <p style={{ fontSize: '0.625rem', color: 'rgba(255,252,247,0.5)', lineHeight: 1.45, marginTop: 1 }}>
-                  완료 {data.paidCount}건 · 예정 {data.upcomingCount}건{data.pendingRevenue > 0 ? ` ${fmtKorMoney(data.pendingRevenue)}` : ''} · 미납 {data.unpaidCount}건{data.unpaidAmount > 0 ? ` ${fmtKorMoney(data.unpaidAmount)}` : ''}
                 </p>
               </>
             )
@@ -1941,8 +1938,6 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           // 현재 장부가 부풀려져 100%에 박힘. 대신 '지출이 얼마나 확정됐나'(실제/예상)를 보여
           // 다 채워지면 예상치로 수렴함을 표시.
           const expenseBooked = data.expectedExpense > 0 ? Math.min(100, Math.round((data.totalExpense / data.expectedExpense) * 100)) : 100
-          const remainExp = Math.max(0, data.expectedExpense - data.totalExpense)
-          const hasReserveOut = data.reserveAccrualFromThisMonth > 0
           return (
             <div className="rounded-xl" style={{
               background: 'var(--np-card-bg)', padding: '18px 20px',
@@ -1959,25 +1954,18 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
               <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.18)', overflow: 'hidden', margin: '2px 0 6px' }}>
                 <div style={{ height: '100%', width: `${expenseBooked}%`, background: 'var(--np-pos)', borderRadius: 3 }} />
               </div>
+              {/* §23.1 — 보조 1줄(현재 장부·지출 반영도). 남은 지출·예비비 이체 상세는 지출/기타수익으로 이동 */}
               <p style={{ fontSize: '0.65625rem', color: 'var(--np-cap)', lineHeight: 1.5 }}>
                 현재 장부 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{fmtKorMoney(currentNet)}</em> · 지출 <em style={{ fontStyle: 'normal', color: 'var(--np-pos)', fontWeight: 700 }}>{expenseBooked}%</em> 반영
               </p>
-              {remainExp > 0 && (
-                <p style={{ fontSize: '0.625rem', color: 'var(--np-cap2)', marginTop: 2 }}>
-                  남은 예상 지출 −{fmtKorMoney(remainExp)} 반영 시 확정
-                </p>
-              )}
-              {hasReserveOut && (
-                <p style={{ fontSize: '0.625rem', color: 'var(--np-cap2)', marginTop: 4 }}>
-                  예비비 −{data.reserveAccrualFromThisMonth.toLocaleString()}원 이체 · 운영 가용 <span style={{ color: 'var(--np-cash)', fontWeight: 600 }}>{data.operatingCashAvailable.toLocaleString()}원</span>
-                </p>
-              )}
             </div>
           )
         })()}
 
-        {/* Row 3 Left: 누적 미납 — 도래·미회수 강조, 납부 예정은 부가 */}
-        <Link href="/rooms" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
+        {/* Row 3 Left: 누적 미납 — §23.1 경고 타입(연체 시 좌 3px danger). 납부 예정 상세는 수납 관리로 */}
+        <Link href="/rooms" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity"
+          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px',
+            boxShadow: data.overdueAmount > 0 ? 'inset 3px 0 0 var(--danger-fg)' : undefined }}>
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             누적 미납
           </p>
@@ -1985,15 +1973,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             {data.overdueAmount.toLocaleString()}
             <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--warm-muted)', marginLeft: 2 }}>원</small>
           </p>
-          <p style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)', marginBottom: data.upcomingAmount > 0 ? 4 : 0 }}>
+          <p style={{ fontSize: '0.65625rem', color: 'var(--warm-muted)' }}>
             <em style={{ fontStyle: 'normal', color: data.unpaidCount > 0 ? 'var(--coral)' : 'var(--warm-muted)' }}>{data.unpaidCount}건</em> · 도래·미회수
           </p>
-          {data.upcomingAmount > 0 && (
-            <p style={{ fontSize: '0.625rem', color: 'var(--warm-muted)' }}>
-              {/* §19-2-5: AWAIT 상태 토큰 — 라이트 #1e40af(동일값)·다크 --d-blue 로 자동 분기 */}
-              <span style={{ color: 'var(--status-await-fg)', fontWeight: 500 }}>+{data.upcomingAmount.toLocaleString()}원</span> 납부 예정 ({data.upcomingCount}건)
-            </p>
-          )}
         </Link>
 
         {/* Row 3 Right: 예상 지출 — 통제가능성 3단계 스택 막대(줄일 수 있는 정도 순).
@@ -2009,9 +1991,6 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           {(() => {
             const t = data.expenseTiers
             const tot = (t.immovable + t.variable + t.savable) || 1
-            // 예상 지출이 지난달·전년동월보다 더(+)/덜(−) 쓰는지 — 덜 쓰면 좋음(success), 더 쓰면 주의(tc)
-            const lmDiff = data.lastMonthExpense > 0 ? Math.round((data.expectedExpense - data.lastMonthExpense) / data.lastMonthExpense * 100) : null
-            const lyDiff = data.lastYearExpense  > 0 ? Math.round((data.expectedExpense - data.lastYearExpense)  / data.lastYearExpense  * 100) : null
             return (
               <>
                 <div style={{ display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden', margin: '2px 0 5px', background: 'var(--warm-border)' }}>
@@ -2019,19 +1998,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                   {t.variable  > 0 && <div style={{ width: `${(t.variable  / tot) * 100}%`, background: 'var(--warm-mid)' }} />}
                   {t.savable   > 0 && <div style={{ width: `${(t.savable   / tot) * 100}%`, background: 'var(--coral)' }} />}
                 </div>
+                {/* §23.1 — 보조 1줄(통제가능성 막대 범례). 현재까지·전월/전년 추세는 지출/기타수익으로 이동 */}
                 <p style={{ fontSize: '0.625rem', color: 'var(--warm-muted)', lineHeight: 1.5 }}>
                   <span style={{ color: 'var(--ink-2)' }}>●</span> 고정(정액) {fmtKorMoney(t.immovable)} · <span style={{ color: 'var(--warm-mid)' }}>●</span> 고정(변동) {fmtKorMoney(t.variable)} · <span style={{ color: 'var(--coral)' }}>●</span> 수시 {fmtKorMoney(t.savable)}
                 </p>
-                <p style={{ fontSize: '0.625rem', color: 'var(--warm-muted)', marginTop: 1 }}>
-                  현재까지 {fmtKorMoney(data.totalExpense)} + 남은 고정비 {fmtKorMoney(data.projectedRecurringExpense)}
-                </p>
-                {(lmDiff !== null || lyDiff !== null) && (
-                  <p style={{ fontSize: '0.625rem', color: 'var(--warm-muted)', marginTop: 1 }}>
-                    예상 기준 {lmDiff !== null && <>지난달 <em style={{ fontStyle: 'normal', fontWeight: 700, color: lmDiff > 0 ? 'var(--tc)' : 'var(--success)' }}>{lmDiff > 0 ? '+' : ''}{lmDiff}%</em></>}
-                    {lmDiff !== null && lyDiff !== null && <span> · </span>}
-                    {lyDiff !== null && <>전년동월 <em style={{ fontStyle: 'normal', fontWeight: 700, color: lyDiff > 0 ? 'var(--tc)' : 'var(--success)' }}>{lyDiff > 0 ? '+' : ''}{lyDiff}%</em></>}
-                  </p>
-                )}
               </>
             )
           })()}
