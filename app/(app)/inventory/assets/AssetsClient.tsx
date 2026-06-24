@@ -321,7 +321,7 @@ export default function AssetsClient({ data, rooms, locations }: {
         </div>
         {!isEmpty && (
           <Btn variant="secondary" size="sm" onClick={() => mergeMode ? exitMerge() : setMergeMode(true)}>
-            {mergeMode ? `선택 취소${mergeSel.size > 0 ? ` (${mergeSel.size})` : ''}` : '선택'}
+            {mergeMode ? '선택 취소' : '선택'}
           </Btn>
         )}
       </div>

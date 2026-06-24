@@ -18,6 +18,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { RoomCard, type CardKind } from '@/components/ui/RoomCard'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { StatusBadge, statusTipColor, statusRowTint, type BadgeTone } from '@/components/ui/StatusBadge'
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
 import { Panorama360 } from '@/components/Panorama360'
@@ -525,7 +526,7 @@ export default function RoomManageClient({
             type="button"
             onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}
             className="px-3 py-2 text-sm font-medium text-[var(--warm-mid)] border border-[var(--warm-border)] hover:border-[var(--coral)] rounded-xl transition-colors">
-            {selectMode ? `선택 취소${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}` : '선택'}
+            {selectMode ? '선택 취소' : '선택'}
           </button>
           <Btn variant="primary" size="md" onClick={() => { setShowAddModal(true); setError('') }}>
             + 호실 등록
@@ -820,18 +821,11 @@ export default function RoomManageClient({
         />
       )}
 
-      {/* 배치 액션 바 */}
+      {/* 배치 액션 바 — §21.3 공용 SelectionPillBar */}
       {selectMode && selectedIds.size > 0 && (
-        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
-          <div className="flex items-center gap-3 bg-[var(--ink)] text-[var(--canvas)] rounded-xl px-4 py-3 shadow-lift pointer-events-auto mx-4">
-            <span className="text-sm font-medium">{selectedIds.size}개 선택됨</span>
-            <div className="w-px h-4 bg-[var(--canvas)]/20" />
-            <button type="button" onClick={() => setShowBatchEdit(true)}
-              className="text-sm font-semibold text-[var(--coral)] hover:text-[var(--coral-dark)] transition-colors">
-              일괄 편집
-            </button>
-          </div>
-        </div>
+        <SelectionPillBar count={selectedIds.size} unit="실" onClose={exitSelectMode}>
+          <PillButton primary onClick={() => setShowBatchEdit(true)}>일괄 편집</PillButton>
+        </SelectionPillBar>
       )}
 
       {/* ── 호실 추가 모달 ──────────────────────────────────────────── */}

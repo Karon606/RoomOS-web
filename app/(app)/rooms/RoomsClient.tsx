@@ -12,6 +12,7 @@ import { SortSelect } from '@/components/ui/SortSelect'
 import { RoomCard } from '@/components/ui/RoomCard'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SearchBar } from '@/components/ui/SearchBar'
+import { DisplayFieldsMenu } from '@/components/ui/DisplayFieldsMenu'
 import { Modal } from '@/components/ui/Modal'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
@@ -237,16 +238,12 @@ export default function RoomsClient({
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'checkout' | 'awaiting' | 'paid' | 'adjusted'>('all')
   const [floorFilter, setFloorFilter] = useState('')
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(DEFAULT_VIS)
-  const [showColMenu, setShowColMenu] = useState(false)
   const [vacantColVis, setVacantColVis] = useState<Record<VacantColKey, boolean>>(DEFAULT_VACANT_VIS)
-  const [showVacantColMenu, setShowVacantColMenu] = useState(false)
   const [vacantSortKey, setVacantSortKey] = useState<VacantSortKey>('roomNo')
   const [vacantSortDir, setVacantSortDir] = useState<SortDir>('asc')
   const [sortKey, setSortKey] = useState<SortKey>('status')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [search, setSearch] = useUrlState('q', '')
-  const colMenuRef       = useRef<HTMLDivElement>(null)
-  const vacantColMenuRef = useRef<HTMLDivElement>(null)
   const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_WIDTHS)
   const colWidthsRef              = useRef<Record<string, number>>(DEFAULT_WIDTHS)
 
@@ -283,28 +280,7 @@ export default function RoomsClient({
     }
   }
 
-  // 열 설정 드롭다운 외부 클릭 닫기
-  useEffect(() => {
-    if (!showColMenu) return
-    const handleClick = (e: MouseEvent) => {
-      if (colMenuRef.current && !colMenuRef.current.contains(e.target as Node)) {
-        setShowColMenu(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [showColMenu])
-
-  useEffect(() => {
-    if (!showVacantColMenu) return
-    const handleClick = (e: MouseEvent) => {
-      if (vacantColMenuRef.current && !vacantColMenuRef.current.contains(e.target as Node)) {
-        setShowVacantColMenu(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [showVacantColMenu])
+  // 열 설정 드롭다운 외부 클릭 닫기는 DisplayFieldsMenu가 자체 처리(§22 통일)
 
   useEffect(() => {
     const savedW = loadColWidths()
@@ -605,59 +581,21 @@ export default function RoomsClient({
           {selectMode ? '선택 취소' : '선택'}
         </button>
 
-        {/* 공실 카드 항목 설정 — 항상 노출 (공실 0실에도). 카드 칩 ON/OFF */}
-        <div className="relative" ref={vacantColMenuRef}>
-          <button
-            onClick={() => setShowVacantColMenu(v => !v)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl transition-colors
-              ${showVacantColMenu ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
-          >
-            공실 카드 항목
-          </button>
-          {showVacantColMenu && (
-            <div className="absolute right-0 top-full mt-1.5 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-3 z-50 shadow-lift min-w-[160px] space-y-2">
-              {VACANT_COL_DEFS.map(col => (
-                <label key={col.key} className="flex items-center gap-2.5 cursor-pointer group">
-                  <input type="checkbox" checked={vacantColVis[col.key] ?? false}
-                    onChange={e => setVacantColVis(v => ({ ...v, [col.key]: e.target.checked }))}
-                    className="w-3.5 h-3.5 rounded accent-indigo-500" />
-                  <span className="text-xs text-[var(--warm-dark)] group-hover:text-[var(--warm-dark)] transition-colors">{col.label}</span>
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* 공실 카드 항목 — §22 공용 DisplayFieldsMenu */}
+        <DisplayFieldsMenu
+          fields={VACANT_COL_DEFS}
+          visible={vacantColVis as Record<string, boolean>}
+          onToggle={k => setVacantColVis(v => ({ ...v, [k as VacantColKey]: !v[k as VacantColKey] }))}
+          label="공실 카드 항목"
+        />
 
-        {/* 표시 항목 드롭다운 — 데스크탑 표 컬럼 + 모바일 카드 정보를 통합 토글. */}
-        <div className="relative" ref={colMenuRef}>
-          <button
-            onClick={() => setShowColMenu(v => !v)}
-            className="px-3 py-1.5 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] text-xs font-medium rounded-xl transition-colors"
-          >
-            표시 항목
-          </button>
-          {showColMenu && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setShowColMenu(false)} />
-              <div className="absolute right-0 mt-2 z-50 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift p-3 space-y-2 min-w-[180px]">
-                <p className="text-[0.625rem] text-[var(--warm-muted)] -mb-1">
-                  이 화면에 보일 정보 선택
-                </p>
-                {COL_DEFS.map(col => (
-                  <label key={col.key} className="flex items-center gap-2.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={colVis[col.key] ?? false}
-                      onChange={e => setColVis(v => ({ ...v, [col.key]: e.target.checked }))}
-                      className="w-4 h-4 accent-indigo-500"
-                    />
-                    <span className="text-sm text-[var(--warm-dark)]">{col.label}</span>
-                  </label>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+        {/* 표시 항목 — §22 공용 DisplayFieldsMenu (표 컬럼 + 카드 정보 통합) */}
+        <DisplayFieldsMenu
+          fields={COL_DEFS}
+          visible={colVis as Record<string, boolean>}
+          onToggle={k => setColVis(v => ({ ...v, [k as ColKey]: !v[k as ColKey] }))}
+          heading="이 화면에 보일 정보 선택"
+        />
         </div> {/* /ml-auto group */}
       </div>
 

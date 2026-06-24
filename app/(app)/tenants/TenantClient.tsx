@@ -931,7 +931,7 @@ export default function TenantClient({
         <div className="flex items-center gap-2">
           <Btn type="button" variant="secondary" size="md"
             onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
-            {selectMode ? `선택 취소${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}` : '선택'}
+            {selectMode ? '선택 취소' : '선택'}
           </Btn>
           <Btn variant="primary" size="md"
             onClick={() => { setShowAdd(true); setError('') }}>

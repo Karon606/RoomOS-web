@@ -43,11 +43,15 @@ export function DisplayFieldsMenu({
   visible,
   onToggle,
   className,
+  label = '표시 항목',
+  heading = '카드에 표시할 항목',
 }: {
   fields: readonly FieldDef[]
   visible: Record<string, boolean>
   onToggle: (key: string) => void
   className?: string
+  label?: string                  // 버튼 라벨(기본 '표시 항목'; 예: '공실 카드 항목')
+  heading?: string                // 드롭다운 상단 안내문
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -75,12 +79,12 @@ export function DisplayFieldsMenu({
           <circle cx="15" cy="12" r="2.2" fill="var(--cream)" />
           <circle cx="9" cy="18" r="2.2" fill="var(--cream)" />
         </svg>
-        표시 항목
+        {label}
       </button>
       {open && (
         <div className="absolute right-0 mt-2 z-50 min-w-[184px] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2">
           <p className="px-2 pt-1 pb-1.5 text-[0.6875rem] font-medium text-[var(--warm-muted)]">
-            카드에 표시할 항목
+            {heading}
           </p>
           {fields.map(f => (
             <label
