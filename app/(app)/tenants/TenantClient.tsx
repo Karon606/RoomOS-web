@@ -364,7 +364,6 @@ export default function TenantClient({
   const [sortDir, setSortDir]           = useState<SortDir>('asc')
   const [cardFields, toggleCardField]   = useDisplayFields('tenants.cardFields', TENANT_CARD_FIELDS)
   const [colVis, setColVis]             = useState<Record<ColKey, boolean>>(initColVis)
-  const [showColMenu, setShowColMenu]   = useState(false)
   const [isPending, startTransition]    = useTransition()
   const [colWidths, setColWidths]       = useState<Record<string, number>>(DEFAULT_WIDTHS)
   const colWidthsRef                    = useRef<Record<string, number>>(DEFAULT_WIDTHS)
@@ -1000,51 +999,17 @@ export default function TenantClient({
         {/* 구분선 */}
         <div className="flex-1" />
 
-        {/* 열 설정 — 데스크탑 */}
-        <div className="relative hidden sm:block">
-          <button
-            onClick={() => setShowColMenu(v => !v)}
-            className="px-3 py-1.5 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] text-sm rounded-xl transition-colors"
-          >
-            열 설정
-          </button>
-          {showColMenu && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowColMenu(false)} />
-              <div className="absolute right-0 mt-2 z-20 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl shadow-lift p-3 space-y-2 min-w-[160px]">
-                {COL_DEFS.filter(c => (c.tabs as readonly string[]).includes(filter)).map(c => (
-                  <label key={c.key} className="flex items-center gap-2.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={colVis[c.key] ?? false}
-                      onChange={e => updateColVis(c.key, e.target.checked)}
-                      className="w-4 h-4 accent-indigo-500"
-                    />
-                    <span className="text-sm text-[var(--warm-dark)]">{c.label}</span>
-                  </label>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+        {/* 표시 항목 — 데스크탑 표 열. §22 공용 DisplayFieldsMenu(다른 페이지와 동일) */}
+        <DisplayFieldsMenu
+          className="hidden sm:block"
+          fields={COL_DEFS.filter(c => (c.tabs as readonly string[]).includes(filter))}
+          visible={colVis as Record<string, boolean>}
+          onToggle={k => updateColVis(k as ColKey, !colVis[k as ColKey])}
+          heading="표에 표시할 항목"
+        />
       </div>
 
-      {/* 모바일 검색바 */}
-      <div className="sm:hidden relative">
-        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" />
-          <path d="M16 16 L21 21" />
-        </svg>
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="이름, 호실, 국적, 직업 검색"
-          className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm pl-9 pr-8 py-2.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--coral)] transition-colors"
-        />
-        {search && (
-          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-base leading-none">×</button>
-        )}
-      </div>
+      {/* 모바일 검색바는 상단 공용 SearchBar(전 사이즈)로 통일 — 중복 제거 */}
 
       {/* 모바일 정렬 + 표시 항목 */}
       <div className="sm:hidden flex items-center justify-between gap-2">
