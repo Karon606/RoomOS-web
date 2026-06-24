@@ -149,27 +149,8 @@ const GENDER_LABEL: Record<string, string> = {
 }
 const PT_LABEL: Record<string, string> = { PREPAID: '선납', POSTPAID: '후납' }
 
-// active 탭 내 빠른 상태 필터
-const RESIDENT_FILTERS = [
-  { key: 'all',              label: '전체' },
-  { key: 'ACTIVE',           label: '거주중' },
-  { key: 'CHECKOUT_PENDING', label: '퇴실 예정' },
-  { key: 'NON_RESIDENT',     label: '비거주자' },
-] as const
-type ResidentFilter = (typeof RESIDENT_FILTERS)[number]['key']
-
-const INQUIRY_FILTERS = [
-  { key: 'all',      label: '전체' },
-  { key: 'RESERVED', label: '예약' },
-  { key: 'TOUR',     label: '투어' },
-] as const
-type InquiryFilter = (typeof INQUIRY_FILTERS)[number]['key']
-
-const PAST_FILTERS = [
-  { key: 'all',         label: '전체' },
-  { key: 'CHECKED_OUT', label: '퇴실' },
-] as const
-type PastFilter = (typeof PAST_FILTERS)[number]['key']
+// §22 — 탭+하위 2단계를 한 줄로 평탄화한 단일 상태 필터(생애주기 전 상태)
+type StatusFilter = 'all' | 'ACTIVE' | 'CHECKOUT_PENDING' | 'NON_RESIDENT' | 'RESERVED' | 'TOUR' | 'CANCELLED' | 'past'
 
 // ── 헬퍼 ─────────────────────────────────────────────────────────
 
@@ -354,10 +335,13 @@ export default function TenantClient({
   const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  const [filter, setFilter]             = useState<'residents' | 'inquiry' | 'past' | 'dropped'>('residents')
-  const [residentFilter, setResidentFilter] = useState<ResidentFilter>('all')
-  const [inquiryFilter, setInquiryFilter]   = useState<InquiryFilter>('all')
-  const [pastFilter, setPastFilter]     = useState<PastFilter>('all')
+  // 단일 상태 필터(탭+하위 평탄화). 선택값 → 생애주기 범주(cat)로 표 열·정렬 구성
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const cat: 'residents' | 'inquiry' | 'dropped' | 'past' =
+    statusFilter === 'RESERVED' || statusFilter === 'TOUR' ? 'inquiry'
+    : statusFilter === 'CANCELLED' ? 'dropped'
+    : statusFilter === 'past' ? 'past'
+    : 'residents'
   const [floorFilter, setFloorFilter]   = useState('')
   const [search, setSearch]             = useUrlState('q', '')
   const [sortKey, setSortKey]           = useState<SortKey>('roomNo')
@@ -472,7 +456,7 @@ export default function TenantClient({
   }, [])
 
   const visibleCols = COL_DEFS.filter(
-    c => (c.tabs as readonly string[]).includes(filter) && colVis[c.key]
+    c => (c.tabs as readonly string[]).includes(cat) && colVis[c.key]
   )
 
   // ── 필터 ────────────────────────────────────────────────────────
@@ -480,26 +464,17 @@ export default function TenantClient({
   const filtered = initialTenants.filter(t => {
     const status = t.leaseTerms[0]?.status ?? ''
 
-    // 탭 필터
+    // 단일 상태 필터 — 생애주기 전 상태를 한 줄로 평탄화
     const isResident = ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(status)
     const isInquiry  = ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(status)
     const isDropped  = status === 'CANCELLED'
-    if (filter === 'residents' && !isResident) return false
-    if (filter === 'inquiry'   && !isInquiry)  return false
-    if (filter === 'past'      && (isResident || isInquiry || isDropped)) return false
-    if (filter === 'dropped'   && !isDropped)  return false
-
-    // 빠른 상태 필터
-    if (filter === 'residents') {
-      if (residentFilter !== 'all' && status !== residentFilter) return false
-    }
-    if (filter === 'inquiry') {
-      if (inquiryFilter === 'TOUR' && !['WAITING_TOUR', 'TOUR_DONE'].includes(status)) return false
-      if (inquiryFilter !== 'all' && inquiryFilter !== 'TOUR' && status !== inquiryFilter) return false
-    }
-    if (filter === 'past') {
-      if (pastFilter !== 'all' && status !== pastFilter) return false
-    }
+    const isPast     = !isResident && !isInquiry && !isDropped   // 퇴실·종료
+    const matchStatus =
+      statusFilter === 'all'  ? true :
+      statusFilter === 'TOUR' ? ['WAITING_TOUR', 'TOUR_DONE'].includes(status) :
+      statusFilter === 'past' ? isPast :
+      status === statusFilter   // ACTIVE/CHECKOUT_PENDING/NON_RESIDENT/RESERVED/CANCELLED
+    if (!matchStatus) return false
 
     // 층 필터
     if (floorFilter && getTenantFloor(t) !== floorFilter) return false
@@ -893,14 +868,16 @@ export default function TenantClient({
 
   // ── 인원수 ────────────────────────────────────────────────────
 
-  const residentsCount = initialTenants.filter(t =>
-    ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(t.leaseTerms[0]?.status ?? '')
-  ).length
-  const inquiryCount   = initialTenants.filter(t =>
-    ['RESERVED', 'WAITING_TOUR', 'TOUR_DONE'].includes(t.leaseTerms[0]?.status ?? '')
-  ).length
-  const droppedCount   = initialTenants.filter(t => t.leaseTerms[0]?.status === 'CANCELLED').length
-  const pastCount      = initialTenants.length - residentsCount - inquiryCount - droppedCount
+  const statusOf = (t: typeof initialTenants[0]) => t.leaseTerms[0]?.status ?? ''
+  const cntBy = (pred: (s: string) => boolean) => initialTenants.filter(t => pred(statusOf(t))).length
+  const countAll       = initialTenants.length
+  const countActive    = cntBy(s => s === 'ACTIVE')
+  const countCheckout  = cntBy(s => s === 'CHECKOUT_PENDING')
+  const countNonRes    = cntBy(s => s === 'NON_RESIDENT')
+  const countReserved  = cntBy(s => s === 'RESERVED')
+  const countTour      = cntBy(s => ['WAITING_TOUR', 'TOUR_DONE'].includes(s))
+  const countCancelled = cntBy(s => s === 'CANCELLED')
+  const countPast      = countAll - countActive - countCheckout - countNonRes - countReserved - countTour - countCancelled
 
   // function 선언 — 호이스팅되어 위쪽 필터(.filter, 478번 줄)에서도 TDZ 없이 안전하게 호출됨
   function getTenantFloor(t: typeof initialTenants[0]) {
@@ -942,45 +919,25 @@ export default function TenantClient({
       {/* 검색 — §22 공용 SearchBar (모바일 포함 항상 노출) */}
       <SearchBar value={search} onChange={setSearch} placeholder="이름, 호실, 국적, 직업 검색" />
 
-      {/* 탭 */}
-      <div>
+      {/* 상태 필터 — §22 단일 SegmentedControl(탭+하위 2단계를 생애주기 한 줄로 평탄화) */}
+      <div className="flex gap-2 flex-wrap items-center">
         <SegmentedControl
           size="md"
           scroll
-          ariaLabel="입주자 구분"
-          value={filter}
-          onChange={setFilter}
+          ariaLabel="고객 상태 필터"
+          value={statusFilter}
+          onChange={setStatusFilter}
           options={[
-            { value: 'residents', label: `입주자 (${residentsCount})` },
-            { value: 'inquiry',   label: `문의/예약자 (${inquiryCount})` },
-            { value: 'dropped',   label: `입실 취소자 (${droppedCount})` },
-            { value: 'past',      label: `퇴실자 (${pastCount})` },
+            { value: 'all',              label: `전체 ${countAll}` },
+            { value: 'ACTIVE',           label: `거주중 ${countActive}` },
+            { value: 'CHECKOUT_PENDING', label: `퇴실 예정 ${countCheckout}` },
+            { value: 'NON_RESIDENT',     label: `비거주자 ${countNonRes}` },
+            { value: 'RESERVED',         label: `예약 ${countReserved}` },
+            { value: 'TOUR',             label: `투어 ${countTour}` },
+            { value: 'CANCELLED',        label: `입실취소 ${countCancelled}` },
+            { value: 'past',             label: `퇴실 ${countPast}` },
           ]}
         />
-      </div>
-
-      {/* 빠른 상태 필터 */}
-      <div className="flex gap-2 flex-wrap items-center">
-        {filter !== 'dropped' && (() => {
-          const opts = filter === 'residents' ? RESIDENT_FILTERS
-            : filter === 'inquiry' ? INQUIRY_FILTERS : PAST_FILTERS
-          const cur = (filter === 'residents' ? residentFilter
-            : filter === 'inquiry' ? inquiryFilter : pastFilter) as string
-          const set =
-            filter === 'residents' ? (v: string) => setResidentFilter(v as ResidentFilter) :
-            filter === 'inquiry'   ? (v: string) => setInquiryFilter(v as InquiryFilter) :
-                                     (v: string) => setPastFilter(v as PastFilter)
-          return (
-            <SegmentedControl
-              size="sm"
-              scroll
-              ariaLabel="빠른 상태 필터"
-              value={cur}
-              onChange={set}
-              options={opts.map(f => ({ value: f.key as string, label: f.label }))}
-            />
-          )
-        })()}
 
         {allFloors.length > 1 && (
           <select
@@ -1002,7 +959,7 @@ export default function TenantClient({
         {/* 표시 항목 — 데스크탑 표 열. §22 공용 DisplayFieldsMenu(다른 페이지와 동일) */}
         <DisplayFieldsMenu
           className="hidden sm:block"
-          fields={COL_DEFS.filter(c => (c.tabs as readonly string[]).includes(filter))}
+          fields={COL_DEFS.filter(c => (c.tabs as readonly string[]).includes(cat))}
           visible={colVis as Record<string, boolean>}
           onToggle={k => updateColVis(k as ColKey, !colVis[k as ColKey])}
           heading="표에 표시할 항목"
