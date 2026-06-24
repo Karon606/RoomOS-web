@@ -280,7 +280,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
               {showMore && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowMore(false)} />
-                  <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-1.5 shadow-lift">
+                  <div className="absolute left-0 top-full z-50 mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-1.5 shadow-lift">
                     <p className="px-2 pt-1 pb-1 text-[0.625rem] font-semibold text-[var(--warm-muted)]">입력·점검</p>
                     <button type="button" disabled={seedPending || isPending} onClick={() => { setShowMore(false); handleSeed() }}
                       className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)] disabled:opacity-50">{seedPending ? '처리 중…' : '지출에서 자동 등록'}</button>
