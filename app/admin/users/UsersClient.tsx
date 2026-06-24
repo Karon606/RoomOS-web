@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { pushToast } from '@/lib/saveStatus'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { setUserStatus, setSuperAdmin } from '../actions'
 
 type Row = {
@@ -87,9 +88,11 @@ export default function UsersClient({ rows, pendingCount }: { rows: Row[]; pendi
       </div>
 
       {visible.length === 0 ? (
-        <p className="text-sm py-8 text-center" style={{ color: 'var(--ink-mute)' }}>
-          해당하는 가입자가 없습니다.
-        </p>
+        <EmptyState
+          icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="4" /><path d="M4 21 C4 16 8 14 12 14 C16 14 20 16 20 21" /></svg>}
+          title="해당하는 가입자가 없습니다"
+          description="검색어나 필터를 조정해 보세요."
+        />
       ) : (
         <ul className="space-y-2.5">
           {visible.map((u) => {

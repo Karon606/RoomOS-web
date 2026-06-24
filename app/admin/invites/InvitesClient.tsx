@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { createInviteCode, toggleInviteCode, deleteInviteCode } from '../actions'
@@ -161,9 +162,11 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
 
       {/* 목록 */}
       {rows.length === 0 ? (
-        <p className="text-sm py-6 text-center" style={{ color: 'var(--ink-mute)' }}>
-          발급한 코드가 없습니다.
-        </p>
+        <EmptyState
+          icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7 h16 a1 1 0 0 1 1 1 v3 a2 2 0 0 0 0 4 v3 a1 1 0 0 1-1 1 H4 a1 1 0 0 1-1-1 v-3 a2 2 0 0 0 0-4 V8 a1 1 0 0 1 1-1 Z M12 7 v12" /></svg>}
+          title="발급한 코드가 없습니다"
+          description="새 초대 코드를 발급하면 여기에 표시됩니다."
+        />
       ) : (
         <ul className="space-y-2.5">
           {rows.map((c) => {

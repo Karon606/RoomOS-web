@@ -1,5 +1,6 @@
 import { getPropertiesOverview, enterPropertyAsAdmin } from '../actions'
 import EnterButton from './EnterButton'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 const fmtDate = (d: Date) =>
   new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
@@ -22,9 +23,10 @@ export default async function AdminPropertiesPage() {
       </div>
 
       {properties.length === 0 ? (
-        <p className="text-sm py-8 text-center" style={{ color: 'var(--ink-mute)' }}>
-          등록된 영업장이 없습니다.
-        </p>
+        <EmptyState
+          icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 21 V8 L12 3 L21 8 V21 M9 21 V13 H15 V21" /></svg>}
+          title="등록된 영업장이 없습니다"
+        />
       ) : (
         <ul className="space-y-2.5">
           {properties.map((p) => (

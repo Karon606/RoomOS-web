@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { moveRecordTargetMonth, bulkApplyLatePayments, type SuspectRecord, type SuspectCategory } from './actions'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
@@ -145,9 +146,11 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
 
       <div className="space-y-2">
         {filtered.length === 0 ? (
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-12 text-center text-sm text-[var(--warm-muted)]">
-            재검토 대상 기록이 없습니다.
-          </div>
+          <EmptyState
+            icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4 M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}
+            title="재검토 대상 기록이 없습니다"
+            description="조건에 맞는 재검토 대상이 없습니다."
+          />
         ) : (
           filtered.map(s => (
             <div key={s.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-2">
