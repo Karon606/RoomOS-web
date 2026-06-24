@@ -19,6 +19,23 @@ export function chartColor(index: number): string {
   return CHART_COLORS[index % CHART_COLORS.length]
 }
 
+/**
+ * §23.2 차트·개념 색 매핑 — 개념별 고정 토큰 1:1 (단일 출처).
+ * 같은 개념(수입·지출·완납…)은 recharts·자체 DonutChart·KPI 어디서나 같은 색.
+ * 의미가 있는 개념은 §14.4 의미색 토큰, 의미 없는 분류는 viz 토큰.
+ */
+export const CONCEPT_COLORS = {
+  income:   'var(--tc)',             // 수입
+  expense:  'var(--ink-s)',          // 지출
+  etcIncome:'var(--camel)',          // 기타수익
+  deposit:  'var(--deposit-fg)',     // 보증금
+  reserve:  'var(--reserve-fg)',     // 예비비
+  paid:     'var(--success-fg)',     // 완납
+  await:    'var(--info-fg)',        // 예정
+  unpaid:   'var(--warning-fg)',     // 미납
+  overdue:  'var(--overdue-solid)',  // 연체
+} as const
+
 /** 지출 카테고리 고정 색상 매핑 — viz 토큰 고정 배정 */
 export const EXPENSE_CATEGORY_COLORS: Record<string, string> = {
   '관리비':      'var(--viz-1)',

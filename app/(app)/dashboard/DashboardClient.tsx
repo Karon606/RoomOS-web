@@ -17,7 +17,7 @@ import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
-import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS } from '@/lib/chartColors'
+import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS, CONCEPT_COLORS } from '@/lib/chartColors'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment, getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { recordRecurringExpense } from '@/app/(app)/finance/actions'
@@ -808,10 +808,11 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
     value: c.amount,
     color: chartColor(i),
   }))
+  // §23.2 — 결제상태 차트는 개념색(완납=success·예정=info·미납=warning)
   const paymentSegments = [
-    { value: data.paidCount,     color: 'var(--persimmon)' },
-    { value: data.upcomingCount, color: 'var(--sun)' },
-    { value: data.unpaidCount,   color: 'var(--cream-3)' },
+    { value: data.paidCount,     color: CONCEPT_COLORS.paid },
+    { value: data.upcomingCount, color: CONCEPT_COLORS.await },
+    { value: data.unpaidCount,   color: CONCEPT_COLORS.unpaid },
   ]
   const paymentTotal = data.paidCount + data.upcomingCount + data.unpaidCount
   const paymentRate = paymentTotal > 0
@@ -950,21 +951,21 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             </div>
             <div className="flex-1 space-y-3">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: 'var(--persimmon)' }} />
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CONCEPT_COLORS.paid }} />
                 <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>완납</span>
-                <span className="text-sm font-semibold" style={{ color: 'var(--persimmon)' }}>{data.paidCount}건</span>
+                <span className="text-sm font-semibold" style={{ color: CONCEPT_COLORS.paid }}>{data.paidCount}건</span>
               </div>
               {data.upcomingCount > 0 && (
                 <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: 'var(--sun)' }} />
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CONCEPT_COLORS.await }} />
                   <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>수납예정</span>
-                  <span className="text-sm font-semibold" style={{ color: 'var(--sun)' }}>{data.upcomingCount}건</span>
+                  <span className="text-sm font-semibold" style={{ color: CONCEPT_COLORS.await }}>{data.upcomingCount}건</span>
                 </div>
               )}
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: 'var(--ink-m)' }} />
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CONCEPT_COLORS.unpaid }} />
                 <span className="text-sm flex-1" style={{ color: 'var(--warm-mid)' }}>미납</span>
-                <span className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>{data.unpaidCount}건</span>
+                <span className="text-sm font-semibold" style={{ color: CONCEPT_COLORS.unpaid }}>{data.unpaidCount}건</span>
               </div>
               <div className="pt-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
                 <Row label="이달 수납액 (귀속)" value={<MoneyDisplay amount={data.paidRevenue} />} />
