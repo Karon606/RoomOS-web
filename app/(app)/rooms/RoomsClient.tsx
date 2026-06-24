@@ -492,7 +492,9 @@ export default function RoomsClient({
 
       {/* 검색창 */}
       <div className="relative">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] text-sm pointer-events-none">🔍</span>
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--warm-muted)] pointer-events-none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" /><path d="M16 16 L21 21" />
+        </svg>
         <input
           type="text"
           value={search}
@@ -637,7 +639,7 @@ export default function RoomsClient({
               {/* 첫 줄: 호실 + 수납상태. 표시 항목 메뉴(colVis)로 타입 ON/OFF. */}
               <div className="flex items-start justify-between">
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-base font-bold text-[var(--coral)]">{fmtRoomNo(room.roomNo)}</span>
+                  <span className="text-base font-bold tnum text-[var(--warm-dark)]">{fmtRoomNo(room.roomNo)}</span>
                   {colVis.type && room.type && <span className="text-xs text-[var(--warm-muted)]">{room.type}</span>}
                 </div>
                 <div className="flex flex-col items-end gap-1">
@@ -923,7 +925,7 @@ export default function RoomsClient({
               const shown = chips.slice(0, 4)   // 공간 한도 — 최대 4개
               return (
                 <div key={room.roomId} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-4 py-3 space-y-1.5">
-                  <span className="text-sm font-bold text-[var(--warm-mid)]">{fmtRoomNo(room.roomNo)}</span>
+                  <span className="text-sm font-bold tnum text-[var(--warm-dark)]">{fmtRoomNo(room.roomNo)}</span>
                   {shown.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {shown.map((c, i) => (
@@ -962,7 +964,7 @@ export default function RoomsClient({
               <tbody>
                 {sortedVacants.map(room => (
                   <tr key={room.roomId} className="border-b border-[var(--warm-border)]/50">
-                    <td className="px-4 py-3 text-sm font-bold text-[var(--warm-mid)]">{fmtRoomNo(room.roomNo)}</td>
+                    <td className="px-4 py-3 text-sm font-bold tnum text-[var(--warm-dark)]">{fmtRoomNo(room.roomNo)}</td>
                     {vacantColVis.type && (
                       <td className="px-4 py-3 text-sm text-[var(--warm-muted)]">{room.type ?? '—'}</td>
                     )}
