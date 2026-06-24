@@ -28,6 +28,7 @@ import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { SortSelect } from '@/components/ui/SortSelect'
 import { STATUS_LABEL, leaseCardKind, statusException, leaseTipTone } from '@/lib/statusColors'
 import { RoomCard } from '@/components/ui/RoomCard'
@@ -1537,18 +1538,11 @@ export default function TenantClient({
         />
       )}
 
-      {/* 배치 액션 바 */}
+      {/* 배치 액션 바 — §21.3 공용 SelectionPillBar */}
       {selectMode && selectedIds.size > 0 && (
-        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+56px)] md:bottom-4 left-0 right-0 z-50 flex justify-center pointer-events-none">
-          <div className="flex items-center gap-3 bg-[var(--ink)] text-[var(--canvas)] rounded-xl px-4 py-3 shadow-lift pointer-events-auto mx-4">
-            <span className="text-sm font-medium">{selectedIds.size}명 선택됨</span>
-            <div className="w-px h-4 bg-[var(--canvas)]/20" />
-            <button type="button" onClick={() => setShowBatchEdit(true)}
-              className="text-sm font-semibold text-[var(--coral)] hover:text-[var(--coral-dark)] transition-colors">
-              일괄 편집
-            </button>
-          </div>
-        </div>
+        <SelectionPillBar count={selectedIds.size} unit="명" onClose={exitSelectMode}>
+          <PillButton primary onClick={() => setShowBatchEdit(true)}>일괄 편집</PillButton>
+        </SelectionPillBar>
       )}
 
       {/* ── 입주자 추가 모달 ────────────────────────────────────────── */}
