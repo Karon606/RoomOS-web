@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
-import { assignAggregateToTarget, setCommonAsset, setAssetReceived, combineAssets, getAssetAssignmentLog, type AssetsData, type AssetItem, type AssetAssignmentLogRow } from './actions'
+import { assignAggregateToTarget, setCommonAsset, setAssetReceived, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
 import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // §10 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
@@ -54,6 +54,8 @@ export default function AssetsClient({ data, rooms, locations }: {
   const [mergeMode, setMergeMode] = useState(false)
   const [mergeSel, setMergeSel]   = useState<Set<string>>(new Set())   // 선택된 AssetItem id
   const [pillMode, setPillMode] = useState<'menu' | 'assign'>('menu')   // 하단 바 단계
+  // 일괄 배정 수량 시트 — 대상 고른 뒤 품목별 수량(기본 전량) 입력
+  const [batchAssign, setBatchAssign] = useState<{ target: Target; label: string; rows: { it: AssetItem; qty: string }[] } | null>(null)
   const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setPillMode('menu') }
   // 합치기 바텀시트 — §21.4 MergeSheet 단일 통일(카드별·선택 공용)
   const [sheet, setSheet] = useState<{ sourceLabel: string; targets: MergeTarget[]; onConfirm: (destId: string) => void } | null>(null)
@@ -107,27 +109,48 @@ export default function AssetsClient({ data, rooms, locations }: {
   })
   // 같은 구역·분류의 다른 카드(합치기 대상 후보)
   const siblingsOf = (list: AssetItem[], it: AssetItem) => list.filter(s => s.id !== it.id && s.category === it.category)
-  // 선택한 비품들을 한 방·공용부에 일괄 배정(각 품목 전체 수량). 부분 수량은 개별 '배정'에서.
-  const doBatchAssign = (target: Target, label: string) => {
-    if (selItems.length === 0) return
-    startTransition(async () => {
-      let ok = 0
-      for (const it of selItems) {
-        const res = await assignAggregateToTarget(it.ids, target, null)
-        if (res.ok) ok++
-      }
-      pushToast(ok === selItems.length ? 'success' : 'error', `${label}에 ${ok}/${selItems.length}개 배정됨`)
-      exitMerge(); router.refresh()
-    })
-  }
-  // 하단 바 방 선택 — 'room:id' | 'loc:id'
+  // 하단 바 대상 선택 → 수량 시트 오픈(품목별 기본 전량). 'room:id' | 'loc:id'
   const onBatchPick = (v: string) => {
-    if (!v) return
+    if (!v || selItems.length === 0) return
     const [k, id] = v.split(':')
     const label = k === 'room'
       ? fmtRoomNo(rooms.find(r => r.id === id)?.roomNo ?? '')
       : (locations.find(l => l.id === id)?.name ?? '')
-    doBatchAssign({ kind: k === 'room' ? 'room' : 'location', id }, label)
+    setBatchAssign({
+      target: { kind: k === 'room' ? 'room' : 'location', id },
+      label,
+      rows: selItems.map(it => ({ it, qty: String(it.qtyValue ?? 1) })),
+    })
+  }
+
+  // 일괄 배정 적용취소(§10·rollback) — 분할 생성행 삭제 + 원상태 복원
+  const undoBatch = (undo: AssetAssignUndo) => startTransition(async () => {
+    const res = await undoBatchAssignAssets(undo)
+    if (!res.ok) { pushToast('error', res.error); return }
+    pushToast('info', '일괄 배정을 적용취소했습니다')
+    router.refresh()
+  })
+
+  // 수량 시트 확정 → 일괄 배정 실행
+  const runBatchAssign = () => {
+    if (!batchAssign) return
+    const target = batchAssign.target
+    const items = batchAssign.rows.map(r => {
+      const max = r.it.qtyValue ?? 1
+      let q = Number(r.qty)
+      if (!(q > 0)) q = max               // 빈/0 → 전량
+      q = Math.min(q, max)
+      return { ids: r.it.ids, qty: q >= max ? null : q }   // 전량이면 null
+    })
+    startTransition(async () => {
+      const res = await batchAssignAssets({ items, target })
+      if (!res.ok) { pushToast('error', res.error); return }
+      setBatchAssign(null); exitMerge()
+      pushToast('success', `${batchAssign.label}에 ${res.assigned}개 품목 배정됨`, {
+        action: { label: '적용취소', run: () => undoBatch(res.undo) },
+      })
+      router.refresh()
+    })
   }
 
   // 배정 해제(미배정으로) — 묶음(ids) 전체
@@ -422,6 +445,38 @@ export default function AssetsClient({ data, rooms, locations }: {
           sourceLabel={sheet.sourceLabel} targets={sheet.targets}
           description="대표(남을 품목) 기준으로 이름·사양이 통일돼 한 카드가 됩니다. 적용취소는 환경설정 ‘품명 병합’."
           onConfirm={sheet.onConfirm} pending={pending} />
+      )}
+
+      {/* 일괄 배정 수량 시트 — 품목별 배정 수량(기본 전량) + 적용취소(§10) */}
+      {batchAssign && (
+        <Modal
+          open
+          onClose={() => setBatchAssign(null)}
+          title={`일괄 배정 — ${batchAssign.label}`}
+          subtitle={`${batchAssign.rows.length}개 품목 · 품목별 배정 수량을 정하세요(기본 전량, 나머지는 여분 유지)`}
+          width="sm"
+          footer={
+            <div className="flex gap-2 justify-end">
+              <Btn variant="secondary" size="md" onClick={() => setBatchAssign(null)} disabled={pending}>취소</Btn>
+              <Btn variant="primary" size="md" onClick={runBatchAssign} disabled={pending}>{pending ? '배정 중…' : '배정'}</Btn>
+            </div>
+          }
+        >
+          <ul className="space-y-2">
+            {batchAssign.rows.map((r, idx) => {
+              const max = r.it.qtyValue ?? 1
+              return (
+                <li key={r.it.id} className="flex items-center gap-2 rounded-md bg-[var(--cream)] border border-[var(--warm-border)] px-3 py-2">
+                  <span className="flex-1 min-w-0 truncate text-sm text-[var(--warm-dark)]">{r.it.detail || r.it.itemLabel}</span>
+                  <input type="number" min={1} max={max} step="any" value={r.qty} disabled={pending}
+                    onChange={e => setBatchAssign(b => b ? { ...b, rows: b.rows.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) } : b)}
+                    className="w-16 text-sm bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums focus:border-[var(--coral)]" />
+                  <span className="text-xs text-[var(--warm-muted)] shrink-0">/ {fmtQty(max)}{r.it.qtyUnit ?? '개'}</span>
+                </li>
+              )
+            })}
+          </ul>
+        </Modal>
       )}
 
       {/* 비품 상세 풀화면 — §21.5 본문 탭 진입. 구매 내역(영수증별)·현재 상태·합치기 */}

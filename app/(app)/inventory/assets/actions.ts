@@ -411,6 +411,77 @@ export async function assignAggregateToTarget(
   }
 }
 
+// ============================================================
+// 일괄 배정 — 선택한 비품들을 한 대상(방/공용부)에 각자 지정 수량만큼 배정 + 적용취소(§10·rollback)
+//   품목별 qty(null=전량)를 받아 assignAggregateToTarget 재사용. 영향 행 원상태 스냅샷 +
+//   분할로 새로 생긴 행 id를 모아 undo 토큰으로 반환 → undoBatchAssignAssets 가 정확히 원복.
+// ============================================================
+export type AssetAssignUndo = {
+  restore: {
+    id: string; roomId: string | null; assignedLocationId: string | null; isCommonAsset: boolean
+    qtyValue: number | null; amount: number; allocationGroupId: string | null; detail: string | null
+  }[]
+  deleteIds: string[]
+}
+
+export async function batchAssignAssets(
+  input: { items: { ids: string[]; qty: number | null }[]; target: AssignTarget },
+): Promise<{ ok: true; assigned: number; undo: AssetAssignUndo } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const items = input.items.filter(i => i.ids.length)
+    if (!items.length) return { ok: false, error: '선택된 비품이 없습니다.' }
+    const verr = await validateTarget(input.target, propertyId)
+    if (verr) return { ok: false, error: verr }
+
+    // 적용취소용 — 영향 행 전체의 원상태 스냅샷
+    const allIds = [...new Set(items.flatMap(i => i.ids))]
+    const restore = await prisma.expense.findMany({
+      where: { id: { in: allIds }, propertyId },
+      select: { id: true, roomId: true, assignedLocationId: true, isCommonAsset: true, qtyValue: true, amount: true, allocationGroupId: true, detail: true },
+    })
+
+    const deleteIds: string[] = []
+    let assigned = 0
+    for (const it of items) {
+      const before = new Set((await prisma.expense.findMany({ where: { propertyId }, select: { id: true } })).map(e => e.id))
+      const res = await assignAggregateToTarget(it.ids, input.target, it.qty)
+      if (!res.ok) continue
+      assigned++
+      const after = await prisma.expense.findMany({ where: { propertyId }, select: { id: true } })
+      for (const e of after) if (!before.has(e.id)) deleteIds.push(e.id)   // 분할로 새로 생긴 행
+    }
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true, assigned, undo: { restore, deleteIds } }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '일괄 배정 중 오류가 발생했습니다.' }
+  }
+}
+
+export async function undoBatchAssignAssets(undo: AssetAssignUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    await prisma.$transaction([
+      ...(undo.deleteIds.length ? [prisma.expense.deleteMany({ where: { id: { in: undo.deleteIds }, propertyId } })] : []),
+      ...undo.restore.map(r => prisma.expense.update({
+        where: { id: r.id },
+        data: {
+          roomId: r.roomId, assignedLocationId: r.assignedLocationId, isCommonAsset: r.isCommonAsset,
+          qtyValue: r.qtyValue, amount: r.amount, allocationGroupId: r.allocationGroupId, detail: r.detail,
+        },
+      })),
+    ])
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '적용취소 중 오류가 발생했습니다.' }
+  }
+}
+
 // 같은 분할 묶음(allocationGroupId)의 '미배정(방·위치 모두 없음)' 행들을 하나로 재병합.
 async function mergeUnassignedGroup(propertyId: string, groupId: string): Promise<void> {
   const unassigned = await prisma.expense.findMany({
