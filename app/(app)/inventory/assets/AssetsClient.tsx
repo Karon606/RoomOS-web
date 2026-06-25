@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
-import { assignAggregateToTarget, setCommonAsset, setAssetReceived, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
+import { assignAggregateToTarget, setCommonAsset, setAssetReceived, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
 import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // §10 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
@@ -76,6 +76,28 @@ export default function AssetsClient({ data, rooms, locations }: {
     ...data.rooms.flatMap(r => r.items), ...data.locations.flatMap(l => l.items),
   ], [data])
   const selItems = useMemo(() => allItems.filter(it => mergeSel.has(it.id)), [allItems, mergeSel])
+  const assetCats = useMemo(() => [...new Set(allItems.map(it => it.category).filter(Boolean))].sort(), [allItems])
+
+  // 무상입수 — 무상으로 생긴 비품을 0원 Expense(재고자산)로 등록
+  const [freeForm, setFreeForm] = useState<null | { label: string; cat: string; spec: string; specUnit: string; qty: string; qtyUnit: string }>(null)
+  const submitFree = () => {
+    if (!freeForm) return
+    if (!freeForm.label.trim()) { pushToast('error', '품목명을 입력하세요.'); return }
+    startTransition(async () => {
+      const res = await addFreeAsset({
+        itemLabel: freeForm.label,
+        category: freeForm.cat,
+        specValue: freeForm.spec.trim() ? Number(freeForm.spec) : null,
+        specUnit: freeForm.specUnit.trim() || null,
+        qtyValue: Number(freeForm.qty) > 0 ? Number(freeForm.qty) : 1,
+        qtyUnit: freeForm.qtyUnit.trim() || '개',
+      })
+      if (!res.ok) { pushToast('error', res.error); return }
+      setFreeForm(null)
+      pushToast('success', '무상 비품이 등록되었습니다')
+      router.refresh()
+    })
+  }
 
   // §10 적용취소 — 토스트 액션·환경설정 '품명 병합' 둘 다(사용자 결정)
   const undoCombine = (runId: string) => startTransition(async () => {
@@ -236,6 +258,7 @@ export default function AssetsClient({ data, rooms, locations }: {
         onToggleSelect={() => toggleMergeSel(it.id)}
         onClick={() => setDetailItem(it)}
         title={it.detail || it.itemLabel}
+        badges={it.amount === 0 ? <span className="inline-flex items-center rounded-full bg-[var(--info-bg)] text-[var(--info-fg)] text-[0.625rem] font-semibold px-1.5 py-0.5">무상</span> : undefined}
         meta={`${it.date.slice(2)} · ${it.category}${it.vendor ? ` · ${it.vendor}` : ''}`}
         value={won(it.amount)}
         expanded={!mergeMode && it.count > 1 && expanded.has(it.id)}
@@ -342,11 +365,17 @@ export default function AssetsClient({ data, rooms, locations }: {
             {mergeMode && <span className="text-[var(--coral)]"> · 비품을 눌러 선택 → 방·공용부 일괄 배정 또는 합치기(대표로 통일).</span>}
           </p>
         </div>
-        {!isEmpty && (
-          <Btn variant="secondary" size="sm" onClick={() => mergeMode ? exitMerge() : setMergeMode(true)}>
-            {mergeMode ? '선택 취소' : '선택'}
+        <div className="flex items-center gap-2 shrink-0">
+          <Btn variant="secondary" size="sm"
+            onClick={() => setFreeForm({ label: '', cat: assetCats[0] ?? '비품', spec: '', specUnit: '', qty: '1', qtyUnit: '개' })}>
+            + 무상 비품
           </Btn>
-        )}
+          {!isEmpty && (
+            <Btn variant="secondary" size="sm" onClick={() => mergeMode ? exitMerge() : setMergeMode(true)}>
+              {mergeMode ? '선택 취소' : '선택'}
+            </Btn>
+          )}
+        </div>
       </div>
 
       {isEmpty ? (
@@ -476,6 +505,67 @@ export default function AssetsClient({ data, rooms, locations }: {
               )
             })}
           </ul>
+        </Modal>
+      )}
+
+      {/* 무상 비품 등록 — 0원 Expense(재고자산) + '무상' 배지 */}
+      {freeForm && (
+        <Modal
+          open
+          onClose={() => setFreeForm(null)}
+          title="무상 비품 등록"
+          subtitle="무상으로 생긴 비품을 0원으로 재고에 등록합니다 (재무 합계 영향 없음)"
+          width="sm"
+          footer={
+            <div className="flex gap-2 justify-end">
+              <Btn variant="secondary" size="md" onClick={() => setFreeForm(null)} disabled={pending}>취소</Btn>
+              <Btn variant="primary" size="md" onClick={submitFree} disabled={pending}>{pending ? '등록 중…' : '등록'}</Btn>
+            </div>
+          }
+        >
+          <div className="space-y-3">
+            <label className="block">
+              <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">품목명</span>
+              <input value={freeForm.label} disabled={pending} autoFocus
+                onChange={e => setFreeForm(f => f ? { ...f, label: e.target.value } : f)}
+                placeholder="예: 의자, 수전 트랩"
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+            </label>
+            <label className="block">
+              <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">분류</span>
+              <input value={freeForm.cat} disabled={pending} list="asset-cats"
+                onChange={e => setFreeForm(f => f ? { ...f, cat: e.target.value } : f)}
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+              <datalist id="asset-cats">{assetCats.map(c => <option key={c} value={c} />)}</datalist>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">규격(선택)</span>
+                <div className="flex gap-1">
+                  <input value={freeForm.spec} disabled={pending} inputMode="decimal"
+                    onChange={e => setFreeForm(f => f ? { ...f, spec: e.target.value } : f)}
+                    placeholder="값"
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 py-2 text-sm outline-none focus:border-[var(--coral)]" />
+                  <input value={freeForm.specUnit} disabled={pending}
+                    onChange={e => setFreeForm(f => f ? { ...f, specUnit: e.target.value } : f)}
+                    placeholder="단위"
+                    className="w-16 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 py-2 text-sm outline-none focus:border-[var(--coral)]" />
+                </div>
+              </label>
+              <label className="block">
+                <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">수량</span>
+                <div className="flex gap-1">
+                  <input value={freeForm.qty} disabled={pending} inputMode="decimal"
+                    onChange={e => setFreeForm(f => f ? { ...f, qty: e.target.value } : f)}
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 py-2 text-sm tabular-nums outline-none focus:border-[var(--coral)]" />
+                  <input value={freeForm.qtyUnit} disabled={pending}
+                    onChange={e => setFreeForm(f => f ? { ...f, qtyUnit: e.target.value } : f)}
+                    placeholder="개"
+                    className="w-16 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 py-2 text-sm outline-none focus:border-[var(--coral)]" />
+                </div>
+              </label>
+            </div>
+          </div>
         </Modal>
       )}
 

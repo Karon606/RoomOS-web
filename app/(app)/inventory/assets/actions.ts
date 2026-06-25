@@ -188,6 +188,50 @@ export async function setAssetReceived(expenseIds: string[], received: boolean):
   }
 }
 
+// 무상입수 — 무상으로 생긴 비품을 0원 Expense(재고자산)로 등록. 지출 ≥1원 강제를 우회.
+// 재무 합계 영향 0(0원), 화면엔 amount===0 → '무상' 배지. 스키마 변경 없음.
+export async function addFreeAsset(input: {
+  itemLabel: string; category: string
+  specValue?: number | null; specUnit?: string | null
+  qtyValue: number; qtyUnit?: string | null
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const label = input.itemLabel.trim()
+    if (!label) return { ok: false, error: '품목명을 입력하세요.' }
+    const cat = (input.category || '').trim() || '비품'
+    const trackedCats = await getTrackedCategories(propertyId)
+    if (trackedCats.includes(cat)) return { ok: false, error: '소모품(재고추적) 분류는 무상 비품에 쓸 수 없습니다.' }
+    const qty = input.qtyValue > 0 ? input.qtyValue : 1
+    const qtyUnit = (input.qtyUnit || '').trim() || '개'
+    await prisma.expense.create({
+      data: {
+        propertyId,
+        date: new Date(),          // 오늘
+        amount: 0,                 // 무상
+        category: cat,
+        itemLabel: label,
+        specValue: input.specValue ?? null,
+        specUnit: input.specUnit ?? null,
+        qtyValue: qty,
+        qtyUnit,
+        detail: buildAssetDetail({ itemLabel: label, specValue: input.specValue ?? null, specUnit: input.specUnit ?? null, qtyValue: qty, qtyUnit }),
+        receivedAt: new Date(),    // 무상은 보통 손에 들어온 상태 → 수령 완료
+        memo: '무상입수',
+        isShipping: false,
+        excludeFromInventory: false,
+        isCommonAsset: false,
+      },
+    })
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '무상 비품 등록 중 오류가 발생했습니다.' }
+  }
+}
+
 // 공용 자재 표시/해제 — value=true 면 방·공용부 배정 해제하고 공용 자재로 마킹, false 면 일반 미배정으로.
 export async function setCommonAsset(expenseIds: string[], value: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
