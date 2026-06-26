@@ -330,7 +330,8 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     const resolvedQty  = noQty ? '1' : qtyValue
     const resolvedUnit = noQty && qtyUnit.trim() === '' ? '개' : qtyUnit
     const q = Number(resolvedQty) || 1
-    const unitPrice = amount != null && q > 0 ? Math.round(amount / q) : undefined
+    const baseQ = q * (specValue ? (Number(specValue) || 1) : 1)   // 기준수량 = 수량 × 규격
+    const unitPrice = amount != null && baseQ > 0 ? Math.round(amount / baseQ) : undefined
     const data: ItemPickState = { label: finalLabel, specValue, specUnit, qtyValue: resolvedQty, qtyUnit: resolvedUnit, amount, unitPrice }
     onChange([...items, data])
     setActiveLabel(null)
@@ -344,24 +345,27 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   function patchItem(idx: number, patch: Partial<ItemPickState>) {
     onChange(items.map((it, i) => i === idx ? { ...it, ...patch } : it))
   }
-  const qtyNumOf = (it: ItemPickState) => Number(it.qtyValue) || 1
-  // 금액 입력 → 단가 자동(금액÷수량)
+  // 단가는 '기준단위(규격) 1개당'. 총 기준수량 = 수량 × 규격 (규격 없으면 수량 그대로).
+  // 예) 40개입 3박스 → 기준수량 120개, 단가 = 금액 ÷ 120.
+  const specMul = (it: { specValue?: string | number | null }) => it.specValue ? (Number(it.specValue) || 1) : 1
+  const baseQtyOf = (it: ItemPickState) => (Number(it.qtyValue) || 1) * specMul(it)
+  // 금액 입력 → 단가 자동(금액 ÷ 기준수량)
   function updateItemAmount(idx: number, raw: string) {
     const amount = raw ? Number(raw.replace(/[^0-9]/g, '')) : undefined
-    const q = qtyNumOf(items[idx])
+    const q = baseQtyOf(items[idx])
     patchItem(idx, { amount, unitPrice: amount != null && q > 0 ? Math.round(amount / q) : undefined })
   }
-  // 단가 입력 → 금액 자동(단가×수량)
+  // 단가 입력 → 금액 자동(단가 × 기준수량)
   function updateItemUnit(idx: number, raw: string) {
     const unitPrice = raw ? Number(raw.replace(/[^0-9]/g, '')) : undefined
-    const q = qtyNumOf(items[idx])
+    const q = baseQtyOf(items[idx])
     patchItem(idx, { unitPrice, amount: unitPrice != null ? Math.round(unitPrice * q) : items[idx].amount })
   }
-  // 수량 변경 → 단가 우선으로 금액 재계산(단가 없으면 금액→단가)
+  // 수량(박스 등) 변경 → 기준수량(수량×규격)으로 금액 재계산
   function updateItemQty(idx: number, raw: string) {
     const qtyValue = raw.replace(/[^0-9.]/g, '')
     const it = items[idx]
-    const q = Number(qtyValue) || 1
+    const q = (Number(qtyValue) || 1) * specMul(it)
     if (it.unitPrice != null) patchItem(idx, { qtyValue, amount: Math.round(it.unitPrice * q) })
     else if (it.amount != null) patchItem(idx, { qtyValue, unitPrice: q > 0 ? Math.round(it.amount / q) : undefined })
     else patchItem(idx, { qtyValue })
@@ -457,9 +461,19 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                         onChange={e => updateItemQty(idx, e.target.value)} placeholder="1"
                         className={`w-12 ${smallNum}`} />
                     </label>
+                    {/* 규격 있으면 곱셈에 명시 — 단가는 규격 1개당. 총 기준수량 = 수량 × 규격 */}
+                    {it.specValue && (
+                      <>
+                        <span className="text-[0.625rem] text-[var(--warm-muted)] pb-1">×</span>
+                        <label className="flex flex-col gap-0.5">
+                          <span className="text-[0.5625rem] text-[var(--warm-muted)]">규격</span>
+                          <span className="w-12 px-1.5 py-0.5 text-xs text-[var(--warm-mid)] text-right tabular-nums">{it.specValue}{it.specUnit}</span>
+                        </label>
+                      </>
+                    )}
                     <span className="text-[0.625rem] text-[var(--warm-muted)] pb-1">×</span>
                     <label className="flex flex-col gap-0.5">
-                      <span className="text-[0.5625rem] text-[var(--warm-muted)]">단가</span>
+                      <span className="text-[0.5625rem] text-[var(--warm-muted)]">단가{it.specValue ? `/${it.specUnit || '개'}` : ''}</span>
                       <input type="text" inputMode="numeric" value={it.unitPrice ? it.unitPrice.toLocaleString() : ''}
                         onChange={e => updateItemUnit(idx, e.target.value)} placeholder="0"
                         className={`w-20 ${smallNum}`} />
