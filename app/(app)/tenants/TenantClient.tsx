@@ -150,7 +150,8 @@ const GENDER_LABEL: Record<string, string> = {
 const PT_LABEL: Record<string, string> = { PREPAID: '선납', POSTPAID: '후납' }
 
 // §22 — 탭+하위 2단계를 한 줄로 평탄화한 단일 상태 필터(생애주기 전 상태)
-type StatusFilter = 'all' | 'ACTIVE' | 'CHECKOUT_PENDING' | 'NON_RESIDENT' | 'RESERVED' | 'TOUR' | 'CANCELLED' | 'past'
+// '거주중(living)' = ACTIVE+CHECKOUT_PENDING — 퇴실 예정도 아직 사는 사람이라 거주중에 포함(기본값).
+type StatusFilter = 'living' | 'CHECKOUT_PENDING' | 'NON_RESIDENT' | 'RESERVED' | 'TOUR' | 'CANCELLED' | 'past' | 'all'
 
 // ── 헬퍼 ─────────────────────────────────────────────────────────
 
@@ -336,7 +337,7 @@ export default function TenantClient({
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   // 단일 상태 필터(탭+하위 평탄화). 선택값 → 생애주기 범주(cat)로 표 열·정렬 구성
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('living')   // 기본 = 거주중(퇴실예정 포함)
   const cat: 'residents' | 'inquiry' | 'dropped' | 'past' =
     statusFilter === 'RESERVED' || statusFilter === 'TOUR' ? 'inquiry'
     : statusFilter === 'CANCELLED' ? 'dropped'
@@ -470,10 +471,11 @@ export default function TenantClient({
     const isDropped  = status === 'CANCELLED'
     const isPast     = !isResident && !isInquiry && !isDropped   // 퇴실·종료
     const matchStatus =
-      statusFilter === 'all'  ? true :
-      statusFilter === 'TOUR' ? ['WAITING_TOUR', 'TOUR_DONE'].includes(status) :
-      statusFilter === 'past' ? isPast :
-      status === statusFilter   // ACTIVE/CHECKOUT_PENDING/NON_RESIDENT/RESERVED/CANCELLED
+      statusFilter === 'all'    ? true :
+      statusFilter === 'living' ? ['ACTIVE', 'CHECKOUT_PENDING'].includes(status) :   // 거주중 = 거주중+퇴실예정
+      statusFilter === 'TOUR'   ? ['WAITING_TOUR', 'TOUR_DONE'].includes(status) :
+      statusFilter === 'past'   ? isPast :
+      status === statusFilter   // CHECKOUT_PENDING/NON_RESIDENT/RESERVED/CANCELLED
     if (!matchStatus) return false
 
     // 층 필터
@@ -871,13 +873,13 @@ export default function TenantClient({
   const statusOf = (t: typeof initialTenants[0]) => t.leaseTerms[0]?.status ?? ''
   const cntBy = (pred: (s: string) => boolean) => initialTenants.filter(t => pred(statusOf(t))).length
   const countAll       = initialTenants.length
-  const countActive    = cntBy(s => s === 'ACTIVE')
   const countCheckout  = cntBy(s => s === 'CHECKOUT_PENDING')
+  const countLiving    = cntBy(s => ['ACTIVE', 'CHECKOUT_PENDING'].includes(s))   // 거주중 = 거주중+퇴실예정
   const countNonRes    = cntBy(s => s === 'NON_RESIDENT')
   const countReserved  = cntBy(s => s === 'RESERVED')
   const countTour      = cntBy(s => ['WAITING_TOUR', 'TOUR_DONE'].includes(s))
   const countCancelled = cntBy(s => s === 'CANCELLED')
-  const countPast      = countAll - countActive - countCheckout - countNonRes - countReserved - countTour - countCancelled
+  const countPast      = countAll - countLiving - countNonRes - countReserved - countTour - countCancelled
 
   // function 선언 — 호이스팅되어 위쪽 필터(.filter, 478번 줄)에서도 TDZ 없이 안전하게 호출됨
   function getTenantFloor(t: typeof initialTenants[0]) {
@@ -928,14 +930,14 @@ export default function TenantClient({
           value={statusFilter}
           onChange={setStatusFilter}
           options={[
-            { value: 'all',              label: `전체 ${countAll}` },
-            { value: 'ACTIVE',           label: `거주중 ${countActive}` },
+            { value: 'living',           label: `거주중 ${countLiving}` },
             { value: 'CHECKOUT_PENDING', label: `퇴실 예정 ${countCheckout}` },
             { value: 'NON_RESIDENT',     label: `비거주자 ${countNonRes}` },
             { value: 'RESERVED',         label: `예약 ${countReserved}` },
             { value: 'TOUR',             label: `투어 ${countTour}` },
             { value: 'CANCELLED',        label: `입실취소 ${countCancelled}` },
             { value: 'past',             label: `퇴실 ${countPast}` },
+            { value: 'all',              label: `전체 ${countAll}` },
           ]}
         />
 
