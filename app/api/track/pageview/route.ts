@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
 import prisma from '@/lib/prisma'
 import { parseUA, categorizeReferrer } from '@/lib/tracking/uaParse'
+import { lookupGeo } from '@/lib/tracking/geo'
 
 // 공개 랜딩 페이지 페이지뷰 수집 — 정적 HTML 의 클라이언트 스크립트에서 POST.
 // 익명 집계 위주(IP·UA는 해시 후 폐기). closeup(체류·스크롤)은 /api/track/closeup 으로.
@@ -85,6 +86,12 @@ export async function POST(req: NextRequest) {
     const refInfo = categorizeReferrer(referrerHost)
     const vh = visitorHash(ip, ua, slug)
 
+    // 도시 정확도 보정 — 봇이 아니면 ipinfo 로 조회(한국 IP 도시 오판정 보정).
+    // 실패/타임아웃이면 Vercel 헤더값을 그대로 사용(geo 가 기록을 막지 않게).
+    const geo = isBot
+      ? { country, region, city }
+      : await lookupGeo(ip, { country, region, city })
+
     const created = await prisma.pageView.create({
       data: {
         slug,
@@ -96,9 +103,9 @@ export async function POST(req: NextRequest) {
         utmSource,
         utmMedium,
         utmCampaign,
-        country,
-        region,
-        city,
+        country: geo.country,
+        region:  geo.region,
+        city:    geo.city,
         os:             uaInfo.os,
         osVersion:      uaInfo.osVersion,
         browser:        uaInfo.browser,

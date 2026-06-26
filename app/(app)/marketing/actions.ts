@@ -88,19 +88,37 @@ function rangeStart(range: MarketingRange): { start: Date; bucket: MarketingBuck
 const KST_OFFSET = 9 * 60 * 60 * 1000
 const toKst = (d: Date) => new Date(d.getTime() + KST_OFFSET)
 
-// Vercel x-vercel-ip-country-region(ISO 3166-2 코드)을 한국 시·도명으로.
-// 같은 city 명(예: suseong-gu)이 서울인지 대구인지 상위 지역으로 구분하기 위함.
-const KR_REGION: Record<string, string> = {
+// 한국 시·도명 표준화 → 한국어.
+// 두 가지 입력을 모두 받는다: (1) Vercel x-vercel-ip-country-region 의 ISO 3166-2 코드('11'),
+// (2) ipinfo 의 영문 시·도명('Seoul'). 레거시 데이터(코드)와 신규(ipinfo 영문) 모두 표시되게 함.
+const KR_REGION_CODE: Record<string, string> = {
   '11': '서울', '26': '부산', '27': '대구', '28': '인천', '29': '광주', '30': '대전',
   '31': '울산', '50': '세종', '41': '경기', '42': '강원', '43': '충북', '44': '충남',
   '45': '전북', '46': '전남', '47': '경북', '48': '경남', '49': '제주',
 }
-function regionDisplay(country: string | null, region: string | null): string | null {
-  if (!region) return null
-  let code = region.toUpperCase()
+// ipinfo 영문 시·도명(정규화: 소문자·영문자만) → 한국어. 도(道)는 표기 변형까지 흡수.
+const KR_REGION_NAME: [RegExp, string][] = [
+  [/seoul/, '서울'], [/busan|pusan/, '부산'], [/daegu|taegu/, '대구'], [/incheon/, '인천'],
+  [/gwangju|kwangju/, '광주'], [/daejeon|taejon/, '대전'], [/ulsan/, '울산'], [/sejong/, '세종'],
+  [/gyeonggi|kyonggi/, '경기'], [/gangwon|kangwon/, '강원'],
+  [/chungcheongbuk|chungbuk|northchungcheong/, '충북'], [/chungcheongnam|chungnam|southchungcheong/, '충남'],
+  [/jeollabuk|jeonbuk|northjeolla/, '전북'], [/jeollanam|jeonnam|southjeolla/, '전남'],
+  [/gyeongsangbuk|gyeongbuk|northgyeongsang/, '경북'], [/gyeongsangnam|gyeongnam|southgyeongsang/, '경남'],
+  [/jeju|cheju/, '제주'],
+]
+// 한국 지명(시·도 또는 광역시 city)을 한국어로. 매핑 안 되면 원본 유지(예: 'Suwon', 'Seongnam-si').
+function krPlaceToKo(country: string | null, name: string | null): string | null {
+  if (!name) return null
+  if (country && country.toUpperCase() !== 'KR') return name   // 한국 외엔 손대지 않음
+  let code = name.toUpperCase()
   if (code.startsWith('KR-')) code = code.slice(3)
-  if ((!country || country.toUpperCase() === 'KR') && KR_REGION[code]) return KR_REGION[code]
-  return region   // 한국 외·미매핑이면 원본 그대로
+  if (KR_REGION_CODE[code]) return KR_REGION_CODE[code]          // ISO 코드(레거시)
+  const norm = name.toLowerCase().replace(/[^a-z]/g, '')
+  for (const [re, ko] of KR_REGION_NAME) if (re.test(norm)) return ko  // ipinfo 영문명
+  return name
+}
+function regionDisplay(country: string | null, region: string | null): string | null {
+  return krPlaceToKo(country, region)
 }
 
 type Row = {
@@ -375,15 +393,18 @@ export async function getMarketingStats(
     .sort((a, b) => b.count - a.count)
     .slice(0, 10)
 
-  // 도시 (상위 지역·국가 함께) — 같은 city명 구분 위해 region(시·도) 병행
+  // 도시 (상위 지역·국가 함께) — 같은 city명 구분 위해 region(시·도) 병행.
+  // 광역시는 city·region 이 같으므로(서울·서울) 중복 표기를 없앤다.
   const cityMap = new Map<string, { city: string; region: string | null; country: string | null; count: number }>()
   for (const r of inRange) {
     if (!r.city) continue
+    const city = krPlaceToKo(r.country, r.city) ?? r.city
     const region = regionDisplay(r.country, r.region)
-    const key = `${r.country ?? ''}|${region ?? ''}|${r.city}`
+    const dedupRegion = region && region === city ? null : region   // '서울 · 서울' 방지
+    const key = `${r.country ?? ''}|${dedupRegion ?? ''}|${city}`
     const existing = cityMap.get(key)
     if (existing) existing.count++
-    else cityMap.set(key, { city: r.city, region, country: r.country, count: 1 })
+    else cityMap.set(key, { city, region: dedupRegion, country: r.country, count: 1 })
   }
   const cities = Array.from(cityMap.values()).sort((a, b) => b.count - a.count).slice(0, 12)
 
