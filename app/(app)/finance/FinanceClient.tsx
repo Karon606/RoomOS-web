@@ -370,6 +370,15 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     else if (it.amount != null) patchItem(idx, { qtyValue, unitPrice: q > 0 ? Math.round(it.amount / q) : undefined })
     else patchItem(idx, { qtyValue })
   }
+  // 규격(개입수 등) 변경 → 규격 오타 정정은 보통 결제 '금액'이 정답이므로 금액 고정·단가 재계산
+  function updateItemSpec(idx: number, raw: string) {
+    const specValue = raw.replace(/[^0-9.]/g, '')
+    const it = items[idx]
+    const q = (Number(it.qtyValue) || 1) * (specValue ? (Number(specValue) || 1) : 1)
+    if (it.amount != null) patchItem(idx, { specValue, unitPrice: q > 0 ? Math.round(it.amount / q) : undefined })
+    else if (it.unitPrice != null) patchItem(idx, { specValue, amount: Math.round(it.unitPrice * q) })
+    else patchItem(idx, { specValue })
+  }
   // 방별 분배 — 켜면 한 줄(방 미지정+전체수량) 생성, 끄면 제거(방 분배 없음)
   function toggleAlloc(idx: number) {
     const it = items[idx]
@@ -457,33 +466,43 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                   <div className="flex items-end gap-1.5 flex-wrap">
                     <label className="flex flex-col gap-0.5">
                       <span className="text-[0.5625rem] text-[var(--warm-muted)]">수량</span>
-                      <input type="text" inputMode="decimal" value={it.qtyValue}
-                        onChange={e => updateItemQty(idx, e.target.value)} placeholder="1"
-                        className={`w-12 ${smallNum}`} />
+                      <div className="flex items-center gap-0.5">
+                        <input type="text" inputMode="decimal" value={it.qtyValue}
+                          onChange={e => updateItemQty(idx, e.target.value)} placeholder="1"
+                          className={`w-12 ${smallNum}`} />
+                        {it.qtyUnit && <span className="text-[0.5625rem] text-[var(--warm-muted)]">{it.qtyUnit}</span>}
+                      </div>
                     </label>
-                    {/* 규격 있으면 곱셈에 명시 — 단가는 규격 1개당. 총 기준수량 = 수량 × 규격 */}
-                    {it.specValue && (
-                      <>
-                        <span className="text-[0.625rem] text-[var(--warm-muted)] pb-1">×</span>
-                        <label className="flex flex-col gap-0.5">
-                          <span className="text-[0.5625rem] text-[var(--warm-muted)]">규격</span>
-                          <span className="w-12 px-1.5 py-0.5 text-xs text-[var(--warm-mid)] text-right tabular-nums">{it.specValue}{it.specUnit}</span>
-                        </label>
-                      </>
-                    )}
-                    <span className="text-[0.625rem] text-[var(--warm-muted)] pb-1">×</span>
+                    {/* 규격 — 수정 가능. 단가는 규격(기준단위) 1개당. 총 기준수량 = 수량 × 규격 */}
+                    <span className="text-[0.625rem] text-[var(--warm-muted)] pb-1.5">×</span>
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-[0.5625rem] text-[var(--warm-muted)]">규격</span>
+                      <div className="flex items-center gap-0.5">
+                        <input type="text" inputMode="decimal" value={it.specValue}
+                          onChange={e => updateItemSpec(idx, e.target.value)} placeholder="—"
+                          className={`w-12 ${smallNum}`} />
+                        {it.specUnit && <span className="text-[0.5625rem] text-[var(--warm-muted)]">{it.specUnit}</span>}
+                      </div>
+                    </label>
+                    <span className="text-[0.625rem] text-[var(--warm-muted)] pb-1.5">×</span>
                     <label className="flex flex-col gap-0.5">
                       <span className="text-[0.5625rem] text-[var(--warm-muted)]">단가{it.specValue ? `/${it.specUnit || '개'}` : ''}</span>
-                      <input type="text" inputMode="numeric" value={it.unitPrice ? it.unitPrice.toLocaleString() : ''}
-                        onChange={e => updateItemUnit(idx, e.target.value)} placeholder="0"
-                        className={`w-20 ${smallNum}`} />
+                      <div className="flex items-center gap-0.5">
+                        <input type="text" inputMode="numeric" value={it.unitPrice ? it.unitPrice.toLocaleString() : ''}
+                          onChange={e => updateItemUnit(idx, e.target.value)} placeholder="0"
+                          className={`w-20 ${smallNum}`} />
+                        <span className="text-[0.5625rem] text-[var(--warm-muted)]">원</span>
+                      </div>
                     </label>
-                    <span className="text-[0.625rem] text-[var(--warm-muted)] pb-1">=</span>
+                    <span className="text-[0.625rem] text-[var(--warm-muted)] pb-1.5">=</span>
                     <label className="flex flex-col gap-0.5 flex-1 min-w-[5rem]">
                       <span className="text-[0.5625rem] text-[var(--warm-muted)]">금액</span>
-                      <input type="text" inputMode="numeric" value={it.amount ? it.amount.toLocaleString() : ''}
-                        onChange={e => updateItemAmount(idx, e.target.value)} placeholder="0"
-                        className={`w-full ${smallNum}`} />
+                      <div className="flex items-center gap-0.5">
+                        <input type="text" inputMode="numeric" value={it.amount ? it.amount.toLocaleString() : ''}
+                          onChange={e => updateItemAmount(idx, e.target.value)} placeholder="0"
+                          className={`flex-1 w-full ${smallNum}`} />
+                        <span className="text-[0.5625rem] text-[var(--warm-muted)]">원</span>
+                      </div>
                     </label>
                   </div>
                 )}
@@ -1486,7 +1505,7 @@ export default function FinanceClient({
         if (d.items.length > 0) {
           // 인식된 품목은 항상 '품목 선택'(ItemSelector)으로 — 등록 폼은 모든 카테고리에서 품목 모듈을 쓰므로.
           // (이전엔 ITEM_PRESETS 있는 카테고리만 품목으로, 나머진 세부 항목 텍스트로 빠지던 문제)
-          setAddItems(d.items.map(it => ({ label: it.label, ocrRaw: it.rawLabel ?? it.label, specValue: it.specValue ?? '', specUnit: it.specUnit ?? '', qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '', amount: it.amount, unitPrice: it.amount != null ? Math.round(it.amount / (Number(it.qtyValue) || 1)) : undefined })))
+          setAddItems(d.items.map(it => ({ label: it.label, ocrRaw: it.rawLabel ?? it.label, specValue: it.specValue ?? '', specUnit: it.specUnit ?? '', qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '', amount: it.amount, unitPrice: it.amount != null ? Math.round(it.amount / ((Number(it.qtyValue) || 1) * (Number(it.specValue) || 1))) : undefined })))
           setAddExpAmount(d.items.reduce((s, it) => s + it.amount, 0))
         } else {
           setAddItems([])
@@ -3259,8 +3278,8 @@ export default function FinanceClient({
                       qtyValue:  detailExp.qtyValue != null ? detailExp.qtyValue.toString() : '1',
                       qtyUnit:   detailExp.qtyValue != null ? (detailExp.qtyUnit ?? '') : (detailExp.qtyUnit ?? '개'),
                       amount:    baseAmount,
-                      // 단가 복원 — (금액−배송비)÷수량(저장엔 단가 없음). 안 채우면 수정 시 단가 0 으로 보임.
-                      unitPrice: Math.round(baseAmount / (Number(detailExp.qtyValue) || 1)),
+                      // 단가 복원 — (금액−배송비)÷기준수량(수량×규격). 규격 반영(40개입 3박스 → ÷120) 해야 표시(÷개)와 일관. 저장엔 단가 없음.
+                      unitPrice: Math.round(baseAmount / ((Number(detailExp.qtyValue) || 1) * (Number(detailExp.specValue) || 1))),
                     }] : [])
                     setEditExpAmount(baseAmount)
                     setEditExpDetail((detailExp.detail ?? '').replace(/\s*·?\s*배송비\s*[\d,]+원/, '').trim())
