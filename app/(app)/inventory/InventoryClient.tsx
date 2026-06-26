@@ -317,13 +317,18 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       ) : (
         <>
         {(() => {
-          const flat = rows.flatMap(r => r.pendingPurchases.map(p => ({ p, label: r.label, category: r.category, qtyUnit: r.qtyUnit })))
+          const flat = rows.flatMap(r => r.pendingPurchases.map(p => ({ p, label: r.label, category: r.category, qtyUnit: r.qtyUnit, trackUnit: r.trackUnit, specUnit: r.specUnit })))
           if (flat.length === 0) return null
+          // 수령 대기 수량도 재고 계산(overview sumPurchases)과 동일 기준으로 규격 환산:
+          // spec 추적 품목은 qtyValue × specValue (예: 40개입 3박스 → 120개). 단위는 specUnit.
+          const usesSpec = (trackUnit: string, specValue: number | null) => trackUnit !== 'qty' && !!specValue && specValue > 0
+          const specQtyOf = (qtyValue: number, specValue: number | null, trackUnit: string) =>
+            usesSpec(trackUnit, specValue) ? qtyValue * (specValue as number) : qtyValue
           // 같은 품목(label|category)끼리 묶기 — 비품의 '합산 N건'과 동일 패턴
-          const groupMap = new Map<string, { key: string; label: string; category: string; qtyUnit: string | null; items: typeof flat }>()
+          const groupMap = new Map<string, { key: string; label: string; category: string; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; specUnit: string | null; items: typeof flat }>()
           for (const f of flat) {
             const key = `${f.label}␟${f.category}`
-            const g = groupMap.get(key) ?? { key, label: f.label, category: f.category, qtyUnit: f.qtyUnit, items: [] as typeof flat }
+            const g = groupMap.get(key) ?? { key, label: f.label, category: f.category, qtyUnit: f.qtyUnit, trackUnit: f.trackUnit, specUnit: f.specUnit, items: [] as typeof flat }
             g.items.push(f); groupMap.set(key, g)
           }
           const groups = [...groupMap.values()]
@@ -336,7 +341,13 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
               </h2>
               <ul className="space-y-1.5">
                 {groups.map(g => {
-                  const totalQty = g.items.reduce((s, f) => s + (f.p.qtyValue || 0), 0)
+                  // 규격 환산 합계(재고 단위) + 원래 박스 수 — 예: "120개 (3박스)"
+                  const totalQty = g.items.reduce((s, f) => s + specQtyOf(f.p.qtyValue || 0, f.p.specValue, g.trackUnit), 0)
+                  const unit = g.trackUnit === 'qty' ? (g.qtyUnit ?? '개') : (g.specUnit ?? g.qtyUnit ?? '개')
+                  const rawBoxSum = g.items.reduce((s, f) => s + (f.p.qtyValue || 0), 0)
+                  const boxUnit = g.items[0].p.qtyUnit
+                  const specApplied = g.items.some(f => usesSpec(g.trackUnit, f.p.specValue))
+                  const qtyLabel = specApplied && boxUnit ? `${totalQty}${unit} (${rawBoxSum}${boxUnit})` : `${totalQty}${unit}`
                   const latest = g.items.reduce((dt, f) => (f.p.date > dt ? f.p.date : dt), g.items[0].p.date)
                   const ld = new Date(latest)
                   const ids = g.items.map(f => f.p.id)
@@ -345,7 +356,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                     <li key={g.key} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3.5 py-2.5">
                       <div className="flex items-baseline justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm text-[var(--warm-dark)] truncate">{g.label}{totalQty ? ` · ${totalQty}${g.qtyUnit ?? '개'}` : ''}</p>
+                          <p className="text-sm text-[var(--warm-dark)] truncate">{g.label}{totalQty ? ` · ${qtyLabel}` : ''}</p>
                           <p className="text-[0.625rem] text-[var(--warm-muted)] truncate">{ld.getMonth() + 1}/{ld.getDate()} · {g.category}</p>
                           {g.items.length > 1 && (
                             <button type="button" onClick={() => togglePendExpand(g.key)} className="mt-0.5 text-[0.625rem] text-[var(--coral)] hover:underline">
@@ -362,9 +373,14 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                         <ul className="mt-1.5 pl-2.5 border-l-2 border-[var(--warm-border)] space-y-0.5">
                           {g.items.map(f => {
                             const fd = new Date(f.p.date)
+                            const sq = specQtyOf(f.p.qtyValue || 0, f.p.specValue, g.trackUnit)
+                            const su = g.trackUnit === 'qty' ? (g.qtyUnit ?? f.p.qtyUnit ?? '개') : (g.specUnit ?? '개')
+                            const qstr = f.p.qtyValue
+                              ? (usesSpec(g.trackUnit, f.p.specValue) && f.p.qtyUnit ? ` · ${sq}${su} (${f.p.qtyValue}${f.p.qtyUnit})` : ` · ${sq}${su}`)
+                              : ''
                             return (
                               <li key={f.p.id} className="flex items-baseline justify-between gap-2 text-[0.6875rem] text-[var(--warm-muted)]">
-                                <span className="tabular-nums">{fd.getMonth() + 1}/{fd.getDate()}{f.p.qtyValue ? ` · ${f.p.qtyValue}${f.qtyUnit ?? '개'}` : ''}{f.p.vendor ? ` · ${f.p.vendor}` : ''}</span>
+                                <span className="tabular-nums">{fd.getMonth() + 1}/{fd.getDate()}{qstr}{f.p.vendor ? ` · ${f.p.vendor}` : ''}</span>
                                 <span className="tabular-nums">{(f.p.amount ?? 0).toLocaleString()}원</span>
                               </li>
                             )
