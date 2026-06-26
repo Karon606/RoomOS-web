@@ -172,6 +172,22 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
   })
 
+  // 규격 자동 반영(§4 — 비었을 때만, 덮어쓰지 않음): trackUnit≠'qty'인데 품목 규격(specUnit)이
+  // 비어 있으면, 같은 품목의 '규격 있는 구매'에서 specUnit을 가져와 채운다. 라면 40개입×3박스가
+  // 품목 규격 미설정으로 3(박스)으로 잡히던 문제 → 규격을 반영하면 qtyValue×specValue로 환산됨.
+  for (const it of items) {
+    if (it.trackUnit === 'qty' || (it.specUnit && it.specUnit.trim())) continue
+    const withSpec = await prisma.expense.findFirst({
+      where: { propertyId, category: it.category, itemLabel: it.label, specUnit: { not: null }, specValue: { not: null, gt: 0 }, excludeFromInventory: false },
+      orderBy: { date: 'desc' },
+      select: { specUnit: true },
+    })
+    if (withSpec?.specUnit) {
+      await prisma.trackedItem.update({ where: { id: it.id }, data: { specUnit: withSpec.specUnit } })
+      it.specUnit = withSpec.specUnit   // 이번 계산에도 즉시 반영
+    }
+  }
+
   const rows: InventoryRow[] = []
   for (const it of items) {
     // 같은 날 dedup 후 가장 최신 / 그 직전 점검 추출
