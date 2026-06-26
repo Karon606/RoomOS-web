@@ -77,6 +77,7 @@ export default function AssetsClient({ data, rooms, locations }: {
   ], [data])
   const selItems = useMemo(() => allItems.filter(it => mergeSel.has(it.id)), [allItems, mergeSel])
   const assetCats = useMemo(() => [...new Set(allItems.map(it => it.category).filter(Boolean))].sort(), [allItems])
+  const assetLabels = useMemo(() => [...new Set(allItems.map(it => it.itemLabel).filter(Boolean))].sort(), [allItems])
 
   // 무상입수 — 무상으로 생긴 비품을 0원 Expense(재고자산)로 등록
   const [freeForm, setFreeForm] = useState<null | { label: string; cat: string; spec: string; specUnit: string; qty: string; qtyUnit: string }>(null)
@@ -515,7 +516,7 @@ export default function AssetsClient({ data, rooms, locations }: {
           onClose={() => setFreeForm(null)}
           title="무상 비품 등록"
           subtitle="무상으로 생긴 비품을 0원으로 재고에 등록합니다 (재무 합계 영향 없음)"
-          width="sm"
+          width="xs"
           footer={
             <div className="flex gap-2 justify-end">
               <Btn variant="secondary" size="md" onClick={() => setFreeForm(null)} disabled={pending}>취소</Btn>
@@ -524,46 +525,46 @@ export default function AssetsClient({ data, rooms, locations }: {
           }
         >
           <div className="space-y-3">
+            {/* 품목명 — 일부 입력 시 기존 비품명 추천(datalist) */}
             <label className="block">
               <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">품목명</span>
-              <input value={freeForm.label} disabled={pending} autoFocus
+              <input value={freeForm.label} disabled={pending} autoFocus list="asset-labels"
                 onChange={e => setFreeForm(f => f ? { ...f, label: e.target.value } : f)}
                 placeholder="예: 의자, 수전 트랩"
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+              <datalist id="asset-labels">{assetLabels.map(l => <option key={l} value={l} />)}</datalist>
             </label>
             <label className="block">
               <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">분류</span>
               <input value={freeForm.cat} disabled={pending} list="asset-cats"
                 onChange={e => setFreeForm(f => f ? { ...f, cat: e.target.value } : f)}
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
               <datalist id="asset-cats">{assetCats.map(c => <option key={c} value={c} />)}</datalist>
             </label>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="block">
-                <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">규격(선택)</span>
-                <div className="flex gap-1">
-                  <input value={freeForm.spec} disabled={pending} inputMode="decimal"
+            {/* 규격·수량 — 숫자 필드는 폭 고정으로 컴팩트(가로 정리) */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">규격 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></span>
+                <div className="flex gap-1.5">
+                  <input value={freeForm.spec} disabled={pending} inputMode="decimal" placeholder="값"
                     onChange={e => setFreeForm(f => f ? { ...f, spec: e.target.value } : f)}
-                    placeholder="값"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 py-2 text-sm outline-none focus:border-[var(--coral)]" />
-                  <input value={freeForm.specUnit} disabled={pending}
+                    className="w-full min-w-0 h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 text-sm tabular-nums outline-none focus:border-[var(--coral)]" />
+                  <input value={freeForm.specUnit} disabled={pending} placeholder="단위"
                     onChange={e => setFreeForm(f => f ? { ...f, specUnit: e.target.value } : f)}
-                    placeholder="단위"
-                    className="w-16 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 py-2 text-sm outline-none focus:border-[var(--coral)]" />
+                    className="w-12 shrink-0 h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 text-sm outline-none focus:border-[var(--coral)]" />
                 </div>
-              </label>
-              <label className="block">
+              </div>
+              <div>
                 <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">수량</span>
-                <div className="flex gap-1">
+                <div className="flex gap-1.5">
                   <input value={freeForm.qty} disabled={pending} inputMode="decimal"
                     onChange={e => setFreeForm(f => f ? { ...f, qty: e.target.value } : f)}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 py-2 text-sm tabular-nums outline-none focus:border-[var(--coral)]" />
-                  <input value={freeForm.qtyUnit} disabled={pending}
+                    className="w-full min-w-0 h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 text-sm tabular-nums outline-none focus:border-[var(--coral)]" />
+                  <input value={freeForm.qtyUnit} disabled={pending} placeholder="개"
                     onChange={e => setFreeForm(f => f ? { ...f, qtyUnit: e.target.value } : f)}
-                    placeholder="개"
-                    className="w-16 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 py-2 text-sm outline-none focus:border-[var(--coral)]" />
+                    className="w-12 shrink-0 h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 text-sm outline-none focus:border-[var(--coral)]" />
                 </div>
-              </label>
+              </div>
             </div>
           </div>
         </Modal>
