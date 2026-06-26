@@ -146,13 +146,26 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; background: var(--forest-dark); }
 
 body {
   font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
   font-weight: 400;
   color: var(--cream);
-  background: var(--forest);
+  /* 전체 페이지 연속 그라데이션 — forest(상단) → forest-deep(중간 가장 짙음) → forest(하단).
+     섹션 배경을 transparent 로 두어 초록↔초록 단차를 없애고, 하단을 다시 옅게 만들어
+     footer 로고가 배경에 녹아들게 한다. (document 길이에 매핑되도록 size 100% no-repeat) */
+  background: linear-gradient(180deg,
+    #2A4538 0%,
+    #213830 20%,
+    #182820 44%,
+    #16241D 55%,
+    #182820 68%,
+    #213830 88%,
+    #2A4538 100%);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  background-attachment: scroll;
   line-height: 1.7;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -219,7 +232,7 @@ nav a:hover { opacity: 1; }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--forest);
+  background: transparent;
   position: relative;
   padding: 140px 24px 100px;
   overflow: hidden;
@@ -377,7 +390,7 @@ section {
 }
 
 /* Rooms */
-.rooms-section { background: var(--forest); }
+.rooms-section { background: transparent; }
 
 .rooms-grid {
   display: grid;
@@ -523,7 +536,7 @@ section {
 
 /* Video */
 .video-section {
-  background: var(--forest-dark);
+  background: transparent;
   position: relative;
 }
 
@@ -545,7 +558,7 @@ section {
 }
 
 /* Gallery */
-.gallery-section { background: var(--forest-dark); }
+.gallery-section { background: transparent; }
 
 .tour360 {
   margin-bottom: 56px;
@@ -773,7 +786,7 @@ section {
 .lightbox-close svg { width: 16px; height: 16px; }
 
 /* Location */
-.location-section { background: var(--forest); }
+.location-section { background: transparent; }
 
 .location-grid {
   display: grid;
@@ -844,7 +857,7 @@ section {
 
 /* Contact CTA */
 .contact-section {
-  background: var(--forest-deep);
+  background: transparent;
   text-align: center;
   padding: 140px 24px;
 }
@@ -923,7 +936,7 @@ section {
 /* Footer */
 footer {
   padding: 100px 24px 48px;
-  background: var(--forest-deep);
+  background: transparent;
   border-top: 1px solid var(--line);
   text-align: center;
 }
@@ -1340,7 +1353,6 @@ footer {
 
 <footer>
   <svg class="footer-logo" viewBox="110 95 280 310" xmlns="http://www.w3.org/2000/svg">
-    <rect width="500" height="500" fill="#2A4538"/>
     <g transform="translate(249,214)">
       <g transform="translate(-82,-100) scale(2)">
         <path d="M 6,98 L 6,50 Q 7,9 40,7 Q 77,9 76,50 L 76,98 L 68,98 L 68,52 Q 69,17 40,17 Q 15,18 14,52 L 14,98 Z" fill="#E8DEC9"/>
