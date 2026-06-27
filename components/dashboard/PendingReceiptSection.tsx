@@ -82,7 +82,8 @@ export function PendingReceiptSection() {
         <Btn variant="primary" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
           {uploading ? '업로드 중...' : '사진 올리기'}
         </Btn>
-        <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
+        {/* capture 미지정 — 모바일에서 '사진 찍기/앨범/파일'을 모두 선택할 수 있게(촬영 강제 X) */}
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
       </header>
 
       {loading && rows.length === 0 && (

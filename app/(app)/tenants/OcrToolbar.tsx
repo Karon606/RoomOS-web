@@ -104,8 +104,9 @@ export function OcrToolbar({ onContract, onIdCard }: {
             onClick={() => idRef.current?.click()}>
             {busy === 'id' ? '분석 중...' : '신분증'}
           </Btn>
-          <input ref={contractRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleContract} />
-          <input ref={idRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleId} />
+          {/* capture 미지정 — 촬영뿐 아니라 앨범/파일의 기존 스캔본도 올릴 수 있게(촬영 강제 X) */}
+          <input ref={contractRef} type="file" accept="image/*" className="hidden" onChange={handleContract} />
+          <input ref={idRef} type="file" accept="image/*" className="hidden" onChange={handleId} />
           <p className="text-[0.5625rem] basis-full mt-0.5" style={{ color: 'var(--warm-muted)' }}>
             ※ 추출 결과는 자동으로 들어가니 반드시 확인 후 저장하세요.
           </p>
