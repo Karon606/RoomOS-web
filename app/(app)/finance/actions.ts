@@ -77,6 +77,59 @@ export async function getExpenses(targetMonth: string) {
   })
 }
 
+// 과거 구매내역 검색 — 월 한정인 지출 화면과 달리 '전 기간'을 품목명·세부·판매처·메모·카테고리로 검색.
+export type ExpenseSearchResult = {
+  id: string
+  date: Date
+  amount: number
+  category: string
+  detail: string | null
+  itemLabel: string | null
+  vendor: string | null
+  memo: string | null
+  specValue: number | null
+  specUnit: string | null
+  qtyValue: number | null
+  qtyUnit: string | null
+  roomNo: string | null
+}
+
+export async function searchExpenses(query: string): Promise<ExpenseSearchResult[]> {
+  const propertyId = await getPropertyId()
+  const q = query.trim()
+  if (q.length < 1) return []
+  const rows = await prisma.expense.findMany({
+    where: {
+      propertyId,
+      OR: [
+        { itemLabel: { contains: q, mode: 'insensitive' } },
+        { detail:    { contains: q, mode: 'insensitive' } },
+        { vendor:    { contains: q, mode: 'insensitive' } },
+        { memo:      { contains: q, mode: 'insensitive' } },
+        { category:  { contains: q, mode: 'insensitive' } },
+      ],
+    },
+    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+    take: 300,
+    include: { room: { select: { roomNo: true } } },
+  })
+  return rows.map(r => ({
+    id: r.id,
+    date: r.date,
+    amount: r.amount,
+    category: r.category,
+    detail: r.detail,
+    itemLabel: r.itemLabel,
+    vendor: r.vendor,
+    memo: r.memo,
+    specValue: r.specValue,
+    specUnit: r.specUnit,
+    qtyValue: r.qtyValue,
+    qtyUnit: r.qtyUnit,
+    roomNo: r.room?.roomNo ?? null,
+  }))
+}
+
 export async function getUnsettledExpenses() {
   const propertyId = await getPropertyId()
   return prisma.expense.findMany({

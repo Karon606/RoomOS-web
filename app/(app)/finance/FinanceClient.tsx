@@ -11,7 +11,9 @@ import {
   addReserveDeposit, addReserveWithdrawDirect, settleReserveFromExpense, deleteReserveTransaction,
   setRecurringPendingAmount, clearRecurringPendingAmount,
   getVendorUsage, renameVendor,
+  searchExpenses,
   type RecurringExpenseWithStatus,
+  type ExpenseSearchResult,
 } from './actions'
 import {
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
@@ -25,6 +27,8 @@ import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Loading } from '@/components/ui/Loading'
 import MonthSelector from '@/components/layout/MonthSelector'
+import { Modal } from '@/components/ui/Modal'
+import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor } from '@/lib/chartColors'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -1562,6 +1566,11 @@ export default function FinanceClient({
   const [recError, setRecError]         = useState('')
 
   const [showVendorMgmt, setShowVendorMgmt] = useState(false)
+  // ── 과거 구매내역 검색 모달 (전 기간) ────────────────────────
+  const [showExpSearch, setShowExpSearch] = useState(false)
+  const [expSearchQ, setExpSearchQ] = useState('')
+  const [expSearchResults, setExpSearchResults] = useState<ExpenseSearchResult[]>([])
+  const [expSearching, setExpSearching] = useState(false)
   // ── 고정 지출 관리 모달 상태 ─────────────────────────────────
   const [showRecMgmt, setShowRecMgmt]   = useState(false)
   const [recMgmtList, setRecMgmtList]   = useState<RecurringExpenseRow[]>([])
@@ -1754,6 +1763,26 @@ export default function FinanceClient({
     }
     return methods
   })()
+
+  // 과거 구매내역 검색 — 입력 디바운스 300ms 후 전 기간 검색(서버). 모달 닫히면 검색 안 함.
+  useEffect(() => {
+    if (!showExpSearch) return
+    const q = expSearchQ.trim()
+    if (q.length < 1) { setExpSearchResults([]); setExpSearching(false); return }
+    setExpSearching(true)
+    let alive = true
+    const t = setTimeout(async () => {
+      try {
+        const res = await searchExpenses(q)
+        if (alive) setExpSearchResults(res)
+      } catch {
+        if (alive) setExpSearchResults([])
+      } finally {
+        if (alive) setExpSearching(false)
+      }
+    }, 300)
+    return () => { alive = false; clearTimeout(t) }
+  }, [expSearchQ, showExpSearch])
 
   const filteredExpenses = expenses.filter(e => {
     if (expFilter.method   !== 'all' && e.payMethod !== expFilter.method) return false
@@ -2213,6 +2242,9 @@ export default function FinanceClient({
             </Btn>
             <Btn variant="secondary" size="md" onClick={() => setShowVendorMgmt(true)}>
               구매처 관리
+            </Btn>
+            <Btn variant="secondary" size="md" onClick={() => { setShowExpSearch(true); setExpSearchQ(''); setExpSearchResults([]) }}>
+              과거 내역 검색
             </Btn>
             <Btn variant="primary" size="md" onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
               + 지출 등록
@@ -4010,6 +4042,87 @@ export default function FinanceClient({
     </div>
 
     {showVendorMgmt && <VendorManageModal onClose={() => setShowVendorMgmt(false)} onChanged={() => router.refresh()} />}
+
+    {/* ── 과거 구매내역 검색 모달 (전 기간) ───────────────────────── */}
+    <Modal open={showExpSearch} onClose={() => setShowExpSearch(false)} title="과거 구매내역 검색" width="lg"
+      subtitle="품목명·세부내역·판매처·메모·카테고리로 전 기간 검색">
+      <div className="p-4 space-y-3">
+        <SearchBar value={expSearchQ} onChange={setExpSearchQ} placeholder="예: 코발트 드릴비트, 쿠팡, 휴지" />
+        {(() => {
+          const q = expSearchQ.trim()
+          if (q.length < 1) {
+            return <p className="text-xs text-center py-8 text-[var(--warm-muted)]">검색어를 입력하면 모든 달의 구매내역에서 찾습니다.</p>
+          }
+          if (expSearching && expSearchResults.length === 0) {
+            return <p className="text-xs text-center py-8 text-[var(--warm-muted)]">검색 중…</p>
+          }
+          if (expSearchResults.length === 0) {
+            return <p className="text-xs text-center py-8 text-[var(--warm-muted)]">‘{q}’ 검색 결과가 없습니다.</p>
+          }
+          // 월별 그룹 (결과는 날짜 내림차순이라 월도 내림차순으로 들어옴)
+          const groups: { month: string; rows: ExpenseSearchResult[] }[] = []
+          for (const r of expSearchResults) {
+            const m = kstYmdStr(new Date(r.date)).slice(0, 7)
+            const last = groups[groups.length - 1]
+            if (last && last.month === m) last.rows.push(r)
+            else groups.push({ month: m, rows: [r] })
+          }
+          const totalAmt = expSearchResults.reduce((s, r) => s + r.amount, 0)
+          const goMonth = (m: string) => {
+            setShowExpSearch(false)
+            router.push(`/finance?tab=expense&month=${m}`)
+          }
+          return (
+            <>
+              <p className="text-[0.6875rem] text-[var(--warm-muted)]">
+                {expSearchResults.length}건{expSearchResults.length >= 300 ? '+ (최근 300건)' : ''} · 합계 <span className="font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={totalAmt} /></span>
+              </p>
+              <div className="space-y-3">
+                {groups.map(g => {
+                  const [gy, gm] = g.month.split('-')
+                  const gTotal = g.rows.reduce((s, r) => s + r.amount, 0)
+                  return (
+                    <div key={g.month}>
+                      <div className="flex items-center justify-between gap-2 px-1 pb-1">
+                        <button onClick={() => goMonth(g.month)}
+                          className="text-xs font-semibold text-[var(--coral)] hover:underline">
+                          {gy}년 {parseInt(gm)}월 ›
+                        </button>
+                        <span className="text-[0.625rem] text-[var(--warm-muted)]">{g.rows.length}건 · <MoneyDisplay amount={gTotal} /></span>
+                      </div>
+                      <ul className="space-y-1">
+                        {g.rows.map(r => {
+                          const fmtQ = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
+                          let label = r.detail ?? ''
+                          if (r.itemLabel) {
+                            const specPart = r.specValue != null ? ` ${fmtQ(r.specValue)}${r.specUnit ?? ''}` : ''
+                            const qtyPart = r.qtyValue != null && r.qtyValue > 0 ? ` x ${fmtQ(r.qtyValue)}${r.qtyUnit ?? '개'}` : ''
+                            label = `[${r.itemLabel}]${specPart}${qtyPart}`
+                          }
+                          if (!label) label = r.category
+                          return (
+                            <li key={r.id} className="flex items-baseline justify-between gap-2 rounded-lg bg-[var(--canvas)] px-2.5 py-1.5">
+                              <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0 tabular-nums">{kstYmdStr(new Date(r.date)).slice(5).replace('-', '.')}</span>
+                              <span className="flex-1 min-w-0">
+                                <span className="block truncate text-xs text-[var(--warm-dark)]">{label}</span>
+                                <span className="block truncate text-[0.5625rem] text-[var(--warm-muted)]">
+                                  {r.category}{r.vendor ? ` · ${r.vendor}` : ''}{r.roomNo ? ` · ${r.roomNo}호` : ''}
+                                </span>
+                              </span>
+                              <span className="shrink-0 tabular-nums text-xs font-semibold text-[var(--warm-dark)]"><MoneyDisplay amount={r.amount} /></span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )
+        })()}
+      </div>
+    </Modal>
 
     {/* ── 고정 지출 관리 모달 ────────────────────────────────────── */}
 
