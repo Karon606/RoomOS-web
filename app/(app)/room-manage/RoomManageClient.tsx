@@ -317,6 +317,19 @@ export default function RoomManageClient({
     setError('')
   }
 
+  // URL ?roomId·?edit=1 정리 — 안 지우면 저장/닫기 후에도 파라미터가 남는다.
+  // 그 상태에서 같은 방을 다시 [수정](EntityModal)하면 router.push 가 '동일 URL' 이라 무시되고
+  // handledOpenRef 도 그대로라 useEffect 가 openEdit 을 호출하지 않아 → 셸만 닫히고 편집 폼이
+  // 안 열려 목록으로 '튕겨나오는' 문제가 생긴다(고객관리 clearTenantUrlParams 와 동일 패턴).
+  const clearRoomUrlParams = () => {
+    if (searchParams.get('edit') === '1' || searchParams.get('roomId')) {
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete('edit'); params.delete('roomId')
+      const qs = params.toString()
+      router.replace(qs ? `?${qs}` : '?', { scroll: false })
+    }
+  }
+
   const closeEdit = () => {
     setEditRoom(null)
     setEditPhotos([])
@@ -324,6 +337,7 @@ export default function RoomManageClient({
     setNrEnabled(false)
     setNrDateVal('')
     setError('')
+    clearRoomUrlParams()
   }
 
   const closeAddModal = () => {
