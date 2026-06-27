@@ -1264,6 +1264,11 @@ footer {
       <h2 class="section-title">머무는 공간을 <em>가까이</em>에서.</h2>
     </div>
 
+    <div class="tour360 reveal" id="tour360-418">
+      <div id="pano418" class="tour360-viewer"></div>
+      <span class="tour360-badge">360° 뷰 · 418호 · 원룸 외창/프리미엄 I</span>
+    </div>
+
     <div class="tour360 reveal" id="tour360">
       <div id="pano" class="tour360-viewer"></div>
       <span class="tour360-badge">360° 뷰 · 408호 · 원룸 외창/스탠다드</span>
@@ -1280,12 +1285,12 @@ footer {
         <span class="gallery-room">401호</span>
       </div>
       <div class="gallery-item reveal delay-1">
-        <img src="/members/thestayjegi/images/IMG_8959.JPG" alt="416호 객실 — 책상과 개별 샤워실" loading="lazy">
-        <span class="gallery-room">416호</span>
+        <img src="/members/thestayjegi/images/room-418.jpg" alt="418호 객실 — 원룸 외창/프리미엄 I" loading="lazy">
+        <span class="gallery-room">418호 · 원룸 외창/프리미엄 I</span>
       </div>
       <div class="gallery-item reveal delay-2">
-        <img src="/members/thestayjegi/images/IMG_1538.jpg" alt="408호 객실 — 개별 샤워실" loading="lazy">
-        <span class="gallery-room">408호</span>
+        <img src="/members/thestayjegi/images/room-408.jpg" alt="408호 객실 — 원룸 외창/스탠다드" loading="lazy">
+        <span class="gallery-room">408호 · 원룸 외창/스탠다드</span>
       </div>
       <div class="gallery-item reveal delay-1">
         <img src="/members/thestayjegi/images/IMG_8936.JPG" alt="422호 객실 — 수납 공간과 개별 욕실" loading="lazy">
@@ -1452,6 +1457,7 @@ window.addEventListener('load', () => {
       });
     }
   }
+  makePano('pano418', '/members/thestayjegi/images/room-360-418.jpg');
   makePano('pano', '/members/thestayjegi/images/room-360-408.jpg');
   makePano('pano508', '/members/thestayjegi/images/room-360-508.jpg');
 });
