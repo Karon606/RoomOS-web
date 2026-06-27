@@ -1,7 +1,13 @@
 # 스테이음 작업 로그
 
-마지막 업데이트: 2026-06-22
+마지막 업데이트: 2026-06-27
 브랜치: main
+
+## 2026-06-27 — 사용자 보고 3건: 호실 재수정 튕김·찍어올리기 업로드·과거 구매내역 검색 [SQL 0]
+- **#1 호실 사진 수정 후 재수정 '튕김'**(4887dca): 저장/닫기 후에도 URL `?roomId&edit=1` 가 남아, 같은 방을 EntityModal 에서 다시 [수정]하면 `router.push` 가 '동일 URL' 이라 무시되고 `handledOpenRef` 도 그대로라 `openEdit` 미호출 → 셸만 닫히고 편집 폼 안 열려 목록으로 튕겨나옴(첫 수정은 정상, 두 번째부터 발생). `closeEdit` 에서 `clearRoomUrlParams()`(roomId·edit 삭제, `router.replace`)로 정리 — 고객관리 `clearTenantUrlParams` 와 동일 패턴. (360 이미지는 우연, 사진 종류 무관.)
+- **#2 찍어올리기·OCR 갤러리/파일 업로드 차단**(03d1cd7): file input `capture="environment"` 가 모바일에서 카메라 촬영만 강제 → 기존 사진 업로드 불가. capture 제거로 OS 선택기가 '사진 찍기/앨범/파일' 모두 제공. 홈 [찍어올리기](components/dashboard/PendingReceiptSection.tsx) + 입주자 계약서·신분증 [OcrToolbar](app/(app)/tenants/OcrToolbar.tsx) 동일 적용(촬영은 그대로 가능, 업로드만 추가 — additive).
+- **#3 과거 구매내역 검색**(0679326): 월 한정이던 지출 화면에 '과거 내역 검색' 모달 신설. 신규 서버액션 `searchExpenses(query)`([finance/actions.ts](app/(app)/finance/actions.ts)) — 품목명·세부·판매처·메모·카테고리를 **전 기간**에서 contains(insensitive) 검색(date desc, 최근 300건, room 포함). 모달([FinanceClient.tsx](app/(app)/finance/FinanceClient.tsx))은 입력 디바운스 300ms → 월별 그룹·건수·합계로 표시, 월 헤더 클릭 시 `/finance?tab=expense&month=` 로 해당 달 이동. 기존 월간 목록·그룹핑 로직 무접점(별도 모달).
+**검증(loop.md)**: tsc --noEmit exit 0 · `npm run build` exit 0 · 변경 5파일 eslint 신규에러 0(기존 no-explicit-any 부채만). SQL 0(읽기전용 쿼리 추가). §4 비해당(스키마·인증·결제·기획 무변경).
 
 ## 2026-06-22 — 홈 위젯 다듬기 + 품명(품목명) 관리 시스템 [SQL 2건·적용완료]
 ### 홈 위젯 다듬기
