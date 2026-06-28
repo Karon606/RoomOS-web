@@ -713,6 +713,15 @@ export async function createStockCheck(data: {
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
         include: { locationBreakdown: true },
       })
+      // 멱등 — 직전 점검이 '같은 patch'(같은 위치=보충후·같은 보충량)를 방금(20초 내) 반영했다면
+      // 중복 제출(더블클릭·다중 탭·재시도)로 보고 새 점검을 만들지 않는다. 안 그러면 그 점검을 base로
+      // 보충이 또 적용돼 허브가 2배 차감됨.
+      if (lastCheck && (Date.now() - lastCheck.createdAt.getTime()) < 20_000) {
+        const lb = lastCheck.locationBreakdown.find(b => b.storageLocationId === data.locationPatch!.checkedLocationId)
+        if (lb && lb.remainingQty === data.locationPatch.afterQty && (lb.restockedQty ?? 0) === data.locationPatch.restockedQty) {
+          return { ok: true, id: lastCheck.id }
+        }
+      }
       const base = (lastCheck?.locationBreakdown ?? []).map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty }))
       // 직전 점검 이후 입수분을 base 에 반영 — 실측한 위치(checkedLocationId)는
       // applyLocationCheck 가 실측값으로 덮어쓰므로 영향 없음(실측 우선)
@@ -855,6 +864,12 @@ export async function updateStockCheck(id: string, data: {
     // #3: locationPatch가 오면 이 점검의 현재 위치별 잔량을 base로 서버에서 적용(연속 위치점검 머지 정확)
     let patchedQtys: LocQty[] | null = null
     if (data.locationPatch) {
+      // 멱등 — 이 점검이 '같은 patch'(점검위치=보충후·같은 보충량)를 이미 반영 중이면 재적용하지 않는다.
+      // 더블클릭/재시도로 같은 머지가 두 번 오면 허브가 보충량만큼 또 차감되던(2배) 버그 방지.
+      const cur = c.locationBreakdown.find(b => b.storageLocationId === data.locationPatch!.checkedLocationId)
+      if (cur && cur.remainingQty === data.locationPatch.afterQty && (cur.restockedQty ?? 0) === data.locationPatch.restockedQty) {
+        return { ok: true }
+      }
       const base = c.locationBreakdown.map(lb => ({ locationId: lb.storageLocationId, qty: lb.remainingQty }))
       // 이 점검 생성 이후 들어온 입수분을 base 에 반영 (createStockCheck 와 동일 규칙)
       const addMap = await additionsSinceCheckByLocation(c.trackedItemId, c, c.trackedItem.hubLocationId, propertyId)
