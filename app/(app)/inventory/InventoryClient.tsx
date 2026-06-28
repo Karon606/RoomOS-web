@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useState, useTransition, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -2318,6 +2318,8 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
   const [reconcileMode, setReconcileMode] = useState(false)
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
+  // 더블클릭 중복 제출 동기 차단 — isPending(useTransition)은 리렌더 후 반영이라 그 전 재진입 방지.
+  const submittingRef = useRef(false)
 
   // 임시저장(드래프트) — 아이템별 점검은 locationId null. 폼을 열면 직전 임시저장값을 복원.
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
@@ -2463,19 +2465,23 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    if (submittingRef.current) return   // 중복 제출(더블클릭) 차단
 
     if (!hasLocations) {
       const n = Number(qty)
       if (isNaN(n) || n < 0) { setError('잔량은 0 이상이어야 합니다.'); return }
+      submittingRef.current = true
       startTransition(async () => {
-        const res = await createStockCheck({
-          trackedItemId: item.id, date, remainingQty: n, memo: memo || undefined,
-          isReconcile: reconcileMode,
-        })
-        if (!res.ok) { setError(res.error); return }
-        await deleteItemDrafts(item.id)
-        onDraftChange?.()
-        onDone()
+        try {
+          const res = await createStockCheck({
+            trackedItemId: item.id, date, remainingQty: n, memo: memo || undefined,
+            isReconcile: reconcileMode,
+          })
+          if (!res.ok) { setError(res.error); return }
+          await deleteItemDrafts(item.id)
+          onDraftChange?.()
+          onDone()
+        } finally { submittingRef.current = false }
       })
       return
     }
@@ -2487,19 +2493,22 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
     const total = locationData.reduce((s, lq) => s + lq.qty, 0)
     if (total < 0) { setError('잔량은 0 이상이어야 합니다.'); return }
 
+    submittingRef.current = true
     startTransition(async () => {
-      const res = await createStockCheck({
-        trackedItemId: item.id, date, remainingQty: total, memo: memo || undefined,
-        locationQtys: locationData,
-        // 위치 일부만 입력해도 나머지 위치는 직전 점검에서 자동 보존
-        // (2026-06-01 사용량 왜곡 버그 fix).
-        carryOverFromLastCheck: true,
-        isReconcile: reconcileMode,
-      })
-      if (!res.ok) { setError(res.error); return }
-      await deleteItemDrafts(item.id)
-      onDraftChange?.()
-      onDone()
+      try {
+        const res = await createStockCheck({
+          trackedItemId: item.id, date, remainingQty: total, memo: memo || undefined,
+          locationQtys: locationData,
+          // 위치 일부만 입력해도 나머지 위치는 직전 점검에서 자동 보존
+          // (2026-06-01 사용량 왜곡 버그 fix).
+          carryOverFromLastCheck: true,
+          isReconcile: reconcileMode,
+        })
+        if (!res.ok) { setError(res.error); return }
+        await deleteItemDrafts(item.id)
+        onDraftChange?.()
+        onDone()
+      } finally { submittingRef.current = false }
     })
   }
 
@@ -2700,6 +2709,9 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
   const [error, setError] = useState('')
   const [mergeChoice, setMergeChoice] = useState<'merge' | 'new' | null>(null)
   const [confirmItems, setConfirmItems] = useState<InventoryRow[]>([])
+  // 더블클릭/중복 제출 동기 차단 — setPending 은 리렌더 후에야 버튼을 disabled 하므로,
+  // 그 사이 두 번째 클릭이 doSave 에 재진입해 보충(허브 차감)이 2번 적용되던 심각한 버그 방지.
+  const savingRef = useRef(false)
 
   useEffect(() => { getStorageLocations().then(setLocs) }, [])
 
@@ -2760,8 +2772,10 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
   const totalRestock = locItems.reduce((s, r) => s + computeRow(r).restocked, 0)
 
   const doSave = async (forceMerge?: boolean) => {
+    if (savingRef.current) return   // 이미 저장 진행 중 — 중복 제출(더블클릭) 차단
     const toSave = locItems.filter(isItemDirty)
     if (toSave.length === 0) { setError('저장할 수량이 없습니다.'); return }
+    savingRef.current = true
     setPending(true); setError('')
     const locName = selectedLoc?.name ?? ''
     const now = Date.now()
@@ -2803,6 +2817,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
       setError('저장 중 오류가 발생했습니다.')
     } finally {
       setPending(false)
+      savingRef.current = false
     }
   }
 
