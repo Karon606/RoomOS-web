@@ -3,6 +3,17 @@
 마지막 업데이트: 2026-06-27
 브랜치: main
 
+## 2026-06-27 (이어서) — 재고: 수령확정한 구매가 잔량에 안 더해지던 버그 (qtyUnit 매칭 통일) [SQL 0]
+**증상**: 라면 120개 구매·수령확정했는데 잔량이 그 전 값 그대로. 물티슈·키친타월(롤)도 동일, 쌀만 정상.
+**근본 원인**: `TrackedItem` 은 `@@unique([propertyId, category, label])` 로 유일한데(=qtyUnit 은 식별자 아님), 재고 '계산' 쿼리들만 `qtyUnit` **완전일치**를 추가로 요구. 반면 수령확정(`confirmAllPending`)·수령대기 표시(`pendingPurchases`)·상세(`getInventoryItemDetail`)는 **느슨 매칭**(`한쪽이 null 이거나 같으면 일치`). → 단위 미입력(null) 수령분이 **대기엔 뜨고 확정도 되지만 잔량엔 통째로 누락**. 쌀은 단위가 우연히 맞아 정상이던 것(단서).
+**수정(전 경로를 정본=느슨 매칭으로 통일)**: [overview.ts](app/(app)/inventory/overview.ts) `sumPurchases`(잔량·소모·월소모) · 단일점검 `firstPurchase` · 단가 `recentPurchases` / [actions.ts](app/(app)/inventory/actions.ts) `getMonthlyInflow` · `getPriceHistory` · `getStockAsOf` · 라벨변경 전파(`updateTrackedItem`) · `changeTrackedItemUnit` unitless 카운트(AND 래퍼로 specUnit OR 와 키충돌 회피). `confirmReceipt` 자동점검 품목조회는 (category,label) 유일이라 `qtyUnit` 조건 **제거**(단위 달라 품목 못 찾아 자동점검 누락되던 것도 해소). 쓰기측 merge/seed 는 범위 외(별도).
+**효과**: 이미 수령확정된 null-단위 구매도 **다음 로드부터 잔량에 자동 반영 — 데이터 수정 불필요**.
+**검증(loop.md)**: tsc exit 0 · `npm run build` exit 0 · 변경 2파일 신규 lint 에러 0(기존 no-explicit-any 부채만). SQL 0(읽기 쿼리 매칭 조건만 완화). §4 비해당(스키마·결제 무변경, 계산식은 누락 복원이라 손실 없음).
+**남은 권장(실데이터 확인)**: 배포 후 라면·물티슈·키친타월(롤) 잔량이 +수령량으로 올라오는지 1회 확인.
+
+### (사이트) 제기역점 랜딩 갤러리·문구 — 이번 세션 함께 처리
+- 418호 추가(360 408호 위 배치)·408호 사진 교체·416호 제거, 캡션 부여 (dbd4c4a). 미사용 이미지 6종 정리(eb73b19·02899c4). '원룸 외창·실속형' 설명 미니룸 오인 표현 정정 (6d18766).
+
 ## 2026-06-27 — 사용자 보고 3건: 호실 재수정 튕김·찍어올리기 업로드·과거 구매내역 검색 [SQL 0]
 - **#1 호실 사진 수정 후 재수정 '튕김'**(4887dca): 저장/닫기 후에도 URL `?roomId&edit=1` 가 남아, 같은 방을 EntityModal 에서 다시 [수정]하면 `router.push` 가 '동일 URL' 이라 무시되고 `handledOpenRef` 도 그대로라 `openEdit` 미호출 → 셸만 닫히고 편집 폼 안 열려 목록으로 튕겨나옴(첫 수정은 정상, 두 번째부터 발생). `closeEdit` 에서 `clearRoomUrlParams()`(roomId·edit 삭제, `router.replace`)로 정리 — 고객관리 `clearTenantUrlParams` 와 동일 패턴. (360 이미지는 우연, 사진 종류 무관.)
 - **#2 찍어올리기·OCR 갤러리/파일 업로드 차단**(03d1cd7): file input `capture="environment"` 가 모바일에서 카메라 촬영만 강제 → 기존 사진 업로드 불가. capture 제거로 OS 선택기가 '사진 찍기/앨범/파일' 모두 제공. 홈 [찍어올리기](components/dashboard/PendingReceiptSection.tsx) + 입주자 계약서·신분증 [OcrToolbar](app/(app)/tenants/OcrToolbar.tsx) 동일 적용(촬영은 그대로 가능, 업로드만 추가 — additive).
