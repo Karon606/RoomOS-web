@@ -177,11 +177,17 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const handleQuickReceive = (key: string, expenseIds: string[]) => {
     setReceivingKey(key)
     const release = trackSave()
-    Promise.all(expenseIds.map(id => confirmReceipt(id))).then(results => {
-      const bad = results.find(r => !r.ok) as { ok: false; error: string } | undefined
+    // 같은 품목 다건은 순차 처리 — 각 수령이 허브에 자동 배치(점검 생성)되므로 동시 실행하면
+    // 직전 점검을 같은 baseline 으로 읽어 입고분이 덮어써져(경합) 누락된다. 하나씩 쌓아 올린다.
+    ;(async () => {
+      let bad: { ok: false; error: string } | undefined
+      for (const id of expenseIds) {
+        const r = await confirmReceipt(id)
+        if (!r.ok) { bad = r as { ok: false; error: string }; break }
+      }
       if (bad) pushToast('error', bad.error)
       else { router.refresh(); pushToast('success', '수령 확인 완료') }
-    }).finally(() => { setReceivingKey(null); release() })
+    })().finally(() => { setReceivingKey(null); release() })
   }
 
   const toggleSelect = (id: string) => setSelected(prev => {
