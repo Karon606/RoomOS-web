@@ -40,7 +40,8 @@ export async function getMonthlyInflow(trackedItemId: string): Promise<MonthlyIn
         propertyId,
         category: item.category,
         itemLabel: item.label,
-        ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
+        // 느슨 매칭 — qtyUnit null/일치 모두 같은 품목(잔량 계산과 동일 규칙). 단위 미입력 입수 누락 방지.
+        ...(item.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: item.qtyUnit }] } : {}),
         qtyValue: { gt: 0 },
         receivedAt: { not: null },
         excludeFromInventory: false,
@@ -89,7 +90,8 @@ export async function getPriceHistory(trackedItemId: string): Promise<PricePoint
       propertyId,
       category: item.category,
       itemLabel: item.label,
-      ...(item.qtyUnit ? { qtyUnit: item.qtyUnit } : {}),
+      // 느슨 매칭 — qtyUnit null/일치 모두 같은 품목(잔량 계산과 동일 규칙).
+      ...(item.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: item.qtyUnit }] } : {}),
       qtyValue: { gt: 0 },
       amount: { gt: 0 },
       receivedAt: { not: null },
@@ -300,7 +302,9 @@ export async function updateTrackedItem(id: string, data: {
           propertyId,
           category: it.category,
           itemLabel: it.label,
-          ...(it.qtyUnit ? { qtyUnit: it.qtyUnit } : {}),
+          // 느슨 매칭 — 단위 미입력(null) 구매도 같은 품목이므로 함께 라벨 변경(안 그러면 옛 라벨로
+          // 남아 새 라벨 품목의 잔량에서 누락됨). (category,label) 유니크라 안전.
+          ...(it.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: it.qtyUnit }] } : {}),
         },
         data: { itemLabel: newLabel },
       })
@@ -366,9 +370,12 @@ export async function changeTrackedItemUnit(id: string, newUnit: string): Promis
     const unitlessReceipts = await prisma.expense.count({
       where: {
         propertyId, category: it.category, itemLabel: it.label,
-        ...(it.qtyUnit ? { qtyUnit: it.qtyUnit } : {}),
         specValue: { not: null },
-        OR: [{ specUnit: null }, { specUnit: '' }],
+        // qtyUnit 느슨 매칭(null/일치)과 specUnit 빈값 조건을 AND 로 묶는다 — 둘 다 OR 라 키 충돌 방지.
+        AND: [
+          ...(it.qtyUnit ? [{ OR: [{ qtyUnit: null }, { qtyUnit: it.qtyUnit }] }] : []),
+          { OR: [{ specUnit: null }, { specUnit: '' }] },
+        ],
       },
     })
 
@@ -1812,8 +1819,9 @@ export async function confirmReceipt(expenseId: string, locationId?: string): Pr
     if (locationId && expense.qtyValue && expense.qtyValue > 0 && expense.itemLabel) {
       const item = await prisma.trackedItem.findFirst({
         where: {
+          // (propertyId,category,label) 유니크 — qtyUnit 으로 또 거르면 단위가 다르거나 비었을 때
+          // 품목을 못 찾아 수령 자동 점검이 안 생기던 문제. 라벨로 유일 품목을 찾는다.
           propertyId, category: expense.category, label: expense.itemLabel,
-          ...(expense.qtyUnit ? { qtyUnit: expense.qtyUnit } : {}),
           isArchived: false,
         },
         select: { id: true, trackUnit: true, specUnit: true, qtyUnit: true },
@@ -1981,7 +1989,8 @@ export async function getStockAsOf(trackedItemId: string, dateStr: string): Prom
   const purchases = await prisma.expense.findMany({
     where: {
       propertyId, category: it.category, itemLabel: it.label,
-      ...(it.qtyUnit ? { qtyUnit: it.qtyUnit } : {}),
+      // 느슨 매칭 — qtyUnit null/일치 모두 같은 품목(잔량 계산과 동일 규칙).
+      ...(it.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: it.qtyUnit }] } : {}),
       receivedAt: { not: null, ...(baseDate ? { gt: baseDate } : {}), lte: asOf },
       excludeFromInventory: false,
     },

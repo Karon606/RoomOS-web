@@ -26,7 +26,10 @@ async function sumPurchases(
     { itemLabel: label },
     { receivedAt: { not: null } },
     { excludeFromInventory: false },
-    ...(qtyUnit ? [{ qtyUnit }] : []),
+    // qtyUnit 은 품목 식별자가 아니다 — TrackedItem 은 (propertyId, category, label) 로 유일하다.
+    // null 이거나 같으면 같은 품목으로 본다(수령확정 confirmAllPending·수령대기 표시와 동일한 느슨 매칭).
+    // 단위 미입력(null) 수령분이 잔량에서 통째로 누락되던 버그(라면·물티슈·키친타월) 방지.
+    ...(qtyUnit ? [{ OR: [{ qtyUnit: null }, { qtyUnit }] }] : []),
     ...(afterReceivedAt  ? [{ receivedAt: { gt:  afterReceivedAt  } }] : []),
     ...(beforeReceivedAt ? [{ receivedAt: { lte: beforeReceivedAt } }] : []),
   ]
@@ -226,7 +229,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       const firstPurchase = await prisma.expense.findFirst({
         where: {
           propertyId, category: it.category, itemLabel: it.label,
-          ...(it.qtyUnit ? { qtyUnit: it.qtyUnit } : {}),
+          // 느슨 매칭 — qtyUnit null/일치 모두 같은 품목(잔량 계산 sumPurchases 와 동일 규칙).
+          ...(it.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: it.qtyUnit }] } : {}),
           receivedAt: { not: null, lte: last.createdAt },
           excludeFromInventory: false, qtyValue: { gt: 0 },
         },
@@ -264,7 +268,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         propertyId,
         category: it.category,
         itemLabel: it.label,
-        ...(it.qtyUnit ? { qtyUnit: it.qtyUnit } : {}),
+        // 느슨 매칭 — qtyUnit null/일치 모두 같은 품목(단가도 누락 없이 집계).
+        ...(it.qtyUnit ? { OR: [{ qtyUnit: null }, { qtyUnit: it.qtyUnit }] } : {}),
         date: { gte: oneYearAgo },
         qtyValue: { gt: 0 },
         amount: { gt: 0 },
