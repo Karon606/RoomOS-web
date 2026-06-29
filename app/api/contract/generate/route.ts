@@ -46,9 +46,7 @@ export async function POST(req: Request) {
 
     const body = (await req.json()) as Body
     if (!body.tenantId) return NextResponse.json({ ok: false, error: 'tenantId 필요' }, { status: 400 })
-    if (!body.signatureImageDataUrl?.startsWith('data:image/')) {
-      return NextResponse.json({ ok: false, error: '서명 이미지가 비어 있습니다.' }, { status: 400 })
-    }
+    // 서명 없이도 생성 허용 — 서명란은 '(서명)' 자리표시로 출력(출력 후 직접 서명·스캔 첨부 케이스).
 
     // 데이터 모음 — getContractData 와 동일하지만 서버 액션 의존성 끊고 직접 조회
     const [tenant, property] = await Promise.all([
@@ -224,12 +222,15 @@ export async function POST(req: Request) {
       select: { id: true, driveFileId: true, fileName: true, signedAt: true },
     })
 
-    // #8 서명 이미지를 lease에 영구 저장 — 다음에 계약서 출력 에디터를 열면 이 서명을 불러와 표시·재인쇄
+    // #8 서명 이미지를 lease에 영구 저장 — 다음에 계약서 출력 에디터를 열면 이 서명을 불러와 표시·재인쇄.
+    // 서명 없이 생성한 경우(빈 값)는 기존 저장 서명을 지우지 않도록 유효 이미지일 때만 갱신.
     if (lease?.id) {
-      await prisma.leaseTerm.update({
-        where: { id: lease.id },
-        data: { signatureImageUrl: body.signatureImageDataUrl },
-      })
+      if (body.signatureImageDataUrl?.startsWith('data:image/')) {
+        await prisma.leaseTerm.update({
+          where: { id: lease.id },
+          data: { signatureImageUrl: body.signatureImageDataUrl },
+        })
+      }
       // 동의서(잔여 소지품 임의처분) 서명도 영구 저장 — 입실계약서 서명과 동일하게 시스템에 남도록.
       // 컬럼 미적용(마이그레이션 전) 환경에서도 PDF 생성·계약서 서명 저장이 깨지지 않게 best-effort.
       try {
