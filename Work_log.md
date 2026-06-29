@@ -14,7 +14,12 @@
 ### #1a 동의서 서명 영구 저장 [⚠️ SQL 1건] (410237d)
 `LeaseTerm.disposalSignatureImageUrl` 추가 — 입실계약서 서명처럼 동의서 서명도 시스템에 저장·재표시. generate route best-effort 저장(컬럼 미적용 시에도 PDF·계약서 서명 안 깨짐). **SQL**: `ALTER TABLE lease_terms ADD COLUMN "disposalSignatureImageUrl" TEXT;`
 
-### 후속(우선순위): #4 미정산 예정/확정 구분 → #3 카드정산 위치 이동 → #1b 계약서 인쇄 한 장 맞춤(시각검증 필요) → #5 오류신고+VSCode 연동(스키마+훅, §4 확인)
+### #4 미정산 카드 예정/확정 구분 [SQL 0] (8433ec8)
+`SettleGroup.isFinalized`(청구 마감일 cutOffDay 기준, 없으면 말일) — 미정산을 '확정(마감·출금 대상)'·'예정(진행 중·마감 전)' 두 섹션으로 분리. 예정은 '미리 정산 처리' 버튼 + 금액 증가 안내.
+### #3 카드 정산 독립 페이지 분리 [SQL 0] (4aa35b4)
+`/card-settlement` 신규 페이지([page.tsx](app/(app)/card-settlement/page.tsx)·[CardSettlementClient.tsx](app/(app)/card-settlement/CardSettlementClient.tsx)) + 사이드바 '수익/지출' 메뉴. FinanceClient 에서 settle 탭·타입·헬퍼·핸들러·props 제거(원자적 스크립트, 잔존 0 검증). #4 분리 규칙 그대로 적용. tsc·build·신규 lint 0.
+
+### 남음: #1b 계약서 인쇄 한 장 맞춤(인쇄 렌더 시각검증 반복 필요) · #5 오류신고+VSCode 연동(스키마+훅 §4) · (신규) Obsidian '제2의 두뇌' 세션연속성 설계
 
 
 ## 2026-06-27 (이어서) — 재고: 위치별 점검 저장 더블클릭 → 보충 중복적용(허브 2배 차감) [SQL 0]
