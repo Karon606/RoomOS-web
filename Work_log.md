@@ -1,7 +1,21 @@
 # 스테이음 작업 로그
 
-마지막 업데이트: 2026-06-27
+마지막 업데이트: 2026-06-29
 브랜치: main
+
+## 2026-06-29 — 사용자 6건 중 #1a·#6 완료 (#1b·#3·#4·#5 후속)
+### #6 예약 인상 '그 달 이용료부터' 반영 [SQL 0 · 데이터 보정 1건] (943326b)
+**증상**: 7/1 인상(scheduledRent+rentUpdateDate=7/1)이 적용일에 baseRent로 옮겨지기 전엔 월 청구가 현재 `lease.rentAmount`(옛 금액)만 봐서, 6월에 7월 이용료를 미리 내면 옛 금액으로 청구·락인. 513호: 35만 납부했는데 7월 28만 완납 + 7만 '8월 과납 이월'로 처리됨.
+**원인 확정(실데이터)**: [billing.ts](lib/billing.ts) `billForLeaseMonth` 와 수납 `expected`([rooms/actions.ts:137](app/(app)/rooms/actions.ts))이 방의 예약 인상을 안 봄.
+**수정(전 계약 적용 — 7/1 자동적용과 동일, 사용자 승인)**: `billForLeaseMonth` 가 `l.room.{scheduledRent,rentUpdateDate}` 를 읽어 대상월 ≥ 인상적용월이면 scheduledRent 로 청구(미전달 시 rentAmount, 회귀 0). 연결: 수납 표시·락인(billForMonth) · savePayment/serverBillForMonth/findFirstUnpaidMonth(선납 락인) · 대시보드 예상매출(page.tsx)·미납(unpaid.ts). 각 lease 쿼리에 room {scheduledRent,rentUpdateDate} select 추가.
+**데이터 보정(513호)**: 7월 record expected/actual 28만→35만(완납), 8월 과납이월 7만 record 삭제. (상태 일치 확인 후 트랜잭션, 읽기검증 완료.)
+**검증**: tsc·build exit 0. §4 결제 로직이라 사용자 사전 승인(전 계약 적용) 후 진행.
+
+### #1a 동의서 서명 영구 저장 [⚠️ SQL 1건] (410237d)
+`LeaseTerm.disposalSignatureImageUrl` 추가 — 입실계약서 서명처럼 동의서 서명도 시스템에 저장·재표시. generate route best-effort 저장(컬럼 미적용 시에도 PDF·계약서 서명 안 깨짐). **SQL**: `ALTER TABLE lease_terms ADD COLUMN "disposalSignatureImageUrl" TEXT;`
+
+### 후속(우선순위): #4 미정산 예정/확정 구분 → #3 카드정산 위치 이동 → #1b 계약서 인쇄 한 장 맞춤(시각검증 필요) → #5 오류신고+VSCode 연동(스키마+훅, §4 확인)
+
 
 ## 2026-06-27 (이어서) — 재고: 위치별 점검 저장 더블클릭 → 보충 중복적용(허브 2배 차감) [SQL 0]
 **증상(사용자)**: 위치별 재고확인에서 저장을 2번 연달아 클릭 → 점검 2건 저장 + 보충(창고→위치 이동) 중복. 대상 위치는 '보충 후' 절대값이라 그대로인데 **허브만 2배 차감**돼 재고가 틀어짐.
