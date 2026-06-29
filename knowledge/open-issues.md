@@ -1,7 +1,10 @@
 # 미해결 · 후속 작업
 
 ## 진행 예정
-- **#5 오류신고 버튼 + VSCode 연동** — 플로팅 버튼 + 자동 에러캡처(window.onerror/breadcrumb) + DB 저장 + 세션시작 알림. ⚠️ DB 테이블 추가(§4) → SQL 승인 필요. 신고를 새 세션 시작 시 자동 노출 → 승인하면 작업.
+- (없음 — 이번 묶음 6건 + 신규 모두 완료)
+
+## 운영 규칙 (신규)
+- **오류신고**: 세션 시작 시 `node --env-file=.env.local scripts/check-error-reports.mjs` 로 open 건 확인 → 운영자에게 보고·진행 여부 확인. 처리 후 `done <id>`. (AGENTS.md 규칙) 자취 캡처는 현재 '이동·JS에러'까지, 클릭·서버액션은 후속 확장.
 
 ## 시각 확인 권장 (실기기)
 - **#1b 계약서 PDF** — 실제 발급 1회로 한 장에 잘 들어가는지·여백(상하좌우 14mm) 대칭 확인. (로컬에서 puppeteer 렌더 불가). 완전 WYSIWYG(화면=PDF 동일 CSS)은 후속 과제. [[domain-contracts]]

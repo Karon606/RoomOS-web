@@ -25,7 +25,10 @@
 ### (신규 인프라) Obsidian '제2의 두뇌' — C안 구축 완료 (216017d)
 세션 재시작 추론손실 해결. 자동메모리(핵심) + 저장소 `knowledge/` Vault(전체, 버전관리·Obsidian) + AGENTS.md 세션시작 규칙. `knowledge/{INDEX,domain-billing,domain-inventory,domain-contracts,decisions,glossary,open-issues}.md`. 메모리에 핵심 결정 2건 시드.
 
-### 남음: #5 오류신고 버튼 + VSCode 연동 (스키마+훅 §4 — SQL 안내 후 착수)
+### #5 오류신고 버튼 + 세션시작 확인 [SQL 적용됨] (26f0589)
+오류 발생 즉시 신고(직전 동작 자취 + 자동 캡처 에러 + 메모). `ErrorReport`(error_reports) 모델 + [lib/errorBreadcrumbs.ts](lib/errorBreadcrumbs.ts)(이동·JS에러 링버퍼) + [BreadcrumbTracker](components/BreadcrumbTracker.tsx)(셸 마운트) + 우하단 플로팅 [ErrorReportButton](components/ErrorReportButton.tsx) + `submitErrorReport` 서버액션. **세션시작 확인**: `scripts/check-error-reports.mjs`(읽기전용 + done/dismiss) + AGENTS.md 규칙(세션 시작 시 open 건 확인→운영자 보고). 버튼 위치·클릭/서버액션 자취는 후속.
+
+### ✅ 이번 묶음 6건(+#6,+Obsidian,+여백대칭) 전부 완료. 남은 확인: #1b 발급 PDF 시각 확인(실기기).
 
 
 ## 2026-06-27 (이어서) — 재고: 위치별 점검 저장 더블클릭 → 보충 중복적용(허브 2배 차감) [SQL 0]
