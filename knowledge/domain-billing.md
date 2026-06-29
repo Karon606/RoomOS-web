@@ -29,6 +29,12 @@
 - ⚠️ 또 의심되면: `scheduledRent != null && rentUpdateDate == null` 인 방(고아)을 찾아라.
 - **추천 납입액/귀속월 금액도 인상 반영(2026-06-30)**: `getTargetMonthOptions`(귀속월 드롭다운)는 옛날 `lease.rentAmount` 평면값 대신 **`billForLeaseMonth`**(일할→락인→예약인상→할인) + 퇴실월 이후 제외로 계산. 수납폼(`PaymentEntryForm`) 추천액은 자동(FIFO)일 때 '가장 이른 미완납 달' 기준 → **인상 전 달이 완납되면 다음 납입부터 인상가가 자동 추천**. savePayment는 원래부터 서버에서 월별 재계산(무변경)이라 추천=저장 일치.
 
+### 두 개의 '월 이용료' 소스 — effective vs lease.rentAmount (2026-06-30)
+- **청구·매출·미납·수납추천**: `billForLeaseMonth`(effective, room.scheduledRent+rentUpdateDate 직접 읽음) → **7/1부터 자동 정확**(스케줄러 무관).
+- **고객관리 리스트·계약서 등 표시**: 원시 필드 `lease.rentAmount` 사용 → `applyScheduledRents()`가 적용일 경과분을 baseRent로 옮기고 활성계약 rentAmount 동기화해야 갱신됨.
+- `applyScheduledRents` 트리거: **호실관리·대시보드·고객관리 페이지 로드 시**(2026-06-30 확대). ⚠️ 주석은 `/api/cron/apply-rents` cron 도 있다 하지만 **실제 라우트 없음**(vercel.json엔 push-alerts만) → 페이지 로드가 유일 트리거. 멱등(적용 후 scheduledRent=null). 백로그: 진짜 일일 cron(다영업장 순회) 추가하면 무방문 자동적용 가능.
+- 매출 귀속: **발생주의(targetMonth)**. 6월에 낸 7월분(targetMonth=2026-07)은 **7월 매출**, 6월엔 미인식(미래 귀속월 제외).
+
 ## 기타
 - `discountedRent` = `lib/rentDiscount.ts`(단위테스트됨). 월별 할인 적용.
 - 퇴실월 무청구: `isCheckoutNoBillingMonth`(퇴실일 ≤ 그 달 납부일이면 0).
