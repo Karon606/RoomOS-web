@@ -30,6 +30,7 @@ type Body = {
   disposalSignatureImageDataUrl?: string  // 잔여 소지품 임의처분 동의서 별도 서명 (선택)
   smoking: '비흡연' | '흡연'
   emergencyContactText: string
+  preview?: boolean                 // true 면 Drive 저장·DB 기록 없이 PDF 바이트만 반환(인쇄/미리보기용)
 }
 
 export async function POST(req: Request) {
@@ -190,6 +191,18 @@ export async function POST(req: Request) {
       }
     } finally {
       await browser.close().catch(() => {})
+    }
+
+    // 미리보기/인쇄 모드 — Drive 저장·DB 기록·서명 영구저장 없이 PDF 바이트만 반환.
+    // (Safari 의 '프린트 → PDF 저장' 백지 버그 우회: 화면 '인쇄' 버튼이 이 서버 PDF 를 새 탭으로 연다.)
+    if (body.preview) {
+      return new NextResponse(new Uint8Array(pdfBuffer), {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'inline; filename="contract-preview.pdf"',
+          'Cache-Control': 'no-store',
+        },
+      })
     }
 
     // 2) Drive 업로드

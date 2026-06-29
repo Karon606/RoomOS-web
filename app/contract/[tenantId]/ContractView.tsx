@@ -142,7 +142,7 @@ export default function ContractView({ data }: { data: ContractData }) {
     미납일수: String(data.disposalConsent.days), 영업장명: biz.name || '', 대표: biz.ceoName || '',
   }
 
-  const handlePrint = () => window.print()
+  // (구) window.print() 는 Safari 'PDF 저장' 시 백지 버그가 있어 제거 — 아래 handlePrintPdf 로 서버 PDF 를 연다.
 
   const handleSaveOverride = () => {
     if (!data.lease?.id) {
@@ -319,6 +319,49 @@ export default function ContractView({ data }: { data: ContractData }) {
     }
   }
 
+  // 인쇄/PDF — 서버에서 만든 진짜 PDF(2단·내용 정상)를 새 탭으로 연다.
+  // Safari 의 'window.print → PDF로 저장'이 백지로 나오는 버그를 우회(미리보기엔 보여도 저장 시 누락).
+  const [printingPdf, setPrintingPdf] = useState(false)
+  const handlePrintPdf = async () => {
+    setPrintingPdf(true)
+    // 팝업 차단 회피 — 클릭 시점에 빈 새 탭을 먼저 연다(비동기 fetch 후 open 은 Safari 가 막음)
+    const win = window.open('', '_blank')
+    if (win) { try { win.document.write('<!doctype html><meta charset="utf-8"><title>PDF 생성 중…</title><body style="font-family:sans-serif;color:#6b6258;padding:24px">계약서 PDF 생성 중… (5~15초)</body>') } catch { /* noop */ } }
+    try {
+      const res = await fetch('/api/contract/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: data.tenant.id,
+          signDate,
+          signatureName,
+          signatureImageDataUrl: signatureDataUrl,
+          disposalSignatureImageDataUrl: disposalSignatureDataUrl ?? '',
+          smoking,
+          emergencyContactText,
+          preview: true,
+        }),
+      })
+      if (!res.ok) {
+        const t = await res.text()
+        if (win) win.close()
+        pushToast('error', `PDF 생성 실패 (${res.status})`)
+        alert(`PDF 생성 실패\n\n${t.slice(0, 200)}`)
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      if (win) win.location.href = url
+      else window.open(url, '_blank')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (err) {
+      if (win) win.close()
+      pushToast('error', (err as Error).message ?? 'PDF 생성 실패')
+    } finally {
+      setPrintingPdf(false)
+    }
+  }
+
   // 출력에 쓰일 활성 템플릿 — 편집 중이면 draft, 아니면 props
   const view = editing ? draft : data.template
 
@@ -343,7 +386,7 @@ export default function ContractView({ data }: { data: ContractData }) {
                 공통 템플릿으로
               </button>
             )}
-            <button onClick={handlePrint} className="toolbar-btn-secondary">인쇄</button>
+            <button onClick={handlePrintPdf} disabled={printingPdf} className="toolbar-btn-secondary">{printingPdf ? 'PDF 생성 중…' : '인쇄 / PDF'}</button>
             {/* 서명은 본문 하단 서명란을 직접 눌러서 — 계약서를 끝까지 본 뒤 서명하도록 유도(상단 즉시서명 버튼 제거) */}
             {signatureDataUrl && (
               <button onClick={handleContractSave} disabled={contractSaving} className="toolbar-print">
