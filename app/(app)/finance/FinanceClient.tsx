@@ -4,7 +4,7 @@ import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragm
 import {
   addExpense, updateExpense, deleteExpense, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder,
   addExtraIncome, updateExtraIncome, deleteExtraIncome,
-  settleCardExpenses, unsettleExpenses,
+  unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
   recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits,
   analyzeReceiptWithGemini,
@@ -77,24 +77,6 @@ type FinancialAccount = {
   payDay: number | null; cutOffDay: number | null
   linkedAccountId: string | null
   linkedAccount: { id: string; brand: string; alias: string | null } | null
-}
-
-type UnsettledExpense = {
-  id: string; date: Date; amount: number; category: string
-  detail: string | null; financeName: string | null
-  financialAccountId: string | null
-  financialAccount: {
-    id: string; brand: string; alias: string | null
-    cutOffDay: number | null; payDay: number | null
-    linkedAccount: { brand: string; alias: string | null } | null
-  } | null
-}
-
-type SettleGroup = {
-  accountId: string; accountName: string; billMonth: string
-  billingPeriodStr: string; linkedAccountName: string | null
-  payDayStr: string; items: UnsettledExpense[]; total: number
-  isFinalized: boolean   // 청구 마감(확정)=마감일 지남 / false=진행 중(예정, 더 늘 수 있음)
 }
 
 // ── Constants ────────────────────────────────────────────────────
@@ -1234,55 +1216,10 @@ function displayDay(day: number | null) {
   return `${day}일`
 }
 
-function getBillMonth(date: Date | string, cutOffDay: number | null) {
-  const d = new Date(date)
-  const cutOff = cutOffDay && cutOffDay < 31 ? cutOffDay : 31
-  let year = d.getFullYear(), month = d.getMonth() + 1
-  if (d.getDate() > cutOff) {
-    month += 1
-    if (month > 12) { month = 1; year += 1 }
-  }
-  return `${year}-${String(month).padStart(2, '0')}`
-}
-
-function buildSettleGroups(unsettledExpenses: UnsettledExpense[]): SettleGroup[] {
-  const now = Date.now()
-  const map = new Map<string, SettleGroup>()
-  unsettledExpenses.forEach(exp => {
-    const acc = exp.financialAccount
-    const cutOff = acc?.cutOffDay ?? null
-    const billMonth = getBillMonth(exp.date, cutOff)
-    const accountId = acc?.id ?? (exp.financeName ?? 'unknown')
-    const name = acc ? accName(acc) : (exp.financeName ?? '미지정 카드')
-    const key = `${accountId}__${billMonth}`
-
-    if (!map.has(key)) {
-      const [billYStr, billMStr] = billMonth.split('-')
-      const billY = parseInt(billYStr), billM = parseInt(billMStr)
-      let prevM = billM - 1, prevY = billY
-      if (prevM < 1) { prevM = 12; prevY -= 1 }
-      const startDay = (cutOff && cutOff < 31) ? cutOff + 1 : 1
-      const endDayStr = (cutOff && cutOff < 31) ? `${cutOff}일` : '말일'
-      const periodStr = `${prevY}년 ${prevM}월 ${startDay}일 ~ ${billY}년 ${billM}월 ${endDayStr}`
-      const linked = acc?.linkedAccount ? accName(acc.linkedAccount) : null
-      const payDayStr = acc?.payDay ? displayDay(acc.payDay) : '미지정'
-      // 청구 마감일 = 그 청구월의 마감일(cutOff) / 마감일 없으면 그 달 말일. 지났으면 '확정', 아니면 '예정(진행 중)'.
-      const closeDate = (cutOff && cutOff < 31)
-        ? new Date(billY, billM - 1, cutOff, 23, 59, 59, 999)
-        : new Date(billY, billM, 0, 23, 59, 59, 999)
-      const isFinalized = now > closeDate.getTime()
-      map.set(key, { accountId, accountName: name, billMonth, billingPeriodStr: periodStr, linkedAccountName: linked, payDayStr, items: [], total: 0, isFinalized })
-    }
-    const g = map.get(key)!
-    g.items.push(exp)
-    g.total += exp.amount
-  })
-  return Array.from(map.values()).sort((a, b) => a.billMonth.localeCompare(b.billMonth))
-}
 
 // ── Main Component ────────────────────────────────────────────────
 
-type Tab = 'expense' | 'income' | 'settle' | 'assets' | 'deposit' | 'reserve'
+type Tab = 'expense' | 'income' | 'assets' | 'deposit' | 'reserve'
 
 // 예비비 거래 (server에서 props로 전달)
 type ReserveTxn = {
@@ -1318,7 +1255,7 @@ type DepositLedgerEntry = {
 type CategoryTotal = { category: string; total: number }
 
 export default function FinanceClient({
-  expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions, vendorSuggestions,
+  expenses, incomes, financialAccounts, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions, vendorSuggestions,
   reserveBalance, reserveMonthly, reserveTxns, settleableExpenses,
   depositSummary, depositLedger, trackedCategories,
   initialTab,
@@ -1326,8 +1263,6 @@ export default function FinanceClient({
   expenses: Expense[]
   incomes: Income[]
   financialAccounts: FinancialAccount[]
-  unsettledExpenses: UnsettledExpense[]
-  settledCardExpenses: UnsettledExpense[]
   incomeCategories: string[]
   expenseCategories: string[]
   paymentMethods: string[]
@@ -1838,8 +1773,6 @@ export default function FinanceClient({
 
   const totalExp = filteredExpenses.reduce((s, e) => s + e.amount, 0)
   const totalInc = filteredIncomes.reduce((s, i) => s + i.amount, 0)
-  const settleGroups = buildSettleGroups(unsettledExpenses)
-  const settledGroups = buildSettleGroups(settledCardExpenses)
 
   // ── 핸들러 ───────────────────────────────────────────────────
 
@@ -1966,12 +1899,6 @@ export default function FinanceClient({
     })
   }
 
-  const handleSettle = async (ids: string[], name: string, billMonth: string) => {
-    if (!(await confirmDialog({ title: `'${name}' ${billMonth} 청구분 ${ids.length}건을 정산 완료로 처리할까요?`, confirmLabel: '정산 완료' }))) return
-    startTransition(async () => {
-      await settleCardExpenses(ids); router.refresh()
-    })
-  }
 
   const handleUnsettle = async (id: string) => {
     if (!(await confirmDialog({ title: '이 지출을 미정산 상태로 되돌릴까요?', confirmLabel: '되돌리기' }))) return
@@ -2067,7 +1994,6 @@ export default function FinanceClient({
   const TABS: { key: Tab; label: string }[] = [
     { key: 'expense', label: `지출 내역${recUnrecordedCount > 0 ? ` (고정 ${recUnrecordedCount}건 미확인)` : ''}` },
     { key: 'income',  label: '부가 수익' },
-    { key: 'settle',  label: `카드 정산${unsettledExpenses.length > 0 ? ` (${unsettledExpenses.length})` : ''}` },
     { key: 'assets',  label: `자산 관리${financialAccounts.length > 0 ? ` (${financialAccounts.length})` : ''}` },
     { key: 'deposit', label: `보증금 (${fmtKorMoney(totalDepositBalance)})` },
     { key: 'reserve', label: `예비비 (${fmtKorMoney(reserveBalance)})` },
@@ -2833,157 +2759,6 @@ export default function FinanceClient({
       {/* ══════════════════════════════════════════════════════════
           탭 3: 카드 대금 정산
       ══════════════════════════════════════════════════════════ */}
-      {tab === 'settle' && (
-        <div className="space-y-4">
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">미정산 신용카드 대금 합산</h2>
-            <p className="text-xs text-[var(--warm-muted)] mb-5">신용카드로 결제된 미정산 지출을 카드별로 합산합니다.</p>
-
-            {settleGroups.length === 0 ? (
-              <EmptyState label="미정산 건이 없습니다" />
-            ) : (() => {
-              const finalizedG = settleGroups.filter(g => g.isFinalized)
-              const pendingG   = settleGroups.filter(g => !g.isFinalized)
-              const settleCard = (g: SettleGroup) => (
-                <div key={`${g.accountId}__${g.billMonth}`} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-5 flex flex-col gap-3">
-                  {/* 카드명 */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-bold text-[var(--warm-dark)] text-base">{g.accountName}</span>
-                    {g.payDayStr !== '미지정' && (
-                      <span className="text-xs px-2.5 py-1 rounded-full bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)] font-medium shrink-0">
-                        결제일: {g.payDayStr}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* 청구 정보 */}
-                  <div className="text-xs text-[var(--warm-mid)] space-y-0.5">
-                    <div>청구기간: {g.billingPeriodStr}</div>
-                    {g.linkedAccountName && (
-                      <div>출금계좌: <span className="text-[var(--warm-dark)]">{g.linkedAccountName}</span></div>
-                    )}
-                  </div>
-
-                  {/* 청구 총액 */}
-                  <div className="flex items-baseline justify-between border-b border-[var(--warm-border)] pb-3">
-                    <span className="text-xs text-[var(--warm-mid)] font-medium">
-                      {g.billMonth.replace('-', '년 ')}월 청구 {g.isFinalized ? '총액(확정)' : '예정액'}
-                    </span>
-                    <span className="text-xl font-bold text-[var(--danger-fg)] num">
-                      {g.total.toLocaleString()}원
-                    </span>
-                  </div>
-
-                  {/* 지출 목록 */}
-                  <div className="max-h-40 overflow-y-auto space-y-1.5">
-                    {g.items.map(item => (
-                      <div key={item.id} className="flex items-center justify-between text-xs gap-2">
-                        <span className="text-[var(--warm-mid)] min-w-0 truncate">
-                          {new Date(item.date).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
-                          &nbsp;
-                          <span className="text-[var(--warm-muted)]">{item.category}</span>
-                          {item.detail && <span className="text-[var(--warm-muted)]"> · {item.detail}</span>}
-                        </span>
-                        <span className="text-[var(--warm-dark)] font-medium num shrink-0">
-                          {item.amount.toLocaleString()}원
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* 정산 버튼 */}
-                  {g.accountId && g.accountId !== 'unknown' ? (
-                    <Btn
-                      variant={g.isFinalized ? 'primary' : 'secondary'} size="md" fullWidth
-                      onClick={() => handleSettle(g.items.map(i => i.id), g.accountName, g.billMonth)}
-                      disabled={isPending}>
-                      {g.isFinalized ? '출금 확인 (정산 완료 처리)' : '미리 정산 처리'}
-                    </Btn>
-                  ) : (
-                    <p className="text-xs text-[var(--warm-muted)] text-center">자산 등록 후 정산하세요</p>
-                  )}
-                </div>
-              )
-              return (
-                <div className="space-y-6">
-                  {/* 확정 청구분 — 청구 마감돼 금액이 고정된 출금 대상 */}
-                  {finalizedG.length > 0 && (
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]">확정</span>
-                        <span className="text-sm font-semibold text-[var(--warm-dark)]">청구 마감 · 출금 대상</span>
-                        <span className="text-xs text-[var(--warm-muted)]">{finalizedG.length}건</span>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {finalizedG.map(settleCard)}
-                      </div>
-                    </div>
-                  )}
-                  {/* 예정 청구분 — 아직 청구 마감 전이라 금액이 더 늘 수 있음 */}
-                  {pendingG.length > 0 && (
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]">예정</span>
-                        <span className="text-sm font-semibold text-[var(--warm-dark)]">진행 중 · 마감 전</span>
-                        <span className="text-xs text-[var(--warm-muted)]">{pendingG.length}건</span>
-                      </div>
-                      <p className="text-xs text-[var(--warm-muted)]">아직 청구 마감 전이라 결제일까지 금액이 더 늘 수 있어요.</p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {pendingG.map(settleCard)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-          </div>
-
-          {/* 정산 완료 내역 */}
-          {settledGroups.length > 0 && (
-            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5 space-y-3">
-              <h3 className="text-sm font-semibold text-[var(--warm-mid)]">정산 완료 내역 (최근 4개월)</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {settledGroups.map(g => (
-                  <div key={`${g.accountId}__${g.billMonth}`}
-                    className="bg-[var(--canvas)]/60 border border-[var(--warm-border)] rounded-xl p-4 space-y-3 opacity-70">
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-[var(--warm-dark)]">{g.accountName}</span>
-                        <span className="text-xs text-[var(--success-fg)] bg-[var(--success-bg)] px-2 py-0.5 rounded-full">정산완료</span>
-                      </div>
-                      <p className="text-xs text-[var(--warm-muted)] mt-0.5">{g.billingPeriodStr}</p>
-                    </div>
-                    <div className="space-y-1">
-                      {g.items.map(item => (
-                        <div key={item.id} className="flex justify-between text-xs text-[var(--warm-muted)]">
-                          <span>{new Date(item.date).getMonth() + 1}. {new Date(item.date).getDate()}. {item.detail ?? item.category}</span>
-                          <span>{item.amount.toLocaleString()}원</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex items-center justify-between pt-1 border-t border-[var(--warm-border)]">
-                      <span className="text-sm font-bold text-[var(--warm-dark)]">{g.total.toLocaleString()}원</span>
-                      <button
-                        onClick={async () => {
-                          if (!(await confirmDialog({ title: `'${g.accountName}' ${g.billMonth} 청구분 정산을 전부 취소할까요?`, confirmLabel: '전체 취소' }))) return
-                          startTransition(async () => {
-                            await unsettleExpenses(g.items.map(i => i.id)); router.refresh()
-                          })
-                        }}
-                        disabled={isPending}
-                        className="text-xs text-[var(--warning-fg)] hover:text-[var(--warning-fg)] px-3 py-1.5 bg-[var(--warning-bg)] hover:bg-[var(--warning-bg)] rounded-lg transition-colors disabled:opacity-40">
-                        전체 정산 취소
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-
       {/* ══════════════════════════════════════════════════════════
           탭 4: 자산 관리
       ══════════════════════════════════════════════════════════ */}

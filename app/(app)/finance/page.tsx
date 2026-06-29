@@ -1,8 +1,8 @@
-import { getExpenses, getExtraIncomes, getFinancialAccounts, getUnsettledExpenses, getSettledCardExpenses, getRecurringExpensesWithStatus, getRoomList, getExpenseCategoryTotals, getExpenseDetailSuggestions, getExpenseVendorSuggestions, getReserveBalance, getReserveMonthlySummary, getReserveTransactions, getSettleableExpenses, getDepositSummaryByTenant, getDepositLedger, getTrackedCategories } from './actions'
+import { getExpenses, getExtraIncomes, getFinancialAccounts, getRecurringExpensesWithStatus, getRoomList, getExpenseCategoryTotals, getExpenseDetailSuggestions, getExpenseVendorSuggestions, getReserveBalance, getReserveMonthlySummary, getReserveTransactions, getSettleableExpenses, getDepositSummaryByTenant, getDepositLedger, getTrackedCategories } from './actions'
 import { getIncomeCategories, getExpenseCategories, getPaymentMethods, getPropertySettings } from '@/app/(app)/settings/actions'
 import FinanceClient from './FinanceClient'
 
-type FinTab = 'expense' | 'income' | 'settle' | 'assets' | 'deposit' | 'reserve'
+type FinTab = 'expense' | 'income' | 'assets' | 'deposit' | 'reserve'
 
 export default async function FinancePage({
   searchParams,
@@ -11,7 +11,7 @@ export default async function FinancePage({
 }) {
   const { month, tab } = await searchParams
   const initialTab: FinTab | undefined =
-    tab === 'expense' || tab === 'income' || tab === 'settle' || tab === 'assets' || tab === 'deposit' || tab === 'reserve'
+    tab === 'expense' || tab === 'income' || tab === 'assets' || tab === 'deposit' || tab === 'reserve'
       ? tab
       : undefined
   const now = new Date()
@@ -23,12 +23,10 @@ export default async function FinancePage({
   const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`
   const lastYearMonth = `${y - 1}-${String(m).padStart(2, '0')}`
 
-  const [expenses, incomes, financialAccounts, unsettledExpenses, settledCardExpenses, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus, rooms, prevMonthTotals, lastYearTotals, propertySettings, detailSuggestions, vendorSuggestions, reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, depositSummary, depositLedger, trackedCategories] = await Promise.all([
+  const [expenses, incomes, financialAccounts, incomeCategories, expenseCategories, paymentMethods, recurringExpensesWithStatus, rooms, prevMonthTotals, lastYearTotals, propertySettings, detailSuggestions, vendorSuggestions, reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, depositSummary, depositLedger, trackedCategories] = await Promise.all([
     getExpenses(targetMonth),
     getExtraIncomes(targetMonth),
     getFinancialAccounts(),
-    getUnsettledExpenses(),
-    getSettledCardExpenses(targetMonth),
     getIncomeCategories(),
     getExpenseCategories(),
     getPaymentMethods(),
@@ -57,8 +55,6 @@ export default async function FinancePage({
       expenses={expenses}
       incomes={incomes}
       financialAccounts={financialAccounts}
-      unsettledExpenses={unsettledExpenses}
-      settledCardExpenses={settledCardExpenses}
       incomeCategories={incomeCategories}
       expenseCategories={expenseCategories}
       paymentMethods={paymentMethods}

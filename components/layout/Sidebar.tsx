@@ -30,6 +30,10 @@ function IcoFinance() {
 function IcoWallet() {
   return <svg {...ico}><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>
 }
+// 카드 정산 — CreditCard
+function IcoCardSettle() {
+  return <svg {...ico}><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>
+}
 // 재고 관리 — Boxes
 function IcoInventory() {
   return <svg {...ico}><path d="M21 8L12 3 3 8v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>
@@ -90,6 +94,7 @@ const NAV_GROUPS = [
     items: [
       { href: '/rooms',     label: '수납 관리',     Icon: IcoFinance   },  // Wallet
       { href: '/finance',   label: '지출/기타수익', Icon: IcoWallet    },  // TrendingUp
+      { href: '/card-settlement', label: '카드 정산', Icon: IcoCardSettle }, // CreditCard
       { href: '/inventory', label: '재고 관리',     Icon: IcoInventory },  // Boxes
       { href: '/report',    label: '결산 보고서',   Icon: IcoReport    },  // FileText
     ],
