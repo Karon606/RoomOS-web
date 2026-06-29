@@ -22,4 +22,10 @@ PDF(`lib/contractPrintHtml.ts`)는 별도 CSS·원본 크기라 가용높이 초
 주의: 화면(ContractView)·브라우저인쇄(@media print)·PDF(contractPrintHtml) 가 **CSS 3벌**이라 픽셀 동일은 아님 — 출력 기준은 PDF(발급).
 
 ### 조항 2단 = 화면=PDF 동일 (2026-06-29)
-**CSS 멀티컬럼(`column-count:2`)은 Chrome 인쇄(고정 페이지)에서 1단으로 흐른다**(화면=무한높이라 2단, PDF=1단 → 세로 길어져 다음 장). 그래서 화면·PDF **둘 다 명시적 2단(flex)**: `lib/contract` `splitClauseColumns`(섹션을 항목 수로 좌/우 그리디 분배) + `.clauses{display:flex;gap:7mm} .clause-col{flex:1;min-width:0}`. flex 는 인쇄에서도 2단 유지 → 스크린 그대로 출력. **계약서 레이아웃 바꿀 때 두 파일(ContractView·contractPrintHtml) CSS·구조를 항상 같이 수정**(드리프트 주의).
+**CSS 멀티컬럼(`column-count:2`)은 Chrome 인쇄(고정 페이지)에서 1단으로 흐른다**(화면=무한높이라 2단, PDF=1단 → 세로 길어져 다음 장). 그래서 화면·PDF **둘 다 명시적 2단(flex)**: `lib/contract` `splitClauseColumns` + `.clauses{display:flex;gap:7mm} .clause-col{flex:1;min-width:0}`. flex 는 인쇄에서도 2단 유지.
+- ⚠️ **조항 순서 절대 불변**: `splitClauseColumns` 는 **문서 순서 보존 분할**(앞에서부터 순서대로, 누적 절반 지점에서만 좌→우). 항목수 그리디로 분배하면 순서가 뒤섞임(좌 1·3/우 2·4) — 절대 금지. 왼쪽 단 위→아래, 오른쪽 단 위→아래로 읽으면 1,2,3,4 그대로여야 함.
+- **계약서 레이아웃 바꿀 때 두 파일(ContractView·contractPrintHtml) CSS·구조를 항상 같이 수정**(드리프트 주의).
+
+### Safari '프린트 → PDF로 저장' 백지 (2026-06-29)
+@media print 의 `.paper-cage { display: contents }` 는 **Safari가 PDF 저장 시 자식을 누락(백지)** — 미리보기엔 보임. 일반 블록(`display:block; width/height/transform 리셋`)으로 해결. 브라우저 인쇄 전용이라 발급(puppeteer) PDF 와 무관.
+- PDF 경로 2가지: **발급 버튼=서버 puppeteer(contractPrintHtml)** = 권장·안정. **브라우저 인쇄/PDF저장=ContractView @media print**(Safari 특이성 주의).
