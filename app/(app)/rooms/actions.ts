@@ -788,6 +788,11 @@ export async function getTargetMonthOptions(
     select: {
       moveInDate: true,
       rentAmount: true,
+      expectedMoveOut: true,
+      checkoutProratedAmount: true,
+      checkoutProratedMonth: true,
+      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+      room: { select: { scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
       property: { select: { acquisitionDate: true, prevOwnerCutoffDate: true } },
     },
   })
@@ -807,26 +812,32 @@ export async function getTargetMonthOptions(
   const endY = endDate.getFullYear()
   const endM = endDate.getMonth() + 1
 
-  // 모든 record 합산 by targetMonth
+  // 모든 record 합산 by targetMonth (+ 그 달 락인 expectedAmount 최대)
   const records = await prisma.paymentRecord.findMany({
     where: { leaseTermId, isDeposit: false },
-    select: { targetMonth: true, actualAmount: true, payDate: true, isPrevOwner: true },
+    select: { targetMonth: true, actualAmount: true, expectedAmount: true, payDate: true, isPrevOwner: true },
   })
   const prevOwnerMonths = new Set(records.filter(r => r.isPrevOwner).map(r => r.targetMonth))
   const paidByMonth: Record<string, number> = {}
+  const lockedByMonth: Record<string, number> = {}
   for (const r of records) {
     if (r.isPrevOwner) continue
     if (cutoffDate && new Date(r.payDate) < cutoffDate) continue
     paidByMonth[r.targetMonth] = (paidByMonth[r.targetMonth] ?? 0) + r.actualAmount
+    if (r.expectedAmount > (lockedByMonth[r.targetMonth] ?? 0)) lockedByMonth[r.targetMonth] = r.expectedAmount
   }
 
-  const expected = lease.rentAmount
   const out: TargetMonthOption[] = []
   let cy = startY, cmn = startM
   while (cy < endY || (cy === endY && cmn <= endM)) {
     const ms = `${cy}-${String(cmn).padStart(2, '0')}`
     if (prevOwnerMonths.has(ms)) { cmn++; if (cmn > 12) { cmn = 1; cy++ }; continue }
+    // 퇴실월 이후는 청구 대상 아님 — findFirstUnpaidMonth 와 동일 규칙(추천이 퇴실 후 달을 잡지 않게).
+    if (isAfterMoveOutMonth(lease.expectedMoveOut, ms)) { cmn++; if (cmn > 12) { cmn = 1; cy++ }; continue }
     const paid = paidByMonth[ms] ?? 0
+    // 그 달 청구액 — 읽기 엔진 3곳·savePayment 과 동일한 단일 규칙(일할→락인→예약인상→할인).
+    const locked = lockedByMonth[ms]
+    const expected = billForLeaseMonth(lease, ms, locked && locked > 0 ? locked : null)
     let status: TargetMonthOption['status']
     if (ms > viewMonth) status = 'future'
     else if (paid >= expected) status = 'paid'

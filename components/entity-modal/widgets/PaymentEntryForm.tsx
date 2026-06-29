@@ -4,7 +4,7 @@
 // 셸의 수납 full 모드와 RoomsClient 양쪽 재사용. RoomsClient 의 handleSavePayment·UI 그대로 이주.
 // FIFO 알고리즘은 savePayment 서버액션 내부 (변경 X). 위젯은 입력+호출+토스트.
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import {
   savePayment, saveDepositPayment, getTargetMonthOptions, type SavePaymentResult,
 } from '@/app/(app)/rooms/actions'
@@ -37,12 +37,23 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
   const [pending, startTransition] = useTransition()
   const [tmOptions, setTmOptions] = useState<TmOption[]>([])
   const [forcedTm, setForcedTm] = useState<'auto' | string>('auto')
-  // 자동 프리필 — 미수가 있으면(balance<0) 그 절댓값(이번 달 보충), 아니면 expected.
-  // 사용자가 직접 바꾸면 그대로 유지. room 이 바뀌면 다시 프리필.
-  const [payAmount, setPayAmount] = useState<number>(room.balance < 0 ? -room.balance : room.expected)
-  useEffect(() => {
-    setPayAmount(room.balance < 0 ? -room.balance : room.expected)
-  }, [room.balance, room.expected])
+  // 추천 납입액:
+  //  - 귀속월을 특정 월로 고르면 그 달의 남은 청구액(인상 반영).
+  //  - 자동(FIFO)일 때 미수가 있으면(balance<0) 그 절댓값(누적 미수 보충),
+  //    미수가 없으면 '앞으로 낼 가장 이른 안 낸 달'의 청구액 → 인상 전 달이 완납되면 자동으로 인상가가 추천됨.
+  //  - 사용자가 직접 바꾸면 그대로 유지(추천값 변할 때만 갱신).
+  const suggestedAmount = useMemo(() => {
+    if (forcedTm !== 'auto') {
+      const o = tmOptions.find(t => t.month === forcedTm)
+      if (o) { const rem = o.expectedAmount - o.paidAmount; return rem > 0 ? rem : o.expectedAmount }
+      return room.expected
+    }
+    if (room.balance < 0) return -room.balance
+    const next = tmOptions.find(o => o.paidAmount < o.expectedAmount)   // FIFO: 가장 이른 미완납 달(인상 반영)
+    return next ? (next.expectedAmount - next.paidAmount) : room.expected
+  }, [forcedTm, tmOptions, room.balance, room.expected])
+  const [payAmount, setPayAmount] = useState<number>(suggestedAmount)
+  useEffect(() => { setPayAmount(suggestedAmount) }, [suggestedAmount])
   const [payDateVal, setPayDateVal] = useState<string>(kstYmdStr())
   const [payMethod, setPayMethod] = useState<string>('계좌이체')
   const [memo, setMemo] = useState<string>('')
