@@ -110,7 +110,7 @@ export async function addRoom(formData: FormData): Promise<{ ok: true; id: strin
 }
 
 // 호실 수정
-export async function updateRoom(formData: FormData) {
+export async function updateRoom(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireEdit()
 
   const id      = formData.get('id') as string
@@ -130,6 +130,12 @@ export async function updateRoom(formData: FormData) {
   const scheduledRent    = scheduledRentRaw ? (Number(scheduledRentRaw) || null) : null
   const rentUpdateDateRaw = formData.get('rentUpdateDate') as string
   const rentUpdateDate   = rentUpdateDateRaw ? new Date(rentUpdateDateRaw) : null
+
+  // 예약 인상/인하: 적용일 없는 예약은 청구(effectiveBaseRent)도 적용 스케줄러도 동작 안 함(영구 방치).
+  // → 예약 이용료와 적용 예정일은 반드시 함께 입력(둘 다 있거나 둘 다 없거나).
+  if ((scheduledRent != null) !== (rentUpdateDate != null)) {
+    return { ok: false, error: '예약 이용료와 적용 예정일은 함께 입력해야 합니다. (적용일이 없으면 인상·인하가 적용되지 않습니다)' }
+  }
 
   // 비거주 이용료 필드
   const nrEnabled = formData.get('nonResidentEnabled') === '1'
@@ -177,6 +183,7 @@ export async function updateRoom(formData: FormData) {
   revalidatePath('/room-manage')
   revalidatePath('/rooms')
   revalidatePath('/tenants')
+  return { ok: true }
 }
 
 // 호실 삭제 — 과거 계약·수납(매출) 기록까지 연쇄 영구 삭제되므로,
@@ -448,6 +455,7 @@ export async function batchUpdateRooms(
     tier?: string | null
     baseRent?: number
     scheduledRent?: number | null
+    rentUpdateDate?: Date | string | null
     windowType?: string | null
     direction?: string | null
   },
@@ -457,6 +465,13 @@ export async function batchUpdateRooms(
     const { propertyId } = await getPropertyId()
     if (roomIds.length === 0) return { ok: false, error: '선택된 호실이 없습니다.' }
     if (Object.keys(data).length === 0) return { ok: false, error: '변경할 항목이 없습니다.' }
+
+    // 예약 이용료는 적용 예정일과 함께여야 함(적용일 없으면 인상·인하가 적용 안 됨). 예약 삭제 시 적용일도 함께 제거.
+    if (data.scheduledRent != null && data.rentUpdateDate == null) {
+      return { ok: false, error: '예약 이용료를 설정하려면 적용 예정일도 함께 지정해야 합니다.' }
+    }
+    if (data.scheduledRent === null) data.rentUpdateDate = null
+    if (typeof data.rentUpdateDate === 'string') data.rentUpdateDate = new Date(data.rentUpdateDate)
 
     // baseRent 동기화 판정용 — 변경 전 기준가 확보 (updateMany 가 덮어쓰기 전에)
     const prevRents = data.baseRent != null

@@ -410,7 +410,8 @@ export default function RoomManageClient({
     startTransition(async () => {
       const release = trackSave()
       try {
-        await updateRoom(formData)
+        const res = await updateRoom(formData)
+        if (res && !res.ok) { setError(res.error); pushToast('error', res.error); return }
         closeEdit()
         // 전체 새로고침(window.reload) 대신 soft refresh — 토스트가 살아남고,
         // URL ?roomId&edit=1 이 남아 있어도 handledOpenRef 가 유지돼 폼이 재오픈되지 않음
@@ -1330,6 +1331,7 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
   const [tier, setTier]             = useState('')
   const [baseRent, setBaseRent]     = useState<number | undefined>(undefined)
   const [scheduledRent, setScheduledRent] = useState<number | undefined>(undefined)
+  const [rentUpdateDateVal, setRentUpdateDateVal] = useState('')
   const [clearScheduled, setClearScheduled] = useState(false)
   const [windowType, setWindowType] = useState('')
   const [direction, setDirection]   = useState('')
@@ -1342,7 +1344,11 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
     if (tier) data.tier = tier
     if (baseRent != null) data.baseRent = baseRent
     if (clearScheduled) data.scheduledRent = null
-    else if (scheduledRent != null) data.scheduledRent = scheduledRent
+    else if (scheduledRent != null) {
+      if (!rentUpdateDateVal) { setError('예약이용료를 설정하려면 적용 예정일을 함께 지정하세요. (적용일이 없으면 적용되지 않습니다)'); return }
+      data.scheduledRent = scheduledRent
+      data.rentUpdateDate = new Date(rentUpdateDateVal)
+    }
     if (windowType) data.windowType = windowType
     if (direction)  data.direction  = direction
 
@@ -1407,6 +1413,14 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
             </label>
           </div>
         </div>
+
+        {!clearScheduled && scheduledRent != null && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--warm-mid)]">적용 예정일 <span className="text-[var(--danger-fg)]">*</span> <span className="text-[var(--warm-muted)]">(예약이용료가 적용될 날짜 — 없으면 적용 안 됨)</span></label>
+            <DatePicker name="batchRentUpdateDate" value={rentUpdateDateVal} onChange={setRentUpdateDateVal}
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
