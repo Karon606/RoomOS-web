@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma'
 import DashboardClient, { type DashboardData } from './DashboardClient'
 import { getPaymentMethods } from '@/app/(app)/settings/actions'
 import { getRecurringExpensesWithStatus } from '@/app/(app)/finance/actions'
+import { applyScheduledRents } from '@/app/(app)/room-manage/actions'
 import { kstMonthStr, kstYmd } from '@/lib/kstDate'
 import { ALERT_WINDOW_BEFORE_DAYS, ALERT_WINDOW_AFTER_DAYS, UNPAID_UPCOMING_ALERT_DAYS } from '@/lib/appConfig'
 import { getNextBusinessDay } from '@/lib/krHolidays'
@@ -1548,6 +1549,10 @@ export default async function DashboardPage({
 
   const { month } = await searchParams
   const targetMonth = month ?? kstMonthStr()
+
+  // 예약 인상/인하 적용일 경과분 동기화 — 어느 페이지로 들어와도 7/1 인상이 baseRent·rentAmount 에 반영되게
+  // (호실관리 미방문 시 리스트·표시가 옛값으로 남는 것 방지). 실패해도 페이지는 정상 노출.
+  await applyScheduledRents().catch(() => {})
 
   const [dashboardData, paymentMethods, floorPlanData] = await Promise.all([
     getDashboardData(propertyId, targetMonth),

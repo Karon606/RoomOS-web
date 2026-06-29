@@ -1,5 +1,6 @@
 import { getTenants, getRoomsForSelect } from './actions'
 import { getPropertySettings, getMyRole } from '@/app/(app)/settings/actions'
+import { applyScheduledRents } from '@/app/(app)/room-manage/actions'
 import TenantClient from './TenantClient'
 
 export default async function TenantsPage({
@@ -10,6 +11,9 @@ export default async function TenantsPage({
   const { month } = await searchParams
   const now = new Date()
   const targetMonth = month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+
+  // 예약 인상/인하 적용일이 지난 호실은 진입 시 baseRent·rentAmount 동기화(호실관리 미방문 시 리스트가 옛값으로 남는 것 방지).
+  await applyScheduledRents().catch(() => { /* 적용 실패해도 페이지는 정상 노출 */ })
 
   // 예약자(RESERVED)는 사용자가 명시적으로 "입실 처리"를 누를 때만 거주중으로 전환됨.
   // 입주 희망일 도래만으로 자동 전환하지 않는다.
