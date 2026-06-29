@@ -19,7 +19,13 @@
 ### #3 카드 정산 독립 페이지 분리 [SQL 0] (4aa35b4)
 `/card-settlement` 신규 페이지([page.tsx](app/(app)/card-settlement/page.tsx)·[CardSettlementClient.tsx](app/(app)/card-settlement/CardSettlementClient.tsx)) + 사이드바 '수익/지출' 메뉴. FinanceClient 에서 settle 탭·타입·헬퍼·핸들러·props 제거(원자적 스크립트, 잔존 0 검증). #4 분리 규칙 그대로 적용. tsc·build·신규 lint 0.
 
-### 남음: #1b 계약서 인쇄 한 장 맞춤(인쇄 렌더 시각검증 반복 필요) · #5 오류신고+VSCode 연동(스키마+훅 §4) · (신규) Obsidian '제2의 두뇌' 세션연속성 설계
+### #1b 계약서 인쇄 한 장 맞춤 [SQL 0] (7037079)
+화면(scale 축소·min-height 297mm)과 PDF(원본크기·별도 CSS)가 달라 출력 시 하단 잘림. generate route 에 **shrink-to-fit** — 의도 페이지 수(.paper 개수)보다 넘치면 한 장에 맞게 `page.pdf({scale})` 단계 축소(하한 0.78). 동의서는 page-break-before 별도 장이라 '서류별 한 장' 목표. **여백 상하좌우 14mm 대칭**(사용자 요청). ⏳ 실제 발급 1회 시각 확인 권장(로컬 puppeteer 렌더 불가). 완전 WYSIWYG(CSS 3벌 통일)은 후속.
+
+### (신규 인프라) Obsidian '제2의 두뇌' — C안 구축 완료 (216017d)
+세션 재시작 추론손실 해결. 자동메모리(핵심) + 저장소 `knowledge/` Vault(전체, 버전관리·Obsidian) + AGENTS.md 세션시작 규칙. `knowledge/{INDEX,domain-billing,domain-inventory,domain-contracts,decisions,glossary,open-issues}.md`. 메모리에 핵심 결정 2건 시드.
+
+### 남음: #5 오류신고 버튼 + VSCode 연동 (스키마+훅 §4 — SQL 안내 후 착수)
 
 
 ## 2026-06-27 (이어서) — 재고: 위치별 점검 저장 더블클릭 → 보충 중복적용(허브 2배 차감) [SQL 0]

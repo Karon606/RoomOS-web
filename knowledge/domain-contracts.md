@@ -12,6 +12,11 @@
 ## 주소
 입주자 주소 = 영업장 주소 + 방번호(별도 필드 없음). [[goshiwon-tenant-address]]
 
-## 인쇄 = 한 장 이슈 (미해결, [[open-issues]] #1b)
-화면 미리보기는 `transform: scale()` + `min-height:297mm`로 한 장처럼 보이지만, 인쇄는 `@media print`에서 scale 제거 → 원본 크기라 콘텐츠가 A4 가용높이 초과 시 2페이지로 넘침. 화면(174×275mm 여백)과 인쇄(182×273mm)도 다름.
-→ 목표: 한 장에 맞추거나(여백·폰트·줄간격 압축) 화면도 실제 페이지대로 보이게(WYSIWYG). **인쇄 PNG 렌더(qlmanage) 반복 검증 필요.**
+## 인쇄 = 한 장 맞춤 (2026-06-29 해결)
+화면 미리보기(ContractView)는 `transform: scale()` + `min-height:297mm`로 한 장처럼 보이지만,
+PDF(`lib/contractPrintHtml.ts`)는 별도 CSS·원본 크기라 가용높이 초과 시 다음 장으로 넘쳤음.
+**해결: `app/api/contract/generate/route.ts` 에서 shrink-to-fit** — 의도 페이지 수(html의 `.paper` 개수:
+계약서 1 + 동의서 옵션 1)보다 많으면 한 장에 맞을 때까지 `page.pdf({ scale })` 단계적 축소(하한 0.78).
+동의서는 `page-break-before` 로 항상 별도 장이라 '서류별 한 장'이 목표(전체 1장 강제 아님).
+**여백 상하좌우 14mm 대칭**(헤더/푸터 간격·좌우 동일). 좌우 14mm 는 표 우측 테두리 잘림 방지.
+주의: 화면(ContractView)·브라우저인쇄(@media print)·PDF(contractPrintHtml) 가 **CSS 3벌**이라 픽셀 동일은 아님 — 출력 기준은 PDF(발급). 완전 WYSIWYG(화면=PDF 같은 CSS)는 후속.
