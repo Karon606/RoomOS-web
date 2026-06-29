@@ -44,6 +44,7 @@ export type ContractData = {
     roomNo: string | null
     registrationStatus: '신고' | '미신고' | '면제'
     signatureImageUrl: string | null   // #8 이전에 받은 앱서명(dataURL) — 출력 시 재표시
+    disposalSignatureImageUrl: string | null   // 동의서 별도 서명(dataURL) — 출력 시 재표시
   } | null
 }
 
@@ -143,6 +144,7 @@ export async function getContractData(tenantId: string): Promise<ContractData | 
       roomNo: lease.room?.roomNo ?? null,
       registrationStatus: REGISTRATION_LABEL[lease.registrationStatus] ?? '미신고',
       signatureImageUrl: (lease as { signatureImageUrl?: string | null }).signatureImageUrl ?? null,
+      disposalSignatureImageUrl: (lease as { disposalSignatureImageUrl?: string | null }).disposalSignatureImageUrl ?? null,
     } : null,
   }
 }

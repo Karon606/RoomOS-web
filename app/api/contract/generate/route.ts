@@ -206,6 +206,16 @@ export async function POST(req: Request) {
         where: { id: lease.id },
         data: { signatureImageUrl: body.signatureImageDataUrl },
       })
+      // 동의서(잔여 소지품 임의처분) 서명도 영구 저장 — 입실계약서 서명과 동일하게 시스템에 남도록.
+      // 컬럼 미적용(마이그레이션 전) 환경에서도 PDF 생성·계약서 서명 저장이 깨지지 않게 best-effort.
+      try {
+        await prisma.leaseTerm.update({
+          where: { id: lease.id },
+          data: { disposalSignatureImageUrl: body.disposalSignatureImageDataUrl?.startsWith('data:image/') ? body.disposalSignatureImageDataUrl : null },
+        })
+      } catch (e) {
+        console.error('[contract/generate] 동의서 서명 저장 실패 (SQL 미적용 가능):', e)
+      }
     }
 
     return NextResponse.json({

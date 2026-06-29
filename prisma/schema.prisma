@@ -417,6 +417,8 @@ model LeaseTerm {
   contractOverride   Json?              // 입실자별 계약서 본문 덮어쓰기 (Property.contractTemplate 형식과 동일). null이면 영업장 공통 템플릿 사용
   // #8 앱서명 재사용: 마지막으로 받은 서명 이미지(dataURL). 계약서 출력 에디터가 이 값을 불러와 표시·재인쇄.
   signatureImageUrl  String?
+  // 잔여 소지품 임의처분 동의서 별도 서명(dataURL) — 입실계약서 서명과 독립 저장(에디터 재표시·재인쇄용).
+  disposalSignatureImageUrl String?
   wishRooms          String?
   wishConditions     String?            // JSON: { floor?, windowType?, type?, direction? } — 호실 미지정 예약자용. "{}"이면 조건 무관(모든 빈 방 매칭)
   keepAlertAfterInquiry Boolean         @default(false)  // 입주 희망일이 지나도 알림 유지

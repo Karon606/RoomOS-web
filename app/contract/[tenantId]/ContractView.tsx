@@ -217,8 +217,9 @@ export default function ContractView({ data }: { data: ContractData }) {
   // 캡처된 서명 PNG dataURL — 화면 서명란에 즉시 표시.
   // #8: 이전에 저장된 앱서명이 있으면 초기값으로 불러와 표시(출력 시 (인) 대신 서명 보이게).
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(data.lease?.signatureImageUrl ?? null)
-  // 동의서(잔여 소지품 임의처분)는 별도 서명 — 같은 패드 모달을 target 으로 구분해 재사용
-  const [disposalSignatureDataUrl, setDisposalSignatureDataUrl] = useState<string | null>(null)
+  // 동의서(잔여 소지품 임의처분)는 별도 서명 — 같은 패드 모달을 target 으로 구분해 재사용.
+  // 저장된 동의서 서명(disposalSignatureImageUrl)이 있으면 불러와 표시(입실계약서 서명과 동일하게 영구 보존).
+  const [disposalSignatureDataUrl, setDisposalSignatureDataUrl] = useState<string | null>(data.lease?.disposalSignatureImageUrl ?? null)
   const [signTarget, setSignTarget] = useState<'contract' | 'disposal'>('contract')
   const openSign = (target: 'contract' | 'disposal') => { setSignTarget(target); setSignOpen(true) }
   const sigCanvasRef = useRef<HTMLCanvasElement>(null)
