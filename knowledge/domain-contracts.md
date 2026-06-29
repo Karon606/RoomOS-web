@@ -26,6 +26,11 @@ PDF(`lib/contractPrintHtml.ts`)는 별도 CSS·원본 크기라 가용높이 초
 - ⚠️ **조항 순서 절대 불변**: `splitClauseColumns` 는 **문서 순서 보존 분할**(앞에서부터 순서대로, 누적 절반 지점에서만 좌→우). 항목수 그리디로 분배하면 순서가 뒤섞임(좌 1·3/우 2·4) — 절대 금지. 왼쪽 단 위→아래, 오른쪽 단 위→아래로 읽으면 1,2,3,4 그대로여야 함.
 - **계약서 레이아웃 바꿀 때 두 파일(ContractView·contractPrintHtml) CSS·구조를 항상 같이 수정**(드리프트 주의).
 
-### Safari '프린트 → PDF로 저장' 백지 (2026-06-29)
-@media print 의 `.paper-cage { display: contents }` 는 **Safari가 PDF 저장 시 자식을 누락(백지)** — 미리보기엔 보임. 일반 블록(`display:block; width/height/transform 리셋`)으로 해결. 브라우저 인쇄 전용이라 발급(puppeteer) PDF 와 무관.
-- PDF 경로 2가지: **발급 버튼=서버 puppeteer(contractPrintHtml)** = 권장·안정. **브라우저 인쇄/PDF저장=ContractView @media print**(Safari 특이성 주의).
+### 인쇄/PDF 버튼 동작 (Safari 제약 반영, 2026-06-29 최종)
+**Safari 제약**: ① JS 로 PDF(iframe/새탭)를 `print()` 불가 — iframe 뷰어의 인쇄 버튼이 Safari 서 안 먹음(Chrome 만 됨). ② `window.print → 'PDF로 저장'`은 백지(WebKit PDF export 버그). Safari 가 허용하는 건 **HTML `window.print()`** 와 **파일 다운로드**뿐.
+→ ContractView 버튼 2개로 분리:
+- **🖨 인쇄 = `window.print()`** (화면 HTML 직접 인쇄). Safari 인쇄창 즉시 표시·내용 2단 정상. 물리 프린터용. (이 경로의 'PDF로 저장'은 Safari 백지라 PDF 는 아래 버튼 사용.)
+- **⬇ PDF 저장 = 서버 puppeteer PDF(preview 모드) 파일 다운로드**. 백지 없음. 파일에서 인쇄/보관.
+- **계약서 저장(발급)** = 서버 PDF 를 Drive 저장 + ContractFile 기록(공식 보관). preview 모드(`body.preview`)는 Drive/DB 미접촉.
+- 서명 없이도 생성 허용(서명란 '(서명)' 자리표시). 빈 서명은 저장된 서명 안 지움.
+- ⚠️ window.print 경로는 `@media print` CSS(ContractView), PDF 다운로드/발급은 contractPrintHtml CSS — **두 CSS 동기화 필수**.
