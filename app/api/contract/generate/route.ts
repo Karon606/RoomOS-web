@@ -159,9 +159,9 @@ export async function POST(req: Request) {
       let scale = 1
       let renderedPdf = Buffer.from(await page.pdf({ ...baseOpts, margin: baseMargin }))
       let pageCount = countPdfPages(renderedPdf)
-      // 의도보다 넘치면(하단 잘려 다음 장) — 한 장에 맞을 때까지 단계적 축소(최대 ~20%, 하한 0.78).
-      // 살짝 넘침은 1~2단계로 해결, 진짜 긴 계약서는 미세글자화 대신 다중페이지 허용. '화면=출력' 근접.
-      while (pageCount > expectedPages && scale > 0.78) {
+      // 살짝 넘치면(하단 조금 잘림) 한 장에 맞게 부드럽게 축소(최대 ~12%, 하한 0.88).
+      // 한 장 강제보다 '깔끔함' 우선 — 더 줄여야 하면 미세글자화 대신 다중 페이지를 허용한다(섹션은 page-break-inside:avoid 로 통째 유지).
+      while (pageCount > expectedPages && scale > 0.88) {
         scale = Math.round((scale - 0.04) * 100) / 100
         renderedPdf = Buffer.from(await page.pdf({ ...baseOpts, margin: baseMargin, scale }))
         pageCount = countPdfPages(renderedPdf)

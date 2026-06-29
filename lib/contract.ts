@@ -93,23 +93,49 @@ export function buildRefundClause(): string {
   return '중도 퇴실 시 환불액은 「총 결제금액 − (1일 이용요금 × 실제 이용일수) − 위약금(총 결제금액의 10%)」으로 산정하며, 1일 이용요금은 월 이용료의 30분의 1로 합니다.'
 }
 
-// 조항 섹션을 2단(좌/우)으로 분배 — ⚠️ 문서 순서 보존이 절대 원칙(계약서 조항 순서를 바꾸면 안 됨).
-// 앞에서부터 '순서대로' 채우되, 누적 높이가 절반에 가장 가까워지는 한 지점에서만 좌→우로 나눈다.
-// → 왼쪽 단을 위에서 아래로, 그다음 오른쪽 단을 위에서 아래로 읽으면 원래 순서(1,2,3,4…) 그대로.
+// 조항을 2단(좌/우)으로 분배 — ⚠️ 문서 순서 보존이 절대 원칙(계약서 조항 순서를 바꾸면 안 됨).
+// 규칙(내용 무관·운영자가 바꿔도 동일 적용):
+//  1) 항목을 '순서대로' 흘려 담는다. 왼쪽 단을 위→아래로, 그다음 오른쪽 단을 위→아래로 읽으면 원래 순서.
+//  2) 누적 높이(글자수로 줄 수 추정)가 절반을 넘는 첫 항목에서 오른쪽 단으로 전환 → 좌/우 높이 균형(빈칸 최소).
+//  3) 한 섹션이 두 단에 걸치면 오른쪽엔 헤더 없이 이어진다(멀티컬럼과 동일). 단, 헤더만 덜렁 남는 건 방지
+//     (전환 직전 헤더에 항목이 하나도 안 들어갔으면 그 헤더를 오른쪽 단으로 옮긴다).
 // CSS 멀티컬럼(column-count)은 Chrome 인쇄(고정 페이지)에서 1단으로 흐르므로 명시적 2단(flex)으로 렌더.
-export function splitClauseColumns<T extends { items: string[] }>(sections: T[]): [T[], T[]] {
-  if (sections.length <= 1) return [sections.slice(), []]
-  const w = sections.map(s => (s.items?.length ?? 0) + 1.5)   // 헤더 가중치 포함
-  const total = w.reduce((a, b) => a + b, 0)
-  let bestK = 1
-  let bestDiff = Infinity
+export type ClauseFragment = { title: string | null; items: string[] }
+export function splitClauseColumns<T extends { title: string; items: string[] }>(sections: T[]): [ClauseFragment[], ClauseFragment[]] {
+  const COL_CHARS = 28          // 한 단(≈87mm)의 한 줄 글자 수 추정(한글 8.7pt 기준)
+  const HEADER_LINES = 1.6      // 섹션 헤더 1개의 높이(줄 환산)
+  const estLines = (s: string) => Math.max(1, Math.ceil((s?.length ?? 0) / COL_CHARS))
+
+  let total = 0
+  for (const sec of sections) { total += HEADER_LINES; for (const it of sec.items) total += estLines(it) }
+  const target = total / 2
+
+  const left: ClauseFragment[] = []
+  const right: ClauseFragment[] = []
   let acc = 0
-  for (let k = 1; k < sections.length; k++) {
-    acc += w[k - 1]
-    const diff = Math.abs(acc - (total - acc))
-    if (diff < bestDiff) { bestDiff = diff; bestK = k }
+  let switched = false
+  for (const sec of sections) {
+    let frag: ClauseFragment = { title: sec.title, items: [] }
+    ;(switched ? right : left).push(frag)
+    acc += HEADER_LINES
+    for (const it of sec.items) {
+      if (!switched && acc >= target) {
+        switched = true
+        if (frag.items.length === 0) {
+          // 헤더만 들어간 채 전환 → 고아 헤더 방지: 그 헤더를 오른쪽 단으로 이동
+          left.pop()
+          frag = { title: frag.title, items: [] }
+        } else {
+          frag = { title: null, items: [] }   // 섹션이 이어짐(오른쪽엔 헤더 반복 안 함)
+        }
+        right.push(frag)
+      }
+      frag.items.push(it)
+      acc += estLines(it)
+    }
   }
-  return [sections.slice(0, bestK), sections.slice(bestK)]
+  const clean = (arr: ClauseFragment[]) => arr.filter(f => f.title !== null || f.items.length > 0)
+  return [clean(left), clean(right)]
 }
 
 // ── 잔여 소지품 임의처분 동의서 — 계약서와 함께 출력되는 별도 서류 ──────────

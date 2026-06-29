@@ -114,17 +114,16 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   }
 
   // 화면(ContractView)과 동일하게 명시적 2단(flex) — CSS 멀티컬럼은 인쇄에서 1단으로 흐름.
-  const renderGroup = (sec: { title: string; items: string[] }) => {
-    const lis = sec.items
+  // 항목 단위로 흘려 좌/우 균형(순서 보존). 이어진 단은 헤더 없음(title === null).
+  const renderFrag = (frag: { title: string | null; items: string[] }) => {
+    const lis = frag.items
       .map(it => `<li>${highlight(stripBullet(renderContractText(it, vars)))}</li>`)
       .join('')
-    return `<div class="clause-group">
-      <div class="clause-h">${escape(renderContractText(sec.title, vars))}</div>
-      <ul class="clause-list">${lis}</ul>
-    </div>`
+    const h = frag.title ? `<div class="clause-h">${escape(renderContractText(frag.title, vars))}</div>` : ''
+    return `<div class="clause-group">${h}<ul class="clause-list">${lis}</ul></div>`
   }
   const [colL, colR] = splitClauseColumns(d.template.sections)
-  const clausesHtml = `<div class="clause-col">${colL.map(renderGroup).join('')}</div><div class="clause-col">${colR.map(renderGroup).join('')}</div>`
+  const clausesHtml = `<div class="clause-col">${colL.map(renderFrag).join('')}</div><div class="clause-col">${colR.map(renderFrag).join('')}</div>`
 
   const biz = d.businessInfo
   const bizMeta1 = [biz.registrationNo ? `사업자등록번호 ${escape(biz.registrationNo)}` : '', biz.ceoName ? `대표 ${escape(biz.ceoName)}` : ''].filter(Boolean).join(' · ')
@@ -214,7 +213,7 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   /* 조항 — 2단 */
   .clauses { display: flex; gap: 7mm; align-items: flex-start; margin-bottom: 3mm; }
   .clause-col { flex: 1 1 0; min-width: 0; }
-  .clause-group { margin-bottom: 2.2mm; }
+  .clause-group { margin-bottom: 2.2mm; break-inside: avoid; }
   .clause-h { font-size: 10.5pt; font-weight: 700; letter-spacing: -.01em; margin-bottom: 1.4mm; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); line-height: 1.2; break-after: avoid; }
   .clause-list { list-style: none; }
   .clause-list li { font-size: 8.7pt; line-height: 1.38; color: var(--p-ink); padding-left: 3mm; text-indent: -3mm; margin-bottom: 0.6mm; white-space: pre-line; word-break: keep-all; break-inside: avoid; }

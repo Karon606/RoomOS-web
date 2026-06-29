@@ -458,11 +458,11 @@ export default function ContractView({ data }: { data: ContractData }) {
           <div className="clauses">
             {splitClauseColumns(view.sections).map((col, ci) => (
               <div key={ci} className="clause-col">
-                {col.map(sec => (
-                  <div key={sec.id} className="clause-group">
-                    <div className="clause-h">{renderContractText(sec.title, vars)}</div>
+                {col.map((frag, fi) => (
+                  <div key={fi} className="clause-group">
+                    {frag.title && <div className="clause-h">{renderContractText(frag.title, vars)}</div>}
                     <ul className="clause-list">
-                      {sec.items.map((item, i) => (
+                      {frag.items.map((item, i) => (
                         <li key={i}>{renderClauseItem(renderContractText(item, vars))}</li>
                       ))}
                     </ul>
@@ -688,7 +688,7 @@ export default function ContractView({ data }: { data: ContractData }) {
         .contract-paper {
           position: absolute; top: 0; left: 0;
           transform: scale(var(--paper-scale, 1)); transform-origin: top left;
-          width: 210mm; min-height: 297mm; padding: 11mm 18mm;
+          width: 210mm; min-height: 297mm; padding: 14mm;   /* 화면 페이지도 상하좌우 여백 동일(인쇄 @page 14mm 와 일치) */
           background: #fff; color: var(--p-ink);
           font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
           word-break: keep-all; box-sizing: border-box;
@@ -731,7 +731,7 @@ export default function ContractView({ data }: { data: ContractData }) {
         /* 조항 — 2단 */
         .contract-paper .clauses { display: flex; gap: 7mm; align-items: flex-start; margin-bottom: 3mm; }
         .contract-paper .clause-col { flex: 1 1 0; min-width: 0; }
-        .contract-paper .clause-group { margin-bottom: 2.6mm; }
+        .contract-paper .clause-group { margin-bottom: 2.6mm; break-inside: avoid; }
         .contract-paper .clause-h { font-size: 10.5pt; font-weight: 700; letter-spacing: -.01em; margin-bottom: 1.6mm; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); line-height: 1.2; break-after: avoid; }
         .contract-paper .clause-list { list-style: none; margin: 0; padding: 0; }
         .contract-paper .clause-list li { font-size: 8.7pt; line-height: 1.42; color: var(--p-ink); padding-left: 3mm; text-indent: -3mm; margin-bottom: 0.8mm; word-break: keep-all; break-inside: avoid; }
