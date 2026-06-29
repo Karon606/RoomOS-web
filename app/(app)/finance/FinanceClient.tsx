@@ -94,6 +94,7 @@ type SettleGroup = {
   accountId: string; accountName: string; billMonth: string
   billingPeriodStr: string; linkedAccountName: string | null
   payDayStr: string; items: UnsettledExpense[]; total: number
+  isFinalized: boolean   // 청구 마감(확정)=마감일 지남 / false=진행 중(예정, 더 늘 수 있음)
 }
 
 // ── Constants ────────────────────────────────────────────────────
@@ -1245,6 +1246,7 @@ function getBillMonth(date: Date | string, cutOffDay: number | null) {
 }
 
 function buildSettleGroups(unsettledExpenses: UnsettledExpense[]): SettleGroup[] {
+  const now = Date.now()
   const map = new Map<string, SettleGroup>()
   unsettledExpenses.forEach(exp => {
     const acc = exp.financialAccount
@@ -1264,7 +1266,12 @@ function buildSettleGroups(unsettledExpenses: UnsettledExpense[]): SettleGroup[]
       const periodStr = `${prevY}년 ${prevM}월 ${startDay}일 ~ ${billY}년 ${billM}월 ${endDayStr}`
       const linked = acc?.linkedAccount ? accName(acc.linkedAccount) : null
       const payDayStr = acc?.payDay ? displayDay(acc.payDay) : '미지정'
-      map.set(key, { accountId, accountName: name, billMonth, billingPeriodStr: periodStr, linkedAccountName: linked, payDayStr, items: [], total: 0 })
+      // 청구 마감일 = 그 청구월의 마감일(cutOff) / 마감일 없으면 그 달 말일. 지났으면 '확정', 아니면 '예정(진행 중)'.
+      const closeDate = (cutOff && cutOff < 31)
+        ? new Date(billY, billM - 1, cutOff, 23, 59, 59, 999)
+        : new Date(billY, billM, 0, 23, 59, 59, 999)
+      const isFinalized = now > closeDate.getTime()
+      map.set(key, { accountId, accountName: name, billMonth, billingPeriodStr: periodStr, linkedAccountName: linked, payDayStr, items: [], total: 0, isFinalized })
     }
     const g = map.get(key)!
     g.items.push(exp)
@@ -2834,70 +2841,101 @@ export default function FinanceClient({
 
             {settleGroups.length === 0 ? (
               <EmptyState label="미정산 건이 없습니다" />
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {settleGroups.map((g, idx) => (
-                  <div key={idx} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-5 flex flex-col gap-3">
-                    {/* 카드명 */}
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-[var(--warm-dark)] text-base">{g.accountName}</span>
-                      {g.payDayStr !== '미지정' && (
-                        <span className="text-xs px-2.5 py-1 rounded-full bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)] font-medium">
-                          결제일: {g.payDayStr}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* 청구 정보 */}
-                    <div className="text-xs text-[var(--warm-mid)] space-y-0.5">
-                      <div>청구기간: {g.billingPeriodStr}</div>
-                      {g.linkedAccountName && (
-                        <div>출금계좌: <span className="text-[var(--warm-dark)]">{g.linkedAccountName}</span></div>
-                      )}
-                    </div>
-
-                    {/* 청구 총액 */}
-                    <div className="flex items-baseline justify-between border-b border-[var(--warm-border)] pb-3">
-                      <span className="text-xs text-[var(--warm-mid)] font-medium">
-                        {g.billMonth.replace('-', '년 ')}월 청구 총액
+            ) : (() => {
+              const finalizedG = settleGroups.filter(g => g.isFinalized)
+              const pendingG   = settleGroups.filter(g => !g.isFinalized)
+              const settleCard = (g: SettleGroup) => (
+                <div key={`${g.accountId}__${g.billMonth}`} className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-5 flex flex-col gap-3">
+                  {/* 카드명 */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-[var(--warm-dark)] text-base">{g.accountName}</span>
+                    {g.payDayStr !== '미지정' && (
+                      <span className="text-xs px-2.5 py-1 rounded-full bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)] font-medium shrink-0">
+                        결제일: {g.payDayStr}
                       </span>
-                      <span className="text-xl font-bold text-[var(--danger-fg)] num">
-                        {g.total.toLocaleString()}원
-                      </span>
-                    </div>
-
-                    {/* 지출 목록 */}
-                    <div className="max-h-40 overflow-y-auto space-y-1.5">
-                      {g.items.map(item => (
-                        <div key={item.id} className="flex items-center justify-between text-xs gap-2">
-                          <span className="text-[var(--warm-mid)] min-w-0 truncate">
-                            {new Date(item.date).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
-                            &nbsp;
-                            <span className="text-[var(--warm-muted)]">{item.category}</span>
-                            {item.detail && <span className="text-[var(--warm-muted)]"> · {item.detail}</span>}
-                          </span>
-                          <span className="text-[var(--warm-dark)] font-medium num shrink-0">
-                            {item.amount.toLocaleString()}원
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* 정산 버튼 */}
-                    {g.accountId && g.accountId !== 'unknown' ? (
-                      <Btn
-                        variant="primary" size="md" fullWidth
-                        onClick={() => handleSettle(g.items.map(i => i.id), g.accountName, g.billMonth)}
-                        disabled={isPending}>
-                        출금 확인 (정산 완료 처리)
-                      </Btn>
-                    ) : (
-                      <p className="text-xs text-[var(--warm-muted)] text-center">자산 등록 후 정산하세요</p>
                     )}
                   </div>
-                ))}
-              </div>
-            )}
+
+                  {/* 청구 정보 */}
+                  <div className="text-xs text-[var(--warm-mid)] space-y-0.5">
+                    <div>청구기간: {g.billingPeriodStr}</div>
+                    {g.linkedAccountName && (
+                      <div>출금계좌: <span className="text-[var(--warm-dark)]">{g.linkedAccountName}</span></div>
+                    )}
+                  </div>
+
+                  {/* 청구 총액 */}
+                  <div className="flex items-baseline justify-between border-b border-[var(--warm-border)] pb-3">
+                    <span className="text-xs text-[var(--warm-mid)] font-medium">
+                      {g.billMonth.replace('-', '년 ')}월 청구 {g.isFinalized ? '총액(확정)' : '예정액'}
+                    </span>
+                    <span className="text-xl font-bold text-[var(--danger-fg)] num">
+                      {g.total.toLocaleString()}원
+                    </span>
+                  </div>
+
+                  {/* 지출 목록 */}
+                  <div className="max-h-40 overflow-y-auto space-y-1.5">
+                    {g.items.map(item => (
+                      <div key={item.id} className="flex items-center justify-between text-xs gap-2">
+                        <span className="text-[var(--warm-mid)] min-w-0 truncate">
+                          {new Date(item.date).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
+                          &nbsp;
+                          <span className="text-[var(--warm-muted)]">{item.category}</span>
+                          {item.detail && <span className="text-[var(--warm-muted)]"> · {item.detail}</span>}
+                        </span>
+                        <span className="text-[var(--warm-dark)] font-medium num shrink-0">
+                          {item.amount.toLocaleString()}원
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 정산 버튼 */}
+                  {g.accountId && g.accountId !== 'unknown' ? (
+                    <Btn
+                      variant={g.isFinalized ? 'primary' : 'secondary'} size="md" fullWidth
+                      onClick={() => handleSettle(g.items.map(i => i.id), g.accountName, g.billMonth)}
+                      disabled={isPending}>
+                      {g.isFinalized ? '출금 확인 (정산 완료 처리)' : '미리 정산 처리'}
+                    </Btn>
+                  ) : (
+                    <p className="text-xs text-[var(--warm-muted)] text-center">자산 등록 후 정산하세요</p>
+                  )}
+                </div>
+              )
+              return (
+                <div className="space-y-6">
+                  {/* 확정 청구분 — 청구 마감돼 금액이 고정된 출금 대상 */}
+                  {finalizedG.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]">확정</span>
+                        <span className="text-sm font-semibold text-[var(--warm-dark)]">청구 마감 · 출금 대상</span>
+                        <span className="text-xs text-[var(--warm-muted)]">{finalizedG.length}건</span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {finalizedG.map(settleCard)}
+                      </div>
+                    </div>
+                  )}
+                  {/* 예정 청구분 — 아직 청구 마감 전이라 금액이 더 늘 수 있음 */}
+                  {pendingG.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]">예정</span>
+                        <span className="text-sm font-semibold text-[var(--warm-dark)]">진행 중 · 마감 전</span>
+                        <span className="text-xs text-[var(--warm-muted)]">{pendingG.length}건</span>
+                      </div>
+                      <p className="text-xs text-[var(--warm-muted)]">아직 청구 마감 전이라 결제일까지 금액이 더 늘 수 있어요.</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {pendingG.map(settleCard)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
 
           {/* 정산 완료 내역 */}
