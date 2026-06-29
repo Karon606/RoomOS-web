@@ -212,7 +212,7 @@ ALTER TABLE properties ADD COLUMN "refundDeductCleaning" BOOLEAN NOT NULL DEFAUL
 - **503호 즉시 처치**: 퇴실 정산 위젯에서 적용(자동/수정/0) → 알림·예상매출·예상순이익 즉시 반영.
 - **캘린더(.ics)**: 납부 예정 제목 '월세'→**'이용료'**, 금액 '1,503,500원'→**'150만3500원'**(만/억 단위 `manWon`). UID 동일 → 재구독 없이 다음 동기화 때 제목 자동 갱신. ([route.ts](app/api/calendar/[token]/route.ts))
 **검증**: tsc 클린·build ✓·변경분 lint 신규에러 0.
-**⏳ 남은 1단계 — 퇴실일 지정 시 일할 자동 적용**(지금은 위젯서 수동 적용 필요). 설계: `prorationDataForChange`를 '미적용→자동 적용'으로 확장(applyStatusTransition·updateTenant·changeDueDay 공유, undo 스냅샷 포함). **일할 계산 적용 로직 변경(loop.md 4번)이라 확정 후 착수.** **2단계**: 환경설정 환불규정(위약금 N일·P%·1일당 입실료·청소비 차감 — 여러 계산법) + Property 스키마 추가.
+**[해결됨 — 89184ab]** ~~남은 1단계 — 퇴실일 지정 시 일할 자동 적용~~ → 완료: `prorationDataForChange(autoApply)` 로 퇴실 예정 전환(applyStatusTransition)·편집 폼(updateTenant) 시 자동 적용, 퇴실일/납부일 변경 시 재계산, 거주중 복귀 시 자동 해제, undo 스냅샷 포함. **2단계(환불규정 다양화)**: 위약금율·기간은 법적으로 임의 설정 불가 → 공정거래위원회 기준 고정으로 결정(설정에서 법정/선의 모드만 선택). 추가 작업 없음.
 
 ## 2026-06-19 — 지출 방별 분배 묶음: 미배정을 '방'으로 세던 버그 [SQL 0]
 **증상(사용자 스크린샷)**: 의자 4개를 418호 1개 + 미배정 3개로 나눴는데 카드가 '방 2개'로 표시. 미배정(roomId=null) 행을 방 1개로 카운트하던 문제. 펼침 팝업도 미배정 행을 품목 detail('[의자] x 3개')로 보여 줌.
