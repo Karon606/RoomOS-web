@@ -5,6 +5,8 @@ import prisma from '@/lib/prisma'
 import AppShell from '@/components/layout/AppShell'
 import { EntityModalProvider } from '@/components/entity-modal/EntityModal'
 import ClearAppBadge from '@/components/ClearAppBadge'
+import BreadcrumbTracker from '@/components/BreadcrumbTracker'
+import ErrorReportButton from '@/components/ErrorReportButton'
 import { isSuperAdminEmail } from '@/lib/auth/access'
 import { buildDriveThumbnailUrl } from '@/lib/google-drive'
 
@@ -81,9 +83,11 @@ export default async function AppLayout({
       isAdminView={isAdminView}
     >
       <ClearAppBadge />
+      <BreadcrumbTracker />
       <EntityModalProvider>
         {children}
       </EntityModalProvider>
+      <ErrorReportButton />
     </AppShell>
   )
 }

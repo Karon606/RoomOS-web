@@ -1343,3 +1343,21 @@ model PageView {
   @@index([slug, country, occurredAt])
   @@map("page_views")
 }
+
+// 오류 신고 — 사용자가 오류 발생 즉시 신고(직전 동작 자취 + 자동 캡처 에러 + 메모).
+// 새 세션 시작 시 open 건을 확인해 진행 여부를 운영자에게 묻는다. SQL 은 운영자가 직접 적용함.
+model ErrorReport {
+  id          String   @id @default(uuid()) @db.Uuid
+  createdAt   DateTime @default(now())
+  propertyId  String?  @db.Uuid
+  userEmail   String?
+  url         String?
+  userAgent   String?
+  breadcrumbs Json?                              // 최근 동작 자취(이동·에러)
+  errorText   String?                            // 자동 캡처된 에러 메시지
+  userNote    String?                            // 사용자 설명
+  status      String   @default("open")          // open | done | dismissed
+
+  @@index([status, createdAt])
+  @@map("error_reports")
+}
