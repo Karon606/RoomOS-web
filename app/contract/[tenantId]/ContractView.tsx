@@ -23,33 +23,6 @@ function renderClauseItem(text: string): React.ReactNode {
   return parts.map((p, i) => (i % 2 === 1 ? <span key={i} className="hl">{p}</span> : p))
 }
 
-// 새 탭 PDF 뷰어 HTML — 상단 툴바(인쇄/저장/닫기) + PDF 임베드. 브라우저 인쇄 메뉴를 찾을 필요 없이 바로 출력/저장.
-function buildPdfViewerHtml(pdfUrl: string, fileName: string): string {
-  const safeName = fileName.replace(/["'\\]/g, '')
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>계약서 인쇄 / 저장</title>
-<style>
-  *{box-sizing:border-box} html,body{margin:0;height:100%;background:#525659;font-family:-apple-system,'Apple SD Gothic Neo',sans-serif}
-  .bar{position:fixed;top:0;left:0;right:0;height:54px;display:flex;align-items:center;gap:8px;padding:0 14px;background:#2b2b2b;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.3)}
-  .bar .title{color:#ddd;font-size:13px;margin-right:auto;font-weight:600}
-  .bar button{padding:10px 18px;border:0;border-radius:9px;font-weight:700;font-size:14px;cursor:pointer}
-  .btn-print{background:#a03c2e;color:#fff}
-  .btn-save{background:#fff;color:#222}
-  .btn-close{background:transparent;color:#aaa;font-weight:500}
-  iframe{position:fixed;top:54px;left:0;right:0;bottom:0;width:100%;height:calc(100% - 54px);border:0;background:#fff}
-</style></head><body>
-<div class="bar">
-  <span class="title">계약서 — 바로 인쇄하거나 PDF로 저장하세요</span>
-  <button class="btn-print" onclick="doPrint()">🖨 인쇄</button>
-  <button class="btn-save" onclick="doSave()">⬇ PDF 저장</button>
-  <button class="btn-close" onclick="window.close()">닫기</button>
-</div>
-<iframe id="pdf" src="${pdfUrl}" title="계약서"></iframe>
-<script>
-  function doPrint(){ try{ var f=document.getElementById('pdf'); f.contentWindow.focus(); f.contentWindow.print(); }catch(e){ alert('자동 인쇄가 막히면 \\'PDF 저장\\' 후 파일에서 인쇄해 주세요.'); } }
-  function doSave(){ var a=document.createElement('a'); a.href='${pdfUrl}'; a.download='${safeName}'; document.body.appendChild(a); a.click(); a.remove(); }
-</script></body></html>`
-}
-
 export default function ContractView({ data }: { data: ContractData }) {
   const router = useRouter()
   const today = kstYmdStr()
@@ -169,7 +142,6 @@ export default function ContractView({ data }: { data: ContractData }) {
     미납일수: String(data.disposalConsent.days), 영업장명: biz.name || '', 대표: biz.ceoName || '',
   }
 
-  // (구) window.print() 는 Safari 'PDF 저장' 시 백지 버그가 있어 제거 — 아래 handlePrintPdf 로 서버 PDF 를 연다.
 
   const handleSaveOverride = () => {
     if (!data.lease?.id) {
@@ -346,14 +318,15 @@ export default function ContractView({ data }: { data: ContractData }) {
     }
   }
 
-  // 인쇄/PDF — 서버에서 만든 진짜 PDF(2단·내용 정상)를 새 탭으로 연다.
-  // Safari 의 'window.print → PDF로 저장'이 백지로 나오는 버그를 우회(미리보기엔 보여도 저장 시 누락).
-  const [printingPdf, setPrintingPdf] = useState(false)
-  const handlePrintPdf = async () => {
-    setPrintingPdf(true)
-    // 팝업 차단 회피 — 클릭 시점에 빈 새 탭을 먼저 연다(비동기 fetch 후 open 은 Safari 가 막음)
-    const win = window.open('', '_blank')
-    if (win) { try { win.document.write('<!doctype html><meta charset="utf-8"><title>PDF 생성 중…</title><body style="font-family:sans-serif;color:#6b6258;padding:24px">계약서 PDF 생성 중… (5~15초)</body>') } catch { /* noop */ } }
+  // 인쇄 — 화면 HTML 직접 인쇄(window.print). Safari 는 JS 로 PDF(iframe) 인쇄가 막혀 있어,
+  // HTML 을 인쇄해야 인쇄창이 바로 뜬다(내용 2단 정상). 물리 프린터 출력용.
+  const handlePrint = () => window.print()
+
+  // PDF 저장 — 서버에서 만든 진짜 PDF(2단·내용·여백 정상, 백지 없음)를 파일로 다운로드.
+  // (Safari 의 'window.print → PDF로 저장'은 백지라, PDF 파일이 필요하면 이 버튼을 쓴다.)
+  const [savingPdf, setSavingPdf] = useState(false)
+  const handleSavePdf = async () => {
+    setSavingPdf(true)
     try {
       const res = await fetch('/api/contract/generate', {
         method: 'POST',
@@ -371,28 +344,24 @@ export default function ContractView({ data }: { data: ContractData }) {
       })
       if (!res.ok) {
         const t = await res.text()
-        if (win) win.close()
         pushToast('error', `PDF 생성 실패 (${res.status})`)
         alert(`PDF 생성 실패\n\n${t.slice(0, 200)}`)
         return
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
-      const fname = `계약서_${(data.tenant.name || '입주자').replace(/[^\p{L}\p{N}_-]+/gu, '_')}_${signDate}.pdf`
-      if (win) {
-        // 출력/저장 버튼이 있는 뷰어로 — 브라우저 인쇄 메뉴를 찾을 필요 없이 바로 인쇄/저장.
-        win.document.open()
-        win.document.write(buildPdfViewerHtml(url, fname))
-        win.document.close()
-      } else {
-        window.open(url, '_blank')   // 팝업 차단 폴백
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 180000)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `계약서_${(data.tenant.name || '입주자').replace(/[^\p{L}\p{N}_-]+/gu, '_')}_${signDate}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+      pushToast('success', 'PDF 다운로드됨 — 파일에서 인쇄할 수 있어요')
     } catch (err) {
-      if (win) win.close()
       pushToast('error', (err as Error).message ?? 'PDF 생성 실패')
     } finally {
-      setPrintingPdf(false)
+      setSavingPdf(false)
     }
   }
 
@@ -420,7 +389,8 @@ export default function ContractView({ data }: { data: ContractData }) {
                 공통 템플릿으로
               </button>
             )}
-            <button onClick={handlePrintPdf} disabled={printingPdf} className="toolbar-btn-secondary">{printingPdf ? 'PDF 생성 중…' : '인쇄 / PDF'}</button>
+            <button onClick={handlePrint} className="toolbar-btn-secondary">🖨 인쇄</button>
+            <button onClick={handleSavePdf} disabled={savingPdf} className="toolbar-btn-secondary">{savingPdf ? 'PDF 생성 중…' : '⬇ PDF 저장'}</button>
             {/* 서명은 본문 하단 서명란을 직접 눌러서 — 계약서를 끝까지 본 뒤 서명하도록 유도(상단 즉시서명 버튼 제거) */}
             {signatureDataUrl && (
               <button onClick={handleContractSave} disabled={contractSaving} className="toolbar-print">
