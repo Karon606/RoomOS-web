@@ -805,7 +805,7 @@ export default function ContractView({ data }: { data: ContractData }) {
         .sig-actions { display: flex; align-items: center; gap: 8px; }
 
         /* ── 인쇄 전용 ─────────────────────────────────────────── */
-        @page { size: A4; margin: 12mm 14mm; }
+        @page { size: A4; margin: 14mm; }   /* 상하좌우 동일(대칭) */
         @media print {
           html, body { background: #fff; overflow: visible !important; height: auto !important; }
           .contract-shell { padding: 0; min-height: auto; display: block !important; align-items: stretch !important; }

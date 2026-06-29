@@ -149,13 +149,23 @@ export async function POST(req: Request) {
       // 폰트 로딩까지 확실하게 대기
       await page.evaluateHandle('document.fonts.ready')
       const baseOpts = { format: 'A4' as const, printBackground: true, preferCSSPageSize: false }
-      // 좌우 14mm 는 표 우측 테두리 잘림 방지.
-      // 1차: 머리말/꼬리말 없이 렌더 → 페이지 수 판정 (조항 적으면 1p, 많으면 다중 페이지 §20.10b)
-      const firstPdf = Buffer.from(await page.pdf({
-        ...baseOpts,
-        margin: { top: '10mm', right: '14mm', bottom: '10mm', left: '14mm' },
-      }))
-      const pageCount = (firstPdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length
+      const baseMargin = { top: '14mm', right: '14mm', bottom: '14mm', left: '14mm' }  // 상하좌우 동일(대칭) — 좌우 14mm 는 표 우측 테두리 잘림 방지
+      const countPdfPages = (buf: Buffer) => (buf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length
+      // 각 서류(.paper: 계약서 + (옵션)동의서)는 1물리페이지에 들어가야 함 → 의도한 페이지 수.
+      // 동의서는 page-break-before 로 항상 새 장이므로 '한 장 강제'가 아니라 '서류별 한 장' 이 목표.
+      const expectedPages = Math.max(1, (html.match(/<div class="paper/g) || []).length)
+
+      // 1차: scale 1 렌더 → 페이지 수 판정 (조항 적으면 의도대로, 많으면 하단이 다음 장으로 넘침)
+      let scale = 1
+      let renderedPdf = Buffer.from(await page.pdf({ ...baseOpts, margin: baseMargin }))
+      let pageCount = countPdfPages(renderedPdf)
+      // 의도보다 넘치면(하단 잘려 다음 장) — 한 장에 맞을 때까지 단계적 축소(최대 ~20%, 하한 0.78).
+      // 살짝 넘침은 1~2단계로 해결, 진짜 긴 계약서는 미세글자화 대신 다중페이지 허용. '화면=출력' 근접.
+      while (pageCount > expectedPages && scale > 0.78) {
+        scale = Math.round((scale - 0.04) * 100) / 100
+        renderedPdf = Buffer.from(await page.pdf({ ...baseOpts, margin: baseMargin, scale }))
+        pageCount = countPdfPages(renderedPdf)
+      }
 
       if (pageCount > 1) {
         // 다중 페이지 — §20.10b·§20.9: 꼬리말에 페이지번호(좌) + 영업장명(우).
@@ -169,13 +179,14 @@ export async function POST(req: Request) {
           `<span>${bizNameEsc}</span></div>`
         pdfBuffer = Buffer.from(await page.pdf({
           ...baseOpts,
-          margin: { top: '10mm', right: '14mm', bottom: '14mm', left: '14mm' },
+          margin: baseMargin,   // 상하좌우 동일(대칭) — 푸터는 14mm 하단 여백 안에 렌더
+          scale,   // 축소맞춤 적용분 유지 (각 서류가 자기 페이지에 들어가도록)
           displayHeaderFooter: true,
           headerTemplate: '<div></div>',   // 머리말 없음 (1p 본문 헤더와 중복 방지)
           footerTemplate,
         }))
       } else {
-        pdfBuffer = firstPdf
+        pdfBuffer = renderedPdf
       }
     } finally {
       await browser.close().catch(() => {})
