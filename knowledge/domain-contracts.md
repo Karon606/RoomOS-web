@@ -16,7 +16,8 @@
 화면 미리보기(ContractView)는 `transform: scale()` + `min-height:297mm`로 한 장처럼 보이지만,
 PDF(`lib/contractPrintHtml.ts`)는 별도 CSS·원본 크기라 가용높이 초과 시 다음 장으로 넘쳤음.
 **해결: `app/api/contract/generate/route.ts` 에서 shrink-to-fit** — 의도 페이지 수(html의 `.paper` 개수:
-계약서 1 + 동의서 옵션 1)보다 많으면 한 장에 맞을 때까지 `page.pdf({ scale })` 단계적 축소(하한 0.78).
+계약서 1 + 동의서 옵션 1)보다 많으면 한 장에 맞을 때까지 `page.pdf({ scale })` 단계적 축소(**하한 0.88 = 가독성 바닥**, 최대 12% 축소).
+**축소(≥88%)로도 못 맞추면 = 내용이 매우 많음 → 원본(100%)으로 되돌려 '읽기 좋은 크기 + 다중 페이지'로 출력**(미세글자화 방지, 2026-06-29). 즉 글씨는 절대 88% 미만으로 작아지지 않음.
 동의서는 `page-break-before` 로 항상 별도 장이라 '서류별 한 장'이 목표(전체 1장 강제 아님).
 **여백 상하좌우 14mm 대칭**(헤더/푸터 간격·좌우 동일). 좌우 14mm 는 표 우측 테두리 잘림 방지.
 주의: 화면(ContractView)·브라우저인쇄(@media print)·PDF(contractPrintHtml) 가 **CSS 3벌**이라 픽셀 동일은 아님 — 출력 기준은 PDF(발급).
@@ -26,11 +27,13 @@ PDF(`lib/contractPrintHtml.ts`)는 별도 CSS·원본 크기라 가용높이 초
 - ⚠️ **조항 순서 절대 불변**: `splitClauseColumns` 는 **문서 순서 보존 분할**(앞에서부터 순서대로, 누적 절반 지점에서만 좌→우). 항목수 그리디로 분배하면 순서가 뒤섞임(좌 1·3/우 2·4) — 절대 금지. 왼쪽 단 위→아래, 오른쪽 단 위→아래로 읽으면 1,2,3,4 그대로여야 함.
 - **계약서 레이아웃 바꿀 때 두 파일(ContractView·contractPrintHtml) CSS·구조를 항상 같이 수정**(드리프트 주의).
 
-### 인쇄/PDF 버튼 동작 (Safari 제약 반영, 2026-06-29 최종)
-**Safari 제약**: ① JS 로 PDF(iframe/새탭)를 `print()` 불가 — iframe 뷰어의 인쇄 버튼이 Safari 서 안 먹음(Chrome 만 됨). ② `window.print → 'PDF로 저장'`은 백지(WebKit PDF export 버그). Safari 가 허용하는 건 **HTML `window.print()`** 와 **파일 다운로드**뿐.
-→ ContractView 버튼 2개로 분리:
-- **🖨 인쇄 = `window.print()`** (화면 HTML 직접 인쇄). Safari 인쇄창 즉시 표시·내용 2단 정상. 물리 프린터용. (이 경로의 'PDF로 저장'은 Safari 백지라 PDF 는 아래 버튼 사용.)
-- **⬇ PDF 저장 = 서버 puppeteer PDF(preview 모드) 파일 다운로드**. 백지 없음. 파일에서 인쇄/보관.
-- **계약서 저장(발급)** = 서버 PDF 를 Drive 저장 + ContractFile 기록(공식 보관). preview 모드(`body.preview`)는 Drive/DB 미접촉.
+### 인쇄/PDF 버튼 동작 (서버 PDF 단일 소스로 통일, 2026-06-29 최종)
+**핵심: 인쇄·저장·발급 모두 같은 '서버 puppeteer PDF'(contractPrintHtml) 하나만 쓴다** → 결과물(레이아웃·페이지 수) 100% 동일.
+- **window.print(화면 직접 인쇄)는 폐기**. 이유: 브라우저가 배율·페이지나눔을 제어해 서버 PDF 의 한장맞춤(shrink-to-fit)을 못 따라가 페이지 수·레이아웃이 달라짐(실제 비교 결과 계약서 1장 vs 2장, 비상연락망 칸·계약번호 유무 차이). CSS 2벌 드리프트의 근본 원인이라 화면인쇄 경로 자체를 제거.
+- **전달 방식만 기기별 분기**(결과 PDF 는 동일):
+  - **모바일(터치 기기)**: `navigator.share({files:[pdf]})` 네이티브 공유 시트 — 프린트·파일에 저장·메일이 한 곳에. 버튼 1개('인쇄 / PDF'). 감지: `maxTouchPoints>0 || /Android|iPhone|iPad|iPod/` && `navigator.canShare`.
+  - **데스크톱**: 버튼 2개 — **인쇄**(서버 PDF 를 새 탭에 열어 Cmd+P) / **PDF 저장**(blob 다운로드).
+- **계약서 저장(발급)** = 서버 PDF 를 Drive 저장 + ContractFile 기록(공식 보관). preview 모드(`body.preview`)는 Drive/DB·서명영구저장 미접촉.
 - 서명 없이도 생성 허용(서명란 '(서명)' 자리표시). 빈 서명은 저장된 서명 안 지움.
-- ⚠️ window.print 경로는 `@media print` CSS(ContractView), PDF 다운로드/발급은 contractPrintHtml CSS — **두 CSS 동기화 필수**.
+- ⚠️ 이모지 금지(운영자 지시) — 버튼 라벨에 아이콘 문자 쓰지 말 것.
+- ⚠️ 화면 미리보기(ContractView @media screen)와 출력(contractPrintHtml)은 여전히 CSS 2벌이지만, **출력은 항상 contractPrintHtml 단일**이라 인쇄=저장=발급이 같음(미리보기만 근사).

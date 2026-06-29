@@ -154,15 +154,23 @@ export async function POST(req: Request) {
       // 동의서는 page-break-before 로 항상 새 장이므로 '한 장 강제'가 아니라 '서류별 한 장' 이 목표.
       const expectedPages = Math.max(1, (html.match(/<div class="paper/g) || []).length)
 
-      // 1차: scale 1 렌더 → 페이지 수 판정 (조항 적으면 의도대로, 많으면 하단이 다음 장으로 넘침)
+      // 1차: scale 1(원본) 렌더 → 페이지 수 판정 (조항 적으면 의도대로, 많으면 하단이 다음 장으로 넘침)
       let scale = 1
-      let renderedPdf = Buffer.from(await page.pdf({ ...baseOpts, margin: baseMargin }))
+      const fullPdf = Buffer.from(await page.pdf({ ...baseOpts, margin: baseMargin }))  // 원본(100%) 보관 — 축소로도 못 맞추면 되돌릴 기준
+      let renderedPdf = fullPdf
       let pageCount = countPdfPages(renderedPdf)
-      // 살짝 넘치면(하단 조금 잘림) 한 장에 맞게 부드럽게 축소(최대 ~12%, 하한 0.88).
-      // 한 장 강제보다 '깔끔함' 우선 — 더 줄여야 하면 미세글자화 대신 다중 페이지를 허용한다(섹션은 page-break-inside:avoid 로 통째 유지).
+      // 살짝 넘치면(하단 조금 잘림) 한 장에 맞게 부드럽게 축소(최대 ~12%, 하한 0.88 = 가독성 바닥).
       while (pageCount > expectedPages && scale > 0.88) {
         scale = Math.round((scale - 0.04) * 100) / 100
         renderedPdf = Buffer.from(await page.pdf({ ...baseOpts, margin: baseMargin, scale }))
+        pageCount = countPdfPages(renderedPdf)
+      }
+      // 축소(≥88%)로도 의도 페이지 수에 못 맞추면 = 내용이 매우 많음 → 글씨가 작아지는 손해만 보고
+      // 어차피 다중 페이지가 됨. 이럴 땐 원본(100%)으로 되돌려 '읽기 좋은 크기 + 여러 장'으로 출력한다.
+      // (운영자가 조항을 많이 적어도 글씨는 절대 88% 미만으로 작아지지 않음. 섹션은 page-break-inside:avoid 로 통째 유지.)
+      if (pageCount > expectedPages) {
+        scale = 1
+        renderedPdf = fullPdf
         pageCount = countPdfPages(renderedPdf)
       }
 
