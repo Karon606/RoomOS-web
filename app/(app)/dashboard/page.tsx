@@ -127,7 +127,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       // #14 월세 할인 — 수납현황 위젯(완료 건수·예상 수입)에 할인 반영
       // moveInDate·expectedMoveOut — 이번달 청구 대상 여부 판정(다음달 입주자가 이번달 매출에 잡히는 버그 방지)
       // dueDay·override — 퇴실월 무청구(checkoutNoBilling) 판정용 (lib/billing 공용 규칙)
-      select: { id: true, status: true, rentAmount: true, moveInDate: true, expectedMoveOut: true, dueDay: true, overrideDueDay: true, overrideDueDayMonth: true, checkoutProratedAmount: true, checkoutProratedMonth: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } } },
+      select: { id: true, status: true, rentAmount: true, moveInDate: true, expectedMoveOut: true, dueDay: true, overrideDueDay: true, overrideDueDayMonth: true, checkoutProratedAmount: true, checkoutProratedMonth: true, discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } }, room: { select: { scheduledRent: true, rentUpdateDate: true } } },
     }),
     prisma.paymentRecord.findMany({
       where: {
@@ -310,7 +310,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         checkoutProratedMonth: true,
         // #14 월세 할인 — 발생주의 미수 계산에 월별 할인 반영
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-        room: { select: { id: true, roomNo: true } },
+        room: { select: { id: true, roomNo: true, scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
         tenant: { select: { id: true, name: true } },
       },
     }),
@@ -685,6 +685,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       id: true, rentAmount: true, moveInDate: true, expectedMoveOut: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+      room: { select: { scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
     },
   })
   const reservedExpected = reservedLeases

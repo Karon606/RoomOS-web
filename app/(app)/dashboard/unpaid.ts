@@ -72,7 +72,7 @@ export async function computeUnpaidStatus(propertyId: string): Promise<UnpaidSta
         checkoutProratedMonth: true,
         // #14 월세 할인 — 미수 계산에 월별 할인 반영(대시보드 발생주의 블록과 동일)
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-        room: { select: { id: true, roomNo: true } },
+        room: { select: { id: true, roomNo: true, scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
         tenant: { select: { id: true, name: true } },
       },
     }),

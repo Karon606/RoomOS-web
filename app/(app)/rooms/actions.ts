@@ -9,7 +9,7 @@ import { requireEdit } from '@/lib/role'
 import { kstYmd } from '@/lib/kstDate'
 import { FIFO_MAX_ALLOCATE_MONTHS } from '@/lib/appConfig'
 import { discountedRent } from '@/lib/rentDiscount'
-import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonth, resolveDueDateForMonth } from '@/lib/billing'
+import { billForLeaseMonth, isAfterMoveOutMonth, isCheckoutNoBillingMonth, resolveDueDateForMonth, monthOfDate } from '@/lib/billing'
 
 async function getPropertyId() {
   const supabase = await createClient()
@@ -134,9 +134,14 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     // 퇴실 일할 정산 — 그 달(checkoutProratedMonth)은 저장된 일할액으로 청구를 덮어씀
     const proratedAmt = l.checkoutProratedAmount
     const proratedMonth = l.checkoutProratedMonth
+    // 예약 인상 — 대상월이 인상 적용월 이상이면 scheduledRent 로 청구('7월 이용료부터' 반영, 적용일 전 선납도 인상가).
+    const rentUpdMonth = room.rentUpdateDate ? monthOfDate(room.rentUpdateDate) : null
+    const baseForMonth = (room.scheduledRent != null && room.scheduledRent > 0 && rentUpdMonth && targetMonth >= rentUpdMonth)
+      ? room.scheduledRent
+      : lease.rentAmount
     const expected = (proratedAmt != null && proratedMonth === targetMonth)
       ? proratedAmt
-      : discountedRent(leaseDiscounts, targetMonth, lease.rentAmount)
+      : discountedRent(leaseDiscounts, targetMonth, baseForMonth)
     const effectiveDueDay = (l.overrideDueDayMonth === targetMonth && l.overrideDueDay)
       ? l.overrideDueDay
       : lease.dueDay
@@ -261,7 +266,8 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     // 청구 규칙(일할→락인→할인)은 lib/billing 공용 — dashboard·unpaid.ts·savePayment 와 동일
     const billForMonth = (ms: string): number =>
       billForLeaseMonth(
-        { rentAmount: lease.rentAmount, checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, discounts: leaseDiscounts },
+        { rentAmount: lease.rentAmount, checkoutProratedAmount: proratedAmt, checkoutProratedMonth: proratedMonth, discounts: leaseDiscounts,
+          room: { scheduledRent: room.scheduledRent, rentUpdateDate: room.rentUpdateDate } },
         ms,
         lockedExpectedByMonth.get(ms) ?? null,
       )
@@ -569,6 +575,7 @@ async function findFirstUnpaidMonth(
       checkoutProratedAmount: true,
       checkoutProratedMonth: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+      room: { select: { scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
       property: { select: { acquisitionDate: true, prevOwnerCutoffDate: true } },
     },
   })
@@ -683,6 +690,8 @@ export async function savePayment(data: {
     select: {
       rentAmount: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+      // 예약 인상 — 미래월 선납 시 인상가로 락인되도록('7월 이용료부터' 반영)
+      room: { select: { scheduledRent: true, rentUpdateDate: true } },
     },
   })
 
@@ -1034,6 +1043,7 @@ async function serverBillForMonth(leaseTermId: string, mon: string, fallback: nu
     select: {
       rentAmount: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+      room: { select: { scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
     },
   })
   if (!lease) return fallback

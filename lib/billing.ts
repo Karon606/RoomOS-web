@@ -12,6 +12,21 @@ export type BillingLeaseFields = {
   checkoutProratedAmount?: number | null
   checkoutProratedMonth?: string | null
   discounts?: RentDiscountInput[] | null
+  // 예약 인상(미래월 미리 반영) — 인상 적용월 이상의 달은 scheduledRent 로 청구한다.
+  // "7/1부 인상"은 곧 "7월 이용료부터" 라서, 적용일 전에 7월분을 미리 납부해도 인상가가 맞다.
+  // 둘 중 한 형태로 제공: 평탄화된 scheduledRent/rentUpdateMonth, 또는 room 객체(스케줄러가 baseRent로
+  // 옮기기 전까지의 예약값). 둘 다 없으면 기존처럼 rentAmount 사용(회귀 0).
+  scheduledRent?: number | null
+  rentUpdateMonth?: string | null       // 'YYYY-MM' — 이 달부터 scheduledRent 적용
+  room?: { scheduledRent?: number | null; rentUpdateDate?: Date | string | null } | null
+}
+
+// 그 달(mon)에 유효한 기준 월세 — 예약 인상 적용월 이상이면 scheduledRent, 아니면 현재 rentAmount.
+function effectiveBaseRent(l: BillingLeaseFields, mon: string): number {
+  const sched = l.scheduledRent ?? l.room?.scheduledRent ?? null
+  const rum = l.rentUpdateMonth ?? (l.room?.rentUpdateDate ? monthOfDate(l.room.rentUpdateDate) : null)
+  if (sched != null && sched > 0 && rum && mon >= rum) return sched
+  return l.rentAmount
 }
 
 export function billForLeaseMonth(
@@ -21,7 +36,7 @@ export function billForLeaseMonth(
 ): number {
   if (l.checkoutProratedAmount != null && l.checkoutProratedMonth === mon) return l.checkoutProratedAmount
   if (locked && locked > 0) return locked
-  return discountedRent(l.discounts, mon, l.rentAmount)
+  return discountedRent(l.discounts, mon, effectiveBaseRent(l, mon))
 }
 
 // 'YYYY-MM' 추출 (Date | 'YYYY-MM-DD' | null)
