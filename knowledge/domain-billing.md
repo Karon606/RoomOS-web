@@ -27,6 +27,7 @@
 - 적용 스케줄러(`room-manage/actions.ts` ~355)도 `rentUpdateDate <= today`만 처리, 적용 시 baseRent로 옮기며 활성계약 rentAmount 동기화(line 395). 적용일 없으면 스킵 → 고아.
 - **버그(해결)**: `updateRoom`이 두 필드를 독립 저장(검증 없음) + 일괄편집(batch)엔 적용일 필드 자체가 없어 → '금액만 있고 적용일 없는 고아' 발생(502·522호). 7월 인상 선납이 옛 금액 처리돼 과납(오류신고 ede8e3f8). **수정**: 두 경로 모두 예약금액↔적용일 동시입력 강제(XOR 차단, 예약삭제 시 적용일도 제거) + batch 모달 적용일 DatePicker 추가. 데이터 보정: 502·522 rentUpdateDate=2026-07-01, 522 7월 470,000 완납·8월 과납기록 삭제. [[rent-increase-month-based]]
 - ⚠️ 또 의심되면: `scheduledRent != null && rentUpdateDate == null` 인 방(고아)을 찾아라.
+- **추천 납입액/귀속월 금액도 인상 반영(2026-06-30)**: `getTargetMonthOptions`(귀속월 드롭다운)는 옛날 `lease.rentAmount` 평면값 대신 **`billForLeaseMonth`**(일할→락인→예약인상→할인) + 퇴실월 이후 제외로 계산. 수납폼(`PaymentEntryForm`) 추천액은 자동(FIFO)일 때 '가장 이른 미완납 달' 기준 → **인상 전 달이 완납되면 다음 납입부터 인상가가 자동 추천**. savePayment는 원래부터 서버에서 월별 재계산(무변경)이라 추천=저장 일치.
 
 ## 기타
 - `discountedRent` = `lib/rentDiscount.ts`(단위테스트됨). 월별 할인 적용.
