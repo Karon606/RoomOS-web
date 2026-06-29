@@ -7,7 +7,7 @@
 // Vercel @sparticuz/chromium 바이너리에는 한글 폰트가 없어 CDN <link>로는 한글이 깨짐.
 // 임베드 방식이라 네트워크 의존성 zero, document.fonts.ready로 로딩 보장.
 
-import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, renderContractText, buildRefundClause } from '@/lib/contract'
+import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, renderContractText, buildRefundClause, splitClauseColumns } from '@/lib/contract'
 import { PRINT_HEX } from '@/lib/printTokens'   // §20.2 인쇄 토큰 단일 출처
 
 // 모듈 레벨 캐시 — cold start 후 첫 PDF 생성 때만 jsdelivr CDN에서 폰트 다운로드 (~570KB).
@@ -113,7 +113,8 @@ export function buildContractPrintHtml(d: PrintContractData): string {
     환불규정: d.refundClauseInContract ? ' ' + buildRefundClause() : '',
   }
 
-  const clausesHtml = d.template.sections.map(sec => {
+  // 화면(ContractView)과 동일하게 명시적 2단(flex) — CSS 멀티컬럼은 인쇄에서 1단으로 흐름.
+  const renderGroup = (sec: { title: string; items: string[] }) => {
     const lis = sec.items
       .map(it => `<li>${highlight(stripBullet(renderContractText(it, vars)))}</li>`)
       .join('')
@@ -121,7 +122,9 @@ export function buildContractPrintHtml(d: PrintContractData): string {
       <div class="clause-h">${escape(renderContractText(sec.title, vars))}</div>
       <ul class="clause-list">${lis}</ul>
     </div>`
-  }).join('')
+  }
+  const [colL, colR] = splitClauseColumns(d.template.sections)
+  const clausesHtml = `<div class="clause-col">${colL.map(renderGroup).join('')}</div><div class="clause-col">${colR.map(renderGroup).join('')}</div>`
 
   const biz = d.businessInfo
   const bizMeta1 = [biz.registrationNo ? `사업자등록번호 ${escape(biz.registrationNo)}` : '', biz.ceoName ? `대표 ${escape(biz.ceoName)}` : ''].filter(Boolean).join(' · ')
@@ -209,7 +212,8 @@ export function buildContractPrintHtml(d: PrintContractData): string {
   .emerg td { font-size: 9pt; padding: 2mm 3mm; border: 0.4pt solid var(--p-rule); vertical-align: middle; }
 
   /* 조항 — 2단 */
-  .clauses { column-count: 2; column-gap: 7mm; column-fill: balance; margin-bottom: 3mm; }
+  .clauses { display: flex; gap: 7mm; align-items: flex-start; margin-bottom: 3mm; }
+  .clause-col { flex: 1 1 0; min-width: 0; }
   .clause-group { margin-bottom: 2.2mm; }
   .clause-h { font-size: 10.5pt; font-weight: 700; letter-spacing: -.01em; margin-bottom: 1.4mm; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); line-height: 1.2; break-after: avoid; }
   .clause-list { list-style: none; }

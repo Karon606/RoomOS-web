@@ -93,6 +93,21 @@ export function buildRefundClause(): string {
   return '중도 퇴실 시 환불액은 「총 결제금액 − (1일 이용요금 × 실제 이용일수) − 위약금(총 결제금액의 10%)」으로 산정하며, 1일 이용요금은 월 이용료의 30분의 1로 합니다.'
 }
 
+// 조항 섹션을 2단(좌/우)으로 분배 — 항목 수 기준 그리디 밸런스.
+// CSS 멀티컬럼(column-count)은 Chrome 인쇄(고정 페이지)에서 화면(무한 높이)과 다르게 1단으로 흐르므로,
+// 화면·PDF 모두 '명시적 2단(flex)'으로 렌더해 동일하게 보이도록 한다(섹션 단위라 중간 끊김 없음).
+export function splitClauseColumns<T extends { items: string[] }>(sections: T[]): [T[], T[]] {
+  const left: T[] = []
+  const right: T[] = []
+  let lw = 0
+  let rw = 0
+  for (const s of sections) {
+    const w = (s.items?.length ?? 0) + 1.5   // 헤더 가중치 포함
+    if (lw <= rw) { left.push(s); lw += w } else { right.push(s); rw += w }
+  }
+  return [left, right]
+}
+
 // ── 잔여 소지품 임의처분 동의서 — 계약서와 함께 출력되는 별도 서류 ──────────
 // body 는 {{성명}} {{호실}} {{연락처}} {{미납일수}} {{영업장명}} {{대표}} 등 변수 사용.
 export type DisposalConsentTemplate = {

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { ContractData } from './actions'
 import { saveContractOverride, resetContractOverride, setTenantSmoking } from './actions'
-import { renderContractText, buildRefundClause, type ContractTemplate, type ContractSection } from '@/lib/contract'
+import { renderContractText, buildRefundClause, splitClauseColumns, type ContractTemplate, type ContractSection } from '@/lib/contract'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -456,14 +456,18 @@ export default function ContractView({ data }: { data: ContractData }) {
         {/* 조항 — 보기: 2단 / 편집: 단일 인라인 편집 */}
         {!editing ? (
           <div className="clauses">
-            {view.sections.map(sec => (
-              <div key={sec.id} className="clause-group">
-                <div className="clause-h">{renderContractText(sec.title, vars)}</div>
-                <ul className="clause-list">
-                  {sec.items.map((item, i) => (
-                    <li key={i}>{renderClauseItem(renderContractText(item, vars))}</li>
-                  ))}
-                </ul>
+            {splitClauseColumns(view.sections).map((col, ci) => (
+              <div key={ci} className="clause-col">
+                {col.map(sec => (
+                  <div key={sec.id} className="clause-group">
+                    <div className="clause-h">{renderContractText(sec.title, vars)}</div>
+                    <ul className="clause-list">
+                      {sec.items.map((item, i) => (
+                        <li key={i}>{renderClauseItem(renderContractText(item, vars))}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
@@ -725,7 +729,8 @@ export default function ContractView({ data }: { data: ContractData }) {
         .contract-paper .emerg-input input { width: 100%; min-width: 60mm; padding: 1mm 2mm; font-size: 9pt; border: 1px dashed #b9ac9a; border-radius: 4px; background: #fff; color: var(--p-ink); font-family: inherit; }
 
         /* 조항 — 2단 */
-        .contract-paper .clauses { column-count: 2; column-gap: 7mm; column-fill: balance; margin-bottom: 3mm; }
+        .contract-paper .clauses { display: flex; gap: 7mm; align-items: flex-start; margin-bottom: 3mm; }
+        .contract-paper .clause-col { flex: 1 1 0; min-width: 0; }
         .contract-paper .clause-group { margin-bottom: 2.6mm; }
         .contract-paper .clause-h { font-size: 10.5pt; font-weight: 700; letter-spacing: -.01em; margin-bottom: 1.6mm; padding-left: 3mm; border-left: 2.5pt solid var(--p-tc); line-height: 1.2; break-after: avoid; }
         .contract-paper .clause-list { list-style: none; margin: 0; padding: 0; }
