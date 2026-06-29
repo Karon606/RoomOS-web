@@ -816,7 +816,8 @@ export default function ContractView({ data }: { data: ContractData }) {
           .contract-shell { padding: 0; min-height: auto; display: block !important; align-items: stretch !important; }
           .no-print { display: none !important; }
           .only-print { display: inline !important; }
-          .paper-cage { display: contents !important; }
+          /* display:contents 는 Safari가 PDF로 저장 시 자식을 누락(백지)하는 버그가 있어 일반 블록으로 — 화면 scale/높이 리셋 */
+          .paper-cage { display: block !important; width: auto !important; height: auto !important; transform: none !important; }
           .contract-paper {
             position: static !important; transform: none !important; transform-origin: 0 0 !important;
             box-shadow: none; width: 100% !important; max-width: 100% !important;

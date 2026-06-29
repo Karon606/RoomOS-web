@@ -93,19 +93,23 @@ export function buildRefundClause(): string {
   return '중도 퇴실 시 환불액은 「총 결제금액 − (1일 이용요금 × 실제 이용일수) − 위약금(총 결제금액의 10%)」으로 산정하며, 1일 이용요금은 월 이용료의 30분의 1로 합니다.'
 }
 
-// 조항 섹션을 2단(좌/우)으로 분배 — 항목 수 기준 그리디 밸런스.
-// CSS 멀티컬럼(column-count)은 Chrome 인쇄(고정 페이지)에서 화면(무한 높이)과 다르게 1단으로 흐르므로,
-// 화면·PDF 모두 '명시적 2단(flex)'으로 렌더해 동일하게 보이도록 한다(섹션 단위라 중간 끊김 없음).
+// 조항 섹션을 2단(좌/우)으로 분배 — ⚠️ 문서 순서 보존이 절대 원칙(계약서 조항 순서를 바꾸면 안 됨).
+// 앞에서부터 '순서대로' 채우되, 누적 높이가 절반에 가장 가까워지는 한 지점에서만 좌→우로 나눈다.
+// → 왼쪽 단을 위에서 아래로, 그다음 오른쪽 단을 위에서 아래로 읽으면 원래 순서(1,2,3,4…) 그대로.
+// CSS 멀티컬럼(column-count)은 Chrome 인쇄(고정 페이지)에서 1단으로 흐르므로 명시적 2단(flex)으로 렌더.
 export function splitClauseColumns<T extends { items: string[] }>(sections: T[]): [T[], T[]] {
-  const left: T[] = []
-  const right: T[] = []
-  let lw = 0
-  let rw = 0
-  for (const s of sections) {
-    const w = (s.items?.length ?? 0) + 1.5   // 헤더 가중치 포함
-    if (lw <= rw) { left.push(s); lw += w } else { right.push(s); rw += w }
+  if (sections.length <= 1) return [sections.slice(), []]
+  const w = sections.map(s => (s.items?.length ?? 0) + 1.5)   // 헤더 가중치 포함
+  const total = w.reduce((a, b) => a + b, 0)
+  let bestK = 1
+  let bestDiff = Infinity
+  let acc = 0
+  for (let k = 1; k < sections.length; k++) {
+    acc += w[k - 1]
+    const diff = Math.abs(acc - (total - acc))
+    if (diff < bestDiff) { bestDiff = diff; bestK = k }
   }
-  return [left, right]
+  return [sections.slice(0, bestK), sections.slice(bestK)]
 }
 
 // ── 잔여 소지품 임의처분 동의서 — 계약서와 함께 출력되는 별도 서류 ──────────
