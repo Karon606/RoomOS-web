@@ -16,6 +16,7 @@ import { DueDayTempAdjustWidget } from '../widgets/DueDayTempAdjustWidget'
 import { DueDayPermanentChangeWidget } from '../widgets/DueDayPermanentChangeWidget'
 import { CheckoutProrationWidget } from '../widgets/CheckoutProrationWidget'
 import { PaymentRecordList } from '../widgets/PaymentRecordList'
+import { PaymentHistoryAll } from '../widgets/PaymentHistoryAll'
 import { PaymentEntryForm } from '../widgets/PaymentEntryForm'
 import { PrevOwnerSettleWidget } from '../widgets/PrevOwnerSettleWidget'
 
@@ -141,8 +142,11 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
             요약으로 돌아가기 ▲
           </button>
 
-          {/* 납부 내역 — 편집·삭제 */}
+          {/* 납부 내역 — 편집·삭제 (이번 달 기준) */}
           <PaymentRecordList leaseTermId={leaseTermId} targetMonth={month} canEdit={canEdit} onChange={refresh} reloadSignal={reloadKey} />
+
+          {/* 전체 수납 내역 — 모든 달(언제·얼마·귀속월·방식). 접기/펼치기. */}
+          <PaymentHistoryAll leaseTermId={leaseTermId} reloadSignal={reloadKey} />
 
           {/* 새 수납 등록 (접힘/펼침) */}
           {canEdit && settlement.leaseTermId && settlement.tenantId && (

@@ -1628,6 +1628,23 @@ export async function getPaymentsByLease(leaseTermId: string, targetMonth: strin
   return { records, acquisitionDate: cutoff, lastPayMethod: lastWithMethod?.payMethod ?? null }
 }
 
+// 고객별 전체 수납 내역 — 모든 달의 납부기록(언제·얼마·귀속월·방식). payDate 최신순.
+export async function getAllPaymentsByLease(leaseTermId: string) {
+  const propertyId = await getPropertyId()
+  const records = await prisma.paymentRecord.findMany({
+    where: { leaseTermId, propertyId },
+    orderBy: [{ payDate: 'desc' }, { seqNo: 'desc' }],
+    select: {
+      id: true, payDate: true, targetMonth: true, seqNo: true,
+      expectedAmount: true, actualAmount: true,
+      isDeposit: true, isPrevOwner: true, payMethod: true, memo: true,
+    },
+  })
+  // 합계 — 양도인(현 소유주 매출 아님) 제외, 보증금 포함한 실제 수령액
+  const total = records.filter(r => !r.isPrevOwner).reduce((s, r) => s + r.actualAmount, 0)
+  return { records, total, count: records.length }
+}
+
 // ── #14 월세 할인 (입주자별) ────────────────────────────────────────
 export type RentDiscountRow = {
   id: string; discountType: string; value: number; scope: string
