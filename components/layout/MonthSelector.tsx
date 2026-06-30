@@ -98,7 +98,7 @@ export default function MonthSelector() {
       className="flex items-center rounded-xl shrink-0 self-start overflow-hidden transition-colors"
       style={isCurrent
         ? { background: 'var(--cream)', border: '1px solid var(--warm-border)' }
-        : { background: 'var(--warning-bg)', border: '1.5px solid var(--warning-fg)' }}  /* 과거 = amber(주의) 토큰 */
+        : { background: 'var(--warning-bg)', border: '1.5px solid var(--warning-fg)' }}
     >
       <button
         onClick={() => changeMonth(-1)}
@@ -119,7 +119,7 @@ export default function MonthSelector() {
           {displayMonth}
           {rel && (
             <span className="text-[0.625rem] font-bold px-1.5 py-0.5 rounded-full leading-none"
-              style={{ background: 'var(--warning-fg)', color: '#fff' }}>{rel}</span>   {/* amber 솔리드 배지 */}
+              style={{ background: 'var(--warning-fg)', color: '#fff' }}>{rel}</span>
           )}
         </div>
         {showPicker && (
