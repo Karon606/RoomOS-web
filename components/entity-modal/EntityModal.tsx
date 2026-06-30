@@ -310,14 +310,11 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
     >
       <div className="px-5 sm:px-6 py-4">
         {/* 수납 정보는 월별 데이터 — 프리즘 안에서도 월 변경 가능(URL ?month= 공유, 모달 유지).
-            과거 월이면 행 전체를 amber 배너로 강조(현재로 착각 방지). */}
+            강조는 MonthSelector 알약 자체(과거면 amber)로 충분 — 별도 박스로 감싸면 '네모 안 네모'라 과함. */}
         {kind === 'payment' && hasPay && (
-          <div
-            className={`flex items-center justify-between mb-3 ${isPastMonth ? 'rounded-xl px-3 py-2' : ''}`}
-            style={isPastMonth ? { background: 'var(--warning-bg)', border: '1.5px solid var(--warning-fg)', borderLeft: '5px solid var(--persimmon)' } : undefined}
-          >
-            <span className="text-xs font-bold" style={{ color: isPastMonth ? 'var(--warning-fg)' : 'var(--warm-muted)' }}>
-              {isPastMonth ? `${Number(month.slice(0, 4))}년 ${Number(month.slice(5, 7))}월 · 현재 월 아님` : '조회 월'}
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-medium" style={{ color: isPastMonth ? 'var(--warning-fg)' : 'var(--warm-muted)' }}>
+              {isPastMonth ? '지난 달 조회 중' : '조회 월'}
             </span>
             <MonthSelector />
           </div>
