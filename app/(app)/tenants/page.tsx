@@ -1,6 +1,7 @@
 import { getTenants, getRoomsForSelect } from './actions'
 import { getPropertySettings, getMyRole } from '@/app/(app)/settings/actions'
 import { applyScheduledRents } from '@/app/(app)/room-manage/actions'
+import { kstYmdStr } from '@/lib/kstDate'
 import TenantClient from './TenantClient'
 
 export default async function TenantsPage({
@@ -28,6 +29,7 @@ export default async function TenantsPage({
       initialTenants={tenants}
       rooms={rooms}
       targetMonth={targetMonth}
+      today={kstYmdStr()}
       defaultDeposit={settings?.defaultDeposit ?? null}
       defaultCleaningFee={settings?.defaultCleaningFee ?? null}
       myRole={myRole}

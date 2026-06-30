@@ -205,10 +205,11 @@ function fmtDueDay(dueDay: string | null | undefined): string {
 function calcStayPeriod(
   moveInDate: string | Date | null | undefined,
   endDate?: string | Date | null,
+  today?: string,            // 'YYYY-MM-DD'(서버 KST 기준) — SSR/클라 동일값으로 하이드레이션 불일치(#418) 방지
 ): string {
   if (!moveInDate) return '—'
   const start  = new Date(moveInDate)
-  const end    = endDate ? new Date(endDate) : new Date()
+  const end    = endDate ? new Date(endDate) : (today ? new Date(today) : new Date())
   const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth())
   if (months < 1) {
     const days = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 86400000))
@@ -221,11 +222,15 @@ function calcStayPeriod(
   return `${months}개월`
 }
 
-function fmtDDay(date: string | Date | null | undefined): string | null {
+function fmtDDay(date: string | Date | null | undefined, today?: string): string | null {
   if (!date) return null
-  const today  = new Date(); today.setHours(0, 0, 0, 0)
-  const target = new Date(date); target.setHours(0, 0, 0, 0)
-  const days   = Math.round((target.getTime() - today.getTime()) / 86400000)
+  // 날짜(YYYY-MM-DD)만으로 일수 차 — Date.UTC 로 계산해 서버(UTC)/클라(KST) 동일 결과(하이드레이션 #418 방지).
+  // setHours/getTime 방식은 TZ에 따라 '오늘'이 달라져 D-day 텍스트가 서버≠클라가 됨.
+  const ymd = (d: string | Date) => (typeof d === 'string' ? d : d.toISOString()).slice(0, 10)
+  const todayStr = today ?? ymd(new Date())
+  const [ay, am, ad] = todayStr.split('-').map(Number)
+  const [by, bm, bd] = ymd(date).split('-').map(Number)
+  const days = Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000)
   if (days < 0) return `${Math.abs(days)}일 초과`
   if (days === 0) return '오늘'
   return `${days}일 후`
@@ -278,11 +283,12 @@ function loadColVis(): Record<ColKey, boolean> | null {
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────
 
 export default function TenantClient({
-  initialTenants, rooms, targetMonth, defaultDeposit, defaultCleaningFee, myRole,
+  initialTenants, rooms, targetMonth, today, defaultDeposit, defaultCleaningFee, myRole,
 }: {
   initialTenants: Tenant[]
   rooms: Room[]
   targetMonth: string
+  today: string              // 'YYYY-MM-DD' 서버 KST 기준 — 거주기간·D-day 가 SSR/클라 동일하게(하이드레이션 안전)
   defaultDeposit: number | null
   defaultCleaningFee: number | null
   myRole: string
@@ -1167,7 +1173,7 @@ export default function TenantClient({
             const lease   = tenant.leaseTerms[0]
             const primary = tenant.contacts.find(c => c.isPrimary) ?? tenant.contacts[0]
             const status  = lease?.status ?? ''
-            const stayPeriod = calcStayPeriod(lease?.moveInDate, lease?.moveOutDate ?? undefined)
+            const stayPeriod = calcStayPeriod(lease?.moveInDate, lease?.moveOutDate ?? undefined, today)
             const tipTone = leaseTipTone(status)
             return (
               <RoomCard key={tenant.id}
@@ -1384,11 +1390,11 @@ export default function TenantClient({
                         case 'stayPeriod':
                           return (
                             <td key={c.key} className={`${tdBase} text-sm text-[var(--warm-mid)]`}>
-                              <span className="block truncate">{calcStayPeriod(lease?.moveInDate, lease?.moveOutDate ?? undefined)}</span>
+                              <span className="block truncate">{calcStayPeriod(lease?.moveInDate, lease?.moveOutDate ?? undefined, today)}</span>
                             </td>
                           )
                         case 'status': {
-                          const ddLabel = sched ? fmtDDay(sched.date) : null
+                          const ddLabel = sched ? fmtDDay(sched.date, today) : null
                           const ddColor = sched?.label === '입실' ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'
                           return (
                             <td key={c.key} className={tdBase}>
