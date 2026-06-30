@@ -40,7 +40,7 @@ export default function PastMonthBanner() {
   return (
     <div
       className="mb-3 flex items-center gap-2.5 rounded-xl px-4 py-3"
-      style={{ background: 'rgba(180,120,10,.14)', border: '1.5px solid var(--warning-fg)', borderLeft: '5px solid var(--persimmon)' }}
+      style={{ background: 'var(--warning-bg)', border: '1.5px solid var(--warning-fg)', borderLeft: '5px solid var(--persimmon)' }}
     >
       <span className="font-extrabold text-base" style={{ color: 'var(--warning-fg)' }}>{vy}년 {vm}월</span>
       <span className="text-sm font-semibold" style={{ color: 'var(--warning-fg)' }}>· {rel} 보는 중 — 현재 월 아님</span>

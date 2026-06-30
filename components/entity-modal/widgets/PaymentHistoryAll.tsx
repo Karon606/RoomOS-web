@@ -60,7 +60,7 @@ export function PaymentHistoryAll({ leaseTermId, reloadSignal }: { leaseTermId: 
                     <span className="num text-[var(--warm-mid)] w-[82px] shrink-0">{fmtDate(r.payDate)}</span>
                     <span className="text-[var(--warm-muted)] shrink-0">
                       {Number(r.targetMonth.slice(5))}월분
-                      {r.isDeposit && <span className="ml-1 text-[var(--info-fg)]">보증금</span>}
+                      {r.isDeposit && <span className="ml-1 text-[var(--warm-mid)] font-medium">보증금</span>}
                       {r.isPrevOwner && <span className="ml-1 text-[var(--warm-muted)]">양도인</span>}
                     </span>
                     <span className="num font-semibold text-[var(--warm-dark)] flex-1 text-right">{r.actualAmount.toLocaleString()}원</span>

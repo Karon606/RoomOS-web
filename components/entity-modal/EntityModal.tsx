@@ -314,7 +314,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
         {kind === 'payment' && hasPay && (
           <div
             className={`flex items-center justify-between mb-3 ${isPastMonth ? 'rounded-xl px-3 py-2' : ''}`}
-            style={isPastMonth ? { background: 'rgba(180,120,10,.14)', border: '1.5px solid var(--warning-fg)', borderLeft: '5px solid var(--persimmon)' } : undefined}
+            style={isPastMonth ? { background: 'var(--warning-bg)', border: '1.5px solid var(--warning-fg)', borderLeft: '5px solid var(--persimmon)' } : undefined}
           >
             <span className="text-xs font-bold" style={{ color: isPastMonth ? 'var(--warning-fg)' : 'var(--warm-muted)' }}>
               {isPastMonth ? `${Number(month.slice(0, 4))}년 ${Number(month.slice(5, 7))}월 · 현재 월 아님` : '조회 월'}
