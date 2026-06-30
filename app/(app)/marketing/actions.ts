@@ -72,21 +72,29 @@ export type MarketingStats = {
   botCount: number
 }
 
-function rangeStart(range: MarketingRange): { start: Date; bucket: MarketingBucket } {
-  const now = new Date()
-  const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0)
-  switch (range) {
-    case 'today': return { start: startOfToday, bucket: 'hour' }
-    case '7d':    { const d = new Date(startOfToday); d.setDate(d.getDate() - 6);  return { start: d, bucket: 'day' } }
-    case '30d':   { const d = new Date(startOfToday); d.setDate(d.getDate() - 29); return { start: d, bucket: 'day' } }
-    case '90d':   { const d = new Date(startOfToday); d.setDate(d.getDate() - 89); return { start: d, bucket: 'day' } }
-    case '1y':    { const d = new Date(startOfToday); d.setMonth(d.getMonth() - 11); d.setDate(1); return { start: d, bucket: 'month' } }
-  }
-}
-
-// KST 보정 (브라우저/서버 timezone과 무관하게 한국시간 기준 day/month)
+// KST 보정 (브라우저/서버 timezone과 무관하게 한국시간 기준 day/month/hour)
 const KST_OFFSET = 9 * 60 * 60 * 1000
 const toKst = (d: Date) => new Date(d.getTime() + KST_OFFSET)
+// KST 기준 '오늘 0시'의 실제 UTC 시각 — 서버가 UTC여도 한국시간 자정으로 맞춘다.
+function kstStartOfTodayUtc(): Date {
+  const k = new Date(Date.now() + KST_OFFSET)
+  return new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate()) - KST_OFFSET)
+}
+
+function rangeStart(range: MarketingRange): { start: Date; bucket: MarketingBucket } {
+  const startOfToday = kstStartOfTodayUtc()   // KST 자정 기준(서버 TZ 무관)
+  const DAY = 86400000
+  switch (range) {
+    case 'today': return { start: startOfToday, bucket: 'hour' }
+    case '7d':    return { start: new Date(startOfToday.getTime() - 6 * DAY),  bucket: 'day' }
+    case '30d':   return { start: new Date(startOfToday.getTime() - 29 * DAY), bucket: 'day' }
+    case '90d':   return { start: new Date(startOfToday.getTime() - 89 * DAY), bucket: 'day' }
+    case '1y':    {
+      const k = new Date(Date.now() + KST_OFFSET)   // KST 기준 11개월 전 1일
+      return { start: new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth() - 11, 1) - KST_OFFSET), bucket: 'month' }
+    }
+  }
+}
 
 // 한국 시·도명 표준화 → 한국어.
 // 두 가지 입력을 모두 받는다: (1) Vercel x-vercel-ip-country-region 의 ISO 3166-2 코드('11'),
@@ -269,11 +277,10 @@ export async function getMarketingStats(
     },
   })
 
-  // 총계 4종은 범위와 무관 — KST 기준 today/week/month/all-time
-  const now = new Date()
-  const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0)
-  const startOfWeek  = new Date(startOfToday); startOfWeek.setDate(startOfWeek.getDate() - 6)
-  const startOfMonth = new Date(startOfToday); startOfMonth.setDate(startOfMonth.getDate() - 29)
+  // 총계 4종은 범위와 무관 — KST 자정 기준 today / 최근7일 / 최근30일 / all-time (서버 TZ 무관)
+  const startOfToday = kstStartOfTodayUtc()
+  const startOfWeek  = new Date(startOfToday.getTime() - 6 * 86400000)
+  const startOfMonth = new Date(startOfToday.getTime() - 29 * 86400000)
 
   const [todayCount, weekCount, monthCount, allTimeCount, botCount] = await Promise.all([
     prisma.pageView.count({ where: { slug, isBot: false, occurredAt: { gte: startOfToday } } }),
