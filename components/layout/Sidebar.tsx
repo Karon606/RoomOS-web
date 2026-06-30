@@ -58,9 +58,13 @@ function IcoReceipt() {
 function IcoChecklist() {
   return <svg {...ico}><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4M8 15l2 2 4-4"/></svg>
 }
-// 시세조사 — Search
+// 시세 조사 — 돋보기 + 추세선 (가격 흐름을 들여다봄)
 function IcoMarket() {
-  return <svg {...ico}><circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5"/></svg>
+  return <svg {...ico}><circle cx="10.5" cy="10.5" r="7"/><path d="M20 20l-4.6-4.6"/><path d="M7.5 12l2-2.3 1.8 1.4 2.4-3"/></svg>
+}
+// 방문 분석 — 막대그래프 (방문 통계)
+function IcoAnalytics() {
+  return <svg {...ico}><path d="M4 4v16h16"/><path d="M8 20v-5M12 20v-9M16 20v-12"/></svg>
 }
 // 요청·컴플레인 — MessageCircle
 function IcoRequests() {
@@ -117,7 +121,7 @@ const NAV_GROUPS = [
     label: '시장분석',
     items: [
       { href: '/market-analysis', label: '시세 조사', Icon: IcoMarket },
-      { href: '/marketing',       label: '방문 분석',    Icon: IcoMarket },
+      { href: '/marketing',       label: '방문 분석',    Icon: IcoAnalytics },
     ],
   },
   {
