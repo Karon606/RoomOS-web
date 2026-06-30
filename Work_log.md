@@ -3,6 +3,14 @@
 마지막 업데이트: 2026-06-30
 브랜치: main
 
+## 2026-06-30 — 오류신고 추가 3건 (월표시 강조 · React#418 · 과납 기타수익)
+### 과거 월 뷰 강조 (오류신고 103b27fc, 6e5d722→6c72488→6fcf611)
+523호 5월 잔액 0=실제 완납(버그 아님), 과거 월 화면 혼동. 공용 MonthSelector 에 '이번 달 아님' 강조(amber 테두리·배지 + persimmon '오늘' 버튼). brand 토큰 의미 정합(amber=주의/persimmon=CTA). ⚠️ 6c72488 에서 JSX 내 /* */ 주석으로 build 깨짐 → 6fcf611 즉시 수정(교훈: build 통과 후 커밋). done.
+### React #418 hydration (오류신고 4ff2d332-a, 9baf110)
+/tenants 거주기간·D-day 를 렌더 중 new Date()로 계산 → 서버(UTC)/클라(KST) 다른 날일 때 텍스트 불일치(#418). 서버 KST today prop 주입 + fmtDDay 를 Date.UTC 일수차로(TZ 무관). done.
+### 과납분 '기타 수익' 처리 (오류신고 4ff2d332-b, 4450737)
+수납 시 추천액 초과분에 [기타수익 처리] 체크 → 이용료는 완납만(이월X) + 초과분 ExtraIncome('기타 임대수입'). 폼 레벨 분기(savePayment 무변경). ⏳ 운영자 확인 후 done.
+
 ## 2026-06-30 — 오류신고 2건 처리 (지출 날짜 · 420호 귀속월)
 ### 지출 입력 날짜 invalid date (오류신고 98c234aa, 2c5a9fa)
 변동성 고정지출(가스 등) 기록 시 날짜 'invalid date'. 원인: 반복지출 dateStr=`${targetMonth}-${dueDay}` 가 납부일>그달일수(말일/31일+30일달)면 invalid. 수정: dateStr 그 달 말일 클램프 + 기록 모달 날짜 기본값 오늘(kstYmdStr). done.
