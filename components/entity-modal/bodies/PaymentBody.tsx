@@ -104,6 +104,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
                   depositAmount: settlement.depositAmount,
                   cleaningFee: settlement.cleaningFee,
                   moveInDate: settlement.moveInDate,
+                  roomNo: roomNo,
                 }}
                 targetMonth={month}
                 onSaved={() => { setShowEntryForm(false); refresh() }}
@@ -160,6 +161,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
                   depositAmount: settlement.depositAmount,
                   cleaningFee: settlement.cleaningFee,
                   moveInDate: settlement.moveInDate,
+                  roomNo: roomNo,
                 }}
                 targetMonth={month}
                 onSaved={() => { setShowEntryForm(false); refresh() }}

@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState, useTransition } from 'react'
 import {
   savePayment, saveDepositPayment, getTargetMonthOptions, type SavePaymentResult,
 } from '@/app/(app)/rooms/actions'
+import { addExtraIncome } from '@/app/(app)/finance/actions'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
@@ -23,7 +24,11 @@ type Room = {
   depositAmount: number
   cleaningFee: number
   moveInDate: string | null
+  roomNo?: string | null   // 과납분 기타수익 기록 시 내역 표기용
 }
+
+// 초과 납부분을 '기타 수익'으로 처리할 때의 카테고리(설정 후 finance 에서 이름 변경 가능)
+const EXTRA_INCOME_CATEGORY = '기타 임대수입'
 
 type TmOption = Awaited<ReturnType<typeof getTargetMonthOptions>>[number]
 
@@ -54,6 +59,9 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
   }, [forcedTm, tmOptions, room.balance, room.expected])
   const [payAmount, setPayAmount] = useState<number>(suggestedAmount)
   useEffect(() => { setPayAmount(suggestedAmount) }, [suggestedAmount])
+  // 추천(이번에 낼 금액)보다 더 낸 초과분 — '이월' 또는 '기타 수익' 처리 대상
+  const excess = Math.max(0, payAmount - suggestedAmount)
+  const [excessAsIncome, setExcessAsIncome] = useState(false)
   const [payDateVal, setPayDateVal] = useState<string>(kstYmdStr())
   const [payMethod, setPayMethod] = useState<string>('계좌이체')
   const [memo, setMemo] = useState<string>('')
@@ -95,18 +103,31 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
             memo:          isCleaningFeeMode ? (memo || '청소비') : (memo || undefined),
           })
         } else {
+          // 초과분을 '기타 수익'으로 처리하면: 이용료는 추천액(=완납)만 저장(이월 안 함) + 초과분은 ExtraIncome.
+          const useIncome = excessAsIncome && excess > 0
+          const rentPart = useIncome ? payAmount - excess : payAmount
           const result: SavePaymentResult = await savePayment({
             leaseTermId:    room.leaseTermId,
             tenantId:       room.tenantId!,
             targetMonth,
             expectedAmount: room.expected,
-            actualAmount:   payAmount,
+            actualAmount:   rentPart,
             payDate:        payDateVal,
             payMethod,
             memo,
             forcedTargetMonth: forcedTm === 'auto' ? undefined : forcedTm,
           })
-          if (result.allocations.length > 0) {
+          if (useIncome) {
+            const fd = new FormData()
+            fd.set('date', payDateVal)
+            fd.set('amount', String(excess))
+            fd.set('category', EXTRA_INCOME_CATEGORY)
+            fd.set('detail', room.roomNo ? `${room.roomNo} 임대료 과납분` : '임대료 과납분')
+            if (payMethod) fd.set('payMethod', payMethod)
+            if (memo) fd.set('memo', memo)
+            const incRes = await addExtraIncome(fd)
+            if (!incRes.ok) pushToast('error', `기타수익 기록 실패: ${incRes.error} (이용료는 저장됨)`)
+          } else if (result.allocations.length > 0) {
             const otherMonths = result.allocations.filter(a => a.targetMonth !== result.inputMonth)
             if (otherMonths.length > 0) {
               const summary = otherMonths.map(a => `${Number(a.targetMonth.slice(5))}월분 ${a.amount.toLocaleString()}원`).join(', ')
@@ -115,9 +136,11 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
           }
         }
         if (payMethod) localStorage.setItem('stayeum-last-pay-method', payMethod)
-        pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨' : '월 이용료 수납됨')
+        pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨'
+          : (excessAsIncome && excess > 0) ? `이용료 ${(payAmount - excess).toLocaleString()}원 + 기타수익 ${excess.toLocaleString()}원 기록됨`
+          : '월 이용료 수납됨')
         // 폼 리셋
-        setPayAmount(0); setForcedTm('auto'); setIsDepositMode(false); setIsCleaningFeeMode(false); setMemo('')
+        setPayAmount(0); setForcedTm('auto'); setIsDepositMode(false); setIsCleaningFeeMode(false); setMemo(''); setExcessAsIncome(false)
         setPayDateVal(kstYmdStr())
         onSaved?.()
       } catch (err) {
@@ -167,6 +190,17 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
           <MoneyInput value={payAmount} onChange={setPayAmount} placeholder="0원" />
         </div>
       </div>
+
+      {/* 초과 납부 처리 — 추천액보다 더 내면 '이월'(기본) 또는 '기타 수익'으로 확정 */}
+      {!isDepositMode && !isCleaningFeeMode && excess > 0 && (
+        <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-2.5 space-y-1.5">
+          <p className="text-[0.6875rem] text-[var(--warm-mid)]">초과분 <span className="font-bold text-[var(--warm-dark)]">{excess.toLocaleString()}원</span></p>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={excessAsIncome} onChange={e => setExcessAsIncome(e.target.checked)} className="rounded" />
+            <span className="text-xs text-[var(--warm-dark)]">기타 수익으로 처리 <span className="text-[var(--warm-muted)]">(체크 안 하면 다음 달로 이월)</span></span>
+          </label>
+        </div>
+      )}
       {/* 보증금/청소비 수납 — 발견성 위해 또렷한 버튼으로. (입주 첫 달 주로 사용) */}
       {(room.depositAmount > 0 || room.cleaningFee > 0) && !showSpecialModes && !isDepositMode && !isCleaningFeeMode && (
         <button type="button" onClick={() => setShowSpecialModes(true)}
