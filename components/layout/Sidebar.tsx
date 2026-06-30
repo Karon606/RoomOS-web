@@ -10,77 +10,74 @@ import { type AppUser } from '@/components/layout/Header'
 //   24×24 viewBox · stroke-width 1.6 · round caps/joins · currentColor
 const ico = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: '1.6', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, width: 20, height: 20, style: { flexShrink: 0 } }
 
-// 대시보드 — LayoutGrid (4 rect)
+// ── 아이콘 비주얼: Stayeum Icons v2 세트 (24×24·stroke 1.6·round·fill none). 라우트·라벨·매핑 불변.
+// 대시보드
 function IcoDashboard() {
-  return <svg {...ico}><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+  return <svg {...ico}><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
 }
-// 호실 관리 — Floor plan
+// 호실 관리 — 방
 function IcoRooms() {
-  return <svg {...ico}><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 10h18M10 10v11"/><path d="M14 6h3"/></svg>
+  return <svg {...ico}><path d="M5 21V5.5a1.5 1.5 0 0 1 1.5-1.5h11A1.5 1.5 0 0 1 19 5.5V21"/><path d="M3.5 21h17"/><circle cx="15.3" cy="12.5" r="1"/></svg>
 }
-// 입주자 — Person
+// 고객 관리 — 사람
 function IcoTenants() {
-  return <svg {...ico}><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
+  return <svg {...ico}><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></svg>
 }
-// 수납 관리 — Wallet
+// 수납 관리 — 지갑+카드
 function IcoFinance() {
-  return <svg {...ico}><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M7 6V5a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v1"/><circle cx="12" cy="13" r="2.5"/></svg>
+  return <svg {...ico}><path d="M3.5 8.5A1.5 1.5 0 0 1 5 7h12.5a1 1 0 0 1 1 1V18a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18z"/><path d="M3.5 8.5V7a1.5 1.5 0 0 1 1.5-1.5h9.5"/><path d="M18.5 11.5h-2.2a1.6 1.6 0 0 0 0 3.2h2.2"/><path d="M9.5 4.2 13 7"/></svg>
 }
-// 지출/기타수익 — TrendingUp
+// 지출/기타수익 — 돈의 출입(양방향 화살표)
 function IcoWallet() {
-  return <svg {...ico}><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>
+  return <svg {...ico}><path d="M7 3.5 4 6.5l3 3"/><path d="M4 6.5h10.5A5.5 5.5 0 0 1 20 12"/><path d="M17 20.5l3-3-3-3"/><path d="M20 17.5H9.5A5.5 5.5 0 0 1 4 12"/></svg>
 }
 // 카드 정산 — CreditCard
 function IcoCardSettle() {
-  return <svg {...ico}><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>
+  return <svg {...ico}><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3 9.5h18"/><path d="M6.5 14.5h3"/></svg>
 }
-// 재고 관리 — Boxes
+// 재고 관리 — 여러 상자
 function IcoInventory() {
-  return <svg {...ico}><path d="M21 8L12 3 3 8v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>
+  return <svg {...ico}><rect x="3.5" y="9.5" width="8" height="7.5" rx="1.2"/><rect x="12.5" y="9.5" width="8" height="7.5" rx="1.2"/><rect x="8" y="3.5" width="8" height="6" rx="1.2"/></svg>
 }
-// 결산 보고서 — FileText
+// 결산 보고서 — 문서+막대그래프
 function IcoReport() {
-  return <svg {...ico}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 14l2 2 4-4"/></svg>
+  return <svg {...ico}><path d="M6 3.5h7.5L18 8v12a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 20V5a1.5 1.5 0 0 1 1-1.5z"/><path d="M13 3.5V8h5"/><path d="M8.5 17.5v-2.5"/><path d="M11.7 17.5v-4.5"/><path d="M14.9 17.5v-1.5"/></svg>
 }
-// 계약서 — FileSignature (문서 + 서명선)
+// 계약서 — 문서+서명선
 function IcoContract() {
-  return <svg {...ico}><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 17c1-1.3 2-1.3 3 0s2 1.3 3 0"/></svg>
+  return <svg {...ico}><path d="M6 3.5h7.5L18 8v12a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 20V5a1.5 1.5 0 0 1 1-1.5z"/><path d="M13 3.5V8h5"/><path d="M8.5 12.5h7"/><path d="M8.5 15.5c1.2-1 2-1 2.7 0s1.6 1 2.8 0"/></svg>
 }
-// 실거주 확인서 — 문서 + 체크 (확인 서류)
+// 실거주 확인서 — 문서+체크
 function IcoResidenceCert() {
-  return <svg {...ico}><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M9 15l2 2 4-4"/></svg>
+  return <svg {...ico}><path d="M6 3.5h7.5L18 8v12a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 20V5a1.5 1.5 0 0 1 1-1.5z"/><path d="M13 3.5V8h5"/><path d="M8.3 14.7l1.8 1.8 3.4-3.6"/></svg>
 }
-// 월세 영수증 — Receipt
+// 입실료 납부확인서 — Receipt
 function IcoReceipt() {
-  return <svg {...ico}><path d="M5 3v18l2-1.2 2 1.2 2-1.2 2 1.2 2-1.2 2 1.2V3l-2 1.2L15 3l-2 1.2L11 3 9 4.2 7 3z"/><path d="M8 8h8M8 12h8"/></svg>
+  return <svg {...ico}><path d="M6.5 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3z"/><path d="M9.5 8.5h5"/><path d="M9.5 12h5"/></svg>
 }
-// 체크리스트 — CalendarCheck
+// 체크리스트 — 목록+체크
 function IcoChecklist() {
-  return <svg {...ico}><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4M8 15l2 2 4-4"/></svg>
+  return <svg {...ico}><path d="M9 5.5h9"/><path d="M9 12h9"/><path d="M9 18.5h9"/><path d="M4.6 5.2l1 1 1.8-2"/><path d="M4.6 11.7l1 1 1.8-2"/><path d="M4.6 18.2l1 1 1.8-2"/></svg>
 }
-// 시세 조사 — 돋보기 + 추세선 (가격 흐름을 들여다봄)
+// 시세 조사 — 돋보기+추세
 function IcoMarket() {
-  return <svg {...ico}><circle cx="10.5" cy="10.5" r="7"/><path d="M20 20l-4.6-4.6"/><path d="M7.5 12l2-2.3 1.8 1.4 2.4-3"/></svg>
+  return <svg {...ico}><circle cx="10.5" cy="10.5" r="6.5"/><path d="M19.5 19.5l-4.4-4.4"/><path d="M7.8 12.2l1.9-2.3 1.6 1.3 2-2.5"/></svg>
 }
-// 방문 분석 — 막대그래프 (방문 통계)
+// 방문 분석 — 막대그래프
 function IcoAnalytics() {
-  return <svg {...ico}><path d="M4 4v16h16"/><path d="M8 20v-5M12 20v-9M16 20v-12"/></svg>
+  return <svg {...ico}><path d="M4 20.5h16"/><path d="M7 20.5v-6"/><path d="M12 20.5v-10"/><path d="M17 20.5v-4"/></svg>
 }
-// 요청·컴플레인 — MessageCircle
+// 요청·컴플레인 — 말풍선
 function IcoRequests() {
-  return <svg {...ico}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+  return <svg {...ico}><path d="M5 5.5h14A1.5 1.5 0 0 1 20.5 7v8A1.5 1.5 0 0 1 19 16.5H10l-4 3.5v-3.5H5A1.5 1.5 0 0 1 3.5 15V7A1.5 1.5 0 0 1 5 5.5z"/><path d="M8.5 11h7"/></svg>
 }
-// 도면 — Map
+// 도면 — 평면도(접힌 지도)
 function IcoFloorPlan() {
-  return <svg {...ico}><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12M15 3v6"/></svg>
-}
-// Stayeum Lab — Flask/Beaker
-function IcoLab() {
-  return <svg {...ico}><path d="M9 3h6M9 3v7l-5 9h16l-5-9V3"/><path d="M6.5 15.5h11"/></svg>
+  return <svg {...ico}><path d="M3.5 6.2 9 4l6 2.2 5.5-2.2v13.8L15 20l-6-2.2L3.5 20z"/><path d="M9 4v13.8"/><path d="M15 6.2V20"/></svg>
 }
 // 환경설정 — Cog
 function IcoSettings() {
-  return <svg {...ico}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  return <svg {...ico}><circle cx="12" cy="12" r="3"/><path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6"/></svg>
 }
 
 // ── Nav structure ──────────────────────────────────────────────────

@@ -20,32 +20,32 @@ const NAV_ITEMS = [
   {
     href: '/dashboard',
     label: '홈',
-    Icon: () => <svg {...ico}><rect x="2" y="2" width="8" height="8" rx="1.5"/><rect x="12" y="2" width="8" height="8" rx="1.5"/><rect x="2" y="12" width="8" height="8" rx="1.5"/><rect x="12" y="12" width="8" height="8" rx="1.5"/></svg>,
+    Icon: () => <svg {...ico}><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>,
   },
   {
     href: '/room-manage',
     label: '방',
-    Icon: () => <svg {...ico}><rect x="2" y="2" width="18" height="18" rx="2.5"/><line x1="2" y1="9" x2="20" y2="9"/><line x1="9" y1="9" x2="9" y2="20"/></svg>,
+    Icon: () => <svg {...ico}><path d="M5 21V5.5a1.5 1.5 0 0 1 1.5-1.5h11A1.5 1.5 0 0 1 19 5.5V21"/><path d="M3.5 21h17"/><circle cx="15.3" cy="12.5" r="1"/></svg>,
   },
   {
     href: '/tenants',
     label: '입주자',
-    Icon: () => <svg {...ico}><circle cx="12" cy="7" r="4"/><path d="M3 20c0-4.4 3.6-7 9-7s9 2.6 9 7"/></svg>,
+    Icon: () => <svg {...ico}><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></svg>,
   },
   {
     href: '/rooms',
     label: '수납',
-    Icon: () => <svg {...ico}><rect x="3" y="6" width="16" height="12" rx="2"/><path d="M7 6V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1"/><circle cx="12" cy="12" r="2"/></svg>,
+    Icon: () => <svg {...ico}><path d="M3.5 8.5A1.5 1.5 0 0 1 5 7h12.5a1 1 0 0 1 1 1V18a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18z"/><path d="M3.5 8.5V7a1.5 1.5 0 0 1 1.5-1.5h9.5"/><path d="M18.5 11.5h-2.2a1.6 1.6 0 0 0 0 3.2h2.2"/><path d="M9.5 4.2 13 7"/></svg>,
   },
   {
     href: '/finance',
     label: '지출',
-    Icon: () => <svg {...ico}><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>,
+    Icon: () => <svg {...ico}><path d="M7 3.5 4 6.5l3 3"/><path d="M4 6.5h10.5A5.5 5.5 0 0 1 20 12"/><path d="M17 20.5l3-3-3-3"/><path d="M20 17.5H9.5A5.5 5.5 0 0 1 4 12"/></svg>,
   },
   {
     href: '/inventory',
     label: '재고',
-    Icon: () => <svg {...ico}><path d="M21 8L12 3 3 8v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>,
+    Icon: () => <svg {...ico}><rect x="3.5" y="9.5" width="8" height="7.5" rx="1.2"/><rect x="12.5" y="9.5" width="8" height="7.5" rx="1.2"/><rect x="8" y="3.5" width="8" height="6" rx="1.2"/></svg>,
   },
 ]
 
