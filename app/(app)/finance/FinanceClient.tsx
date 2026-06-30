@@ -2322,7 +2322,12 @@ export default function FinanceClient({
               ...unconfirmedRecs.map(r => ({
                 kind: 'recurring' as const,
                 rec: r,
-                dateStr: `${targetMonth}-${String(r.dueDay).padStart(2, '0')}`,
+                // 납부일이 그 달 일수를 넘으면(예: 31일/말일 + 30일 달) 말일로 클램프 — 'YYYY-MM-31' invalid date 방지
+                dateStr: (() => {
+                  const [ty, tm] = targetMonth.split('-').map(Number)
+                  const lastDay = new Date(ty, tm, 0).getDate()
+                  return `${targetMonth}-${String(Math.min(r.dueDay, lastDay)).padStart(2, '0')}`
+                })(),
               })),
             ].sort((a, b) => {
               // 1차: 날짜 내림차순 (최신 날짜 먼저)
@@ -2450,7 +2455,7 @@ export default function FinanceClient({
                       return (
                         <Fragment key={`rec-${r.id}`}>{dateHead}
                         <div key={`rec-${r.id}`}
-                          onClick={() => { setRecordingRec(r); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
+                          onClick={() => { setRecordingRec(r); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(kstYmdStr()); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
                           className="border border-[var(--warning-ring)] rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity bg-[var(--warning-bg)]/30">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
@@ -2558,7 +2563,7 @@ export default function FinanceClient({
                       const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
                           return (
                             <tr key={`rec-${r.id}`}
-                              onClick={() => { setRecordingRec(r); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(item.dateStr); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
+                              onClick={() => { setRecordingRec(r); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(kstYmdStr()); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
                               className="border-b border-[var(--warm-border)] bg-[var(--canvas)]/40 hover:bg-[var(--canvas)] transition-colors cursor-pointer"
                               style={{ boxShadow: 'inset 3px 0 0 var(--warning-fg)' }}>
                               <td className="px-4 py-3 text-xs text-[var(--warm-muted)] overflow-hidden">
