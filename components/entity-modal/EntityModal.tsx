@@ -18,6 +18,7 @@ import { deleteTenant, getContractFiles } from '@/app/(app)/tenants/actions'
 import { withSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { PrismNavBar } from './PrismNavBar'
+import MonthSelector from '@/components/layout/MonthSelector'
 import { RoomBody } from './bodies/RoomBody'
 import { TenantBody } from './bodies/TenantBody'
 import { PaymentBody } from './bodies/PaymentBody'
@@ -307,6 +308,13 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
       }
     >
       <div className="px-5 sm:px-6 py-4">
+        {/* 수납 정보는 월별 데이터 — 프리즘 안에서도 월 변경 가능(URL ?month= 공유, 모달 유지) */}
+        {kind === 'payment' && hasPay && (
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs text-[var(--warm-muted)]">조회 월</span>
+            <MonthSelector />
+          </div>
+        )}
         {kind === 'room'    && (hasRoom   ? <RoomBody roomId={links!.roomId!} onApplyScheduledNow={handleApplyScheduledNow} /> : <Empty label="연결된 호실이 없습니다." />)}
         {kind === 'tenant'  && (hasTenant ? <TenantBody tenantId={links!.tenantId!} /> : <Empty label="연결된 고객이 없습니다." />)}
         {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={links!.leaseTermId!} month={month} canEdit roomNo={links?.roomNo ?? null} openCheckoutProration={effectiveOpenProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}

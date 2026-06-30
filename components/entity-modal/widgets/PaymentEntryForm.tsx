@@ -106,6 +106,10 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
           // 초과분을 '기타 수익'으로 처리하면: 이용료는 추천액(=완납)만 저장(이월 안 함) + 초과분은 ExtraIncome.
           const useIncome = excessAsIncome && excess > 0
           const rentPart = useIncome ? payAmount - excess : payAmount
+          // 납부 내역에서도 보이도록 그 달 기록 메모에 초과분 표시(이용료 금액 자체는 정상가 유지 — 중복 매출 방지)
+          const rentMemo = useIncome
+            ? `${memo ? memo + ' · ' : ''}초과 ${excess.toLocaleString()}원 기타수익 처리`
+            : memo
           const result: SavePaymentResult = await savePayment({
             leaseTermId:    room.leaseTermId,
             tenantId:       room.tenantId!,
@@ -114,7 +118,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
             actualAmount:   rentPart,
             payDate:        payDateVal,
             payMethod,
-            memo,
+            memo:           rentMemo,
             forcedTargetMonth: forcedTm === 'auto' ? undefined : forcedTm,
           })
           if (useIncome) {
