@@ -11,6 +11,18 @@ function todayMonthStr() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
+// 보고 있는 월이 '이번 달'과 얼마나 떨어졌는지 라벨 (과거=양수). 같으면 null.
+function relMonthLabel(view: string, today: string): string | null {
+  if (view === today) return null
+  const [vy, vm] = view.split('-').map(Number)
+  const [ty, tm] = today.split('-').map(Number)
+  const diff = (ty - vy) * 12 + (tm - vm)   // +면 과거
+  if (diff === 1) return '지난달'
+  if (diff > 1) return `${diff}개월 전`
+  if (diff === -1) return '다음달'
+  return `${-diff}개월 후`
+}
+
 /**
  * 보이는 월 컨트롤 ◀ 5월 ▶ + 월 선택 팝오버.
  * 헤더가 아니라 각 월-페이지(대시보드·수납·지출) 콘텐츠 상단에 둔다 ('기간은 데이터 옆에').
@@ -76,15 +88,21 @@ export default function MonthSelector() {
   const [cy, cm] = localMonth.split('-')
   const displayMonth = `${cy}년 ${parseInt(cm)}월`
   const atCurrentMonth = localMonth >= todayMonth
+  const isCurrent = localMonth === todayMonth
+  const rel = relMonthLabel(localMonth, todayMonth)
+  const jumpToday = () => { setLocalMonth(todayMonth); localMonthRef.current = todayMonth; if (debounceRef.current) clearTimeout(debounceRef.current); applyMonth(todayMonth) }
 
   return (
+    // 이번 달이 아니면 '눈에 띄게' — 감색 테두리·배경 + 상대월 배지 + '오늘' 점프(과거 데이터를 현재로 착각 방지).
     <div
-      className="flex items-center rounded-xl shrink-0 self-start"
-      style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}
+      className="flex items-center rounded-xl shrink-0 self-start overflow-hidden transition-colors"
+      style={isCurrent
+        ? { background: 'var(--cream)', border: '1px solid var(--warm-border)' }
+        : { background: 'var(--warning-bg, #FDF2E3)', border: '1.5px solid var(--persimmon)' }}
     >
       <button
         onClick={() => changeMonth(-1)}
-        className="w-9 h-9 flex items-center justify-center rounded-l-xl text-xs transition-colors hover:bg-[var(--canvas)]"
+        className="w-9 h-9 flex items-center justify-center text-xs transition-colors hover:bg-[var(--canvas)]"
         style={{ color: 'var(--warm-mid)' }}
         aria-label="이전 달"
       >
@@ -93,12 +111,16 @@ export default function MonthSelector() {
       <div ref={pickerRef} className="relative">
         <div
           onClick={() => setShowPicker(v => !v)}
-          className="text-sm font-semibold text-center cursor-pointer px-2.5 py-2 select-none whitespace-nowrap"
+          className="text-sm font-semibold text-center cursor-pointer px-2.5 py-2 select-none whitespace-nowrap flex items-center gap-1.5"
           style={{ color: 'var(--warm-dark)' }}
           role="button"
           aria-label="월 선택"
         >
           {displayMonth}
+          {rel && (
+            <span className="text-[0.625rem] font-bold px-1.5 py-0.5 rounded-full leading-none"
+              style={{ background: 'var(--persimmon)', color: '#fff' }}>{rel}</span>
+          )}
         </div>
         {showPicker && (
           <MonthPicker
@@ -112,12 +134,22 @@ export default function MonthSelector() {
       <button
         onClick={() => changeMonth(1)}
         disabled={atCurrentMonth}
-        className="w-9 h-9 flex items-center justify-center rounded-r-xl text-xs transition-colors enabled:hover:bg-[var(--canvas)]"
+        className="w-9 h-9 flex items-center justify-center text-xs transition-colors enabled:hover:bg-[var(--canvas)]"
         style={{ color: atCurrentMonth ? 'var(--warm-border)' : 'var(--warm-mid)', cursor: atCurrentMonth ? 'default' : 'pointer' }}
         aria-label="다음 달"
       >
         ▶
       </button>
+      {!isCurrent && (
+        <button
+          onClick={jumpToday}
+          className="h-9 px-2.5 flex items-center text-xs font-bold transition-colors border-l"
+          style={{ color: '#fff', background: 'var(--persimmon)', borderColor: 'var(--persimmon)' }}
+          aria-label="이번 달로"
+        >
+          오늘
+        </button>
+      )}
     </div>
   )
 }
