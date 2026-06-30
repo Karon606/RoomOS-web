@@ -102,6 +102,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
   const router = useRouter()
   const searchParams = useSearchParams()
   const month = searchParams.get('month') || kstMonthStr()
+  const isPastMonth = month < kstMonthStr()   // 프리즘이 과거 월을 보고 있으면 강조
   const [isPending, startTransition] = useTransition()
 
   const hasRoom = !!links?.roomId
@@ -308,10 +309,16 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
       }
     >
       <div className="px-5 sm:px-6 py-4">
-        {/* 수납 정보는 월별 데이터 — 프리즘 안에서도 월 변경 가능(URL ?month= 공유, 모달 유지) */}
+        {/* 수납 정보는 월별 데이터 — 프리즘 안에서도 월 변경 가능(URL ?month= 공유, 모달 유지).
+            과거 월이면 행 전체를 amber 배너로 강조(현재로 착각 방지). */}
         {kind === 'payment' && hasPay && (
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs text-[var(--warm-muted)]">조회 월</span>
+          <div
+            className={`flex items-center justify-between mb-3 ${isPastMonth ? 'rounded-xl px-3 py-2' : ''}`}
+            style={isPastMonth ? { background: 'rgba(180,120,10,.14)', border: '1.5px solid var(--warning-fg)', borderLeft: '5px solid var(--persimmon)' } : undefined}
+          >
+            <span className="text-xs font-bold" style={{ color: isPastMonth ? 'var(--warning-fg)' : 'var(--warm-muted)' }}>
+              {isPastMonth ? `${Number(month.slice(0, 4))}년 ${Number(month.slice(5, 7))}월 · 현재 월 아님` : '조회 월'}
+            </span>
             <MonthSelector />
           </div>
         )}
