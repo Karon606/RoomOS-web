@@ -74,7 +74,7 @@ export type DashboardData = {
   alerts:            { category?: 'unpaid' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
-  activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number }[]
+  activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number; badgeLabel?: string; badgeTone?: 'prepay' | 'late' }[]
   unpaidLeases:      { roomNo: string; tenantName: string; tenantId: string; leaseId: string; daysOverdue: number | null; unpaidAmount: number; monthsOverdue: number }[]
   unpaidRoomNosForView: string[]
   awaitingRoomNosForView: string[]
@@ -2389,6 +2389,13 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink-2)' }}>{fmtRoomNo(item.roomNo)} {item.tenantName}</p>
                                 <p className="text-[0.625rem] font-medium mt-0.5" style={{ color: 'var(--warm-muted)' }}>{item.timeLabel}</p>
                               </div>
+                              {item.badgeLabel && (
+                                <span className="rounded-full shrink-0 text-[0.625rem] font-semibold px-2 py-0.5" style={item.badgeTone === 'late'
+                                  ? { background: 'var(--warning-bg)', color: 'var(--warning-fg)' }
+                                  : { background: 'var(--info-bg)', color: 'var(--info-fg)' }}>
+                                  {item.badgeLabel}
+                                </span>
+                              )}
                               <span className="rounded-full shrink-0 text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>
                                 {fmtKorMoney(item.amount)}
                               </span>

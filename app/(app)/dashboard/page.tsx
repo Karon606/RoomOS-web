@@ -41,15 +41,6 @@ function dayLabel(days: number): string {
   return `${days}일 남음`
 }
 
-function relativeTime(date: Date): string {
-  const diff = Date.now() - date.getTime()
-  if (diff < 60000) return '방금'
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}분 전`
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}시간 전`
-  if (diff < 2 * 86400000) return '어제'
-  return `${Math.floor(diff / 86400000)}일 전`
-}
-
 function monthRange(startMonth: string, endMonth: string): string[] {
   const result: string[] = []
   let [y, m] = startMonth.split('-').map(Number)
@@ -270,13 +261,18 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       const [vy, vm] = targetMonth.split('-').map(Number)
       const monthStart = new Date(vy, vm - 1, 1)
       const monthEnd = new Date(vy, vm, 0); monthEnd.setHours(23, 59, 59, 999)
+      // 납입완료 피드 범위 = (이 달에 낸 결제) ∪ (이 달분 결제).
+      //   → 7월분을 6월에 선납한 건: 6월 화면(payDate∈6월)·7월 화면(targetMonth=7월) 양쪽에 뜬다. 각 줄에 귀속월·선납/지연 뱃지.
       return prisma.paymentRecord.findMany({
         where: {
           propertyId,
           isDeposit: false,
           isPrevOwner: false,
-          payDate: { gte: monthStart, lte: monthEnd },
           NOT: { memo: { contains: '[납입일변경]' } },
+          OR: [
+            { payDate: { gte: monthStart, lte: monthEnd } },
+            { targetMonth },
+          ],
         },
         select: {
           targetMonth: true,
@@ -287,7 +283,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
           leaseTerm: { select: { room: { select: { roomNo: true } } } },
         },
         orderBy: { payDate: 'desc' },
-        take: 20,
+        take: 40,
       })
     })(),
     // 미납 상세 (이달 청구 대상 계약) — RESERVED는 미입주라 제외
@@ -1458,16 +1454,39 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
 
   // ── 최근 납입 완료 ────────────────────────────────────────────
-  const activityItems: DashboardData['activity'] = recentPaymentsRaw.map(p => ({
-    text:       `${p.tenant.name}님 ${p.leaseTerm.room?.roomNo ?? '?'}호 납입 완료`,
-    timeLabel:  relativeTime(p.createdAt),
-    dotColor:   'var(--success-fg)',
-    link:       `/tenants?tenantId=${p.tenant.id}&tab=info`,
-    tenantId:   p.tenant.id,
-    tenantName: p.tenant.name,
-    roomNo:     p.leaseTerm.room?.roomNo ?? '?',
-    amount:     p.actualAmount,
-  }))
+  // 각 결제의 귀속월(targetMonth=T)·납부월(payDate=P)·보는 달(viewMonth=targetMonth=V) 관계로 뱃지 결정.
+  //  · T=V, P<V → '선납 완료'(이 달분을 미리 냄)  · T=V, P>V → '지연 완료'  · T=V, P=V → 뱃지 없음(당월 정상)
+  //  · T>V → 'N월 선납분'(다음달+ 분을 이 달에 냄)  · T<V → 'N월분 지연'(지난달 분을 이 달에 냄)
+  const V = targetMonth
+  const activityItems: DashboardData['activity'] = recentPaymentsRaw.map(p => {
+    const T = p.targetMonth
+    const payIso = p.payDate.toISOString()          // @db.Date → UTC 자정, 날짜부만 사용
+    const P = payIso.slice(0, 7)
+    const payLabel = `${Number(payIso.slice(5, 7))}/${Number(payIso.slice(8, 10))} 납부`
+    const tNum = Number(T.slice(5))
+    let badgeLabel: string | undefined
+    let badgeTone: 'prepay' | 'late' | undefined
+    if (T === V) {
+      if (P < V) { badgeLabel = '선납 완료'; badgeTone = 'prepay' }
+      else if (P > V) { badgeLabel = '지연 완료'; badgeTone = 'late' }
+    } else if (T > V) {
+      badgeLabel = `${tNum}월 선납분`; badgeTone = 'prepay'
+    } else {
+      badgeLabel = `${tNum}월분 지연`; badgeTone = 'late'
+    }
+    return {
+      text:       `${p.tenant.name}님 ${p.leaseTerm.room?.roomNo ?? '?'}호 납입 완료`,
+      timeLabel:  payLabel,
+      dotColor:   'var(--success-fg)',
+      link:       `/tenants?tenantId=${p.tenant.id}&tab=info`,
+      tenantId:   p.tenant.id,
+      tenantName: p.tenant.name,
+      roomNo:     p.leaseTerm.room?.roomNo ?? '?',
+      amount:     p.actualAmount,
+      badgeLabel,
+      badgeTone,
+    }
+  })
 
   // 양도인 자동 완납 항목 — 수납 기록 없이 납부일이 귀속 기준일 이전인 경우 납입완료 피드에 표시
   if (cutoffMonthStr && targetMonth === cutoffMonthStr) {
