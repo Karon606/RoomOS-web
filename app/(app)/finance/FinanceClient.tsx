@@ -265,6 +265,8 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   const [qtyValue, setQtyValue]       = useState('')
   const [qtyUnit, setQtyUnit]         = useState('')
   const [amountStr, setAmountStr]     = useState('')
+  const [unitStr, setUnitStr]         = useState('')                        // 단가(기준단위 1개당) — 아는 값 입력 시 금액 자동
+  const [priceMode, setPriceMode]     = useState<'amount' | 'unit'>('amount')  // 마지막으로 사용자가 직접 입력한 쪽(그쪽이 기준)
   const [customLabel, setCustomLabel] = useState('')
   const [fetching, setFetching]       = useState(false)
   const [prevUnits, setPrevUnits]     = useState<{ specUnit: string | null; qtyUnit: string | null } | null>(null)
@@ -274,8 +276,23 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   useEffect(() => {
     setActiveLabel(null)
     setSpecValue(''); setSpecUnit(''); setQtyValue(''); setQtyUnit('')
-    setAmountStr(''); setCustomLabel(''); setPrevUnits(null); setNoSpec(false)
+    setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setCustomLabel(''); setPrevUnits(null); setNoSpec(false)
   }, [category])
+
+  // 단가·금액 양방향 자동계산 — 사용자가 마지막 입력한 쪽(priceMode)을 기준으로 나머지를 채운다.
+  // 기준수량 = 수량 × 규격. 단가만 알아도(금액만 알아도) 다른 쪽이 자동으로 채워진다. (오류신고 407567e6)
+  useEffect(() => {
+    const baseQ = (Number(qtyValue) || 1) * (specValue ? (Number(specValue) || 1) : 1)
+    if (priceMode === 'unit') {
+      const u = unitStr ? Number(unitStr) : undefined
+      const next = u != null ? String(Math.round(u * baseQ)) : ''
+      setAmountStr(prev => (prev === next ? prev : next))
+    } else {
+      const a = amountStr ? Number(amountStr) : undefined
+      const next = a != null && baseQ > 0 ? String(Math.round(a / baseQ)) : ''
+      setUnitStr(prev => (prev === next ? prev : next))
+    }
+  }, [qtyValue, specValue, unitStr, amountStr, priceMode])
 
   const numCls  = 'w-16 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
   const amtCls  = 'flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
@@ -283,7 +300,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
 
   async function openPreset(label: string) {
     setActiveLabel(label)
-    setSpecValue(''); setQtyValue(''); setAmountStr(''); setNoSpec(false)
+    setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setNoSpec(false)
     const def = ITEM_DEFAULTS[label]
     setSpecUnit(def?.specUnit ?? ''); setQtyUnit(def?.qtyUnit ?? '')
     setPrevUnits(null)
@@ -311,18 +328,26 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
       })
       if (useExisting) finalLabel = similar
     }
-    const amount = amountStr ? Number(amountStr.replace(/[^0-9]/g, '')) : undefined
     // 수량 미입력 → 자동 1개 (화면·detail·DB 표기 일관: "x 1개"). 단위도 비었으면 '개'.
     const noQty = qtyValue.trim() === ''
     const resolvedQty  = noQty ? '1' : qtyValue
     const resolvedUnit = noQty && qtyUnit.trim() === '' ? '개' : qtyUnit
     const q = Number(resolvedQty) || 1
     const baseQ = q * (specValue ? (Number(specValue) || 1) : 1)   // 기준수량 = 수량 × 규격
-    const unitPrice = amount != null && baseQ > 0 ? Math.round(amount / baseQ) : undefined
+    // 단가를 직접 입력했으면(priceMode='unit') 단가를 기준으로 금액 산출, 아니면 금액에서 단가 역산.
+    let amount: number | undefined
+    let unitPrice: number | undefined
+    if (priceMode === 'unit' && unitStr) {
+      unitPrice = Number(unitStr.replace(/[^0-9]/g, '')) || undefined
+      amount = unitPrice != null ? Math.round(unitPrice * baseQ) : undefined
+    } else {
+      amount = amountStr ? Number(amountStr.replace(/[^0-9]/g, '')) : undefined
+      unitPrice = amount != null && baseQ > 0 ? Math.round(amount / baseQ) : undefined
+    }
     const data: ItemPickState = { label: finalLabel, specValue, specUnit, qtyValue: resolvedQty, qtyUnit: resolvedUnit, amount, unitPrice }
     onChange([...items, data])
     setActiveLabel(null)
-    setSpecValue(''); setQtyValue(''); setAmountStr(''); setCustomLabel('')
+    setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setCustomLabel('')
   }
 
   function removeItem(idx: number) {
@@ -418,15 +443,31 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
       </div>
       {allowMulti && (
         <div className="space-y-1">
-          <label className="text-[0.625rem] text-[var(--warm-muted)]">금액 <span className="text-[var(--warm-muted)]">(이 품목 분)</span></label>
-          <div className="flex gap-1 items-center">
-            <input type="text" inputMode="numeric"
-              value={amountStr ? Number(amountStr.replace(/[^0-9]/g, '')).toLocaleString() : ''}
-              onChange={e => setAmountStr(e.target.value.replace(/[^0-9]/g, ''))}
-              placeholder="0"
-              className={amtCls} />
-            <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">원</span>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-[0.625rem] text-[var(--warm-muted)]">단가{specValue ? `/${specUnit || '개'}` : ''} <span className="text-[var(--warm-muted)]">(선택)</span></label>
+              <div className="flex gap-1 items-center">
+                <input type="text" inputMode="numeric"
+                  value={unitStr ? Number(unitStr).toLocaleString() : ''}
+                  onChange={e => { setPriceMode('unit'); setUnitStr(e.target.value.replace(/[^0-9]/g, '')) }}
+                  placeholder="0"
+                  className={amtCls} />
+                <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">원</span>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[0.625rem] text-[var(--warm-muted)]">금액 <span className="text-[var(--warm-muted)]">(이 품목 분)</span></label>
+              <div className="flex gap-1 items-center">
+                <input type="text" inputMode="numeric"
+                  value={amountStr ? Number(amountStr.replace(/[^0-9]/g, '')).toLocaleString() : ''}
+                  onChange={e => { setPriceMode('amount'); setAmountStr(e.target.value.replace(/[^0-9]/g, '')) }}
+                  placeholder="0"
+                  className={amtCls} />
+                <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0">원</span>
+              </div>
+            </div>
           </div>
+          <p className="text-[0.5625rem] text-[var(--warm-muted)]">단가·금액 중 아는 값만 넣으면 나머지는 자동 계산돼요 (수량×규격 기준).</p>
         </div>
       )}
     </div>
