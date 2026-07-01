@@ -465,9 +465,9 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
       cashReceipt: cashReceipt || null,
       registrationStatus,
       contractUrl: contractUrl || null,
-      // 호실이 실제로 바뀌면 희망 호실 초기화 (이미 이동했으므로 의미 없음)
-      wishRooms: (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishRooms || null),
-      wishConditions: wishConditions || null,
+      // 호실이 실제로 바뀌면 희망 호실/조건 모두 초기화 (이미 이동했으므로 의미 없음 — 잔여 "{}"가 대시보드에 오탐되던 것 방지)
+      wishRooms:      (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishRooms || null),
+      wishConditions: (newRoomId !== prevRoomId && !['CHECKED_OUT', 'CANCELLED'].includes(status)) ? null : (wishConditions || null),
       keepAlertAfterInquiry,
       visitRoute: visitRoute || null,
       // 퇴실 일할 정산 패치 — 위 expectedMoveOut 값을 덮어쓸 수 있음(거주중 복귀 시 null 등)

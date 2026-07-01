@@ -2219,8 +2219,11 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
       condObj.maxRent = condMaxRent
     }
   }
-  // 조건 모드는 빈 객체("{}")라도 저장 — "조건 무관, 모든 빈 방 매칭" 의도
-  const wishConditionsValue = mode === 'conditions' ? JSON.stringify(condObj) : ''
+  // 조건 모드 빈 객체("{}") = "조건 무관, 모든 빈 방 매칭" — 호실 미지정 예약자(seeker)에게만 유효한 의도.
+  // 거주중 이동희망(isMove)은 조건 미입력이면 '희망 없음'이므로 "{}" 대신 빈값(null) 저장 — 잔여 "{}" 재발 방지.
+  const wishConditionsValue = mode === 'conditions'
+    ? (isMove && Object.keys(condObj).length === 0 ? '' : JSON.stringify(condObj))
+    : ''
 
   const selCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] w-full'
 
