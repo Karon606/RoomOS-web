@@ -2380,6 +2380,10 @@ export default function FinanceClient({
               return bTime - aTime
             })
 
+            // 날짜별 '해당일 지출 합계' — 실제 지출만(예정/고정 미확인 제외). 병합 행(주문·방분배)은 이미 합계 금액이라 그대로 합산. (오류신고 f7b0292a)
+            const dayTotals = new Map<string, number>()
+            for (const it of items) if (it.kind === 'expense') dayTotals.set(it.dateStr, (dayTotals.get(it.dateStr) ?? 0) + it.exp.amount)
+
             const isEmpty = items.length === 0
 
             return (
@@ -2432,7 +2436,12 @@ export default function FinanceClient({
                         const [yy, mm, dd] = item.dateStr.split('-').map(Number)
                         const DAYS = ['일', '월', '화', '수', '목', '금', '토']
                         const wd = DAYS[new Date(yy, mm - 1, dd).getDay()]
-                        return <div className="px-1 pt-2 pb-0.5 text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{mm}월 {dd}일 ({wd})</div>
+                        return (
+                          <div className="flex items-baseline justify-between px-1 pt-2 pb-0.5">
+                            <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{mm}월 {dd}일 ({wd})</span>
+                            <span className="num text-[0.6875rem] font-semibold text-[var(--warm-mid)]">합계 {(dayTotals.get(item.dateStr) ?? 0).toLocaleString()}원</span>
+                          </div>
+                        )
                       })() : null
                       if (item.kind === 'expense') {
                         const e = item.exp
@@ -2543,13 +2552,26 @@ export default function FinanceClient({
                         </tr>
                       </thead>
                       <tbody>
-                        {items.map(item => {
+                        {items.map((item, idx) => {
+                          // 날짜 그룹 소계 행 — 날짜가 바뀌는 첫 행 위에 '해당일 합계'. (오류신고 f7b0292a)
+                          const showDate = idx === 0 || items[idx - 1].dateStr !== item.dateStr
+                          const dayHead = showDate ? (
+                            <tr key={`dh-${item.dateStr}`} className="bg-[var(--canvas)]/50 border-b border-[var(--warm-border)]">
+                              <td colSpan={6} className="px-4 py-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{fmtDate(item.dateStr)}</span>
+                                  <span className="num text-[0.6875rem] font-semibold text-[var(--warm-mid)]">해당일 합계 {(dayTotals.get(item.dateStr) ?? 0).toLocaleString()}원</span>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null
                           if (item.kind === 'expense') {
                             const e = item.exp
                             const grp = item.groupRows
                             const selRow = mergeMode && isExpSelected(e, grp)
                             return (
-                              <tr key={e.id}
+                              <Fragment key={e.id}>{dayHead}
+                              <tr
                                 onClick={() => {
                                   if (lpFired.current) { lpFired.current = false; return }
                                   if (mergeMode) { toggleExpSel(e, grp); return }
@@ -2596,6 +2618,7 @@ export default function FinanceClient({
                                     : <span className="text-xs text-[var(--warm-muted)]">정산완료</span>}
                                 </td>
                               </tr>
+                              </Fragment>
                             )
                           }
                           // 미확인 고정 지출 행
@@ -2603,7 +2626,8 @@ export default function FinanceClient({
                           // 예약 금액이 있으면 우선 prefill, 없으면 평균 또는 기본 금액
                       const expectedAmt = r.pendingAmount ?? r.historicalAvg ?? r.amount
                           return (
-                            <tr key={`rec-${r.id}`}
+                            <Fragment key={`rec-${r.id}`}>{dayHead}
+                            <tr
                               onClick={() => { setRecordingRec(r); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(kstYmdStr()); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
                               className="border-b border-[var(--warm-border)] bg-[var(--canvas)]/40 hover:bg-[var(--canvas)] transition-colors cursor-pointer"
                               style={{ boxShadow: 'inset 3px 0 0 var(--warning-fg)' }}>
@@ -2635,6 +2659,7 @@ export default function FinanceClient({
                                 </span>
                               </td>
                             </tr>
+                            </Fragment>
                           )
                         })}
                       </tbody>
