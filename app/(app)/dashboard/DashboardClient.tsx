@@ -582,12 +582,11 @@ function AlertsStrip({ alerts, onOpenAlert }: {
     .filter(x => x.u <= x.t)
     .sort((x, y) => x.u - y.u)   // 가장 급한(많이 경과한) 순 — 카테고리 무관
     .map(x => x.a)
-  const restItems = withU.filter(x => x.u > x.t)
-
-  // 예정: 긴급 존에 안 든 항목만 카테고리 그룹 (그룹 내 가까운 순)
+  // 카테고리 묶음 = '완전한 목록' — 긴급 항목도 그 카테고리에 함께 표시(긴급 존과 중복). 2026-07-01 사용자 요청:
+  // 긴급인 퇴실예정도 '퇴실 예정' 묶음에 보여야 함. '긴급'은 가장 급한 것 하이라이트, 카테고리는 전체 목록.
   const groups = (() => {
     const map = new Map<AlertCat, { a: AlertItem; u: number }[]>()
-    for (const x of restItems) {
+    for (const x of withU) {
       const cat = (x.a.category ?? 'other') as AlertCat
       const arr = map.get(cat) ?? []
       arr.push(x)
