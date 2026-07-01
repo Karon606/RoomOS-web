@@ -8,7 +8,6 @@ import BottomNav from '@/components/layout/BottomNav'
 import SaveFeedback from '@/components/feedback/SaveFeedback'
 import { ConfirmHost } from '@/components/ui/ConfirmDialog'
 import MonthSync from '@/components/layout/MonthSync'
-import PastMonthBanner from '@/components/layout/PastMonthBanner'
 import { NavigationProvider } from '@/components/layout/NavigationContext'
 
 // §18.1 (v1.3.1): 셸이 살아있는 라우트 전환은 본문 스켈레톤만 — 브랜드 로더 오버레이는
@@ -71,10 +70,7 @@ export default function AppShell({
         {/* NavigationProvider: 페이지 안 MonthSelector 등이 전환 transition을 공유.
             전환 중 표시는 라우트 세그먼트 loading.tsx(본문 스켈레톤)가 담당 — §18.1 ③ */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 app-main relative">
-          {/* 과거/미래 월 보는 중 전체 폭 경고 배너 — 월-페이지에서만, 마운트 후(하이드레이션 안전) */}
-          <Suspense fallback={null}>
-            <PastMonthBanner />
-          </Suspense>
+          {/* 과거월 표시는 페이지 상단 MonthSelector 가 겸함(amber+'지난달'+오늘) — 별도 배너 제거(중복). */}
           <NavigationProvider startNavigation={startNavigation}>
             {children}
           </NavigationProvider>
