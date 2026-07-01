@@ -18,6 +18,7 @@ import { Btn } from '@/components/ui/Btn'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { kstYmdStr } from '@/lib/kstDate'
+import MonthSelector from '@/components/layout/MonthSelector'
 
 type Request = Awaited<ReturnType<typeof getAllRequestsForProperty>>[number]
 type ActiveTenant = Awaited<ReturnType<typeof getActiveTenantsForRequests>>[number]
@@ -36,12 +37,20 @@ const CATEGORY_COLORS: Record<string, { bg: string; fg: string; ring: string }> 
 const fmtDate = (d: Date | string | null | undefined) =>
   d ? new Date(d).toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
 
+// 타임스탬프의 KST 월(YYYY-MM) — 월 경계는 한국시간 기준.
+function kstMonthOf(d: Date | string): string {
+  const t = new Date(new Date(d).getTime() + 9 * 3600000)
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
 export default function RequestsClient({
   initialRequests,
   activeTenants,
+  targetMonth,
 }: {
   initialRequests: Request[]
   activeTenants: ActiveTenant[]
+  targetMonth: string
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -65,6 +74,8 @@ export default function RequestsClient({
   const [addTargetDate, setAddTargetDate] = useState('')
 
   const filtered = useMemo(() => initialRequests.filter(r => {
+    // 월 스코프: 처리됨(resolved)은 그 달에 해결된 것만. 미처리(open)는 월 무관 항상 노출(활성 큐 — 놓치지 않게).
+    if (r.resolvedAt && kstMonthOf(r.resolvedAt) !== targetMonth) return false
     if (filterStatus === 'unresolved' && r.resolvedAt) return false
     if (filterStatus === 'resolved'   && !r.resolvedAt) return false
     if (filterCategory !== 'all' && r.category !== filterCategory) return false
@@ -75,7 +86,7 @@ export default function RequestsClient({
       if (!hay.includes(q)) return false
     }
     return true
-  }), [initialRequests, filterStatus, filterCategory, filterUrgent, search])
+  }), [initialRequests, filterStatus, filterCategory, filterUrgent, search, targetMonth])
 
   const unresolvedCount = initialRequests.filter(r => !r.resolvedAt).length
   const urgentCount     = initialRequests.filter(r => !r.resolvedAt && r.isUrgent).length
@@ -143,18 +154,19 @@ export default function RequestsClient({
         <div>
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">요청 · 컴플레인</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">
-            전체 {initialRequests.length}건
-            <span className="mx-1.5 text-[var(--warm-border)]">·</span>
-            미처리 {unresolvedCount}건
+            미처리 {unresolvedCount}건<span className="text-[var(--warm-muted)]"> (월 무관 전체)</span>
             {urgentCount > 0 && (
               <>
                 <span className="mx-1.5 text-[var(--warm-border)]">·</span>
                 <span className="text-[var(--coral)] font-semibold">긴급 {urgentCount}건</span>
               </>
             )}
+            <span className="mx-1.5 text-[var(--warm-border)]">·</span>
+            처리됨은 <span className="text-[var(--warm-mid)]">{Number(targetMonth.slice(5))}월 해결분</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <MonthSelector />
           <SearchBar value={search} onChange={setSearch} placeholder="입주자/내용 검색" className="flex-1 min-w-[180px]" />
           <button
             onClick={() => setShowAddForm(v => !v)}

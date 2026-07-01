@@ -14,6 +14,7 @@ import { SectionHeader, DotMarker } from '@/components/ui/inventory/SectionHeade
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { InventoryCard as InvCard } from '@/components/ui/inventory/InventoryCard'
 import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
+import MonthSelector from '@/components/layout/MonthSelector'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { convertSpecValue, listCompatibleUnits, unitFactor } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -251,11 +252,14 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
 
   return (
     <div className="space-y-4 px-4 sm:px-6 py-5">
-      {/* 동일 레벨 탭 — 소모품·부식(기본) / 비품·자재 */}
-      <div className="inline-flex rounded-xl border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
-        <span className="px-4 py-2 bg-[var(--coral)] text-white">소모품·부식</span>
-        <Link href="/inventory/assets" prefetch
-          className="px-4 py-2 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">비품·자재</Link>
+      {/* 동일 레벨 탭 — 소모품·부식(기본) / 비품·자재 + 월 전환(재고는 월별 이월·소비 데이터) */}
+      <div className="flex items-start justify-between gap-2 flex-wrap">
+        <div className="inline-flex rounded-xl border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
+          <span className="px-4 py-2 bg-[var(--coral)] text-white">소모품·부식</span>
+          <Link href="/inventory/assets" prefetch
+            className="px-4 py-2 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">비품·자재</Link>
+        </div>
+        <MonthSelector />
       </div>
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-2">

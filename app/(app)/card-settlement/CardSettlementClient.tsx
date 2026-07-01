@@ -8,6 +8,7 @@ import { settleCardExpenses, unsettleExpenses } from '../finance/actions'
 import { Btn } from '@/components/ui/Btn'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import MonthSelector from '@/components/layout/MonthSelector'
 
 type UnsettledExpense = {
   id: string; date: Date; amount: number; category: string
@@ -84,16 +85,19 @@ function buildSettleGroups(unsettledExpenses: UnsettledExpense[]): SettleGroup[]
 }
 
 export default function CardSettlementClient({
-  unsettledExpenses, settledCardExpenses,
+  unsettledExpenses, settledCardExpenses, targetMonth,
 }: {
   unsettledExpenses: UnsettledExpense[]
   settledCardExpenses: UnsettledExpense[]
+  targetMonth: string
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
   const settleGroups = buildSettleGroups(unsettledExpenses)
-  const settledGroups = buildSettleGroups(settledCardExpenses)
+  // 정산 완료 내역은 선택한 달의 '청구월'분만. (미정산은 월 무관 전체 유지)
+  const settledGroups = buildSettleGroups(settledCardExpenses).filter(g => g.billMonth === targetMonth)
+  const monthLabel = `${Number(targetMonth.slice(5))}월`
   const finalizedG = settleGroups.filter(g => g.isFinalized)
   const pendingG   = settleGroups.filter(g => !g.isFinalized)
 
@@ -156,9 +160,12 @@ export default function CardSettlementClient({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-[var(--warm-dark)]">카드 정산</h1>
-        <p className="text-sm text-[var(--warm-muted)] mt-0.5">신용카드로 결제된 미정산 지출을 카드·청구월별로 묶어 정산합니다.</p>
+      <div className="flex items-start justify-between gap-2 flex-wrap">
+        <div>
+          <h1 className="text-xl font-bold text-[var(--warm-dark)]">카드 정산</h1>
+          <p className="text-sm text-[var(--warm-muted)] mt-0.5">신용카드로 결제된 미정산 지출을 카드·청구월별로 묶어 정산합니다. <span className="text-[var(--warm-mid)]">미정산은 월 무관 전체, 정산 완료 내역은 선택한 달 청구분.</span></p>
+        </div>
+        <MonthSelector />
       </div>
 
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5">
@@ -200,10 +207,12 @@ export default function CardSettlementClient({
         )}
       </div>
 
-      {/* 정산 완료 내역 */}
-      {settledGroups.length > 0 && (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5 space-y-3">
-          <h3 className="text-sm font-semibold text-[var(--warm-mid)]">정산 완료 내역 (최근 4개월)</h3>
+      {/* 정산 완료 내역 — 선택한 달 청구분 */}
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5 space-y-3">
+        <h3 className="text-sm font-semibold text-[var(--warm-mid)]">정산 완료 내역 <span className="text-[var(--warm-muted)] font-normal">· {monthLabel} 청구분</span></h3>
+        {settledGroups.length === 0 ? (
+          <EmptyState title={`${monthLabel} 청구분 정산 완료 내역이 없습니다`} />
+        ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {settledGroups.map(g => (
               <div key={`${g.accountId}__${g.billMonth}`}
@@ -238,8 +247,8 @@ export default function CardSettlementClient({
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

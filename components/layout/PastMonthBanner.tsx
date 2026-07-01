@@ -6,7 +6,8 @@
 import { useEffect, useState } from 'react'
 import { usePathname, useSearchParams, useRouter } from 'next/navigation'
 
-const MONTH_PAGES = ['/dashboard', '/finance', '/rooms', '/tenants']
+// 월이 의미 있는(월 넘김 필요) 페이지. 고객관리(tenants)는 월이 결제 표시에만 영향 → 제외(2026-07-01).
+const MONTH_PAGES = ['/dashboard', '/finance', '/rooms', '/inventory', '/card-settlement', '/requests']
 
 function todayMonthStr() {
   const n = new Date()
@@ -23,7 +24,8 @@ export default function PastMonthBanner() {
 
   const month = sp.get('month')
   const today = todayMonthStr()
-  const onMonthPage = MONTH_PAGES.some(p => pathname?.startsWith(p))
+  // 비품·자재(/inventory/assets)는 내구재 뷰라 월 단위 아님 → 배너 제외.
+  const onMonthPage = MONTH_PAGES.some(p => pathname?.startsWith(p)) && pathname !== '/inventory/assets'
   if (!onMonthPage || !month || month === today) return null
 
   const [vy, vm] = month.split('-').map(Number)
