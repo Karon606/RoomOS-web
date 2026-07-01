@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
-import { assignAggregateToTarget, setCommonAsset, setAssetReceived, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
+import { assignAggregateToTarget, setCommonAsset, setAssetReceived, setAssetAssignedAt, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
 import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // §10 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
@@ -248,6 +248,19 @@ export default function AssetsClient({ data, rooms, locations }: {
     })
   }
 
+  // 배정일 입력·수정 — 방/공용부에 배정된 비품 묶음의 배정일을 저장(빈 값=미상). 상세에서만 노출.
+  const saveAssignedAt = (it: AssetItem, v: string) => {
+    const next = v || null
+    if (next === (it.assignedAt ?? null)) return
+    startTransition(async () => {
+      const res = await setAssetAssignedAt(it.ids, next)
+      if (!res.ok) { pushToast('error', res.error); return }
+      setDetailItem(d => d && d.id === it.id ? { ...d, assignedAt: next } : d)
+      pushToast('success', next ? '배정일을 저장했습니다' : '배정일을 비웠습니다')
+      router.refresh()
+    })
+  }
+
   const currentValue = (it: AssetItem) =>
     it.roomId ? `room:${it.roomId}` : it.locationId ? `loc:${it.locationId}` : ''
 
@@ -260,7 +273,7 @@ export default function AssetsClient({ data, rooms, locations }: {
         onClick={() => setDetailItem(it)}
         title={it.itemLabel}
         badges={it.amount === 0 ? <span className="inline-flex items-center rounded-full bg-[var(--info-bg)] text-[var(--info-fg)] text-[0.625rem] font-semibold px-1.5 py-0.5">무상</span> : undefined}
-        meta={`${it.date.slice(2)} 구매${it.vendor ? ` · ${it.vendor}` : ''} · ${it.category} · ${won(it.amount)}`}
+        meta={[`${it.date.slice(2)} 구매`, it.vendor, it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category, won(it.amount)].filter(Boolean).join(' · ')}
         value={it.qtyValue != null ? `${fmtQty(it.qtyValue)}${it.qtyUnit ?? '개'}` : `${it.count}건`}
         expanded={!mergeMode && it.count > 1 && expanded.has(it.id)}
         expand={
@@ -587,6 +600,18 @@ export default function AssetsClient({ data, rooms, locations }: {
                 {it.isCommon && <Badge tone="inspect">공용 자재</Badge>}
                 <span className="text-xs text-[var(--warm-muted)]">총 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'} · {won(it.amount)} · 구매 {it.count}건</span>
               </div>
+              {(it.roomNo || it.locationName) && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-[var(--warm-mid)] shrink-0">배정일</span>
+                  <input key={it.assignedAt ?? 'none'} type="date" defaultValue={it.assignedAt ?? ''} disabled={pending}
+                    onChange={e => saveAssignedAt(it, e.target.value)}
+                    className="h-9 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  {it.assignedAt
+                    ? <button type="button" onClick={() => saveAssignedAt(it, '')} disabled={pending}
+                        className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">비우기</button>
+                    : <span className="text-[0.6875rem] text-[var(--warm-muted)]">미상</span>}
+                </div>
+              )}
               <div>
                 <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">구매 내역</p>
                 <ul className="space-y-1">

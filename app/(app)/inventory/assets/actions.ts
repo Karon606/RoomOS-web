@@ -48,6 +48,7 @@ export type AssetItem = {
   locationId: string | null     // 공용부(StorageLocation) 배정 시
   locationName: string | null
   isCommon: boolean             // 공용 자재(페인트 등) 표시
+  assignedAt: string | null     // 방/공용부 배정일(대표=최근). null=미배정 또는 미상
   breakdown: { date: string; qty: number | null; amount: number }[]   // 합산 펼치기 — 개별 구매 내역
 }
 
@@ -67,7 +68,7 @@ type RawAsset = {
   qtyValue: number | null; qtyUnit: string | null; specValue: number | null; specUnit: string | null
   category: string; vendor: string | null
   roomId: string | null; roomNo: string | null; locationId: string | null; locationName: string | null
-  isCommon: boolean; received: boolean
+  isCommon: boolean; received: boolean; assignedAt: string | null
 }
 
 // 한 버킷의 행들을 동일 품목끼리 묶어 AssetItem[] 로 집계
@@ -85,6 +86,7 @@ function aggregateAssets(list: RawAsset[]): AssetItem[] {
     const qtyValue = hasQty ? rows.reduce((s, r) => s + (r.qtyValue ?? 0), 0) : null
     const amount = rows.reduce((s, r) => s + r.amount, 0)
     const date = rows.reduce((d, r) => (r.date > d ? r.date : d), rows[0].date)
+    const assignedAt = rows.map(r => r.assignedAt).filter((x): x is string => !!x).sort().pop() ?? null   // 대표=가장 최근 배정일
     const rep = rows[0]
     out.push({
       id: rep.id, ids: rows.map(r => r.id), count: rows.length, date,
@@ -92,7 +94,7 @@ function aggregateAssets(list: RawAsset[]): AssetItem[] {
       detail: buildAssetDetail({ itemLabel: rep.itemLabel, specValue: g.spec, specUnit: g.specUnit, qtyValue, qtyUnit: rep.qtyUnit }),
       amount, qtyValue, qtyUnit: rep.qtyUnit, category: rep.category, vendor: rep.vendor,
       roomId: rep.roomId, roomNo: rep.roomNo, locationId: rep.locationId, locationName: rep.locationName,
-      isCommon: rep.isCommon,
+      isCommon: rep.isCommon, assignedAt,
       breakdown: rows.map(r => ({ date: r.date, qty: r.qtyValue, amount: r.amount }))
         .sort((a, b) => b.date.localeCompare(a.date)),
     })
@@ -122,7 +124,7 @@ export async function getDurableItems(): Promise<AssetsData> {
       room: { select: { roomNo: true } },
       assignedLocationId: true,
       assignedLocation: { select: { name: true } },
-      isCommonAsset: true, receivedAt: true,
+      isCommonAsset: true, receivedAt: true, assignedAt: true,
     },
   })
 
@@ -133,6 +135,7 @@ export async function getDurableItems(): Promise<AssetsData> {
     roomId: r.roomId, roomNo: r.room?.roomNo ?? null,
     locationId: r.assignedLocationId, locationName: r.assignedLocation?.name ?? null,
     isCommon: r.isCommonAsset, received: r.receivedAt != null,
+    assignedAt: r.assignedAt ? r.assignedAt.toISOString().slice(0, 10) : null,
   }))
 
   const roomBuckets = new Map<string, RawAsset[]>()
@@ -181,6 +184,26 @@ export async function setAssetReceived(expenseIds: string[], received: boolean):
       data: { receivedAt: received ? new Date() : null },
     })
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 배정일 입력·수정 — 방/공용부에 배정된 비품 묶음의 배정일(assignedAt)을 설정. 빈 값이면 미상(null)으로.
+export async function setAssetAssignedAt(expenseIds: string[], dateStr: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (!expenseIds.length) return { ok: false, error: '대상 항목이 없습니다.' }
+    const val = dateStr ? new Date(`${dateStr}T00:00:00Z`) : null
+    if (dateStr && Number.isNaN(val!.getTime())) return { ok: false, error: '날짜 형식이 올바르지 않습니다.' }
+    await prisma.expense.updateMany({
+      where: { id: { in: expenseIds }, propertyId },
+      data: { assignedAt: val },
+    })
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -403,7 +426,7 @@ export async function assignAggregateToTarget(
     const fromState = await placeLabel(propertyId, rep0.roomId, rep0.assignedLocationId, rep0.isCommonAsset)
 
     if (target.kind === 'none') {
-      await prisma.$transaction(exps.map(e => prisma.expense.update({ where: { id: e.id }, data: { roomId: null, assignedLocationId: null, isCommonAsset: false } })))
+      await prisma.$transaction(exps.map(e => prisma.expense.update({ where: { id: e.id }, data: { roomId: null, assignedLocationId: null, isCommonAsset: false, assignedAt: null } })))
       const groups = [...new Set(exps.map(e => e.allocationGroupId).filter(Boolean) as string[])]
       for (const g of groups) await mergeUnassignedGroup(propertyId, g)
       await logAssignment(propertyId, rep0.itemLabel, fromState, { kind: 'none', label: '미배정' }, exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0))
@@ -412,6 +435,8 @@ export async function assignAggregateToTarget(
     }
 
     const tData = targetData(target)
+    // 배정일 — 방/공용부 배정 시 '지금'을 기본값으로. 이후 상세에서 수정 가능. 공용 자재(대상 없음)는 미상(null).
+    const assignedAtVal = (tData.roomId || tData.assignedLocationId) ? new Date() : null
     const totalQty = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
     const movedQty = (qty == null || qty >= totalQty) ? totalQty : Math.max(1, qty)
     let need = (qty == null || qty >= totalQty) ? totalQty : Math.max(1, qty)
@@ -422,7 +447,7 @@ export async function assignAggregateToTarget(
       if (need <= 1e-9) break
       const eq = e.qtyValue ?? 1
       if (eq <= need + 1e-9) {
-        ops.push(prisma.expense.update({ where: { id: e.id }, data: { ...tData, isCommonAsset: false } }))
+        ops.push(prisma.expense.update({ where: { id: e.id }, data: { ...tData, isCommonAsset: false, assignedAt: assignedAtVal } }))
         need -= eq
       } else {
         const assignedAmount = Math.round(e.amount * (need / eq))
@@ -439,7 +464,7 @@ export async function assignAggregateToTarget(
           qtyValue: need, qtyUnit: e.qtyUnit,
           receivedAt: e.receivedAt, excludeFromInventory: e.excludeFromInventory,
           allocationGroupId: groupId, orderId: e.orderId, isShipping: e.isShipping,
-          propertyId, roomId: tData.roomId, assignedLocationId: tData.assignedLocationId,
+          propertyId, roomId: tData.roomId, assignedLocationId: tData.assignedLocationId, assignedAt: assignedAtVal,
           financialAccountId: e.financialAccountId, recurringExpenseId: e.recurringExpenseId, receivedLocationId: e.receivedLocationId,
         } }))
         need = 0

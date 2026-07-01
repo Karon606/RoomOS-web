@@ -595,6 +595,8 @@ model Expense {
   // 비품·자재 배정 위치(공용부 — 주방·화장실·복도 등 StorageLocation). 방(roomId)과 상호배타.
   assignedLocationId   String?            @db.Uuid
   assignedLocation     StorageLocation?   @relation("ExpenseAssignedLocation", fields: [assignedLocationId], references: [id], onDelete: SetNull)
+  // 방/공용부 배정일 — 입력·수정 가능, 기본=배정하는 순간. null = 미배정 또는 배정일 미상.
+  assignedAt           DateTime?          @db.Date
   // 공용 자재 — 페인트·공구처럼 두고두고 공용으로 쓰는 비품. 방/공용부에 배분하지 않음(미배정과 구분: '의도된 공용').
   isCommonAsset        Boolean            @default(false)
 
