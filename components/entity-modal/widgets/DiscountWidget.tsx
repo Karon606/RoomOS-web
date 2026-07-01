@@ -58,7 +58,7 @@ export function DiscountWidget({ leaseTermId, onChange }: {
   return (
     <div className="border-t border-[var(--warm-border)] pt-3 mt-1 space-y-2">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-[var(--success-fg)]">월세 할인</p>
+        <p className="text-xs font-medium text-[var(--success-fg)]">월 이용료 할인</p>
         {!showForm && (
           <button onClick={() => setShowForm(true)}
             className="text-xs px-2.5 py-1 rounded-lg border border-[var(--success-ring)] text-[var(--success-fg)] hover:bg-[var(--success-bg)] transition-colors">+ 할인 추가</button>

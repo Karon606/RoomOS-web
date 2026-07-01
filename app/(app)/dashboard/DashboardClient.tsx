@@ -1310,7 +1310,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
         setIsDepositMode(false)
         await reload(lease)
         onPaymentDone?.()
-        pushToast('success', isDepositMode ? '보증금 수납됨' : '월세 수납됨')
+        pushToast('success', isDepositMode ? '보증금 수납됨' : '월 이용료 수납됨')
       } catch (err: unknown) {
         const msg = (err as Error).message
         setError(msg); pushToast('error', msg)

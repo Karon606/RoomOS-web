@@ -54,7 +54,7 @@ export function CalendarSubscribeCard() {
     <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
       <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">캘린더 연동 (구독)</h2>
       <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
-        구독 주소를 구글·애플·아웃룩 캘린더에 한 번 등록하면, 월세 납부 예정일과 퇴실 예정일이
+        구독 주소를 구글·애플·아웃룩 캘린더에 한 번 등록하면, 월 이용료 납부 예정일과 퇴실 예정일이
         내 캘린더에 자동으로 표시되고 변경사항도 주기적으로 동기화됩니다(읽기 전용).
       </p>
 

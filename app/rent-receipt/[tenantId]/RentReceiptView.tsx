@@ -123,7 +123,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
             <Field label="거주 기간 (1달 선납)" k="period" placeholder="2026.06.05 ~ 2026.07.04" />
             <Field label="납부 대상월" k="targetMonth" placeholder="2026년 6월분" />
           </div>
-          <Field label="금액 (월세, 원)" k="amount" placeholder="390,000" />
+          <Field label="금액 (월 이용료, 원)" k="amount" placeholder="390,000" />
           <div className="grid grid-cols-2 gap-3">
             <Field label="납부일" k="payDate" placeholder="2026년 6월 16일" />
             <Field label="납부방법" k="payMethod" placeholder="계좌이체 · 계좌번호 / 현금" />

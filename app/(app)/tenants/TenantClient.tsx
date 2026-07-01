@@ -753,7 +753,7 @@ export default function TenantClient({
         const { records } = await getPaymentsByLease(payTarget.lease.id, targetMonth)
         setPayHistory(records as PayRecord[])
         refresh()
-        pushToast('success', isDepositMode ? '보증금 수납됨' : '월세 수납됨')
+        pushToast('success', isDepositMode ? '보증금 수납됨' : '월 이용료 수납됨')
       } catch (err: unknown) {
         const msg = (err as Error).message
         setError(msg); pushToast('error', msg)
