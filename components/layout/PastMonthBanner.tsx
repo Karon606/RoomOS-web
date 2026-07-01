@@ -38,20 +38,21 @@ export default function PastMonthBanner() {
   }
 
   return (
+    // 컴팩트 슬림 바 — '2026년 6월 (지난달) 오늘'. 눈엔 띄되(amber) 과하지 않게. (2026-07-01 피드백)
     <div
-      className="mb-3 flex items-center gap-2.5 rounded-xl px-4 py-3"
-      style={{ background: 'var(--warning-bg)', border: '1.5px solid var(--warning-fg)', borderLeft: '5px solid var(--persimmon)' }}
+      className="mb-2.5 flex items-center gap-1.5 rounded-lg px-3 py-1.5"
+      style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-fg)' }}
     >
-      <span className="font-extrabold text-base" style={{ color: 'var(--warning-fg)' }}>{vy}년 {vm}월</span>
-      <span className="text-sm font-semibold" style={{ color: 'var(--warning-fg)' }}>· {rel} 보는 중 — 현재 월 아님</span>
+      <span className="text-xs font-bold" style={{ color: 'var(--warning-fg)' }}>{vy}년 {vm}월</span>
+      <span className="text-[0.6875rem] font-medium" style={{ color: 'var(--warning-fg)' }}>({rel})</span>
       <div className="flex-1" />
       <button
         type="button"
         onClick={goToday}
-        className="text-sm font-bold px-3.5 py-2 rounded-lg shrink-0"
+        className="text-[0.6875rem] font-bold px-2.5 py-1 rounded-md shrink-0"
         style={{ background: 'var(--persimmon)', color: '#fff' }}
       >
-        오늘로
+        오늘
       </button>
     </div>
   )
