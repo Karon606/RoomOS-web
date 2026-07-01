@@ -776,9 +776,14 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       })
     }
 
-    // 2) 조건 매칭 — 호실 미지정자가 wishConditions를 등록한 경우, 조건에 부합하는 모든 빈 방에 후보로 등록
+    // 2) 조건 매칭 — 호실 미지정자가 wishConditions를 등록한 경우, 조건에 부합하는 모든 빈 방에 후보로 등록.
+    //    단 '조건 무관'(빈 객체 "{}")은 '호실 미지정 seeker'에게만. 이미 방 배정된 거주중/퇴실예정의 잔여 "{}"는
+    //    '아무 방이나'로 잘못 매칭되므로 제외(구체 조건이 있는 실제 이동희망은 그대로 매칭). 2026-07-01 오탐 수정(412호 등).
     if (l.wishConditions) {
-      for (const info of vacantInfoMap.values()) {
+      const hasRealCond = (() => {
+        try { const c = JSON.parse(l.wishConditions!); return !!c && Object.values(c).some(v => v != null && v !== '') } catch { return false }
+      })()
+      if (hasRealCond || !l.room?.roomNo) for (const info of vacantInfoMap.values()) {
         if (!matchesConditions(info, l.wishConditions)) continue
         if (l.room?.roomNo === info.roomNo) continue
         // 같은 사람이 호실로도, 조건으로도 매칭되면 중복 방지
