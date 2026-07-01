@@ -524,7 +524,7 @@ export default function AssetsClient({ data, rooms, locations }: {
             </div>
           }
         >
-          <div className="space-y-3">
+          <div className="space-y-3 px-5 sm:px-6 py-4">
             {/* 품목명 — 일부 입력 시 기존 비품명 추천(datalist) */}
             <label className="block">
               <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">품목명</span>
