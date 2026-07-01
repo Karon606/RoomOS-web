@@ -888,14 +888,26 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
               const carry = priorChecks.length > 0
                 ? priorChecks.reduce((a, b) => (new Date(b.date) > new Date(a.date) ? b : a))
                 : null
-              // 점검 이후~월초 사이 입수 합(재고단위) — actions.ts 월별입수와 동일 변환(구매=qtyValue×spec, 무상=addedQty)
+              // 점검 이후~월초 사이 입수 합(재고단위) — 점검의 '실제 시각'(effTime) 기준으로 '그 이후 수령'만 더한다.
+              // ⚠️ date(자정) 기준이면 같은 날 점검보다 '먼저' 수령한 구매도 자정보다 늦어 '점검 이후'로 잡혀 이중 계산됨
+              //   (예: 6/16 13:53 수령 → 14:08 점검=20 인데 이월분이 20+20=40). 서버 overview·타임라인 정렬과 동일한 effTime 사용.
               const carryUseSpec = data.item.trackUnit !== 'qty' && !!(data.item.specUnit && data.item.specUnit.trim())
+              const KST = 9 * 3600000
+              const kstDayStr = (d: Date) => new Date(d.getTime() + KST).toISOString().slice(0, 10)
+              const kstMidnightMs = (d: Date) => Math.floor((d.getTime() + KST) / 86400000) * 86400000 - KST
+              const kstTodMs = (d: Date) => (d.getTime() + KST) % 86400000
+              const effMs = (e: TimelineEntry): number => {
+                if (e.type === 'purchase') return new Date(e.receivedAt ?? e.date).getTime()
+                const cr = new Date(e.createdAt), dt = new Date(e.date)
+                return kstDayStr(cr) === kstDayStr(dt) ? cr.getTime() : kstMidnightMs(dt) + kstTodMs(cr)
+              }
+              const carryBoundary = carry ? effMs(carry) : 0
               const carryInflow = carry
                 ? data.timeline.reduce((s, e) => {
                     if (entryMonth(e) >= targetMonth) return s
                     if (e.type === 'addition')
-                      return new Date(e.date) > new Date(carry.date) ? s + e.addedQty : s
-                    if (e.type === 'purchase' && e.receivedAt && new Date(e.receivedAt) > new Date(carry.date)) {
+                      return effMs(e) > carryBoundary ? s + e.addedQty : s
+                    if (e.type === 'purchase' && e.receivedAt && effMs(e) > carryBoundary) {
                       const spec = (carryUseSpec && e.specValue && e.specValue > 0)
                         ? (convertSpecValue(e.specValue, e.specUnit, data.item.specUnit) ?? e.specValue) : null
                       return s + (spec != null ? e.qtyValue * spec : e.qtyValue)
