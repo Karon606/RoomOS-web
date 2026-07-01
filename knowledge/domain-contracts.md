@@ -2,6 +2,9 @@
 
 핵심: `app/contract/[tenantId]/{ContractView.tsx, actions.ts}`, `lib/contract.ts`, `lib/contractPrintHtml.ts`, `app/api/contract/generate/route.ts`.
 
+## 결정: 동의서 수신인 '○○ 대표 귀하' 유지 (2026-07-01)
+잔여 소지품 임의처분 동의서 하단 "○○ 대표 귀하"(contractPrintHtml:153·ContractView:724)는 **의도된 표준 서식**. 이 동의서는 입주자가 작성·서명해 대표(운영자)에게 제출하는 서류라, '귀하'는 시스템이 운영자를 높이는 게 아니라 제출자(입주자)가 수신인을 높이는 것 — 유지 결정(오류신고 88c2f268). 존칭 규칙: 개인=귀하, 기관=귀중.
+
 ## 서명 저장
 - 입실계약서 서명: `LeaseTerm.signatureImageUrl`(dataURL). 출력 에디터가 불러와 재표시.
 - 동의서(잔여 소지품 임의처분) 서명: `LeaseTerm.disposalSignatureImageUrl`(2026-06-29 추가). generate route가 best-effort 저장(컬럼 미적용 시에도 PDF 안 깨짐).
