@@ -258,10 +258,10 @@ export default function AssetsClient({ data, rooms, locations }: {
         selected={mergeSel.has(it.id)}
         onToggleSelect={() => toggleMergeSel(it.id)}
         onClick={() => setDetailItem(it)}
-        title={it.detail || it.itemLabel}
+        title={it.itemLabel}
         badges={it.amount === 0 ? <span className="inline-flex items-center rounded-full bg-[var(--info-bg)] text-[var(--info-fg)] text-[0.625rem] font-semibold px-1.5 py-0.5">무상</span> : undefined}
-        meta={`${it.date.slice(2)} · ${it.category}${it.vendor ? ` · ${it.vendor}` : ''}`}
-        value={won(it.amount)}
+        meta={`${it.date.slice(2)} 구매${it.vendor ? ` · ${it.vendor}` : ''} · ${it.category} · ${won(it.amount)}`}
+        value={it.qtyValue != null ? `${fmtQty(it.qtyValue)}${it.qtyUnit ?? '개'}` : `${it.count}건`}
         expanded={!mergeMode && it.count > 1 && expanded.has(it.id)}
         expand={
           <ul className="space-y-0.5 border-l-2 border-[var(--warm-border)] pl-2.5">
