@@ -1506,6 +1506,23 @@ export default function FinanceClient({
               })
             }
           }
+          // 인식 직후 유사 품목 확인(오류신고 a3a4bac7) — 과거에 쓰던 비슷한 품목명이 있으면
+          // 그 이름으로 등록할지 물어봄(수동 추가의 confirmAdd와 동일 규칙). 승인 시 ocrRaw(원문)가
+          // 남아 별칭 학습 → 다음 영수증부턴 자동 치환.
+          const renamed: typeof ocrItems = []
+          for (const it of ocrItems) {
+            const similar = findSimilarItemName(it.label, detailSuggestions)
+            if (similar && similar !== it.label) {
+              const useExisting = await confirmDialog({
+                title: '비슷한 품목이 있어요',
+                message: `영수증의 '${it.label}' — 이미 '${similar}'(으)로 쓰신 적이 있어요. 같은 품목인가요?\n(다른 제품이면 '새 품목으로' — '${it.label}' 그대로 등록)`,
+                confirmLabel: `'${similar}'로`,
+                cancelLabel: '새 품목으로',
+              })
+              renamed.push(useExisting ? { ...it, rawLabel: it.rawLabel ?? it.label, label: similar } : it)
+            } else renamed.push(it)
+          }
+          ocrItems = renamed
           // 인식된 품목은 항상 '품목 선택'(ItemSelector)으로 — 등록 폼은 모든 카테고리에서 품목 모듈을 쓰므로.
           // (이전엔 ITEM_PRESETS 있는 카테고리만 품목으로, 나머진 세부 항목 텍스트로 빠지던 문제)
           setAddItems(ocrItems.map(it => ({ label: it.label, ocrRaw: it.rawLabel ?? it.label, specValue: it.specValue ?? '', specUnit: it.specUnit ?? '', qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '', amount: it.amount, unitPrice: it.amount != null ? Math.round(it.amount / ((Number(it.qtyValue) || 1) * (Number(it.specValue) || 1))) : undefined })))
