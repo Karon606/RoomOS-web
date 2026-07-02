@@ -13,6 +13,7 @@ import { RoomCard } from '@/components/ui/RoomCard'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { IncomeSection, type Income, type LeaseOption } from './IncomeSection'
+import { fmtKorMoney } from '@/lib/fmtMoney'
 import { DisplayFieldsMenu } from '@/components/ui/DisplayFieldsMenu'
 import { Modal } from '@/components/ui/Modal'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -531,6 +532,16 @@ export default function RoomsClient({
     return vacantSortDir === 'asc' ? cmp : -cmp
   })
 
+  // ── 상단 수납 진행 스트립 (표시 전용 — 서버가 계산한 행 값을 그대로 합산, §4 재계산 없음) ──
+  // 예상 = 이 화면 행들의 그 달 청구액 합(Σ expected) → 공실 제외·무청구 퇴실월 0원·퇴실 일할이 자동 반영.
+  // 수납 = 예상 − 이번 달 미수(행별 balance<0, 이월 미수와 구분되도록 expected로 캡).
+  // 만실 시 = 예상 + 공실들의 기준 임대료(baseRent) — 점유 손실 참고치.
+  const expectedSum  = occupied.reduce((s, r) => s + r.expected, 0)
+  const collectedSum = occupied.reduce((s, r) => s + (r.expected - Math.min(r.expected, Math.max(0, -r.balance))), 0)
+  const maxSum       = expectedSum + vacants.reduce((s, r) => s + (r.baseRent || 0), 0)
+  const collectPct   = expectedSum > 0 ? Math.round((collectedSum / expectedSum) * 100) : 0
+  const incomeSum    = incomes.reduce((s, i) => s + i.amount, 0)
+
   // 부가수익 입주자 연결 선택지 — 현재 수납 화면의 계약들(비공실 + 계약 존재)
   const leaseOptions: LeaseOption[] = (() => {
     const seen = new Set<string>()
@@ -553,7 +564,9 @@ export default function RoomsClient({
             <button type="button" onClick={() => setViewTab('rooms')}
               className={`px-4 py-2 transition-colors ${viewTab === 'rooms' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>수납</button>
             <button type="button" onClick={() => setViewTab('income')}
-              className={`px-4 py-2 transition-colors ${viewTab === 'income' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>부가수익</button>
+              className={`px-4 py-2 transition-colors ${viewTab === 'income' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>
+              부가수익{incomeSum > 0 ? ` (+${fmtKorMoney(incomeSum)})` : ''}
+            </button>
           </div>
         </div>
         <MonthSelector />
@@ -565,6 +578,25 @@ export default function RoomsClient({
       )}
 
       {viewTab === 'rooms' && <>
+      {/* 수납 진행 스트립 — 걷은 돈/걷을 돈(%) + 만실 참고치. 예상=아래 목록 청구액 합(일할·무청구 반영) */}
+      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-4 py-3 space-y-1.5">
+        <div className="flex items-baseline justify-between gap-2 flex-wrap">
+          <p className="text-sm text-[var(--warm-dark)]">
+            <span className="text-xs text-[var(--warm-muted)]">수납 </span>
+            <span className="font-bold text-[var(--success-fg)] num">{collectedSum.toLocaleString()}원</span>
+            <span className="text-[var(--warm-muted)]"> / 예상 </span>
+            <span className="font-semibold num">{expectedSum.toLocaleString()}원</span>
+            <span className="text-xs text-[var(--warm-muted)]"> ({collectPct}%)</span>
+          </p>
+          {maxSum > expectedSum && (
+            <span className="text-[0.6875rem] text-[var(--warm-muted)] num">만실 시 {maxSum.toLocaleString()}원</span>
+          )}
+        </div>
+        <div className="h-1.5 rounded-full bg-[var(--canvas)] border border-[var(--warm-border)]/60 overflow-hidden">
+          <div className="h-full rounded-full transition-[width]" style={{ width: `${Math.min(100, collectPct)}%`, background: 'var(--success-fg)' }} />
+        </div>
+      </div>
+
       {/* 검색창 — §22 공용 SearchBar */}
       <SearchBar value={search} onChange={setSearch} placeholder="호실 번호 또는 입주자 이름 검색" />
 
