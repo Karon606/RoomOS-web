@@ -137,6 +137,9 @@ export type ItemPickState = {
   qtyValue: string; qtyUnit: string
   amount?: number   // 이 품목에 할당된 총 금액
   unitPrice?: number  // 단가 — amount 와 수량으로 상호 자동계산(둘 중 하나 입력 시 다른 쪽 계산)
+  // 단가 기준 — 'spec'(규격당: 40개입 3박스 → 120개당) / 'qty'(완제품 1개당: 장판 1롤당 등).
+  // 규격이 치수(cm 등)면 규격당 단가가 무의미해 개당 기준 입력 지원(오류신고 4e2ffe04). 생략=spec(현행).
+  unitBasis?: 'spec' | 'qty'
   // 방별 분배 (선택) — 사용자가 '방별로 나누기'를 켰을 때만. 비면 방 분할 없음(방은 선택사항).
   allocations?: { roomId: string; qty: string }[]
 }
@@ -267,6 +270,8 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   const [amountStr, setAmountStr]     = useState('')
   const [unitStr, setUnitStr]         = useState('')                        // 단가(기준단위 1개당) — 아는 값 입력 시 금액 자동
   const [priceMode, setPriceMode]     = useState<'amount' | 'unit'>('amount')  // 마지막으로 사용자가 직접 입력한 쪽(그쪽이 기준)
+  const [unitBasis, setUnitBasis]     = useState<'spec' | 'qty'>('spec')    // 단가 기준: 규격당 / 완제품 1개당(장판 1롤당 등)
+  const [basisTouched, setBasisTouched] = useState(false)
   const [customLabel, setCustomLabel] = useState('')
   const [fetching, setFetching]       = useState(false)
   const [prevUnits, setPrevUnits]     = useState<{ specUnit: string | null; qtyUnit: string | null } | null>(null)
@@ -276,13 +281,22 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   useEffect(() => {
     setActiveLabel(null)
     setSpecValue(''); setSpecUnit(''); setQtyValue(''); setQtyUnit('')
-    setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setCustomLabel(''); setPrevUnits(null); setNoSpec(false)
+    setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setCustomLabel(''); setPrevUnits(null); setNoSpec(false)
   }, [category])
 
-  // 단가·금액 양방향 자동계산 — 사용자가 마지막 입력한 쪽(priceMode)을 기준으로 나머지를 채운다.
-  // 기준수량 = 수량 × 규격. 단가만 알아도(금액만 알아도) 다른 쪽이 자동으로 채워진다. (오류신고 407567e6)
+  // 규격 단위가 치수(cm·mm·m·인치)면 규격당 단가가 무의미한 경우가 많아(장판 1cm당 가격 등)
+  // 기본 기준을 '완제품 1개당'으로. 사용자가 직접 전환했으면(basisTouched) 존중. (오류신고 4e2ffe04)
   useEffect(() => {
-    const baseQ = (Number(qtyValue) || 1) * (specValue ? (Number(specValue) || 1) : 1)
+    if (basisTouched) return
+    const u = specUnit.trim().toLowerCase()
+    setUnitBasis(['cm', 'mm', 'm', '인치'].includes(u) ? 'qty' : 'spec')
+  }, [specUnit, basisTouched])
+
+  // 단가·금액 양방향 자동계산 — 사용자가 마지막 입력한 쪽(priceMode)을 기준으로 나머지를 채운다.
+  // 기준수량 = 수량 × (규격당 기준이면 규격). 단가만 알아도(금액만 알아도) 다른 쪽이 자동으로 채워진다. (오류신고 407567e6)
+  useEffect(() => {
+    const specFactor = specValue ? (Number(specValue) || 1) : 1
+    const baseQ = (Number(qtyValue) || 1) * (unitBasis === 'spec' ? specFactor : 1)
     if (priceMode === 'unit') {
       const u = unitStr ? Number(unitStr) : undefined
       const next = u != null ? String(Math.round(u * baseQ)) : ''
@@ -292,7 +306,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
       const next = a != null && baseQ > 0 ? String(Math.round(a / baseQ)) : ''
       setUnitStr(prev => (prev === next ? prev : next))
     }
-  }, [qtyValue, specValue, unitStr, amountStr, priceMode])
+  }, [qtyValue, specValue, unitStr, amountStr, priceMode, unitBasis])
 
   const numCls  = 'w-16 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
   const amtCls  = 'flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
@@ -300,7 +314,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
 
   async function openPreset(label: string) {
     setActiveLabel(label)
-    setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setNoSpec(false)
+    setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setNoSpec(false)
     const def = ITEM_DEFAULTS[label]
     setSpecUnit(def?.specUnit ?? ''); setQtyUnit(def?.qtyUnit ?? '')
     setPrevUnits(null)
@@ -333,7 +347,8 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     const resolvedQty  = noQty ? '1' : qtyValue
     const resolvedUnit = noQty && qtyUnit.trim() === '' ? '개' : qtyUnit
     const q = Number(resolvedQty) || 1
-    const baseQ = q * (specValue ? (Number(specValue) || 1) : 1)   // 기준수량 = 수량 × 규격
+    // 기준수량 = 수량 × (규격당 기준이면 규격). 개당 기준(장판 1롤당 등)이면 수량만.
+    const baseQ = q * (unitBasis === 'spec' ? (specValue ? (Number(specValue) || 1) : 1) : 1)
     // 단가를 직접 입력했으면(priceMode='unit') 단가를 기준으로 금액 산출, 아니면 금액에서 단가 역산.
     let amount: number | undefined
     let unitPrice: number | undefined
@@ -344,10 +359,10 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
       amount = amountStr ? Number(amountStr.replace(/[^0-9]/g, '')) : undefined
       unitPrice = amount != null && baseQ > 0 ? Math.round(amount / baseQ) : undefined
     }
-    const data: ItemPickState = { label: finalLabel, specValue, specUnit, qtyValue: resolvedQty, qtyUnit: resolvedUnit, amount, unitPrice }
+    const data: ItemPickState = { label: finalLabel, specValue, specUnit, qtyValue: resolvedQty, qtyUnit: resolvedUnit, amount, unitPrice, unitBasis }
     onChange([...items, data])
     setActiveLabel(null)
-    setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setCustomLabel('')
+    setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setCustomLabel('')
   }
 
   function removeItem(idx: number) {
@@ -357,10 +372,11 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   function patchItem(idx: number, patch: Partial<ItemPickState>) {
     onChange(items.map((it, i) => i === idx ? { ...it, ...patch } : it))
   }
-  // 단가는 '기준단위(규격) 1개당'. 총 기준수량 = 수량 × 규격 (규격 없으면 수량 그대로).
-  // 예) 40개입 3박스 → 기준수량 120개, 단가 = 금액 ÷ 120.
+  // 단가 기준 — 'spec'(규격당: 40개입 3박스 → 120개당) / 'qty'(완제품 1개당: 장판 1롤당).
+  // 총 기준수량 = 수량 × (spec 기준이면 규격값). 단가 라벨을 눌러 기준 전환.
+  const basisOf = (it: ItemPickState) => it.unitBasis ?? 'spec'
   const specMul = (it: { specValue?: string | number | null }) => it.specValue ? (Number(it.specValue) || 1) : 1
-  const baseQtyOf = (it: ItemPickState) => (Number(it.qtyValue) || 1) * specMul(it)
+  const baseQtyOf = (it: ItemPickState) => (Number(it.qtyValue) || 1) * (basisOf(it) === 'spec' ? specMul(it) : 1)
   // 금액 입력 → 단가 자동(금액 ÷ 기준수량)
   function updateItemAmount(idx: number, raw: string) {
     const amount = raw ? Number(raw.replace(/[^0-9]/g, '')) : undefined
@@ -386,10 +402,17 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   function updateItemSpec(idx: number, raw: string) {
     const specValue = raw.replace(/[^0-9.]/g, '')
     const it = items[idx]
-    const q = (Number(it.qtyValue) || 1) * (specValue ? (Number(specValue) || 1) : 1)
+    const q = (Number(it.qtyValue) || 1) * (basisOf(it) === 'spec' ? (specValue ? (Number(specValue) || 1) : 1) : 1)
     if (it.amount != null) patchItem(idx, { specValue, unitPrice: q > 0 ? Math.round(it.amount / q) : undefined })
     else if (it.unitPrice != null) patchItem(idx, { specValue, amount: Math.round(it.unitPrice * q) })
     else patchItem(idx, { specValue })
+  }
+  // 단가 기준 전환(규격당 ↔ 개당) — 금액은 그대로 두고 단가만 새 기준으로 재계산
+  function toggleItemBasis(idx: number) {
+    const it = items[idx]
+    const next: 'spec' | 'qty' = basisOf(it) === 'spec' ? 'qty' : 'spec'
+    const q = (Number(it.qtyValue) || 1) * (next === 'spec' ? specMul(it) : 1)
+    patchItem(idx, { unitBasis: next, unitPrice: it.amount != null && q > 0 ? Math.round(it.amount / q) : it.unitPrice })
   }
   // 방별 분배 — 켜면 한 줄(방 미지정+전체수량) 생성, 끄면 제거(방 분배 없음)
   function toggleAlloc(idx: number) {
@@ -445,7 +468,11 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
         <div className="space-y-1">
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <label className="text-[0.625rem] text-[var(--warm-muted)]">단가{specValue ? `/${specUnit || '개'}` : ''} <span className="text-[var(--warm-muted)]">(선택)</span></label>
+              <button type="button" onClick={() => { setBasisTouched(true); setUnitBasis(b => b === 'spec' ? 'qty' : 'spec') }}
+                title="단가 기준 전환 (규격당 ↔ 완제품 1개당)"
+                className="block text-[0.625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2">
+                단가 (1{unitBasis === 'spec' && specValue ? (specUnit || '개') : (qtyUnit || '개')}당)
+              </button>
               <div className="flex gap-1 items-center">
                 <input type="text" inputMode="numeric"
                   value={unitStr ? Number(unitStr).toLocaleString() : ''}
@@ -467,7 +494,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
               </div>
             </div>
           </div>
-          <p className="text-[0.5625rem] text-[var(--warm-muted)]">단가·금액 중 아는 값만 넣으면 나머지는 자동 계산돼요 (수량×규격 기준).</p>
+          <p className="text-[0.5625rem] text-[var(--warm-muted)]">단가·금액 중 아는 값만 넣으면 나머지는 자동 계산돼요. 단가 라벨을 누르면 기준 전환(규격당 ↔ 완제품 1개당 — 장판 1롤당 등).</p>
         </div>
       )}
     </div>
@@ -514,7 +541,10 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                     </label>
                     <span className="text-[0.625rem] text-[var(--warm-muted)] pb-1.5">×</span>
                     <label className="flex flex-col gap-0.5">
-                      <span className="text-[0.5625rem] text-[var(--warm-muted)]">단가{it.specValue ? `/${it.specUnit || '개'}` : ''}</span>
+                      <button type="button" onClick={() => toggleItemBasis(idx)} title="단가 기준 전환 (규격당 ↔ 완제품 1개당)"
+                        className="text-[0.5625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 text-left">
+                        단가/1{basisOf(it) === 'spec' && it.specValue ? (it.specUnit || '개') : (it.qtyUnit || '개')}
+                      </button>
                       <div className="flex items-center gap-0.5">
                         <input type="text" inputMode="numeric" value={it.unitPrice ? it.unitPrice.toLocaleString() : ''}
                           onChange={e => updateItemUnit(idx, e.target.value)} placeholder="0"
