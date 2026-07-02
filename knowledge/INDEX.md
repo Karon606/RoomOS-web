@@ -18,6 +18,7 @@
 - [[decisions]] — 주요 의사결정 로그(왜 그렇게 했나)
 - [[glossary]] — 용어집(귀속월·확정/예정·허브·일할 등)
 - [[open-issues]] — 미해결·후속 작업
+- [[design-audit-2026-07]] — 디자인 가이드 감사(Phase 1 완료, 보류 목록)
 
 ## 핵심 파일 맵 (자주 건드리는 곳)
 - 빌링 엔진: `lib/billing.ts` `billForLeaseMonth`

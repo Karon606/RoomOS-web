@@ -22,6 +22,7 @@ import { includeExpenseInInventory } from '@/app/(app)/inventory/actions'
 import { useRouter } from 'next/navigation'
 import { recordDepositReceived } from '@/app/(app)/rooms/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Loading } from '@/components/ui/Loading'
@@ -2457,7 +2458,7 @@ export default function FinanceClient({
                 {/* 모바일 카드 */}
                 {isEmpty ? (
                   <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-10 text-center">
-                    <EmptyState label="지출 내역이 없습니다" />
+                    <EmptyState title="지출 내역이 없습니다" className="border-0 bg-transparent" />
                   </div>
                 ) : (
                   <div className="sm:hidden space-y-1.5">
@@ -2567,7 +2568,7 @@ export default function FinanceClient({
                 {/* 데스크탑 테이블 */}
                 <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-auto max-h-[calc(100vh-340px)]">
                   {isEmpty ? (
-                    <EmptyState label="지출 내역이 없습니다" />
+                    <EmptyState title="지출 내역이 없습니다" className="border-0 bg-transparent" />
                   ) : (
                     <table className="w-full" style={{
                       tableLayout: 'fixed',
@@ -2888,7 +2889,7 @@ export default function FinanceClient({
               <h2 className="text-sm font-semibold text-[var(--warm-dark)]">등록된 자산 목록</h2>
             </div>
             {financialAccounts.length === 0 ? (
-              <EmptyState label="등록된 자산이 없습니다" />
+              <EmptyState title="등록된 자산이 없습니다" />
             ) : (
               <div>
                 {(
@@ -4286,7 +4287,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
       {sub === 'tenant' && (
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
           {summary.length === 0 ? (
-            <EmptyState label="보증금 거래 이력이 있는 입주자가 없습니다." />
+            <EmptyState title="보증금 거래 이력이 있는 입주자가 없습니다." className="border-0 bg-transparent" />
           ) : (
             <ul className="divide-y divide-[var(--warm-border)]/50">
               {summary.map(d => (
@@ -4340,7 +4341,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
       {sub === 'ledger' && (
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-hidden">
           {ledger.length === 0 ? (
-            <EmptyState label="보증금 거래 이력이 없습니다." />
+            <EmptyState title="보증금 거래 이력이 없습니다." className="border-0 bg-transparent" />
           ) : (
             <ul className="divide-y divide-[var(--warm-border)]/50">
               {ledger.map((e, i) => (
@@ -4628,7 +4629,7 @@ function ReserveTab({
           <h3 className="text-sm font-semibold text-[var(--warm-dark)]">{targetMonth} 거래 이력 ({txns.length}건)</h3>
         </div>
         {txns.length === 0 ? (
-          <EmptyState label="이번 달 예비비 거래 없음" />
+          <EmptyState title="이번 달 예비비 거래 없음" />
         ) : (
           <ul className="divide-y divide-[var(--warm-border)]/50">
             {txns.map(t => (
@@ -4676,10 +4677,6 @@ function ReserveTab({
 }
 
 // ── 공통 서브 컴포넌트 ────────────────────────────────────────────
-
-function EmptyState({ label }: { label: string }) {
-  return <div className="p-12 text-center"><p className="text-[var(--warm-muted)] text-sm">{label}</p></div>
-}
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (

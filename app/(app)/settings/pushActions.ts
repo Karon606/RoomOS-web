@@ -83,7 +83,7 @@ export async function sendTestPush(): Promise<{ ok: true; sent: number } | { ok:
     if (subs.length === 0) return { ok: false, error: '구독된 기기가 없습니다. 먼저 알림을 켜주세요.' }
     const payload = JSON.stringify({
       title: '스테이음 알림 테스트',
-      body: '푸시 알림이 정상 동작합니다 🎉',
+      body: '푸시 알림이 정상 동작합니다',
       url: '/dashboard',
       badge: 1,
       tag: 'stayeum-test',
@@ -106,7 +106,7 @@ export async function sendTestPush(): Promise<{ ok: true; sent: number } | { ok:
           userId,
           source: 'test',
           title: '스테이음 알림 테스트',
-          body: '푸시 알림이 정상 동작합니다 🎉',
+          body: '푸시 알림이 정상 동작합니다',
           url: '/dashboard',
           badge: 1,
           tag: 'stayeum-test',
