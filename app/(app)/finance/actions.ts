@@ -451,6 +451,8 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     const orderShippingType = (formData.get('orderShippingType') as string) || null
     const orderShippingMemo = (formData.get('orderShippingMemo') as string) || null
     const externalOrderNo   = ((formData.get('externalOrderNo') as string) || '').trim() || null
+    // 같은 쇼핑몰 주문번호의 기존 주문에 합류(클라이언트에서 확인 후 전달) — 오류신고 4f9fb398
+    const attachOrderId     = ((formData.get('attachOrderId') as string) || '').trim() || null
     const isOrderMode       = !!orderShipping && orderShipping > 0
     // 합산형 배송비('배송비 포함') — amount 에 이미 더해져 제출됨. 품목합 검증 시 이만큼 차감.
     // (이전엔 이 필드가 없어 '품목 2개+ + 배송비 포함' 조합이 합계 불일치로 항상 저장 실패)
@@ -486,18 +488,25 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     //  - 그 외 다품목 구매(multiItems ≥ 2): 배송비 없는 주문 자동 생성 → 지출내역 '주문별 보기'에서 한 묶음.
     //  (단일 품목은 주문 불필요 — 그 자체가 한 건)
     let orderId: string | null = null
-    if (isOrderMode) {
-      const shipType = orderShippingType && (SHIPPING_TYPES as readonly string[]).includes(orderShippingType)
-        ? orderShippingType : null
-      const order = await prisma.expenseOrder.create({
-        data: { propertyId, code: await genOrderCode(propertyId), externalOrderNo, shippingType: shipType, shippingMemo: orderShippingMemo },
-      })
-      orderId = order.id
-    } else if ((multiItems && multiItems.length > 1) || externalOrderNo) {
-      const order = await prisma.expenseOrder.create({
-        data: { propertyId, code: await genOrderCode(propertyId), externalOrderNo, shippingType: null, shippingMemo: null },
-      })
-      orderId = order.id
+    // 기존 주문 합류 — 같은 주문번호로 이미 만든 주문에 이 지출을 묶음(판매점별 영수증 여러 장 대응).
+    if (attachOrderId) {
+      const existing = await prisma.expenseOrder.findFirst({ where: { id: attachOrderId, propertyId }, select: { id: true } })
+      if (existing) orderId = existing.id
+    }
+    if (!orderId) {
+      if (isOrderMode) {
+        const shipType = orderShippingType && (SHIPPING_TYPES as readonly string[]).includes(orderShippingType)
+          ? orderShippingType : null
+        const order = await prisma.expenseOrder.create({
+          data: { propertyId, code: await genOrderCode(propertyId), externalOrderNo, shippingType: shipType, shippingMemo: orderShippingMemo },
+        })
+        orderId = order.id
+      } else if ((multiItems && multiItems.length > 1) || externalOrderNo) {
+        const order = await prisma.expenseOrder.create({
+          data: { propertyId, code: await genOrderCode(propertyId), externalOrderNo, shippingType: null, shippingMemo: null },
+        })
+        orderId = order.id
+      }
     }
 
     const baseRow = {
@@ -819,6 +828,25 @@ async function cleanupOrderIfOrphan(orderId: string) {
   } else if (rows.length === 1) {
     await prisma.expense.updateMany({ where: { orderId }, data: { orderId: null } })
     await prisma.expenseOrder.delete({ where: { id: orderId } }).catch(() => {})
+  }
+}
+
+// 같은 쇼핑몰 주문번호의 기존 주문 조회 — 지출 등록 시 '같은 주문으로 묶을까요?' 확인용(오류신고 4f9fb398).
+export async function findOrderByExternalNo(externalOrderNo: string): Promise<{ id: string; code: string; count: number; total: number } | null> {
+  const propertyId = await getPropertyId()
+  const no = externalOrderNo.trim()
+  if (!no) return null
+  const order = await prisma.expenseOrder.findFirst({
+    where: { propertyId, externalOrderNo: no },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, code: true, expenses: { select: { amount: true, isShipping: true } } },
+  })
+  if (!order) return null
+  return {
+    id: order.id,
+    code: order.code,
+    count: order.expenses.filter(e => !e.isShipping).length,
+    total: order.expenses.reduce((s, e) => s + e.amount, 0),
   }
 }
 

@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
 import {
-  addExpense, updateExpense, deleteExpense, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder,
+  addExpense, updateExpense, deleteExpense, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, findOrderByExternalNo,
   addExtraIncome, updateExtraIncome, deleteExtraIncome,
   unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
@@ -1877,6 +1877,21 @@ export default function FinanceClient({
     startTransition(async () => {
       const release = trackSave()
       try {
+        // 같은 쇼핑몰 주문번호의 기존 주문이 있으면 묶을지 확인(오류신고 4f9fb398) —
+        // 쿠팡처럼 한 주문을 판매점별로 나눠 결제해 영수증이 여러 장인 경우, 각 영수증을 같은 주문으로.
+        const extNo = ((fd.get('externalOrderNo') as string) || '').trim()
+        if (extNo) {
+          const found = await findOrderByExternalNo(extNo).catch(() => null)
+          if (found) {
+            const attach = await confirmDialog({
+              title: '같은 주문번호의 주문이 있어요',
+              message: `주문 ${found.code} — 품목 ${found.count}건 · ${found.total.toLocaleString()}원.\n이 지출을 같은 주문으로 묶을까요? (한 주문에 판매점별 영수증이 여러 장인 경우)\n묶은 뒤에도 지출 상세에서 풀 수 있어요.`,
+              confirmLabel: '같은 주문으로 묶기',
+              cancelLabel: '따로 등록',
+            })
+            if (attach) fd.set('attachOrderId', found.id)
+          }
+        }
         const res = await addExpense(fd)
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
         setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
