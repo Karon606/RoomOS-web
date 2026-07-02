@@ -7,6 +7,7 @@
 import { useState, useTransition, useMemo, useEffect, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { ViewTabs } from '@/components/ui/ViewTabs'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
@@ -366,11 +367,10 @@ export default function AssetsClient({ data, rooms, locations }: {
   return (
     <div className="space-y-5 px-4 sm:px-6 py-5">
       {/* 동일 레벨 탭 — 소모품·부식 / 비품·자재(현재) */}
-      <div className="inline-flex rounded-xl border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
-        <Link href="/inventory" prefetch
-          className="px-4 py-2 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">소모품·부식</Link>
-        <span className="px-4 py-2 bg-[var(--coral)] text-white">비품·자재</span>
-      </div>
+      <ViewTabs ariaLabel="재고 탭" activeId="assets" tabs={[
+        { id: 'consumables', label: '소모품·부식', href: '/inventory' },
+        { id: 'assets',      label: '비품·자재',   href: '/inventory/assets' },
+      ]} />
       <div className="flex items-start justify-between gap-2">
         <div>
           <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재</h1>

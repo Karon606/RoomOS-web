@@ -19,6 +19,7 @@ import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { convertSpecValue, listCompatibleUnits, unitFactor } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { ViewTabs } from '@/components/ui/ViewTabs'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type InventoryCategory, suggestInventoryAlias } from './constants'
 import {
   getInventoryDetail,
@@ -254,11 +255,10 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
     <div className="space-y-4 px-4 sm:px-6 py-5">
       {/* 동일 레벨 탭 — 소모품·부식(기본) / 비품·자재 + 월 전환(재고는 월별 이월·소비 데이터) */}
       <div className="flex items-start justify-between gap-2 flex-wrap">
-        <div className="inline-flex rounded-xl border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
-          <span className="px-4 py-2 bg-[var(--coral)] text-white">소모품·부식</span>
-          <Link href="/inventory/assets" prefetch
-            className="px-4 py-2 bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">비품·자재</Link>
-        </div>
+        <ViewTabs ariaLabel="재고 탭" activeId="consumables" tabs={[
+          { id: 'consumables', label: '소모품·부식', href: '/inventory' },
+          { id: 'assets',      label: '비품·자재',   href: '/inventory/assets' },
+        ]} />
         <MonthSelector />
       </div>
       <div className="space-y-2">
