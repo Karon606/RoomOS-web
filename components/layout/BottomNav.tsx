@@ -39,7 +39,7 @@ const NAV_ITEMS = [
   },
   {
     href: '/finance',
-    label: '지출',
+    label: '지출/수익',
     Icon: () => <svg {...ico}><path d="M7 3.5 4 6.5l3 3"/><path d="M4 6.5h10.5A5.5 5.5 0 0 1 20 12"/><path d="M17 20.5l3-3-3-3"/><path d="M20 17.5H9.5A5.5 5.5 0 0 1 4 12"/></svg>,
   },
   {
