@@ -27,6 +27,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { Modal } from '@/components/ui/Modal'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
@@ -325,6 +326,10 @@ export default function TenantClient({
   ) as Record<ColKey, boolean>
 
   const [showAdd, setShowAdd]             = useState(false)
+  // §13.2 — 폼 모달 입력 보호(dirty). 입력 시작 후 배경클릭 무시, Esc/X 확인(Modal 내장).
+  const [addTenantDirty, setAddTenantDirty] = useState(false)
+  const [editTenantDirty, setEditTenantDirty] = useState(false)
+  const [detailEditDirty, setDetailEditDirty] = useState(false)
   const [selectMode, setSelectMode]       = useState(false)
   const [selectedIds, setSelectedIds]     = useState<Set<string>>(new Set())
   const [showBatchEdit, setShowBatchEdit] = useState(false)
@@ -919,7 +924,7 @@ export default function TenantClient({
             {selectMode ? '선택 취소' : '선택'}
           </Btn>
           <Btn variant="primary" size="md"
-            onClick={() => { setShowAdd(true); setError('') }}>
+            onClick={() => { setAddTenantDirty(false); setShowAdd(true); setError('') }}>
             + 고객 등록
           </Btn>
         </div>
@@ -1126,12 +1131,8 @@ export default function TenantClient({
         const dirLabel = diff > 0 ? '인상' : diff < 0 ? '인하' : '동결'
         const dirColor = diff > 0 ? 'text-[var(--danger-fg)]' : diff < 0 ? 'text-[var(--success-fg)]' : 'text-[var(--warm-dark)]'
         return (
-          <div className="fixed inset-0 bg-black/70 z-[var(--z-modal-3)] flex items-center justify-center p-4">
-            <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-bold text-[var(--warm-dark)]">가격 변동 적용</h2>
-                <button onClick={() => setRentChangeModal(null)} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
-              </div>
+          <Modal open z={280} width="sm" onClose={() => setRentChangeModal(null)}
+            title="가격 변동 적용" bodyClassName="p-6 space-y-4">
               <p className="text-sm text-[var(--warm-mid)] leading-relaxed">
                 <span className="font-semibold text-[var(--warm-dark)]">{fmtRoomNo(rentChangeModal.roomNo)}</span>가 공실로 변경됩니다. 예정된 가격 변동을 즉시 적용할까요?
               </p>
@@ -1154,8 +1155,7 @@ export default function TenantClient({
                   네, 즉시 적용
                 </Btn>
               </div>
-            </div>
-          </div>
+          </Modal>
         )
       })()}
 
@@ -1433,15 +1433,11 @@ export default function TenantClient({
           clearTenantUrlParams()
         }
         return (
-          <div className="fixed inset-0 bg-black/70 z-[var(--z-modal-2)] flex items-center justify-center p-4"
-            onClick={closeEdit}>
-            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[88vh]"
-              onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-                <h2 className="text-base font-bold text-[var(--warm-dark)]">고객 정보 수정 — {t.name}</h2>
-                <button onClick={closeEdit} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none">✕</button>
-              </div>
-              <form key={t.id} onSubmit={handleUpdateFromDetail} className="flex flex-col flex-1 overflow-hidden">
+          <Modal open z={260} width="lg" dirty={detailEditDirty}
+            onClose={() => { setDetailEditDirty(false); closeEdit() }}
+            title={`고객 정보 수정 — ${t.name}`}>
+              <form key={t.id} onSubmit={handleUpdateFromDetail} className="flex flex-col flex-1 overflow-hidden"
+                onInput={() => setDetailEditDirty(true)} onChange={() => setDetailEditDirty(true)}>
                 <input type="hidden" name="tenantId"    value={t.id} />
                 <input type="hidden" name="leaseTermId" value={t.leaseTerms[0]?.id ?? ''} />
                 <div className="overflow-y-auto p-6 space-y-4 flex-1">
@@ -1454,8 +1450,7 @@ export default function TenantClient({
                   </Btn>
                 </div>
               </form>
-            </div>
-          </div>
+          </Modal>
         )
       })()}
 
@@ -1478,15 +1473,10 @@ export default function TenantClient({
 
       {/* ── 입주자 추가 모달 ────────────────────────────────────────── */}
       {showAdd && (
-        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
-          onClick={() => setShowAdd(false)}>
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh]"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-              <h2 className="text-base font-bold text-[var(--warm-dark)]">고객 등록</h2>
-              <button onClick={() => setShowAdd(false)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl">✕</button>
-            </div>
-            <form onSubmit={handleAdd} className="overflow-y-auto p-6 space-y-4">
+        <Modal open width="lg" dirty={addTenantDirty}
+          onClose={() => { setShowAdd(false); setAddTenantDirty(false) }} title="고객 등록">
+            <form onSubmit={handleAdd} className="overflow-y-auto p-6 space-y-4"
+              onInput={() => setAddTenantDirty(true)} onChange={() => setAddTenantDirty(true)}>
               <TenantForm rooms={rooms} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} />
               <div className="flex gap-2 pt-2">
                 <Btn type="button" variant="secondary" size="md" onClick={() => setShowAdd(false)}
@@ -1499,21 +1489,16 @@ export default function TenantClient({
                 </Btn>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* ── 입주자 수정 모달 ────────────────────────────────────────── */}
       {editTenant && (
-        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
-          onClick={() => setEditTenant(null)}>
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh]"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-              <h2 className="text-base font-bold text-[var(--warm-dark)]">수정 — {editTenant.name}</h2>
-              <button onClick={() => setEditTenant(null)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl">✕</button>
-            </div>
-            <form key={editTenant.id} onSubmit={handleUpdate} className="overflow-y-auto p-6 space-y-4">
+        <Modal open width="lg" dirty={editTenantDirty}
+          onClose={() => { setEditTenant(null); setEditTenantDirty(false) }}
+          title={`수정 — ${editTenant.name}`}>
+            <form key={editTenant.id} onSubmit={handleUpdate} className="overflow-y-auto p-6 space-y-4"
+              onInput={() => setEditTenantDirty(true)} onChange={() => setEditTenantDirty(true)}>
               <input type="hidden" name="tenantId"    value={editTenant.id} />
               <input type="hidden" name="leaseTermId" value={editTenant.leaseTerms[0]?.id ?? ''} />
               <TenantForm rooms={rooms} tenant={editTenant} error={error} />
@@ -1528,8 +1513,7 @@ export default function TenantClient({
                 </Btn>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* ── 수납 모달 ─────────────────────────────────────────────── */}
@@ -3052,20 +3036,13 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
     onDone()
   }
 
+  const [dirty, setDirty] = useState(false)   // §13.2
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[90vh]"
-        onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-          <div>
-            <h2 className="text-base font-bold text-[var(--warm-dark)]">고객 일괄 편집</h2>
-            <p className="text-xs text-[var(--warm-muted)] mt-0.5">{selectedIds.length}명 선택됨 · 입력하지 않은 항목은 변경되지 않습니다</p>
-          </div>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl">✕</button>
-        </div>
-        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
+    <Modal open onClose={onClose} width="md" dirty={dirty}
+      title="고객 일괄 편집" subtitle={`${selectedIds.length}명 선택됨 · 입력하지 않은 항목은 변경되지 않습니다`}>
+      <div className="px-6 py-4 space-y-4" onInput={() => setDirty(true)} onChange={() => setDirty(true)}>
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
 
           <div className="space-y-1.5">
@@ -3123,7 +3100,6 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
             {pending ? '적용 중...' : '적용'}
           </Btn>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
