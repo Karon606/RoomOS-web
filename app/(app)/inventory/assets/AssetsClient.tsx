@@ -373,7 +373,7 @@ export default function AssetsClient({ data, rooms, locations }: {
       ]} />
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재</h1>
+          <h1 className="text-xl font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">
             품목으로 산 내구재(의자·거치대·수선유지 자재 등)를 방·공용부별로 모아 봅니다. 여분(미배정)은 방이나 공용부(주방·화장실·복도 등)에 배정할 수 있습니다. <span className="text-[var(--warm-mid)]">공용부는 ‘위치 관리’에서 추가합니다.</span>
             {mergeMode && <span className="text-[var(--coral)]"> · 비품을 눌러 선택 → 방·공용부 일괄 배정 또는 합치기(대표로 통일).</span>}

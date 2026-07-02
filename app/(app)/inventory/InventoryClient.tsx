@@ -264,7 +264,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">재고 관리 · 소모품·부식</h1>
+            <h1 className="text-xl font-bold text-[var(--warm-dark)]">재고 관리 · 소모품·부식</h1>
             <p className="text-xs text-[var(--warm-muted)] mt-0.5">부식·소모품·폐기물 사용량을 점검 기록 기반으로 추적합니다.</p>
           </div>
           {/* 점검 진입 방식 토글 — 모드 전환과 무관하게 항상 우측 상단 고정 (위치 점프 방지) */}

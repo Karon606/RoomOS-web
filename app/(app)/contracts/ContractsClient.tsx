@@ -72,7 +72,7 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
     <div className="space-y-4 px-4 sm:px-6 py-5">
       <div className="space-y-2">
         <div>
-          <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">계약서</h1>
+          <h1 className="text-xl font-bold text-[var(--warm-dark)]">계약서</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">앱 서명·스캔 업로드된 계약서를 한곳에서 봅니다. 거주중 {contracts.length - departedCount}건 · 퇴실 {departedCount}건.</p>
         </div>
         <SearchBar value={query} onChange={setQuery} placeholder="이름·호실·파일명 검색" />

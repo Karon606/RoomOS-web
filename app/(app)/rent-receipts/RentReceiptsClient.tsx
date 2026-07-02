@@ -53,7 +53,7 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
   return (
     <div className="space-y-5 px-4 sm:px-6 py-5">
       <div>
-        <h1 className="text-base sm:text-lg font-bold text-[var(--warm-dark)]">입실료 납부 확인서</h1>
+        <h1 className="text-xl font-bold text-[var(--warm-dark)]">입실료 납부 확인서</h1>
         <p className="text-xs text-[var(--warm-muted)] mt-0.5">거주중 입실자를 선택해 발급하면 이름·호실·거주기간·월 이용료·수령인·도장이 자동으로 채워집니다.</p>
       </div>
 
