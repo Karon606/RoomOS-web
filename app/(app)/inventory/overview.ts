@@ -80,8 +80,10 @@ async function sumAdditions(
 
 // ── 추적 품목 목록 + 계산된 지표
 export async function computeInventoryOverview(propertyId: string): Promise<InventoryRow[]> {
-  const trackedCats = await getTrackedCategories(propertyId)
-  const items = await prisma.trackedItem.findMany({
+  // 서로 독립 조회 — 동시 실행(계산·값 불변, 왕복 직렬만 제거)
+  const [trackedCats, items] = await Promise.all([
+    getTrackedCategories(propertyId),
+    prisma.trackedItem.findMany({
     where: { propertyId, isArchived: false },
     orderBy: [{ category: 'asc' }, { label: 'asc' }],
     include: {
@@ -99,7 +101,8 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         },
       },
     },
-  })
+    }),
+  ])
 
   // 같은 날 여러 점검 dedup — 가장 늦은 createdAt 만 유효한 점검으로 간주.
   // 사용자가 같은 날 임시 점검 후 확정 점검을 다시 하는 패턴 + 그 사이 큰 잔량 jump 가
@@ -145,41 +148,41 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
   const monthsAgo7 = new Date()
   monthsAgo7.setMonth(monthsAgo7.getMonth() - 7)
   monthsAgo7.setDate(1); monthsAgo7.setHours(0, 0, 0, 0)
-  const allChecksForUsage = await prisma.stockCheck.findMany({
-    where: { trackedItemId: { in: items.map(i => i.id) }, date: { gte: monthsAgo7 } },
-    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
-    select: { id: true, trackedItemId: true, date: true, createdAt: true, remainingQty: true, isReconcile: true },
-  })
+  const [allChecksForUsage, allItemLocations, allPending] = await Promise.all([
+    prisma.stockCheck.findMany({
+      where: { trackedItemId: { in: items.map(i => i.id) }, date: { gte: monthsAgo7 } },
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true, trackedItemId: true, date: true, createdAt: true, remainingQty: true, isReconcile: true },
+    }),
+    // 위치 정보 일괄 조회 — 루프 내 N+1 방지
+    prisma.trackedItemLocation.findMany({
+      where: { trackedItemId: { in: items.map(i => i.id) } },
+      include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true } } },
+    }),
+    // 수령 대기 구매 일괄 조회 — 루프 내 N+1 방지.
+    // qtyValue 조건 없음 — 수량 미입력 구매도 수령 대기로 노출(알림 쿼리와 동일 기준).
+    // 수량은 소모량·단가 수학에만 필수, 수령 확인 자체엔 불필요 (세탁조크리너 케이스).
+    prisma.expense.findMany({
+      where: {
+        propertyId,
+        category: { in: trackedCats },
+        itemLabel: { not: null },
+        receivedAt: null,
+        excludeFromInventory: false,
+      },
+      select: { id: true, date: true, qtyValue: true, specValue: true, specUnit: true, qtyUnit: true, itemLabel: true, category: true, amount: true, vendor: true, memo: true },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+    }),
+  ])
 
   const today = new Date()
   today.setHours(23, 59, 59, 999)
 
-  // 위치 정보 일괄 조회 — 루프 내 N+1 방지
-  const allItemLocations = await prisma.trackedItemLocation.findMany({
-    where: { trackedItemId: { in: items.map(i => i.id) } },
-    include: { storageLocation: { select: { id: true, name: true, sortOrder: true, isHub: true } } },
-  })
-
-  // 수령 대기 구매 일괄 조회 — 루프 내 N+1 방지.
-  // qtyValue 조건 없음 — 수량 미입력 구매도 수령 대기로 노출(알림 쿼리와 동일 기준).
-  // 수량은 소모량·단가 수학에만 필수, 수령 확인 자체엔 불필요 (세탁조크리너 케이스).
-  const allPending = await prisma.expense.findMany({
-    where: {
-      propertyId,
-      category: { in: trackedCats },
-      itemLabel: { not: null },
-      receivedAt: null,
-      excludeFromInventory: false,
-    },
-    select: { id: true, date: true, qtyValue: true, specValue: true, specUnit: true, qtyUnit: true, itemLabel: true, category: true, amount: true, vendor: true, memo: true },
-    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-  })
-
   // 규격 자동 반영(§4 — 비었을 때만, 덮어쓰지 않음): trackUnit≠'qty'인데 품목 규격(specUnit)이
   // 비어 있으면, 같은 품목의 '규격 있는 구매'에서 specUnit을 가져와 채운다. 라면 40개입×3박스가
   // 품목 규격 미설정으로 3(박스)으로 잡히던 문제 → 규격을 반영하면 qtyValue×specValue로 환산됨.
-  for (const it of items) {
-    if (it.trackUnit === 'qty' || (it.specUnit && it.specUnit.trim())) continue
+  await Promise.all(items.map(async it => {
+    if (it.trackUnit === 'qty' || (it.specUnit && it.specUnit.trim())) return
     const withSpec = await prisma.expense.findFirst({
       where: { propertyId, category: it.category, itemLabel: it.label, specUnit: { not: null }, specValue: { not: null, gt: 0 }, excludeFromInventory: false },
       orderBy: { date: 'desc' },
@@ -189,10 +192,10 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       await prisma.trackedItem.update({ where: { id: it.id }, data: { specUnit: withSpec.specUnit } })
       it.specUnit = withSpec.specUnit   // 이번 계산에도 즉시 반영
     }
-  }
+  }))
 
-  const rows: InventoryRow[] = []
-  for (const it of items) {
+  // 품목별 계산 병렬화 — 품목 간 공유 상태 없음(각자 자기 행만 만들어 반환), 순서는 map이 보존.
+  const rows: InventoryRow[] = await Promise.all(items.map(async (it): Promise<InventoryRow> => {
     // 같은 날 dedup 후 가장 최신 / 그 직전 점검 추출
     const dedupedRecentChecks = dedupSameDay([...it.stockChecks]).reverse()  // 최신 우선
     const last = dedupedRecentChecks[0] ?? null
@@ -205,8 +208,10 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     if (last) {
       // 승인일(receivedAt) 기준: 점검 기록이 생성된 이후 승인된 구매만 반영
       // → 구매일이 과거여도 승인 전에 실사한 재고 수량이 currentStock에 포함되지 않도록 방지
-      const incomingPurchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, last.createdAt, null, useSpec, it.specUnit)
-      const incomingAdditions = await sumAdditions(it.id, last.date, today, last.createdAt)
+      const [incomingPurchases, incomingAdditions] = await Promise.all([
+        sumPurchases(propertyId, it.category, it.label, it.qtyUnit, last.createdAt, null, useSpec, it.specUnit),
+        sumAdditions(it.id, last.date, today, last.createdAt),
+      ])
       currentStock = last.remainingQty + incomingPurchases + incomingAdditions
     }
 
@@ -220,8 +225,10 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       //   사용자가 과거 점검을 나중에 보정 입력하면 createdAt 이 며칠~몇 주 뒤로 밀려,
       //   createdAt 기준 구간이 인접 구간과 겹쳐 같은 구매를 두 번(또는 엉뚱한 달에) 세는
       //   버그가 있었음 (2026-06-01 사용자 보고). additions 와 동일하게 date 기준으로 통일.
-      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(last), useSpec, it.specUnit)
-      const additions = await sumAdditions(it.id, effTime(prev), effTime(last))
+      const [purchases, additions] = await Promise.all([
+        sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(last), useSpec, it.specUnit),
+        sumAdditions(it.id, effTime(prev), effTime(last)),
+      ])
       lastPeriodConsumption = (prev.remainingQty + purchases + additions) - last.remainingQty
       lastPeriodDays = Math.max(1, Math.round((last.date.getTime() - prev.date.getTime()) / 86400000))
     } else if (last && !prev) {
@@ -239,8 +246,10 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
       })
       if (firstPurchase?.receivedAt) {
         // 최초 구매 승인 ~ 실사 사이의 총 입수량
-        const totalPurchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, null, last.createdAt, useSpec, it.specUnit)
-        const totalAdditions = await sumAdditions(it.id, null, last.date)
+        const [totalPurchases, totalAdditions] = await Promise.all([
+          sumPurchases(propertyId, it.category, it.label, it.qtyUnit, null, last.createdAt, useSpec, it.specUnit),
+          sumAdditions(it.id, null, last.date),
+        ])
         const consumed = totalPurchases + totalAdditions - last.remainingQty
         const days = Math.max(1, Math.round((last.date.getTime() - firstPurchase.receivedAt.getTime()) / 86400000))
         if (consumed > 0) {
@@ -322,17 +331,24 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
     //   '입고 = 가짜 사용량' 으로 부풀려졌음 (예: 주방세제 5월 6270→9740, 라면 입고 160 이 165 소모로 둔갑).
     //   부호 그대로 합산하면 같은 입고의 +/− 가 같은 달 안에서 상쇄되어 물리적 정답(시작잔량+입고−월말잔량)에 수렴.
     //   부수효과: 백필된 잘못된 점검값도 인접 두 구간에서 +/− 로 상쇄되어 면역 (2026-06-01 사용자 보고).
+    // 전체 재고 보정 점검은 '실측 리셋' — 직전 구간의 차이(분실·오차)를 소모량으로 잡지 않는다.
+    // curr 는 다음 구간의 기준선(prev)으로는 그대로 쓰임.
+    const intervalPairs: { prev: (typeof itemChecks)[number]; curr: (typeof itemChecks)[number] }[] = []
     for (let i = 1; i < itemChecks.length; i++) {
-      const prev = itemChecks[i - 1]
-      const curr = itemChecks[i]
-      // 전체 재고 보정 점검은 '실측 리셋' — 직전 구간의 차이(분실·오차)를 소모량으로 잡지 않는다.
-      // curr 는 다음 구간의 기준선(prev)으로는 그대로 쓰임.
-      if (curr.isReconcile) continue
-      // 입고 구간은 effTime(실제 발생 시각) 기준 — 수령 즉시 생성된 자동점검이 baseline 일 때
-      // 그 구매가 다음 구간에 중복 입고로 더해지는 것을 방지(수세미 케이스).
-      const purchases = await sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(curr), useSpec, it.specUnit)
-      const additions = await sumAdditions(it.id, effTime(prev), effTime(curr))
-      const consumed = (prev.remainingQty + purchases + additions) - curr.remainingQty
+      if (itemChecks[i].isReconcile) continue
+      intervalPairs.push({ prev: itemChecks[i - 1], curr: itemChecks[i] })
+    }
+    // 입고 구간은 effTime(실제 발생 시각) 기준 — 수령 즉시 생성된 자동점검이 baseline 일 때
+    // 그 구매가 다음 구간에 중복 입고로 더해지는 것을 방지(수세미 케이스).
+    // 구간 간 의존 없음 → 동시 조회, 합산은 원래 순서대로(결과 동일).
+    const intervalConsumed = await Promise.all(intervalPairs.map(async ({ prev, curr }) => {
+      const [purchases, additions] = await Promise.all([
+        sumPurchases(propertyId, it.category, it.label, it.qtyUnit, effTime(prev), effTime(curr), useSpec, it.specUnit),
+        sumAdditions(it.id, effTime(prev), effTime(curr)),
+      ])
+      return { curr, consumed: (prev.remainingQty + purchases + additions) - curr.remainingQty }
+    }))
+    for (const { curr, consumed } of intervalConsumed) {
       const key = `${curr.date.getFullYear()}-${String(curr.date.getMonth() + 1).padStart(2, '0')}`
       if (key in monthlyMap) monthlyMap[key] += consumed
     }
@@ -364,7 +380,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         memo: p.memo,
       }))
 
-    rows.push({
+    return {
       id: it.id,
       category: it.category,
       label: it.label,
@@ -395,7 +411,7 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         qty: lb.remainingQty,
       })) satisfies LocationQtyEntry[],
       monthlyConsumption,
-    })
-  }
+    }
+  }))
   return rows
 }
