@@ -2094,9 +2094,13 @@ export default function FinanceClient({
             </div>
           </div>
 
-          {/* 부가수익 */}
-          <div className="px-5 py-4 space-y-2">
-            <p className="text-xs font-medium text-[var(--warm-muted)]">부가 수익 합계</p>
+          {/* 부가수익 — 클릭 시 '부가 수익' 탭으로 (오류신고 71c4283e: 세부내역 바로가기) */}
+          <button type="button" onClick={() => setTab('income')}
+            className="px-5 py-4 space-y-2 text-left transition-colors hover:bg-[var(--canvas)]/60 cursor-pointer">
+            <p className="text-xs font-medium text-[var(--warm-muted)] flex items-center justify-between">
+              부가 수익 합계
+              <span className="text-[var(--coral)] font-medium">내역 보기 →</span>
+            </p>
             <p className="text-xl font-bold text-[var(--warm-dark)] num">
               <MoneyDisplay amount={totalIncomeSum} prefix="+" />
             </p>
@@ -2106,7 +2110,7 @@ export default function FinanceClient({
                 <span className="text-[var(--warm-dark)] font-medium">{incomes.length}건</span>
               </div>
             </div>
-          </div>
+          </button>
         </div>
 
       </div>
