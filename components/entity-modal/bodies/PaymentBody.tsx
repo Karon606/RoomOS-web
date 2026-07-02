@@ -61,7 +61,15 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
 
       <div>
         <Row k="월 이용료" v={fmtWon(settlement.expected)} />
-        {settlement.dueDay && <Row k="납부일" v={settlement.dueDay.includes('말') ? '매월 말일' : `매월 ${settlement.dueDay}일`} />}
+        {settlement.dueDay && (() => {
+          // 임시 조정 활성(이 달) — settlement.dueDay는 override 반영값이라 '매월'로 쓰면 오해(오류신고 7c8c5fcd).
+          const ovrActive = !!settlement.overrideDueDay && settlement.overrideDueDayMonth === month
+          const d = settlement.dueDay
+          const dayLabel = d.includes('-') ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : d.includes('말') ? '말일' : `${d}일`
+          return <Row k="납부일" v={ovrActive
+            ? <>이번 달만 {dayLabel} <span className="text-[var(--warning-fg)]">(임시 조정)</span></>
+            : d.includes('말') ? '매월 말일' : `매월 ${d}일`} />
+        })()}
       </div>
 
       {mode === 'summary' && (
