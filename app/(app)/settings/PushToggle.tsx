@@ -97,7 +97,7 @@ export function PushToggle() {
             <Btn variant="primary" size="sm" onClick={test} disabled={busy}>테스트 푸시 보내기</Btn>
           </>
         )}
-        {enabled && <span className="text-[0.6875rem] text-[var(--status-paid,#1a6e4c)] font-medium">● 이 기기 알림 켜짐</span>}
+        {enabled && <span className="text-[0.6875rem] text-[var(--success-fg)] font-medium">● 이 기기 알림 켜짐</span>}
       </div>
       <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
         납부 예정·퇴실 예정·재고 소진 등 대시보드 알림을 이 기기로 받습니다.

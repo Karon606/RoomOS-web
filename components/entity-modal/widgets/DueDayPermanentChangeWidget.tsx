@@ -78,7 +78,7 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
           <div className="rounded-lg px-3 py-2 text-xs font-medium"
             style={{
               background: calc.type === 'extra' ? 'rgba(160,60,46,0.10)' : 'rgba(122,154,82,0.12)',
-              color: calc.type === 'extra' ? 'var(--coral-dark)' : '#4e6834',
+              color: calc.type === 'extra' ? 'var(--coral-dark)' : 'var(--success-fg)',
               border: `1px solid ${calc.type === 'extra' ? 'rgba(160,60,46,0.20)' : 'rgba(122,154,82,0.25)'}`,
             }}>
             {calc.type === 'extra'

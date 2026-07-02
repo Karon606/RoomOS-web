@@ -238,7 +238,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                 <div className="flex items-center gap-2">
                   <span className="text-[0.625rem] text-[var(--warm-muted)] w-8 shrink-0">수익</span>
                   <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, incomePct)}%`, minWidth: incomeTotal > 0 ? 2 : 0, background: '#6aab7e' }} />
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, incomePct)}%`, minWidth: incomeTotal > 0 ? 2 : 0, background: 'var(--success-fg)' }} />
                   </div>
                   <span className="text-[0.625rem] text-[var(--warm-muted)] tabular-nums w-12 text-right shrink-0">{fmtMan(incomeTotal)}</span>
                 </div>
@@ -336,7 +336,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
-                            <div className="h-full rounded-full" style={{ width: `${Math.min(100, incomePct)}%`, minWidth: incomeTotal > 0 ? 2 : 0, background: '#6aab7e' }} />
+                            <div className="h-full rounded-full" style={{ width: `${Math.min(100, incomePct)}%`, minWidth: incomeTotal > 0 ? 2 : 0, background: 'var(--success-fg)' }} />
                           </div>
                           <span className="text-[0.625rem] text-[var(--warm-muted)] tabular-nums w-10 text-right shrink-0">{fmtMan(incomeTotal)}</span>
                         </div>

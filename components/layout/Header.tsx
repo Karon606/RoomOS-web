@@ -122,7 +122,7 @@ export default function Header({
         </div>
       </div>
 
-      {/* ── 우: 알림(🔔) ── (프로필/계정은 전체 메뉴로 이동) */}
+      {/* ── 우: 알림 ── (프로필/계정은 전체 메뉴로 이동) */}
       <div className="flex items-center gap-0.5 shrink-0">
         <NotificationBell currentPropertyId={currentPropertyId} />
       </div>

@@ -121,7 +121,7 @@ export function CheckoutProrationWidget({
           <div>
             <p className="text-xs font-medium text-[var(--warm-mid)]">퇴실 정산 (일할)</p>
             {isApplied ? (
-              <p className="text-[0.625rem] mt-0.5" style={{ color: '#4e6834' }}>
+              <p className="text-[0.625rem] mt-0.5" style={{ color: 'var(--success-fg)' }}>
                 {fmtMonth(checkoutProratedMonth!)} 청구 {fmtWon(checkoutProratedAmount!)} 로 일할 적용됨
                 {expectedMoveOut ? ` · 퇴실 ${expectedMoveOut.slice(5).replace('-', '/')}` : ''}
               </p>
@@ -164,7 +164,7 @@ export function CheckoutProrationWidget({
 
         {calc && (
           <div className="rounded-lg px-3 py-2 text-xs font-medium"
-            style={{ background: 'rgba(122,154,82,0.12)', color: '#4e6834', border: '1px solid rgba(122,154,82,0.25)' }}>
+            style={{ background: 'rgba(122,154,82,0.12)', color: 'var(--success-fg)', border: '1px solid rgba(122,154,82,0.25)' }}>
             {fmtMonth(calc.moveOutMonth)} 청구 → <b>{fmtWon(calc.amount)}</b> ({calc.daysUsed}일치)
             <span className="block mt-0.5 font-normal" style={{ color: 'var(--warm-muted)' }}>
               한 달 {fmtWon(calc.fullAmount)} ÷ {PRORATE_BASE_DAYS}일 × {calc.daysUsed}일 · 감액 {fmtWon(calc.reduction)}
@@ -221,7 +221,7 @@ export function CheckoutProrationWidget({
                 <div className="flex justify-between"><span>− 사용분 ({refund.refund.daysUsed}일 × {fmtWon(refund.refund.dailyRate)})</span><span className="tabular-nums">{fmtWon(refund.refund.usedAmount)}</span></div>
                 {penalty > 0 && <div className="flex justify-between"><span>− 위약금 (총 결제금액의 {LEGAL_PENALTY_PCT}%)</span><span className="tabular-nums">{fmtWon(penalty)}</span></div>}
               </div>
-              <div className="flex justify-between font-bold mt-1 pt-1 border-t" style={{ borderColor: 'var(--warm-border)', color: '#4e6834' }}>
+              <div className="flex justify-between font-bold mt-1 pt-1 border-t" style={{ borderColor: 'var(--warm-border)', color: 'var(--success-fg)' }}>
                 <span>환불액</span><span className="tabular-nums">{fmtWon(refundAmt)}</span>
               </div>
               <p className="text-[0.5625rem] text-[var(--warm-muted)] mt-1">참고용 — 보증금 환불(퇴실 처리)에서 이 금액을 함께 정산하세요.</p>

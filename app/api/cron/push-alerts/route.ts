@@ -14,7 +14,7 @@ import { computeAlerts, summarizeAlerts, type AlertItem } from '@/app/(app)/dash
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-// 알림 목록은 computeAlerts(propertyId) 단일 소스를 쓴다 — 🔔 인앱 종과 같은 소스라
+// 알림 목록은 computeAlerts(propertyId) 단일 소스를 쓴다 — 인앱 종과 같은 소스라
 // 푸시 뱃지 숫자 = 종 뱃지 숫자가 자동으로 일치한다. (윈도우·당일/미납 정책은 alerts.ts 참조)
 
 export async function GET(req: Request) {

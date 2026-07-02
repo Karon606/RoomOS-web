@@ -1,7 +1,7 @@
 'use client'
 
 // 입주자 등록 폼 상단에 얹는 OCR 도우미.
-// [📄 계약서] 또는 [🪪 신분증] 클릭 → 파일 선택 → Gemini 분석 → 추출된 필드를 폼에 채움.
+// [계약서] 또는 [신분증] 클릭 → 파일 선택 → Gemini 분석 → 추출된 필드를 폼에 채움.
 // 폼 안 controlled state 는 부모가 setter 로 채우고, uncontrolled <input name="X"> 들은
 // 본 컴포넌트가 React 내부 setter 트릭으로 채운다.
 

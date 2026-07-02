@@ -3908,7 +3908,7 @@ export default function FinanceClient({
                 </button>
                 <button onClick={() => { setRecGroupMode(true); setRecMgmtError('') }}
                   className="px-4 py-2.5 text-sm font-medium rounded-xl border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
-                  🔗 묶기
+                  묶기
                 </button>
               </div>
             )}
