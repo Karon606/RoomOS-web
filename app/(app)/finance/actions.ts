@@ -306,7 +306,7 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
 {
   "date": "YYYY-MM-DD",          // 결제일. 안 보이면 생략
   "vendor": "상호명",              // 안 보이면 생략
-  "totalAmount": 12345,           // 합계 금액 (정수, 원)
+  "totalAmount": 12345,           // 최종 결제 금액 = 부가세 포함 (정수, 원). '합계/총액/결제금액/받을금액/승인금액' 값. '공급가액/과세금액'을 쓰지 말 것
   "orderNo": "1234567890",        // 쇼핑몰 주문번호(쿠팡 등). 영수증/주문서에 '주문번호'가 보이면. 없으면 생략
   "category": "부식비|소모품비|폐기물 처리비|수선유지비|공과금|마케팅/광고비|인건비|청소용역비|관리비|임대료|통신/렌탈/보험료|세금/수수료|보증금 반환",  // 가장 적합한 1개. 애매하면 생략
   "items": [
@@ -322,9 +322,10 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
 }
 
 규칙:
-- 부가세/할인/포인트 등 메타 행은 items에 넣지 마세요
+- totalAmount는 반드시 부가세 포함 최종 결제 금액. 공급가액(과세금액)·부가세가 따로 표시된 영수증이면 그 합(=합계/총액)을 쓰고, 공급가액만 넣지 마세요
+- items의 amount도 부가세 포함 가격으로. 품목이 부가세 별도 단가로 표시돼 있으면 부가세를 각 품목에 비례 배분해 포함시키고, items 합계가 totalAmount와 일치하게 하세요
+- 부가세/할인/포인트 등 메타 행 자체는 items에 넣지 마세요
 - 한국어 영수증 우선. 가격은 숫자만 (콤마 제거)
-- 품목 가격 합계가 totalAmount와 약간 달라도 OK
 - 영수증으로 보이지 않는 이미지면: { "items": [] } 만 반환`
 
     const res = await fetch(
