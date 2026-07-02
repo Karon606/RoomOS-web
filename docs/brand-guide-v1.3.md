@@ -921,3 +921,166 @@ raw hex 8종(`#22c55e·#eab308·#6366f1·#dc2626·#a855f7·#f59e0b·#64748b·#d4
 
 - **Do**: 모든 위젯이 같은 카드 셸·색 매핑·진입 규칙. **Don't**: 위젯마다 raw hex·다른 진입 방식.
 
+
+## §24 뷰 전환 탭 (View Tabs)
+
+> **계기**: "한 페이지 안에서 뷰를 갈아끼우는 탭"이 코드에서 3계열로 분열(A 코랄 채움 조인트 / B SegmentedControl 트랙 / C rounded-2xl 코랄 변종). 같은 의미가 화면마다 다른 컴포넌트 — §22.8 키 위반. §24는 **뷰 전환 탭의 단일 정본**을 세운다. **필터가 아니다** — §22.2 필터 SegmentedControl은 그대로 유지.
+
+### 24.0 판별 기준 — 필터 vs 뷰 전환 탭 vs 링크 탭
+
+먼저 "이 컨트롤이 무엇인가"를 판별한다. 셋은 **다른 컴포넌트·다른 외형**을 쓴다(혼용 금지).
+
+| | 필터 (§22.2) | **뷰 전환 탭 (§24)** | 링크 탭 |
+|---|---|---|---|
+| 의미 | 같은 목록을 **좁힌다** | 같은 페이지에서 **다른 뷰/데이터셋으로 교체** | **다른 라우트로 이동** |
+| 결과 | 행 수 감소, 열·레이아웃 동일 | 콘텐츠 구조가 바뀜 (다른 표·다른 KPI) | URL 변경, 페이지 전환 |
+| '전체' 개념 | 있음(해제=전체) | **없음** — 항상 정확히 1개 활성 | 없음 |
+| 컴포넌트 | SegmentedControl (트랙+떠있는 세그) | **ViewTabs (코랄 채움 조인트)** | ViewTabs 외형 + `<a href>` |
+| 예 | 상태 빠른필터(전체/미납/완납) | 소모품↔비품, 지출↔자산↔보증금, 결산↔예상↔AI | 재고 탭(각 탭이 라우트) |
+
+- **핵심 분리**: 필터는 **트랙형(cream 세그가 cream-2 트랙 위에 뜸)**, 뷰 전환은 **코랄 채움형**. 두 외형이 달라야 사용자가 "좁히기"와 "갈아끼우기"를 구별한다.
+- **Do**: 활성이 항상 1개면 뷰 전환 탭. **Don't**: 뷰 전환에 '전체' 세그 추가 / 필터를 코랄 채움으로.
+
+### 24.1 정본 계열 선택 — **A계열 (코랄 채움 조인트 탭)**
+
+**결정: A를 정본으로, B의 role=tablist 접근성 세맨틱을 흡수한다. B·C의 뷰 전환 용도는 폐기.**
+
+- **왜 A인가 (1)**: §22.2가 이미 트랙+떠있는 세그(B 외형)를 **필터**로 점유했다. 뷰 전환도 B를 쓰면 같은 화면에서 "필터인지 뷰 전환인지" 시각 구분이 사라진다 → A의 코랄 채움으로 역할을 분리.
+- **왜 A인가 (2)**: 뷰 전환은 페이지 정체성 전환(소모품 사전 → 비품 사전)이라 무게·시인성이 필터보다 높아야 하며, 코랄 채움이 그 위계에 맞다.
+- **B·C 폐기**: B(재무 TABS)·C(리포트 rounded-2xl)의 **뷰 전환 용도**는 A로 이관. B의 SegmentedControl 컴포넌트 자체는 **필터 전용**으로 계속 쓴다(폐기 아님). C의 rounded-2xl은 radius 토큰(§ radius) 이탈이므로 완전 폐기.
+- **접근성 흡수**: A는 `<span>`/`<a>`로 세맨틱이 없었다 → 정본은 `role=tablist`/`role=tab`/`aria-selected`를 A 외형에 씌운다(24.6).
+
+### 24.2 스펙 — 컨테이너 · 세그 · 상태
+
+| 요소 | 값 |
+|---|---|
+| **컨테이너** | `inline-flex` · radius **10px (r-md)** · border 1px `--warm-border` · `overflow: hidden` · bg `--cream` · padding 0(세그가 꽉 채움) |
+| **세그(탭)** | 높이 **최소 40px**(모바일 44pt는 24.6) · padding `10px 16px` · 타이포 14px/600 · radius 0(컨테이너가 라운드 소유) · 세그 사이 구분선 1px `--warm-border` |
+| **탭 모드** | 기본 `내용탭(inline-flex)`. 2~3개를 균등 채움이 필요할 때만 `flex-1`(구 C의 유일한 장점 계승) |
+
+| 상태 | 배경 | 텍스트 | 기타 |
+|---|---|---|---|
+| **활성** active | `--coral` | `--cream` (white 금지, §14) | `aria-selected=true` |
+| **비활성** | `--cream` | `--warm-mid` | |
+| **hover**(비활성) | `--cream-2` | `--warm-dark` | transition 150ms(§ 모션) |
+| **focus-visible** | (배경 유지) | | outline 2px `--coral` offset 2px — §접근성 링 |
+| **disabled** | `--cream` | `--warm-muted` | `cursor:not-allowed` · aria-disabled |
+
+- 활성 세그는 다크모드에서도 `--coral`+`--cream`(전 모드 동일 값 계열) — `-fg` 반전 토큰 쓰지 말 것(§14.4 함정).
+- **Do**: 활성=코랄 채움 1개. **Don't**: 활성 세그에 그림자·테두리 등 추가 장식.
+
+### 24.3 라벨 규칙 — 합계 접미
+
+톱 관례(`부가수익 (+16만)`, `보증금 (12만)`)를 **유지·정본화**한다. 탭 라벨에 요약 수치를 붙이면 전환 전에 규모를 가늠할 수 있어 유용.
+
+| 항목 | 규칙 |
+|---|---|
+| 형식 | `{라벨} ({값})` — 라벨과 괄호 사이 space 1 |
+| 단위 | 만 단위 축약 허용(`16만`) — **단, §07 금액 규칙의 "축약 금지 맥락"(정산·법적 금액)에는 붙이지 않음** |
+| 부호 | 증감 의미일 때만 `+`/`−`(§07 부호 규칙 계승). 단순 합계는 무부호 |
+| 폰트 | 괄호 안 수치는 **Pretendard tnum**(사선 없는 0). 별도 색 없음 — 라벨 색 상속 |
+| 생략 | 값이 0이거나 계산 전이면 접미 생략(빈 괄호 금지) |
+
+- **Do**: `지출 (−42만)` 처럼 부호+축약. **Don't**: `보증금 (1,240,000원)`식 항상(길어짐) / 빈 `자산 ()`.
+
+### 24.4 개수 · 오버플로
+
+| 상황 | 규칙 |
+|---|---|
+| 권장 개수 | **2~4개**. 5개→는 뷰 전환보다 필터/서브내비를 재검토 |
+| 최대 | 5개 하드 리밋 |
+| 모바일 넘침 | 컨테이너 `overflow-x:auto` + `scrollbar` 숨김 · 세그 `white-space:nowrap` · 좌우 페이드 마스크. **세그 축약(…)·줄바꿈 금지** |
+| 활성 보장 | 스크롤 시 활성 세그가 뷰포트 밖이면 진입 시 `scrollLeft`로 활성만 보이게(스크롤만, `scrollIntoView` 금지) |
+
+- **Do**: 4개 초과면 정보구조 재검토. **Don't**: 탭을 2줄로 wrap / 라벨을 `소모품→소모`로 자르기.
+
+### 24.5 링크 탭 겸용 (라우트 이동)
+
+재고 탭처럼 각 탭이 **별도 라우트**일 때도 **외형은 동일**. 요소만 `<a href>`.
+
+- 마크업: `<a role="tab" href="…" aria-selected={isActive}>` — 외형 클래스는 버튼형과 동일.
+- 활성 판정: 현재 경로와 매칭(`aria-selected`/`aria-current="page"` 병기 허용).
+- 전환: 전체 새로고침 금지 — SPA `<Link>`(§23.4). `window.location.href` 금지.
+- **Do**: 링크 탭도 코랄 채움 정본 외형. **Don't**: 링크라고 밑줄·파랑 등 앵커 기본 스타일 노출.
+
+### 24.6 배치 · 반응형 · 접근성
+
+**배치**
+- 위치: 페이지 **제목 아래 한 줄**(제목 옆 금지 — 4개+ 라벨이 제목과 충돌). 본문 상단 여백 16px.
+- MonthSelector 동시 존재: 같은 줄에 두면 **탭 좌측 / MonthSelector 우측** 정렬(`justify-between`). 모바일에선 탭이 위, MonthSelector가 아랫 줄.
+
+**반응형·접근성**
+- 모바일 터치 타겟 **44pt**: 세그 세로 padding을 `12px`로 올려 높이 44px 확보(데스크톱 40px).
+- ARIA: 컨테이너 `role="tablist"` + `aria-label`, 세그 `role="tab"` + `aria-selected`, 대응 패널 `role="tabpanel"` + `aria-labelledby`.
+- 키보드: `←/→`로 탭 이동, `Home/End`로 처음/끝, 활성만 `tabindex=0`(roving) — 나머지 `tabindex=-1`.
+- `prefers-reduced-motion`: hover/활성 전환 트랜지션 제거.
+
+### 24.7 Do / Don't
+
+- **Do**: 뷰 전환은 어디서나 `ViewTabs`(코랄 채움) 하나로. 활성은 정확히 1개.
+- **Do**: `role=tablist` + 키보드 roving + focus-visible 링 필수.
+- **Do**: 라벨 합계 접미는 tnum·축약·부호 규칙(24.3)대로.
+- **Don't**: 같은 "뷰 전환" 의미를 페이지마다 다른 컴포넌트로(§22.8 위반) — B·C 부활 금지.
+- **Don't**: 필터(§22.2)에 같은 트랙 외형 사용 / '전체' 세그 추가.
+- **Don't**: rounded-2xl·white 텍스트·그림자·2줄 wrap.
+
+### 24.8 마이그레이션 표
+
+| 현행 | 계열 | → 정본 변경점 |
+|---|---|---|
+| 재고 탭(소모품·부식/비품·자재) | A | 세맨틱만 추가(`role=tab`/키보드). 외형 유지 — **radius 12→10(r-md) 통일**, 링크 탭이면 24.5 |
+| 수납 탭(수납/부가수익) | A | 위와 동일. 라벨 접미(`부가수익 (+16만)`) 24.3 형식 확인 |
+| 재무 TABS(지출/자산/보증금/예비비) | **B → A** | 트랙형 폐기 → 코랄 채움. 4개라 `flex-1` 균등 또는 스크롤(24.4). role=tablist 유지 |
+| 리포트 탭(결산/예상/AI 진단) | **C → A** | rounded-2xl 폐기 → r-md. `flex-1` 3등분 유지, white→cream, 코랄 채움 정본 |
+
+---
+
+### 부록 §24 — Tailwind 레시피 & `ViewTabs` API
+
+**컨테이너**
+```html
+<div role="tablist" aria-label="뷰 전환"
+  class="inline-flex rounded-[10px] border border-[var(--warm-border)] overflow-hidden bg-[var(--cream)] text-sm font-semibold">
+  <!-- 세그들 -->
+</div>
+```
+
+**활성 세그**
+```
+class="px-4 py-2.5 md:py-2.5 min-h-[44px] md:min-h-[40px] bg-[var(--coral)] text-[var(--cream)]
+       focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)]
+       border-r border-[var(--warm-border)] last:border-r-0 transition-colors duration-150"
+```
+
+**비활성 세그**
+```
+class="px-4 py-2.5 min-h-[44px] md:min-h-[40px] bg-[var(--cream)] text-[var(--warm-mid)]
+       hover:bg-[var(--cream-2)] hover:text-[var(--warm-dark)]
+       focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)]
+       border-r border-[var(--warm-border)] last:border-r-0 transition-colors duration-150"
+```
+
+**균등 탭(3~4개)**: 컨테이너에 `flex w-full max-w-xl`, 각 세그에 `flex-1 justify-center`.
+**모바일 스크롤**: 컨테이너에 `max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`, 세그에 `whitespace-nowrap shrink-0`.
+
+**`ViewTabs` props (SegmentedControl과 겹치지 않는 API)**
+```ts
+// SegmentedControl = 필터(라디오, value 해제 가능). ViewTabs = 뷰 전환(항상 1개 활성).
+interface ViewTab {
+  id: string;              // 탭 식별자 (패널 aria-labelledby와 매칭)
+  label: string;
+  suffix?: string;         // 합계 접미: "+16만" | "12만" — 괄호는 컴포넌트가 붙임(24.3)
+  href?: string;           // 지정 시 <a> 링크 탭(24.5). 없으면 <button>
+  disabled?: boolean;
+}
+
+interface ViewTabsProps {
+  tabs: ViewTab[];                          // 2~4 권장, 5 max
+  activeId: string;                         // 항상 정확히 1개 — 필수(해제 없음)
+  onChange?: (id: string) => void;          // button 모드에서만
+  fill?: boolean;                           // true = flex-1 균등 탭
+  ariaLabel: string;                        // role=tablist용
+  // scroll·keyboard(roving)·focus 링은 컴포넌트 내부 기본 제공
+}
+```
+- **API 차이 요약**: `SegmentedControl`은 `value: string | null`(해제=null, '전체'). `ViewTabs`는 `activeId: string`(null 불가). 접미(`suffix`)·`href`(링크 탭)는 ViewTabs 전용.
