@@ -71,7 +71,7 @@ export function CalendarSubscribeCard() {
             <label className="block text-[0.6875rem] font-medium text-[var(--warm-muted)] mb-1">구독 주소</label>
             <div className="flex items-center gap-1.5">
               <input readOnly value={httpUrl} onFocus={e => e.currentTarget.select()}
-                className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-2 text-[0.6875rem] text-[var(--warm-dark)] outline-none" />
+                className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-[0.6875rem] text-[var(--warm-dark)] outline-none" />
               <button type="button" onClick={() => copy(httpUrl, '구독 주소')}
                 className="shrink-0 px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
                 복사

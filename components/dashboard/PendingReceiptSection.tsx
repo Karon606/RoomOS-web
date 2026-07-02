@@ -244,25 +244,25 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                   <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>품목명 *</label>
                   <input type="text" placeholder="예: 신라면, 두루마리 휴지"
                     value={itemLabel} onChange={e => setItemLabel(e.target.value)}
-                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                    className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   <div>
                     <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>규격 (선택)</label>
                     <div className="flex gap-1">
                       <input type="text" placeholder="300" value={specValue} onChange={e => setSpecValue(e.target.value)}
-                        className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                        className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
                       <input type="text" placeholder="ml" value={specUnit} onChange={e => setSpecUnit(e.target.value)}
-                        className="w-12 bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-1.5 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                        className="w-12 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-1.5 py-1 text-xs text-[var(--warm-dark)] outline-none" />
                     </div>
                   </div>
                   <div>
                     <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>수량 *</label>
                     <div className="flex gap-1">
                       <input type="text" placeholder="6" value={qtyValue} onChange={e => setQtyValue(e.target.value)}
-                        className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                        className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
                       <input type="text" placeholder="개" value={qtyUnit} onChange={e => setQtyUnit(e.target.value)}
-                        className="w-12 bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-1.5 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                        className="w-12 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-1.5 py-1 text-xs text-[var(--warm-dark)] outline-none" />
                     </div>
                   </div>
                 </div>
@@ -286,7 +286,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
             <div>
               <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>카테고리 *</label>
               <select value={category} onChange={e => setCategory(e.target.value)}
-                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-xs text-[var(--warm-dark)] outline-none">
+                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none">
                 <option value="">선택</option>
                 {(isInventory ? INVENTORY_CATEGORIES : EXPENSE_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -298,9 +298,9 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               <input type="text" placeholder="상호명 (선택)" value={vendor} onChange={e => setVendor(e.target.value)}
-                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
               <input type="text" placeholder="메모 (선택)" value={memo} onChange={e => setMemo(e.target.value)}
-                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
             </div>
             <div className="flex gap-1.5 pt-1">
               <button onClick={handleApprove} disabled={pending}

@@ -309,7 +309,7 @@ export default function AssetsClient({ data, rooms, locations }: {
                   value={qtyVal} disabled={pending}
                   onChange={e => setQtyVal(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') confirmPartial() }}
-                  className="w-16 text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums" />
+                  className="w-16 text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums" />
                 <span className="text-[0.6875rem] text-[var(--warm-muted)]">{it.qtyUnit ?? '개'}</span>
                 <button type="button" onClick={confirmPartial} disabled={pending}
                   className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">배정</button>
@@ -319,7 +319,7 @@ export default function AssetsClient({ data, rooms, locations }: {
               <>
                 <select autoFocus disabled={pending} defaultValue={currentValue(it)}
                   onChange={e => onPickTarget(it, e.target.value)}
-                  className="text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-[var(--warm-dark)] outline-none max-w-[60vw]">
+                  className="text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none max-w-[60vw]">
                   <option value="">미배정(여분)</option>
                   <optgroup label="방">
                     {rooms.map(r => <option key={r.id} value={`room:${r.id}`}>{fmtRoomNo(r.roomNo)}</option>)}
@@ -513,7 +513,7 @@ export default function AssetsClient({ data, rooms, locations }: {
                   <span className="flex-1 min-w-0 truncate text-sm text-[var(--warm-dark)]">{r.it.detail || r.it.itemLabel}</span>
                   <input type="number" min={1} max={max} step="any" value={r.qty} disabled={pending}
                     onChange={e => setBatchAssign(b => b ? { ...b, rows: b.rows.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) } : b)}
-                    className="w-16 text-sm bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums focus:border-[var(--coral)]" />
+                    className="w-16 text-sm bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums focus:border-[var(--coral)]" />
                   <span className="text-xs text-[var(--warm-muted)] shrink-0">/ {fmtQty(max)}{r.it.qtyUnit ?? '개'}</span>
                 </li>
               )
@@ -544,14 +544,14 @@ export default function AssetsClient({ data, rooms, locations }: {
               <input value={freeForm.label} disabled={pending} autoFocus list="asset-labels"
                 onChange={e => setFreeForm(f => f ? { ...f, label: e.target.value } : f)}
                 placeholder="예: 의자, 수전 트랩"
-                className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
               <datalist id="asset-labels">{assetLabels.map(l => <option key={l} value={l} />)}</datalist>
             </label>
             <label className="block">
               <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">분류</span>
               <input value={freeForm.cat} disabled={pending} list="asset-cats"
                 onChange={e => setFreeForm(f => f ? { ...f, cat: e.target.value } : f)}
-                className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
               <datalist id="asset-cats">{assetCats.map(c => <option key={c} value={c} />)}</datalist>
             </label>
             {/* 규격·수량 — 숫자 필드는 폭 고정으로 컴팩트(가로 정리) */}
@@ -561,10 +561,10 @@ export default function AssetsClient({ data, rooms, locations }: {
                 <div className="flex gap-1.5">
                   <input value={freeForm.spec} disabled={pending} inputMode="decimal" placeholder="값"
                     onChange={e => setFreeForm(f => f ? { ...f, spec: e.target.value } : f)}
-                    className="w-full min-w-0 h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 text-sm tabular-nums outline-none focus:border-[var(--coral)]" />
+                    className="w-full min-w-0 h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 text-sm tabular-nums outline-none focus:border-[var(--coral)]" />
                   <input value={freeForm.specUnit} disabled={pending} placeholder="단위"
                     onChange={e => setFreeForm(f => f ? { ...f, specUnit: e.target.value } : f)}
-                    className="w-12 shrink-0 h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 text-sm outline-none focus:border-[var(--coral)]" />
+                    className="w-12 shrink-0 h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 text-sm outline-none focus:border-[var(--coral)]" />
                 </div>
               </div>
               <div>
@@ -572,10 +572,10 @@ export default function AssetsClient({ data, rooms, locations }: {
                 <div className="flex gap-1.5">
                   <input value={freeForm.qty} disabled={pending} inputMode="decimal"
                     onChange={e => setFreeForm(f => f ? { ...f, qty: e.target.value } : f)}
-                    className="w-full min-w-0 h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 text-sm tabular-nums outline-none focus:border-[var(--coral)]" />
+                    className="w-full min-w-0 h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 text-sm tabular-nums outline-none focus:border-[var(--coral)]" />
                   <input value={freeForm.qtyUnit} disabled={pending} placeholder="개"
                     onChange={e => setFreeForm(f => f ? { ...f, qtyUnit: e.target.value } : f)}
-                    className="w-12 shrink-0 h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2 text-sm outline-none focus:border-[var(--coral)]" />
+                    className="w-12 shrink-0 h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 text-sm outline-none focus:border-[var(--coral)]" />
                 </div>
               </div>
             </div>
@@ -605,7 +605,7 @@ export default function AssetsClient({ data, rooms, locations }: {
                   <span className="text-xs font-medium text-[var(--warm-mid)] shrink-0">배정일</span>
                   <input key={it.assignedAt ?? 'none'} type="date" defaultValue={it.assignedAt ?? ''} disabled={pending}
                     onChange={e => saveAssignedAt(it, e.target.value)}
-                    className="h-9 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                    className="h-9 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                   {it.assignedAt
                     ? <button type="button" onClick={() => saveAssignedAt(it, '')} disabled={pending}
                         className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">비우기</button>

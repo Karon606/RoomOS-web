@@ -2222,18 +2222,18 @@ export default function FinanceClient({
           {/* 필터 + 합계 + 버튼 */}
           <div className="flex flex-wrap items-center gap-2">
             <select value={expFilter.method} onChange={e => setExpFilter(f => ({ ...f, method: e.target.value }))}
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-lg px-3 py-1.5 outline-none">
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
               <option value="all">결제수단 (전체)</option>
               {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <select value={expFilter.category} onChange={e => setExpFilter(f => ({ ...f, category: e.target.value }))}
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-lg px-3 py-1.5 outline-none">
+              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
               <option value="all">카테고리 (전체)</option>
               {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             {financialAccounts.length > 0 && (
               <select value={expFilter.finance} onChange={e => setExpFilter(f => ({ ...f, finance: e.target.value }))}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-lg px-3 py-1.5 outline-none">
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
                 <option value="all">금융사 (전체)</option>
                 {financialAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
               </select>

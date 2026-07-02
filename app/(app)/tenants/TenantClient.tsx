@@ -952,7 +952,7 @@ export default function TenantClient({
           <select
             value={floorFilter}
             onChange={e => setFloorFilter(e.target.value)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors outline-none
+            className={`px-3 py-1.5 text-xs font-medium rounded-sm border transition-colors outline-none
               ${floorFilter
                 ? 'bg-[var(--coral)] text-white border-[var(--coral)]'
                 : 'bg-[var(--cream)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}
@@ -1913,7 +1913,7 @@ export default function TenantClient({
                                   value={overrideReason}
                                   onChange={e => setOverrideReason(e.target.value)}
                                   placeholder="예: 급여일 변경"
-                                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--warning-ring)]"
+                                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] placeholder-[var(--warm-muted)] outline-none focus:border-[var(--warning-ring)]"
                                 />
                               </div>
                             </div>

@@ -432,7 +432,7 @@ export default function RequestsClient({
                         rows={2}
                         autoFocus
                         placeholder="어떻게 처리했는지 짧게 (선택)"
-                        className="w-full text-xs rounded-md px-2 py-1.5 resize-none bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] outline-none"
+                        className="w-full text-xs rounded-sm px-2 py-1.5 resize-none bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] outline-none"
                       />
                       <div className="flex gap-2">
                         <button

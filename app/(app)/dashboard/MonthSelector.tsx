@@ -17,7 +17,7 @@ export default function MonthSelector({ currentMonth }: { currentMonth: string }
     <select
       value={currentMonth}
       onChange={e => router.push(`?month=${e.target.value}`)}
-      className="rounded-xl px-3 py-2 text-sm outline-none cursor-pointer"
+      className="rounded-sm px-3 py-2 text-sm outline-none cursor-pointer"
       style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
     >
       {months.map(m => {

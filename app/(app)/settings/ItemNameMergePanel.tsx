@@ -74,7 +74,7 @@ export function ItemNameMergePanel() {
                 <input
                   value={canonEdits[idx] ?? c.canonical}
                   onChange={e => setCanonEdits(prev => ({ ...prev, [idx]: e.target.value }))}
-                  className="flex-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  className="flex-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 <Btn variant="primary" size="sm" onClick={() => doMerge(idx, c)} disabled={busy === `m${idx}`}>
                   {busy === `m${idx}` ? '통일 중…' : '이 이름으로 통일'}
                 </Btn>

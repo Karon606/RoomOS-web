@@ -126,12 +126,12 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <select value={incFilter.method} onChange={e => setIncFilter(f => ({ ...f, method: e.target.value }))}
-          className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-lg px-3 py-1.5 outline-none">
+          className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
           <option value="all">입금수단 (전체)</option>
           {PAY_METHODS_INC.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
         <select value={incFilter.category} onChange={e => setIncFilter(f => ({ ...f, category: e.target.value }))}
-          className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-lg px-3 py-1.5 outline-none">
+          className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
           <option value="all">카테고리 (전체)</option>
           {incomeCategories.map(c => <option key={c} value={c}>{c}</option>)}
         </select>

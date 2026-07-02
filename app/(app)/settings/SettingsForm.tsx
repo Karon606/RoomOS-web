@@ -751,7 +751,7 @@ export default function SettingsForm({
                   onChange={e => setAreaVal(e.target.value.replace(/[^0-9.]/g, ''))}
                   placeholder="예: 13.2"
                   autoComplete="off"
-                  className="w-full px-3 py-2.5 pr-10 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
+                  className="w-full px-3 py-2.5 pr-10 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
                 {areaVal.trim() !== '' && (
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--warm-mid)] pointer-events-none">㎡</span>
                 )}
@@ -781,18 +781,18 @@ export default function SettingsForm({
                 <div className="space-y-1">
                   <label className="text-[0.6875rem] text-[var(--warm-muted)]">제목</label>
                   <input type="text" name="disposalTitle" defaultValue={dc.title}
-                    className="w-full px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
+                    className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[0.6875rem] text-[var(--warm-muted)]">미납 기준일</label>
                   <input type="text" inputMode="numeric" name="disposalDays" defaultValue={String(dc.days)} placeholder="7"
-                    className="w-20 px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
+                    className="w-20 px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num focus:border-[var(--coral)] transition-colors" />
                 </div>
               </div>
               <div className="space-y-1">
                 <label className="text-[0.6875rem] text-[var(--warm-muted)]">동의 내용 (본문)</label>
                 <textarea name="disposalBody" defaultValue={dc.body} rows={9}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm leading-relaxed outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors resize-y" />
+                  className="w-full px-3 py-2.5 rounded-sm text-sm leading-relaxed outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors resize-y" />
               </div>
             </div>
             <div className="space-y-1.5">
@@ -802,7 +802,7 @@ export default function SettingsForm({
                 defaultValue={property?.bankAccount ?? ''}
                 placeholder="예: 카카오뱅크 3333-01-2345678 (김건우)"
                 autoComplete="off"
-                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
+                className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">공개 페이지 슬러그</label>
@@ -815,7 +815,7 @@ export default function SettingsForm({
                 defaultValue={property?.publicSlug ?? ''}
                 placeholder="예: thestayjegi"
                 autoComplete="off"
-                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num"
+                className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num"
               />
             </div>
             <Btn type="submit" variant="primary" size="md" fullWidth className="mt-2" disabled={isPending}>
@@ -1248,7 +1248,7 @@ export default function SettingsForm({
                         <select
                           defaultValue="STAFF"
                           onChange={e => { req.role = e.target.value as Role }}
-                          className="text-xs bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 outline-none"
+                          className="text-xs bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 outline-none"
                           style={{ color: 'var(--warm-dark)' }}>
                           <option value="MANAGER">관리자</option>
                           <option value="STAFF">스태프</option>
@@ -1282,7 +1282,7 @@ export default function SettingsForm({
                     <select
                       value={m.role}
                       onChange={e => handleRoleChange(m.userId, e.target.value as Role)}
-                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1 text-xs text-[var(--warm-dark)] outline-none"
+                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none"
                     >
                       <option value="OWNER">소유자</option>
                       <option value="MANAGER">관리자</option>
@@ -1508,7 +1508,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
             type="text"
             value={template.title}
             onChange={e => setTemplate(t => ({ ...t, title: e.target.value }))}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2 text-sm text-[var(--warm-dark)] outline-none"
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none"
           />
         </div>
         <div className="space-y-1">
@@ -1518,7 +1518,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
             value={template.emergencyContactNote ?? ''}
             onChange={e => setTemplate(t => ({ ...t, emergencyContactNote: e.target.value }))}
             placeholder="예) * 비상연락망(이름/전화번호/관계-위급상황시 통보):"
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2 text-sm text-[var(--warm-dark)] outline-none"
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none"
           />
         </div>
         <div className="space-y-1">
@@ -1527,7 +1527,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
             type="text"
             value={template.oathText}
             onChange={e => setTemplate(t => ({ ...t, oathText: e.target.value }))}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2 text-sm text-[var(--warm-dark)] outline-none"
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none"
           />
         </div>
 
@@ -1790,7 +1790,7 @@ function OptionSection({
                   onChange={e => setEditingValue(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditingItem(null) }}
                   autoFocus
-                  className="flex-1 bg-[var(--canvas)] border border-[var(--coral)] rounded-lg px-2 py-1 text-sm text-[var(--warm-dark)] outline-none"
+                  className="flex-1 bg-[var(--canvas)] border border-[var(--coral)] rounded-sm px-2 py-1 text-sm text-[var(--warm-dark)] outline-none"
                 />
                 <button onClick={saveEdit}
                   className="shrink-0 text-[0.625rem] px-2 py-1 rounded-lg text-white transition-colors"

@@ -198,7 +198,7 @@ export function CheckoutProrationWidget({
               <div className="flex items-center gap-1.5">
                 <input type="text" inputMode="numeric" value={amountInput ? Number(amountInput.replace(/[^0-9]/g, '')).toLocaleString() : ''}
                   onChange={e => setAmountInput(e.target.value.replace(/[^0-9]/g, ''))}
-                  className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2.5 py-1.5 text-sm text-right tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 <span className="text-xs text-[var(--warm-muted)]">원</span>
               </div>
               <p className="text-[0.5625rem] text-[var(--warm-muted)]">하루 더 봐주기 등 예외는 이 금액을 직접 조정하세요. (환불액 = 총 결제금액 − 이 금액)</p>

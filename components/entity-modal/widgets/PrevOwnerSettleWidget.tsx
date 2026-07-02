@@ -66,7 +66,7 @@ export function PrevOwnerSettleWidget({ leaseTermId, targetMonth, canEdit, onCha
           <span className="text-xs font-medium text-[var(--warm-mid)]">양도인 메뉴</span>
           <select value={menuMode} onChange={e => handleMenuChange(e.target.value as 'auto' | 'show' | 'hide')}
             disabled={pending}
-            className="text-[0.625rem] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-md px-1.5 py-1 text-[var(--warm-dark)] outline-none">
+            className="text-[0.625rem] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 py-1 text-[var(--warm-dark)] outline-none">
             <option value="auto">자동</option>
             <option value="show">항상 표시</option>
             <option value="hide">숨김</option>

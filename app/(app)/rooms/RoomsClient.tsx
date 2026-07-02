@@ -620,7 +620,7 @@ export default function RoomsClient({
           <select
             value={floorFilter}
             onChange={e => setFloorFilter(e.target.value)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors outline-none
+            className={`px-3 py-1.5 text-xs font-medium rounded-sm border transition-colors outline-none
               ${floorFilter
                 ? 'bg-[var(--coral)] text-white border-[var(--coral)]'
                 : 'bg-[var(--cream)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}

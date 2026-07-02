@@ -66,7 +66,7 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
           <div className="flex-1 space-y-1">
             <label className="text-xs text-[var(--warm-muted)]">새 납입일</label>
             <input type="text" value={input} onChange={e => setInput(e.target.value)} placeholder="예: 25, 말일"
-              className="w-full rounded-lg px-2.5 py-1.5 text-sm outline-none"
+              className="w-full rounded-sm px-2.5 py-1.5 text-sm outline-none"
               style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }} />
           </div>
           <div className="text-xs pb-1.5" style={{ color: 'var(--warm-muted)' }}>

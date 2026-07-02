@@ -59,7 +59,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
         <div className="rounded-xl p-4 space-y-3" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
           <p className="text-xs font-semibold" style={{ color: 'var(--warm-mid)' }}>새 요청 등록</p>
           <textarea value={newContent} onChange={e => setNewContent(e.target.value)} rows={3} placeholder="요청 내용을 입력하세요"
-            className="w-full text-sm rounded-lg px-3 py-2 resize-none"
+            className="w-full text-sm rounded-sm px-3 py-2 resize-none"
             style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)', outline: 'none' }} />
           <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
             <div className="min-w-0">

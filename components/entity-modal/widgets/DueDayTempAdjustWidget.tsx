@@ -214,7 +214,7 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
             <div className="flex-1 space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">사유 (선택)</label>
               <input type="text" placeholder="사유" value={reason} onChange={e => setReason(e.target.value)}
-                className="w-full bg-[var(--canvas)] border border-[var(--warning-ring)] rounded-lg px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--warning-ring)]" />
+                className="w-full bg-[var(--canvas)] border border-[var(--warning-ring)] rounded-sm px-3 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--warning-ring)]" />
             </div>
           </div>
           <button disabled={!dateInput || pending} onClick={handleSave}
