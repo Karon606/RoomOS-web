@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import { after } from 'next/server'
 import { fmtWon } from '@/lib/fmtMoney'
 import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
@@ -81,6 +82,55 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const today     = new Date(kstToday.year, kstToday.month - 1, kstToday.day)
   const alertFrom = new Date(today.getTime() - ALERT_WINDOW_BEFORE_DAYS * 86400000)
   const alertTo   = new Date(today.getTime() + ALERT_WINDOW_AFTER_DAYS  * 86400000)
+
+  // ── 응답시간: 서로 독립인 조회를 여기서 미리 시작 — await는 각 사용 지점 그대로 ──
+  // 값·계산식·에러 처리 불변, 쿼리 시작 시점만 앞당김(순차 왕복 → 동시 실행).
+  const pCheckedOutRev        = getCheckedOutLeasesWithRevenue(prisma, propertyId, targetMonth)
+  const pCheckedOutRecognized = getCheckedOutRecognizedRevenue(prisma, propertyId, targetMonth)
+  const pRecurringWithStatus  = getRecurringExpensesWithStatus(targetMonth)
+  const pDepositRecordedAgg   = prisma.paymentRecord.aggregate({
+    where: { propertyId, isDeposit: true, leaseTerm: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } } },
+    _sum: { actualAmount: true },
+  })
+  const pReservedLeases = prisma.leaseTerm.findMany({
+    where: { propertyId, status: 'RESERVED', rentAmount: { gt: 0 } },
+    select: {
+      id: true, rentAmount: true, moveInDate: true, expectedMoveOut: true,
+      checkoutProratedAmount: true, checkoutProratedMonth: true,
+      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
+      room: { select: { scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
+    },
+  })
+  const [tcY, tcM] = targetMonth.split('-').map(Number)
+  const pLastExpAggs = Promise.all([
+    prisma.expense.aggregate({ where: { propertyId, date: { gte: new Date(tcY, tcM - 2, 1), lte: new Date(tcY, tcM - 1, 0) } }, _sum: { amount: true } }),
+    prisma.expense.aggregate({ where: { propertyId, date: { gte: new Date(tcY - 1, tcM - 1, 1), lte: new Date(tcY - 1, tcM, 0) } }, _sum: { amount: true } }),
+  ])
+  const pOverduConfirmed = prisma.leaseTerm.findMany({
+    where: {
+      propertyId,
+      status: 'RESERVED',
+      reservationConfirmedAt: { not: null },
+      moveInDate: { not: null, lt: alertFrom },
+    },
+    select: {
+      id: true, moveInDate: true,
+      tenant: { select: { name: true, id: true } },
+      room:   { select: { id: true, roomNo: true } },
+    },
+  })
+  const pInventoryRows = import('@/app/(app)/inventory/actions').then(m => m.getInventoryOverview()).catch(() => null)
+  const pStockDrafts = prisma.stockCheckDraft.findMany({
+    where: { trackedItem: { propertyId } },
+    select: {
+      trackedItemId: true,
+      updatedAt: true,
+      trackedItem: { select: { label: true, category: true } },
+    },
+    orderBy: { updatedAt: 'desc' },
+  }).catch(() => null)
+  // 조기 시작 프라미스의 unhandled rejection 방지 — 실제 에러는 각 await 지점에서 기존대로 전파
+  for (const p of [pCheckedOutRev, pCheckedOutRecognized, pRecurringWithStatus, pDepositRecordedAgg, pReservedLeases, pLastExpAggs, pOverduConfirmed] as Promise<unknown>[]) { void p.catch(() => {}) }
 
   const [
     activeLeases,
@@ -372,7 +422,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // CHECKED_OUT lease 도 그 달 귀속 입금이 있으면 매출 인식 (totalExpected/Revenue 통일 정책).
   // 단기 입주 후 퇴실(예: 5월 단기 정산) + 거주 중 중도퇴실(예: 월초 입금 후 퇴실).
   // 헬퍼: lib/leaseStatus.ts — 같은 의도의 다른 페이지도 이 헬퍼 사용.
-  const checkedOutLeasesForRev = await getCheckedOutLeasesWithRevenue(prisma, propertyId, targetMonth)
+  const checkedOutLeasesForRev = await pCheckedOutRev
   for (const l of checkedOutLeasesForRev) {
     activeLeaseIds.add(l.id)
     leaseRentMap.set(l.id, l.rentAmount)
@@ -394,10 +444,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const totalDeposit = depositAgg._sum.depositAmount ?? 0
   // 보유 보증금 분해 — 실수납(보증금 입금기록 있음) vs 미기록(전 원장 등 기록 없이 계약상만).
   // 총액(totalDeposit, 계약 기준)은 유지하고 아래에 분해만 표기 → 전 원장 보증금 누락 위험 없음.
-  const depositRecordedAgg = await prisma.paymentRecord.aggregate({
-    where: { propertyId, isDeposit: true, leaseTerm: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING'] } } },
-    _sum: { actualAmount: true },
-  })
+  const depositRecordedAgg = await pDepositRecordedAgg
   const depositRecorded = depositRecordedAgg._sum.actualAmount ?? 0
   const depositUnrecorded = Math.max(0, totalDeposit - depositRecorded)
 
@@ -673,19 +720,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // ── 단기 입주·중도퇴실 lease 의 매출 추가 인식 (lib/leaseStatus.ts 정책)
   // 일할 정산되는 짧은 거주를 과다 인식하지 않도록 rentAmount 전체가 아닌
   // 그 달 귀속 paymentRecord 합계만 인식. paidRevenue 의 CHECKED_OUT 포함 정책과 통일.
-  const checkedOutRecognized = await getCheckedOutRecognizedRevenue(prisma, propertyId, targetMonth)
+  const checkedOutRecognized = await pCheckedOutRecognized
 
   // 신규 입실자(예약확정 RESERVED)의 이번 달 예상 매출 — 입주 예정월이 이 달 이내면 전액(할인 반영) 가산.
   // (사용자 결정 2026-06-20: RESERVED 이상은 그 달 전액으로 예상 매출에 반영. 입주 후엔 ACTIVE 로 일반 청구.)
-  const reservedLeases = await prisma.leaseTerm.findMany({
-    where: { propertyId, status: 'RESERVED', rentAmount: { gt: 0 } },
-    select: {
-      id: true, rentAmount: true, moveInDate: true, expectedMoveOut: true,
-      checkoutProratedAmount: true, checkoutProratedMonth: true,
-      discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
-      room: { select: { scheduledRent: true, rentUpdateDate: true } },   // 예약 인상 — 미래월 청구 반영
-    },
-  })
+  const reservedLeases = await pReservedLeases
   const reservedExpected = reservedLeases
     .filter(l => billableInTargetMonth(l))
     .reduce((s, l) => s + billForLeaseMonth(l, targetMonth, null), 0)
@@ -1014,7 +1053,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   //   예상 순이익 = 예상 매출 - 예상 지출
   // 지출 화면과 동일한 추정식으로 통일: 임시조정 → 과거평균(변동) → 기본액.
   // (getRecurringExpensesWithStatus 재사용 — 두 화면이 같은 데이터·식을 써 금액이 일치)
-  const recurringWithStatus = await getRecurringExpensesWithStatus(targetMonth)
+  const recurringWithStatus = await pRecurringWithStatus
   const projectedRecurringExpense = recurringWithStatus
     .filter(r => !r.isPending && !r.recordedExpenseId)
     .reduce((s, r) => s + (r.pendingAmount ?? r.historicalAvg ?? r.amount), 0)
@@ -1031,11 +1070,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   const tierVariable  = recurringWithStatus.filter(r => (r as { isVariable?: boolean }).isVariable).reduce((s, r) => s + recMonthAmt(r), 0)
   const tierSavable   = Math.max(0, expectedExpense - tierImmovable - tierVariable)
   // 지난달·전년동월 지출(실제 합계) — 예상 지출이 더/덜 쓰는지 비교용 (trend는 6개월뿐이라 전년동월은 별도 집계)
-  const [tcY, tcM] = targetMonth.split('-').map(Number)
-  const [lastMonthExpAgg, lastYearExpAgg] = await Promise.all([
-    prisma.expense.aggregate({ where: { propertyId, date: { gte: new Date(tcY, tcM - 2, 1), lte: new Date(tcY, tcM - 1, 0) } }, _sum: { amount: true } }),
-    prisma.expense.aggregate({ where: { propertyId, date: { gte: new Date(tcY - 1, tcM - 1, 1), lte: new Date(tcY - 1, tcM, 0) } }, _sum: { amount: true } }),
-  ])
+  const [lastMonthExpAgg, lastYearExpAgg] = await pLastExpAggs
   const lastMonthExpense = lastMonthExpAgg._sum.amount ?? 0
   const lastYearExpense  = lastYearExpAgg._sum.amount ?? 0
   // 수납 예정 = 이번 달 청구 중 아직 안 들어온 매출 = 예상 매출 − 수납완료(귀속).
@@ -1158,19 +1193,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   }
 
   // 7일보다 오래된 과거 입주 희망일을 가진 확정 예약 — alertFrom 범위 밖이라 별도 처리
-  const overduConfirmed = await prisma.leaseTerm.findMany({
-    where: {
-      propertyId,
-      status: 'RESERVED',
-      reservationConfirmedAt: { not: null },
-      moveInDate: { not: null, lt: alertFrom },
-    },
-    select: {
-      id: true, moveInDate: true,
-      tenant: { select: { name: true, id: true } },
-      room:   { select: { id: true, roomNo: true } },
-    },
-  })
+  const overduConfirmed = await pOverduConfirmed
   for (const l of overduConfirmed) {
     const days = daysUntil(l.moveInDate!)
     alertItems.push({
@@ -1341,8 +1364,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   // ── 재고 부족 알림 (소진 예상 D-3 이내) ────────────────────
   try {
-    const { getInventoryOverview } = await import('@/app/(app)/inventory/actions')
-    const inventoryRows = await getInventoryOverview()
+    const inventoryRows = (await pInventoryRows) ?? []
     for (const r of inventoryRows) {
       if (r.daysUntilEmpty == null || r.daysUntilEmpty > r.alertThresholdDays) continue
       // #17: 재고 표시 단위는 추적 단위(규격이면 specUnit=kg, 수량이면 qtyUnit=개/박스)와 일치시켜야 함.
@@ -1368,15 +1390,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
 
   // ── 재고 점검 임시저장 (저장 안 한 채 남아 있는 점검) ─────────────────
   try {
-    const drafts = await prisma.stockCheckDraft.findMany({
-      where: { trackedItem: { propertyId } },
-      select: {
-        trackedItemId: true,
-        updatedAt: true,
-        trackedItem: { select: { label: true, category: true } },
-      },
-      orderBy: { updatedAt: 'desc' },
-    })
+    const drafts = (await pStockDrafts) ?? []
     // 같은 trackedItem 의 위치별 드래프트 여러 개는 1건으로 묶음
     type DraftEntry = { label: string; category: string; latestUpdate: Date; count: number }
     const draftMap = new Map<string, DraftEntry>()
@@ -1577,7 +1591,7 @@ export default async function DashboardPage({
 
   // 예약 인상/인하 적용일 경과분 동기화 — 어느 페이지로 들어와도 7/1 인상이 baseRent·rentAmount 에 반영되게
   // (호실관리 미방문 시 리스트·표시가 옛값으로 남는 것 방지). 실패해도 페이지는 정상 노출.
-  await applyScheduledRents().catch(() => {})
+  after(() => applyScheduledRents().catch(() => {}))   // 인상 적용 영속화는 응답 후 — 청구 표시는 billForLeaseMonth(scheduledRent)가 이미 정확
 
   const [dashboardData, paymentMethods, floorPlanData] = await Promise.all([
     getDashboardData(propertyId, targetMonth),
