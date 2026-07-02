@@ -1677,6 +1677,7 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
   onClose: () => void
   onDone: () => void
 }) {
+  const [dirty, setDirty] = useState(false)   // §13.2 — 입력 시작 후 닫기 보호
   const [entries, setEntries] = useState<InventoryCategory[]>(categories.map(c => ({ ...c })))
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
@@ -1703,19 +1704,18 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
   const inputCls = 'bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (
-    <div className="fixed inset-0 z-[var(--z-modal)] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] shadow-lift w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--warm-border)]">
-          <div>
-            <h2 className="text-base font-bold text-[var(--warm-dark)]">재고 카테고리 설정</h2>
-            <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">재고관리에 표시할 카테고리와 이름을 정합니다. (지출 카테고리는 그대로 유지)</p>
-          </div>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] p-1" aria-label="닫기">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+    <Modal open onClose={onClose} title="재고 카테고리 설정"
+      subtitle="재고관리에 표시할 카테고리와 이름을 정합니다. (지출 카테고리는 그대로 유지)"
+      width="lg" dirty={dirty}
+      footer={<div className="flex items-center justify-end gap-2">
+          <button onClick={onClose} className="text-sm text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-3 py-2">취소</button>
+          <Btn variant="primary" size="sm" onClick={handleSave} disabled={pending || !entries.length}>
+            {pending ? '저장 중...' : '저장'}
+          </Btn>
+      </div>}
+      bodyClassName="px-4 py-3">
+      {/* §13.2 dirty — 입력 시작 후 배경클릭 무시(Modal 내장) */}
+      <div className="space-y-3" onInput={() => setDirty(true)} onChange={() => setDirty(true)}>
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
           <div className="space-y-2">
             <p className="text-[0.6875rem] font-medium text-[var(--warm-mid)]">표시 중인 카테고리 (위에서부터 표시 순서)</p>
@@ -1754,16 +1754,9 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
               <p className="text-[0.5625rem] text-[var(--warm-muted)]">예: 수선유지비를 추가하면 수리부품 재고도 추적할 수 있습니다.</p>
             </div>
           )}
-        </div>
 
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[var(--warm-border)]">
-          <button onClick={onClose} className="text-sm text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-3 py-2">취소</button>
-          <Btn variant="primary" size="sm" onClick={handleSave} disabled={pending || !entries.length}>
-            {pending ? '저장 중...' : '저장'}
-          </Btn>
-        </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -1773,6 +1766,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
   onClose: () => void
   onDone: () => void
 }) {
+  const [dirty, setDirty] = useState(false)   // §13.2 — 입력 시작 후 닫기 보호
   const NO_LOC = '__total__'
   const r2 = (x: number) => Math.round(x * 100) / 100
   const todayKst = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)
@@ -1835,33 +1829,21 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
   }
 
   return (
-    <div className="fixed inset-0 z-[var(--z-modal)] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] shadow-lift w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--warm-border)]">
-          <div>
-            <h2 className="text-base font-bold text-[var(--warm-dark)]">전체 재고 보정</h2>
-            <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">실제 남은 수량을 세어 기준선을 다시 맞춥니다. 차이는 사용량으로 잡히지 않습니다.</p>
-          </div>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] p-1" aria-label="닫기">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
-          </button>
-        </div>
-
-        <div className="px-4 py-3 border-b border-[var(--warm-border)] space-y-2.5">
+    <Modal open onClose={onClose} title="전체 재고 보정"
+      subtitle="실제 남은 수량을 세어 기준선을 다시 맞춥니다. 차이는 사용량으로 잡히지 않습니다."
+      width="2xl" dirty={dirty}
+      footer={<div className="flex items-center justify-between gap-2">
+          <span className="text-[0.6875rem] text-[var(--warm-muted)]">차이 있는 {changed.length}품목 보정</span>
           <div className="flex items-center gap-2">
-            <span className="text-[0.6875rem] text-[var(--warm-muted)] shrink-0">보정 날짜</span>
-            <div className="w-44"><DatePicker value={date} onChange={setDate} /></div>
+            <button onClick={onClose} className="text-sm text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-3 py-2">취소</button>
+            <Btn variant="primary" size="sm" onClick={handleSave} disabled={pending || !restockDone || !changed.length}>
+              {pending ? '저장 중...' : `보정 저장 (${changed.length})`}
+            </Btn>
           </div>
-          <label className="flex items-start gap-2 cursor-pointer select-none rounded-lg bg-[var(--honey)]/5 border border-[var(--honey)]/30 px-2.5 py-2">
-            <input type="checkbox" checked={restockDone} onChange={e => setRestockDone(e.target.checked)} className="mt-0.5 accent-[var(--coral)]" />
-            <span className="text-[0.6875rem] text-[var(--warm-mid)] leading-snug">
-              <strong className="text-[var(--warm-dark)]">창고 → 방 보충을 모두 마쳤습니다.</strong><br />
-              보충이 끝나기 전(입주자가 아직 쓰는 중)에 점검하면 사용분이 분실로 잡힐 수 있어, 보충 완료 후 점검을 권장합니다.
-            </span>
-          </label>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+      </div>}
+      bodyClassName="px-4 py-3">
+      {/* §13.2 dirty — 입력 시작 후 배경클릭 무시(Modal 내장) */}
+      <div className="space-y-3" onInput={() => setDirty(true)} onChange={() => setDirty(true)}>
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
           {categories.map(({ cat, alias }) => {
             const catRows = rows.filter(r => r.category === cat)
@@ -1915,19 +1897,9 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
               </section>
             )
           })}
-        </div>
 
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-[var(--warm-border)]">
-          <span className="text-[0.6875rem] text-[var(--warm-muted)]">차이 있는 {changed.length}품목 보정</span>
-          <div className="flex items-center gap-2">
-            <button onClick={onClose} className="text-sm text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-3 py-2">취소</button>
-            <Btn variant="primary" size="sm" onClick={handleSave} disabled={pending || !restockDone || !changed.length}>
-              {pending ? '저장 중...' : `보정 저장 (${changed.length})`}
-            </Btn>
-          </div>
-        </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 

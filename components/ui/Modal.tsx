@@ -3,13 +3,14 @@
 import React from 'react'
 import { confirmDialog } from './ConfirmDialog'
 
-type Width = 'xs' | 'sm' | 'md' | 'lg'
+type Width = 'xs' | 'sm' | 'md' | 'lg' | '2xl'
 
 const WIDTH_CLS: Record<Width, string> = {
   xs: 'max-w-xs',
   sm: 'max-w-sm',
   md: 'max-w-md',
   lg: 'max-w-lg',
+  '2xl': 'max-w-2xl',   // 넓은 표 모달(전체 재고 보정 등)
 }
 
 // Esc 처리용 전역 스택 — 모달이 겹쳐 있을 때(z 260/280) Esc 는 최상단(마지막 마운트)만 닫는다.
