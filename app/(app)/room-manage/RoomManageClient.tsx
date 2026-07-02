@@ -756,6 +756,7 @@ export default function RoomManageClient({
                 tipColor={tipTone ? statusTipColor(tipTone) : undefined}
                 tipBg={tipTone ? statusRowTint(tipTone) : undefined}
                 onClick={() => selectMode ? toggleSelectRoom(room.id) : (entityModal.open({ kind: 'room', roomId: room.id }), setError(''))}
+                onLongPress={!selectMode ? () => { setSelectMode(true); toggleSelectRoom(room.id) } : undefined}
                 className="overflow-hidden flex items-stretch">
                 {/* 정보 */}
                 <div className="flex-1 p-4 min-w-0 space-y-1">

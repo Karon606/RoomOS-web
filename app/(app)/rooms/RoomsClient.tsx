@@ -7,6 +7,7 @@ import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { formatPhone } from '@/lib/formatPhone'
 import { useUrlState } from '@/lib/useUrlState'
+import { useLongPress } from '@/lib/useLongPress'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SortSelect } from '@/components/ui/SortSelect'
 import { RoomCard } from '@/components/ui/RoomCard'
@@ -266,6 +267,7 @@ export default function RoomsClient({
   const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
   const toggleSelect = (id: string) =>
     setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const press = useLongPress()      // 데스크톱 행 꾹 눌러 선택 진입 (§22 공통 제스처, 카드는 RoomCard 내장)
   // 일괄 수납 대상 — 비공실 + 미래월 아님 + 이번 달 미수(balance<0)
   const isBatchEligible = (r: RoomStatus) =>
     !r.isVacant && !r.isFutureMonth && !!r.leaseTermId && r.balance < 0
@@ -702,6 +704,10 @@ export default function RoomsClient({
                   ? (isBatchEligible(room) ? () => toggleSelect(room.roomId) : undefined)
                   : (room.isFutureMonth ? undefined : () => openPayModal(room))
               }
+              onLongPress={(!selectMode && !room.isFutureMonth) ? () => {
+                setSelectMode(true)
+                if (isBatchEligible(room)) toggleSelect(room.roomId)
+              } : undefined}
               className={`px-4 py-3.5 ${(room.isFutureMonth || (selectMode && !isBatchEligible(room))) ? 'opacity-50' : ''}`}>
               {/* 첫 줄: 호실 + 수납상태. 표시 항목 메뉴(colVis)로 타입 ON/OFF. */}
               <div className="flex items-start justify-between gap-2">
@@ -859,6 +865,10 @@ export default function RoomsClient({
                       ? (isBatchEligible(room) ? () => toggleSelect(room.roomId) : undefined)
                       : () => { if (!room.isFutureMonth) openPayModal(room) }
                   }
+                  {...press((!selectMode && !room.isFutureMonth) ? () => {
+                    setSelectMode(true)
+                    if (isBatchEligible(room)) toggleSelect(room.roomId)
+                  } : undefined)}
                   className={`border-b border-[var(--warm-border)]/50 transition-colors
                     ${(room.isFutureMonth || (selectMode && !isBatchEligible(room))) ? 'opacity-50' : 'cursor-pointer hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:scale-[0.995] active:opacity-80'}
                     ${selectMode && selectedIds.has(room.roomId) ? 'bg-[var(--coral)]/5' : ''}`}>

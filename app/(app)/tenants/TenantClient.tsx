@@ -26,6 +26,7 @@ import { JobSelect } from '@/components/ui/JobSelect'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
+import { useLongPress } from '@/lib/useLongPress'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Modal } from '@/components/ui/Modal'
@@ -338,6 +339,7 @@ export default function TenantClient({
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
   })
   const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
+  const press = useLongPress()      // 데스크톱 행 꾹 눌러 선택 진입 (§22 공통 제스처, 카드는 RoomCard 내장)
   const [editTenant, setEditTenant]       = useState<Tenant | null>(null)
   const [detailTenant, setDetailTenant]   = useState<Tenant | null>(null)
   const [detailEditMode, setDetailEditMode] = useState(false)
@@ -1180,6 +1182,7 @@ export default function TenantClient({
                 tipBg={tipTone ? statusRowTint(tipTone) : undefined}
                 selected={selectMode && selectedIds.has(tenant.id)}
                 onClick={() => selectMode ? toggleSelectTenant(tenant.id) : openTenantPrism(tenant)}
+                onLongPress={!selectMode ? () => { setSelectMode(true); toggleSelectTenant(tenant.id) } : undefined}
                 className="p-4"
               >
                 {/* 첫 줄: 호실(또는 희망 조건/미배정) + 이름 + 상태 */}
@@ -1337,6 +1340,7 @@ export default function TenantClient({
                 return (
                   <tr key={tenant.id}
                     onClick={() => selectMode ? toggleSelectTenant(tenant.id) : openTenantPrism(tenant)}
+                    {...press(!selectMode ? () => { setSelectMode(true); toggleSelectTenant(tenant.id) } : undefined)}
                     className={`border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:opacity-80 transition-colors cursor-pointer ${selectMode && selectedIds.has(tenant.id) ? 'bg-[var(--coral)]/5 ring-inset ring-1 ring-[var(--coral)]/30' : ''}`}
                   >
                     {/* sticky — 호실 (클릭 시 호실 관리 페이지로) */}

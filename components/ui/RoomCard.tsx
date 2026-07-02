@@ -8,7 +8,8 @@
 //
 // 정상 상태는 베이스만으로 충분 — 뱃지는 예외일 때만 badge 슬롯으로.
 
-import type { ReactNode, CSSProperties } from 'react'
+import { useRef } from 'react'
+import type { ReactNode, CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 
 export type CardKind = 'resident' | 'vacant' | 'neutral'
 
@@ -26,6 +27,7 @@ export function RoomCard({
   tipColor,
   tipBg,
   onClick,
+  onLongPress,
   className,
   children,
 }: {
@@ -41,9 +43,24 @@ export function RoomCard({
   /** 상태별 옅은 배경 틴트 — tipColor 와 함께 쓰면 Status Row 행 틴트 (rgba 권장). */
   tipBg?: string
   onClick?: () => void
+  /** 꾹 눌러 선택 모드 진입 — §22 공통 제스처(500ms, 10px 이동 시 취소). 발화 후 click 억제. */
+  onLongPress?: () => void
   className?: string
   children: ReactNode
 }) {
+  const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lpFired = useRef(false)
+  const lpStart = useRef<{ x: number; y: number } | null>(null)
+  const lpClear = () => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null } }
+  const lpDown = (e: ReactPointerEvent) => {
+    if (!onLongPress) return
+    lpStart.current = { x: e.clientX, y: e.clientY }
+    lpClear()
+    lpTimer.current = setTimeout(() => { lpFired.current = true; onLongPress() }, 500)
+  }
+  const lpMove = (e: ReactPointerEvent) => {
+    if (lpStart.current && (Math.abs(e.clientX - lpStart.current.x) > 10 || Math.abs(e.clientY - lpStart.current.y) > 10)) lpClear()
+  }
   const k = KIND[kind]
   const style: CSSProperties = selected
     ? { background: 'var(--cream)', borderColor: 'var(--coral)', borderWidth: 2, boxShadow: '0 0 0 2px rgba(160,60,46,0.20)' }
@@ -56,8 +73,16 @@ export function RoomCard({
           : { background: k.bg, borderColor: k.bd, opacity: k.opacity }
   return (
     <div
-      onClick={onClick}
-      className={`relative rounded-2xl border transition-colors ${onClick ? 'cursor-pointer active:brightness-[0.97]' : ''} ${className ?? ''}`}
+      onClick={(onClick || onLongPress) ? () => {
+        if (lpFired.current) { lpFired.current = false; return }
+        onClick?.()
+      } : undefined}
+      onPointerDown={lpDown}
+      onPointerMove={lpMove}
+      onPointerUp={lpClear}
+      onPointerLeave={lpClear}
+      onContextMenu={onLongPress ? e => e.preventDefault() : undefined}
+      className={`relative rounded-2xl border transition-colors ${onClick ? 'cursor-pointer active:brightness-[0.97]' : ''} ${onLongPress ? 'select-none' : ''} ${className ?? ''}`}
       style={style}
     >
       {children}

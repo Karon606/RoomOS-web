@@ -439,6 +439,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                   isSelected={selected.has(r.id)}
                   hasDraft={draftIds.has(r.id)}
                   onOpen={() => selectMode ? toggleSelect(r.id) : setDetailId(r.id)}
+                  onLongPress={!selectMode ? () => { setSelectMode(true); toggleSelect(r.id) } : undefined}
                   onArchive={async () => {
                     if (!(await confirmDialog({ title: `'${r.label}' 품목을 숨길까요?`, message: '카드 목록에서 사라집니다. 점검·구매·지출 기록은 모두 보존되며, 헤더의 "숨김 품목"에서 언제든 복구할 수 있습니다.', confirmLabel: '숨김' }))) return
                     const res = await archiveTrackedItem(r.id)
