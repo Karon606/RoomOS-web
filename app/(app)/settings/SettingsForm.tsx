@@ -943,7 +943,7 @@ export default function SettingsForm({
         <div className="space-y-4">
           <OptionSection
             title="부가수익 카테고리 관리"
-            description="지출/기타수익 페이지에서 부가수익 등록 시 선택할 카테고리입니다."
+            description="수납 관리 > 부가수익 탭에서 수익 등록 시 선택할 카테고리입니다."
             items={incomeCategs}
             getLabel={v => v}
             newValue={newIncomeCateg}

@@ -94,7 +94,7 @@ const NAV_GROUPS = [
     label: '수익/지출',
     items: [
       { href: '/rooms',     label: '수납 관리',     Icon: IcoFinance   },  // Wallet
-      { href: '/finance',   label: '지출/기타수익', Icon: IcoWallet    },  // TrendingUp
+      { href: '/finance',   label: '지출 관리',     Icon: IcoWallet    },  // TrendingUp — 부가수익은 수납 관리로 이동(2026-07-02)
       { href: '/card-settlement', label: '카드 정산', Icon: IcoCardSettle }, // CreditCard
       { href: '/inventory', label: '재고 관리',     Icon: IcoInventory },  // Boxes
       { href: '/report',    label: '결산 보고서',   Icon: IcoReport    },  // FileText

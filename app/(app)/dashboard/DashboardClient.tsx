@@ -373,7 +373,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
           <Link href={alert.link} onClick={onClose}
             className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-opacity hover:opacity-70"
             style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-            {isRecurring ? '지출/기타 수익에서 보기 →'
+            {isRecurring ? '지출 관리에서 보기 →'
               : alert.category === 'inventory' ? '재고 관리에서 보기 →'
               : alert.category === 'request' ? '요청·컴플레인에서 보기 →'
               : alert.wishCandidates && alert.wishCandidates.length > 0 ? '호실 관리로 이동 →'

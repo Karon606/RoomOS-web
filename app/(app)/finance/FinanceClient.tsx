@@ -2074,7 +2074,7 @@ export default function FinanceClient({
 
       {/* 헤더 — 우측 월 셀렉터(기간) */}
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-bold text-[var(--warm-dark)]">지출/기타 수익</h1>
+        <h1 className="text-xl font-bold text-[var(--warm-dark)]">지출 관리</h1>
         <MonthSelector />
       </div>
 
