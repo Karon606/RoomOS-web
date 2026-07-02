@@ -3777,7 +3777,7 @@ export default function FinanceClient({
     {/* ── 고정 지출 관리 모달 ────────────────────────────────────── */}
 
     {showRecMgmt && (
-      <div className="fixed inset-0 z-[var(--z-modal)] flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) { setShowRecMgmt(false); setShowRecMgmtForm(false) } }}>
+      <div className="fixed inset-0 z-[var(--z-modal)] flex items-end sm:items-center justify-center p-4 bg-black/70" onClick={e => { if (e.target === e.currentTarget) { setShowRecMgmt(false); setShowRecMgmtForm(false) } }}>
         <div className="bg-[var(--cream)] rounded-2xl w-full max-w-lg max-h-[90dvh] flex flex-col shadow-lift border border-[var(--warm-border)]">
           {/* 모달 헤더 */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
@@ -4006,7 +4006,7 @@ export default function FinanceClient({
     {/* ── 고정 지출 기록 모달 ────────────────────────────────────────── */}
     {recordingRec && (
       <div
-        className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+        className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-4 bg-black/70"
         onClick={e => { if (e.target === e.currentTarget) { setRecordingRec(null); setRecError('') } }}>
         <div className="bg-[var(--cream)] rounded-2xl w-full max-w-sm shadow-lift border border-[var(--warm-border)]">
           {/* 헤더 */}
