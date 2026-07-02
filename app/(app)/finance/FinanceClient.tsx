@@ -1411,7 +1411,7 @@ export default function FinanceClient({
     if (mergeMode) return
     lpFired.current = false
     cancelLongPress()
-    lpTimer.current = setTimeout(() => { lpFired.current = true; setMergeMode(true); toggleExpSel(exp, groupRows) }, 450)
+    lpTimer.current = setTimeout(() => { lpFired.current = true; setMergeMode(true); toggleExpSel(exp, groupRows) }, 500)   // §22 공통 제스처 500ms 통일
   }
   const exitMergeMode = () => { setMergeMode(false); setMergeSel(new Set()) }
   const handleMergeSelected = () => {
@@ -2458,7 +2458,7 @@ export default function FinanceClient({
                 {/* 모바일 카드 */}
                 {isEmpty ? (
                   <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-10 text-center">
-                    <EmptyState title="지출 내역이 없습니다" className="border-0 bg-transparent" />
+                    <EmptyState title="지출 내역이 없습니다" description="필터를 바꾸거나 지출을 등록해 보세요." className="border-0 bg-transparent" />
                   </div>
                 ) : (
                   <div className="sm:hidden space-y-1.5">
@@ -2568,7 +2568,7 @@ export default function FinanceClient({
                 {/* 데스크탑 테이블 */}
                 <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-auto max-h-[calc(100vh-340px)]">
                   {isEmpty ? (
-                    <EmptyState title="지출 내역이 없습니다" className="border-0 bg-transparent" />
+                    <EmptyState title="지출 내역이 없습니다" description="필터를 바꾸거나 지출을 등록해 보세요." className="border-0 bg-transparent" />
                   ) : (
                     <table className="w-full" style={{
                       tableLayout: 'fixed',

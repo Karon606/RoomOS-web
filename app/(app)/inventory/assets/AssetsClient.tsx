@@ -279,7 +279,7 @@ export default function AssetsClient({ data, rooms, locations }: {
         selected={mergeSel.has(it.id)}
         onToggleSelect={() => toggleMergeSel(it.id)}
         onClick={() => setDetailItem(it)}
-        onLongPress={() => { if (!mergeMode) { setMergeMode(true); toggleMergeSel(it.id) } }}
+        onLongPress={!mergeMode ? () => { setMergeMode(true); toggleMergeSel(it.id) } : undefined}
         title={it.itemLabel}
         badges={it.amount === 0 ? <span className="inline-flex items-center rounded-full bg-[var(--info-bg)] text-[var(--info-fg)] text-[0.625rem] font-semibold px-1.5 py-0.5">무상</span> : undefined}
         meta={[`${it.date.slice(2)} 구매`, it.vendor, it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category, won(it.amount)].filter(Boolean).join(' · ')}
@@ -300,7 +300,7 @@ export default function AssetsClient({ data, rooms, locations }: {
             {it.count > 1 && (
               <button type="button" onClick={() => toggleExpand(it.id)}
                 className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
-                구매 {it.count}건 {expanded.has(it.id) ? '접기' : '합산'}
+                구매 {it.count}건 합산 {expanded.has(it.id) ? '▾ 접기' : '▸ 펼치기'}
               </button>
             )}
             {awaitingReceipt && rcvAsk === it.id ? (
