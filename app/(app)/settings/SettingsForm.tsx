@@ -621,7 +621,7 @@ export default function SettingsForm({
   return (
     <div className="max-w-lg">
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-5 py-3 text-sm text-[var(--warm-dark)] shadow-lift">
+        <div className="fixed bottom-6 right-6 z-[var(--z-toast)] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-5 py-3 text-sm text-[var(--warm-dark)] shadow-lift">
           {toast}
         </div>
       )}

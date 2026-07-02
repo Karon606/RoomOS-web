@@ -290,8 +290,8 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
               <Btn variant="secondary" size="sm" onClick={() => setShowMore(v => !v)}>⋯ 더보기</Btn>
               {showMore && (
                 <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowMore(false)} />
-                  <div className="absolute left-0 top-full z-50 mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-1.5 shadow-lift">
+                  <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setShowMore(false)} />
+                  <div className="absolute left-0 top-full z-[var(--z-dropdown)] mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-1.5 shadow-lift">
                     <p className="px-2 pt-1 pb-1 text-[0.625rem] font-semibold text-[var(--warm-muted)]">입력·점검</p>
                     <button type="button" disabled={seedPending || isPending} onClick={() => { setShowMore(false); handleSeed() }}
                       className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)] disabled:opacity-50">{seedPending ? '처리 중…' : '지출에서 자동 등록'}</button>
@@ -853,8 +853,8 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                   </button>
                   {hubOpen && (
                     <>
-                      <div className="fixed inset-0 z-[60]" onClick={() => setHubOpen(false)} />
-                      <div className="absolute left-0 top-full mt-1 z-[61] min-w-[200px] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] shadow-lift py-1">
+                      <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setHubOpen(false)} />
+                      <div className="absolute left-0 top-full mt-1 z-[var(--z-dropdown)] min-w-[200px] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] shadow-lift py-1">
                         <p className="px-3 py-1 text-[0.5625rem] text-[var(--warm-muted)]">보충 시 차감할 창고(허브) 위치</p>
                         {row.locations.map(l => (
                           <button key={l.id} type="button" disabled={pending} onClick={() => changeItemHub(l.id)}

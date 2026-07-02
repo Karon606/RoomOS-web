@@ -132,7 +132,7 @@ export function AddressSearch({
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-[var(--z-modal-2)] flex items-center justify-center p-4"
           style={{ background: 'rgba(0,0,0,0.5)' }}
           onClick={() => setOpen(false)}
         >

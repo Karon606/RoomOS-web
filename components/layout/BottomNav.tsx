@@ -77,7 +77,7 @@ export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
   return (
     /* HIG: 탭 바는 화면 하단 고정, safe area 위에 콘텐츠 배치 */
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 md:hidden flex safe-b"
+      className="fixed bottom-0 left-0 right-0 z-[var(--z-sticky)] md:hidden flex safe-b"
       style={{ background: 'var(--cream)', borderTop: '1px solid var(--warm-border)' }}
     >
       {NAV_ITEMS.map(({ href, label, Icon }) => {

@@ -56,7 +56,7 @@ export default function Header({
   }
 
   return (
-    /* relative z-[100]: 헤더가 사이드바(z-50)보다 항상 위 → 드롭다운 겹침 방지 */
+    /* relative z-[var(--z-sticky)]: 헤더가 사이드바(z-50)보다 항상 위 → 드롭다운 겹침 방지 */
     <header
       className="h-14 md:h-16 flex items-center justify-between gap-2 px-3 md:px-6 shrink-0 relative z-[100]"
       style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }}
@@ -84,7 +84,7 @@ export default function Header({
           </button>
 
           {propOpen && (
-            <div className="absolute left-0 top-12 w-60 rounded-xl shadow-lift z-50 overflow-hidden"
+            <div className="absolute left-0 top-12 w-60 rounded-xl shadow-lift z-[var(--z-dropdown)] overflow-hidden"
                  style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
               <div className="px-3 pt-2.5 pb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wide"
                    style={{ color: 'var(--warm-muted)' }}>
