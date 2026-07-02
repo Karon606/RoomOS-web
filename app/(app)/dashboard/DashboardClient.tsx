@@ -19,7 +19,7 @@ import {
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
 import { CHART_COLORS, chartColor, GENDER_COLORS, STATUS_COLORS, CONCEPT_COLORS } from '@/lib/chartColors'
-import { fmtKorMoney } from '@/lib/fmtMoney'
+import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { getTenantLeaseForDashboard, getPaymentsByLease, savePayment, saveDepositPayment, updatePayment, deletePayment, getTenantQuickInfo } from '@/app/(app)/rooms/actions'
 import { recordRecurringExpense } from '@/app/(app)/finance/actions'
 import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
@@ -171,20 +171,20 @@ function CheckoutRefundModal({
             <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
               <p style={{ color: 'var(--warm-muted)' }}>보증금</p>
               <p className="text-sm font-semibold mt-0.5" style={{ color: 'var(--warm-dark)' }}>
-                {depositAmount.toLocaleString()}원
+                {fmtWon(depositAmount)}
               </p>
             </div>
             <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
               <p style={{ color: 'var(--warm-muted)' }}>청소비 차감</p>
               <p className="text-sm font-semibold mt-0.5" style={{ color: cleaningFee > 0 ? 'var(--tc)' : 'var(--warm-mid)' }}>
-                {cleaningFee > 0 ? `-${cleaningFee.toLocaleString()}원` : '없음'}
+                {cleaningFee > 0 ? `-${fmtWon(cleaningFee)}` : '없음'}
               </p>
             </div>
           </div>
 
           <div className="space-y-1.5">
             <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>
-              환불 금액 (최대 {maxRefund.toLocaleString()}원)
+              환불 금액 (최대 {fmtWon(maxRefund)})
             </label>
             <input
               type="text"
@@ -197,19 +197,19 @@ function CheckoutRefundModal({
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors"
             />
             {exceedsMax && (
-              <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {maxRefund.toLocaleString()}원입니다.</p>
+              <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
             )}
           </div>
 
           <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ background: 'rgba(244,98,58,0.08)', color: 'var(--warm-dark)' }}>
             <div className="flex justify-between">
               <span style={{ color: 'var(--warm-muted)' }}>환불</span>
-              <span className="font-medium">{refund.toLocaleString()}원</span>
+              <span className="font-medium">{fmtWon(refund)}</span>
             </div>
             {unreturned > 0 && (
               <div className="flex justify-between">
                 <span style={{ color: 'var(--warm-muted)' }}>부가수익 귀속 (보증금)</span>
-                <span className="font-medium">{unreturned.toLocaleString()}원</span>
+                <span className="font-medium">{fmtWon(unreturned)}</span>
               </div>
             )}
             <p className="text-[0.625rem] pt-1" style={{ color: 'var(--warm-muted)' }}>
@@ -1358,7 +1358,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
         : <h2 className="text-base font-bold text-[var(--warm-dark)] truncate">
             {lease?.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}{lease?.tenant.name}
           </h2>}
-      subtitle={loading ? undefined : `${targetMonth} · 예정 ${lease?.rentAmount.toLocaleString()}원`}
+      subtitle={loading ? undefined : `${targetMonth} · 예정 ${fmtWon(lease?.rentAmount ?? 0)}`}
       footer={!loading && lease ? (
         <div className="flex gap-2">
           <Link href={`/rooms?month=${targetMonth}`}
@@ -1408,15 +1408,15 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                                   + (viewBalance > 0 ? viewBalance : 0)
                 const thirdLabel = trueUnpaid > 0 ? '미수' : truePrepaid > 0 ? '선납' : '정상'
                 const thirdValue = trueUnpaid > 0
-                  ? `−${trueUnpaid.toLocaleString()}원`
-                  : truePrepaid > 0 ? `+${truePrepaid.toLocaleString()}원` : '0원'
+                  ? `−${fmtWon(trueUnpaid)}`
+                  : truePrepaid > 0 ? `+${fmtWon(truePrepaid)}` : '0원'
                 const thirdColor = trueUnpaid > 0 ? 'var(--tc)' : truePrepaid > 0 ? 'var(--success)' : 'var(--warm-mid)'
                 return (
                   <>
                     <div className="grid grid-cols-3 gap-2">
                       {[
-                        { label: '이달 청구', value: `${lease!.rentAmount.toLocaleString()}원`, color: 'var(--warm-dark)' },
-                        { label: '이달 납부', value: `${regularPaid.toLocaleString()}원`, color: regularPaid >= lease!.rentAmount ? 'var(--success)' : 'var(--warm-dark)' },
+                        { label: '이달 청구', value: `${fmtWon(lease!.rentAmount)}`, color: 'var(--warm-dark)' },
+                        { label: '이달 납부', value: `${fmtWon(regularPaid)}`, color: regularPaid >= lease!.rentAmount ? 'var(--success)' : 'var(--warm-dark)' },
                         { label: thirdLabel, value: thirdValue, color: thirdColor },
                       ].map(item => (
                         <div key={item.label} className="rounded-xl p-3 text-center" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
@@ -1429,12 +1429,12 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                     {carryOver !== 0 && (
                       <p className="text-[0.6875rem] text-[var(--warm-muted)] mt-1.5 text-center">
                         {carryOver < 0 ? (
-                          <>이월 미수 <span className="text-[var(--danger-fg)] font-medium mono tnum">{Math.abs(carryOver).toLocaleString()}원</span> 포함</>
+                          <>이월 미수 <span className="text-[var(--danger-fg)] font-medium mono tnum">{fmtWon(Math.abs(carryOver))}</span> 포함</>
                         ) : (
-                          <>이월 선납 <span className="text-[var(--success-fg)] font-medium mono tnum">{carryOver.toLocaleString()}원</span> 포함</>
+                          <>이월 선납 <span className="text-[var(--success-fg)] font-medium mono tnum">{fmtWon(carryOver)}</span> 포함</>
                         )}
                         {!viewDuePassed && viewBalance < 0 && (
-                          <span className="ml-1.5 text-[var(--warm-muted)]">(이달 청구 {Math.abs(viewBalance).toLocaleString()}원은 도래 전)</span>
+                          <span className="ml-1.5 text-[var(--warm-muted)]">(이달 청구 {fmtWon(Math.abs(viewBalance))}은 도래 전)</span>
                         )}
                       </p>
                     )}
@@ -1498,7 +1498,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                             {getDueDateStr()} 납부 (자동) · <span className="underline">날짜 수정</span>
                           </button>
                         </div>
-                        <p className="text-xs font-semibold text-[var(--info-fg)]">{lease!.rentAmount.toLocaleString()}원</p>
+                        <p className="text-xs font-semibold text-[var(--info-fg)]">{fmtWon(lease!.rentAmount)}</p>
                       </div>
                     )
                   })()}
@@ -1519,7 +1519,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                   {prevOwnerPaid > 0 && (
                     <div className="flex items-center justify-between bg-[var(--info-bg)] border border-[var(--info-ring)] rounded-xl px-3 py-2">
                       <p className="text-xs text-[var(--info-fg)]">양도인 귀속</p>
-                      <p className="text-xs font-semibold text-[var(--info-fg)]">{prevOwnerPaid.toLocaleString()}원</p>
+                      <p className="text-xs font-semibold text-[var(--info-fg)]">{fmtWon(prevOwnerPaid)}</p>
                     </div>
                   )}
                   {regularRecords.length > 0 && (
@@ -1549,7 +1549,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                         if (e.target.checked) setPayAmount(lease!.depositAmount)
                         else setPayAmount(lease!.rentAmount)
                       }} className="accent-[var(--coral)]" />
-                      <span className="text-xs font-medium text-[var(--warm-dark)]">보증금 수납 ({lease!.depositAmount.toLocaleString()}원)</span>
+                      <span className="text-xs font-medium text-[var(--warm-dark)]">보증금 수납 ({fmtWon(lease!.depositAmount)})</span>
                     </label>
                   )}
                   <div className="grid grid-cols-2 gap-2">
@@ -1584,7 +1584,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                   </div>
                   {isDepositMode && payAmount > lease!.depositAmount && (
                     <p className="text-[0.625rem] text-[var(--coral)]">
-                      초과금 {(payAmount - lease!.depositAmount).toLocaleString()}원 → {targetMonth} 이용료 처리
+                      초과금 {fmtWon((payAmount - lease!.depositAmount))} → {targetMonth} 이용료 처리
                     </p>
                   )}
                   <div className="flex gap-2">
@@ -1627,7 +1627,7 @@ function DashPayRow({ p, isPreAcq, onEdit, onDelete, color }: {
         {p.memo && !p.isDeposit && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
       </div>
       <div className="flex items-center gap-2">
-        <span className={`text-sm font-semibold ${amountColor}`}>{p.actualAmount.toLocaleString()}원</span>
+        <span className={`text-sm font-semibold ${amountColor}`}>{fmtWon(p.actualAmount)}</span>
         <div className="flex gap-1.5 ml-1">
           <button onClick={() => onEdit(p)} className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border transition-colors" style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>수정</button>
           <button onClick={() => onDelete(p.id)} className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">삭제</button>
@@ -1772,12 +1772,12 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
                 </div>
                 <div className="flex justify-between mb-1">
                   <span className="text-[var(--warm-muted)]">이용료</span>
-                  <span className="font-semibold text-[var(--warm-dark)]">{lease.rentAmount.toLocaleString()}원</span>
+                  <span className="font-semibold text-[var(--warm-dark)]">{fmtWon(lease.rentAmount)}</span>
                 </div>
                 {lease.depositAmount > 0 && (
                   <div className="flex justify-between mb-1">
                     <span className="text-[var(--warm-muted)]">보증금</span>
-                    <span className="text-[var(--warm-dark)]">{lease.depositAmount.toLocaleString()}원</span>
+                    <span className="text-[var(--warm-dark)]">{fmtWon(lease.depositAmount)}</span>
                   </div>
                 )}
                 {lease.dueDay && (
@@ -1921,7 +1921,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                 </div>
                 {/* §23.1 — 보조 1줄(달성도). 완료/예정/미납 건 상세는 수납 관리로 이동 */}
                 <p style={{ fontSize: '0.65625rem', color: 'rgba(255,252,247,0.55)', lineHeight: 1.5 }}>
-                  수납 {data.totalRevenue.toLocaleString()}원 · 달성 <em style={{ fontStyle: 'normal', color: 'var(--rev-change)', fontWeight: 700 }}>{pct}%</em>
+                  수납 {fmtWon(data.totalRevenue)} · 달성 <em style={{ fontStyle: 'normal', color: 'var(--rev-change)', fontWeight: 700 }}>{pct}%</em>
                 </p>
               </>
             )

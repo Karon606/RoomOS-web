@@ -18,7 +18,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn } from '@/components/ui/Btn'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 
-const fmtWon = (n: number) => `${n.toLocaleString()}원`
+import { fmtWon } from '@/lib/fmtMoney'   // §15 단일 경로
 const fmtMonth = (m: string) => { const [y, mm] = m.split('-'); return `${y}년 ${Number(mm)}월` }
 
 export function CheckoutProrationWidget({

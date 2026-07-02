@@ -5,7 +5,7 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 
 type Settlement = { totalPaid: number; balance: number; carryOver: number }
 
-const fmtWon = (n: number) => `${n.toLocaleString()}원`
+import { fmtWon } from '@/lib/fmtMoney'   // §15 단일 경로
 
 export function PaymentSummaryCards({ settlement, month }: { settlement: Settlement; month?: string }) {
   return (

@@ -3,6 +3,7 @@
 // 카드 정산 — '지출/기타수익'에서 분리한 독립 화면.
 // 미정산 신용카드 대금을 카드·청구월별로 묶어 '확정(마감)'과 '예정(진행 중)'으로 구분 표시 + 정산 처리.
 import { useTransition } from 'react'
+import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
 import { settleCardExpenses, unsettleExpenses } from '../finance/actions'
 import { Btn } from '@/components/ui/Btn'
@@ -127,7 +128,7 @@ export default function CardSettlementClient({
           {g.billMonth.replace('-', '년 ')}월 청구 {g.isFinalized ? '총액(확정)' : '예정액'}
         </span>
         <span className="text-xl font-bold text-[var(--danger-fg)] num">
-          {g.total.toLocaleString()}원
+          {fmtWon(g.total)}
         </span>
       </div>
       <div className="max-h-40 overflow-y-auto space-y-1.5">
@@ -140,7 +141,7 @@ export default function CardSettlementClient({
               {item.detail && <span className="text-[var(--warm-muted)]"> · {item.detail}</span>}
             </span>
             <span className="text-[var(--warm-dark)] font-medium num shrink-0">
-              {item.amount.toLocaleString()}원
+              {fmtWon(item.amount)}
             </span>
           </div>
         ))}
@@ -228,12 +229,12 @@ export default function CardSettlementClient({
                   {g.items.map(item => (
                     <div key={item.id} className="flex justify-between text-xs text-[var(--warm-muted)]">
                       <span>{new Date(item.date).getMonth() + 1}. {new Date(item.date).getDate()}. {item.detail ?? item.category}</span>
-                      <span>{item.amount.toLocaleString()}원</span>
+                      <span>{fmtWon(item.amount)}</span>
                     </div>
                   ))}
                 </div>
                 <div className="flex items-center justify-between pt-1 border-t border-[var(--warm-border)]">
-                  <span className="text-sm font-bold text-[var(--warm-dark)]">{g.total.toLocaleString()}원</span>
+                  <span className="text-sm font-bold text-[var(--warm-dark)]">{fmtWon(g.total)}</span>
                   <button
                     onClick={async () => {
                       if (!(await confirmDialog({ title: `'${g.accountName}' ${g.billMonth} 청구분 정산을 전부 취소할까요?`, confirmLabel: '전체 취소' }))) return

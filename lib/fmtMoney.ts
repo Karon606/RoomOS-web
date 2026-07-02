@@ -8,7 +8,7 @@
 export function fmtKorMoney(n: number, opts: { zero?: string } = {}): string {
   const r = Math.round(n)
   if (r === 0) return opts.zero ?? '0원'
-  const sign = r < 0 ? '-' : ''
+  const sign = r < 0 ? '−' : ''   // §15 음수는 U+2212
   const abs = Math.abs(r)
 
   if (abs < 10_000) return sign + abs.toLocaleString() + '원'
@@ -18,4 +18,11 @@ export function fmtKorMoney(n: number, opts: { zero?: string } = {}): string {
 
   if (rest === 0) return sign + man.toLocaleString() + '만원'
   return sign + man.toLocaleString() + '만' + rest + '원'
+}
+
+// §15 표준 원화 표기 — 콤마 + '원', 음수는 '−'(U+2212). 인라인 toLocaleString()+'원' 직접 호출 금지의 단일 경로.
+export function fmtWon(n: number): string {
+  const r = Math.round(n)
+  const sign = r < 0 ? '−' : ''
+  return sign + Math.abs(r).toLocaleString('ko-KR') + '원'
 }

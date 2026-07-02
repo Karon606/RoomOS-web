@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition, useRef } from 'react'
+import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -366,7 +367,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             <section className="space-y-2">
               {/* 헤더 스타일 — 비품·자재 '수령 대기'와 동일 (#2 통일) */}
               <h2 className="text-sm font-semibold text-[var(--warm-dark)]">
-                수령 대기 <span className="text-[0.625rem] text-[var(--coral)] font-normal">도착 전</span> <span className="text-[var(--warm-muted)] font-normal">{flat.length}건{totalAmt > 0 ? ` · ${totalAmt.toLocaleString()}원` : ''}</span>
+                수령 대기 <span className="text-[0.625rem] text-[var(--coral)] font-normal">도착 전</span> <span className="text-[var(--warm-muted)] font-normal">{flat.length}건{totalAmt > 0 ? ` · ${fmtWon(totalAmt)}` : ''}</span>
               </h2>
               <ul className="space-y-1.5">
                 {groups.map(g => {
@@ -410,7 +411,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                             return (
                               <li key={f.p.id} className="flex items-baseline justify-between gap-2 text-[0.6875rem] text-[var(--warm-muted)]">
                                 <span className="tabular-nums">{fd.getMonth() + 1}/{fd.getDate()}{qstr}{f.p.vendor ? ` · ${f.p.vendor}` : ''}</span>
-                                <span className="tabular-nums">{(f.p.amount ?? 0).toLocaleString()}원</span>
+                                <span className="tabular-nums">{fmtWon((f.p.amount ?? 0))}</span>
                               </li>
                             )
                           })}
@@ -555,12 +556,12 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
           <p className="text-[0.625rem] text-[var(--warm-muted)]">평균 단가</p>
           <p className="text-sm font-medium text-[var(--warm-mid)]">
             {row.avgUnitPrice != null
-              ? `${Math.round(row.avgUnitPrice).toLocaleString()}원${priceUnit ? `/${priceUnit}` : ''}`
+              ? `${fmtWon(Math.round(row.avgUnitPrice))}${priceUnit ? `/${priceUnit}` : ''}`
               : '—'}
           </p>
           {row.lastUnitPrice != null && row.lastUnitPrice !== row.avgUnitPrice && (
             <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">
-              최근 {Math.round(row.lastUnitPrice).toLocaleString()}원{priceUnit ? `/${priceUnit}` : ''}
+              최근 {fmtWon(Math.round(row.lastUnitPrice))}{priceUnit ? `/${priceUnit}` : ''}
             </p>
           )}
         </div>
@@ -1003,7 +1004,7 @@ function MonthlyInflowList({ rows, stockUnit }: { rows: MonthlyInflowRow[]; stoc
         </div>
         <div className="bg-[var(--canvas)] rounded-xl p-3">
           <p className="text-[0.625rem] text-[var(--warm-muted)]">전체 구매 비용</p>
-          <p className="text-sm font-bold text-[var(--warm-dark)] mt-0.5">{totalAmt.toLocaleString()}원</p>
+          <p className="text-sm font-bold text-[var(--warm-dark)] mt-0.5">{fmtWon(totalAmt)}</p>
         </div>
       </div>
       <ul className="space-y-1.5">
@@ -1026,7 +1027,7 @@ function MonthlyInflowList({ rows, stockUnit }: { rows: MonthlyInflowRow[]; stoc
                       <div className="h-full rounded-full" style={{ width: `${Math.min(100, purchasePct)}%`, background: 'var(--success-fg)' }} />
                     </div>
                     <span className="text-[0.625rem] text-[var(--warm-muted)] w-24 text-right shrink-0 tabular-nums">
-                      {Math.round(r.purchaseQty * 100) / 100}{u} · {r.purchaseAmount.toLocaleString()}원
+                      {Math.round(r.purchaseQty * 100) / 100}{u} · {fmtWon(r.purchaseAmount)}
                     </span>
                   </div>
                 )}
@@ -1071,8 +1072,8 @@ function PriceChart({ points, unitLabel, qtyUnit }: { points: PricePoint[]; unit
     <div className="space-y-3">
       <div className="bg-[var(--canvas)] rounded-xl p-3 space-y-2">
         <div className="flex items-center justify-between text-[0.625rem] text-[var(--warm-muted)]">
-          <span>최저 {Math.round(minP).toLocaleString()}원{unitSuffix}</span>
-          <span>최고 {Math.round(maxP).toLocaleString()}원{unitSuffix}</span>
+          <span>최저 {fmtWon(Math.round(minP))}{unitSuffix}</span>
+          <span>최고 {fmtWon(Math.round(maxP))}{unitSuffix}</span>
         </div>
         <svg viewBox={`0 0 ${W} ${H + 4}`} preserveAspectRatio="none" className="w-full h-32">
           <path d={path} fill="none" stroke="var(--coral)" strokeWidth="0.8" strokeLinejoin="round" strokeLinecap="round" />
@@ -1084,10 +1085,10 @@ function PriceChart({ points, unitLabel, qtyUnit }: { points: PricePoint[]; unit
           <li key={i} className="flex items-center justify-between text-xs px-3 py-2 bg-[var(--cream)] border border-[var(--warm-border)]/60 rounded-xl">
             <span className="text-[var(--warm-muted)]">{fmtDate(p.date)}</span>
             <span className="text-[var(--warm-dark)] font-medium">
-              {Math.round(p.unitPrice).toLocaleString()}원{unitSuffix}
+              {fmtWon(Math.round(p.unitPrice))}{unitSuffix}
             </span>
             <span className="text-[0.625rem] text-[var(--warm-muted)]">
-              {p.qty}{qtyUnit ?? ''} · {p.amount.toLocaleString()}원
+              {p.qty}{qtyUnit ?? ''} · {fmtWon(p.amount)}
             </span>
           </li>
         ))}
@@ -1430,7 +1431,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
               <p className="text-xs text-[var(--warm-muted)]">
                 구매일 {fmtDate(entry.date)}{packLabel ? ` · ${packLabel}` : ''}
               </p>
-              <p className="text-sm font-medium text-[var(--warm-dark)]">{baseQty > 0 ? `+ ${fmtQty(baseQty, baseUnit)}` : '수량 미기록'}{entry.amount > 0 ? ` (${entry.amount.toLocaleString()}원)` : ''}</p>
+              <p className="text-sm font-medium text-[var(--warm-dark)]">{baseQty > 0 ? `+ ${fmtQty(baseQty, baseUnit)}` : '수량 미기록'}{entry.amount > 0 ? ` (${fmtWon(entry.amount)})` : ''}</p>
               {isPendingReceipt ? (
                 <p className="text-[0.625rem] text-[var(--honey)] mt-0.5">수령 대기 중</p>
               ) : entry.receivedAt ? (

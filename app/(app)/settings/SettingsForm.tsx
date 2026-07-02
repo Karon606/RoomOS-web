@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
+import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
 import { DEFAULT_DISPOSAL_CONSENT, type DisposalConsentTemplate } from '@/lib/contract'
 import {
@@ -1009,7 +1010,7 @@ export default function SettingsForm({
                     <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
                     {recItemsActive ? (
                       <div className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm flex items-center justify-between">
-                        <span className="font-medium text-[var(--warm-dark)]">{recItemsTotal.toLocaleString()}원</span>
+                        <span className="font-medium text-[var(--warm-dark)]">{fmtWon(recItemsTotal)}</span>
                         <span className="text-[0.625rem] text-[var(--warm-muted)]">세부항목 합계</span>
                       </div>
                     ) : (
@@ -1159,7 +1160,7 @@ export default function SettingsForm({
                       {!r.isActive && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--neutral-bg)] text-[var(--neutral-fg)]">비활성</span>}
                     </div>
                     <p className="text-xs text-[var(--warm-muted)] mt-0.5">
-                      매월 {r.dueDay >= 30 ? '말일' : `${r.dueDay}일`} · {r.amount.toLocaleString()}원 · {r.category} · {r.alertDaysBefore}일 전 알림
+                      매월 {r.dueDay >= 30 ? '말일' : `${r.dueDay}일`} · {fmtWon(r.amount)} · {r.category} · {r.alertDaysBefore}일 전 알림
                     </p>
                     {r.items.length > 0 && (
                       <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">

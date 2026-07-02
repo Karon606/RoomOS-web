@@ -31,7 +31,7 @@ import MonthSelector from '@/components/layout/MonthSelector'
 import { Modal } from '@/components/ui/Modal'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor } from '@/lib/chartColors'
-import { fmtKorMoney } from '@/lib/fmtMoney'
+import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -606,7 +606,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
           })}
           {allowMulti && items.length > 1 && (
             <p className="text-[0.625rem] text-[var(--warm-muted)] text-right">
-              합계 {totalItemAmount.toLocaleString()}원
+              합계 {fmtWon(totalItemAmount)}
             </p>
           )}
         </div>
@@ -1898,7 +1898,7 @@ export default function FinanceClient({
           if (found) {
             const attach = await confirmDialog({
               title: '같은 주문번호의 주문이 있어요',
-              message: `주문 ${found.code} — 품목 ${found.count}건 · ${found.total.toLocaleString()}원.\n이 지출을 같은 주문으로 묶을까요? (한 주문에 판매점별 영수증이 여러 장인 경우)\n묶은 뒤에도 지출 상세에서 풀 수 있어요.`,
+              message: `주문 ${found.code} — 품목 ${found.count}건 · ${fmtWon(found.total)}.\n이 지출을 같은 주문으로 묶을까요? (한 주문에 판매점별 영수증이 여러 장인 경우)\n묶은 뒤에도 지출 상세에서 풀 수 있어요.`,
               confirmLabel: '같은 주문으로 묶기',
               cancelLabel: '따로 등록',
             })
@@ -1955,7 +1955,7 @@ export default function FinanceClient({
           confirmLabel: '기록 취소',
         })
       : await confirmDialog({
-          title: `이 지출(${exp.amount.toLocaleString()}원)을 삭제할까요?`,
+          title: `이 지출(${fmtWon(exp.amount)})을 삭제할까요?`,
           level: 'danger', confirmLabel: '삭제',
         })
     if (!ok) return
@@ -2170,7 +2170,7 @@ export default function FinanceClient({
                     <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: catColorMap[cat] }} />
                     <span className="text-xs text-[var(--warm-muted)] flex-1 truncate min-w-0">{cat}</span>
                     <span className="text-xs font-medium text-[var(--warm-dark)] num shrink-0">
-                      {amt.toLocaleString()}원
+                      {fmtWon(amt)}
                     </span>
                     <span className="text-[0.625rem] text-[var(--warm-muted)] w-6 text-right shrink-0">{pct}%</span>
                   </div>
@@ -2450,7 +2450,7 @@ export default function FinanceClient({
                     {recVisibility === 'soon' && hiddenRecs.length > 0 && (
                       <button onClick={() => setRecVisibility('all')}
                         className="text-xs text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
-                        + 임박하지 않은 고정 <span className="text-[var(--warm-dark)] font-semibold">{hiddenRecs.length}건</span> · 합계 <span className="num text-[var(--warm-dark)] font-semibold">{hiddenRecsTotal.toLocaleString()}원</span> 숨김
+                        + 임박하지 않은 고정 <span className="text-[var(--warm-dark)] font-semibold">{hiddenRecs.length}건</span> · 합계 <span className="num text-[var(--warm-dark)] font-semibold">{fmtWon(hiddenRecsTotal)}</span> 숨김
                       </button>
                     )}
                   </div>
@@ -2472,7 +2472,7 @@ export default function FinanceClient({
                         return (
                           <div className="flex items-baseline justify-between px-1 pt-2 pb-0.5">
                             <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{mm}월 {dd}일 ({wd})</span>
-                            <span className="num text-[0.6875rem] font-semibold text-[var(--warm-mid)]">합계 {(dayTotals.get(item.dateStr) ?? 0).toLocaleString()}원</span>
+                            <span className="num text-[0.6875rem] font-semibold text-[var(--warm-mid)]">합계 {fmtWon((dayTotals.get(item.dateStr) ?? 0))}</span>
                           </div>
                         )
                       })() : null
@@ -2593,7 +2593,7 @@ export default function FinanceClient({
                               <td colSpan={6} className="px-4 py-1.5">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[0.6875rem] font-semibold text-[var(--warm-muted)]">{fmtDate(item.dateStr)}</span>
-                                  <span className="num text-[0.6875rem] font-semibold text-[var(--warm-mid)]">해당일 합계 {(dayTotals.get(item.dateStr) ?? 0).toLocaleString()}원</span>
+                                  <span className="num text-[0.6875rem] font-semibold text-[var(--warm-mid)]">해당일 합계 {fmtWon((dayTotals.get(item.dateStr) ?? 0))}</span>
                                 </div>
                               </td>
                             </tr>
@@ -2958,7 +2958,7 @@ export default function FinanceClient({
       {groupDetail && (
         <Modal open onClose={() => setGroupDetail(null)} width="sm"
           title={groupDetail[0]?.order?.code ? `주문 ${groupDetail[0].order.code}` : '주문 묶음'}
-          subtitle={`${groupDetail[0]?.order?.externalOrderNo ? `쇼핑몰 ${groupDetail[0].order.externalOrderNo} · ` : ''}${groupDetail.length}건 · 합계 ${groupDetail.reduce((s, r) => s + r.amount, 0).toLocaleString()}원`}>
+          subtitle={`${groupDetail[0]?.order?.externalOrderNo ? `쇼핑몰 ${groupDetail[0].order.externalOrderNo} · ` : ''}${groupDetail.length}건 · 합계 ${fmtWon(groupDetail.reduce((s, r) => s + r.amount, 0))}`}>
           <ul className="overflow-y-auto px-4 py-3 space-y-1.5">
               {groupDetail.map(r => (
                 <li key={r.id}>
@@ -2969,7 +2969,7 @@ export default function FinanceClient({
                       {r.isShipping ? '배송비' : (r.room ? (/^\d+$/.test(r.room.roomNo) ? `${r.room.roomNo}호` : r.room.roomNo) : (r.allocationGroupId ? '미배정' : (r.detail || r.itemLabel || '방 미배정')))}
                       {r.qtyValue ? <span className="text-[var(--warm-muted)]"> · {r.qtyValue}{r.qtyUnit ?? ''}</span> : null}
                     </span>
-                    <span className="text-sm font-semibold text-[var(--danger-fg)] shrink-0 tabular-nums">{r.amount.toLocaleString()}원</span>
+                    <span className="text-sm font-semibold text-[var(--danger-fg)] shrink-0 tabular-nums">{fmtWon(r.amount)}</span>
                   </button>
                 </li>
               ))}
@@ -3008,7 +3008,7 @@ export default function FinanceClient({
                               {it.name}
                               {it.isVariable && <span className="ml-1 text-[0.5625rem] text-[var(--warning-fg)]">(변동)</span>}
                             </span>
-                            <span className="num text-[var(--warm-dark)]">{it.amount.toLocaleString()}원</span>
+                            <span className="num text-[var(--warm-dark)]">{fmtWon(it.amount)}</span>
                           </div>
                         ))}
                       </div>
@@ -3150,7 +3150,7 @@ export default function FinanceClient({
                             <input type="hidden" name="shippingIncluded" value={ship} />
                             {editItems.length >= 1 ? (
                               <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]">
-                                {total.toLocaleString()}원
+                                {fmtWon(total)}
                                 {ship > 0 && <span className="text-[0.625rem] text-[var(--warm-muted)] ml-1">(품목 {base.toLocaleString()} + 배송 {ship.toLocaleString()})</span>}
                               </div>
                             ) : (
@@ -3244,7 +3244,7 @@ export default function FinanceClient({
                                     <input type="checkbox" checked={attachShipSiblings.includes(s.id)} onChange={() => toggle(s.id)}
                                       className="w-3.5 h-3.5 accent-[var(--coral)] shrink-0" />
                                     <span className="truncate flex-1">{[s.vendor, s.detail].filter(Boolean).join(' · ') || s.category}</span>
-                                    <span className="text-[var(--warm-muted)] shrink-0">{s.amount.toLocaleString()}원</span>
+                                    <span className="text-[var(--warm-muted)] shrink-0">{fmtWon(s.amount)}</span>
                                   </label>
                                 ))}
                               </div>
@@ -3265,7 +3265,7 @@ export default function FinanceClient({
                           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                     }
                     {/* 제출 detail = 표시 내용 + 배송비 표기(있으면) */}
-                    <input type="hidden" name="detail" value={`${editItems.length > 0 ? fmtItemListDetail(editItems) : editExpDetail}${editHasShipping && (editShipping ?? 0) > 0 ? `${(editItems.length > 0 || editExpDetail) ? ' · ' : ''}배송비 ${(editShipping ?? 0).toLocaleString()}원` : ''}`} />
+                    <input type="hidden" name="detail" value={`${editItems.length > 0 ? fmtItemListDetail(editItems) : editExpDetail}${editHasShipping && (editShipping ?? 0) > 0 ? `${(editItems.length > 0 || editExpDetail) ? ' · ' : ''}배송비 ${fmtWon((editShipping ?? 0))}` : ''}`} />
                     {editItems.length > 0 && <>
                       <input type="hidden" name="itemsJson" value={JSON.stringify(editIsDurable ? editItems.map(it => ({ ...it, allocations: undefined })) : editItems)} />
                       {editItems.length === 1 && (
@@ -3434,7 +3434,7 @@ export default function FinanceClient({
                           <input type="hidden" name="shippingIncluded" value={ship} />
                           {addItems.length >= 1 ? (
                             <div className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]">
-                              {total.toLocaleString()}원
+                              {fmtWon(total)}
                               {ship > 0 && <span className="text-[0.625rem] text-[var(--warm-muted)] ml-1">(품목 {base.toLocaleString()} + 배송 {ship.toLocaleString()})</span>}
                             </div>
                           ) : (
@@ -3544,7 +3544,7 @@ export default function FinanceClient({
                         className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                   }
                   {/* 제출 detail = 표시 내용 + 배송비 표기(있으면) */}
-                  <input type="hidden" name="detail" value={`${addItems.length > 0 ? fmtItemListDetail(addItems) : addExpDetail}${addHasShipping && (addShipping ?? 0) > 0 ? `${(addItems.length > 0 || addExpDetail) ? ' · ' : ''}배송비 ${(addShipping ?? 0).toLocaleString()}원` : ''}`} />
+                  <input type="hidden" name="detail" value={`${addItems.length > 0 ? fmtItemListDetail(addItems) : addExpDetail}${addHasShipping && (addShipping ?? 0) > 0 ? `${(addItems.length > 0 || addExpDetail) ? ' · ' : ''}배송비 ${fmtWon((addShipping ?? 0))}` : ''}`} />
                   {addItems.length > 0 && <>
                     <input type="hidden" name="itemsJson" value={JSON.stringify(addIsDurable ? addItems.map(it => ({ ...it, allocations: undefined })) : addItems)} />
                     {addItems.length === 1 && (
@@ -3941,7 +3941,7 @@ export default function FinanceClient({
                         {r.activeSince && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--warning-bg)] text-[var(--warning-fg)]">{r.activeSince.slice(0, 7)}부터</span>}
                       </div>
                       <p className="text-xs text-[var(--warm-muted)] mt-0.5">
-                        매월 {r.dueDay}일 · {r.amount.toLocaleString()}원 · {r.category}
+                        매월 {r.dueDay}일 · {fmtWon(r.amount)} · {r.category}
                         {r.payMethod && <> · {r.payMethod}</>}
                         {r.financialAccountName && <> ({r.financialAccountName})</>}
                       </p>
@@ -4008,13 +4008,13 @@ export default function FinanceClient({
                           }} placeholder="0원" />
                         </div>
                       ) : (
-                        <span className="text-xs num text-[var(--warm-dark)] w-28 text-right pr-1">{it.amount.toLocaleString()}원</span>
+                        <span className="text-xs num text-[var(--warm-dark)] w-28 text-right pr-1">{fmtWon(it.amount)}</span>
                       )}
                     </div>
                   ))}
                   <div className="flex items-center justify-between border-t border-[var(--warm-border)] pt-1.5 mt-1">
                     <span className="text-xs font-semibold text-[var(--warm-dark)]">합계</span>
-                    <span className="text-sm font-bold num text-[var(--coral)]">{recRecAmount.toLocaleString()}원</span>
+                    <span className="text-sm font-bold num text-[var(--coral)]">{fmtWon(recRecAmount)}</span>
                   </div>
                 </div>
               </>
@@ -4029,7 +4029,7 @@ export default function FinanceClient({
                 <label className="text-xs text-[var(--warm-muted)]">
                   금액
                   {recordingRec.historicalAvg && (
-                    <span className="ml-1 text-[var(--info-fg)] text-[0.625rem]">평균 {recordingRec.historicalAvg.toLocaleString()}원</span>
+                    <span className="ml-1 text-[var(--info-fg)] text-[0.625rem]">평균 {fmtWon(recordingRec.historicalAvg)}</span>
                   )}
                 </label>
                 <MoneyInput value={recRecAmount} onChange={v => setRecRecAmount(v)} placeholder="0원" />
@@ -4085,7 +4085,7 @@ export default function FinanceClient({
             {recError && <p className="text-[var(--danger-fg)] text-xs">{recError}</p>}
             {recordingRec.pendingAmount != null && (
               <p className="text-[0.625rem] text-[var(--warm-muted)] -mt-1">
-                예약된 금액 {recordingRec.pendingAmount.toLocaleString()}원이 자동 입력되었습니다.
+                예약된 금액 {fmtWon(recordingRec.pendingAmount)}이 자동 입력되었습니다.
                 <button type="button"
                   onClick={() => {
                     startTransition(async () => {
@@ -4188,7 +4188,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
 
   // 전 원장 등으로 받았으나 입금기록 없는 보증금 → '받음(실수납)'으로 기록.
   const handleRecordReceived = async (leaseTermId: string, name: string, amount: number) => {
-    if (!(await confirmDialog({ title: `${name} 보증금을 '받음(실수납)'으로 기록할까요?`, message: `계약상 금액(${amount.toLocaleString()}원)으로 입금 기록이 생성됩니다.`, confirmLabel: '기록' }))) return
+    if (!(await confirmDialog({ title: `${name} 보증금을 '받음(실수납)'으로 기록할까요?`, message: `계약상 금액(${fmtWon(amount)})으로 입금 기록이 생성됩니다.`, confirmLabel: '기록' }))) return
     startRec(async () => {
       const release = trackSave()
       try {
@@ -4267,12 +4267,12 @@ function DepositTab({ summary, ledger, totalBalance }: {
                     </div>
                     <p className="text-xs text-[var(--warm-muted)]">
                       {d.hasNoInRecord
-                        ? `계약상 보증금 ${d.contractDeposit.toLocaleString()}원`
-                        : `입금 ${d.totalIn.toLocaleString()}원`}
-                      {d.totalReturned > 0 && ` · 반환 ${d.totalReturned.toLocaleString()}원`}
-                      {d.totalWithheld > 0 && ` · 미반환 ${d.totalWithheld.toLocaleString()}원`}
+                        ? `계약상 보증금 ${fmtWon(d.contractDeposit)}`
+                        : `입금 ${fmtWon(d.totalIn)}`}
+                      {d.totalReturned > 0 && ` · 반환 ${fmtWon(d.totalReturned)}`}
+                      {d.totalWithheld > 0 && ` · 미반환 ${fmtWon(d.totalWithheld)}`}
                       {!d.hasNoInRecord && d.contractDeposit !== d.totalIn && (
-                        <span className="ml-1 text-[var(--warning-fg)]">(계약 {d.contractDeposit.toLocaleString()}원)</span>
+                        <span className="ml-1 text-[var(--warning-fg)]">(계약 {fmtWon(d.contractDeposit)})</span>
                       )}
                       {d.status === 'CHECKED_OUT' && d.balance === 0 && (d.totalReturned + d.totalWithheld === 0) && (
                         <span className="ml-1 text-[var(--warm-muted)]">· 퇴실 정리됨</span>
@@ -4281,7 +4281,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-sm font-bold" style={{ color: d.balance > 0 ? 'var(--deposit-fg)' : 'var(--warm-muted)' }}>
-                      {d.balance.toLocaleString()}원
+                      {fmtWon(d.balance)}
                     </p>
                     <p className="text-[0.625rem] text-[var(--warm-muted)]">현재 잔고</p>
                     {d.hasNoInRecord && d.status !== 'CHECKED_OUT' && d.contractDeposit > 0 && (
@@ -4317,8 +4317,8 @@ function DepositTab({ summary, ledger, totalBalance }: {
                     </div>
                     {e.type === 'REFUND' && (
                       <p className="text-xs text-[var(--warm-muted)]">
-                        반환 {(e.returnedAmount ?? 0).toLocaleString()}원
-                        {(e.withheldAmount ?? 0) > 0 && ` · 미반환 ${(e.withheldAmount ?? 0).toLocaleString()}원`}
+                        반환 {fmtWon((e.returnedAmount ?? 0))}
+                        {(e.withheldAmount ?? 0) > 0 && ` · 미반환 ${fmtWon((e.withheldAmount ?? 0))}`}
                         {e.reason && ` · 사유: ${e.reason}`}
                       </p>
                     )}
@@ -4326,7 +4326,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
                   </div>
                   <div className="text-right shrink-0">
                     <p className={`text-sm font-semibold ${e.type === 'IN' ? 'text-[var(--success-fg)]' : 'text-[var(--warning-fg)]'}`}>
-                      {e.type === 'IN' ? '+' : '−'}{e.amount.toLocaleString()}원
+                      {e.type === 'IN' ? '+' : '−'}{fmtWon(e.amount)}
                     </p>
                   </div>
                 </li>
@@ -4507,7 +4507,7 @@ function ReserveTab({
                   {settleableExpenses.map(e => (
                     <option key={e.id} value={e.id}>
                       {new Date(e.date).toISOString().slice(5,10)} · {e.category}
-                      {e.detail ? ` · ${e.detail}` : ''} · {e.remaining.toLocaleString()}원 남음
+                      {e.detail ? ` · ${e.detail}` : ''} · {fmtWon(e.remaining)} 남음
                     </option>
                   ))}
                 </select>
@@ -4614,14 +4614,14 @@ function ReserveTab({
                   )}
                   {t.expense && (
                     <p className="text-xs text-[var(--warm-muted)] truncate">
-                      ↪ 원 지출: {t.expense.category}{t.expense.detail ? ` · ${t.expense.detail}` : ''} ({t.expense.amount.toLocaleString()}원)
+                      ↪ 원 지출: {t.expense.category}{t.expense.detail ? ` · ${t.expense.detail}` : ''} ({fmtWon(t.expense.amount)})
                     </p>
                   )}
                   {t.memo && <p className="text-xs text-[var(--warm-muted)] truncate">메모: {t.memo}</p>}
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span className={`text-sm font-semibold ${typeColor(t.type)}`}>
-                    {t.type === 'DEPOSIT' ? '+' : '−'}{t.amount.toLocaleString()}원
+                    {t.type === 'DEPOSIT' ? '+' : '−'}{fmtWon(t.amount)}
                   </span>
                   <button onClick={() => handleDelete(t.id)}
                     className="text-xs text-[var(--warm-muted)] hover:text-[var(--danger-fg)]">삭제</button>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
+import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn,
@@ -749,7 +750,7 @@ export default function TenantClient({
             const otherMonths = result.allocations.filter(a => a.targetMonth !== result.inputMonth)
             if (otherMonths.length > 0) {
               const summary = otherMonths
-                .map(a => `${Number(a.targetMonth.slice(5))}월분 ${a.amount.toLocaleString()}원`)
+                .map(a => `${Number(a.targetMonth.slice(5))}월분 ${fmtWon(a.amount)}`)
                 .join(', ')
               setToast(`자동 분배: ${summary} (미수가 가장 오래된 월부터 충당)`)
             }
@@ -1061,23 +1062,23 @@ export default function TenantClient({
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
                     <p className="text-[var(--warm-muted)]">보증금</p>
-                    <p className="text-sm font-semibold mt-0.5 text-[var(--warm-dark)]">{dep.toLocaleString()}원</p>
+                    <p className="text-sm font-semibold mt-0.5 text-[var(--warm-dark)]">{fmtWon(dep)}</p>
                   </div>
                   <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
                     <p className="text-[var(--warm-muted)]">청소비 차감</p>
                     <p className={`text-sm font-semibold mt-0.5 ${fee > 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-mid)]'}`}>
-                      {fee > 0 ? `−${fee.toLocaleString()}원` : '없음'}
+                      {fee > 0 ? `−${fmtWon(fee)}` : '없음'}
                     </p>
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">
-                    환불 금액 (최대 {maxRefund.toLocaleString()}원)
+                    환불 금액 (최대 {fmtWon(maxRefund)})
                   </label>
                   <MoneyInput value={depositReturnAmt} onChange={setDepositReturnAmt} placeholder="0원" />
                   {exceedsMax && (
-                    <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {maxRefund.toLocaleString()}원입니다.</p>
+                    <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
                   )}
                 </div>
 
@@ -1090,12 +1091,12 @@ export default function TenantClient({
                 <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ background: 'rgba(244,98,58,0.08)', color: 'var(--warm-dark)' }}>
                   <div className="flex justify-between">
                     <span className="text-[var(--warm-muted)]">환불</span>
-                    <span className="font-medium">{depositReturnAmt.toLocaleString()}원</span>
+                    <span className="font-medium">{fmtWon(depositReturnAmt)}</span>
                   </div>
                   {unreturned > 0 && (
                     <div className="flex justify-between">
                       <span className="text-[var(--warm-muted)]">부가수익 귀속 (보증금)</span>
-                      <span className="font-medium">{unreturned.toLocaleString()}원</span>
+                      <span className="font-medium">{fmtWon(unreturned)}</span>
                     </div>
                   )}
                   <p className="text-[0.625rem] pt-1 text-[var(--warm-muted)]">
@@ -1134,9 +1135,9 @@ export default function TenantClient({
               </p>
               <div className="bg-[var(--canvas)] rounded-sm px-3 py-2.5 text-sm flex items-center justify-center gap-2 flex-wrap">
                 <span className="text-[var(--warm-muted)]">기존</span>
-                <span className="font-semibold text-[var(--warm-dark)]">{rentChangeModal.baseRent.toLocaleString()}원</span>
+                <span className="font-semibold text-[var(--warm-dark)]">{fmtWon(rentChangeModal.baseRent)}</span>
                 <span className="text-[var(--warm-muted)]">→</span>
-                <span className={`font-semibold ${dirColor}`}>{dirLabel} {rentChangeModal.scheduledRent.toLocaleString()}원</span>
+                <span className={`font-semibold ${dirColor}`}>{dirLabel} {fmtWon(rentChangeModal.scheduledRent)}</span>
               </div>
               <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
                 네: 즉시 적용 (예정일 무시) · 아니오: 변경 예정일에 자동 적용
@@ -1531,7 +1532,7 @@ export default function TenantClient({
         return (
           <Modal open width="md" onClose={closePayModal} dirty={showPayForm}
             title={`${lease.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}${tenant.name}`}
-            subtitle={`${targetMonth} · 예정 ${lease.rentAmount.toLocaleString()}원`}>
+            subtitle={`${targetMonth} · 예정 ${fmtWon(lease.rentAmount)}`}>
 
               {/* ── 읽기 전용 ── */}
               {!showPayForm && (
@@ -1545,7 +1546,7 @@ export default function TenantClient({
                         {adjNet !== 0 && (
                           <p className="text-[0.625rem] mt-0.5 font-medium"
                             style={{ color: adjNet > 0 ? 'var(--success-fg)' : 'var(--danger-fg)' }}>
-                            조정 {adjNet > 0 ? '+' : ''}{adjNet.toLocaleString()}원
+                            조정 {adjNet > 0 ? '+' : ''}{fmtWon(adjNet)}
                           </p>
                         )}
                       </div>
@@ -1563,7 +1564,7 @@ export default function TenantClient({
                     {prevOwnerPaid > 0 && (
                       <div className="flex items-center justify-between bg-[var(--info-bg)] border border-[var(--info-ring)] rounded-xl px-3 py-2">
                         <p className="text-xs text-[var(--info-fg)]">양도인 귀속 (인수일 이전 납부)</p>
-                        <p className="text-xs font-semibold text-[var(--info-fg)]">{prevOwnerPaid.toLocaleString()}원</p>
+                        <p className="text-xs font-semibold text-[var(--info-fg)]">{fmtWon(prevOwnerPaid)}</p>
                       </div>
                     )}
 
@@ -1593,7 +1594,7 @@ export default function TenantClient({
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-semibold"
                                   style={{ color: isExtra ? 'var(--danger-fg)' : 'var(--success-fg)' }}>
-                                  {isExtra ? '-' : '+'}{absAmt.toLocaleString()}원
+                                  {isExtra ? '-' : '+'}{fmtWon(absAmt)}
                                 </span>
                                 <button onClick={() => handleDeletePayRecord(p.id)}
                                   className="text-xs font-medium px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">삭제</button>
@@ -1650,7 +1651,7 @@ export default function TenantClient({
                                 </p>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className="text-sm font-semibold text-[var(--deposit-fg)]">{p.actualAmount.toLocaleString()}원</span>
+                                <span className="text-sm font-semibold text-[var(--deposit-fg)]">{fmtWon(p.actualAmount)}</span>
                                 <div className="flex gap-1.5 ml-1">
                                   <button onClick={() => handleUpdatePayRecord(p)}
                                     className="text-[0.625rem] font-medium px-2 py-1 rounded-lg border border-[var(--deposit-ring)] text-[var(--deposit-fg)] transition-colors">
@@ -1728,7 +1729,7 @@ export default function TenantClient({
                                 {p.memo && <p className="text-xs text-[var(--coral)] mt-0.5">{p.memo}</p>}
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className={`text-sm font-semibold ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'}`}>{p.actualAmount.toLocaleString()}원</span>
+                                <span className={`text-sm font-semibold ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'}`}>{fmtWon(p.actualAmount)}</span>
                                 <div className="flex gap-1.5 ml-1">
                                   <button onClick={() => handleUpdatePayRecord(p)}
                                     className="text-[0.625rem] font-medium px-2 py-1 rounded-lg border transition-colors"
@@ -1992,12 +1993,12 @@ export default function TenantClient({
                             className="w-4 h-4 accent-[var(--coral)]"
                           />
                           <span className="text-xs text-[var(--warm-mid)]">
-                            보증금 수납 ({lease.depositAmount.toLocaleString()}원)
+                            보증금 수납 ({fmtWon(lease.depositAmount)})
                           </span>
                         </label>
                         {isDepositMode && payAmount > lease.depositAmount && (
                           <p className="text-xs text-[var(--success-fg)]">
-                            초과금 {(payAmount - lease.depositAmount).toLocaleString()}원 → {targetMonth} 이용료 처리
+                            초과금 {fmtWon((payAmount - lease.depositAmount))} → {targetMonth} 이용료 처리
                           </p>
                         )}
                       </div>

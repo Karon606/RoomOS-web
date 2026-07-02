@@ -5,6 +5,7 @@
 // 양도인 record 는 양도인 색 표시.
 
 import { useEffect, useState, useTransition } from 'react'
+import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   getPaymentsByLease, getTargetMonthOptions, updatePayment, deletePayment,
@@ -158,7 +159,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                     {tmOptions.map(o => {
                       const [y, m] = o.month.split('-')
                       const tag = o.status === 'paid' ? '완납'
-                        : o.status === 'partial' ? `일부 ${o.paidAmount.toLocaleString()}/${o.expectedAmount.toLocaleString()}원`
+                        : o.status === 'partial' ? `일부 ${o.paidAmount.toLocaleString()}/${fmtWon(o.expectedAmount)}`
                         : o.status === 'future' ? '향후' : '미수'
                       return <option key={o.month} value={o.month}>{Number(y)}년 {Number(m)}월분 — {tag}</option>
                     })}
@@ -184,7 +185,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                 {displaySeq}회차 · {fmtDate(p.payDate)} · {p.payMethod ?? '—'}
               </p>
               <span className={`text-sm font-semibold whitespace-nowrap ${p.isDeposit ? 'text-[var(--deposit-fg)]' : prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'}`}>
-                {p.actualAmount.toLocaleString()}원
+                {fmtWon(p.actualAmount)}
               </span>
             </div>
             {/* 줄2: 뱃지들 + 메모 + 액션 버튼 */}

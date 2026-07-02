@@ -5,6 +5,7 @@
 // transitionsFor() 정의 그대로 이주.
 
 import { useState, useTransition } from 'react'
+import { fmtWon } from '@/lib/fmtMoney'
 import { applyStatusTransition, recordDepositReturn } from '@/app/(app)/tenants/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -210,7 +211,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">
-                      보증금 환불액 <span className="text-[var(--warm-muted)] font-normal">(보증금 {active.depositAmount.toLocaleString()}원)</span>
+                      보증금 환불액 <span className="text-[var(--warm-muted)] font-normal">(보증금 {fmtWon(active.depositAmount)})</span>
                     </label>
                     <button type="button" onClick={() => setTransRefund(0)}
                       className={`shrink-0 text-[0.625rem] px-2 py-1 rounded-md border transition-colors ${
@@ -223,7 +224,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                   </div>
                   <MoneyInput value={transRefund} onChange={setTransRefund} placeholder="0원" />
                   <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
-                    {active.cleaningFee > 0 && <>청소비 {active.cleaningFee.toLocaleString()}원을 뺀 금액이 기본값입니다. </>}
+                    {active.cleaningFee > 0 && <>청소비 {fmtWon(active.cleaningFee)}을 뺀 금액이 기본값입니다. </>}
                     일부만 환불하려면 금액을 직접 입력하고, 환불하지 않으려면 ‘환불 안 함’을 누르세요. 환불하지 않은 금액은 보증금 수익으로 기록됩니다.
                   </p>
                 </div>

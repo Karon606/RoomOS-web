@@ -14,7 +14,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { IncomeSection, type Income, type LeaseOption } from './IncomeSection'
 import { ViewTabs } from '@/components/ui/ViewTabs'
-import { fmtKorMoney } from '@/lib/fmtMoney'
+import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { DisplayFieldsMenu } from '@/components/ui/DisplayFieldsMenu'
 import { Modal } from '@/components/ui/Modal'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -582,13 +582,13 @@ export default function RoomsClient({
         <div className="flex items-baseline justify-between gap-2 flex-wrap">
           <p className="text-sm text-[var(--warm-dark)]">
             <span className="text-xs text-[var(--warm-muted)]">수납 </span>
-            <span className="font-bold text-[var(--success-fg)] num">{collectedSum.toLocaleString()}원</span>
+            <span className="font-bold text-[var(--success-fg)] num">{fmtWon(collectedSum)}</span>
             <span className="text-[var(--warm-muted)]"> / 예상 </span>
-            <span className="font-semibold num">{expectedSum.toLocaleString()}원</span>
+            <span className="font-semibold num">{fmtWon(expectedSum)}</span>
             <span className="text-xs text-[var(--warm-muted)]"> ({collectPct}%)</span>
           </p>
           {maxSum > expectedSum && (
-            <span className="text-[0.6875rem] text-[var(--warm-muted)] num">만실 시 {maxSum.toLocaleString()}원</span>
+            <span className="text-[0.6875rem] text-[var(--warm-muted)] num">만실 시 {fmtWon(maxSum)}</span>
           )}
         </div>
         <div className="h-1.5 rounded-full bg-[var(--canvas)] border border-[var(--warm-border)]/60 overflow-hidden">

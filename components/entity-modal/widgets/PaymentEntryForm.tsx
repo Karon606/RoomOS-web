@@ -13,7 +13,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { kstYmdStr } from '@/lib/kstDate'
-import { fmtKorMoney } from '@/lib/fmtMoney'
+import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 
 type Room = {
@@ -108,7 +108,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
           const rentPart = useIncome ? payAmount - excess : payAmount
           // 납부 내역에서도 보이도록 그 달 기록 메모에 초과분 표시(이용료 금액 자체는 정상가 유지 — 중복 매출 방지)
           const rentMemo = useIncome
-            ? `${memo ? memo + ' · ' : ''}초과 ${excess.toLocaleString()}원 기타수익 처리`
+            ? `${memo ? memo + ' · ' : ''}초과 ${fmtWon(excess)} 기타수익 처리`
             : memo
           const result: SavePaymentResult = await savePayment({
             leaseTermId:    room.leaseTermId,
@@ -137,14 +137,14 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
           } else if (result.allocations.length > 0) {
             const otherMonths = result.allocations.filter(a => a.targetMonth !== result.inputMonth)
             if (otherMonths.length > 0) {
-              const summary = otherMonths.map(a => `${Number(a.targetMonth.slice(5))}월분 ${a.amount.toLocaleString()}원`).join(', ')
+              const summary = otherMonths.map(a => `${Number(a.targetMonth.slice(5))}월분 ${fmtWon(a.amount)}`).join(', ')
               pushToast('success', `자동 분배: ${summary} (미수가 가장 오래된 월부터 충당)`)
             }
           }
         }
         if (payMethod) localStorage.setItem('stayeum-last-pay-method', payMethod)
         pushToast('success', isDepositMode ? '보증금 수납됨' : isCleaningFeeMode ? '청소비 수납됨'
-          : (excessAsIncome && excess > 0) ? `이용료 ${(payAmount - excess).toLocaleString()}원 + 기타수익 ${excess.toLocaleString()}원 기록됨`
+          : (excessAsIncome && excess > 0) ? `이용료 ${fmtWon((payAmount - excess))} + 기타수익 ${fmtWon(excess)} 기록됨`
           : '월 이용료 수납됨')
         // 폼 리셋
         setPayAmount(0); setForcedTm('auto'); setIsDepositMode(false); setIsCleaningFeeMode(false); setMemo(''); setExcessAsIncome(false)
@@ -173,7 +173,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
               {tmOptions.map(o => {
                 const [y, m] = o.month.split('-')
                 const tag = o.status === 'paid' ? '완납'
-                  : o.status === 'partial' ? `일부 ${o.paidAmount.toLocaleString()}/${o.expectedAmount.toLocaleString()}원`
+                  : o.status === 'partial' ? `일부 ${o.paidAmount.toLocaleString()}/${fmtWon(o.expectedAmount)}`
                   : o.status === 'future' ? '향후' : '미수'
                 return <option key={o.month} value={o.month}>{Number(y)}년 {Number(m)}월분 — {tag}</option>
               })}
@@ -201,7 +201,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
       {/* 초과 납부 처리 — 추천액보다 더 내면 '이월'(기본) 또는 '기타 수익'으로 확정 */}
       {!isDepositMode && !isCleaningFeeMode && excess > 0 && (
         <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-2.5 space-y-1.5">
-          <p className="text-[0.6875rem] text-[var(--warm-mid)]">초과분 <span className="font-bold text-[var(--warm-dark)]">{excess.toLocaleString()}원</span></p>
+          <p className="text-[0.6875rem] text-[var(--warm-mid)]">초과분 <span className="font-bold text-[var(--warm-dark)]">{fmtWon(excess)}</span></p>
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={excessAsIncome} onChange={e => setExcessAsIncome(e.target.checked)} className="rounded" />
             <span className="text-xs text-[var(--warm-dark)]">기타 수익으로 처리 <span className="text-[var(--warm-muted)]">(체크 안 하면 다음 달로 이월)</span></span>

@@ -4,6 +4,7 @@
 // calcProRata 로 일할 계산 → 추가납부(extra) 또는 환급(refund) 미리 보여주고 적용.
 
 import { useState, useTransition } from 'react'
+import { fmtWon } from '@/lib/fmtMoney'
 import { changeDueDay } from '@/app/(app)/tenants/actions'
 import { calcProRata, PRORATE_BASE_DAYS } from '@/lib/prorate'
 import { Btn } from '@/components/ui/Btn'
@@ -81,10 +82,10 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
               border: `1px solid ${calc.type === 'extra' ? 'rgba(160,60,46,0.20)' : 'rgba(122,154,82,0.25)'}`,
             }}>
             {calc.type === 'extra'
-              ? `납입일 ${calc.days}일 늦어짐 → 추가납부 ${calc.amount.toLocaleString()}원 발생`
-              : `납입일 ${calc.days}일 빨라짐 → 과입금 ${calc.amount.toLocaleString()}원 환급`}
+              ? `납입일 ${calc.days}일 늦어짐 → 추가납부 ${fmtWon(calc.amount)} 발생`
+              : `납입일 ${calc.days}일 빨라짐 → 과입금 ${fmtWon(calc.amount)} 환급`}
             <span className="block mt-0.5 font-normal" style={{ color: 'var(--warm-muted)' }}>
-              월 {expected.toLocaleString()}원 ÷ {PRORATE_BASE_DAYS}일 × {calc.days}일
+              월 {fmtWon(expected)} ÷ {PRORATE_BASE_DAYS}일 × {calc.days}일
             </span>
           </div>
         )}

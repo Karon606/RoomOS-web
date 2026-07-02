@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import { fmtWon } from '@/lib/fmtMoney'
 import { redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
 import DashboardClient, { type DashboardData } from './DashboardClient'
@@ -1279,7 +1280,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         tenantId:  l.tenantId,
         leaseTermId: l.leaseId,
         roomId:    l.roomId,
-        detail:    `미수금 ${l.overduePortion.toLocaleString()}원이 ${days}일 동안 회수되지 않고 있습니다.`,
+        detail:    `미수금 ${fmtWon(l.overduePortion)}이 ${days}일 동안 회수되지 않고 있습니다.`,
         sortKey:   -days,
       })
     } else if (l.upcomingPortion > 0 && days < 0 && days >= -UNPAID_UPCOMING_ALERT_DAYS) {
@@ -1297,7 +1298,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         tenantId:  l.tenantId,
         leaseTermId: l.leaseId,
         roomId:    l.roomId,
-        detail:    `청구 예정액 ${l.upcomingPortion.toLocaleString()}원${daysLeft === 0 ? ' — 오늘이 납부일입니다.' : ` — ${daysLeft}일 후 납부 예정.`}`,
+        detail:    `청구 예정액 ${fmtWon(l.upcomingPortion)}${daysLeft === 0 ? ' — 오늘이 납부일입니다.' : ` — ${daysLeft}일 후 납부 예정.`}`,
         exactDate: fmtShortDate(dueDate),
         sortKey:   Math.abs(days),
       })
@@ -1312,7 +1313,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         tenantId:  l.tenantId,
         leaseTermId: l.leaseId,
         roomId:    l.roomId,
-        detail:    `미수금 ${l.overduePortion.toLocaleString()}원이 오늘 도래입니다.`,
+        detail:    `미수금 ${fmtWon(l.overduePortion)}이 오늘 도래입니다.`,
         sortKey:   0,
       })
     }
@@ -1442,7 +1443,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       dotColor:            'var(--info-fg)',
       timeLabel:           dayLabel(daysLeft),
       exactDate:           fmtShortDate(effectiveDate),
-      detail:              `${re.amount.toLocaleString()}원 · ${re.category}${re.isAutoDebit ? ' · 자동이체' + shiftedNote : ''}${re.memo ? '\n' + re.memo : ''}`,
+      detail:              `${fmtWon(re.amount)} · ${re.category}${re.isAutoDebit ? ' · 자동이체' + shiftedNote : ''}${re.memo ? '\n' + re.memo : ''}`,
       recurringExpenseId:    re.id,
       recurringAmount:       re.amount,
       recurringDueDate:      effectiveDate.toISOString().slice(0, 10),

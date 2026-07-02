@@ -2,6 +2,7 @@
 
 // 고객별 전체 수납 내역 — 접기/펼치기. 펼칠 때 모든 달 납부기록(언제·얼마·귀속월·방식·메모)을 최신순으로.
 import { useState } from 'react'
+import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getAllPaymentsByLease } from '@/app/(app)/rooms/actions'
 
@@ -42,7 +43,7 @@ export function PaymentHistoryAll({ leaseTermId, reloadSignal }: { leaseTermId: 
       >
         <span>
           전체 수납 내역
-          {data && <span className="ml-1 text-[0.6875rem] font-medium text-[var(--warm-muted)]">{data.count}건 · 합계 {data.total.toLocaleString()}원</span>}
+          {data && <span className="ml-1 text-[0.6875rem] font-medium text-[var(--warm-muted)]">{data.count}건 · 합계 {fmtWon(data.total)}</span>}
         </span>
         <span className="text-[var(--warm-muted)] text-xs">{open ? '▲' : '▾'}</span>
       </button>
@@ -64,7 +65,7 @@ export function PaymentHistoryAll({ leaseTermId, reloadSignal }: { leaseTermId: 
                       {r.isDeposit && <span className="ml-1 text-[var(--warm-mid)] font-medium">보증금</span>}
                       {r.isPrevOwner && <span className="ml-1 text-[var(--warm-muted)]">양도인</span>}
                     </span>
-                    <span className="num font-semibold text-[var(--warm-dark)] flex-1 text-right">{r.actualAmount.toLocaleString()}원</span>
+                    <span className="num font-semibold text-[var(--warm-dark)] flex-1 text-right">{fmtWon(r.actualAmount)}</span>
                     <span className="text-[var(--warm-muted)] w-[60px] shrink-0 truncate text-right">{r.payMethod ?? ''}</span>
                   </div>
                   {r.memo && <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 pl-[90px] break-keep">{r.memo}</p>}

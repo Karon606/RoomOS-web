@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import type { AnnualSummary, ForecastSummary, PropertyDiagnostics } from './actions'
 import { analyzePropertyWithGemini } from './actions'
 import { Btn } from '@/components/ui/Btn'
-import { fmtKorMoney } from '@/lib/fmtMoney'
+import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 
 const fmt = (n: number) => n === 0 ? '—' : n.toLocaleString('ko-KR') + '원'
 const fmtMan = (n: number) => n === 0 ? '—' : fmtKorMoney(n).replace(/원$/, '')
@@ -227,7 +227,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                       <span className="text-[var(--warm-mid)]">{fmt(prevRow?.revenue ?? 0)}</span>
                       {prevRow && r.revenue > 0 && delta !== 0 && (
                         <span className={`text-[0.625rem] font-semibold ${delta > 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
-                          {(delta > 0 ? '▲' : '▼')} {Math.abs(delta).toLocaleString()}원
+                          {(delta > 0 ? '▲' : '▼')} {fmtWon(Math.abs(delta))}
                         </span>
                       )}
                     </span>
@@ -274,7 +274,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                     <span className="text-[var(--warm-mid)]">{fmt(summary.prevYear.totalRevenue)}</span>
                     {totalDelta !== 0 && (
                       <span className={`text-[0.625rem] font-semibold ${totalDelta > 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
-                        {(totalDelta > 0 ? '▲' : '▼')} {Math.abs(totalDelta).toLocaleString()}원
+                        {(totalDelta > 0 ? '▲' : '▼')} {fmtWon(Math.abs(totalDelta))}
                       </span>
                     )}
                   </span>

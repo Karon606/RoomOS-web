@@ -7,6 +7,7 @@
 //   3) 사용자가 검토 후 [지출 등록] 또는 [재고 등록] 또는 [거절]
 
 import { useEffect, useRef, useState, useTransition } from 'react'
+import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   uploadPendingReceipt, getPendingReceipts, approvePendingReceipt, rejectPendingReceipt,
@@ -201,7 +202,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
             </p>
             <p className="text-xs" style={{ color: 'var(--warm-mid)' }}>
               {row.inferredDate ?? '—'}
-              {row.inferredAmount != null && <> · <span className="font-semibold">{row.inferredAmount.toLocaleString()}원</span></>}
+              {row.inferredAmount != null && <> · <span className="font-semibold">{fmtWon(row.inferredAmount)}</span></>}
               {row.inferredCategory && <> · {row.inferredCategory}</>}
               {row.qtyValue && <> · {row.qtyValue}{row.qtyUnit ?? '개'}</>}
               {row.specValue && <> · {row.specValue}{row.specUnit ?? ''}</>}

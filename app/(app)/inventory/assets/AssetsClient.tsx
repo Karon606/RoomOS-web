@@ -30,7 +30,7 @@ const CoralTag = ({ children }: { children: ReactNode }) => (
   <span className="text-[0.625rem] font-normal text-[var(--coral)]">{children}</span>
 )
 
-const won = (n: number) => n.toLocaleString('ko-KR') + '원'
+import { fmtWon as won } from '@/lib/fmtMoney'   // §15 단일 경로
 const fmtRoomNo = (no: string) => (/^\d+$/.test(no) ? `${no}호` : no)
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
 
