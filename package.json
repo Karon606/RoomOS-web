@@ -48,6 +48,7 @@
     "eslint-config-next": "16.2.3",
     "pdfjs-dist": "^6.0.227",
     "tailwindcss": "^4",
+    "tsx": "^4.22.5",
     "typescript": "^5"
   }
 }
