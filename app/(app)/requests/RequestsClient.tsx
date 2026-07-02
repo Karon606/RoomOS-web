@@ -15,6 +15,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn } from '@/components/ui/Btn'
+import { Modal } from '@/components/ui/Modal'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { kstYmdStr } from '@/lib/kstDate'
@@ -65,6 +66,7 @@ export default function RequestsClient({
 
   // 등록 폼 상태
   const [showAddForm,   setShowAddForm]   = useState(false)
+  const [addDirty,      setAddDirty]      = useState(false)   // §13.2 — 등록 폼 입력 보호
   const [addSubject,    setAddSubject]    = useState<'common' | string>('common') // 'common' or tenantId
   const [addCommonPlace, setAddCommonPlace] = useState('')
   const [addContent,    setAddContent]    = useState('')
@@ -135,6 +137,7 @@ export default function RequestsClient({
         if (!res.ok) { pushToast('error', res.error); return }
         pushToast('success', '요청 등록됨')
         setShowAddForm(false)
+        setAddDirty(false)
         setAddSubject('common')
         setAddCommonPlace('')
         setAddContent('')
@@ -169,22 +172,16 @@ export default function RequestsClient({
       </div>
       <div className="flex items-center gap-2">
         <SearchBar value={search} onChange={setSearch} placeholder="입주자/내용 검색" className="flex-1 min-w-[180px]" />
-        <button
-          onClick={() => setShowAddForm(v => !v)}
-          className={`shrink-0 px-4 py-2 text-sm font-semibold rounded-xl transition-colors ${
-            showAddForm
-              ? 'bg-[var(--warm-border)] text-[var(--warm-mid)]'
-              : 'bg-[var(--coral)] text-white hover:opacity-90'
-          }`}
-        >
-          {showAddForm ? '취소' : '+ 요청 등록'}
-        </button>
+        <Btn variant="primary" size="md" className="shrink-0" onClick={() => { setAddDirty(false); setShowAddForm(true) }}>
+          + 요청 등록
+        </Btn>
       </div>
 
-      {/* 등록 폼 */}
-      {showAddForm && (
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
-          <p className="text-xs font-semibold text-[var(--warm-dark)]">새 요청 등록</p>
+      {/* 등록 폼 — §22.8 페이지 Modal (지출·고객 등록과 동일 흐름) */}
+      <Modal open={showAddForm} onClose={() => { setShowAddForm(false); setAddDirty(false) }}
+        title="새 요청 등록" width="md" dirty={addDirty}>
+        <form className="space-y-3" onSubmit={e => e.preventDefault()}
+          onInput={() => setAddDirty(true)} onChange={() => setAddDirty(true)}>
 
           {/* 대상 선택 */}
           <div className="space-y-1">
@@ -236,7 +233,7 @@ export default function RequestsClient({
             <div className="space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">요청일</label>
               <DatePicker value={addReqDate} onChange={setAddReqDate}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
             </div>
           </div>
 
@@ -245,7 +242,7 @@ export default function RequestsClient({
             <div className="space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">목표 처리일 (선택)</label>
               <DatePicker value={addTargetDate} onChange={setAddTargetDate}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
             </div>
             <div className="flex items-end pb-2">
               <label className="flex items-center gap-2 cursor-pointer">
@@ -275,15 +272,15 @@ export default function RequestsClient({
           <div className="flex gap-2 pt-1">
             <Btn
               variant="secondary"
-              size="sm"
+              size="md"
               className="flex-1"
-              onClick={() => setShowAddForm(false)}
+              onClick={() => { setShowAddForm(false); setAddDirty(false) }}
             >
               취소
             </Btn>
             <Btn
               variant="primary"
-              size="sm"
+              size="md"
               className="flex-1 font-semibold"
               onClick={handleAdd}
               disabled={pending || !addContent.trim()}
@@ -291,8 +288,8 @@ export default function RequestsClient({
               {pending ? '저장 중...' : '저장'}
             </Btn>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
 
       {/* 필터 바 */}
       <div className="flex flex-wrap items-center gap-2">
