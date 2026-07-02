@@ -273,7 +273,8 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
           { id: 'consumables', label: '소모품·부식', href: '/inventory' },
           { id: 'assets',      label: '비품·자재',   href: '/inventory/assets' },
         ]} />
-        <MonthSelector />
+        {/* 월 셀렉터는 전 페이지 우측 통일 — 모바일 아랫줄에서도 우측 정렬(운영자 지적) */}
+        <div className="self-end md:self-auto"><MonthSelector /></div>
       </div>
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-2">
