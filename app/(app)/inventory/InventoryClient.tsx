@@ -804,10 +804,10 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     }).catch(() => { setLoadingId(null); release() })
   }
 
-  const handleConfirmReceipt = (expenseId: string, locationId?: string) => {
+  const handleConfirmReceipt = (expenseId: string, locationId?: string, qty?: number) => {
     setLoadingId(expenseId)
     const release = trackSave()
-    confirmReceipt(expenseId, locationId).then(res => {
+    confirmReceipt(expenseId, locationId, qty).then(res => {
       if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '수령 확인 완료') }).finally(release) }
       else { setLoadingId(null); setError(res.error); pushToast('error', res.error); release() }
     }).catch(() => { setLoadingId(null); release() })
@@ -1298,7 +1298,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
   itemLocations: StorageLocationItem[]
   onDeleteCheck: (id: string) => void
   onDeleteAddition: (id: string) => void
-  onConfirmReceipt?: (id: string, locationId?: string) => void
+  onConfirmReceipt?: (id: string, locationId?: string, qty?: number) => void
   onChanged: () => void
   loadingId: string | null
 }) {
@@ -1307,6 +1307,8 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
   const [savePending, setSavePending] = useState(false)
   const [editError, setEditError] = useState('')
   const [showLocationPicker, setShowLocationPicker] = useState(false)
+  // 부분 수령 — 몇 개 도착했는지(기본 전체). 전체 미만이면 서버가 행 분할(잔여=수령 대기).
+  const [rcvQtyStr, setRcvQtyStr] = useState('')
 
   // ── 점검
   if (entry.type === 'check') {
@@ -1448,7 +1450,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
           <div className="flex items-center gap-1 shrink-0">
             {isPendingReceipt && onConfirmReceipt && !showLocationPicker && (
               <button type="button" disabled={pending}
-                onClick={() => setShowLocationPicker(true)}
+                onClick={() => { setShowLocationPicker(true); setRcvQtyStr(entry.qtyValue != null ? String(entry.qtyValue) : '') }}
                 className="text-xs font-semibold text-[var(--status-paid-fg)] hover:text-[var(--status-paid-strong)] disabled:opacity-40 px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--status-paid-bg)] whitespace-nowrap">
                 수령 확인
               </button>
@@ -1460,16 +1462,24 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
         {isPendingReceipt && showLocationPicker && onConfirmReceipt && (
           <div className="mt-2 pt-2 border-t border-[var(--honey)]/30">
             <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1.5">어느 위치로 입고됩니까?</p>
+            {entry.qtyValue != null && entry.qtyValue > 1 && (
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="text-[0.625rem] text-[var(--warm-muted)]">도착 수량 (전체 {entry.qtyValue}{entry.qtyUnit ?? '개'} — 일부만 오면 잔여는 수령 대기 유지)</span>
+                <input type="number" min={1} max={entry.qtyValue} step="any" value={rcvQtyStr} disabled={pending}
+                  onChange={e => setRcvQtyStr(e.target.value)}
+                  className="w-16 text-xs bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums focus:border-[var(--coral)]" />
+              </div>
+            )}
             <div className="flex flex-wrap gap-1.5">
               {itemLocations.map(loc => (
                 <button key={loc.id} type="button" disabled={pending}
-                  onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id, loc.id) }}
+                  onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id, loc.id, (entry.qtyValue != null && Number(rcvQtyStr) > 0 && Number(rcvQtyStr) < entry.qtyValue) ? Number(rcvQtyStr) : undefined) }}
                   className={`text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-40 ${loc.isHub ? 'border-[var(--honey)] bg-[var(--honey)]/10 text-[var(--ink)] font-medium' : 'border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)]'}`}>
                   {loc.name}
                 </button>
               ))}
               <button type="button" disabled={pending}
-                onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id) }}
+                onClick={() => { setShowLocationPicker(false); onConfirmReceipt(entry.id, undefined, (entry.qtyValue != null && Number(rcvQtyStr) > 0 && Number(rcvQtyStr) < entry.qtyValue) ? Number(rcvQtyStr) : undefined) }}
                 className="text-xs px-2.5 py-1 rounded-lg border border-dashed border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40">
                 위치 없이 확정
               </button>

@@ -174,11 +174,52 @@ export async function getDurableItems(): Promise<AssetsData> {
 
 // 비품 수령 상태 토글 — received=true 면 수령 완료(receivedAt=지금), false 면 수령 대기로.
 // (비품은 재고추적 대상이 아니라 자동 점검 생성 없이 receivedAt 만 설정)
-export async function setAssetReceived(expenseIds: string[], received: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function setAssetReceived(expenseIds: string[], received: boolean, qty?: number | null): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     if (!expenseIds.length) return { ok: false, error: '대상 항목이 없습니다.' }
+    // 부분 수령(분할 배송) — qty가 전체 미만이면 그 수량만 수령: 수량 큰 행부터 통째 소진,
+    // 마지막만 분할(금액 비례·allocationGroupId 공유). 잔여는 수령 대기 유지. (배정 분할과 동일 선례)
+    if (received && qty != null) {
+      const exps = await prisma.expense.findMany({ where: { id: { in: expenseIds }, propertyId } })
+      const totalQty = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
+      if (qty > 0 && qty < totalQty) {
+        let need = qty
+        const now = new Date()
+        const sorted = [...exps].sort((a, b) => (b.qtyValue ?? 1) - (a.qtyValue ?? 1))
+        const ops: Prisma.PrismaPromise<unknown>[] = []
+        for (const e of sorted) {
+          if (need <= 1e-9) break
+          const eq = e.qtyValue ?? 1
+          if (eq <= need + 1e-9) {
+            ops.push(prisma.expense.update({ where: { id: e.id }, data: { receivedAt: now } }))
+            need -= eq
+          } else {
+            const recvAmount = Math.round(e.amount * (need / eq))
+            const remainQty = Math.round((eq - need) * 1000) / 1000
+            const groupId = e.allocationGroupId ?? randomUUID()
+            ops.push(prisma.expense.update({ where: { id: e.id }, data: { qtyValue: remainQty, amount: e.amount - recvAmount, allocationGroupId: groupId, detail: buildAssetDetail({ ...e, qtyValue: remainQty }) } }))
+            ops.push(prisma.expense.create({ data: {
+              date: e.date, amount: recvAmount, category: e.category,
+              detail: buildAssetDetail({ ...e, qtyValue: need }),
+              vendor: e.vendor, memo: e.memo, payMethod: e.payMethod, settleStatus: e.settleStatus,
+              receiptUrl: e.receiptUrl, receiptUrls: e.receiptUrls, financeName: e.financeName,
+              itemLabel: e.itemLabel, specValue: e.specValue, specUnit: e.specUnit,
+              qtyValue: need, qtyUnit: e.qtyUnit,
+              receivedAt: now, excludeFromInventory: e.excludeFromInventory,
+              allocationGroupId: groupId, orderId: e.orderId, isShipping: e.isShipping,
+              propertyId, roomId: e.roomId, assignedLocationId: e.assignedLocationId,
+              financialAccountId: e.financialAccountId, recurringExpenseId: e.recurringExpenseId, receivedLocationId: e.receivedLocationId,
+            } }))
+            need = 0
+          }
+        }
+        await prisma.$transaction(ops)
+        revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+        return { ok: true }
+      }
+    }
     await prisma.expense.updateMany({
       where: { id: { in: expenseIds }, propertyId },
       data: { receivedAt: received ? new Date() : null },

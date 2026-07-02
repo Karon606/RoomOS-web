@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { randomUUID } from 'crypto'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
@@ -1817,12 +1818,44 @@ export async function batchSetItemLocations(trackedItemIds: string[], locationId
 // ── 수령 확인
 // locationId가 지정되면, 그 위치의 잔량에 수령 수량을 더한 StockCheck를 자동 생성한다.
 // 결과: 수령 확인 직후 재고 점검을 열면 해당 위치 잔량이 0이 아니라 수령된 만큼으로 prefill됨 (#3)
-export async function confirmReceipt(expenseId: string, locationId?: string): Promise<{ ok: true } | { ok: false; error: string }> {
+// receiveQty — 부분 수령(분할 배송): 전체 중 일부만 도착 시 그 수량만 수령 처리.
+// 지출 행을 [수령분]+[대기 잔여]로 분할(금액 비례, allocationGroupId로 지출목록 한 줄 유지 — 배정 분할과 동일 선례).
+export async function confirmReceipt(expenseId: string, locationId?: string, receiveQty?: number): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const expense = await prisma.expense.findFirst({ where: { id: expenseId, propertyId } })
+    let expense = await prisma.expense.findFirst({ where: { id: expenseId, propertyId } })
     if (!expense) return { ok: false, error: '구매 내역을 찾을 수 없습니다.' }
+
+    // 부분 수령 — 요청 수량이 전체 미만이면 행 분할 후, 수령 분할행에 대해 아래 기존 흐름을 그대로 태운다
+    // (자동 점검·허브 배치가 수령 수량만 반영됨). 잔여 행은 수령 대기 유지.
+    if (receiveQty != null && expense.qtyValue && receiveQty > 0 && receiveQty < expense.qtyValue) {
+      const eq = expense.qtyValue
+      const recvAmount = Math.round(expense.amount * (receiveQty / eq))
+      const remainQty = Math.round((eq - receiveQty) * 1000) / 1000
+      const groupId = expense.allocationGroupId ?? randomUUID()
+      const qtyPart = (q: number) => expense!.specValue != null
+        ? `[${expense!.itemLabel}] ${expense!.specValue}${expense!.specUnit ?? ''} x ${q}${expense!.qtyUnit ?? '개'}`
+        : `[${expense!.itemLabel}] x ${q}${expense!.qtyUnit ?? '개'}`
+      const [, created] = await prisma.$transaction([
+        prisma.expense.update({
+          where: { id: expense.id },
+          data: { qtyValue: remainQty, amount: expense.amount - recvAmount, allocationGroupId: groupId, detail: qtyPart(remainQty) },
+        }),
+        prisma.expense.create({ data: {
+          date: expense.date, amount: recvAmount, category: expense.category, detail: qtyPart(receiveQty),
+          vendor: expense.vendor, memo: expense.memo, payMethod: expense.payMethod, settleStatus: expense.settleStatus,
+          receiptUrl: expense.receiptUrl, receiptUrls: expense.receiptUrls, financeName: expense.financeName,
+          itemLabel: expense.itemLabel, specValue: expense.specValue, specUnit: expense.specUnit,
+          qtyValue: receiveQty, qtyUnit: expense.qtyUnit,
+          excludeFromInventory: expense.excludeFromInventory,
+          allocationGroupId: groupId, orderId: expense.orderId, isShipping: expense.isShipping,
+          propertyId, roomId: expense.roomId, assignedLocationId: expense.assignedLocationId,
+          financialAccountId: expense.financialAccountId, recurringExpenseId: expense.recurringExpenseId,
+        } }),
+      ])
+      expense = created
+    }
 
     const receivedAt = new Date()
 
@@ -1853,7 +1886,7 @@ export async function confirmReceipt(expenseId: string, locationId?: string): Pr
     }
 
     await prisma.expense.update({
-      where: { id: expenseId },
+      where: { id: expense.id },
       data: { receivedAt, ...(effectiveLocationId ? { receivedLocationId: effectiveLocationId } : {}) },
     })
 

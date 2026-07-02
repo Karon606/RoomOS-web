@@ -44,6 +44,9 @@ export default function AssetsClient({ data, rooms, locations }: {
   const router = useRouter()
   const [picking, setPicking] = useState<string | null>(null)   // 배정 picker 가 열린 항목 id
   const [qtyAsk, setQtyAsk] = useState<{ it: AssetItem; target: Target; label: string } | null>(null)
+  // 부분 수령(분할 배송) — 수량>1 이면 몇 개 왔는지 물어봄(기본 전체). 잔여는 수령 대기 유지.
+  const [rcvAsk, setRcvAsk] = useState<string | null>(null)   // 대상 AssetItem id
+  const [rcvQty, setRcvQty] = useState('1')
   const [qtyVal, setQtyVal] = useState('1')
   const [pending, startTransition] = useTransition()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())   // 합산 펼친 항목 id
@@ -239,12 +242,16 @@ export default function AssetsClient({ data, rooms, locations }: {
     })
   }
 
-  // 수령 상태 토글 (수령 완료 / 수령 대기로)
-  const markReceived = (it: AssetItem, value: boolean) => {
+  // 수령 상태 토글 (수령 완료 / 수령 대기로). qty 지정 시 부분 수령(행 분할).
+  const markReceived = (it: AssetItem, value: boolean, qty?: number) => {
     startTransition(async () => {
-      const res = await setAssetReceived(it.ids, value)
+      const res = await setAssetReceived(it.ids, value, qty ?? null)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', value ? '수령 완료' : '수령 대기로 변경됨')
+      setRcvAsk(null)
+      pushToast('success', !value ? '수령 대기로 변경됨'
+        : qty != null && it.qtyValue != null && qty < it.qtyValue
+          ? `${fmtQty(qty)}${it.qtyUnit ?? '개'} 수령 완료 — 잔여 ${fmtQty(it.qtyValue - qty)}${it.qtyUnit ?? '개'}는 수령 대기 유지`
+          : '수령 완료')
       router.refresh()
     })
   }
@@ -295,8 +302,26 @@ export default function AssetsClient({ data, rooms, locations }: {
                 구매 {it.count}건 {expanded.has(it.id) ? '접기' : '합산'}
               </button>
             )}
-            {awaitingReceipt ? (
-              <button type="button" onClick={() => markReceived(it, true)} disabled={pending}
+            {awaitingReceipt && rcvAsk === it.id ? (
+              <>
+                <span className="text-[0.6875rem] text-[var(--warm-muted)]">몇 {it.qtyUnit ?? '개'} 도착? (전체 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'})</span>
+                <input autoFocus type="number" min={1} max={it.qtyValue ?? undefined} step="any"
+                  value={rcvQty} disabled={pending}
+                  onChange={e => setRcvQty(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') markReceived(it, true, Math.min(Number(rcvQty) || 1, it.qtyValue ?? 1)) }}
+                  className="w-16 text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums" />
+                <button type="button" disabled={pending}
+                  onClick={() => markReceived(it, true, Math.min(Number(rcvQty) || 1, it.qtyValue ?? 1))}
+                  className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">수령</button>
+                <button type="button" onClick={() => setRcvAsk(null)} disabled={pending} className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
+              </>
+            ) : awaitingReceipt ? (
+              <button type="button" disabled={pending}
+                onClick={() => {
+                  // 수량 여러 개면 부분 수령 지원 — 몇 개 도착했는지 확인(기본 전체)
+                  if (it.qtyValue != null && it.qtyValue > 1) { setRcvAsk(it.id); setRcvQty(fmtQty(it.qtyValue)) }
+                  else markReceived(it, true)
+                }}
                 className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
                 수령 완료
               </button>
