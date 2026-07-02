@@ -7,7 +7,8 @@ import { Skeleton, SkeletonCard } from '@/components/ui/Skeleton'
 export default function AppLoading() {
   return (
     // delayed-fallback: 300ms 안에 끝나는 전환에선 스켈레톤이 아예 안 보임 (§18.3)
-    <div className="delayed-fallback px-4 sm:px-6 py-5 space-y-4" aria-busy="true" aria-label="불러오는 중">
+    // 패딩은 AppShell(p-4 md:p-6) 것만 사용 — 자체 패딩을 얹으면 로딩↔실화면 인셋이 어긋난다.
+    <div className="delayed-fallback space-y-4" aria-busy="true" aria-label="불러오는 중">
       {/* 제목 영역 */}
       <div className="space-y-2">
         <Skeleton className="h-6 w-40" />

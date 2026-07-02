@@ -5,7 +5,8 @@ import { Skeleton } from '@/components/ui/Skeleton'
 
 export default function DashboardLoading() {
   return (
-    <div className="delayed-fallback px-4 sm:px-6 py-5 space-y-4" aria-busy="true" aria-label="불러오는 중">
+    // 패딩은 AppShell 것만 사용(이중 패딩 금지) — 리듬도 실제 홈(space-y-3.5)과 동일
+    <div className="delayed-fallback space-y-3.5" aria-busy="true" aria-label="불러오는 중">
       {/* 기간 셀렉터 행 */}
       <div className="flex items-center justify-between">
         <Skeleton className="h-7 w-32" />
