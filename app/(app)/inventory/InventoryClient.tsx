@@ -264,7 +264,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   }))
 
   return (
-    <div className="space-y-4 px-4 sm:px-6 py-5">
+    <div className="space-y-4">
       {/* 동일 레벨 탭 — 소모품·부식(기본) / 비품·자재 + 월 전환(재고는 월별 이월·소비 데이터)
           §24.6: 모바일=탭 윗줄·MonthSelector 아랫줄 고정(2줄), md=한 줄 justify-between.
           flex-wrap 임계에 맡기면 과거월 배지 유무로 줄바꿈이 출렁여 탭바 높이가 페이지·상태마다 달라짐. */}
@@ -283,26 +283,19 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             <h1 className="text-xl font-bold text-[var(--warm-dark)]">재고 관리 · 소모품·부식</h1>
             <p className="text-xs text-[var(--warm-muted)] mt-0.5">부식·소모품·폐기물 사용량을 점검 기록 기반으로 추적합니다.</p>
           </div>
-          {/* 점검 진입 방식 토글 — 모드 전환과 무관하게 항상 우측 상단 고정 (위치 점프 방지) */}
-          <div className="inline-flex rounded-lg border border-[var(--warm-border)] overflow-hidden text-xs font-medium shrink-0">
-            <button type="button" onClick={() => changeView('item')}
-              className={`px-3 py-1.5 transition-colors ${viewMode === 'item' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>
-              아이템별
-            </button>
-            <button type="button" onClick={() => changeView('location')}
-              className={`px-3 py-1.5 transition-colors ${viewMode === 'location' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>
-              위치별
-            </button>
-          </div>
+          {/* 점검 진입 방식 토글 — §22.2 트랙형(보기 방식). 지출 '아이템별/주문별'과 동일 컴포넌트 */}
+          <SegmentedControl size="sm" ariaLabel="점검 보기" className="shrink-0"
+            value={viewMode} onChange={changeView}
+            options={[{ value: 'item', label: '아이템별' }, { value: 'location', label: '위치별' }]} />
         </div>
         {viewMode === 'item' && (
           <div className="flex gap-2 flex-wrap items-center">
-            <Btn variant="secondary" size="sm" onClick={() => { selectMode ? exitSelectMode() : setSelectMode(true) }}>
-              {selectMode ? `선택 취소${selected.size > 0 ? ` (${selected.size})` : ''}` : '선택'}
+            <Btn variant="secondary" size="md" onClick={() => { selectMode ? exitSelectMode() : setSelectMode(true) }}>
+              {selectMode ? '선택 취소' : '선택'}
             </Btn>
             {/* 6+개 헤더 버튼 → 주요 1개(품목 추가) + ⋯ 더보기(점검·입력 / 관리·설정 그룹) */}
             <div className="relative">
-              <Btn variant="secondary" size="sm" onClick={() => setShowMore(v => !v)}>⋯ 더보기</Btn>
+              <Btn variant="secondary" size="md" onClick={() => setShowMore(v => !v)}>⋯ 더보기</Btn>
               {showMore && (
                 <>
                   <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setShowMore(false)} />
@@ -326,7 +319,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                 </>
               )}
             </div>
-            <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
+            <Btn variant="primary" size="md" onClick={() => setShowAdd(true)}>+ 품목 추가</Btn>
           </div>
         )}
       </div>

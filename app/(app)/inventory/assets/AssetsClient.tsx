@@ -391,7 +391,7 @@ export default function AssetsClient({ data, rooms, locations }: {
   const isEmpty = data.rooms.length === 0 && data.locations.length === 0 && data.unassigned.length === 0 && data.common.length === 0 && data.pending.length === 0
 
   return (
-    <div className="space-y-4 px-4 sm:px-6 py-5">
+    <div className="space-y-4">
       {/* 동일 레벨 탭 — 소모품·부식 / 비품·자재(현재) */}
       <ViewTabs ariaLabel="재고 탭" activeId="assets" tabs={[
         { id: 'consumables', label: '소모품·부식', href: '/inventory' },
@@ -406,12 +406,12 @@ export default function AssetsClient({ data, rooms, locations }: {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Btn variant="secondary" size="sm"
+          <Btn variant="secondary" size="md"
             onClick={() => setFreeForm({ label: '', cat: assetCats[0] ?? '비품', spec: '', specUnit: '', qty: '1', qtyUnit: '개' })}>
             + 무상 비품
           </Btn>
           {!isEmpty && (
-            <Btn variant="secondary" size="sm" onClick={() => mergeMode ? exitMerge() : setMergeMode(true)}>
+            <Btn variant="secondary" size="md" onClick={() => mergeMode ? exitMerge() : setMergeMode(true)}>
               {mergeMode ? '선택 취소' : '선택'}
             </Btn>
           )}
