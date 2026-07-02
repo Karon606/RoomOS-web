@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { ViewTabs } from '@/components/ui/ViewTabs'
 import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -2056,17 +2057,11 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
       {/* ── 탭 섹션 ─────────────────────────────────────────────── */}
       <div>
         {/* 탭 바 (필 스타일) */}
-        <div className="flex gap-1.5 sticky -top-4 md:-top-6 z-10 pb-2 pt-0.5" style={{ background: 'var(--canvas)' }}>
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              className={`px-4 py-2 text-sm font-medium rounded-xl transition-colors whitespace-nowrap ${
-                tab === t.key
-                  ? 'bg-[var(--coral)] text-white'
-                  : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
-              }`}>
-              {t.label}
-            </button>
-          ))}
+        {/* §24 뷰 전환 탭 — 개별 필 나열(제4 변종) 폐기, 코랄 채움 정본. sticky 래퍼는 유지 */}
+        <div className="sticky -top-4 md:-top-6 z-10 pb-2 pt-0.5" style={{ background: 'var(--canvas)' }}>
+          <ViewTabs ariaLabel="대시보드 탭" activeId={tab}
+            onChange={id => setTab(id as (typeof TABS)[number]['key'])}
+            tabs={TABS.map(t => ({ id: t.key, label: t.label }))} />
         </div>
 
         {/* 탭 콘텐츠 */}
