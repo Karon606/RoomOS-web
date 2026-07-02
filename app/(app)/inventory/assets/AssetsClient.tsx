@@ -19,6 +19,7 @@ import { InventoryCard } from '@/components/ui/inventory/InventoryCard'
 import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
 import { Modal } from '@/components/ui/Modal'
 import { SearchBar } from '@/components/ui/SearchBar'
+import MonthSelector from '@/components/layout/MonthSelector'
 import { Badge } from '@/components/ui/Badge'
 
 // 비품 위치 섹션 마커 — §21.2 위치 아이콘(핀) 14px
@@ -37,7 +38,8 @@ const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.rou
 
 type Target = { kind: 'room' | 'location'; id: string }
 
-export default function AssetsClient({ data, rooms, locations }: {
+export default function AssetsClient({ data, rooms, locations, targetMonth }: {
+  targetMonth: string
   data: AssetsData
   rooms: { id: string; roomNo: string }[]
   locations: { id: string; name: string }[]
@@ -284,7 +286,7 @@ export default function AssetsClient({ data, rooms, locations }: {
         onLongPress={!mergeMode ? () => { setMergeMode(true); toggleMergeSel(it.id) } : undefined}
         title={it.itemLabel}
         badges={it.amount === 0 ? <span className="inline-flex items-center rounded-full bg-[var(--info-bg)] text-[var(--info-fg)] text-[0.625rem] font-semibold px-1.5 py-0.5">무상</span> : undefined}
-        meta={[`${it.date.slice(2)} 구매`, it.vendor, it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category, won(it.amount)].filter(Boolean).join(' · ')}
+        meta={[boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, it.vendor, it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category, won(it.amount)].filter(Boolean).join(' · ')}
         value={it.qtyValue != null ? `${fmtQty(it.qtyValue)}${it.qtyUnit ?? '개'}` : `${it.count}건`}
         expanded={!mergeMode && it.count > 1 && expanded.has(it.id)}
         expand={
@@ -403,13 +405,22 @@ export default function AssetsClient({ data, rooms, locations }: {
   const vLocations  = data.locations.map(g => ({ ...g, fItems: g.items.filter(hit) })).filter(g => g.fItems.length > 0)
   const searchEmpty = !!q && vPending.length === 0 && vUnassigned.length === 0 && vCommon.length === 0 && vRooms.length === 0 && vLocations.length === 0
 
+  // 선택 월 구매 요약 — 개별 구매 내역(breakdown) 기준. 배치 현황 자체는 월 무관(누적).
+  const everyItem = [...data.pending, ...data.unassigned, ...data.common, ...data.rooms.flatMap(g => g.items), ...data.locations.flatMap(g => g.items)]
+  const monthBuys = everyItem.flatMap(it => it.breakdown.filter(b => b.date.startsWith(targetMonth)))
+  const monthLabel = `${Number(targetMonth.slice(5))}월`
+  const boughtThisMonth = (it: AssetItem) => it.breakdown.some(b => b.date.startsWith(targetMonth))
+
   return (
     <div className="space-y-4">
-      {/* 동일 레벨 탭 — 소모품·부식 / 비품·자재(현재) */}
-      <ViewTabs ariaLabel="재고 탭" activeId="assets" tabs={[
-        { id: 'consumables', label: '소모품·부식', href: '/inventory' },
-        { id: 'assets',      label: '비품·자재',   href: '/inventory/assets' },
-      ]} />
+      {/* 동일 레벨 탭 — 소모품·부식 / 비품·자재(현재) + 월 전환(§24.6 소모품과 동일 2줄 골격) */}
+      <div className="flex flex-col items-start gap-2 md:flex-row md:justify-between">
+        <ViewTabs ariaLabel="재고 탭" activeId="assets" tabs={[
+          { id: 'consumables', label: '소모품·부식', href: '/inventory' },
+          { id: 'assets',      label: '비품·자재',   href: '/inventory/assets' },
+        ]} />
+        <div className="self-end md:self-auto"><MonthSelector /></div>
+      </div>
       {/* 헤더 — 소모품 탭과 동일 골격: 제목 블록 → 버튼 줄 → 검색(§22.1) */}
       <div className="space-y-2">
         <div>
@@ -417,6 +428,13 @@ export default function AssetsClient({ data, rooms, locations }: {
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">
             품목으로 산 내구재(의자·거치대·수선유지 자재 등)를 방·공용부별로 모아 봅니다. 여분(미배정)은 방이나 공용부(주방·화장실·복도 등)에 배정할 수 있습니다. <span className="text-[var(--warm-mid)]">공용부는 ‘위치 관리’에서 추가합니다.</span>
             {mergeMode && <span className="text-[var(--coral)]"> · 비품을 눌러 선택 → 방·공용부 일괄 배정 또는 합치기(대표로 통일).</span>}
+          </p>
+          <p className="text-xs mt-1">
+            <span className="font-semibold text-[var(--warm-dark)]">{monthLabel} 구매</span>{' '}
+            {monthBuys.length > 0
+              ? <span className="text-[var(--warm-mid)] tabular-nums">{monthBuys.length}건 · {won(monthBuys.reduce((s, b) => s + b.amount, 0))}</span>
+              : <span className="text-[var(--warm-muted)]">없음</span>}
+            <span className="text-[var(--warm-muted)]"> — 배치 현황은 월 무관(누적)</span>
           </p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
