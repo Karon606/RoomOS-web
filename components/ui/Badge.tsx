@@ -23,7 +23,7 @@ const SOLID_CLS: Record<SemanticTone, string> = {
 // 페일 톤 — 일반 라벨용. ring 1px solid 색약 강조
 const PALE_CLS: Record<string, string> = {
   'pale-coral':  'bg-[var(--persimmon-l)] text-[var(--persimmon-d)] ring-[var(--persimmon)]/20',
-  'pale-green':  'bg-[#eef2e5] text-[#4e6834] ring-[var(--viz-3)]/30',
+  'pale-green':  'bg-[var(--success-bg)] text-[var(--success-fg)] ring-[var(--viz-3)]/30',
   'pale-amber':  'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-[var(--warning-ring)]',
   'pale-blue':   'bg-[var(--info-bg)] text-[var(--info-fg)] ring-[var(--info-ring)]',
   'pale-red':    'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]',
@@ -32,7 +32,7 @@ const PALE_CLS: Record<string, string> = {
   'inspect':     'bg-[var(--inspect-bg)] text-[var(--inspect-fg)] ring-[var(--inspect-ring)]',
   // legacy alias — 기존 코드 호환
   'coral':       'bg-[var(--persimmon-l)] text-[var(--persimmon-d)] ring-[var(--persimmon)]/20',
-  'green':       'bg-[#eef2e5] text-[#4e6834] ring-[var(--viz-3)]/30',
+  'green':       'bg-[var(--success-bg)] text-[var(--success-fg)] ring-[var(--viz-3)]/30',
   'amber':       'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-[var(--warning-ring)]',
   'blue':        'bg-[var(--info-bg)] text-[var(--info-fg)] ring-[var(--info-ring)]',
   'red':         'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-[var(--danger-ring)]',
