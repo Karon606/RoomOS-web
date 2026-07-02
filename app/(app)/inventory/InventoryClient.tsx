@@ -20,6 +20,7 @@ import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { convertSpecValue, listCompatibleUnits, unitFactor } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { SearchBar } from '@/components/ui/SearchBar'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type InventoryCategory, suggestInventoryAlias } from './constants'
 import {
@@ -148,6 +149,12 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const [viewMode, setViewMode] = useState<'item' | 'location'>(() =>
     typeof window !== 'undefined' && localStorage.getItem('stayeum-inventory-view') === 'location' ? 'location' : 'item'
   )
+  // §22.1 메인 검색 — 품목명·카테고리·메모 대상. 품목별·위치별 두 보기와 수령 대기 목록에 동일 적용.
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const visibleRows = q
+    ? rows.filter(r => r.label.toLowerCase().includes(q) || r.category.toLowerCase().includes(q) || (r.memo ?? '').toLowerCase().includes(q))
+    : rows
   const changeView = (m: 'item' | 'location') => {
     setViewMode(m)
     if (typeof window !== 'undefined') localStorage.setItem('stayeum-inventory-view', m)
@@ -249,7 +256,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const grouped = [...trackedCats, ...extraCats].map(cat => ({
     cat,
     alias: aliasOf(cat),
-    rows: rows.filter(r => r.category === cat),
+    rows: visibleRows.filter(r => r.category === cat),
   }))
 
   return (
@@ -316,10 +323,18 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         )}
       </div>
 
+      {/* §22.1 메인 검색 — 헤더 아래 풀폭. 모달 안이 아니라 목록 상단에서 바로 좁힌다. */}
+      <SearchBar value={search} onChange={setSearch} placeholder="품목명, 카테고리, 메모 검색" />
+
+      {/* 검색 무결과 — §22.2 분기 */}
+      {q && visibleRows.length === 0 && rows.length > 0 && (
+        <EmptyState title="검색 결과가 없습니다" description="다른 검색어로 시도해 보세요." />
+      )}
+
       {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
 
       {viewMode === 'location' ? (
-        <LocationBatchCheckModal inline rows={rows} onClose={() => changeView('item')} onDone={() => { router.refresh(); refreshDrafts() }} onDraftChange={refreshDrafts} />
+        <LocationBatchCheckModal inline rows={visibleRows} onClose={() => changeView('item')} onDone={() => { router.refresh(); refreshDrafts() }} onDraftChange={refreshDrafts} />
       ) : rows.length === 0 ? (
         <EmptyState
           title="추적할 품목이 아직 없습니다"
@@ -328,7 +343,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       ) : (
         <>
         {(() => {
-          const flat = rows.flatMap(r => r.pendingPurchases.map(p => ({ p, label: r.label, category: r.category, qtyUnit: r.qtyUnit, trackUnit: r.trackUnit, specUnit: r.specUnit })))
+          const flat = visibleRows.flatMap(r => r.pendingPurchases.map(p => ({ p, label: r.label, category: r.category, qtyUnit: r.qtyUnit, trackUnit: r.trackUnit, specUnit: r.specUnit })))
           if (flat.length === 0) return null
           // 수령 대기 수량도 재고 계산(overview sumPurchases)과 동일 기준으로 규격 환산:
           // spec 추적 품목은 qtyValue × specValue (예: 40개입 3박스 → 120개). 단위는 specUnit.
