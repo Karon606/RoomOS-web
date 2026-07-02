@@ -10,6 +10,7 @@
   /* §12 레이어 위계 */
   --z-base: 0;
   --z-sticky: 100;      /* 헤더, 고정 컬럼, 섹션 sticky */
+  --z-pill: 120;        /* 선택 모드 하단 알약(SelectionPillBar §21.3) — sticky 위, dropdown/drawer 아래 */
   --z-dropdown: 150;    /* 셀렉트, 알림벨 패널, 날짜피커 */
   --z-drawer: 200;      /* 모바일 사이드바 드로어 */
   --z-modal: 300;       /* 1차 모달 */
@@ -342,6 +343,30 @@ PAID/AWAIT/UNPAID/OVERDUE/VACANT 토큰은 **수납 표·호실 카드·대시�
 
 **Do**: raw 무지개색은 1:1 토큰 치환만 — 의미가 모호한 곳은 치환 멈추고 보고.
 **Don't**: 새 hue 추가 / `-fg`(밝은 다크값)를 솔리드 배지 배경에 사용 / 라이트에서 의도된 픽셀 변경.
+
+#### 14.4b 정합 확인 — 컴포넌트 리터럴 2건 (2026-07-02)
+
+코드 감사에서 발견된 리터럴 잔존의 정본 처리. **신규 토큰 만들지 않는다** — 기존 §14.4 토큰으로 흡수.
+
+**① Badge 'pale-green' 쌍 (`bg #eef2e5 + text #4e6834`, 라이트·다크 동일)**
+- 정본: `bg → --success-bg` · `text → --success-fg` (**둘을 항상 쌍으로 이동**, text만 토큰화 금지).
+- 근거: 이건 **틴트 칩**(솔리드 배지 아님)이므로 다크에서 `-fg`가 밝아지는 게 정상 동작(§14.4 함정의 "틴트 칩" 케이스). bg·fg가 함께 다크 변환(#eef2e5 불투명 → `--success-bg` rgba 반투명 / #4e6834 → #A3BF7B)되어 대비 유지.
+- **Don't**: text만 `--success-fg`로 바꾸고 bg는 #eef2e5 불투명 고정 → 다크에서 밝은 배경+밝은 글씨로 붕괴(이번 우려 지점).
+
+**② StatusBadge ROW_TINT 6종 (rgba 리터럴, 주석 "라이트·다크 공용")**
+- 정본: "라이트·다크 공용" 의도는 **폐기** → 각 의미의 `--{semantic}-bg`로 전환(다크 자동 변형). §19.1 다크 배지 배경표가 이미 의미별 다크 틴트를 따로 규정하므로 "공용"과 충돌.
+
+  | ROW_TINT | → 토큰 | 다크 의도값(참조 §19.1) |
+  |---|---|---|
+  | 완납/PAID | `--success-bg` | rgba(163,191,123,.14) |
+  | 예정/AWAIT | `--info-bg` | rgba(147,169,209,.14) |
+  | 미납/UNPAID | `--warning-bg` | rgba(217,166,72,.14) |
+  | 연체/OVERDUE | `--danger-bg`* | rgba(224,138,117,.12) |
+  | 보증금/deposit | `--deposit-bg` | rgba(212,180,148,.14) |
+  | 공실/VACANT | `--neutral-bg` | rgba(242,232,220,.06) |
+
+  \* 연체 행은 `--danger-bg`(테라코타 hue, danger=terracotta 흡수) + **좌측 3px `--overdue-fg` 보더**가 강조를 담당 → 행 채움은 옅게. §14.4에 별도 `--overdue-bg`는 두지 않음(중복 hue).
+- **Do**: 행 틴트는 `-bg`(반투명, 다크 자동). **Don't**: 불투명 rgba를 전 모드 고정으로 박기.
 
 ---
 
@@ -803,7 +828,7 @@ PAID/AWAIT/UNPAID/OVERDUE/VACANT 토큰은 **수납 표·호실 카드·대시�
 
 | 요소 | 값 |
 |---|---|
-| 컨테이너 | bg `--ink` · radius 15px · left/right 14px · bottom 16px · shadow lg · z 20 |
+| 컨테이너 | bg `--ink` · radius 15px · left/right 14px · bottom 16px · shadow lg · z `--z-pill` (120) |
 | 카운트 | 13px/600 흰색, 숫자 `--sand` (DM Mono) |
 | 액션 | height 36px radius 9px. ghost=rgba(255,255,255,.13) / 주액션 solid `--tc-s` |
 | 닫기 | 34px 사각 rgba(255,255,255,.1) |
@@ -818,7 +843,7 @@ A의 상세 속 MergeSection·전용 규칙 모달과 B의 인라인 합치기�
 
 | 요소 | 값 |
 |---|---|
-| 시트 | bg `--cream` · radius 20px(상단) · padding 8/18/20px · scrim rgba(31,26,23,.45) · z 30 |
+| 시트 | bg `--cream` · radius 20px(상단) · padding 8/18/20px · scrim rgba(31,26,23,.45) · z `--z-modal` (300) |
 | 그립 | 38×4px `--border-s` 중앙 |
 | 제목 | 16px / 700, 설명 12.5px `--ink-s` |
 | 대상 선택 | select height 44px radius 10px bg `--cream-2` border 1.5px `--border-s` |
