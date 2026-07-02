@@ -12,6 +12,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { Modal } from '@/components/ui/Modal'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 
@@ -70,6 +71,9 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
   const [detailIncEdit, setDetailIncEdit] = useState(false)
   const [editIncMethod, setEditIncMethod] = useState('계좌이체')
   const [editIncDate, setEditIncDate]     = useState('')
+  // §13.2 dirty — 수정/등록 폼 입력 시작 후 배경클릭 무시, Esc/X는 닫기 확인(Modal 내장 정책)
+  const [editDirty, setEditDirty] = useState(false)
+  const [addDirty, setAddDirty]   = useState(false)
 
   const filteredIncomes = incomes.filter(i => {
     if (incFilter.method   !== 'all' && i.payMethod !== incFilter.method) return false
@@ -140,7 +144,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
         <span className="ml-auto text-sm font-bold text-[var(--success-fg)] num">
           합계: <MoneyDisplay amount={totalInc} />
         </span>
-        <Btn variant="primary" size="md" onClick={() => { setShowAddInc(true); setAddIncMethod('계좌이체'); setError('') }}>
+        <Btn variant="primary" size="md" onClick={() => { setShowAddInc(true); setAddDirty(false); setAddIncMethod('계좌이체'); setError('') }}>
           + 수익 등록
         </Btn>
       </div>
@@ -224,19 +228,10 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
         )}
       </div>
 
-      {/* 상세/수정 모달 */}
+      {/* 상세/수정 모달 — §22.8 공용 Modal. dirty 시 §13.2 정책은 Modal 내장. */}
       {detailInc && (
-        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
-          onClick={() => { setDetailInc(null); setDetailIncEdit(false) }}>
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-              <h2 className="text-base font-bold text-[var(--warm-dark)]">
-                {detailIncEdit ? '수익 수정' : '수익 상세'}
-              </h2>
-              <button onClick={() => { setDetailInc(null); setDetailIncEdit(false) }}
-                aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
-            </div>
+        <Modal open onClose={() => { setDetailInc(null); setDetailIncEdit(false); setEditDirty(false) }}
+          title={detailIncEdit ? '수익 수정' : '수익 상세'} width="sm" dirty={detailIncEdit && editDirty}>
 
             {!detailIncEdit ? (
               <>
@@ -256,6 +251,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                   <div className="flex-1" />
                   <Btn variant="primary" size="md" onClick={() => {
                     setDetailIncEdit(true)
+                    setEditDirty(false)
                     setEditIncDate(toDateInput(detailInc.date))
                     setEditIncMethod(detailInc.payMethod ?? '계좌이체')
                     setError('')
@@ -263,7 +259,8 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                 </div>
               </>
             ) : (
-              <form key={detailInc.id + '-edit'} onSubmit={handleUpdateInc} className="flex flex-col flex-1 overflow-hidden">
+              <form key={detailInc.id + '-edit'} onSubmit={handleUpdateInc} className="flex flex-col flex-1 overflow-hidden"
+                onInput={() => setEditDirty(true)} onChange={() => setEditDirty(true)}>
                 <input type="hidden" name="id" value={detailInc.id} />
                 <input type="hidden" name="financialAccountId" value={detailInc.financialAccountId ?? ''} />
                 <div className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -317,21 +314,14 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                 </div>
               </form>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
 
-      {/* 등록 모달 */}
+      {/* 등록 모달 — §22.8 공용 Modal */}
       {showAddInc && (
-        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
-          onClick={() => setShowAddInc(false)}>
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-              <h2 className="text-base font-bold text-[var(--warm-dark)]">부가 수익 등록</h2>
-              <button onClick={() => setShowAddInc(false)} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
-            </div>
-            <form onSubmit={handleAddInc} className="flex flex-col flex-1 overflow-hidden">
+        <Modal open onClose={() => { setShowAddInc(false); setAddDirty(false) }} title="부가 수익 등록" width="sm" dirty={addDirty}>
+            <form onSubmit={handleAddInc} className="flex flex-col flex-1 overflow-hidden"
+              onInput={() => setAddDirty(true)} onChange={() => setAddDirty(true)}>
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -384,8 +374,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   )
