@@ -1408,7 +1408,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                                   + (viewBalance > 0 ? viewBalance : 0)
                 const thirdLabel = trueUnpaid > 0 ? '미수' : truePrepaid > 0 ? '선납' : '정상'
                 const thirdValue = trueUnpaid > 0
-                  ? `-${trueUnpaid.toLocaleString()}원`
+                  ? `−${trueUnpaid.toLocaleString()}원`
                   : truePrepaid > 0 ? `+${truePrepaid.toLocaleString()}원` : '0원'
                 const thirdColor = trueUnpaid > 0 ? 'var(--tc)' : truePrepaid > 0 ? 'var(--success)' : 'var(--warm-mid)'
                 return (

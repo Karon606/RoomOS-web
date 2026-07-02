@@ -1064,7 +1064,7 @@ export default function TenantClient({
                   <div className="bg-[var(--canvas)] rounded-lg px-3 py-2">
                     <p className="text-[var(--warm-muted)]">청소비 차감</p>
                     <p className={`text-sm font-semibold mt-0.5 ${fee > 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-mid)]'}`}>
-                      {fee > 0 ? `-${fee.toLocaleString()}원` : '없음'}
+                      {fee > 0 ? `−${fee.toLocaleString()}원` : '없음'}
                     </p>
                   </div>
                 </div>
