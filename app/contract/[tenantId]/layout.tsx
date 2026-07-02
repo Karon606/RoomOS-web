@@ -3,6 +3,7 @@
 
 import type { Viewport } from 'next'
 import { ConfirmHost } from '@/components/ui/ConfirmDialog'
+import SaveFeedback from '@/components/feedback/SaveFeedback'
 
 // 계약서·잔여소지품 동의서는 서명 전 작은 글씨를 확대해 봐야 하므로 핀치줌 허용.
 // 루트 layout 의 userScalable:false / maximumScale:1 을 이 라우트에서만 override (하위 세그먼트 우선).
@@ -22,8 +23,9 @@ export default function ContractLayout({ children }: { children: React.ReactNode
   return (
     <>
       {children}
-      {/* AppShell 밖이므로 확인 다이얼로그 호스트를 직접 마운트 */}
+      {/* AppShell 밖이므로 확인 다이얼로그·토스트 호스트를 직접 마운트 */}
       <ConfirmHost />
+      <SaveFeedback />
     </>
   )
 }

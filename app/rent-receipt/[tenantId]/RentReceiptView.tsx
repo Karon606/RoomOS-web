@@ -79,13 +79,13 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
       try { json = JSON.parse(text) } catch { /* not json */ }
       if (!res.ok || !json?.ok) {
         const msg = json?.error ?? `서버 오류 (${res.status})`
-        pushToast('error', msg); alert(`입실료 납부 확인서 PDF 생성 실패\n\n${msg}`); return
+        pushToast('error', msg); return
       }
       pushToast('success', '입실료 납부 확인서 발급됨 — 발급 이력으로 이동합니다')
       router.push('/rent-receipts')
     } catch (err) {
       const msg = (err as Error).message ?? 'PDF 생성 실패'
-      pushToast('error', msg); alert(`입실료 납부 확인서 PDF 생성 실패\n\n${msg}`)
+      pushToast('error', msg)
     } finally { release(); setIssuing(false) }
   }
 

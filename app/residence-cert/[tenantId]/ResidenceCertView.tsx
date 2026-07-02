@@ -106,13 +106,13 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
       try { json = JSON.parse(text) } catch { /* not json */ }
       if (!res.ok || !json?.ok) {
         const msg = json?.error ?? `서버 오류 (${res.status})`
-        pushToast('error', msg); alert(`실거주 확인서 PDF 생성 실패\n\n${msg}`); return
+        pushToast('error', msg); return
       }
       pushToast('success', '실거주 확인서 발급됨 — 발급 이력으로 이동합니다')
       router.push('/residence-certs')
     } catch (err) {
       const msg = (err as Error).message ?? 'PDF 생성 실패'
-      pushToast('error', msg); alert(`실거주 확인서 PDF 생성 실패\n\n${msg}`)
+      pushToast('error', msg)
     } finally { release(); setIssuing(false) }
   }
 

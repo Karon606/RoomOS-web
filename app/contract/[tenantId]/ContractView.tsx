@@ -302,16 +302,14 @@ export default function ContractView({ data }: { data: ContractData }) {
       try { json = JSON.parse(text) } catch { /* not JSON */ }
       if (!res.ok || !json?.ok) {
         const msg = json?.error ?? `서버 오류 (${res.status}): ${text.slice(0, 200)}`
-        pushToast('error', msg)
-        alert(`계약서 PDF 생성 실패\n\n${msg}`)
+        pushToast('error', `계약서 PDF 생성 실패 — ${msg}`)
         return
       }
       pushToast('success', '계약서 저장됨 — 입실자 정보로 이동합니다')
       router.push(`/tenants?tenantId=${data.tenant.id}&tab=info`)
     } catch (err) {
       const msg = (err as Error).message ?? 'PDF 생성 실패'
-      pushToast('error', msg)
-      alert(`계약서 PDF 생성 실패\n\n${msg}`)
+      pushToast('error', `계약서 PDF 생성 실패 — ${msg}`)
     } finally {
       release()
       setContractSaving(false)
@@ -352,7 +350,7 @@ export default function ContractView({ data }: { data: ContractData }) {
     if (!res.ok) {
       const t = await res.text()
       pushToast('error', `PDF 생성 실패 (${res.status})`)
-      alert(`PDF 생성 실패\n\n${t.slice(0, 200)}`)
+      pushToast('error', `PDF 생성 실패 — ${t.slice(0, 200)}`)
       return null
     }
     return res.blob()
