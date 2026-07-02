@@ -3,7 +3,6 @@
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
 import {
   addExpense, updateExpense, deleteExpense, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, findOrderByExternalNo,
-  addExtraIncome, updateExtraIncome, deleteExtraIncome,
   unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
   recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits,
@@ -728,7 +727,6 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
 
 const PAY_METHODS_EXP    = ['계좌이체', '신용카드', '체크카드', '현금', '기타']
 // 부가 수익 전용 입금수단 — '보유 보증금'은 보증금 카테고리에서 선택 가능 (다른 카테고리/모달엔 노출 X)
-const PAY_METHODS_INC    = ['계좌이체', '현금', '보유 보증금', '기타']
 const ACCOUNT_TYPE_LABEL: Record<string, string> = {
   BANK_ACCOUNT: '은행계좌', CREDIT_CARD: '신용카드', DEBIT_CARD: '체크카드', PREPAID: '선불/상품권',
 }
@@ -1290,7 +1288,7 @@ function displayDay(day: number | null) {
 
 // ── Main Component ────────────────────────────────────────────────
 
-type Tab = 'expense' | 'income' | 'assets' | 'deposit' | 'reserve'
+type Tab = 'expense' | 'assets' | 'deposit' | 'reserve'
 
 // 예비비 거래 (server에서 props로 전달)
 type ReserveTxn = {
@@ -1589,16 +1587,6 @@ export default function FinanceClient({
   const handleScanAndOcr = async () => { if (scanCropped) await ocrCropped(scanCropped) }
 
   // ── 수익 탭 상태 ─────────────────────────────────────────────
-  const [incFilter, setIncFilter] = useState({ method: 'all', category: 'all' })
-  const [showAddInc, setShowAddInc]       = useState(false)
-  const [addIncDate, setAddIncDate]       = useState(() => kstYmdStr())
-  const [detailInc, setDetailInc]         = useState<Income | null>(null)
-  const [detailIncEdit, setDetailIncEdit] = useState(false)
-  const [addIncMethod, setAddIncMethod]   = useState('계좌이체')
-  const [addIncAccId, setAddIncAccId]     = useState('')
-  const [editIncMethod, setEditIncMethod]   = useState('계좌이체')
-  const [editIncAccId, setEditIncAccId]     = useState('')
-  const [editIncDate, setEditIncDate]       = useState('')
 
   // ── 고정 지출 탭 상태 ────────────────────────────────────────
   const [recordingRec, setRecordingRec] = useState<RecurringExpenseWithStatus | null>(null)
@@ -1836,11 +1824,6 @@ export default function FinanceClient({
     if (expFilter.finance  !== 'all' && e.financialAccountId !== expFilter.finance) return false
     return true
   })
-  const filteredIncomes = incomes.filter(i => {
-    if (incFilter.method   !== 'all' && i.payMethod !== incFilter.method) return false
-    if (incFilter.category !== 'all' && i.category  !== incFilter.category) return false
-    return true
-  })
 
   // ── 합배송 주문 요약 — 주문별 대표라벨 "○○ 외 N건" + 배송 결제구분 (행에 칩으로 표시) ──
   //    이 달에 보이는 지출들로 계산(같은 주문이 여러 행으로 쪼개진 것 모음). 대표=비배송 최대금액 행.
@@ -1876,7 +1859,6 @@ export default function FinanceClient({
   }
 
   const totalExp = filteredExpenses.reduce((s, e) => s + e.amount, 0)
-  const totalInc = filteredIncomes.reduce((s, i) => s + i.amount, 0)
 
   // ── 핸들러 ───────────────────────────────────────────────────
 
@@ -1985,38 +1967,7 @@ export default function FinanceClient({
     })
   }
 
-  const handleAddInc = (e: React.SyntheticEvent<HTMLFormElement>) => {
-    e.preventDefault(); setError('')
-    const fd = new FormData(e.currentTarget)
-    startTransition(async () => {
-      const release = trackSave()
-      try {
-        const res = await addExtraIncome(fd)
-        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-        setShowAddInc(false); setAddIncDate(kstYmdStr()); router.refresh()
-        pushToast('success', '수익 등록됨')
-      } finally { release() }
-    })
-  }
-  const handleUpdateInc = (e: React.SyntheticEvent<HTMLFormElement>) => {
-    e.preventDefault(); setError('')
-    const fd = new FormData(e.currentTarget)
-    startTransition(async () => {
-      const release = trackSave()
-      try {
-        const res = await updateExtraIncome(fd)
-        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-        setDetailInc(null); setDetailIncEdit(false); router.refresh()
-        pushToast('success', '수익 수정됨')
-      } finally { release() }
-    })
-  }
-  const handleDeleteInc = async (id: string) => {
-    if (!(await confirmDialog({ title: '이 수익 기록을 삭제할까요?', level: 'danger', confirmLabel: '삭제' }))) return
-    startTransition(async () => {
-      await deleteExtraIncome(id); setDetailInc(null); router.refresh()
-    })
-  }
+
 
 
   const handleUnsettle = async (id: string) => {
@@ -2112,7 +2063,6 @@ export default function FinanceClient({
     .reduce((s, d) => s + d.balance, 0)
   const TABS: { key: Tab; label: string }[] = [
     { key: 'expense', label: `지출 내역${recUnrecordedCount > 0 ? ` (고정 ${recUnrecordedCount}건 미확인)` : ''}` },
-    { key: 'income',  label: '부가 수익' },
     { key: 'assets',  label: `자산 관리${financialAccounts.length > 0 ? ` (${financialAccounts.length})` : ''}` },
     { key: 'deposit', label: `보증금 (${fmtKorMoney(totalDepositBalance)})` },
     { key: 'reserve', label: `예비비 (${fmtKorMoney(reserveBalance)})` },
@@ -2172,8 +2122,8 @@ export default function FinanceClient({
             </div>
           </div>
 
-          {/* 부가수익 — 클릭 시 '부가 수익' 탭으로 (오류신고 71c4283e: 세부내역 바로가기) */}
-          <button type="button" onClick={() => setTab('income')}
+          {/* 부가수익 — 클릭 시 수납관리 부가수익 탭으로 (탭 자체는 2026-07-02 수납관리로 이동, 합계 위젯은 손익 요약이라 유지) */}
+          <button type="button" onClick={() => router.push(`/rooms?month=${targetMonth}&tab=income`)}
             className="px-5 py-4 space-y-2 text-left transition-colors hover:bg-[var(--canvas)]/60 cursor-pointer">
             <p className="text-xs font-medium text-[var(--warm-muted)] flex items-center justify-between">
               부가 수익 합계
@@ -2793,119 +2743,6 @@ export default function FinanceClient({
               </>
             )
           })()}
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════
-          탭 2: 부가 수익
-      ══════════════════════════════════════════════════════════ */}
-      {tab === 'income' && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <select value={incFilter.method} onChange={e => setIncFilter(f => ({ ...f, method: e.target.value }))}
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-lg px-3 py-1.5 outline-none">
-              <option value="all">입금수단 (전체)</option>
-              {PAY_METHODS_INC.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-            <select value={incFilter.category} onChange={e => setIncFilter(f => ({ ...f, category: e.target.value }))}
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-lg px-3 py-1.5 outline-none">
-              <option value="all">카테고리 (전체)</option>
-              {incomeCategories.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <button onClick={() => setIncFilter({ method: 'all', category: 'all' })}
-              className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2">초기화</button>
-            <span className="ml-auto text-sm font-bold text-[var(--success-fg)] num">
-              합계: <MoneyDisplay amount={totalInc} />
-            </span>
-            <Btn variant="primary" size="md" onClick={() => { setShowAddInc(true); setAddIncMethod('계좌이체'); setAddIncAccId(''); setError('') }}>
-              + 수익 등록
-            </Btn>
-          </div>
-
-          {/* 부가 수익 목록 — 모바일 카드 */}
-          {filteredIncomes.length === 0 ? (
-            <div className="sm:hidden bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-10 text-center">
-              <EmptyState label="부가 수익 내역이 없습니다" />
-            </div>
-          ) : (
-            <div className="sm:hidden space-y-2">
-              {filteredIncomes.map(i => (
-                <div key={i.id}
-                  onClick={() => { setDetailInc(i); setDetailIncEdit(false); setError('') }}
-                  className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 cursor-pointer active:opacity-70 transition-opacity">
-                  {/* 날짜 + 금액 */}
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-[var(--warm-muted)]">{fmtDate(i.date)}</span>
-                    <span className="text-sm font-bold text-[var(--success-fg)]"><MoneyDisplay amount={i.amount} prefix="+" alwaysFull /></span>
-                  </div>
-                  {/* 카테고리 + 입금수단 */}
-                  <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                    <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]">{i.category}</span>
-                    {i.payMethod && (
-                      <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{i.payMethod}</span>
-                    )}
-                    {i.financialAccount && (
-                      <span className="text-[0.625rem] text-[var(--warm-muted)]">{accName(i.financialAccount)}</span>
-                    )}
-                  </div>
-                  {/* 세부항목 · 메모 */}
-                  {(i.detail || i.memo) && (
-                    <p className="text-xs text-[var(--warm-dark)] truncate">
-                      {[i.detail, i.memo].filter(Boolean).join(' · ')}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* 부가 수익 목록 — 데스크탑 테이블 */}
-          <div className="hidden sm:block bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl overflow-auto max-h-[calc(100vh-340px)]">
-            {filteredIncomes.length === 0 ? (
-              <EmptyState label="부가 수익 내역이 없습니다" />
-            ) : (
-              <table className="w-full" style={{
-                tableLayout: 'fixed',
-                minWidth: ['incDate','incMethod','incCategory','incDetail','incAmount'].reduce((s, k) => s + (finColWidths[k] ?? 100), 0),
-              }}>
-                <thead className="sticky top-0 z-10 bg-[var(--cream)]">
-                  <tr className="border-b border-[var(--warm-border)]">
-                    <ResizableTh label="날짜"     colKey="incDate" />
-                    <ResizableTh label="입금수단" colKey="incMethod" />
-                    <ResizableTh label="카테고리" colKey="incCategory" />
-                    <ResizableTh label="세부 항목" colKey="incDetail" />
-                    <ResizableTh label="금액"     colKey="incAmount" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredIncomes.map(i => (
-                    <tr key={i.id}
-                      onClick={() => { setDetailInc(i); setDetailIncEdit(false); setError('') }}
-                      className="border-b border-[var(--warm-border)]/50 hover:bg-[var(--canvas)]/40 transition-colors cursor-pointer">
-                      <td className="px-4 py-3 text-xs text-[var(--warm-mid)] overflow-hidden">
-                        <span className="truncate block">{fmtDate(i.date)}</span>
-                      </td>
-                      <td className="px-4 py-3 overflow-hidden">
-                        <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] whitespace-nowrap">{i.payMethod ?? '—'}</span>
-                        {i.financialAccount && (
-                          <div className="text-xs text-[var(--warm-muted)] mt-0.5 truncate">{accName(i.financialAccount)}</div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 overflow-hidden">
-                        <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)] whitespace-nowrap">{i.category}</span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-[var(--warm-dark)] overflow-hidden">
-                        <span className="truncate block">{i.detail ?? '—'}</span>
-                      </td>
-                      <td className="px-4 py-3 text-sm font-semibold text-[var(--success-fg)] overflow-hidden">
-                        <span className="truncate block"><MoneyDisplay amount={i.amount} prefix="+" /></span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
         </div>
       )}
 
@@ -3576,98 +3413,6 @@ export default function FinanceClient({
       {/* ══════════════════════════════════════════════════════════
           모달: 수익 상세 / 수정
       ══════════════════════════════════════════════════════════ */}
-      {detailInc && (
-        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
-          onClick={() => { setDetailInc(null); setDetailIncEdit(false) }}>
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-              <h2 className="text-base font-bold text-[var(--warm-dark)]">
-                {detailIncEdit ? '수익 수정' : '수익 상세'}
-              </h2>
-              <button onClick={() => { setDetailInc(null); setDetailIncEdit(false) }}
-                aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
-            </div>
-
-            {!detailIncEdit ? (
-              <>
-                <div className="flex-1 overflow-y-auto p-6 space-y-3">
-                  <DetailRow label="날짜"      value={fmtDate(detailInc.date)} />
-                  <DetailRow label="카테고리"  value={detailInc.category} />
-                  <DetailRow label="세부 항목" value={detailInc.detail ?? '—'} />
-                  <DetailRow label="금액"      value={<span className="text-[var(--success-fg)] font-semibold"><MoneyDisplay amount={detailInc.amount} prefix="+" /></span>} />
-                  <DetailRow label="입금수단"  value={detailInc.payMethod ?? '—'} />
-                  {detailInc.financialAccount && <DetailRow label="금융사" value={accName(detailInc.financialAccount)} />}
-                  {detailInc.memo && <DetailRow label="메모" value={detailInc.memo} />}
-                </div>
-                <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                  <button onClick={() => handleDeleteInc(detailInc.id)} disabled={isPending}
-                    className="px-4 py-2.5 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-sm rounded-xl transition-colors disabled:opacity-40">삭제</button>
-                  <div className="flex-1" />
-                  <Btn variant="primary" size="md" onClick={() => {
-                    setDetailIncEdit(true)
-                    setEditIncDate(toDateInput(detailInc.date))
-                    setEditIncMethod(detailInc.payMethod ?? '계좌이체')
-                    setEditIncAccId(detailInc.financialAccountId ?? '')
-                    setError('')
-                  }}>수정</Btn>
-                </div>
-              </>
-            ) : (
-              <form key={detailInc.id + '-edit'} onSubmit={handleUpdateInc} className="flex flex-col flex-1 overflow-hidden">
-                <input type="hidden" name="id" value={detailInc.id} />
-                <input type="hidden" name="financialAccountId" value={editIncAccId} />
-                <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
-                      <DatePicker name="date" value={editIncDate} onChange={setEditIncDate}
-                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
-                      <MoneyInput name="amount" defaultValue={detailInc.amount} placeholder="0원" />
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
-                    <select name="category" defaultValue={detailInc.category}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                      {incomeCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
-                    <input type="text" name="detail" defaultValue={detailInc.detail ?? ''}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">입금수단</label>
-                    <select name="payMethod" value={editIncMethod}
-                      onChange={e => { setEditIncMethod(e.target.value); setEditIncAccId('') }}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                      {PAY_METHODS_INC.map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
-                    <input type="text" name="memo" defaultValue={detailInc.memo ?? ''}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
-                  </div>
-                  {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
-                </div>
-                <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                  <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => { setDetailIncEdit(false); setError('') }}>취소</Btn>
-                  <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={isPending}>
-                    {isPending ? '저장 중...' : '저장'}
-                  </Btn>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ══════════════════════════════════════════════════════════
           모달: 지출 등록
       ══════════════════════════════════════════════════════════ */}
@@ -3942,69 +3687,6 @@ export default function FinanceClient({
       {/* ══════════════════════════════════════════════════════════
           모달: 수익 등록
       ══════════════════════════════════════════════════════════ */}
-      {showAddInc && (
-        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
-          onClick={() => setShowAddInc(false)}>
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-              <h2 className="text-base font-bold text-[var(--warm-dark)]">부가 수익 등록</h2>
-              <button onClick={() => setShowAddInc(false)} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
-            </div>
-            <form onSubmit={handleAddInc} className="flex flex-col flex-1 overflow-hidden">
-              <input type="hidden" name="financialAccountId" value={addIncAccId} />
-              <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">날짜 *</label>
-                    <DatePicker name="date" value={addIncDate} onChange={setAddIncDate}
-                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--warm-mid)]">금액 *</label>
-                    <MoneyInput name="amount" placeholder="0원" />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
-                  <select name="category"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                    {incomeCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
-                  <input type="text" name="detail" placeholder="세부 내용"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">입금수단</label>
-                  <select name="payMethod" value={addIncMethod}
-                    onChange={e => { setAddIncMethod(e.target.value); setAddIncAccId('') }}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-                    {PAY_METHODS_INC.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
-                  <input type="text" name="memo" placeholder="메모 (선택)"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
-                </div>
-                {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
-              </div>
-              <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                <button type="button" onClick={() => setShowAddInc(false)}
-                  className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">취소</button>
-                <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-[var(--success-solid)] hover:opacity-90 text-[var(--cream)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
-                  {isPending ? '저장 중...' : '저장'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
     </div>
 
     {showVendorMgmt && <VendorManageModal onClose={() => setShowVendorMgmt(false)} onChanged={() => router.refresh()} />}

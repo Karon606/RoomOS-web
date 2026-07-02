@@ -1260,7 +1260,12 @@ export async function getExtraIncomes(targetMonth: string) {
       date: { gte: new Date(yyyy, mm - 1, 1), lte: new Date(yyyy, mm, 0) },
     },
     orderBy: { date: 'desc' },
-    include: { financialAccount: { select: { brand: true, alias: true } } },
+    include: {
+      financialAccount: { select: { brand: true, alias: true } },
+      // 입주자 연결(선택) — 과납분·보증금 미반환분 등 수납 파생 수익 표시용
+      tenant: { select: { id: true, name: true } },
+      leaseTerm: { select: { id: true, room: { select: { roomNo: true } } } },
+    },
   })
 }
 
@@ -1275,6 +1280,13 @@ export async function addExtraIncome(formData: FormData): Promise<{ ok: true } |
     const memo      = formData.get('memo') as string
     const payMethod = formData.get('payMethod') as string
     const financialAccountId = formData.get('financialAccountId') as string
+    // 입주자 연결(선택) — leaseTermId만 와도 tenantId를 계약에서 보충
+    const leaseTermId = ((formData.get('leaseTermId') as string) || '').trim() || null
+    let tenantId      = ((formData.get('tenantId') as string) || '').trim() || null
+    if (leaseTermId && !tenantId) {
+      const lt = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { tenantId: true } })
+      tenantId = lt?.tenantId ?? null
+    }
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
@@ -1287,9 +1299,10 @@ export async function addExtraIncome(formData: FormData): Promise<{ ok: true } |
         memo:               memo || null,
         payMethod:          payMethod || '계좌이체',
         financialAccountId: financialAccountId || null,
+        tenantId, leaseTermId,
       },
     })
-    revalidatePath('/finance')
+    revalidatePath('/finance'); revalidatePath('/rooms')
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -1300,6 +1313,7 @@ export async function addExtraIncome(formData: FormData): Promise<{ ok: true } |
 export async function updateExtraIncome(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
+    const propertyId = await getPropertyId()
     const id        = formData.get('id') as string
     const date      = formData.get('date') as string
     const amount    = parseAmount(formData.get('amount'))
@@ -1308,6 +1322,12 @@ export async function updateExtraIncome(formData: FormData): Promise<{ ok: true 
     const memo      = formData.get('memo') as string
     const payMethod = formData.get('payMethod') as string
     const financialAccountId = formData.get('financialAccountId') as string
+    const leaseTermId = ((formData.get('leaseTermId') as string) || '').trim() || null
+    let tenantId      = ((formData.get('tenantId') as string) || '').trim() || null
+    if (leaseTermId && !tenantId) {
+      const lt = await prisma.leaseTerm.findFirst({ where: { id: leaseTermId, propertyId }, select: { tenantId: true } })
+      tenantId = lt?.tenantId ?? null
+    }
 
     if (!date || !amount || !category) return { ok: false, error: '날짜, 금액, 카테고리는 필수입니다.' }
 
@@ -1320,9 +1340,10 @@ export async function updateExtraIncome(formData: FormData): Promise<{ ok: true 
         memo:               memo || null,
         payMethod:          payMethod || '계좌이체',
         financialAccountId: financialAccountId || null,
+        tenantId, leaseTermId,
       },
     })
-    revalidatePath('/finance')
+    revalidatePath('/finance'); revalidatePath('/rooms')
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -1333,7 +1354,7 @@ export async function updateExtraIncome(formData: FormData): Promise<{ ok: true 
 export async function deleteExtraIncome(id: string) {
   await requireEdit()
   await prisma.extraIncome.delete({ where: { id } })
-  revalidatePath('/finance')
+  revalidatePath('/finance'); revalidatePath('/rooms')
 }
 
 // ── 자산 ─────────────────────────────────────────────────────────

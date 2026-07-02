@@ -615,6 +615,9 @@ export async function recordDepositReturn(params: {
           category:  '보증금',
           detail:    `${params.tenantName} 퇴실 — 보증금 미반환분`,
           payMethod: '보유 보증금',
+          // 입주자 연결 — 수납관리 부가수익에서 누구 건인지 바로 확인
+          tenantId:    params.tenantId,
+          leaseTermId: params.leaseTermId,
         },
       })
     }

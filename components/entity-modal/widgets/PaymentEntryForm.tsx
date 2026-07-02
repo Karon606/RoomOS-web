@@ -127,6 +127,9 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
             fd.set('amount', String(excess))
             fd.set('category', EXTRA_INCOME_CATEGORY)
             fd.set('detail', room.roomNo ? `${room.roomNo} 임대료 과납분` : '임대료 과납분')
+            // 입주자 연결 — 수납관리 부가수익에서 누구 과납분인지 바로 확인
+            fd.set('leaseTermId', room.leaseTermId)
+            if (room.tenantId) fd.set('tenantId', room.tenantId)
             if (payMethod) fd.set('payMethod', payMethod)
             if (memo) fd.set('memo', memo)
             const incRes = await addExtraIncome(fd)

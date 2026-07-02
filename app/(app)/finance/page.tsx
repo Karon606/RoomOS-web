@@ -2,7 +2,8 @@ import { getExpenses, getExtraIncomes, getFinancialAccounts, getRecurringExpense
 import { getIncomeCategories, getExpenseCategories, getPaymentMethods, getPropertySettings } from '@/app/(app)/settings/actions'
 import FinanceClient from './FinanceClient'
 
-type FinTab = 'expense' | 'income' | 'assets' | 'deposit' | 'reserve'
+// 'income'(부가 수익)은 2026-07-02 수납관리(/rooms?tab=income)로 이동 — 여기선 더 이상 유효 탭 아님.
+type FinTab = 'expense' | 'assets' | 'deposit' | 'reserve'
 
 export default async function FinancePage({
   searchParams,
@@ -11,7 +12,7 @@ export default async function FinancePage({
 }) {
   const { month, tab } = await searchParams
   const initialTab: FinTab | undefined =
-    tab === 'expense' || tab === 'income' || tab === 'assets' || tab === 'deposit' || tab === 'reserve'
+    tab === 'expense' || tab === 'assets' || tab === 'deposit' || tab === 'reserve'
       ? tab
       : undefined
   const now = new Date()

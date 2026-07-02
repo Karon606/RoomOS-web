@@ -3,6 +3,13 @@
 마지막 업데이트: 2026-07-02
 브랜치: main
 
+## 2026-07-02 — 부가수익을 수납관리로 이동 + 입주자 연결 [SQL 필요]
+운영자 제안·승인("기타수익을 수납관리에 넣는 게 로직에 맞다"): 실데이터 5건 전부 수납 파생(보증금 미반환 2·과납 2·현금차액 1).
+- **스키마**: `ExtraIncome.tenantId`·`leaseTermId`(nullable FK, `migrate_extra_income_tenant_link.sql`). 백필 4/5건(서민준 418·변세진 409·심원재 405·김영일 512), 현금차액은 무연결(의도).
+- **화면**: /rooms에 수납/부가수익 탭(RoomsClient viewTab + `IncomeSection.tsx` — /finance income 탭 이식 + 입주자 열·연결 셀렉트). /finance에선 탭 제거(약 300줄), 요약 위젯 '부가 수익 합계'는 유지·클릭 시 `/rooms?tab=income`. FinTab에서 'income' 제거.
+- **자동 등록 연결**: 퇴실 보증금 미반환분(tenants/actions)·과납 기타수익(PaymentEntryForm) 생성 시 tenantId·leaseTermId 저장.
+- **불변**: 서버액션·손익 합산(대시보드·리포트 발생주의)은 finance/actions 그대로. 수납 완납 계산에 부가수익 안 섞임(별도 탭). [[decisions]]
+
 ## 2026-07-02 — 오류신고 7건 처리
 ### 표시·라벨 (3건)
 - **[eacfbaad] 하단 탭 '지출'→'지출/수익'** (988f2ca): 화면명(지출/기타수익)과 불일치 해소.

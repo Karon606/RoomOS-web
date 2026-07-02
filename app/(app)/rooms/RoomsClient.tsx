@@ -12,6 +12,7 @@ import { SortSelect } from '@/components/ui/SortSelect'
 import { RoomCard } from '@/components/ui/RoomCard'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SearchBar } from '@/components/ui/SearchBar'
+import { IncomeSection, type Income, type LeaseOption } from './IncomeSection'
 import { DisplayFieldsMenu } from '@/components/ui/DisplayFieldsMenu'
 import { Modal } from '@/components/ui/Modal'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -227,14 +228,19 @@ function getSortValue(room: RoomStatus, key: SortKey, targetMonth: string): stri
 // ── 컴포넌트 ─────────────────────────────────────────────────────
 
 export default function RoomsClient({
-  roomStatus, targetMonth,
+  roomStatus, targetMonth, incomes, incomeCategories, initialTab,
 }: {
   roomStatus: RoomStatus[]
   targetMonth: string
   myRole: string
+  incomes: Income[]
+  incomeCategories: string[]
+  initialTab?: 'rooms' | 'income'
 }) {
   const searchParams = useSearchParams()
   const entityModal = useEntityModal()
+  // 수납 / 부가수익 탭 — 부가수익은 /finance에서 이동(2026-07-02, 과납·보증금 몰수 등 수납 파생 수익)
+  const [viewTab, setViewTab] = useState<'rooms' | 'income'>(initialTab ?? 'rooms')
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'checkout' | 'awaiting' | 'paid' | 'adjusted'>('all')
   const [floorFilter, setFloorFilter] = useState('')
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(DEFAULT_VIS)
@@ -525,14 +531,40 @@ export default function RoomsClient({
     return vacantSortDir === 'asc' ? cmp : -cmp
   })
 
+  // 부가수익 입주자 연결 선택지 — 현재 수납 화면의 계약들(비공실 + 계약 존재)
+  const leaseOptions: LeaseOption[] = (() => {
+    const seen = new Set<string>()
+    const out: LeaseOption[] = []
+    for (const r of roomStatus) {
+      if (!r.leaseTermId || !r.tenantName || seen.has(r.leaseTermId)) continue
+      seen.add(r.leaseTermId)
+      out.push({ leaseTermId: r.leaseTermId, tenantName: r.tenantName, roomNo: r.roomNo })
+    }
+    return out
+  })()
+
   return (
     <div className="space-y-6">
-      {/* 헤더 — 우측 월 셀렉터(기간) */}
-      <div className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-bold text-[var(--warm-dark)]">수납 관리</h1>
+      {/* 헤더 — 좌측 제목+탭(수납/부가수익), 우측 월 셀렉터(기간) */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-xl font-bold text-[var(--warm-dark)]">수납 관리</h1>
+          <div className="inline-flex rounded-xl border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
+            <button type="button" onClick={() => setViewTab('rooms')}
+              className={`px-4 py-2 transition-colors ${viewTab === 'rooms' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>수납</button>
+            <button type="button" onClick={() => setViewTab('income')}
+              className={`px-4 py-2 transition-colors ${viewTab === 'income' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>부가수익</button>
+          </div>
+        </div>
         <MonthSelector />
       </div>
 
+      {/* 부가수익 탭 — 과납분·보증금 미반환분 등 수납 파생 수익 + 일반 기타수입 */}
+      {viewTab === 'income' && (
+        <IncomeSection incomes={incomes} incomeCategories={incomeCategories} leaseOptions={leaseOptions} />
+      )}
+
+      {viewTab === 'rooms' && <>
       {/* 검색창 — §22 공용 SearchBar */}
       <SearchBar value={search} onChange={setSearch} placeholder="호실 번호 또는 입주자 이름 검색" />
 
@@ -1090,6 +1122,7 @@ export default function RoomsClient({
           </p>
         </div>
       </Modal>
+      </>}
 
     </div>
   )
