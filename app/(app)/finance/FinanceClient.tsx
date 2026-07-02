@@ -36,6 +36,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { ViewTabs } from '@/components/ui/ViewTabs'
 import {
   DEFAULT_RECURRING_DUE_DAY,
   DEFAULT_RECURRING_CATEGORY,
@@ -2062,11 +2063,12 @@ export default function FinanceClient({
   const totalDepositBalance = depositSummary
     .filter(d => d.status === 'ACTIVE' || d.status === 'CHECKOUT_PENDING')
     .reduce((s, d) => s + d.balance, 0)
-  const TABS: { key: Tab; label: string }[] = [
-    { key: 'expense', label: `지출 내역${recUnrecordedCount > 0 ? ` (고정 ${recUnrecordedCount}건 미확인)` : ''}` },
-    { key: 'assets',  label: `자산 관리${financialAccounts.length > 0 ? ` (${financialAccounts.length})` : ''}` },
-    { key: 'deposit', label: `보증금 (${fmtKorMoney(totalDepositBalance)})` },
-    { key: 'reserve', label: `예비비 (${fmtKorMoney(reserveBalance)})` },
+  // §24.3 — 합계 접미는 suffix로 분리(괄호·tnum은 ViewTabs가 처리)
+  const TABS: { key: Tab; label: string; suffix?: string }[] = [
+    { key: 'expense', label: '지출 내역', suffix: recUnrecordedCount > 0 ? `고정 ${recUnrecordedCount}건 미확인` : undefined },
+    { key: 'assets',  label: '자산 관리', suffix: financialAccounts.length > 0 ? String(financialAccounts.length) : undefined },
+    { key: 'deposit', label: '보증금',   suffix: fmtKorMoney(totalDepositBalance) },
+    { key: 'reserve', label: '예비비',   suffix: fmtKorMoney(reserveBalance) },
   ]
 
   return (
@@ -2202,13 +2204,12 @@ export default function FinanceClient({
 
       {/* 서브탭 */}
       <div id="finance-tabs" className="scroll-mt-20">
-        <SegmentedControl
-          size="md"
-          scroll
+        {/* §24 뷰 전환 탭 — 트랙형(B)은 필터 전용, 뷰 전환은 코랄 채움 정본 */}
+        <ViewTabs
           ariaLabel="재무 탭"
-          value={tab}
-          onChange={setTab}
-          options={TABS.map(t => ({ value: t.key, label: t.label }))}
+          activeId={tab}
+          onChange={id => setTab(id as Tab)}
+          tabs={TABS.map(t => ({ id: t.key, label: t.label, suffix: t.suffix }))}
         />
       </div>
 
