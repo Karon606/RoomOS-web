@@ -8,10 +8,10 @@ Phase 2(페이지 대조)·Phase 3(UX 흐름) 미실시, Phase 4(수정)는 아�
 - EmptyState 이중 구현 통합 — FinanceClient 로컬(label만) 삭제 → 공용(§16 정본) 사용 6곳 전환(카드 안 4곳은 `border-0 bg-transparent`로 이중 배경 방지).
 
 ## 보류 — 판단 필요 (Phase 2 대상)
-- **StatusBadge ROW_TINT rgba 6곳**: 주석에 "라이트·다크 공용" 의도 명시된 리터럴. 토큰화 시 다크 시각 변경 → 의도 확인 후 결정.
-- **Badge pale-green/green** `bg-[#eef2e5] text-[#4e6834]`: 쌍 고정이라 대비 유지 중. text만 토큰화하면 다크에서 깨짐 → 쌍 토큰 신설(예: --pale-green-bg/fg) 여부 판단.
+- ~~StatusBadge ROW_TINT~~ → **해소(2026-07-02, §14.4b)**: '공용' 의도 폐기(디자인 정정) → 의미 -bg 토큰 6종(다크 자동). info(비거주)는 neutral-bg 변경 승인.
+- ~~Badge pale-green/green~~ → **해소(2026-07-02, §14.4b)**: 신규 토큰 없이 --success-bg/fg **쌍 이동**(틴트 칩 케이스). green 변형 포함(승인).
 - ~~입력 radius 혼용(§13.1)~~ → **해소(2026-07-02)**: input/select/textarea의 md·lg·xl 50곳 → rounded-sm(6px) 단일화. 필터 셀렉트도 '셀렉트 전부' 문언대로 포함.
-- ~~z-index 리터럴(§12)~~ → **부분 해소(2026-07-02)**: 전역 fixed 레이어 10곳 토큰화(주소검색 modal-2·설정 토스트 toast·하단탭/헤더 sticky·드롭다운·MergeSheet modal). 보존: 표 sticky z-30/20(§22.7 정본)·카드 내부 로컬 스택·floor-plan 캔버스존. **가이드 정정 필요**: §21.3 SelectionPillBar 'z 20'·§21.4 'z 30'이 §12 토큰 체계와 충돌(리터럴 명기).
+- ~~z-index 리터럴(§12)~~ → **부분 해소(2026-07-02)**: 전역 fixed 레이어 10곳 토큰화(주소검색 modal-2·설정 토스트 toast·하단탭/헤더 sticky·드롭다운·MergeSheet modal). 보존: 표 sticky z-30/20(§22.7 정본)·카드 내부 로컬 스택·floor-plan 캔버스존. ~~가이드 충돌~~ → **정정 완료(2026-07-02)**: §12 --z-pill(120) 신설, §21.3=--z-pill·§21.4=--z-modal로 가이드·코드 동시 반영.
 - ~~인라인 "불러오는 중…"(§16)~~ → **해소(2026-07-02)**: 14곳 SkeletonRows 교체 + 모달 타이틀 2곳 중립화. 유지(정당): 품목 프리셋 캡션(§16 예외 1곳)·버튼 상태 라벨·aria-label.
 - ~~페이지 제목 혼재~~ → **해소**: 5곳 text-xl 통일(별도 항목 참조).
 - **손말이 모달(§22.8)**: FinanceClient·InventoryClient·TenantClient·IncomeSection이 fixed inset-0 직접 구현(페이지 Modal 미사용).
