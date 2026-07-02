@@ -18,5 +18,18 @@ Phase 2(페이지 대조)·Phase 3(UX 흐름) 미실시, Phase 4(수정)는 아�
 - **앱 화면 색 리터럴**: InventoryClient hex8+rgba6, DashboardClient rgba13 — §14.4 정본 매핑 대조 필요.
 - 인쇄 서류(ContractView 52·ResidenceCert 11)는 §20 --p-* 영역이라 별도 기준으로 확인. FloorPlanEditor(30)는 캔버스 특수영역.
 
+## Phase 2 결과 — 페이지 대조 (2026-07-02, 검증 완료)
+9페이지 × §21·§22 대조. 3종(수납·고객·호실) 골격·SearchBar·1차필터·sticky는 정본대로 — IA 자체는 건강.
+
+**확정 위반(심각도순)**
+1. **손말이 모달 19곳+** (§22.8): FinanceClient 7(694·1228·2959·2994·3421·3779·4008), TenantClient 8(1010·1050·1128·1435·1480·1507·1551·2076), InventoryClient 5(292·855·1690·1822·2889), IncomeSection 2. **배경 불투명도 7종 혼재**(black/40·50·60·65·70·90·92 — 실측) = 모달 느낌이 화면마다 다름.
+2. **탭 패턴 2계열 분열**: inline-flex rounded-xl coral(재고 257·수납 563·비품자재) vs SegmentedControl(재무 TABS 2205) vs rounded-2xl 커스텀(리포트 124). 가이드에 '뷰 전환 탭' 정본이 없어 **정본 결정 필요**(운영자).
+3. **재고관리 메인에 SearchBar 없음**(§22.1) — 품목 검색이 모달 안에만. 상위 검색 부재.
+4. **호실관리 SearchBar가 필터 패널 뒤에 숨음**(RoomManageClient 554) — 타 페이지는 상시 노출.
+5. **h1 크기**: 재고만 text-base sm:text-lg, 나머지 text-xl.
+6. 비품·자재 페이지 h1 없음(서브페이지 성격 — 의도 여부 판단).
+
+**오탐 정정**: requests 상태 필터는 SegmentedControl 사용 중(299) — 위반 아님. card-settlement·stats는 목록형 아님(§22 비적용).
+
 ## Phase 계획
 1. ~~기계 스캔~~ (완료) → 2. 페이지별 헤더·필터·카드·모달 전수 대조(§21·§22 정본) → 3. UX 흐름(터치 타겟·정보 위계·§10 undo·§22 선택모드) → 4. 승인분 수정.
