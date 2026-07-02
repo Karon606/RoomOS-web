@@ -178,6 +178,7 @@
   /* §12 레이어 위계 — 토큰 외 z값 금지 */
   --z-base: 0;
   --z-sticky: 100;      /* 헤더, 고정 컬럼, 섹션 sticky */
+  --z-pill: 120;        /* 선택 모드 하단 알약(SelectionPillBar §21.3) — sticky 위, dropdown/drawer 아래 */
   --z-dropdown: 150;    /* 셀렉트, 알림벨 패널, 날짜피커 */
   --z-drawer: 200;      /* 모바일 사이드바 드로어 */
   --z-modal: 300;       /* 1차 모달 */

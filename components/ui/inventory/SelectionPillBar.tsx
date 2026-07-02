@@ -15,7 +15,7 @@ export function SelectionPillBar({
   unit?: string                  // 조수사(기본 '개'; 사람은 '명' 등)
 }) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+56px)] z-50 flex justify-center md:bottom-4">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+56px)] z-[var(--z-pill)] flex justify-center md:bottom-4">
       <div className="pointer-events-auto mx-3.5 flex max-w-[calc(100vw-28px)] items-center gap-2 rounded-[15px] bg-[var(--pill-bg)] px-4 py-3 shadow-[0_8px_24px_-8px_rgba(0,0,0,.45)]">
         <span className="whitespace-nowrap text-[0.8125rem] font-semibold text-white">
           <span className="mono tnum text-[var(--sand)]">{count}</span>{unit} {label}
