@@ -291,13 +291,13 @@ export default function AssetsClient({ data, rooms, locations }: {
           <>
             {it.count > 1 && (
               <button type="button" onClick={() => toggleExpand(it.id)}
-                className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
                 구매 {it.count}건 {expanded.has(it.id) ? '접기' : '합산'}
               </button>
             )}
             {awaitingReceipt ? (
               <button type="button" onClick={() => markReceived(it, true)} disabled={pending}
-                className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
+                className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
                 수령 완료
               </button>
             ) : qtyAsk?.it.id === it.id ? (
@@ -312,8 +312,8 @@ export default function AssetsClient({ data, rooms, locations }: {
                   className="w-16 text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums" />
                 <span className="text-[0.6875rem] text-[var(--warm-muted)]">{it.qtyUnit ?? '개'}</span>
                 <button type="button" onClick={confirmPartial} disabled={pending}
-                  className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">배정</button>
-                <button type="button" onClick={() => setQtyAsk(null)} disabled={pending} className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
+                  className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">배정</button>
+                <button type="button" onClick={() => setQtyAsk(null)} disabled={pending} className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
               </>
             ) : picking === it.id ? (
               <>
@@ -330,27 +330,27 @@ export default function AssetsClient({ data, rooms, locations }: {
                     </optgroup>
                   )}
                 </select>
-                <button type="button" onClick={() => setPicking(null)} className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
+                <button type="button" onClick={() => setPicking(null)} className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
               </>
             ) : (
               <>
                 <button type="button" onClick={() => markReceived(it, false)} disabled={pending}
-                  className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
+                  className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
                   수령대기로
                 </button>
                 {!placed && (
                   <button type="button" onClick={() => markCommon(it, !it.isCommon)} disabled={pending}
-                    className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
+                    className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
                     {it.isCommon ? '공용 해제' : '공용 자재로'}
                   </button>
                 )}
                 <button type="button" onClick={() => setPicking(it.id)} disabled={pending}
-                  className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
+                  className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
                   {placed ? '배정 변경' : '배정'}
                 </button>
                 {siblings.length > 0 && (
                   <button type="button" onClick={() => openCardMerge(it, siblings)} disabled={pending}
-                    className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
+                    className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">
                     합치기
                   </button>
                 )}
@@ -608,7 +608,7 @@ export default function AssetsClient({ data, rooms, locations }: {
                     className="h-9 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                   {it.assignedAt
                     ? <button type="button" onClick={() => saveAssignedAt(it, '')} disabled={pending}
-                        className="text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">비우기</button>
+                        className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">비우기</button>
                     : <span className="text-[0.6875rem] text-[var(--warm-muted)]">미상</span>}
                 </div>
               )}

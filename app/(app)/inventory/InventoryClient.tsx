@@ -385,7 +385,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                           <p className="text-sm text-[var(--warm-dark)] truncate">{g.label}{totalQty ? ` · ${qtyLabel}` : ''}</p>
                           <p className="text-[0.625rem] text-[var(--warm-muted)] truncate">{ld.getMonth() + 1}/{ld.getDate()} · {g.category}</p>
                           {g.items.length > 1 && (
-                            <button type="button" onClick={() => togglePendExpand(g.key)} className="mt-0.5 text-[0.625rem] text-[var(--coral)] hover:underline">
+                            <button type="button" onClick={() => togglePendExpand(g.key)} className="mt-0.5 min-h-[34px] inline-flex items-center -my-1.5 text-[0.625rem] text-[var(--coral)] hover:underline">
                               구매 {g.items.length}건 합산 {expanded ? '▾ 접기' : '▸ 펼치기'}
                             </button>
                           )}
@@ -523,12 +523,12 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
       expanded={open}
       actions={<>
         <button type="button" onClick={() => setOpen(v => !v)}
-          className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+          className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
           {open ? '지표 접기' : '지표·추이'}
         </button>
         {suggestHide && onArchive && (
           <button type="button" onClick={onArchive}
-            className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors">
+            className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/40 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors">
             숨기기
           </button>
         )}
