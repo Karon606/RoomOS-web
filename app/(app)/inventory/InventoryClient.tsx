@@ -265,8 +265,10 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
 
   return (
     <div className="space-y-4 px-4 sm:px-6 py-5">
-      {/* 동일 레벨 탭 — 소모품·부식(기본) / 비품·자재 + 월 전환(재고는 월별 이월·소비 데이터) */}
-      <div className="flex items-start justify-between gap-2 flex-wrap">
+      {/* 동일 레벨 탭 — 소모품·부식(기본) / 비품·자재 + 월 전환(재고는 월별 이월·소비 데이터)
+          §24.6: 모바일=탭 윗줄·MonthSelector 아랫줄 고정(2줄), md=한 줄 justify-between.
+          flex-wrap 임계에 맡기면 과거월 배지 유무로 줄바꿈이 출렁여 탭바 높이가 페이지·상태마다 달라짐. */}
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <ViewTabs ariaLabel="재고 탭" activeId="consumables" tabs={[
           { id: 'consumables', label: '소모품·부식', href: '/inventory' },
           { id: 'assets',      label: '비품·자재',   href: '/inventory/assets' },

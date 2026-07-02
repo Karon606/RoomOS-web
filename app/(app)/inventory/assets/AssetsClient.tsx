@@ -365,7 +365,7 @@ export default function AssetsClient({ data, rooms, locations }: {
   const isEmpty = data.rooms.length === 0 && data.locations.length === 0 && data.unassigned.length === 0 && data.common.length === 0 && data.pending.length === 0
 
   return (
-    <div className="space-y-5 px-4 sm:px-6 py-5">
+    <div className="space-y-4 px-4 sm:px-6 py-5">
       {/* 동일 레벨 탭 — 소모품·부식 / 비품·자재(현재) */}
       <ViewTabs ariaLabel="재고 탭" activeId="assets" tabs={[
         { id: 'consumables', label: '소모품·부식', href: '/inventory' },
