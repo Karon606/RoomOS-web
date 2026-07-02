@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition, useRef } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -1597,7 +1598,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], onCancel, onDone 
       </div>
 
       {loading ? (
-        <p className="text-xs text-[var(--warm-muted)] py-3 text-center">그 시점 예상 재고 불러오는 중…</p>
+        <SkeletonRows rows={3} className="py-1" />
       ) : (
         <>
           <div className="flex items-center justify-between text-[0.6875rem]">

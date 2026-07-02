@@ -4,6 +4,7 @@
 // 펼침/접힘으로 노출.
 
 import { useEffect, useState } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getMyPushHistory, type PushHistoryRow } from './pushActions'
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -48,7 +49,7 @@ export function PushHistoryList() {
       {open && (
         <div className="space-y-1.5">
           {loading && rows === null && (
-            <p className="text-[0.6875rem] text-[var(--warm-muted)]">불러오는 중…</p>
+            <SkeletonRows rows={3} />
           )}
           {rows && rows.length === 0 && (
             <p className="text-[0.6875rem] text-[var(--warm-muted)]">아직 발송된 푸시가 없습니다.</p>

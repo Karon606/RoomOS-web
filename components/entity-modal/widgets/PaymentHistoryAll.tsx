@@ -2,6 +2,7 @@
 
 // 고객별 전체 수납 내역 — 접기/펼치기. 펼칠 때 모든 달 납부기록(언제·얼마·귀속월·방식·메모)을 최신순으로.
 import { useState } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getAllPaymentsByLease } from '@/app/(app)/rooms/actions'
 
 type Data = Awaited<ReturnType<typeof getAllPaymentsByLease>>
@@ -49,7 +50,7 @@ export function PaymentHistoryAll({ leaseTermId, reloadSignal }: { leaseTermId: 
       {open && (
         <div className="px-3 pb-3">
           {loading ? (
-            <p className="text-xs text-[var(--warm-muted)] py-3 text-center">불러오는 중…</p>
+            <SkeletonRows rows={3} className="py-1" />
           ) : !data || data.records.length === 0 ? (
             <p className="text-xs text-[var(--warm-muted)] py-3 text-center">수납 내역이 없습니다.</p>
           ) : (

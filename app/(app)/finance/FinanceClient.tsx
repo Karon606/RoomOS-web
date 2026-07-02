@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   addExpense, updateExpense, deleteExpense, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, findOrderByExternalNo,
   unsettleExpenses,
@@ -703,7 +704,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1.5">
           {rows === null ? (
-            <p className="text-xs text-[var(--warm-muted)] text-center py-6">불러오는 중…</p>
+            <SkeletonRows rows={4} className="py-2" />
           ) : rows.length === 0 ? (
             <p className="text-xs text-[var(--warm-muted)] text-center py-6">등록된 구매처가 없습니다.</p>
           ) : rows.map(r => {

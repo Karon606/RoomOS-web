@@ -4,6 +4,7 @@
 // TenantClient 에서 이주(2026-05-30): 셸의 고객 면과 페이지 자체 팝업 양쪽에서 재사용.
 
 import { useEffect, useState } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   getContractFiles, deleteContractFile,
   createContractScanUploadSession, finalizeContractScan,
@@ -71,7 +72,7 @@ export function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string;
           <input type="file" accept="application/pdf,image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
         </label>
       </div>
-      {loading && <p className="text-xs text-[var(--warm-muted)]">불러오는 중...</p>}
+      {loading && <SkeletonRows rows={2} />}
       {!loading && files && files.length === 0 && (
         <p className="text-xs text-[var(--warm-muted)]">등록된 계약서가 없습니다. 출력 페이지에서 서명을 받거나 스캔 본을 첨부하세요.</p>
       )}

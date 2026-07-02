@@ -4,6 +4,7 @@
 // 등록(생성) + 완료 처리 + 삭제 + 처리 이력 펼침/접힘.
 
 import { useEffect, useState, useTransition } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests,
 } from '@/app/(app)/tenants/actions'
@@ -46,7 +47,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
   }
 
   if (requests === null) {
-    return <Section title="요청·컴플레인"><p className="text-xs text-[var(--warm-muted)] py-2">불러오는 중...</p></Section>
+    return <Section title="요청·컴플레인"><SkeletonRows rows={2} className="py-1" /></Section>
   }
   const unresolved = requests.filter(r => !r.resolvedAt)
   const resolved   = requests.filter(r =>  r.resolvedAt)

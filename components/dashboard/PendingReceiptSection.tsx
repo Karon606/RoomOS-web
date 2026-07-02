@@ -7,6 +7,7 @@
 //   3) 사용자가 검토 후 [지출 등록] 또는 [재고 등록] 또는 [거절]
 
 import { useEffect, useRef, useState, useTransition } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   uploadPendingReceipt, getPendingReceipts, approvePendingReceipt, rejectPendingReceipt,
   type PendingReceiptRow,
@@ -87,7 +88,7 @@ export function PendingReceiptSection() {
       </header>
 
       {loading && rows.length === 0 && (
-        <p className="text-xs text-center py-3" style={{ color: 'var(--warm-muted)' }}>불러오는 중…</p>
+        <SkeletonRows rows={2} className="py-1" />
       )}
       {!loading && rows.length === 0 && (
         <p className="text-xs text-center py-3" style={{ color: 'var(--warm-muted)' }}>대기 중인 항목이 없습니다.</p>

@@ -117,7 +117,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
     if (kind === 'payment' && k !== 'payment' && openCheckoutProration) setProrationSeedSpent(true)
     setKind(k)
   }
-  const title = links ? `${fmtRoomNo(links.roomNo)}${links.tenantName ? ` · ${links.tenantName}` : ''}` : '불러오는 중…'
+  const title = links ? `${fmtRoomNo(links.roomNo)}${links.tenantName ? ` · ${links.tenantName}` : ''}` : '…'
 
   // 호실 액션 — 셸이 직접 처리(데이터 정합).
   const handleApplyScheduledNow = async () => {

@@ -5,6 +5,7 @@
 // 상태 전환 / 납입일 변경 / 편집 / 요청·컴플레인 CRUD 는 /tenants?tenantId=X 로 딥링크.
 
 import { useEffect, useState, useTransition } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getTenantDetail } from '@/app/(app)/rooms/actions'
 import { analyzeTenantWithGemini } from '@/app/(app)/tenants/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -31,7 +32,7 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
   }, [tenantId, reloadKey])
   const refresh = () => setReloadKey(k => k + 1)
 
-  if (!tenant) return <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
+  if (!tenant) return <SkeletonRows rows={5} className="py-4" />
 
   const lease = tenant.leaseTerms[0]
   const status = lease?.status ?? ''

@@ -5,6 +5,7 @@
 // "데이터 조합으로 발현되는 뷰" 의 첫 사례.
 
 import { useEffect, useState } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { getRoomDetail } from '@/app/(app)/rooms/actions'
 import { PhotoStrip } from '../widgets/PhotoStrip'
 import { RoomBasicInfo } from '../widgets/RoomBasicInfo'
@@ -26,7 +27,7 @@ export function RoomBody({ roomId, onApplyScheduledNow }: {
     return () => { active = false }
   }, [roomId])
 
-  if (!room) return <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
+  if (!room) return <SkeletonRows rows={5} className="py-4" />
 
   return (
     <>

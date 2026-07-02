@@ -5,6 +5,7 @@
 // 양도인 record 는 양도인 색 표시.
 
 import { useEffect, useState, useTransition } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   getPaymentsByLease, getTargetMonthOptions, updatePayment, deletePayment,
 } from '@/app/(app)/rooms/actions'
@@ -97,7 +98,7 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
     })
   }
 
-  if (records === null) return <p className="text-xs text-[var(--warm-muted)] py-2">불러오는 중…</p>
+  if (records === null) return <SkeletonRows rows={2} className="py-1" />
   if (records.length === 0) return <p className="text-xs text-[var(--warm-muted)] py-2">이 달 납부 기록이 없습니다.</p>
 
   return (

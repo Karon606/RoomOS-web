@@ -8,6 +8,7 @@
 // 은 Phase 2.4b 에서.
 
 import { useEffect, useState, useTransition } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter } from 'next/navigation'
 import { getLeaseSettlementInfo, getPaymentsByLease } from '@/app/(app)/rooms/actions'
 import { PaymentSummaryCards } from '../widgets/PaymentSummaryCards'
@@ -53,7 +54,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
   // router.refresh() 가 없으면 셸 닫고 페이지로 돌아갔을 때 카드가 여전히 미납으로 보임.
   const refresh = () => startTransition(() => { setReloadKey(k => k + 1); router.refresh() })
 
-  if (!settlement) return <p className="text-sm text-[var(--warm-muted)] text-center py-8">불러오는 중…</p>
+  if (!settlement) return <SkeletonRows rows={5} className="py-4" />
 
   return (
     <div className="space-y-3">
@@ -78,7 +79,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
           <div className="space-y-1">
             <p className="text-xs font-semibold text-[var(--warm-mid)]">이번 달 납부 내역</p>
             {records === null ? (
-              <p className="text-xs text-[var(--warm-muted)] py-2">불러오는 중…</p>
+              <SkeletonRows rows={2} className="py-1" />
             ) : records.length === 0 ? (
               <p className="text-xs text-[var(--warm-muted)] py-2">이 달 납부 기록이 없습니다.</p>
             ) : (

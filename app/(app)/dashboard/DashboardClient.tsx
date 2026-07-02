@@ -1709,7 +1709,7 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
 
   return (
     <Modal open onClose={onClose} width="sm"
-      title={loading ? '불러오는 중…' : (info?.name ?? '입주자 정보')}>
+      title={info?.name ?? '입주자 정보'}>
         {loading ? (
           <Loading />
         ) : !info ? (

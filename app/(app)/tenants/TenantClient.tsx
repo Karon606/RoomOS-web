@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn,
   getContractFiles, deleteContractFile, createContractScanUploadSession, finalizeContractScan,
@@ -2988,7 +2989,7 @@ function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string; tenant
           <input type="file" accept="application/pdf,image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
         </label>
       </div>
-      {loading && <p className="text-xs text-[var(--warm-muted)]">불러오는 중...</p>}
+      {loading && <SkeletonRows rows={2} />}
       {!loading && files && files.length === 0 && (
         <p className="text-xs text-[var(--warm-muted)]">등록된 계약서가 없습니다. 출력 페이지에서 서명을 받거나 스캔 본을 첨부하세요.</p>
       )}

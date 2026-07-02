@@ -6,6 +6,7 @@
 //   ※ 종은 Header(EntityModalProvider 밖)에 있어 전역 모달을 못 쓰므로 URL 딥링크로 이동한다.
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, usePathname } from 'next/navigation'
 import { getMyAlerts } from '@/app/(app)/dashboard/alertActions'
 import type { AlertItem, AlertCategory } from '@/app/(app)/dashboard/alerts'
@@ -135,7 +136,7 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
 
           <div className="max-h-[60vh] overflow-y-auto">
             {loading ? (
-              <div className="px-3.5 py-6 text-center text-xs" style={{ color: 'var(--warm-muted)' }}>불러오는 중…</div>
+              <div className="px-3.5 py-3"><SkeletonRows rows={3} /></div>
             ) : count === 0 ? (
               <div className="px-3.5 py-7 text-center">
                 <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-muted)' }}>
