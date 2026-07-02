@@ -31,5 +31,24 @@ Phase 2(페이지 대조)·Phase 3(UX 흐름) 미실시, Phase 4(수정)는 아�
 
 **오탐 정정**: requests 상태 필터는 SegmentedControl 사용 중(299) — 위반 아님. card-settlement·stats는 목록형 아님(§22 비적용).
 
+
+## Phase 3 결과 — UX 흐름 (2026-07-02, 재검증 포함)
+7규칙 검사. **합격**: R1 confirm/alert(앱 본체 클린 — 가이드의 '71곳 교체'는 기완료 상태 확인) · R2 window.location.href(전부 파일 다운로드 등 정당) · R3 삭제류 confirmDialog danger 준수+일괄수납 undo 양성대조 확인 · R4 선택모드 3페이지 완비.
+
+**발견·처치**:
+- ~~R6 음수 ASCII '-' 4곳~~ → **해소**(−U+2212: PaymentSummaryCards 잔액·이월, TenantClient 청소비, DashboardClient 미수).
+- **R5 dirty 정책(§13.2) 위반 4모달** → **모달 이관(백로그 #2) 설계 입력**: 거래처 관리(FinanceClient:696)·부가수익 수정(IncomeSection:229)·재고 카테고리 설정(InventoryClient:1706)·고객 편집(TenantClient:1058) — 배경클릭 무조건 닫힘·입력 유실. 양성 패턴: FinanceClient:3781(고정지출 관리).
+- **R1 추가발견(에이전트 스코프 밖)**: 인쇄 뷰 공개 페이지 alert() 6곳(ContractView 3·ResidenceCert 2·RentReceipt 1) — 공개 페이지 토스트 호스트 존재 확인 후 교체(무확인 제거 금지: pushToast가 no-op이면 alert가 유일 통지).
+- **R7 터치 타겟**: AssetsClient 배정/취소 등 카드 액션 행 py-1(~26px) — §21.1 정본 34px로 '카드 액션 34px 정합 배치' 백로그(형제 버튼 전수 동반).
+- **R6 잔여**: toLocaleString 직접 호출 176곳(재무 42·대시 36·고객 19…) — §15 단일 포맷 유틸 경로 백로그(대형).
+
+## 백로그 최신 상태
+1. 손말이 모달 19곳 → 공용 Modal 완전 이관(§22.8) — **R5 dirty 4곳이 우선 대상**, 새 세션 권장.
+2. 색 리터럴 §14.4 매핑(Inventory hex8+rgba6·Dashboard rgba13) — 모달 이관 뒤.
+3. §15 금액 포맷 단일화(176곳) — 대형.
+4. 카드 액션 34px 정합(§21.1) — 소형.
+5. 인쇄 뷰 alert 6곳 — 토스트 호스트 확인 후.
+6. 마감 재스캔 → 감사 클로즈.
+
 ## Phase 계획
 1. ~~기계 스캔~~ (완료) → 2. 페이지별 헤더·필터·카드·모달 전수 대조(§21·§22 정본) → 3. UX 흐름(터치 타겟·정보 위계·§10 undo·§22 선택모드) → 4. 승인분 수정.
