@@ -670,6 +670,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
 
 // 구매처 정리 — 이력 기반 자동완성(B)에 쌓인 구매처의 오타·중복을 이름변경/합치기/비우기로 정돈.
 function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
+  const [dirty, setDirty] = useState(false)   // §13.2 — 이름 수정 시작 후 닫기 보호
   const [rows, setRows] = useState<{ vendor: string; count: number }[] | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<string | null>(null)
@@ -693,16 +694,10 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
   }
 
   return (
-    <div className="fixed inset-0 z-[var(--z-modal)] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70" onClick={onClose}>
-      <div className="bg-[var(--cream)] border border-[var(--warm-border)] shadow-lift w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
-          <div>
-            <h2 className="text-sm font-bold text-[var(--warm-dark)]">구매처 관리</h2>
-            <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">오타·중복 정리. 같은 이름으로 바꾸면 합쳐지고, 비우면 그 지출들의 구매처가 제거됩니다.</p>
-          </div>
-          <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] w-9 h-9 flex items-center justify-center" aria-label="닫기">✕</button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1.5">
+    <Modal open onClose={onClose} title="구매처 관리"
+      subtitle="오타·중복 정리. 같은 이름으로 바꾸면 합쳐지고, 비우면 그 지출들의 구매처가 제거됩니다."
+      width="md" dirty={dirty}>
+      <div className="px-5 py-3 space-y-1.5" onInput={() => setDirty(true)}>
           {rows === null ? (
             <SkeletonRows rows={4} className="py-2" />
           ) : rows.length === 0 ? (
@@ -722,9 +717,8 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
               </div>
             )
           })}
-        </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -1227,7 +1221,7 @@ function ReceiptScanModal({ bitmap, onConfirm, onCancel }: {
   const pts = `${corners.tl.x*dW},${corners.tl.y*dH} ${corners.tr.x*dW},${corners.tr.y*dH} ${corners.br.x*dW},${corners.br.y*dH} ${corners.bl.x*dW},${corners.bl.y*dH}`
 
   return (
-    <div className="fixed inset-0 z-[var(--z-modal)] flex flex-col items-center justify-center bg-black/92">
+    <div className="fixed inset-0 z-[var(--z-lightbox)] flex flex-col items-center justify-center bg-black/92">
       <p className="text-white text-sm font-medium mb-4 px-4 text-center">모서리를 드래그해서 영수증 테두리를 맞추세요</p>
       <div ref={containerRef} className="relative" style={{ width: dW, height: dH, touchAction: 'none' }}>
         <canvas ref={canvasRef} width={dW} height={dH} className="block rounded-xl" />
@@ -1386,9 +1380,11 @@ export default function FinanceClient({
     if (typeof window !== 'undefined') localStorage.setItem('stayeum-rec-visibility', recVisibility)
   }, [recVisibility])
   const [showAddExp, setShowAddExp]       = useState(false)
+  const [addExpDirty, setAddExpDirty] = useState(false)   // §13.2 — 지출 등록 폼 입력 보호
   const [addExpDate, setAddExpDate]       = useState(() => kstYmdStr())
   const [detailExp, setDetailExp]         = useState<Expense | null>(null)
   const [detailExpEdit, setDetailExpEdit] = useState(false)
+  const [expEditDirty, setExpEditDirty] = useState(false)   // §13.2 — 지출 수정 폼 입력 보호
   // 방별 분배 묶음 펼침 — 멤버 행 목록(각 방별 금액). null 이면 닫힘.
   const [groupDetail, setGroupDetail]     = useState<Expense[] | null>(null)
   // 지출내역 보기 — '아이템별'(기본) / '주문별'(같은 주문 묶음 + 배송비 포함, 쇼핑몰 주문내역처럼). 선택 기억.
@@ -1593,6 +1589,7 @@ export default function FinanceClient({
 
   // ── 고정 지출 탭 상태 ────────────────────────────────────────
   const [recordingRec, setRecordingRec] = useState<RecurringExpenseWithStatus | null>(null)
+  const [recRecDirty, setRecRecDirty] = useState(false)   // §13.2 — 지출 기록 폼 입력 보호
   const [recRecAmount, setRecRecAmount] = useState(0)
   // #1 관리비 묶음: 기록 시 세부항목별 금액(변동은 편집). 비어있으면 단일 금액 모드.
   const [recRecItems, setRecRecItems]   = useState<{ name: string; amount: number; isVariable: boolean }[]>([])
@@ -1610,6 +1607,7 @@ export default function FinanceClient({
   const [expSearching, setExpSearching] = useState(false)
   // ── 고정 지출 관리 모달 상태 ─────────────────────────────────
   const [showRecMgmt, setShowRecMgmt]   = useState(false)
+  const [recMgmtDirty, setRecMgmtDirty] = useState(false)   // §13.2 — 고정지출 폼 입력 보호
   const [recMgmtList, setRecMgmtList]   = useState<RecurringExpenseRow[]>([])
   const [recMgmtLoading, setRecMgmtLoading] = useState(false)
   const [editingRecMgmt, setEditingRecMgmt] = useState<RecurringExpenseRow | null>(null)
@@ -1638,13 +1636,13 @@ export default function FinanceClient({
       ? kstYmdStr(new Date(acquisitionDate))
       : ''
     setRecMgmtForm({ title: '', amount: '', category: expenseCategories[0] ?? DEFAULT_RECURRING_CATEGORY, dueDay: DEFAULT_RECURRING_DUE_DAY, payMethod: '', financialAccountId: '', isAutoDebit: false, isVariable: false, alertDaysBefore: DEFAULT_RECURRING_ALERT_DAYS_BEFORE, activeSince: defaultActiveSince, priorYearAmount: '', memo: '' })
-    setShowRecMgmtForm(true)
+    setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
   const openEditRecMgmt = (r: RecurringExpenseRow) => {
     setEditingRecMgmt(r)
     setRecMgmtForm({ title: r.title, amount: r.amount.toString(), category: r.category, dueDay: r.dueDay.toString(), payMethod: r.payMethod ?? '', financialAccountId: r.financialAccountId ?? '', isAutoDebit: r.isAutoDebit, isVariable: r.isVariable, alertDaysBefore: r.alertDaysBefore.toString(), activeSince: r.activeSince ?? '', priorYearAmount: r.priorYearAmount ? r.priorYearAmount.toString() : '', memo: r.memo ?? '' })
-    setShowRecMgmtForm(true)
+    setRecMgmtDirty(false); setShowRecMgmtForm(true)
     setRecMgmtError('')
   }
   const handleSaveRecMgmt = () => {
@@ -1909,7 +1907,7 @@ export default function FinanceClient({
         }
         const res = await addExpense(fd)
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
-        setShowAddExp(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
+        setShowAddExp(false); setAddExpDirty(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
         pushToast('success', '지출 등록됨')
       } finally { release() }
     })
@@ -2255,7 +2253,7 @@ export default function FinanceClient({
             <Btn variant="secondary" size="md" onClick={() => { setShowExpSearch(true); setExpSearchQ(''); setExpSearchResults([]) }}>
               과거 내역 검색
             </Btn>
-            <Btn variant="primary" size="md" onClick={() => { setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
+            <Btn variant="primary" size="md" onClick={() => { setAddExpDirty(false); setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
               + 지출 등록
             </Btn>
           </div>
@@ -2540,7 +2538,7 @@ export default function FinanceClient({
                       return (
                         <Fragment key={`rec-${r.id}`}>{dateHead}
                         <div key={`rec-${r.id}`}
-                          onClick={() => { setRecordingRec(r); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(kstYmdStr()); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
+                          onClick={() => { setRecordingRec(r); setRecRecDirty(false); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(kstYmdStr()); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
                           className="border border-[var(--warning-ring)] rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity bg-[var(--warning-bg)]/30">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
@@ -2663,7 +2661,7 @@ export default function FinanceClient({
                           return (
                             <Fragment key={`rec-${r.id}`}>{dayHead}
                             <tr
-                              onClick={() => { setRecordingRec(r); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(kstYmdStr()); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
+                              onClick={() => { setRecordingRec(r); setRecRecDirty(false); setRecRecItems(r.items.map(it => ({ name: it.name, amount: it.amount, isVariable: it.isVariable }))); setRecRecAmount(r.items.length > 0 ? r.items.reduce((s, it) => s + it.amount, 0) : expectedAmt); setRecRecDate(kstYmdStr()); setRecRecMemo(r.memo ?? ''); setRecRecPayMethod(r.lastPayMethod ?? r.payMethod ?? '계좌이체'); setRecRecAccId(r.lastFinancialAccountId ?? r.financialAccountId ?? ''); setRecError('') }}
                               className="border-b border-[var(--warm-border)] bg-[var(--canvas)]/40 hover:bg-[var(--canvas)] transition-colors cursor-pointer"
                               style={{ boxShadow: 'inset 3px 0 0 var(--warning-fg)' }}>
                               <td className="px-4 py-3 text-xs text-[var(--warm-muted)] overflow-hidden">
@@ -2958,18 +2956,10 @@ export default function FinanceClient({
           모달: 방별 분배 묶음 — 방별 금액 펼침
       ══════════════════════════════════════════════════════════ */}
       {groupDetail && (
-        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
-          onClick={() => setGroupDetail(null)}>
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-start justify-between gap-2 px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-              <div className="min-w-0">
-                <h3 className="text-sm font-bold text-[var(--warm-dark)] truncate">{groupDetail[0]?.order?.code ? `주문 ${groupDetail[0].order.code}` : (groupDetail[0]?.detail || groupDetail[0]?.itemLabel || '묶음 지출')}</h3>
-                <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">{groupDetail[0]?.order?.externalOrderNo ? `쇼핑몰 ${groupDetail[0].order.externalOrderNo} · ` : ''}{groupDetail.length}건 · 합계 {groupDetail.reduce((s, r) => s + r.amount, 0).toLocaleString()}원</p>
-              </div>
-              <button onClick={() => setGroupDetail(null)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-lg leading-none shrink-0">✕</button>
-            </div>
-            <ul className="overflow-y-auto px-4 py-3 space-y-1.5">
+        <Modal open onClose={() => setGroupDetail(null)} width="sm"
+          title={groupDetail[0]?.order?.code ? `주문 ${groupDetail[0].order.code}` : '주문 묶음'}
+          subtitle={`${groupDetail[0]?.order?.externalOrderNo ? `쇼핑몰 ${groupDetail[0].order.externalOrderNo} · ` : ''}${groupDetail.length}건 · 합계 ${groupDetail.reduce((s, r) => s + r.amount, 0).toLocaleString()}원`}>
+          <ul className="overflow-y-auto px-4 py-3 space-y-1.5">
               {groupDetail.map(r => (
                 <li key={r.id}>
                   <button type="button"
@@ -2984,26 +2974,17 @@ export default function FinanceClient({
                 </li>
               ))}
             </ul>
-            <p className="px-6 pb-4 text-[0.625rem] text-[var(--warm-muted)] shrink-0">각 방 항목을 누르면 개별 수정·삭제할 수 있습니다.</p>
-          </div>
-        </div>
+            <p className="px-6 pb-4 text-[0.625rem] text-[var(--warm-muted)]">각 방 항목을 누르면 개별 수정·삭제할 수 있습니다.</p>
+        </Modal>
       )}
 
       {/* ══════════════════════════════════════════════════════════
           모달: 지출 상세 / 수정
       ══════════════════════════════════════════════════════════ */}
       {detailExp && (
-        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
-          onClick={() => { setDetailExp(null); setDetailExpEdit(false) }}>
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-              <h2 className="text-base font-bold text-[var(--warm-dark)]">
-                {detailExpEdit ? '지출 수정' : '지출 상세'}
-              </h2>
-              <button onClick={() => { setDetailExp(null); setDetailExpEdit(false) }}
-                aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
-            </div>
+        <Modal open width="sm" dirty={detailExpEdit && expEditDirty}
+          onClose={() => { setDetailExp(null); setDetailExpEdit(false); setExpEditDirty(false) }}
+          title={detailExpEdit ? '지출 수정' : '지출 상세'}>
 
             {!detailExpEdit ? (
               <>
@@ -3095,7 +3076,7 @@ export default function FinanceClient({
                   )}
                   <div className="flex-1" />
                   <Btn variant="primary" size="md" onClick={() => {
-                    setDetailExpEdit(true)
+                    setExpEditDirty(false); setDetailExpEdit(true)
                     setEditExpDate(toDateInput(detailExp.date))
                     setEditExpMethod(detailExp.payMethod ?? '계좌이체')
                     setEditExpAccId(detailExp.financialAccountId ?? '')
@@ -3139,7 +3120,8 @@ export default function FinanceClient({
                 </div>
               </>
             ) : (
-              <form key={detailExp.id + '-edit'} onSubmit={handleUpdateExp} className="flex flex-col flex-1 overflow-hidden">
+              <form key={detailExp.id + '-edit'} onSubmit={handleUpdateExp} className="flex flex-col flex-1 overflow-hidden"
+                onInput={() => setExpEditDirty(true)} onChange={() => setExpEditDirty(true)}>
                 <input type="hidden" name="id" value={detailExp.id} />
                 <input type="hidden" name="financialAccountId" value={editExpAccId} />
                 <input type="hidden" name="financeName" value={editExpAccName} />
@@ -3393,8 +3375,7 @@ export default function FinanceClient({
                 </div>
               </form>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
 
       {tab === 'deposit' && (
@@ -3420,15 +3401,11 @@ export default function FinanceClient({
           모달: 지출 등록
       ══════════════════════════════════════════════════════════ */}
       {showAddExp && (
-        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
-          onClick={() => setShowAddExp(false)}>
-          <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm flex flex-col max-h-[85vh]"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-              <h2 className="text-base font-bold text-[var(--warm-dark)]">지출 등록</h2>
-              <button onClick={() => setShowAddExp(false)} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
-            </div>
-            <form onSubmit={handleAddExp} className="flex flex-col flex-1 overflow-hidden">
+        <Modal open width="sm" dirty={addExpDirty}
+          onClose={() => { setShowAddExp(false); setAddExpDirty(false) }}
+          title="지출 등록">
+            <form onSubmit={handleAddExp} className="flex flex-col flex-1 overflow-hidden"
+              onInput={() => setAddExpDirty(true)} onChange={() => setAddExpDirty(true)}>
               <input type="hidden" name="financialAccountId" value={addExpAccId} />
               <input type="hidden" name="financeName" value={addExpAccName} />
               <input type="hidden" name="roomId" value={(addIsDurable || addItems.some(it => (it.allocations?.length ?? 0) > 0)) ? '' : addExpRoomId} />
@@ -3683,8 +3660,7 @@ export default function FinanceClient({
                 </Btn>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* ══════════════════════════════════════════════════════════
@@ -3778,19 +3754,11 @@ export default function FinanceClient({
     {/* ── 고정 지출 관리 모달 ────────────────────────────────────── */}
 
     {showRecMgmt && (
-      <div className="fixed inset-0 z-[var(--z-modal)] flex items-end sm:items-center justify-center p-4 bg-black/70" onClick={e => { if (e.target === e.currentTarget) { setShowRecMgmt(false); setShowRecMgmtForm(false) } }}>
-        <div className="bg-[var(--cream)] rounded-2xl w-full max-w-lg max-h-[90dvh] flex flex-col shadow-lift border border-[var(--warm-border)]">
-          {/* 모달 헤더 */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
-            <div>
-              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">고정 지출 관리</h2>
-              <p className="text-xs text-[var(--warm-muted)] mt-0.5">매월 반복 지출 항목을 추가·수정·삭제합니다.</p>
-            </div>
-            <button onClick={() => { setShowRecMgmt(false); setShowRecMgmtForm(false) }}
-              className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl leading-none px-1">×</button>
-          </div>
-
-          <div className="overflow-y-auto flex-1 p-5 space-y-4">
+      <Modal open width="lg" dirty={showRecMgmtForm && recMgmtDirty}
+        onClose={() => { setShowRecMgmt(false); setShowRecMgmtForm(false); setRecMgmtDirty(false) }}
+        title="고정 지출 관리" subtitle="매월 반복 지출 항목을 추가·수정·삭제합니다."
+        bodyClassName="p-5">
+          <div className="space-y-4" onInput={() => setRecMgmtDirty(true)} onChange={() => setRecMgmtDirty(true)}>
             {/* 추가/수정 폼 */}
             {showRecMgmtForm ? (
               <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
@@ -4001,24 +3969,14 @@ export default function FinanceClient({
               </div>
             )}
           </div>
-        </div>
-      </div>
+      </Modal>
     )}
     {/* ── 고정 지출 기록 모달 ────────────────────────────────────────── */}
     {recordingRec && (
-      <div
-        className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-4 bg-black/70"
-        onClick={e => { if (e.target === e.currentTarget) { setRecordingRec(null); setRecError('') } }}>
-        <div className="bg-[var(--cream)] rounded-2xl w-full max-w-sm shadow-lift border border-[var(--warm-border)]">
-          {/* 헤더 */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--warm-border)]">
-            <div>
-              <h2 className="text-sm font-semibold text-[var(--warm-dark)]">지출 기록</h2>
-              <p className="text-xs text-[var(--warm-muted)] mt-0.5">{recordingRec.title}</p>
-            </div>
-            <button onClick={() => { setRecordingRec(null); setRecError('') }}
-              className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-lg leading-none transition-colors">✕</button>
-          </div>
+      <Modal open width="sm" dirty={recRecDirty}
+        onClose={() => { setRecordingRec(null); setRecError(''); setRecRecDirty(false) }}
+        title="지출 기록" subtitle={recordingRec.title}>
+        <div onInput={() => setRecRecDirty(true)} onChange={() => setRecRecDirty(true)}>
           {/* 폼 */}
           <div className="p-5 space-y-3">
             {recRecItems.length > 0 ? (
@@ -4179,7 +4137,7 @@ export default function FinanceClient({
                   })
                 }}
                 className="w-full px-4 py-2.5 bg-[var(--canvas)] border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-xs font-medium rounded-xl hover:bg-[var(--coral)]/5 disabled:opacity-60 transition-colors">
-                💾 금액만 저장 (정산 안 함 · 나중에 납부)
+                금액만 저장 (정산 안 함 · 나중에 납부)
               </button>
               <p className="text-[0.625rem] text-[var(--warm-muted)] text-center leading-relaxed">
                 ‘지출로 기록’은 바로 정산 처리돼요. 금액만 미리 적어둘 땐 아래 버튼을 쓰세요.
@@ -4187,7 +4145,7 @@ export default function FinanceClient({
             </div>
           </div>
         </div>
-      </div>
+      </Modal>
     )}
 
     {/* 다중선택 묶기 — 하단 액션 바 */}
