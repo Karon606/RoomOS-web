@@ -1372,6 +1372,7 @@ export default function FinanceClient({
 
   // ── 지출 탭 상태 ─────────────────────────────────────────────
   const [expFilter, setExpFilter] = useState({ method: 'all', category: 'all', finance: 'all' })
+  const [expListSearch, setExpListSearch] = useState('')   // 이번 달 목록 인라인 검색(§22.1) — '과거 내역 검색'(전 기간 서버)과 별개
   // 미확인 고정 지출 가시성: 'all' = 전체, 'soon' = 결제일 D-3 이내(과거 도래 포함)만
   const [recVisibility, setRecVisibility] = useState<'all' | 'soon'>(() => {
     if (typeof window === 'undefined') return 'soon'
@@ -1824,6 +1825,11 @@ export default function FinanceClient({
     if (expFilter.method   !== 'all' && e.payMethod !== expFilter.method) return false
     if (expFilter.category !== 'all' && e.category  !== expFilter.category) return false
     if (expFilter.finance  !== 'all' && e.financialAccountId !== expFilter.finance) return false
+    if (expListSearch.trim()) {
+      const q   = expListSearch.trim().toLowerCase()
+      const hay = `${e.detail ?? ''} ${e.vendor ?? ''} ${e.memo ?? ''} ${e.category} ${e.payMethod ?? ''} ${e.room?.roomNo ?? ''}`.toLowerCase()
+      if (!hay.includes(q)) return false
+    }
     return true
   })
 
@@ -2218,6 +2224,8 @@ export default function FinanceClient({
       ══════════════════════════════════════════════════════════ */}
       {tab === 'expense' && (
         <div className="space-y-4">
+          {/* 검색 — §22 공용 SearchBar (모바일 포함 항상 노출). 이번 달 목록 필터, 전 기간은 '과거 내역 검색' */}
+          <SearchBar value={expListSearch} onChange={setExpListSearch} placeholder="품목·구매처·내역·호실 검색" />
           {/* 필터 + 합계 + 버튼 */}
           <div className="flex flex-wrap items-center gap-2">
             <select value={expFilter.method} onChange={e => setExpFilter(f => ({ ...f, method: e.target.value }))}
@@ -2237,7 +2245,7 @@ export default function FinanceClient({
                 {financialAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
               </select>
             )}
-            <button onClick={() => setExpFilter({ method: 'all', category: 'all', finance: 'all' })}
+            <button onClick={() => { setExpFilter({ method: 'all', category: 'all', finance: 'all' }); setExpListSearch('') }}
               className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2">초기화</button>
             <span className="ml-auto flex flex-col items-end">
               <span className="text-[0.6875rem] text-[var(--warm-muted)] leading-none">실제 지출 합계 <span className="text-[0.5625rem]">(예정 제외)</span></span>
