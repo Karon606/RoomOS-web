@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { ViewTabs } from '@/components/ui/ViewTabs'
 import { useRouter } from 'next/navigation'
 import type { AnnualSummary, ForecastSummary, PropertyDiagnostics } from './actions'
 import { analyzePropertyWithGemini } from './actions'
@@ -121,24 +122,15 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
       </div>
 
       {/* 탭 */}
-      <div className="flex gap-1 bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-1 max-w-xl no-print">
-        {([
-          { k: 'past',     label: '결산 (실적)' },
-          { k: 'forecast', label: '예상 (6개월)' },
-          { k: 'ai',       label: 'AI 진단' },
-        ] as const).map(t => (
-          <button
-            key={t.k}
-            onClick={() => setTab(t.k)}
-            className={`flex-1 py-2 text-sm font-medium rounded-xl transition-colors ${
-              tab === t.k
-                ? 'bg-[var(--coral)] text-white'
-                : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* §24 뷰 전환 탭 — rounded-2xl 변종(C) 폐기, 코랄 채움 정본 + flex-1 3등분 유지 */}
+      <div className="max-w-xl no-print">
+        <ViewTabs ariaLabel="보고서 탭" fill activeId={tab}
+          onChange={id => setTab(id as 'past' | 'forecast' | 'ai')}
+          tabs={[
+            { id: 'past',     label: '결산 (실적)' },
+            { id: 'forecast', label: '예상 (6개월)' },
+            { id: 'ai',       label: 'AI 진단' },
+          ]} />
       </div>
 
       {tab === 'forecast' && <ForecastSection forecast={forecast} />}
