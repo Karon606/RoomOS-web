@@ -72,17 +72,20 @@ import {
 } from './actions'
 import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow } from './constants'
 
+// §14.1 — 카테고리 마커 색은 viz 팔레트 토큰만(새 hue 금지·§14.4). 틴트 bg는 color-mix 10%.
+const vizTint = (v: string): { bg: string; fg: string } =>
+  ({ bg: `color-mix(in srgb, var(${v}) 10%, transparent)`, fg: `var(${v})` })
 const CATEGORY_TINT: Record<string, { bg: string; fg: string }> = {
-  '부식비':       { bg: 'rgba(232,137,58,0.10)',  fg: '#e8893a' },
-  '소모품비':     { bg: 'rgba(244,98,58,0.10)',   fg: 'var(--persimmon)' },
-  '폐기물 처리비':{ bg: 'rgba(91,164,184,0.10)',  fg: '#5aa4b8' },
+  '소모품비':     vizTint('--viz-1'),   // terracotta (기존 persimmon 유지)
+  '부식비':       vizTint('--viz-4'),   // amber
+  '폐기물 처리비': vizTint('--viz-7'),  // sage (구 쿨블루 — §14.4 신규 hue 폐기)
 }
 // 사용자가 추가한 카테고리(수선유지비 등)용 폴백 팔레트 — cat 문자열 해시로 안정 배정.
 const FALLBACK_TINTS: { bg: string; fg: string }[] = [
-  { bg: 'rgba(124,154,90,0.10)',  fg: '#7c9a5a' },
-  { bg: 'rgba(176,122,58,0.10)',  fg: '#b07a3a' },
-  { bg: 'rgba(120,110,180,0.10)', fg: '#786eb4' },
-  { bg: 'rgba(190,90,120,0.10)',  fg: '#be5a78' },
+  vizTint('--viz-3'),   // warm olive
+  vizTint('--viz-2'),   // camel
+  vizTint('--viz-5'),   // deep wine
+  vizTint('--viz-6'),   // dusty rose
 ]
 const tintOf = (cat: string): { bg: string; fg: string } => {
   if (CATEGORY_TINT[cat]) return CATEGORY_TINT[cat]
@@ -1020,7 +1023,7 @@ function MonthlyInflowList({ rows, stockUnit }: { rows: MonthlyInflowRow[]; stoc
                   <div className="flex items-center gap-2">
                     <span className="text-[0.625rem] text-[var(--warm-muted)] w-8 shrink-0">구매</span>
                     <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, purchasePct)}%`, background: '#6aab7e' }} />
+                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, purchasePct)}%`, background: 'var(--success-fg)' }} />
                     </div>
                     <span className="text-[0.625rem] text-[var(--warm-muted)] w-24 text-right shrink-0 tabular-nums">
                       {Math.round(r.purchaseQty * 100) / 100}{u} · {r.purchaseAmount.toLocaleString()}원
@@ -2249,7 +2252,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
         <p className="text-[0.625rem] text-[var(--warm-muted)]">수령 확정일시</p>
         {unreceived ? (
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)]">
-            <span className="text-[0.6875rem] font-bold px-2 py-0.5 rounded bg-[var(--honey)]/15 text-[var(--honey-d,#8B5E0A)] tracking-wider">미수령</span>
+            <span className="text-[0.6875rem] font-bold px-2 py-0.5 rounded bg-[var(--honey)]/15 text-[var(--warning-fg)] tracking-wider">미수령</span>
             <span className="text-[0.6875rem] text-[var(--warm-muted)]">저장 시 수령 대기로 되돌립니다</span>
             <div className="flex-1" />
             <Btn variant="ghost" size="sm" onClick={() => { setUnreceived(false); setReceivedDate(initReceivedDate || ''); setReceivedTime(initReceivedTime || '') }}>되돌리기</Btn>
