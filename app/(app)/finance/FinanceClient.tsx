@@ -37,6 +37,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import {
   DEFAULT_RECURRING_DUE_DAY,
@@ -2072,7 +2073,7 @@ export default function FinanceClient({
 
   return (
     <>
-    <div className="space-y-5">
+    <div className="space-y-4">
 
       {/* 헤더 — 우측 월 셀렉터(기간) */}
       <div className="flex items-center justify-between gap-2">
@@ -4150,15 +4151,11 @@ export default function FinanceClient({
 
     {/* 다중선택 묶기 — 하단 액션 바 */}
     {mergeMode && (
-      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+16px)] left-1/2 -translate-x-1/2 z-[var(--z-modal)] flex items-center gap-2 bg-[var(--ink)] text-[var(--canvas)] rounded-2xl pl-4 pr-2 py-2 shadow-lift max-w-[calc(100vw-24px)]">
-        <span className="text-sm font-medium whitespace-nowrap">{mergeSel.size}건 선택</span>
-        <button type="button" onClick={handleMergeSelected} disabled={isPending || mergeSel.size < 2}
-          className="text-sm font-semibold px-3.5 py-1.5 rounded-xl bg-[var(--coral)] text-white disabled:opacity-50">
+      <SelectionPillBar count={mergeSel.size} unit="건" onClose={exitMergeMode}>
+        <PillButton primary disabled={isPending || mergeSel.size < 2} onClick={handleMergeSelected}>
           한 주문으로 묶기
-        </button>
-        <button type="button" onClick={exitMergeMode}
-          className="text-sm px-3 py-1.5 rounded-xl bg-white/15 text-[var(--canvas)] hover:bg-white/25 transition-colors">취소</button>
-      </div>
+        </PillButton>
+      </SelectionPillBar>
     )}
 
     {/* 영수증 스캔 모달 (전체화면) */}
