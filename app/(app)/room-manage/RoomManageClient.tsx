@@ -509,7 +509,7 @@ export default function RoomManageClient({
   // ── 렌더 ─────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
 
       {/* 헤더 */}
       <div className="flex items-center justify-between">
@@ -537,12 +537,9 @@ export default function RoomManageClient({
           })()}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}
-            className="px-3 py-2 text-sm font-medium text-[var(--warm-mid)] border border-[var(--warm-border)] hover:border-[var(--coral)] rounded-xl transition-colors">
+          <Btn variant="secondary" size="md" onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
             {selectMode ? '선택 취소' : '선택'}
-          </button>
+          </Btn>
           <Btn variant="primary" size="md" onClick={() => { setShowAddModal(true); setError('') }}>
             + 호실 등록
           </Btn>

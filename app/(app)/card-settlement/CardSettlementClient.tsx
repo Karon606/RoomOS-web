@@ -160,7 +160,7 @@ export default function CardSettlementClient({
   )
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">카드 정산</h1>

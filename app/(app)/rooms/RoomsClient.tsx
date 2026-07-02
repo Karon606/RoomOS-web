@@ -558,7 +558,7 @@ export default function RoomsClient({
   })()
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* 헤더 — 좌측 제목+탭(수납/부가수익), 우측 월 셀렉터(기간) */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
@@ -638,13 +638,9 @@ export default function RoomsClient({
         <div className="ml-auto flex gap-2 items-center">
 
         {/* 선택 모드 토글 — 일괄 수납 (§22 선택모드) */}
-        <button
-          onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}
-          className={`px-3 py-1.5 text-xs font-medium rounded-xl transition-colors
-            ${selectMode ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}
-        >
+        <Btn variant="secondary" size="md" onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
           {selectMode ? '선택 취소' : '선택'}
-        </button>
+        </Btn>
 
         {/* 공실 카드 항목 — §22 공용 DisplayFieldsMenu */}
         <DisplayFieldsMenu
