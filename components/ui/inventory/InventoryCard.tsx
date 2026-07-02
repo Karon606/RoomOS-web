@@ -10,7 +10,7 @@ export function InventoryCard({
   value, valueSub, valueDanger = false,
   actions, expand, expanded = false,
   selectable = false, selected = false, onToggleSelect,
-  attn = false, onClick, className = '',
+  attn = false, onClick, onLongPress, className = '',
 }: {
   title: React.ReactNode
   badges?: React.ReactNode
@@ -26,14 +26,39 @@ export function InventoryCard({
   onToggleSelect?: () => void
   attn?: boolean                // 주의 강조(소진 임박·연체 등) — border-left
   onClick?: () => void          // 카드 본문 탭 → 상세 풀화면
+  /** 꾹 눌러 선택 모드 진입(+이 카드 선택) — 지출 목록과 동일 제스처(전 목록 통일). '선택' 버튼과 병행. */
+  onLongPress?: () => void
   className?: string
 }) {
+  // 롱프레스(500ms) — 발화 시 뒤따르는 click 무시. 이동(스크롤)하면 취소.
+  const lpTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lpFired = React.useRef(false)
+  const lpStart = React.useRef<{ x: number; y: number } | null>(null)
+  const lpClear = () => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null } }
+  const lpDown = (e: React.PointerEvent) => {
+    if (!onLongPress) return
+    lpStart.current = { x: e.clientX, y: e.clientY }
+    lpClear()
+    lpTimer.current = setTimeout(() => { lpFired.current = true; onLongPress() }, 500)
+  }
+  const lpMove = (e: React.PointerEvent) => {
+    if (!lpStart.current) return
+    if (Math.abs(e.clientX - lpStart.current.x) > 10 || Math.abs(e.clientY - lpStart.current.y) > 10) lpClear()
+  }
   const clickable = !!onClick && !selectable
   return (
     <div
-      onClick={selectable ? onToggleSelect : onClick}
+      onClick={() => {
+        if (lpFired.current) { lpFired.current = false; return }
+        ;(selectable ? onToggleSelect : onClick)?.()
+      }}
+      onPointerDown={lpDown}
+      onPointerMove={lpMove}
+      onPointerUp={lpClear}
+      onPointerLeave={lpClear}
+      onContextMenu={e => { if (onLongPress) e.preventDefault() }}
       className={[
-        'rounded-[13px] border bg-[var(--cream)] px-3.5 py-3 transition-colors',
+        'rounded-[13px] border bg-[var(--cream)] px-3.5 py-3 transition-colors select-none',
         selected
           ? 'border-[var(--coral)] ring-2 ring-[var(--coral)]/[0.16]'
           : 'border-[var(--warm-border)]',

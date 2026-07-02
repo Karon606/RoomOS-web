@@ -504,7 +504,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   )
 }
 
-function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraft }: { row: InventoryRow; onOpen: () => void; onArchive?: () => void; selectMode?: boolean; isSelected?: boolean; hasDraft?: boolean }) {
+function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraft, onLongPress }: { row: InventoryRow; onOpen: () => void; onArchive?: () => void; selectMode?: boolean; isSelected?: boolean; hasDraft?: boolean; onLongPress?: () => void }) {
   const [open, setOpen] = useState(false)   // 지표·추이 펼치기
   const tint = tintOf(row.category)
   const lowStock = row.daysUntilEmpty != null && row.daysUntilEmpty <= row.alertThresholdDays
@@ -516,7 +516,7 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
   return (
     <InvCard
       selectable={selectMode} selected={isSelected}
-      onToggleSelect={onOpen} onClick={onOpen} attn={lowStock}
+      onToggleSelect={onOpen} onClick={onOpen} onLongPress={onLongPress} attn={lowStock}
       title={row.label}
       badges={<>
         {hasDraft && <Badge tone="inspect">점검 중</Badge>}
