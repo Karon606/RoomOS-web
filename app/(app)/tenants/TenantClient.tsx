@@ -1053,12 +1053,9 @@ export default function TenantClient({
         const unreturned = dep - depositReturnAmt
         const exceedsMax = depositReturnAmt > maxRefund
         return (
-          <div className="fixed inset-0 bg-black/70 z-[var(--z-modal-2)] flex items-center justify-center p-4">
-            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm shadow-lift overflow-hidden">
-              <div className="px-5 py-4 border-b border-[var(--warm-border)]">
-                <p className="text-base font-bold text-[var(--warm-dark)]">보증금 환불</p>
-                <p className="text-xs mt-1 text-[var(--warm-muted)]">{depositRefundModal.tenantName}님 퇴실 정산</p>
-              </div>
+          <Modal open z={260} width="sm" dirty
+            onClose={() => setDepositRefundModal(null)}
+            title="보증금 환불" subtitle={`${depositRefundModal.tenantName}님 퇴실 정산`}>
 
               <div className="px-5 py-4 space-y-3">
                 <div className="grid grid-cols-2 gap-2 text-xs">
@@ -1120,8 +1117,7 @@ export default function TenantClient({
                   {isPending ? '처리 중...' : '퇴실 처리'}
                 </button>
               </div>
-            </div>
-          </div>
+          </Modal>
         )
       })()}
 
@@ -1533,23 +1529,9 @@ export default function TenantClient({
           return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})`
         }
         return (
-          <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
-            onClick={closePayModal}>
-            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-md flex flex-col max-h-[88vh]"
-              onClick={e => e.stopPropagation()}>
-
-              {/* 헤더 */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--warm-border)] shrink-0">
-                <div>
-                  <h2 className="text-base font-bold text-[var(--warm-dark)]">
-                    {lease.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}{tenant.name}
-                  </h2>
-                  <p className="text-xs text-[var(--warm-muted)] mt-0.5">
-                    {targetMonth} · 예정 {lease.rentAmount.toLocaleString()}원
-                  </p>
-                </div>
-                <button onClick={closePayModal} aria-label="닫기" className="w-11 h-11 flex items-center justify-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--canvas)] text-xl leading-none transition-colors">✕</button>
-              </div>
+          <Modal open width="md" onClose={closePayModal} dirty={showPayForm}
+            title={`${lease.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}${tenant.name}`}
+            subtitle={`${targetMonth} · 예정 ${lease.rentAmount.toLocaleString()}원`}>
 
               {/* ── 읽기 전용 ── */}
               {!showPayForm && (
@@ -2049,8 +2031,7 @@ export default function TenantClient({
                   </div>
                 </form>
               )}
-            </div>
-          </div>
+          </Modal>
         )
       })()}
 
@@ -2058,14 +2039,8 @@ export default function TenantClient({
       {roomDetailId && (() => {
         const room = rooms.find(r => r.id === roomDetailId)
         return (
-          <div className="fixed inset-0 bg-black/70 z-[var(--z-modal)] flex items-center justify-center p-4"
-            onClick={() => setRoomDetailId(null)}>
-            <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-sm p-6 space-y-3"
-              onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-bold text-[var(--warm-dark)]">{fmtRoomNo(room?.roomNo)} 정보</h2>
-                <button onClick={() => setRoomDetailId(null)} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl">✕</button>
-              </div>
+          <Modal open width="sm" onClose={() => setRoomDetailId(null)}
+            title={`${fmtRoomNo(room?.roomNo)} 정보`} bodyClassName="p-6 space-y-3">
               {room ? (
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between"><span className="text-[var(--warm-muted)]">상태</span><span className={room.isVacant ? 'text-[var(--warm-mid)]' : 'text-[var(--success-fg)]'}>{room.isVacant ? '공실' : '거주중'}</span></div>
@@ -2077,8 +2052,7 @@ export default function TenantClient({
               <a href="/room-manage" className="block w-full text-center py-2 mt-2 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
                 호실 관리 페이지로 →
               </a>
-            </div>
-          </div>
+          </Modal>
         )
       })()}
     </div>
