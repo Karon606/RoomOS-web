@@ -67,7 +67,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
           const d = settlement.dueDay
           const dayLabel = d.includes('-') ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : d.includes('말') ? '말일' : `${d}일`
           return <Row k="납부일" v={ovrActive
-            ? <>이번 달만 {dayLabel} <span className="text-[var(--warning-fg)]">(임시 조정)</span></>
+            ? <>이달 {dayLabel} <span className="text-[var(--warning-fg)]">(임시)</span></>
             : d.includes('말') ? '매월 말일' : `매월 ${d}일`} />
         })()}
       </div>
