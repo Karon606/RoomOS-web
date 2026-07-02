@@ -149,8 +149,8 @@ export default function RequestsClient({
 
   return (
     <div className="space-y-4">
-      {/* 헤더 */}
-      <div className="flex items-end justify-between gap-3 flex-wrap">
+      {/* 헤더 — 제목 좌측 + 월 셀렉터 우측 끝(전 페이지 통일), 검색·등록은 아랫줄 */}
+      <div className="flex items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">요청 · 컴플레인</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">
@@ -165,20 +165,20 @@ export default function RequestsClient({
             처리됨은 <span className="text-[var(--warm-mid)]">{Number(targetMonth.slice(5))}월 해결분</span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <MonthSelector />
-          <SearchBar value={search} onChange={setSearch} placeholder="입주자/내용 검색" className="flex-1 min-w-[180px]" />
-          <button
-            onClick={() => setShowAddForm(v => !v)}
-            className={`px-4 py-2 text-sm font-semibold rounded-xl transition-colors ${
-              showAddForm
-                ? 'bg-[var(--warm-border)] text-[var(--warm-mid)]'
-                : 'bg-[var(--coral)] text-white hover:opacity-90'
-            }`}
-          >
-            {showAddForm ? '취소' : '+ 요청 등록'}
-          </button>
-        </div>
+        <div className="shrink-0"><MonthSelector /></div>
+      </div>
+      <div className="flex items-center gap-2">
+        <SearchBar value={search} onChange={setSearch} placeholder="입주자/내용 검색" className="flex-1 min-w-[180px]" />
+        <button
+          onClick={() => setShowAddForm(v => !v)}
+          className={`shrink-0 px-4 py-2 text-sm font-semibold rounded-xl transition-colors ${
+            showAddForm
+              ? 'bg-[var(--warm-border)] text-[var(--warm-mid)]'
+              : 'bg-[var(--coral)] text-white hover:opacity-90'
+          }`}
+        >
+          {showAddForm ? '취소' : '+ 요청 등록'}
+        </button>
       </div>
 
       {/* 등록 폼 */}
