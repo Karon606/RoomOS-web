@@ -13,6 +13,7 @@ import { RoomCard } from '@/components/ui/RoomCard'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { IncomeSection, type Income, type LeaseOption } from './IncomeSection'
+import { ViewTabs } from '@/components/ui/ViewTabs'
 import { fmtKorMoney } from '@/lib/fmtMoney'
 import { DisplayFieldsMenu } from '@/components/ui/DisplayFieldsMenu'
 import { Modal } from '@/components/ui/Modal'
@@ -560,14 +561,12 @@ export default function RoomsClient({
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">수납 관리</h1>
-          <div className="inline-flex rounded-xl border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
-            <button type="button" onClick={() => setViewTab('rooms')}
-              className={`px-4 py-2 transition-colors ${viewTab === 'rooms' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>수납</button>
-            <button type="button" onClick={() => setViewTab('income')}
-              className={`px-4 py-2 transition-colors ${viewTab === 'income' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>
-              부가수익{incomeSum > 0 ? ` (+${fmtKorMoney(incomeSum)})` : ''}
-            </button>
-          </div>
+          <ViewTabs ariaLabel="수납 관리 뷰" activeId={viewTab}
+            onChange={id => setViewTab(id as 'rooms' | 'income')}
+            tabs={[
+              { id: 'rooms',  label: '수납' },
+              { id: 'income', label: '부가수익', suffix: incomeSum > 0 ? `+${fmtKorMoney(incomeSum)}` : undefined },
+            ]} />
         </div>
         <MonthSelector />
       </div>
