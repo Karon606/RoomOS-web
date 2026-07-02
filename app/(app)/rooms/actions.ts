@@ -59,67 +59,67 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
   const isFutureMonth = (yyyy > kst.year) || (yyyy === kst.year && mm > kst.month)
 
   // 영업장 인수 날짜 조회
-  const property = await prisma.property.findUnique({
-    where: { id: propertyId },
-    select: { acquisitionDate: true, prevOwnerCutoffDate: true },
-  })
+  // 다섯 조회 모두 propertyId·월에만 의존 — 병렬 실행(값·계산식 불변, 응답시간 단축)
+  const [property, rooms, activeLeases, prevLeases, allRecordsThruMonth] = await Promise.all([
+    prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { acquisitionDate: true, prevOwnerCutoffDate: true },
+    }),
+    prisma.room.findMany({
+      where: { propertyId },
+      orderBy: { roomNo: 'asc' },
+    }),
+    prisma.leaseTerm.findMany({
+      where: {
+        propertyId,
+        status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] },
+      },
+      include: {
+        tenant: {
+          include: {
+            contacts: { where: { isPrimary: true }, take: 1 },
+          },
+        },
+        discounts: true,   // #14 월세 할인
+      },
+    }),
+    // 공실 방의 직전 입주자 (CHECKED_OUT, moveOutDate 최신순)
+    prisma.leaseTerm.findMany({
+      where: { propertyId, status: { in: ['CHECKED_OUT', 'CANCELLED'] } },
+      orderBy: { moveOutDate: 'desc' },
+      include: {
+        tenant: {
+          include: { contacts: { where: { isPrimary: true }, take: 1 } },
+        },
+      },
+    }),
+    prisma.paymentRecord.findMany({
+      where: {
+        propertyId,
+        isDeposit: false,
+        // targetMonth가 viewMonth 이하인 record + viewMonth 말일까지의 payDate record (선납분 등)
+        // + [납입일변경] 메모 record는 viewMonth와 무관하게 항상 — originalDueDay 복원용
+        OR: [
+          { targetMonth: { lte: targetMonth } },
+          { payDate: { lte: new Date(yyyy, mm, 0, 23, 59, 59, 999) } },
+          { memo: { contains: '[납입일변경]' } },
+          { isPrevOwner: true },
+        ],
+      },
+    }),
+  ])
   const acquisitionDate = property?.acquisitionDate ?? null
   // 양도인 귀속 기준일 — 별도 설정 없으면 인수일과 동일
   const cutoffDate: Date | null = property?.prevOwnerCutoffDate
     ? new Date(property.prevOwnerCutoffDate)
     : acquisitionDate ? new Date(acquisitionDate) : null
 
-
-  const rooms = await prisma.room.findMany({
-    where: { propertyId },
-    orderBy: { roomNo: 'asc' },
-  })
-
-  const activeLeases = await prisma.leaseTerm.findMany({
-    where: {
-      propertyId,
-      status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] },
-    },
-    include: {
-      tenant: {
-        include: {
-          contacts: { where: { isPrimary: true }, take: 1 },
-        },
-      },
-      discounts: true,   // #14 월세 할인
-    },
-  })
-
-  // 공실 방의 직전 입주자 (CHECKED_OUT, moveOutDate 최신순)
-  const prevLeases = await prisma.leaseTerm.findMany({
-    where: { propertyId, status: { in: ['CHECKED_OUT', 'CANCELLED'] } },
-    orderBy: { moveOutDate: 'desc' },
-    include: {
-      tenant: {
-        include: { contacts: { where: { isPrimary: true }, take: 1 } },
-      },
-    },
-  })
-
   // 발생주의(귀속월) 모델:
   // - 잔액/이월액/총수납/firstUnpaidMonth/매출 → targetMonth 기준
   //   (4/30 dueDay인데 5/1 입금 + targetMonth=4월 → 4월 페이지에서 완납으로 인식)
   // - 지연납부 라벨(latePaidAt)만 payDate를 보조로 사용
   // 인수일 이전 양도인 record는 별도 처리. [납입일변경] 메모는 payDate에 무관하게 항상 조회되어야 함.
-  const allRecordsThruMonth = await prisma.paymentRecord.findMany({
-    where: {
-      propertyId,
-      isDeposit: false,
-      // targetMonth가 viewMonth 이하인 record + viewMonth 말일까지의 payDate record (선납분 등)
-      // + [납입일변경] 메모 record는 viewMonth와 무관하게 항상 — originalDueDay 복원용
-      OR: [
-        { targetMonth: { lte: targetMonth } },
-        { payDate: { lte: new Date(yyyy, mm, 0, 23, 59, 59, 999) } },
-        { memo: { contains: '[납입일변경]' } },
-        { isPrevOwner: true },
-      ],
-    },
-  })
+  // (조회 자체는 위 Promise.all의 allRecordsThruMonth)
 
   type LeaseWithOverride = (typeof activeLeases)[number] & {
     overrideDueDay: string | null
