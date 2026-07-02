@@ -18,6 +18,7 @@ import { SelectionPillBar, PillButton } from '@/components/ui/inventory/Selectio
 import { InventoryCard } from '@/components/ui/inventory/InventoryCard'
 import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
 import { Modal } from '@/components/ui/Modal'
+import { SearchBar } from '@/components/ui/SearchBar'
 import { Badge } from '@/components/ui/Badge'
 
 // 비품 위치 섹션 마커 — §21.2 위치 아이콘(핀) 14px
@@ -56,6 +57,7 @@ export default function AssetsClient({ data, rooms, locations }: {
 
   // 선택 모드 — 여러 비품을 골라 ① 방·공용부 일괄 배정 ② 대표 골라 합치기(MergeSheet). 카드별 '합치기'도 병행.
   const [mergeMode, setMergeMode] = useState(false)
+  const [search, setSearch] = useState('')   // §22.1 상시 검색 — 품목·구매처·카테고리 클라 필터
   const [mergeSel, setMergeSel]   = useState<Set<string>>(new Set())   // 선택된 AssetItem id
   const [pillMode, setPillMode] = useState<'menu' | 'assign'>('menu')   // 하단 바 단계
   // 일괄 배정 수량 시트 — 대상 고른 뒤 품목별 수량(기본 전량) 입력
@@ -390,6 +392,17 @@ export default function AssetsClient({ data, rooms, locations }: {
 
   const isEmpty = data.rooms.length === 0 && data.locations.length === 0 && data.unassigned.length === 0 && data.common.length === 0 && data.pending.length === 0
 
+  // 검색 필터 — 표시만 거른다. 합치기 후보(siblings)는 원본 목록에서 찾아 검색 중에도 온전.
+  const q = search.trim().toLowerCase()
+  const hit = (it: AssetsData['pending'][number]) => !q || `${it.itemLabel} ${it.vendor ?? ''} ${it.category}`.toLowerCase().includes(q)
+  const sumAmt = (l: AssetsData['pending']) => l.reduce((s, it) => s + it.amount, 0)
+  const vPending    = data.pending.filter(hit)
+  const vUnassigned = data.unassigned.filter(hit)
+  const vCommon     = data.common.filter(hit)
+  const vRooms      = data.rooms.map(g => ({ ...g, fItems: g.items.filter(hit) })).filter(g => g.fItems.length > 0)
+  const vLocations  = data.locations.map(g => ({ ...g, fItems: g.items.filter(hit) })).filter(g => g.fItems.length > 0)
+  const searchEmpty = !!q && vPending.length === 0 && vUnassigned.length === 0 && vCommon.length === 0 && vRooms.length === 0 && vLocations.length === 0
+
   return (
     <div className="space-y-4">
       {/* 동일 레벨 탭 — 소모품·부식 / 비품·자재(현재) */}
@@ -397,7 +410,8 @@ export default function AssetsClient({ data, rooms, locations }: {
         { id: 'consumables', label: '소모품·부식', href: '/inventory' },
         { id: 'assets',      label: '비품·자재',   href: '/inventory/assets' },
       ]} />
-      <div className="flex items-start justify-between gap-2">
+      {/* 헤더 — 소모품 탭과 동일 골격: 제목 블록 → 버튼 줄 → 검색(§22.1) */}
+      <div className="space-y-2">
         <div>
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재</h1>
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">
@@ -405,17 +419,18 @@ export default function AssetsClient({ data, rooms, locations }: {
             {mergeMode && <span className="text-[var(--coral)]"> · 비품을 눌러 선택 → 방·공용부 일괄 배정 또는 합치기(대표로 통일).</span>}
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Btn variant="secondary" size="md"
-            onClick={() => setFreeForm({ label: '', cat: assetCats[0] ?? '비품', spec: '', specUnit: '', qty: '1', qtyUnit: '개' })}>
-            + 무상 비품
-          </Btn>
+        <div className="flex gap-2 flex-wrap items-center">
           {!isEmpty && (
             <Btn variant="secondary" size="md" onClick={() => mergeMode ? exitMerge() : setMergeMode(true)}>
               {mergeMode ? '선택 취소' : '선택'}
             </Btn>
           )}
+          <Btn variant="primary" size="md"
+            onClick={() => setFreeForm({ label: '', cat: assetCats[0] ?? '비품', spec: '', specUnit: '', qty: '1', qtyUnit: '개' })}>
+            + 무상 비품
+          </Btn>
         </div>
+        {!isEmpty && <SearchBar value={search} onChange={setSearch} placeholder="품목명, 구매처, 카테고리 검색" />}
       </div>
 
       {isEmpty ? (
@@ -426,53 +441,56 @@ export default function AssetsClient({ data, rooms, locations }: {
       ) : (
         <>
           {/* 수령 대기 — 주문했지만 아직 안 받은 비품 (맨 위) */}
-          {data.pending.length > 0 && (
+          {searchEmpty && <EmptyState title="검색 결과가 없습니다" description="다른 검색어로 시도해 보세요." />}
+          {vPending.length > 0 && (
             <section className="space-y-2">
-              <SectionHeader name={<>수령 대기 <CoralTag>도착 전</CoralTag></>} count={`${data.pending.length}건 · ${won(data.pendingTotal)}`} />
+              <SectionHeader name={<>수령 대기 <CoralTag>도착 전</CoralTag></>} count={`${vPending.length}건 · ${won(q ? sumAmt(vPending) : data.pendingTotal)}`} />
               <ul className="space-y-1.5">
-                {data.pending.map(it => <ItemRow key={it.id} it={it} placed={false} awaitingReceipt siblings={siblingsOf(data.pending, it)} />)}
+                {vPending.map(it => <ItemRow key={it.id} it={it} placed={false} awaitingReceipt siblings={siblingsOf(data.pending, it)} />)}
               </ul>
             </section>
           )}
 
-          {/* 미배정(여분) — 먼저 */}
+          {/* 미배정(여분) — 먼저. 검색 중 무결과면 섹션 자체를 숨김 */}
+          {(!q || vUnassigned.length > 0) && (
           <section className="space-y-2">
-            <SectionHeader name="미배정 (여분)" count={`${data.unassigned.length}건 · ${won(data.unassignedTotal)}`} />
-            {data.unassigned.length === 0 ? (
+            <SectionHeader name="미배정 (여분)" count={`${vUnassigned.length}건 · ${won(q ? sumAmt(vUnassigned) : data.unassignedTotal)}`} />
+            {vUnassigned.length === 0 ? (
               <p className="text-xs text-[var(--warm-muted)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-3 text-center">미배정 비품이 없습니다.</p>
             ) : (
               <ul className="space-y-1.5">
-                {data.unassigned.map(it => <ItemRow key={it.id} it={it} placed={false} siblings={siblingsOf(data.unassigned, it)} />)}
+                {vUnassigned.map(it => <ItemRow key={it.id} it={it} placed={false} siblings={siblingsOf(data.unassigned, it)} />)}
               </ul>
             )}
           </section>
+          )}
 
           {/* 공용 자재 — 페인트·공구 등 방/공용부 배분 안 하는 공용 비품 */}
-          {data.common.length > 0 && (
+          {vCommon.length > 0 && (
             <section className="space-y-2">
-              <SectionHeader name={<>공용 자재 <CoralTag>배분 안 함</CoralTag></>} count={`${data.common.length}건 · ${won(data.commonTotal)}`} />
+              <SectionHeader name={<>공용 자재 <CoralTag>배분 안 함</CoralTag></>} count={`${vCommon.length}건 · ${won(q ? sumAmt(vCommon) : data.commonTotal)}`} />
               <ul className="space-y-1.5">
-                {data.common.map(it => <ItemRow key={it.id} it={it} placed={false} siblings={siblingsOf(data.common, it)} />)}
+                {vCommon.map(it => <ItemRow key={it.id} it={it} placed={false} siblings={siblingsOf(data.common, it)} />)}
               </ul>
             </section>
           )}
 
           {/* 방별 */}
-          {data.rooms.map(g => (
+          {vRooms.map(g => (
             <section key={g.roomId} className="space-y-2">
-              <SectionHeader marker={<PinMarker />} name={fmtRoomNo(g.roomNo)} count={`${g.items.length}건 · ${won(g.total)}`} />
+              <SectionHeader marker={<PinMarker />} name={fmtRoomNo(g.roomNo)} count={`${g.fItems.length}건 · ${won(q ? sumAmt(g.fItems) : g.total)}`} />
               <ul className="space-y-1.5">
-                {g.items.map(it => <ItemRow key={it.id} it={it} placed siblings={siblingsOf(g.items, it)} />)}
+                {g.fItems.map(it => <ItemRow key={it.id} it={it} placed siblings={siblingsOf(g.items, it)} />)}
               </ul>
             </section>
           ))}
 
           {/* 공용부별 */}
-          {data.locations.map(g => (
+          {vLocations.map(g => (
             <section key={g.locationId} className="space-y-2">
-              <SectionHeader marker={<PinMarker />} name={<>{g.name} <CoralTag>공용부</CoralTag></>} count={`${g.items.length}건 · ${won(g.total)}`} />
+              <SectionHeader marker={<PinMarker />} name={<>{g.name} <CoralTag>공용부</CoralTag></>} count={`${g.fItems.length}건 · ${won(q ? sumAmt(g.fItems) : g.total)}`} />
               <ul className="space-y-1.5">
-                {g.items.map(it => <ItemRow key={it.id} it={it} placed siblings={siblingsOf(g.items, it)} />)}
+                {g.fItems.map(it => <ItemRow key={it.id} it={it} placed siblings={siblingsOf(g.items, it)} />)}
               </ul>
             </section>
           ))}
