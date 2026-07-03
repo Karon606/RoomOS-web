@@ -14,6 +14,13 @@
 - **지출 인라인 검색 신설**(805876c): "사용성도 통일했나" 확인 중 발견 — 지출만 상시 SearchBar 부재(모달 검색뿐, §22.1 위반). 이번 달 클라 필터 검색(품목·구매처·내역·호실) + 초기화 연동. 이로써 검색 행동도 전 목록 페이지 동일.
 - 판단 대기: 가이드 §22.1 '12px' 문구 정정(실태 16px 통일), '선택' 버튼 배치 줄(수납만 필터 줄), stats h1 부재. [[design-audit-2026-07]]
 
+## 2026-07-04 — 영업장 운영 종료·재개·영구 삭제 (신규 기능)
+"만들 수만 있고 닫을 수 없다" → 폐쇄·삭제 기능. 백업·재개 포함.
+- **스키마 cascade 정비**(ece8c57): property 참조 25관계 중 RESTRICT 4개(lease_terms·payment_records·tenant_status_logs·tenant_requests) → onDelete Cascade(SQL 적용). 영구 삭제가 FK 제약에 막히던 것 해소.
+- **서버 액션**: deactivate(되돌림)·reactivate·deletePermanently(이름 확인 필수·연쇄)·getDeletionImpact. 전부 requirePropertyOwner(오너/슈퍼관리자).
+- **UI**(18ceae7): 설정 위험 구역(오너 전용) — 운영 종료 + 영구 삭제(이름 입력 + 삭제 건수 고지 + 백업 안내). 종료된 영업장은 진입 불가라 선택 화면에 '운영 재개' 버튼. 백업은 기존 JSON 백업/엑셀 재사용.
+- 운영자 실물 확인 권장: 테스트 영업장 개설 → 운영 종료 → 재개 → 영구 삭제(백업 후) 1회.
+
 ## 2026-07-04 — 보안 점검 + 유료 API 게이트 + 영업장 이름 IME 버그
 - **보안 점검**(knowledge/security-audit-2026-07.md): 비밀키·SQL인젝션·XSS·공개문서·cron 전부 안전 확인. 저장소 public이나 시크릿 노출 0.
 - **[해결 584eba7] 유료 API denial-of-wallet**: ai-analysis·market-analyze·naver-places 인증 없이 열림 → getClaims 게이트(401). 앱 내부 호출 불변.
