@@ -874,6 +874,28 @@ export default function SettingsForm({
 
         {/* 품명 병합 (AI) — 비품·자재·소모품·부식 유사 품명 통일 */}
         <ItemNameMergePanel />
+
+        {/* 도움말 — 앱의 사고방식(사용성 감사 F2). 처음 쓰는 사람이 막히는 개념만 짧게. */}
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
+          <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">도움말 — 앱이 계산하는 방식</h2>
+          <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">처음 쓸 때 헷갈리기 쉬운 개념을 모았습니다. 항목을 누르면 펼쳐집니다.</p>
+          <div className="space-y-1.5">
+            {[
+              { q: '매출이 왜 입금한 달이 아니라 다른 달에 잡히나요?', a: '이 앱은 귀속월 기준(발생주의)입니다. 4월분 이용료를 5월 1일에 받아도 4월 매출로 집계됩니다. 홈·수납·리포트가 모두 같은 기준을 쓰므로 어디서 봐도 숫자가 일치합니다.' },
+              { q: '재고 숫자가 왜 안 변하나요?', a: '재고는 점검(실사) 기록을 기준으로 계산됩니다. 구매는 수령 확인 시 더해지고, 소모량은 두 점검 사이의 차이로 계산됩니다. 재고 관리에서 주기적으로 점검을 기록해 주세요.' },
+              { q: '재고가 실제와 다르면 어떻게 하나요?', a: '재고 관리 > 더보기 > 전체 재고 보정으로 실측값을 입력하면 그 시점으로 리셋됩니다. 보정 구간의 차이는 소모량으로 잡지 않아 통계가 왜곡되지 않습니다.' },
+              { q: '같은 품목이 여러 이름으로 갈라졌어요.', a: '재고 카드의 합치기(또는 이 페이지의 품명 병합)로 통일하세요. 한 번 고치면 별칭으로 학습되어 다음 영수증부터 자동으로 통일된 이름이 붙습니다.' },
+              { q: '영수증은 어디로 올리는 게 좋나요?', a: '바쁠 때는 홈의 찍어 올리기 — 던져두면 AI가 분류하고 나중에 검토·승인하면 됩니다. 지금 바로 정확히 입력하려면 지출 등록의 영수증 스캔을 쓰세요. 두 경로 모두 같은 학습을 공유합니다.' },
+              { q: '실수로 저장했어요.', a: '저장 직후 뜨는 알림의 적용취소를 누르면 되돌아갑니다. 삭제·병합·일괄 수납 등 대부분의 동작에 적용취소가 있습니다.' },
+              { q: '여러 항목을 한 번에 처리하고 싶어요.', a: '목록의 카드를 꾹 누르거나 상단의 선택 버튼을 누르면 다중 선택 모드가 됩니다. 하단 바에서 일괄 수납·일괄 배정·묶기 등을 실행할 수 있습니다.' },
+            ].map(h => (
+              <details key={h.q} className="rounded-lg border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-2">
+                <summary className="cursor-pointer text-xs font-semibold text-[var(--warm-dark)]">{h.q}</summary>
+                <p className="mt-1.5 text-xs leading-relaxed text-[var(--warm-mid)]">{h.a}</p>
+              </details>
+            ))}
+          </div>
+        </div>
         </>
       )}
 

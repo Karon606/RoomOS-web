@@ -304,7 +304,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                     <button type="button" disabled={seedPending || isPending} onClick={() => { setShowMore(false); handleSeed() }}
                       className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)] disabled:opacity-50">{seedPending ? '처리 중…' : '지출에서 자동 등록'}</button>
                     <button type="button" onClick={() => { setShowMore(false); setShowReconcile(true) }}
-                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">전체 재고 보정</button>
+                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">전체 재고 보정<span className="block text-[0.625rem] text-[var(--warm-muted)]">실제와 다를 때 실측값으로 리셋</span></button>
                     <div className="my-1 border-t border-[var(--warm-border)]" />
                     <p className="px-2 pt-0.5 pb-1 text-[0.625rem] font-semibold text-[var(--warm-muted)]">관리·설정</p>
                     <button type="button" onClick={() => { setShowMore(false); setShowLocations(true) }}
@@ -314,7 +314,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                     <button type="button" onClick={() => { setShowMore(false); setShowExcluded(true) }}
                       className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">숨김 품목{archivedCount > 0 ? ` (${archivedCount})` : ''}</button>
                     <button type="button" onClick={() => { setShowMore(false); setShowMergeRules(true) }}
-                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">병합 적용취소·규칙</button>
+                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">병합 적용취소·규칙<span className="block text-[0.625rem] text-[var(--warm-muted)]">갈라진 품목명 통일 관리</span></button>
                   </div>
                 </>
               )}
