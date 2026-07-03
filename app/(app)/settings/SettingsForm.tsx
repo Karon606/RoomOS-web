@@ -33,6 +33,8 @@ import { PushToggle } from './PushToggle'
 import { CalendarSubscribeCard } from './CalendarSubscribeCard'
 import { ItemNameMergePanel } from './ItemNameMergePanel'
 import DataButtons from '@/components/DataButtons'
+import { deactivateProperty, deletePropertyPermanently, getPropertyDeletionImpact } from '@/app/property-select/actions'
+import { Modal } from '@/components/ui/Modal'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import { useTheme, type ThemeMode } from '@/components/theme/ThemeProvider'
 import { useFontSize, type FontSizeLevel } from '@/components/theme/FontSizeProvider'
@@ -896,6 +898,9 @@ export default function SettingsForm({
             ))}
           </div>
         </div>
+
+        {/* 위험 구역 — 오너 전용. 운영 종료(되돌림 가능)·영구 삭제(불가). */}
+        {isOwner && property && <DangerZone propertyId={property.id} propertyName={property.name} />}
         </>
       )}
 
@@ -1898,6 +1903,109 @@ function BackupButton() {
         {busy ? '백업 생성 중...' : 'JSON 백업 다운로드'}
       </Btn>
       {error && <p className="text-[var(--danger-fg)] text-xs mt-2">{error}</p>}
+    </div>
+  )
+}
+
+// 위험 구역 — 오너 전용. 운영 종료(되돌림 가능)와 영구 삭제(불가) + 삭제 전 백업 안내.
+function DangerZone({ propertyId, propertyName }: { propertyId: string; propertyName: string }) {
+  const router = useRouter()
+  const [busy, setBusy] = useState(false)
+  const [delOpen, setDelOpen] = useState(false)
+  const [impact, setImpact] = useState<{ rooms: number; tenants: number; payments: number; expenses: number } | null>(null)
+  const [confirmName, setConfirmName] = useState('')
+  const [delError, setDelError] = useState('')
+
+  const handleDeactivate = async () => {
+    const ok = await confirmDialog({
+      title: '운영을 종료할까요?',
+      message: `'${propertyName}'을(를) 운영 종료합니다. 목록에서 비활성으로 표시되며 데이터는 그대로 보존됩니다. 영업장 선택 화면에서 언제든 '운영 재개'할 수 있습니다.`,
+      confirmLabel: '운영 종료',
+    })
+    if (!ok) return
+    setBusy(true)
+    const res = await deactivateProperty(propertyId)
+    setBusy(false)
+    if (!res.ok) { pushToast('error', res.error); return }
+    pushToast('success', '운영을 종료했습니다')
+    router.push('/property-select')
+  }
+
+  const openDelete = async () => {
+    setDelError(''); setConfirmName(''); setImpact(null); setDelOpen(true)
+    const res = await getPropertyDeletionImpact(propertyId)
+    if (res.ok) setImpact(res.counts)
+    else { setDelError(res.error) }
+  }
+
+  const handleDelete = async () => {
+    setDelError('')
+    if (confirmName.trim() !== propertyName.trim()) { setDelError('영업장 이름이 일치하지 않습니다.'); return }
+    setBusy(true)
+    const res = await deletePropertyPermanently(propertyId, confirmName)
+    setBusy(false)
+    if (!res.ok) { setDelError(res.error); return }
+    pushToast('success', '영업장이 영구 삭제되었습니다')
+    router.push('/property-select')
+  }
+
+  return (
+    <div className="rounded-xl p-6 mt-4" style={{ border: '1px solid var(--danger-ring)', background: 'var(--danger-bg)' }}>
+      <h2 className="text-sm font-semibold text-[var(--danger-fg)] mb-1">위험 구역</h2>
+      <p className="text-xs text-[var(--warm-mid)] leading-relaxed mb-4">
+        아래 작업은 영업장 오너만 할 수 있습니다. 삭제 전에는 위 &lsquo;데이터 백업&rsquo;에서 JSON 백업을 먼저 받아두세요.
+      </p>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--cream)] border border-[var(--warm-border)] px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-[var(--warm-dark)]">운영 종료</p>
+            <p className="text-xs text-[var(--warm-muted)]">목록에서 비활성 표시. 데이터 보존, 언제든 재개 가능.</p>
+          </div>
+          <Btn type="button" variant="secondary" size="sm" onClick={handleDeactivate} disabled={busy}>운영 종료</Btn>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 rounded-lg bg-[var(--cream)] border border-[var(--danger-ring)] px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-[var(--danger-fg)]">영구 삭제</p>
+            <p className="text-xs text-[var(--warm-muted)]">호실·입주자·수납·지출 등 모든 데이터를 영구 삭제합니다. 되돌릴 수 없습니다.</p>
+          </div>
+          <Btn type="button" variant="danger" size="sm" onClick={openDelete} disabled={busy}>영구 삭제</Btn>
+        </div>
+      </div>
+
+      <Modal open={delOpen} onClose={() => setDelOpen(false)} title="영업장 영구 삭제" width="sm" dirty={!!confirmName}>
+        <div className="p-5 space-y-3">
+          <p className="text-sm text-[var(--warm-dark)] leading-relaxed">
+            <strong className="text-[var(--danger-fg)]">되돌릴 수 없습니다.</strong> 아래 데이터가 모두 영구 삭제됩니다.
+          </p>
+          {impact ? (
+            <ul className="grid grid-cols-2 gap-1.5 text-xs">
+              <li className="rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2">호실 <span className="font-bold tnum text-[var(--warm-dark)]">{impact.rooms}</span></li>
+              <li className="rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2">입주자 <span className="font-bold tnum text-[var(--warm-dark)]">{impact.tenants}</span></li>
+              <li className="rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2">수납 기록 <span className="font-bold tnum text-[var(--warm-dark)]">{impact.payments}</span></li>
+              <li className="rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2">지출 <span className="font-bold tnum text-[var(--warm-dark)]">{impact.expenses}</span></li>
+            </ul>
+          ) : !delError ? (
+            <p className="text-xs text-[var(--warm-muted)]">삭제 대상 집계 중…</p>
+          ) : null}
+          <p className="text-xs text-[var(--warm-muted)]">백업을 아직 안 받으셨다면 취소하고 &lsquo;데이터 백업&rsquo;에서 먼저 내려받으세요.</p>
+          <label className="block">
+            <span className="block text-xs text-[var(--warm-mid)] mb-1">확인을 위해 영업장 이름 <strong className="text-[var(--warm-dark)]">{propertyName}</strong> 을(를) 입력하세요</span>
+            <input value={confirmName} onChange={e => setConfirmName(e.target.value)} autoFocus
+              placeholder={propertyName}
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+          </label>
+          {delError && <p className="text-xs text-[var(--danger-fg)]">{delError}</p>}
+          <div className="flex gap-2 pt-1">
+            <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => setDelOpen(false)} disabled={busy}>취소</Btn>
+            <Btn type="button" variant="danger" size="md" className="flex-1" onClick={handleDelete}
+              disabled={busy || confirmName.trim() !== propertyName.trim()}>
+              {busy ? '삭제 중…' : '영구 삭제'}
+            </Btn>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

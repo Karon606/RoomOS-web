@@ -2,7 +2,7 @@
 
 import { useTransition, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { selectProperty, signOut, createProperty, requestJoinByCode } from './actions'
+import { selectProperty, signOut, createProperty, requestJoinByCode, reactivateProperty } from './actions'
 
 const ROLE_STYLE: Record<string, { bg: string; color: string }> = {
   OWNER:   { bg: 'rgba(244,98,58,0.12)', color: 'var(--persimmon-d)' },
@@ -58,6 +58,16 @@ export default function PropertyList({ properties }: { properties: Property[] })
     if (!result.ok) { setJoinError(result.error); return }
     setJoinSuccess(`'${result.propertyName}' 운영자에게 참여 요청이 전송됐습니다. 승인되면 영업장 목록에 표시됩니다.`)
     setJoinCode(''); setJoinMsg('')
+  }
+
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null)
+  const handleReactivate = (propertyId: string) => {
+    setReactivatingId(propertyId)
+    startTransition(async () => {
+      const res = await reactivateProperty(propertyId)
+      if (res.ok) router.refresh()
+      setReactivatingId(null)
+    })
   }
 
   const handleSelect = (propertyId: string) => {
@@ -240,6 +250,16 @@ export default function PropertyList({ properties }: { properties: Property[] })
                   )}
                 </div>
               </button>
+              {/* 운영 종료된 영업장은 진입 불가 → 오너에게 '운영 재개' 노출(재개해야 들어가 관리 가능) */}
+              {!p.isActive && p.role === 'OWNER' && (
+                <button
+                  onClick={() => handleReactivate(p.propertyId)}
+                  disabled={isPending}
+                  className="mt-1.5 w-full py-2 rounded-xl text-xs font-medium disabled:opacity-40"
+                  style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--coral)' }}>
+                  {reactivatingId === p.propertyId ? '재개 중...' : '운영 재개'}
+                </button>
+              )}
             </li>
           )
         })}
