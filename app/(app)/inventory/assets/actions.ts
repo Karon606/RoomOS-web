@@ -49,7 +49,7 @@ export type AssetItem = {
   locationName: string | null
   isCommon: boolean             // 공용 자재(페인트 등) 표시
   assignedAt: string | null     // 방/공용부 배정일(대표=최근). null=미배정 또는 미상
-  breakdown: { date: string; qty: number | null; amount: number }[]   // 합산 펼치기 — 개별 구매 내역
+  breakdown: { id: string; date: string; qty: number | null; amount: number; specValue: number | null; specUnit: string | null }[]   // 합산 펼치기 — 개별 구매 내역(행별 규격 수정용 id 포함)
 }
 
 export type AssetsData = {
@@ -95,7 +95,7 @@ function aggregateAssets(list: RawAsset[]): AssetItem[] {
       amount, qtyValue, qtyUnit: rep.qtyUnit, category: rep.category, vendor: rep.vendor,
       roomId: rep.roomId, roomNo: rep.roomNo, locationId: rep.locationId, locationName: rep.locationName,
       isCommon: rep.isCommon, assignedAt,
-      breakdown: rows.map(r => ({ date: r.date, qty: r.qtyValue, amount: r.amount }))
+      breakdown: rows.map(r => ({ id: r.id, date: r.date, qty: r.qtyValue, amount: r.amount, specValue: r.specValue, specUnit: r.specUnit }))
         .sort((a, b) => b.date.localeCompare(a.date)),
     })
   }
@@ -233,6 +233,23 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
 }
 
 // 배정일 입력·수정 — 방/공용부에 배정된 비품 묶음의 배정일(assignedAt)을 설정. 빈 값이면 미상(null)으로.
+// 구매 행별 규격 지정·수정 — 그룹 키에 규격이 포함되므로 규격이 달라지면 별도 카드로 분리된다.
+// 사이즈가 달라 단가가 다른 제품(의자발커버 등)이 한 카드로 묶여 배정이 임의로 되던 문제 해결(오류신고 3707bf65).
+// 금액·수량은 불변 — 규격 표기만 변경(§4: 재고 수학은 내구재 카테고리 밖이라 무영향).
+export async function setAssetRowSpec(expenseId: string, specValue: number | null, specUnit: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const row = await prisma.expense.findFirst({ where: { id: expenseId, propertyId }, select: { id: true } })
+    if (!row) return { ok: false, error: '구매 행을 찾을 수 없습니다.' }
+    await prisma.expense.update({ where: { id: expenseId }, data: { specValue, specUnit } })
+    revalidatePath('/inventory/assets')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 export async function setAssetAssignedAt(expenseIds: string[], dateStr: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()

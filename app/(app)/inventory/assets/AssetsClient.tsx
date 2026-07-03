@@ -11,7 +11,7 @@ import { ViewTabs } from '@/components/ui/ViewTabs'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
-import { assignAggregateToTarget, setCommonAsset, setAssetReceived, setAssetAssignedAt, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
+import { assignAggregateToTarget, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
 import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // §10 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
@@ -69,6 +69,18 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const [sheet, setSheet] = useState<{ sourceLabel: string; targets: MergeTarget[]; onConfirm: (destId: string) => void } | null>(null)
   // 비품 상세 풀화면 — §21.5 본문 탭 진입(구매 내역·배정 변경 이력·현재 상태·합치기)
   const [detailItem, setDetailItem] = useState<AssetItem | null>(null)
+  // 행별 규격 편집(상세 모달) — 규격이 달라지면 카드가 자동 분리됨(오류신고 3707bf65)
+  const [rowSpec, setRowSpec] = useState<Record<string, { v: string; u: string }>>({})
+  const saveRowSpec = (b: { id: string; specValue: number | null; specUnit: string | null }) => {
+    const s = rowSpec[b.id] ?? { v: b.specValue != null ? String(b.specValue) : '', u: b.specUnit ?? '' }
+    startTransition(async () => {
+      const res = await setAssetRowSpec(b.id, s.v.trim() ? Number(s.v) : null, s.u.trim() || null)
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', '규격 저장됨 — 규격이 다르면 별도 카드로 분리됩니다')
+      setDetailItem(null)
+      router.refresh()
+    })
+  }
   const [logRows, setLogRows] = useState<AssetAssignmentLogRow[]>([])
   useEffect(() => {
     if (!detailItem) { setLogRows([]); return }
@@ -676,14 +688,31 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
               )}
               <div>
                 <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">구매 내역</p>
-                <ul className="space-y-1">
-                  {it.breakdown.map((b, i) => (
-                    <li key={i} className="flex items-baseline justify-between gap-2 text-xs">
-                      <span className="tabular-nums text-[var(--warm-mid)]">{b.date}{b.qty != null ? ` · ${fmtQty(b.qty)}${it.qtyUnit ?? '개'}` : ''}</span>
-                      <span className="tabular-nums text-[var(--warm-dark)]">{won(b.amount)}</span>
-                    </li>
-                  ))}
+                <ul className="space-y-1.5">
+                  {it.breakdown.map(b => {
+                    const s = rowSpec[b.id] ?? { v: b.specValue != null ? String(b.specValue) : '', u: b.specUnit ?? '' }
+                    const changed = s.v !== (b.specValue != null ? String(b.specValue) : '') || s.u !== (b.specUnit ?? '')
+                    return (
+                      <li key={b.id} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="tabular-nums text-[var(--warm-mid)] shrink-0">{b.date}{b.qty != null ? ` · ${fmtQty(b.qty)}${it.qtyUnit ?? '개'}` : ''}</span>
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <input value={s.v} disabled={pending} inputMode="decimal" placeholder="규격"
+                            onChange={e => setRowSpec(p => ({ ...p, [b.id]: { ...s, v: e.target.value } }))}
+                            className="w-14 h-8 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 text-xs tabular-nums outline-none focus:border-[var(--coral)]" />
+                          <input value={s.u} disabled={pending} placeholder="단위"
+                            onChange={e => setRowSpec(p => ({ ...p, [b.id]: { ...s, u: e.target.value } }))}
+                            className="w-12 h-8 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 text-xs outline-none focus:border-[var(--coral)]" />
+                          {changed && (
+                            <button type="button" onClick={() => saveRowSpec(b)} disabled={pending}
+                              className="min-h-[34px] inline-flex items-center px-2 text-[0.6875rem] font-semibold text-[var(--coral)] hover:underline shrink-0">저장</button>
+                          )}
+                          <span className="tabular-nums text-[var(--warm-dark)] shrink-0">{won(b.amount)}</span>
+                        </span>
+                      </li>
+                    )
+                  })}
                 </ul>
+                <p className="mt-1 text-[0.625rem] text-[var(--warm-muted)]">규격(사이즈·용량)이 서로 다르면 별도 카드로 분리돼 따로 배정할 수 있습니다.</p>
               </div>
               {logRows.length > 0 && (
                 <div>
