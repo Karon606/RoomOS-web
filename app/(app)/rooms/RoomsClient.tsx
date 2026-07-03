@@ -563,7 +563,7 @@ export default function RoomsClient({
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">수납 관리</h1>
-          <ViewTabs ariaLabel="수납 관리 뷰" activeId={viewTab}
+          <ViewTabs ariaLabel="수납 관리 뷰" activeId={viewTab} equal
             onChange={id => setViewTab(id as 'rooms' | 'income')}
             tabs={[
               { id: 'rooms',  label: '수납' },

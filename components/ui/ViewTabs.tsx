@@ -19,12 +19,14 @@ export function ViewTabs({
   activeId,
   onChange,
   fill = false,
+  equal = false,
   ariaLabel,
 }: {
   tabs: ViewTab[]          // 2~4 권장, 5 max
   activeId: string         // 항상 정확히 1개 — 필수(해제 없음)
   onChange?: (id: string) => void   // button 모드에서만
-  fill?: boolean           // true = flex-1 균등 탭
+  fill?: boolean           // true = flex-1 균등 탭(컨테이너 풀폭)
+  equal?: boolean          // true = 탭 폭 동일(가장 긴 라벨 기준), 컨테이너는 내용폭 유지 — §24 부록 등재 제안 중
   ariaLabel: string
 }) {
   const refs = useRef<(HTMLElement | null)[]>([])
@@ -43,7 +45,7 @@ export function ViewTabs({
     refs.current[next]?.focus()
   }
 
-  const segBase = `px-4 ${fill ? 'flex-1 justify-center text-center' : ''} py-2.5 min-h-[44px] md:min-h-[40px] md:py-2 inline-flex items-center whitespace-nowrap shrink-0
+  const segBase = `px-4 ${fill ? 'flex-1 justify-center text-center' : equal ? 'justify-center text-center' : ''} py-2.5 min-h-[44px] md:min-h-[40px] md:py-2 inline-flex items-center whitespace-nowrap shrink-0
     focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)]
     border-r border-[var(--warm-border)] last:border-r-0 motion-safe:transition-colors motion-safe:duration-150`
   const segActive   = 'bg-[var(--coral)] text-[var(--cream)]'
@@ -54,7 +56,7 @@ export function ViewTabs({
     <div
       role="tablist"
       aria-label={ariaLabel}
-      className={`${fill ? 'flex w-full' : 'inline-flex'} rounded-[10px] border border-[var(--warm-border)] overflow-hidden bg-[var(--cream)] text-sm font-semibold max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
+      className={`${fill ? 'flex w-full' : equal ? 'inline-grid grid-flow-col auto-cols-fr' : 'inline-flex'} rounded-[10px] border border-[var(--warm-border)] overflow-hidden bg-[var(--cream)] text-sm font-semibold max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
     >
       {tabs.map((t, i) => {
         const active = t.id === activeId
