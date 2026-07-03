@@ -278,7 +278,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   const [basisTouched, setBasisTouched] = useState(false)
   const [customLabel, setCustomLabel] = useState('')
   const [fetching, setFetching]       = useState(false)
-  const [prevUnits, setPrevUnits]     = useState<{ specUnit: string | null; qtyUnit: string | null } | null>(null)
+  const [prevUnits, setPrevUnits]     = useState<{ specUnit: string | null; qtyUnit: string | null; trackUnit?: string | null } | null>(null)
   const [noSpec, setNoSpec]           = useState(false)   // 규격 없음(수량만) — 켜면 규격 입력 숨김
 
   // category 변경 시 active picker 입력만 초기화 (items는 부모가 관리)
@@ -293,8 +293,10 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   useEffect(() => {
     if (basisTouched) return
     const u = specUnit.trim().toLowerCase()
-    setUnitBasis(['cm', 'mm', 'm', '인치'].includes(u) ? 'qty' : 'spec')
-  }, [specUnit, basisTouched])
+    if (['cm', 'mm', 'm', '인치'].includes(u)) { setUnitBasis('qty'); return }
+    // 품목의 재고 추적 단위가 '수량'이면 개당 단가가 기본 — 봉투·장판 등(오류신고 c7cf6180)
+    setUnitBasis(prevUnits?.trackUnit === 'qty' ? 'qty' : 'spec')
+  }, [specUnit, basisTouched, prevUnits])
 
   // 단가·금액 양방향 자동계산 — 사용자가 마지막 입력한 쪽(priceMode)을 기준으로 나머지를 채운다.
   // 기준수량 = 수량 × (규격당 기준이면 규격). 단가만 알아도(금액만 알아도) 다른 쪽이 자동으로 채워진다. (오류신고 407567e6)

@@ -197,14 +197,19 @@ export async function uploadExpenseReceipt(formData: FormData): Promise<{ ok: tr
 
 export async function getLastItemUnits(
   itemLabel: string,
-): Promise<{ specUnit: string | null; qtyUnit: string | null } | null> {
+): Promise<{ specUnit: string | null; qtyUnit: string | null; trackUnit: string | null } | null> {
   const propertyId = await getPropertyId()
-  const row = await prisma.expense.findFirst({
-    where: { propertyId, itemLabel },
-    select: { specUnit: true, qtyUnit: true },
-    orderBy: { createdAt: 'desc' },
-  })
-  return row ?? null
+  const [row, tracked] = await Promise.all([
+    prisma.expense.findFirst({
+      where: { propertyId, itemLabel },
+      select: { specUnit: true, qtyUnit: true },
+      orderBy: { createdAt: 'desc' },
+    }),
+    // 품목의 재고 추적 단위 — '수량' 품목(종량제봉투 등)은 개당 단가가 기본이 되도록(오류신고 c7cf6180)
+    prisma.trackedItem.findFirst({ where: { propertyId, label: itemLabel }, select: { trackUnit: true } }),
+  ])
+  if (!row && !tracked) return null
+  return { specUnit: row?.specUnit ?? null, qtyUnit: row?.qtyUnit ?? null, trackUnit: tracked?.trackUnit ?? null }
 }
 
 type ItemPick = {
