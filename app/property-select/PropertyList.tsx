@@ -246,9 +246,9 @@ export default function PropertyList({ properties }: { properties: Property[] })
       </ul>
 
       {showCreate ? (
-        {createForm}
+        createForm
       ) : showJoin ? (
-        {joinForm}
+        joinForm
       ) : (
         <div className="flex flex-col gap-2">
           <button
