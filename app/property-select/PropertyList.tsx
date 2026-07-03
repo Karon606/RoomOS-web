@@ -73,7 +73,10 @@ export default function PropertyList({ properties }: { properties: Property[] })
     })
   }
 
-  const JoinForm = () => (
+  // JSX 상수(함수 컴포넌트 X) — 함수 컴포넌트로 두면 부모 리렌더(입력 한 글자)마다
+  // 새 컴포넌트 타입으로 인식돼 input 이 매번 리마운트되고, 한글 IME 조합이 끊겨
+  // 자모가 분리됨(운영자 신고, iOS·Android). 상수 엘리먼트는 이 문제가 없다.
+  const joinForm = (
     <div className="rounded-xl p-6 space-y-3"
          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
       <p className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>참여 코드로 영업장 참여</p>
@@ -115,7 +118,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
     </div>
   )
 
-  const CreateForm = () => (
+  const createForm = (
     <div className="rounded-xl p-6 space-y-3"
          style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
       <p className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>새 영업장 개설</p>
@@ -177,8 +180,8 @@ export default function PropertyList({ properties }: { properties: Property[] })
             </div>
           )}
         </div>
-        {showCreate && <CreateForm />}
-        {showJoin && <JoinForm />}
+        {showCreate && createForm}
+        {showJoin && joinForm}
         <form action={signOut}>
           <button type="submit"
             className="w-full text-sm py-2 transition-colors"
@@ -243,9 +246,9 @@ export default function PropertyList({ properties }: { properties: Property[] })
       </ul>
 
       {showCreate ? (
-        <CreateForm />
+        {createForm}
       ) : showJoin ? (
-        <JoinForm />
+        {joinForm}
       ) : (
         <div className="flex flex-col gap-2">
           <button
