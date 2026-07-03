@@ -5,6 +5,7 @@
 // 2) PendingReceipt row 적재 (status='pending')
 // 3) 대시보드에서 사용자가 검토 → 승인(Expense 등록) 또는 거절
 
+import { captureItemNameAliasPairs, normalizeItemName } from '@/lib/itemNameAlias'
 import prisma from '@/lib/prisma'
 import { uploadToDrive } from '@/lib/google-drive'
 import { createClient } from '@/lib/supabase/server'
@@ -135,6 +136,21 @@ export async function uploadPendingReceipt(formData: FormData): Promise<{ ok: tr
       inferred = { kind: 'unknown' }
     }
 
+    // 2.5) 학습된 별칭 적용 — 과거에 사용자가 고쳐 확정한 품목명이 있으면 추론 결과를 선호명으로 치환.
+    //      지출 등록 OCR 과 동일 학습 경로(lib/itemNameAlias). 원문은 rawItemLabel 로 보존(승인 시 재학습 판단용).
+    if (inferred?.itemLabel) {
+      try {
+        const alias = await prisma.itemNameAlias.findUnique({
+          where: { propertyId_aliasKey: { propertyId, aliasKey: normalizeItemName(inferred.itemLabel) } },
+          select: { preferredLabel: true },
+        })
+        if (alias && alias.preferredLabel !== inferred.itemLabel) {
+          ;(inferred as GeminiResult & { rawItemLabel?: string }).rawItemLabel = inferred.itemLabel
+          inferred = { ...inferred, itemLabel: alias.preferredLabel }
+        }
+      } catch { /* 별칭 미적용이어도 업로드는 정상 */ }
+    }
+
     // 3) row 적재
     const row = await prisma.pendingReceipt.create({
       data: {
@@ -234,9 +250,17 @@ export async function approvePendingReceipt(
     }
     const row = await prisma.pendingReceipt.findFirst({
       where: { id, propertyId, status: 'pending' },
-      select: { id: true, imageUrl: true },
+      select: { id: true, imageUrl: true, parsedJson: true },
     })
     if (!row) return { ok: false, error: '대기 항목을 찾을 수 없습니다.' }
+
+    // 품명 학습 — AI 추론 원문과 사용자가 고쳐 승인한 최종명이 다르면 별칭 저장.
+    // 지출 등록 OCR 학습과 같은 경로(lib/itemNameAlias) — 다음 인식부터 자동 치환. best-effort.
+    const parsedForAlias = row.parsedJson as { itemLabel?: string; rawItemLabel?: string } | null
+    const inferredLabel = parsedForAlias?.rawItemLabel ?? parsedForAlias?.itemLabel
+    if (final.itemLabel && inferredLabel) {
+      await captureItemNameAliasPairs(propertyId, [{ raw: inferredLabel, label: final.itemLabel }]).catch(() => {})
+    }
 
     const exp = await prisma.expense.create({
       data: {

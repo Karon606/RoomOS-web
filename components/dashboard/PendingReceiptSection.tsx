@@ -6,6 +6,7 @@
 //   2) AI 가 영수증/재고/기타 분류 + 추출값 표시
 //   3) 사용자가 검토 후 [지출 등록] 또는 [재고 등록] 또는 [거절]
 
+import { ReceiptScanModal, tryDetectDocumentCorners, dataUrlToFile } from '@/components/ReceiptScanModal'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -59,19 +60,34 @@ export function PendingReceiptSection() {
   }
   useEffect(() => { reload() /* eslint-disable-line */ }, [])
 
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]
-    e.target.value = ''
-    if (!f) return
+  // 영수증 스캔(모서리 인식) — 지출 등록과 동일 UX 공유
+  const [scanBitmap, setScanBitmap] = useState<ImageBitmap | null>(null)
+  const [scanFile, setScanFile]     = useState<File | null>(null)
+
+  const doUpload = async (file: File) => {
     setUploading(true)
     try {
       const fd = new FormData()
-      fd.append('image', f)
+      fd.append('image', file)
       const res = await uploadPendingReceipt(fd)
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', '업로드 + AI 분류 완료')
       await reload()
     } finally { setUploading(false) }
+  }
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    // 영수증 감지 — 문서 영역이 잡히면 지출 등록과 동일한 모서리 스캔 UX 자동 활성화.
+    // 감지 실패(물품 사진 등)·비트맵 불가 포맷(HEIC 등)은 기존처럼 원본 그대로 업로드.
+    try {
+      const bmp = await createImageBitmap(f)
+      if (tryDetectDocumentCorners(bmp)) { setScanFile(f); setScanBitmap(bmp); return }
+      bmp.close?.()
+    } catch { /* 감지 불가 포맷 — 원본 업로드로 진행 */ }
+    await doUpload(f)
   }
 
   return (
@@ -110,6 +126,23 @@ export function PendingReceiptSection() {
           />
         ))}
       </div>
+      {scanBitmap && (
+        <ReceiptScanModal
+          bitmap={scanBitmap}
+          onConfirm={async ({ dataUrl }) => {
+            scanBitmap.close?.()
+            setScanBitmap(null); setScanFile(null)
+            await doUpload(dataUrlToFile(dataUrl, 'receipt_scan.jpg'))
+          }}
+          onCancel={async () => {
+            // 여기선 업로드가 곧 목적 — 크롭을 취소해도 원본 그대로 업로드 진행(지출 등록의 '첨부 취소'와 다른 맥락)
+            const f = scanFile
+            scanBitmap.close?.()
+            setScanBitmap(null); setScanFile(null)
+            if (f) await doUpload(f)
+          }}
+        />
+      )}
     </section>
   )
 }
