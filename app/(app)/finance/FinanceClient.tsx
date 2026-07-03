@@ -502,7 +502,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
               <button type="button" onClick={() => { setBasisTouched(true); setUnitBasis(b => b === 'spec' ? 'qty' : 'spec') }}
                 title="단가 기준 전환 (규격당 ↔ 완제품 1개당)"
                 className="block text-[0.625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2">
-                단가 (1{unitBasis === 'spec' && specValue ? (specUnit || '개') : (qtyUnit || '개')}당)
+                단가 (1{unitBasis === 'spec' && specValue ? (specUnit || '개') : (qtyUnit || '개')}당)<svg className="inline-block align-[-1px] ml-0.5" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h13M13 3l4 4-4 4M20 17H7M11 21l-4-4 4-4" /></svg>
               </button>
               <div className="flex gap-1 items-center">
                 <input type="text" inputMode="numeric"
@@ -574,7 +574,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                     <label className="flex flex-col gap-0.5">
                       <button type="button" onClick={() => toggleItemBasis(idx)} title="단가 기준 전환 (규격당 ↔ 완제품 1개당)"
                         className="text-[0.5625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2 text-left">
-                        단가/1{basisOf(it) === 'spec' && it.specValue ? (it.specUnit || '개') : (it.qtyUnit || '개')}
+                        단가/1{basisOf(it) === 'spec' && it.specValue ? (it.specUnit || '개') : (it.qtyUnit || '개')}<svg className="inline-block align-[-1px] ml-0.5" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h13M13 3l4 4-4 4M20 17H7M11 21l-4-4 4-4" /></svg>
                       </button>
                       <div className="flex items-center gap-0.5">
                         <input type="text" inputMode="numeric" value={it.unitPrice ? it.unitPrice.toLocaleString() : ''}
