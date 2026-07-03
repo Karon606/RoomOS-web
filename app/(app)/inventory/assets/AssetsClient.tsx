@@ -70,11 +70,11 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   // 비품 상세 풀화면 — §21.5 본문 탭 진입(구매 내역·배정 변경 이력·현재 상태·합치기)
   const [detailItem, setDetailItem] = useState<AssetItem | null>(null)
   // 행별 규격 편집(상세 모달) — 규격이 달라지면 카드가 자동 분리됨(오류신고 3707bf65)
-  const [rowSpec, setRowSpec] = useState<Record<string, { v: string; u: string }>>({})
-  const saveRowSpec = (b: { id: string; specValue: number | null; specUnit: string | null }) => {
-    const s = rowSpec[b.id] ?? { v: b.specValue != null ? String(b.specValue) : '', u: b.specUnit ?? '' }
+  const [rowSpec, setRowSpec] = useState<Record<string, { v: string; u: string; t: string }>>({})
+  const saveRowSpec = (b: { id: string; specValue: number | null; specUnit: string | null; specText: string | null }) => {
+    const s = rowSpec[b.id] ?? { v: b.specValue != null ? String(b.specValue) : '', u: b.specUnit ?? '', t: b.specText ?? '' }
     startTransition(async () => {
-      const res = await setAssetRowSpec(b.id, s.v.trim() ? Number(s.v) : null, s.u.trim() || null)
+      const res = await setAssetRowSpec(b.id, s.v.trim() ? Number(s.v) : null, s.u.trim() || null, s.t.trim() || null)
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', '규격 저장됨 — 규격이 다르면 별도 카드로 분리됩니다')
       setDetailItem(null)
@@ -408,7 +408,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
 
   // 검색 필터 — 표시만 거른다. 합치기 후보(siblings)는 원본 목록에서 찾아 검색 중에도 온전.
   const q = search.trim().toLowerCase()
-  const hit = (it: AssetsData['pending'][number]) => !q || `${it.itemLabel} ${it.vendor ?? ''} ${it.category}`.toLowerCase().includes(q)
+  const hit = (it: AssetsData['pending'][number]) => !q || `${it.itemLabel} ${it.vendor ?? ''} ${it.category} ${it.specText ?? ''}`.toLowerCase().includes(q)
   const sumAmt = (l: AssetsData['pending']) => l.reduce((s, it) => s + it.amount, 0)
   const vPending    = data.pending.filter(hit)
   const vUnassigned = data.unassigned.filter(hit)
@@ -690,8 +690,8 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">구매 내역</p>
                 <ul className="space-y-1.5">
                   {it.breakdown.map(b => {
-                    const s = rowSpec[b.id] ?? { v: b.specValue != null ? String(b.specValue) : '', u: b.specUnit ?? '' }
-                    const changed = s.v !== (b.specValue != null ? String(b.specValue) : '') || s.u !== (b.specUnit ?? '')
+                    const s = rowSpec[b.id] ?? { v: b.specValue != null ? String(b.specValue) : '', u: b.specUnit ?? '', t: b.specText ?? '' }
+                    const changed = s.v !== (b.specValue != null ? String(b.specValue) : '') || s.u !== (b.specUnit ?? '') || s.t !== (b.specText ?? '')
                     return (
                       <li key={b.id} className="flex items-center justify-between gap-2 text-xs">
                         <span className="tabular-nums text-[var(--warm-mid)] shrink-0">{b.date}{b.qty != null ? ` · ${fmtQty(b.qty)}${it.qtyUnit ?? '개'}` : ''}</span>
@@ -702,6 +702,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                           <input value={s.u} disabled={pending} placeholder="단위"
                             onChange={e => setRowSpec(p => ({ ...p, [b.id]: { ...s, u: e.target.value } }))}
                             className="w-12 h-8 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 text-xs outline-none focus:border-[var(--coral)]" />
+                          <input value={s.t} disabled={pending} placeholder="서술(선택)"
+                            onChange={e => setRowSpec(p => ({ ...p, [b.id]: { ...s, t: e.target.value } }))}
+                            className="w-20 h-8 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 text-xs outline-none focus:border-[var(--coral)]" />
                           {changed && (
                             <button type="button" onClick={() => saveRowSpec(b)} disabled={pending}
                               className="min-h-[34px] inline-flex items-center px-2 text-[0.6875rem] font-semibold text-[var(--coral)] hover:underline shrink-0">저장</button>

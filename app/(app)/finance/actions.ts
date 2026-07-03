@@ -216,6 +216,8 @@ type ItemPick = {
   label: string
   ocrRaw?: string   // OCR 인식 원문 — 최종 label 과 다르면 별칭 학습(다음 영수증 자동 치환)
   specValue?: string; specUnit?: string
+  specText?: string          // 서술형 규격(계산 비관여, 표시·자재 구분용)
+  unitBasis?: 'spec' | 'qty' // 입력 당시 단가 기준 — 재열람 시 보존
   qtyValue?: string;  qtyUnit?: string
   amount?: number
   // 방별 분배 (선택) — 있으면 이 품목을 방별 행으로 분할(금액은 수량 비례, 마지막 행이 잔여 흡수)
@@ -577,11 +579,13 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
           ...baseRow,
           roomId:    r.roomId,
           amount:    r.amount,
-          detail:    `[${r.it.label}]${r.it.specValue ? ` ${r.it.specValue}${r.it.specUnit ?? ''}` : ''}${r.qtyValue ? ` x ${r.qtyValue}${r.it.qtyUnit ?? ''}` : ''}`,
+          detail:    `[${r.it.label}]${r.it.specText ? ` ${r.it.specText}` : r.it.specValue ? ` ${r.it.specValue}${r.it.specUnit ?? ''}` : ''}${r.qtyValue ? ` x ${r.qtyValue}${r.it.qtyUnit ?? ''}` : ''}`,
           itemLabel: r.it.label,
           specUnit:  r.it.specUnit || null,
           qtyUnit:   r.it.qtyUnit  || null,
           specValue: r.it.specValue ? parseFloat(r.it.specValue) : null,
+          specText:  r.it.specText || null,
+          unitBasis: r.it.unitBasis || null,
           qtyValue:  r.qtyValue ? parseFloat(r.qtyValue) : null,
           allocationGroupId: r.groupId,
         },
@@ -710,7 +714,7 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
       const rows = expandExpenseRows(multiItems, roomId || null)
       const firstRow = rows[0]
       const restRows = rows.slice(1)
-      const detailOf = (r: ExpandedRow) => `[${r.it.label}]${r.it.specValue ? ` ${r.it.specValue}${r.it.specUnit ?? ''}` : ''}${r.qtyValue ? ` x ${r.qtyValue}${r.it.qtyUnit ?? ''}` : ''}`
+      const detailOf = (r: ExpandedRow) => `[${r.it.label}]${r.it.specText ? ` ${r.it.specText}` : r.it.specValue ? ` ${r.it.specValue}${r.it.specUnit ?? ''}` : ''}${r.qtyValue ? ` x ${r.qtyValue}${r.it.qtyUnit ?? ''}` : ''}`
 
       await prisma.$transaction([
         prisma.expense.update({
@@ -731,6 +735,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
             specUnit:  firstRow.it.specUnit || null,
             qtyUnit:   firstRow.it.qtyUnit  || null,
             specValue: firstRow.it.specValue ? parseFloat(firstRow.it.specValue) : null,
+            specText:  firstRow.it.specText || null,
+            unitBasis: firstRow.it.unitBasis || null,
             qtyValue:  firstRow.qtyValue  ? parseFloat(firstRow.qtyValue)  : null,
             allocationGroupId: firstRow.groupId,
             excludeFromInventory,
@@ -756,6 +762,8 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
             specUnit:  r.it.specUnit || null,
             qtyUnit:   r.it.qtyUnit  || null,
             specValue: r.it.specValue ? parseFloat(r.it.specValue) : null,
+            specText:  r.it.specText || null,
+            unitBasis: r.it.unitBasis || null,
             qtyValue:  r.qtyValue  ? parseFloat(r.qtyValue)  : null,
             allocationGroupId: r.groupId,
             excludeFromInventory,

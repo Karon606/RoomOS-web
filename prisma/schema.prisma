@@ -563,6 +563,8 @@ model Expense {
   itemLabel    String?
   specValue    Float?
   specUnit     String?
+  specText     String?   // 서술형 규격(1200x600mm 등) — 표시·자재 구분용, 계산 비관여 (2026-07-03)
+  unitBasis    String?   // 입력 당시 단가 기준 'spec'|'qty' — 재열람 시 보존 (2026-07-03)
   qtyValue     Float?
   qtyUnit      String?
   receivedAt   DateTime?    // null = 수령 대기, not null = 수령 완료 (재고 계산에 반영)

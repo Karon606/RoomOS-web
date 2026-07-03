@@ -12,9 +12,9 @@ import { getTrackedCategories } from '../categoryConfig'
 
 // 품목 detail 문자열 재구성 (addExpense 와 동일 포맷: "[라벨] 규격 x 수량단위")
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
-function buildAssetDetail(e: { itemLabel: string | null; specValue: number | null; specUnit: string | null; qtyValue: number | null; qtyUnit: string | null }): string {
+function buildAssetDetail(e: { itemLabel: string | null; specValue: number | null; specUnit: string | null; specText?: string | null; qtyValue: number | null; qtyUnit: string | null }): string {
   const label = e.itemLabel ?? ''
-  const spec = e.specValue != null ? ` ${fmtQty(e.specValue)}${e.specUnit ?? ''}` : ''
+  const spec = e.specText ? ` ${e.specText}` : e.specValue != null ? ` ${fmtQty(e.specValue)}${e.specUnit ?? ''}` : ''
   const qty = e.qtyValue != null ? ` x ${fmtQty(e.qtyValue)}${e.qtyUnit ?? ''}` : ''
   return `[${label}]${spec}${qty}`
 }
@@ -38,6 +38,7 @@ export type AssetItem = {
   date: string                  // 대표(최신) 일자
   itemLabel: string
   detail: string | null         // 합계 수량으로 재구성
+  specText: string | null       // 서술형 규격(카드 구분·검색용)
   amount: number                // 합계 금액
   qtyValue: number | null       // 합계 수량
   qtyUnit: string | null
@@ -49,7 +50,7 @@ export type AssetItem = {
   locationName: string | null
   isCommon: boolean             // 공용 자재(페인트 등) 표시
   assignedAt: string | null     // 방/공용부 배정일(대표=최근). null=미배정 또는 미상
-  breakdown: { id: string; date: string; qty: number | null; amount: number; specValue: number | null; specUnit: string | null }[]   // 합산 펼치기 — 개별 구매 내역(행별 규격 수정용 id 포함)
+  breakdown: { id: string; date: string; qty: number | null; amount: number; specValue: number | null; specUnit: string | null; specText: string | null }[]   // 합산 펼치기 — 개별 구매 내역(행별 규격 수정용 id 포함)
 }
 
 export type AssetsData = {
@@ -65,7 +66,7 @@ export type AssetsData = {
 
 type RawAsset = {
   id: string; date: string; itemLabel: string; amount: number
-  qtyValue: number | null; qtyUnit: string | null; specValue: number | null; specUnit: string | null
+  qtyValue: number | null; qtyUnit: string | null; specValue: number | null; specUnit: string | null; specText: string | null
   category: string; vendor: string | null
   roomId: string | null; roomNo: string | null; locationId: string | null; locationName: string | null
   isCommon: boolean; received: boolean; assignedAt: string | null
@@ -73,10 +74,10 @@ type RawAsset = {
 
 // 한 버킷의 행들을 동일 품목끼리 묶어 AssetItem[] 로 집계
 function aggregateAssets(list: RawAsset[]): AssetItem[] {
-  const map = new Map<string, { spec: number | null; specUnit: string | null; rows: RawAsset[] }>()
+  const map = new Map<string, { spec: number | null; specUnit: string | null; specText: string | null; rows: RawAsset[] }>()
   for (const r of list) {
-    const key = [r.itemLabel, r.specValue ?? '', r.specUnit ?? '', r.qtyUnit ?? '', r.category, r.isCommon ? 'C' : ''].join('␟')
-    const g = map.get(key) ?? { spec: r.specValue, specUnit: r.specUnit, rows: [] }
+    const key = [r.itemLabel, r.specValue ?? '', r.specUnit ?? '', r.specText ?? '', r.qtyUnit ?? '', r.category, r.isCommon ? 'C' : ''].join('␟')
+    const g = map.get(key) ?? { spec: r.specValue, specUnit: r.specUnit, specText: r.specText, rows: [] }
     g.rows.push(r); map.set(key, g)
   }
   const out: AssetItem[] = []
@@ -90,12 +91,12 @@ function aggregateAssets(list: RawAsset[]): AssetItem[] {
     const rep = rows[0]
     out.push({
       id: rep.id, ids: rows.map(r => r.id), count: rows.length, date,
-      itemLabel: rep.itemLabel,
-      detail: buildAssetDetail({ itemLabel: rep.itemLabel, specValue: g.spec, specUnit: g.specUnit, qtyValue, qtyUnit: rep.qtyUnit }),
+      itemLabel: rep.itemLabel, specText: g.specText,
+      detail: buildAssetDetail({ itemLabel: rep.itemLabel, specValue: g.spec, specUnit: g.specUnit, specText: g.specText, qtyValue, qtyUnit: rep.qtyUnit }),
       amount, qtyValue, qtyUnit: rep.qtyUnit, category: rep.category, vendor: rep.vendor,
       roomId: rep.roomId, roomNo: rep.roomNo, locationId: rep.locationId, locationName: rep.locationName,
       isCommon: rep.isCommon, assignedAt,
-      breakdown: rows.map(r => ({ id: r.id, date: r.date, qty: r.qtyValue, amount: r.amount, specValue: r.specValue, specUnit: r.specUnit }))
+      breakdown: rows.map(r => ({ id: r.id, date: r.date, qty: r.qtyValue, amount: r.amount, specValue: r.specValue, specUnit: r.specUnit, specText: r.specText }))
         .sort((a, b) => b.date.localeCompare(a.date)),
     })
   }
@@ -119,7 +120,7 @@ export async function getDurableItems(): Promise<AssetsData> {
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     select: {
       id: true, date: true, itemLabel: true, amount: true,
-      qtyValue: true, qtyUnit: true, specValue: true, specUnit: true,
+      qtyValue: true, qtyUnit: true, specValue: true, specUnit: true, specText: true,
       category: true, vendor: true, roomId: true,
       room: { select: { roomNo: true } },
       assignedLocationId: true,
@@ -130,7 +131,7 @@ export async function getDurableItems(): Promise<AssetsData> {
 
   const raws: RawAsset[] = rows.map(r => ({
     id: r.id, date: r.date.toISOString().slice(0, 10), itemLabel: r.itemLabel ?? '',
-    amount: r.amount, qtyValue: r.qtyValue, qtyUnit: r.qtyUnit, specValue: r.specValue, specUnit: r.specUnit,
+    amount: r.amount, qtyValue: r.qtyValue, qtyUnit: r.qtyUnit, specValue: r.specValue, specUnit: r.specUnit, specText: r.specText,
     category: r.category, vendor: r.vendor,
     roomId: r.roomId, roomNo: r.room?.roomNo ?? null,
     locationId: r.assignedLocationId, locationName: r.assignedLocation?.name ?? null,
@@ -236,13 +237,13 @@ export async function setAssetReceived(expenseIds: string[], received: boolean, 
 // 구매 행별 규격 지정·수정 — 그룹 키에 규격이 포함되므로 규격이 달라지면 별도 카드로 분리된다.
 // 사이즈가 달라 단가가 다른 제품(의자발커버 등)이 한 카드로 묶여 배정이 임의로 되던 문제 해결(오류신고 3707bf65).
 // 금액·수량은 불변 — 규격 표기만 변경(§4: 재고 수학은 내구재 카테고리 밖이라 무영향).
-export async function setAssetRowSpec(expenseId: string, specValue: number | null, specUnit: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function setAssetRowSpec(expenseId: string, specValue: number | null, specUnit: string | null, specText?: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const row = await prisma.expense.findFirst({ where: { id: expenseId, propertyId }, select: { id: true } })
     if (!row) return { ok: false, error: '구매 행을 찾을 수 없습니다.' }
-    await prisma.expense.update({ where: { id: expenseId }, data: { specValue, specUnit } })
+    await prisma.expense.update({ where: { id: expenseId }, data: { specValue, specUnit, specText: specText ?? null } })
     revalidatePath('/inventory/assets')
     return { ok: true }
   } catch (err) {

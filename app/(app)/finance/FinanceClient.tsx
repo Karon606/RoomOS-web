@@ -138,6 +138,7 @@ export type ItemPickState = {
   label: string
   ocrRaw?: string   // OCR 인식 원문 — 사용자가 이름을 바꿔 저장하면 별칭 학습(다음 영수증 자동 치환)
   specValue: string; specUnit: string
+  specText?: string   // 서술형 규격(1200x600mm 등) — 표시·자재 구분용, 계산 비관여
   qtyValue: string; qtyUnit: string
   amount?: number   // 이 품목에 할당된 총 금액
   unitPrice?: number  // 단가 — amount 와 수량으로 상호 자동계산(둘 중 하나 입력 시 다른 쪽 계산)
@@ -149,7 +150,7 @@ export type ItemPickState = {
 }
 
 export function fmtItemDetail(d: ItemPickState): string {
-  const spec = d.specValue ? `${d.specValue}${d.specUnit}` : ''
+  const spec = d.specText ? d.specText : d.specValue ? `${d.specValue}${d.specUnit}` : ''
   const qty  = d.qtyValue  ? `${d.qtyValue}${d.qtyUnit}`  : ''
   return [`[${d.label}]`, spec, qty && `x ${qty}`].filter(Boolean).join(' ')
 }
@@ -280,12 +281,14 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   const [fetching, setFetching]       = useState(false)
   const [prevUnits, setPrevUnits]     = useState<{ specUnit: string | null; qtyUnit: string | null; trackUnit?: string | null } | null>(null)
   const [noSpec, setNoSpec]           = useState(false)   // 규격 없음(수량만) — 켜면 규격 입력 숨김
+  const [specTextMode, setSpecTextMode] = useState(false)  // 서술형 규격(사이즈 등) — 계산 비관여, 개당 단가 강제
+  const [specText, setSpecText]       = useState('')
 
   // category 변경 시 active picker 입력만 초기화 (items는 부모가 관리)
   useEffect(() => {
     setActiveLabel(null)
     setSpecValue(''); setSpecUnit(''); setQtyValue(''); setQtyUnit('')
-    setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setCustomLabel(''); setPrevUnits(null); setNoSpec(false)
+    setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setCustomLabel(''); setPrevUnits(null); setNoSpec(false); setSpecTextMode(false); setSpecText('')
   }, [category])
 
   // 규격 단위가 치수(cm·mm·m·인치)면 규격당 단가가 무의미한 경우가 많아(장판 1cm당 가격 등)
@@ -320,7 +323,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
 
   async function openPreset(label: string) {
     setActiveLabel(label)
-    setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setNoSpec(false)
+    setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setNoSpec(false); setSpecTextMode(false); setSpecText('')
     const def = ITEM_DEFAULTS[label]
     setSpecUnit(def?.specUnit ?? ''); setQtyUnit(def?.qtyUnit ?? '')
     setPrevUnits(null)
@@ -365,7 +368,14 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
       amount = amountStr ? Number(amountStr.replace(/[^0-9]/g, '')) : undefined
       unitPrice = amount != null && baseQ > 0 ? Math.round(amount / baseQ) : undefined
     }
-    const data: ItemPickState = { label: finalLabel, specValue, specUnit, qtyValue: resolvedQty, qtyUnit: resolvedUnit, amount, unitPrice, unitBasis }
+    const data: ItemPickState = {
+      label: finalLabel,
+      specValue: specTextMode ? '' : specValue,
+      specUnit:  specTextMode ? '' : specUnit,
+      specText:  specTextMode && specText.trim() ? specText.trim() : undefined,
+      qtyValue: resolvedQty, qtyUnit: resolvedUnit, amount, unitPrice,
+      unitBasis: specTextMode ? 'qty' : unitBasis,   // 서술 규격은 계산 비관여 → 개당 단가
+    }
     onChange([...items, data])
     setActiveLabel(null)
     setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setCustomLabel('')
@@ -442,14 +452,29 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
         </p>
       )}
       {/* 규격 없음(수량만) — 켜면 규격 입력을 숨겨 빈 칸 혼동을 없앤다 */}
-      <label className="flex items-center gap-1.5 text-[0.625rem] text-[var(--warm-muted)] cursor-pointer">
-        <input type="checkbox" checked={noSpec}
-          onChange={e => { setNoSpec(e.target.checked); if (e.target.checked) { setSpecValue(''); setSpecUnit(''); if (!qtyUnit.trim()) setQtyUnit('개') } }}
-          className="w-3 h-3 accent-[var(--coral)]" />
-        규격 없음 (수량만 입력)
-      </label>
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        <label className="flex items-center gap-1.5 text-[0.625rem] text-[var(--warm-muted)] cursor-pointer">
+          <input type="checkbox" checked={noSpec}
+            onChange={e => { setNoSpec(e.target.checked); if (e.target.checked) { setSpecTextMode(false); setSpecText(''); setSpecValue(''); setSpecUnit(''); if (!qtyUnit.trim()) setQtyUnit('개') } }}
+            className="w-3 h-3 accent-[var(--coral)]" />
+          규격 없음 (수량만 입력)
+        </label>
+        <label className="flex items-center gap-1.5 text-[0.625rem] text-[var(--warm-muted)] cursor-pointer">
+          <input type="checkbox" checked={specTextMode}
+            onChange={e => { setSpecTextMode(e.target.checked); if (e.target.checked) { setNoSpec(false); setSpecValue(''); setSpecUnit(''); if (!qtyUnit.trim()) setQtyUnit('개') } else setSpecText('') }}
+            className="w-3 h-3 accent-[var(--coral)]" />
+          서술형 규격 (사이즈 등)
+        </label>
+      </div>
       <div className={`grid ${noSpec ? 'grid-cols-1' : 'grid-cols-2'} gap-2`}>
-        {!noSpec && (
+        {specTextMode && (
+        <div className="space-y-1">
+          <label className="text-[0.625rem] text-[var(--warm-muted)]">규격 (서술)</label>
+          <input type="text" placeholder="예: 1200x600x720mm" value={specText}
+            onChange={e => setSpecText(e.target.value)} className={textCls} />
+        </div>
+        )}
+        {!noSpec && !specTextMode && (
         <div className="space-y-1">
           <label className="text-[0.625rem] text-[var(--warm-muted)]">규격</label>
           <div className="flex gap-1">
