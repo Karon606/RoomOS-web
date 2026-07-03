@@ -92,9 +92,11 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
     const href = hrefOf(a)
     if (href) {
       router.push(href)
-      // 이미 같은 페이지에 있으면 push 가 화면 변화를 못 만들고 알림만 읽음 처리되던 문제 —
-      // 데이터 새로고침을 함께 트리거해 클릭이 항상 반응하게 한다.
-      router.refresh()
+      // 이미 같은 페이지에 있으면 push 가 화면 변화를 못 만들고 알림만 읽음 처리되던 문제(e289e69) —
+      // 같은 경로일 때만 refresh 로 반응을 보장한다.
+      // ⚠️ 다른 페이지로 갈 때 refresh 를 같이 부르면 refresh(현재 경로 갱신)가 push 내비게이션과
+      //    경합해 이동 자체가 취소됨 — "알림만 사라지고 안 넘어감" 회귀의 원인이라 경로 비교로 분기.
+      if (href.split('?')[0] === pathname) router.refresh()
     }
   }
 
