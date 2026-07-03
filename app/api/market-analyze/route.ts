@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 
 type RoomType = { type: string; avgPrice: number; count: number }
 type CompetitorPrice = { type: string; price: number; memo?: string }
@@ -6,6 +7,11 @@ type Competitor = { name: string; address: string; roomPrices: CompetitorPrice[]
 
 export async function POST(req: NextRequest) {
   try {
+    // 인증 게이트 — 로그인 사용자만(유료 API 비용 보호)
+    const supabase = await createClient()
+    const { data: auth } = await supabase.auth.getClaims()
+    if (!auth?.claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) {
       return NextResponse.json({ error: 'Gemini API 키가 설정되지 않았습니다.' }, { status: 500 })

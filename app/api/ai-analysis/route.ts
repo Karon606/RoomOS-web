@@ -2,8 +2,14 @@ export const runtime = 'edge'
 
 import { streamText } from 'ai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import { createClient } from '@/lib/supabase/server'
 
 export async function POST(req: Request) {
+  // 인증 게이트 — 로그인 사용자만. 외부의 무단 호출로 유료 API(Gemini) 비용이 소진되는 것 방지.
+  const supabase = await createClient()
+  const { data: auth } = await supabase.auth.getClaims()
+  if (!auth?.claims) return new Response('Unauthorized', { status: 401 })
+
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) return new Response('GEMINI_API_KEY 미설정', { status: 500 })
 
