@@ -1,5 +1,6 @@
 'use server'
 
+import { normalizeItemName, captureItemNameAliasPairs } from '@/lib/itemNameAlias'
 import { randomUUID } from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
@@ -272,9 +273,7 @@ async function genOrderCode(propertyId: string): Promise<string> {
 // ── 품명 정규화 (별칭 매칭 키) ─────────────────────────────────────
 // 영수증 OCR 학습·자동완성·병합이 공유하는 키. 공백 정리 + 소문자 → 사소한 변형 흡수.
 // ('use server' 파일이라 export 불가 — 공유 필요 시 별도 util로 분리 예정)
-function normalizeItemName(s: string): string {
-  return s.trim().replace(/\s+/g, ' ').toLowerCase()
-}
+// normalizeItemName·별칭 upsert 는 lib/itemNameAlias 로 이동(홈 찍어올리기 승인과 학습 경로 공유)
 
 // ── 영수증 OCR (Gemini Vision) ────────────────────────────────────
 export type ReceiptOcrItem = {
@@ -429,18 +428,7 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
 // 저장 시 품명 학습 — itemsJson 품목 중 OCR 원문(ocrRaw)과 사용자 최종 입력 label 이 다르면 별칭 upsert.
 // → 다음 영수증에서 같은 원문이 인식되면 자동으로 선호명으로 치환됨. (best-effort — 실패해도 저장 유지)
 async function captureItemNameAliases(propertyId: string, items: ItemPick[]): Promise<void> {
-  for (const it of items) {
-    const raw = (it.ocrRaw ?? '').trim()
-    const label = (it.label ?? '').trim()
-    if (!raw || !label) continue
-    const key = normalizeItemName(raw)
-    if (key === normalizeItemName(label)) continue   // 안 고쳤거나 같은 이름 — 학습 불필요
-    await prisma.itemNameAlias.upsert({
-      where: { propertyId_aliasKey: { propertyId, aliasKey: key } },
-      update: { preferredLabel: label, aliasLabel: raw, hitCount: { increment: 1 } },
-      create: { propertyId, aliasKey: key, aliasLabel: raw, preferredLabel: label, source: 'ocr', hitCount: 1 },
-    })
-  }
+  await captureItemNameAliasPairs(propertyId, items.map(it => ({ raw: it.ocrRaw, label: it.label })))
 }
 
 export async function addExpense(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
