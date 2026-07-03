@@ -164,3 +164,83 @@ export async function requestJoinByCode(code: string, message?: string): Promise
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
+// ── 영업장 오너 가드 — 이 사용자가 이 영업장의 OWNER 인지 확인(슈퍼관리자도 허용). ──
+async function requirePropertyOwner(propertyId: string): Promise<{ userId: string }> {
+  const ctx = await getAccessContext()
+  if (!ctx) redirect('/login')
+  if (ctx.isSuperAdmin) return { userId: ctx.userId }
+  const role = await prisma.userPropertyRole.findUnique({
+    where: { userId_propertyId: { userId: ctx.userId, propertyId } },
+    select: { role: true },
+  })
+  const owner = role?.role === 'OWNER'
+    || (await prisma.property.findUnique({ where: { id: propertyId }, select: { ownerId: true } }))?.ownerId === ctx.userId
+  if (!owner) throw new Error('영업장 오너만 할 수 있습니다.')
+  return { userId: ctx.userId }
+}
+
+// 영업장 삭제 전 영향 집계 — 사용자에게 "무엇이 지워지는지" 고지용(§9.3 임팩트 고지).
+export async function getPropertyDeletionImpact(propertyId: string): Promise<
+  { ok: true; name: string; counts: { rooms: number; tenants: number; payments: number; expenses: number } } | { ok: false; error: string }
+> {
+  try {
+    await requirePropertyOwner(propertyId)
+    const [property, rooms, tenants, payments, expenses] = await Promise.all([
+      prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } }),
+      prisma.room.count({ where: { propertyId } }),
+      prisma.tenant.count({ where: { propertyId } }),
+      prisma.paymentRecord.count({ where: { propertyId } }),
+      prisma.expense.count({ where: { propertyId } }),
+    ])
+    if (!property) return { ok: false, error: '영업장을 찾을 수 없습니다.' }
+    return { ok: true, name: property.name, counts: { rooms, tenants, payments, expenses } }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 운영 종료 — 되돌릴 수 있는 폐쇄(isActive=false). 데이터 유지, 목록에서 비활성 표시.
+export async function deactivateProperty(propertyId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requirePropertyOwner(propertyId)
+    await prisma.property.update({ where: { id: propertyId }, data: { isActive: false } })
+    // 종료한 영업장을 보고 있었다면 컨텍스트 정리 — 선택 화면으로.
+    const cookieStore = await cookies()
+    if (cookieStore.get('selected_property_id')?.value === propertyId) cookieStore.delete('selected_property_id')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 운영 재개 — 종료했던 영업장 다시 활성화.
+export async function reactivateProperty(propertyId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requirePropertyOwner(propertyId)
+    await prisma.property.update({ where: { id: propertyId }, data: { isActive: true } })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 영구 삭제 — 되돌릴 수 없음. 이름 정확 입력 확인 필수. 연쇄(cascade)로 하위 데이터 전부 삭제.
+export async function deletePropertyPermanently(
+  propertyId: string,
+  confirmName: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requirePropertyOwner(propertyId)
+    const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } })
+    if (!property) return { ok: false, error: '영업장을 찾을 수 없습니다.' }
+    // 오입력 방지 — 이름을 정확히 입력해야만 삭제(§9.3 파괴적 확인)
+    if (confirmName.trim() !== property.name.trim()) return { ok: false, error: '영업장 이름이 일치하지 않습니다.' }
+    // 모든 propertyId 관계는 onDelete: Cascade → 하위 데이터 연쇄 삭제.
+    await prisma.property.delete({ where: { id: propertyId } })
+    const cookieStore = await cookies()
+    if (cookieStore.get('selected_property_id')?.value === propertyId) cookieStore.delete('selected_property_id')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}

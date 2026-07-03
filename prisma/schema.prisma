@@ -438,7 +438,7 @@ model LeaseTerm {
   room   Room?   @relation(fields: [roomId], references: [id])
 
   propertyId String   @db.Uuid
-  property   Property @relation(fields: [propertyId], references: [id])
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   paymentRecords PaymentRecord[]
   statusLogs     TenantStatusLog[]
@@ -532,7 +532,7 @@ model PaymentRecord {
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   propertyId String   @db.Uuid
-  property   Property @relation(fields: [propertyId], references: [id])
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@unique([leaseTermId, targetMonth, seqNo])
   @@index([leaseTermId, targetMonth])
@@ -761,7 +761,7 @@ model TenantStatusLog {
   changedBy   User?   @relation(fields: [changedById], references: [id])
 
   propertyId String   @db.Uuid
-  property   Property @relation(fields: [propertyId], references: [id])
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, changedAt])
   @@index([propertyId, changedAt])
@@ -790,7 +790,7 @@ model TenantRequest {
   tenant     Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   propertyId String   @db.Uuid
-  property   Property @relation(fields: [propertyId], references: [id])
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([propertyId, resolvedAt])
   @@index([tenantId, createdAt])
