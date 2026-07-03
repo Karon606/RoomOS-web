@@ -39,6 +39,8 @@ const fmtRoomNo = (no: string | null | undefined) =>
 // ── 타입 ────────────────────────────────────────────────────────
 
 export type DashboardData = {
+  // 시작 체크리스트 — 3단계(호실·입주자·첫 수납) 모두 완료면 null
+  onboarding:        { hasRooms: boolean; hasTenants: boolean; hasPayments: boolean } | null
   totalRevenue:      number
   paidRevenue:       number
   extraRevenue:      number
@@ -1795,6 +1797,14 @@ const TABS: { key: Tab; label: string }[] = [
 
 export default function DashboardClient({ data, targetMonth, paymentMethods }: { data: DashboardData; targetMonth: string; paymentMethods: string[] }) {
   const router = useRouter()
+  // KPI 용어 설명(사용성 감사 F3) — 라벨 옆 ? 탭
+  const [kpiHelp, setKpiHelp] = useState<{ title: string; body: string } | null>(null)
+  const KPI_HELP = {
+    projectedRevenue: { title: '예상 매출', body: '이번 달 입주자 전원이 납부를 마쳤을 때의 매출입니다. 퇴실 예정은 일할 정산으로, 입주 예정(예약 확정)은 전액으로 반영됩니다. 막대는 지금까지 실제 수납된 금액의 달성률입니다.' },
+    projectedNetProfit: { title: '예상 순이익', body: '예상 매출에서 이미 쓴 지출과 아직 안 빠진 고정지출(예상치)을 뺀 월말 전망입니다. 막대는 예상 지출 중 실제로 확정된 비율 — 다 채워질수록 전망이 정확해집니다.' },
+    overdue: { title: '누적 미납', body: '납부일이 지났는데 아직 받지 못한 금액의 합계입니다. 지난달 이전에 밀린 금액(이월 미수)도 포함됩니다. 카드를 누르면 수납 관리로 이동합니다.' },
+    expectedExpense: { title: '예상 지출', body: '이미 쓴 지출에 아직 안 빠진 고정지출(임대료·공과금 등 예상치)을 더한 이번 달 전망입니다. 막대 색은 줄일 수 있는 정도 순 — 고정(정액)·고정(변동)·수시.' },
+  }
   // viewMonth가 현재이면 "오늘 기준", 그 외(과거/미래)는 "○월 말일 기준"
   const isViewingRealMonth = targetMonth === kstMonthStr()
   const basisLabel = isViewingRealMonth
@@ -1855,6 +1865,46 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
   return (
     <div className="space-y-3.5">
 
+      {/* ── 시작 체크리스트(온보딩) — 신규 영업장: 무엇부터 할지 3단계 안내 ── */}
+      {data.onboarding && (() => {
+        const ob = data.onboarding
+        const steps = [
+          { done: ob.hasRooms,    label: '호실 등록',   desc: '운영할 방(호실)을 먼저 만들어 주세요.',   href: '/room-manage' },
+          { done: ob.hasTenants,  label: '입주자 등록', desc: '입주자를 등록하고 호실에 배정합니다.',     href: '/tenants' },
+          { done: ob.hasPayments, label: '첫 수납 기록', desc: '이용료를 받으면 수납 관리에 기록합니다.',  href: '/rooms' },
+        ]
+        const doneCount = steps.filter(s => s.done).length
+        return (
+          <section className="rounded-xl p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
+            <div>
+              <h2 className="text-sm font-bold text-[var(--warm-dark)]">시작하기 <span className="text-[var(--coral)] tnum">{doneCount}/3</span></h2>
+              <p className="text-xs text-[var(--warm-muted)] mt-0.5">세 단계면 운영 준비가 끝납니다. 완료된 단계는 자동으로 체크됩니다.</p>
+            </div>
+            <ol className="space-y-1.5">
+              {steps.map((s, i) => (
+                <li key={s.label}>
+                  <Link href={s.href}
+                    className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 transition-colors ${s.done ? 'border-[var(--warm-border)] opacity-60' : 'border-[var(--coral)]/40 hover:bg-[var(--canvas)]'}`}>
+                    <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold ${s.done ? 'bg-[var(--success-bg)] text-[var(--success-fg)]' : 'bg-[var(--coral)] text-white'}`}>
+                      {s.done
+                        ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>
+                        : i + 1}
+                    </span>
+                    <span className="min-w-0">
+                      <span className={`block text-sm font-semibold ${s.done ? 'text-[var(--warm-muted)] line-through' : 'text-[var(--warm-dark)]'}`}>{s.label}</span>
+                      {!s.done && <span className="block text-xs text-[var(--warm-muted)]">{s.desc}</span>}
+                    </span>
+                    {!s.done && (
+                      <svg className="ml-auto shrink-0 text-[var(--coral)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
+                    )}
+                  </Link>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )
+      })()}
+
       {/* ── 기간(월) 셀렉터 — 우측 정렬 ────────────────────────────── */}
       <div className="flex justify-end">
         <MonthSelector />
@@ -1866,6 +1916,11 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
       {/* ── 찍어 올리기 + 등록 대기 (영수증/물품 AI 분류) ─────────────────────────── */}
       <PendingReceiptSection />
 
+      {/* KPI 용어 한 줄 설명 — 라벨 옆 ? 탭(모바일 title 힌트 대체, 사용성 감사 F3) */}
+      <Modal open={!!kpiHelp} onClose={() => setKpiHelp(null)} title={kpiHelp?.title} width="xs">
+        <p className="p-5 text-sm leading-relaxed text-[var(--warm-dark)]">{kpiHelp?.body}</p>
+      </Modal>
+
       {/* ── KPI 카드 (§23.5 반응형: 모바일 2 → sm 3 → lg 4) ──────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
 
@@ -1875,6 +1930,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,252,247,0.55)', marginBottom: 8 }}>
             예상 매출
             <span style={{ fontSize: '0.5625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'rgba(255,252,247,0.5)' }}>(이번 달)</span>
+            <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.projectedRevenue) }} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full align-[-2px] text-[0.5625rem] font-bold" style={{ marginLeft: 6, background: 'rgba(127,127,127,0.22)', color: 'inherit' }}>?</button>
           </p>
           <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
             {data.projectedRevenue.toLocaleString()}
@@ -1914,6 +1970,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
               <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--np-label)', marginBottom: 8 }}>
                 예상 순이익
                 <span style={{ fontSize: '0.5625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'var(--np-cap)' }}>(이번 달)</span>
+                <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.projectedNetProfit) }} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full align-[-2px] text-[0.5625rem] font-bold" style={{ marginLeft: 6, background: 'rgba(127,127,127,0.22)', color: 'inherit' }}>?</button>
               </p>
               <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: isPosExp ? 'var(--np-pos)' : 'var(--np-neg)' }}>
                 {isPosExp ? '+' : ''}{expectedNet.toLocaleString()}
@@ -1936,6 +1993,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             boxShadow: data.overdueAmount > 0 ? 'inset 3px 0 0 var(--danger-fg)' : undefined }}>
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             누적 미납
+            <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.overdue) }} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full align-[-2px] text-[0.5625rem] font-bold" style={{ marginLeft: 6, background: 'rgba(127,127,127,0.22)', color: 'inherit' }}>?</button>
           </p>
           <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.overdueAmount > 0 ? 'var(--tc)' : 'var(--ink-2)' }}>
             {data.overdueAmount.toLocaleString()}
@@ -1951,6 +2009,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         <Link href="/finance?tab=expense" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             예상 지출 <span style={{ fontSize: '0.5625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 4, color: 'var(--warm-muted)' }}>(이번 달)</span>
+            <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.expectedExpense) }} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full align-[-2px] text-[0.5625rem] font-bold" style={{ marginLeft: 6, background: 'rgba(127,127,127,0.22)', color: 'inherit' }}>?</button>
           </p>
           <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--ink-2)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
             {data.expectedExpense.toLocaleString()}

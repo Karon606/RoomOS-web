@@ -1523,6 +1523,22 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }
   }
 
+  // 시작 체크리스트(온보딩) — 신규 영업장 안내. 3단계 모두 완료면 null(카드 미표시).
+  // 수납 여부는 이 달 조회분에 없을 때만 전체 이력 1건 존재를 확인(설립 초기 외엔 추가 쿼리 없음).
+  let onboarding: { hasRooms: boolean; hasTenants: boolean; hasPayments: boolean } | null = null
+  {
+    const obRooms = totalRooms > 0
+    const obTenants = activeLeases.length > 0
+    let obPayments = payments.length > 0
+    if (!obRooms || !obTenants || !obPayments) {
+      if (!obPayments) {
+        const anyPay = await prisma.paymentRecord.findFirst({ where: { propertyId }, select: { id: true } })
+        obPayments = !!anyPay
+      }
+      if (!(obRooms && obTenants && obPayments)) onboarding = { hasRooms: obRooms, hasTenants: obTenants, hasPayments: obPayments }
+    }
+  }
+
   const dashboardData: DashboardData = {
     totalRevenue,
     paidRevenue,
@@ -1556,6 +1572,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     totalRooms,
     vacantRooms,
     occupiedRooms: totalRooms - vacantRooms,
+    onboarding,
     statusCounts: { active: activeCount, reserved: reservedCount, checkout: checkoutCount, nonResident: nonResidentCount, waitingTour: waitingTourLeases.length },
     totalTenants:    activeTenants.length,
     genderDist:      toDistribution(genderMap),
