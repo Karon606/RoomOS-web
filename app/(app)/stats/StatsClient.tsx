@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useEffect } from 'react'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
+import { ViewTabs } from '@/components/ui/ViewTabs'
 import { analyzeDashboardWithGemini, getTrendData, type TrendRange, type TrendPoint } from '../dashboard/actions'
 import type { DashboardData } from '../dashboard/DashboardClient'
 
@@ -409,20 +410,14 @@ export default function StatsClient({ data, targetMonth }: { data: DashboardData
 
   return (
     <div className="space-y-5">
-      <div className="flex gap-2 sticky top-0 z-10 pb-1 pt-0.5" style={{ background: 'var(--canvas)' }}>
-        {([
-          { key: 'finance', label: '재무현황' },
-          { key: 'tenants', label: '입주자 통계' },
-          { key: 'ai',      label: '✦ AI 분석' },
-        ] as const).map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className="px-4 py-2 text-sm font-medium rounded-xl transition-colors"
-            style={tab === t.key
-              ? { background: 'var(--coral)', color: '#fff' }
-              : { background: 'var(--cream)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
-            {t.label}
-          </button>
-        ))}
+      <div className="sticky top-0 z-10 pb-1 pt-0.5" style={{ background: 'var(--canvas)' }}>
+        <ViewTabs ariaLabel="통계 탭" activeId={tab}
+          onChange={id => setTab(id as 'finance' | 'tenants' | 'ai')}
+          tabs={[
+            { id: 'finance', label: '재무현황' },
+            { id: 'tenants', label: '입주자 통계' },
+            { id: 'ai',      label: 'AI 분석' },
+          ]} />
       </div>
       {tab === 'finance' && <FinanceTab data={data} targetMonth={targetMonth} />}
       {tab === 'tenants' && <TenantsTab data={data} />}
