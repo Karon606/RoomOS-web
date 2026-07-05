@@ -9,6 +9,7 @@
 - **보안 및 인증:** Supabase API Key 및 환경 변수 노출 절대 불가.
 - **DB 무결성:** 기존 DB 스키마 및 RLS(Row Level Security) 정책 충돌 발생 여부 확인.
 - **핵심 운영 로직:** 입실자 계약 기간 처리, 결제일 기준 임대료 일할 계산 로직, 방 상태 변경 등이 에러 없이 정상 동작하는가.
+- **UI/UX 정합(상용화 기준):** UI를 신설·변경했다면 ① 정본 공용 컴포넌트(Btn·Modal·SearchBar·SegmentedControl·ViewTabs·SelectionPillBar·MergeSheet·EmptyState·SpecWizard·ConfirmDialog) 재사용 확인 ② 같은 행동을 하는 형제 페이지와 동일 문법인지 전수 대조(선택=꾹/버튼+알약바, 합치기=MergeSheet, 등록=Modal+dirty, 검색=상시 SearchBar, 월전환=우측) ③ docs/brand-guide-v1.3.md 해당 § 확인. **새 인터랙션 패턴 도입은 4번(인간 호출) 대상 — 가이드 등재 없이 임의 신설 금지.** 레이아웃 변경은 모바일 폭 시각 확인.
 
 ## 2. 측정 기준 (객관적 지표)
 숫자와 로그로 측정할 수 있는 아래 기준들을 확인해라.
