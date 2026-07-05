@@ -139,3 +139,66 @@ export function calcCheckoutRefund(input: {
   const refund = Math.max(0, prepaidAmount - companyKeeps)
   return { mode, daysUsed, dailyRate, usedAmount, penalty, companyKeeps, refund }
 }
+
+// ── 단기 입실 요금 시뮬레이션 (2026-07-05, 운영자 요청) ─────────────────────
+// 입실일~퇴실일 총 요금을 회차(입주일 기준 월 단위) + 마지막 부분 기간 일할로 분해.
+// 선납 모델과 동일 규칙: 각 회차 = [시작일, 다음 달 같은 날 - 1] (말일 클램프),
+// 마지막 부분 기간은 양끝 포함 일수 × 월세/30 (calcCheckoutProration 과 같은 수학) —
+// 등록 없이 견적만 내도 실제 정산과 금액이 일치한다.
+export type StayQuoteItem = {
+  start: string; end: string       // 'YYYY-MM-DD' (양끝 포함)
+  days: number | null              // 부분 기간 일수 (전액 회차는 null)
+  amount: number
+  full: boolean                    // true = 한 달 전액 회차
+}
+export type StayQuote = {
+  items: StayQuoteItem[]
+  total: number
+  fullMonths: number               // 전액 회차 수
+  partialDays: number              // 마지막 부분 기간 일수 (없으면 0)
+}
+
+const ymdToUtc = (s: string): Date | null => {
+  const p = s.split('-').map(Number)
+  if (p.length !== 3 || p.some(isNaN)) return null
+  return new Date(Date.UTC(p[0], p[1] - 1, p[2]))
+}
+const utcToYmd = (d: Date): string => d.toISOString().slice(0, 10)
+const addMonthsClamped = (d: Date, n: number): Date => {
+  const y = d.getUTCFullYear(), m = d.getUTCMonth(), day = d.getUTCDate()
+  const last = new Date(Date.UTC(y, m + n + 1, 0)).getUTCDate()
+  return new Date(Date.UTC(y, m + n, Math.min(day, last)))
+}
+const addDays = (d: Date, n: number): Date => new Date(d.getTime() + n * 86400000)
+
+export function calcStayQuote(monthlyRent: number, moveInYmd: string, moveOutYmd: string): StayQuote | null {
+  if (!monthlyRent || monthlyRent <= 0) return null
+  const start = ymdToUtc(moveInYmd)
+  const end = ymdToUtc(moveOutYmd)
+  if (!start || !end || end.getTime() < start.getTime()) return null
+
+  const items: StayQuoteItem[] = []
+  let cursor = start
+  let fullMonths = 0
+  let partialDays = 0
+  // 안전 상한 36회차(3년) — 단기 시뮬 용도라 충분
+  for (let i = 0; i < 36; i++) {
+    const nextStart = addMonthsClamped(start, fullMonths + 1)
+    const cycleEnd = addDays(nextStart, -1)
+    if (end.getTime() >= cycleEnd.getTime()) {
+      items.push({ start: utcToYmd(cursor), end: utcToYmd(cycleEnd), days: null, amount: monthlyRent, full: true })
+      fullMonths++
+      cursor = nextStart
+      if (end.getTime() === cycleEnd.getTime()) break   // 회차 마지막 날 퇴실 = 딱 떨어짐
+    } else {
+      // 마지막 부분 기간 — 양끝 포함, 30일 기준(일할과 동일)
+      const days = Math.max(1, Math.min(Math.round((end.getTime() - cursor.getTime()) / 86400000) + 1, PRORATE_BASE_DAYS))
+      const amount = Math.floor((monthlyRent * days) / PRORATE_BASE_DAYS)
+      items.push({ start: utcToYmd(cursor), end: utcToYmd(end), days, amount, full: false })
+      partialDays = days
+      break
+    }
+  }
+  const total = items.reduce((s, it) => s + it.amount, 0)
+  return { items, total, fullMonths, partialDays }
+}

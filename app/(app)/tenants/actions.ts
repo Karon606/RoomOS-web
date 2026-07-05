@@ -1957,3 +1957,17 @@ export async function batchUpdateTenants(
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
+
+// 단기 입실 요금 시뮬레이션용 — 방 목록(월세·사용중 여부). 등록 없이 견적만 낼 때 방 선택 → 월세 자동.
+export async function getRoomsForQuote(): Promise<{ id: string; roomNo: string; baseRent: number; occupied: boolean }[]> {
+  const { propertyId } = await getPropertyId()
+  const rooms = await prisma.room.findMany({
+    where: { propertyId },
+    orderBy: { roomNo: 'asc' },
+    select: {
+      id: true, roomNo: true, baseRent: true,
+      leaseTerms: { where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } }, select: { id: true }, take: 1 },
+    },
+  })
+  return rooms.map(r => ({ id: r.id, roomNo: r.roomNo, baseRent: r.baseRent, occupied: r.leaseTerms.length > 0 }))
+}
