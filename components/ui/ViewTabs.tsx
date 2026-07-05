@@ -6,6 +6,11 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 
+// 링크 탭(href)은 페이지 전환 시 컴포넌트가 리마운트돼 슬라이드가 사라진다(수납만 움직인다는 지적 2026-07-06).
+// 같은 탭 구성(id 목록)끼리 직전 썸 위치를 모듈 레벨에 기억해, 클릭 즉시 낙관 이동 + 새 페이지 마운트 시
+// 기억 위치에서 실측 위치로 이어 붙인다 — 버튼 탭과 링크 탭의 체감을 통일.
+const thumbMemory = new Map<string, { left: number; width: number }>()
+
 export interface ViewTab {
   id: string              // 탭 식별자 (패널 aria-labelledby와 매칭)
   label: string
@@ -33,18 +38,27 @@ export function ViewTabs({
 
   // 슬라이딩 코랄 채움(§25.3) — 활성 탭 위치를 실측해 채움 블록이 탭 사이를 미끄러진다.
   // 세그먼트 배경은 투명(트랙이 cream), 채움은 z-0, 탭 콘텐츠는 z-1. reduced-motion이면 즉시 점프.
-  const [thumb, setThumb] = useState<{ left: number; width: number } | null>(null)
-  const activeIdx = tabs.findIndex(t => t.id === activeId)
+  const memKey = tabs.map(t => t.id).join('|')
+  const [thumb, setThumb] = useState<{ left: number; width: number } | null>(() => thumbMemory.get(memKey) ?? null)
+  // 링크 탭 낙관 활성 — 클릭 즉시 텍스트 색까지 새 탭으로(썸만 먼저 가면 옛 탭 크림 글자가 트랙에 묻힘)
+  const [optimisticIdx, setOptimisticIdx] = useState<number | null>(null)
+  const activeIdx = optimisticIdx ?? tabs.findIndex(t => t.id === activeId)
   useLayoutEffect(() => {
     const el = refs.current[activeIdx]
     if (!el) { setThumb(null); return }
-    const measure = () => setThumb({ left: el.offsetLeft, width: el.offsetWidth })
-    measure()
+    const measure = () => {
+      const rect = { left: el.offsetLeft, width: el.offsetWidth }
+      setThumb(rect)
+      thumbMemory.set(memKey, rect)
+    }
+    // 기억 위치(직전 페이지)에서 실측 위치로 트랜지션되도록 한 프레임 뒤에 측정
+    if (thumbMemory.has(memKey)) requestAnimationFrame(measure)
+    else measure()
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     if (el.parentElement) ro.observe(el.parentElement)
     return () => ro.disconnect()
-  }, [activeIdx, tabs.length, fill, equal])
+  }, [activeIdx, tabs.length, fill, equal, memKey])
 
   // 키보드 roving(§24.6) — ←/→ 이동, Home/End 처음/끝. 활성만 tabindex=0.
   const onKeyDown = (e: React.KeyboardEvent, idx: number) => {
@@ -79,7 +93,7 @@ export function ViewTabs({
           style={{ left: thumb.left, width: thumb.width }} />
       )}
       {tabs.map((t, i) => {
-        const active = t.id === activeId
+        const active = i === activeIdx
         const cls = `${segBase} ${t.disabled ? segDisabled : active ? segActive : segInactive}`
         const content = (
           <>
@@ -97,6 +111,14 @@ export function ViewTabs({
             tabIndex={active ? 0 : -1}
             ref={el => { refs.current[i] = el }}
             onKeyDown={e => onKeyDown(e, i)}
+            onClick={() => {
+              setOptimisticIdx(i)
+              const el = refs.current[i]
+              if (!el) return
+              const rect = { left: el.offsetLeft, width: el.offsetWidth }
+              setThumb(rect)
+              thumbMemory.set(memKey, rect)
+            }}
             className={cls}
           >
             {content}
