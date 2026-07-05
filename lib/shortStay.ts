@@ -13,11 +13,12 @@ export type ShortStayPolicy = {
   thresholdDays: number   // 이 거주일수 이하일 때 정책 적용 (30 = 1달 이내)
   multiplier: number      // 청구 배율 (1.5 = 계약일수의 1.5배 일수만큼 청구)
   cleaningFee: number     // 단기 청소비 (원)
+  roundTo: number         // 기본요금 절삭 단위 (1000 = 천원 단위 반올림, 1 = 절삭 없음)
 }
 
 // 신규 영업장 기본값 — 정책 미사용. 제기역점 값은 시드로 저장돼 있음.
 export const SHORT_STAY_DEFAULTS: ShortStayPolicy = {
-  enabled: false, unitDays: 7, minUnits: 1, thresholdDays: 30, multiplier: 1.5, cleaningFee: 20000,
+  enabled: false, unitDays: 7, minUnits: 1, thresholdDays: 30, multiplier: 1.5, cleaningFee: 20000, roundTo: 1000,
 }
 
 // DB Json 값 → 정책 (필드 누락·이상값은 기본값으로 방어)
@@ -36,6 +37,7 @@ export function parseShortStayPolicy(raw: unknown): ShortStayPolicy {
     thresholdDays: Math.round(num(o.thresholdDays, d.thresholdDays, 1, 90)),
     multiplier: num(o.multiplier, d.multiplier, 1, 5),
     cleaningFee: Math.round(num(o.cleaningFee, d.cleaningFee, 0, 10_000_000)),
+    roundTo: Math.round(num(o.roundTo, d.roundTo, 1, 100_000)),
   }
 }
 
@@ -44,7 +46,7 @@ export type ShortStayQuote = {
   units: number          // 계약 단위 수 (올림, 최소 minUnits)
   contractDays: number   // 계약일수 = units × unitDays
   billedDays: number     // 청구 일수 = floor(계약일수 × 배율), 1개월(30일) 상한
-  baseAmount: number     // floor(월세 × 청구일수 / 30)
+  baseAmount: number     // 월세 × 청구일수 / 30 을 roundTo 단위로 반올림 (운영자 기준: 천원 단위)
   cleaningFee: number
   total: number          // baseAmount + cleaningFee
   cappedAtMonth: boolean // 배율 적용 결과가 1개월을 넘어 상한에 걸림 (3주부터)
@@ -79,7 +81,9 @@ export function calcShortStay(policy: ShortStayPolicy, monthlyRent: number, stay
   const contractDays = units * policy.unitDays
   const rawBilled = Math.floor(contractDays * policy.multiplier)
   const billedDays = Math.min(rawBilled, PRORATE_BASE_DAYS)
-  const baseAmount = Math.floor((monthlyRent * billedDays) / PRORATE_BASE_DAYS)
+  // 원단위 절삭 — 일할 원값을 roundTo(기본 1,000원) 단위로 반올림 (운영자 기준 2026-07-06)
+  const roundTo = Math.max(1, policy.roundTo)
+  const baseAmount = Math.round(Math.floor((monthlyRent * billedDays) / PRORATE_BASE_DAYS) / roundTo) * roundTo
   return {
     stayDays, units, contractDays, billedDays, baseAmount,
     cleaningFee: policy.cleaningFee,

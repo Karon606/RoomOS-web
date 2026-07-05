@@ -161,6 +161,10 @@ const RENT = 300000
   // 날짜 → 일수 (양끝 포함)
   eq('단기: 6/20~6/26 = 7일', stayDaysOf('2026-06-20', '2026-06-26'), 7)
   eq('단기: 역순 → null', stayDaysOf('2026-06-20', '2026-06-19'), null)
+  // 원단위 절삭 — 천원 기준 반올림 (월세 55만 1주 = 183,333 → 183,000 / 32.5만 2주 = 227,500 → 228,000)
+  eq('단기: 천원 반올림(내림 방향)', calcShortStay(P, 550000, 7)?.baseAmount, 183000)
+  eq('단기: 천원 반올림(올림 방향)', calcShortStay(P, 325000, 14)?.baseAmount, 228000)
+  eq('단기: 절삭 없음(roundTo 1)', calcShortStay({ ...P, roundTo: 1 }, 550000, 7)?.baseAmount, 183333)
   // JSON 방어 파싱 — 이상값은 기본값으로
   eq('단기: 정책 파싱 방어', parseShortStayPolicy({ enabled: true, multiplier: 99, cleaningFee: -5 }),
     { ...SHORT_STAY_DEFAULTS, enabled: true })
