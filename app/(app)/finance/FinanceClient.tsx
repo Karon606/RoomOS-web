@@ -721,6 +721,19 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
   const [rows, setRows] = useState<{ vendor: string; count: number }[] | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<string | null>(null)
+  // 명시적 병합(신고 e32c60ab) — '같은 이름으로 바꾸면 합쳐짐'이 헷갈려 재고 합치기처럼 대상 선택형으로
+  const [mergeFor, setMergeFor] = useState<string | null>(null)
+  const [mergeTarget, setMergeTarget] = useState('')
+  const doMerge = async (src: string, count: number) => {
+    if (!mergeTarget) return
+    if (!(await confirmDialog({
+      title: `'${src}' → '${mergeTarget}' 합치기`,
+      message: `'${src}'의 지출 ${count}건이 '${mergeTarget}'(으)로 합쳐집니다.`,
+      confirmLabel: '합치기',
+    }))) return
+    setMergeFor(null); setMergeTarget('')
+    await apply(src, mergeTarget)
+  }
   const load = () => getVendorUsage().then(setRows)
   useEffect(() => { load() }, [])
 
@@ -742,7 +755,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
 
   return (
     <Modal open onClose={onClose} title="구매처 관리"
-      subtitle="오타·중복 정리. 같은 이름으로 바꾸면 합쳐지고, 비우면 그 지출들의 구매처가 제거됩니다."
+      subtitle="이름을 고치면 표기만 바뀝니다. 다른 구매처와 합치려면 행의 '합치기'로 대상을 고르세요. 비우면 그 지출들의 구매처 표시가 사라집니다."
       width="md" dirty={dirty}>
       <div className="px-5 py-3 space-y-1.5" onInput={() => setDirty(true)}>
           {rows === null ? (
@@ -753,15 +766,34 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
             const val = edits[r.vendor] ?? r.vendor
             const changed = val.trim() !== r.vendor
             return (
-              <div key={r.vendor} className="flex items-center gap-1.5">
+              <Fragment key={r.vendor}>
+              <div className="flex items-center gap-1.5">
                 <input type="text" value={val} onChange={e => setEdits(p => ({ ...p, [r.vendor]: e.target.value }))}
                   className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0 w-9 text-right">{r.count}건</span>
                 <button type="button" disabled={busy === r.vendor || !changed} onClick={() => apply(r.vendor, val)}
                   className="text-xs px-2 py-1 rounded-lg bg-[var(--coral)] text-white disabled:opacity-30 shrink-0">저장</button>
+                <button type="button" disabled={busy === r.vendor}
+                  onClick={() => { setMergeFor(m => m === r.vendor ? null : r.vendor); setMergeTarget('') }}
+                  className={`text-xs px-1.5 py-1 shrink-0 transition-colors ${mergeFor === r.vendor ? 'text-[var(--coral)] font-semibold' : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>합치기</button>
                 <button type="button" disabled={busy === r.vendor} onClick={() => apply(r.vendor, '')}
                   className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-1.5 py-1 shrink-0" title="구매처 비우기">비움</button>
               </div>
+              {mergeFor === r.vendor && (
+                <div className="flex items-center gap-1.5 pb-1 pl-2">
+                  <span className="text-xs text-[var(--warm-muted)] shrink-0">→ 합칠 대상</span>
+                  <select value={mergeTarget} onChange={e => setMergeTarget(e.target.value)}
+                    className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none">
+                    <option value="">선택하세요</option>
+                    {(rows ?? []).filter(x => x.vendor !== r.vendor).map(x => (
+                      <option key={x.vendor} value={x.vendor}>{x.vendor} ({x.count}건)</option>
+                    ))}
+                  </select>
+                  <button type="button" disabled={!mergeTarget || busy === r.vendor} onClick={() => doMerge(r.vendor, r.count)}
+                    className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--coral)] text-white disabled:opacity-30 shrink-0">합치기</button>
+                </div>
+              )}
+              </Fragment>
             )
           })}
       </div>
