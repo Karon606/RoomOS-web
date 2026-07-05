@@ -15,8 +15,15 @@
 - **[중간→해결, 584eba7] 유료 API denial-of-wallet**: ai-analysis·market-analyze(Gemini)·naver-places(네이버)가 인증 없이 열려 외부가 우리 API 비용 소진 가능 → `getClaims()` 게이트 추가(401). 앱 내부 호출은 세션 동반이라 불변.
 - **[IME, 35dfef4]** 영업장 이름 입력 자모 분리 — 보안 아님(렌더 리마운트). 인라인 컴포넌트 → JSX 상수.
 
-## 미해결 — 운영자 확인 필요 (인증/권한 §4)
-**영업장 격리가 UUID 비밀성에 의존**:
+## 해결 (2026-07-06, ee5225e — 운영자 승인 후 시공)
+**영업장 격리 중앙화 완료**: lib/auth/propertyAccess.ts `requirePropertyAccess()`(redirect)/`getPropertyAccess()`(nullable, API용).
+허용 = UserPropertyRole 행 | property.ownerId(레거시) | 슈퍼관리자. React cache()로 요청당 1회 조회.
+- 22개 파일 로컬 getPropertyId/requireAuthAndProperty → 관문 위임, getMyRole STAFF 폴백 제거(비멤버는 /property-select).
+- (app)/layout 격리 가드(슈퍼관리자 관리자 뷰는 유지), export·doc-file 403 게이트, import 2종은 중앙 관문+canEdit(오탐 해소).
+- generate 3종 라우트는 requireEdit→getMyRole→관문으로 전이적 검증(쿠키 직독 잔존하나 동일 요청서 검증됨).
+- 검증: scripts/verify-property-access.mjs — 전 (user×property) 조합 구/신 판정 diff, 정상 사용자 잠김 0, 신규 차단은 구 STAFF 폴백 무단 읽기뿐.
+
+### (기록) 원 문제 — 영업장 격리가 UUID 비밀성에 의존:
 - 모든 서버 액션의 `getPropertyId()`/`requireAuthAndProperty()`가 쿠키 `selected_property_id`를 **멤버십 재검증 없이 신뢰**.
 - 정상 경로(selectProperty)는 멤버십 확인 후에만 쿠키를 씀 + 쿠키 httpOnly. 그러나 인증된 사용자가 **요청 헤더에 남의 영업장 UUID를 직접 실어 보내면** 그 영업장 데이터를 읽을 수 있음(쓰기는 requireEdit→canEdit=STAFF 차단, **읽기는 무방비**).
 - **실질 위험 낮음**: UUID v4(추측·목록화 불가) 필요. 하지만 접근통제를 ID 비밀성에 기대는 것은 원칙 위반(방어심층화). 상용화 시 영업장 증가 + UUID가 에러리포트·공유링크·지원채널로 유출 가능.
