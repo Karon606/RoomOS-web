@@ -206,10 +206,17 @@ export type LastItemContext = {
 
 export async function getLastItemUnits(itemLabel: string): Promise<LastItemContext | null> {
   const propertyId = await getPropertyId()
-  const [row, tracked] = await Promise.all([
+  const sel = { specValue: true, specUnit: true, specText: true, unitBasis: true, qtyValue: true, qtyUnit: true, amount: true } as const
+  const [row, priceRow, tracked] = await Promise.all([
     prisma.expense.findFirst({
       where: { propertyId, itemLabel },
-      select: { specValue: true, specUnit: true, specText: true, unitBasis: true, qtyValue: true, qtyUnit: true, amount: true },
+      select: sel,
+      orderBy: { createdAt: 'desc' },
+    }),
+    // 단가 이력은 유상 구매만 — 무상입수(0원) 행이 최신이면 단가가 비어버리는 것 방지(하수구트랩 사례 2026-07-06)
+    prisma.expense.findFirst({
+      where: { propertyId, itemLabel, amount: { gt: 0 } },
+      select: sel,
       orderBy: { createdAt: 'desc' },
     }),
     // 품목의 재고 추적 단위 — '수량' 품목(종량제봉투 등)은 개당 단가가 기본이 되도록(오류신고 c7cf6180)
@@ -222,9 +229,11 @@ export async function getLastItemUnits(itemLabel: string): Promise<LastItemConte
     ? ((row.unitBasis === 'spec' || row.unitBasis === 'qty') ? row.unitBasis : (row.specValue ? 'spec' : 'qty'))
     : null
   let unitPrice: number | null = null
-  if (row && row.amount > 0) {
-    const q = (row.qtyValue ?? 1) * (basis === 'spec' ? (row.specValue ?? 1) : 1)
-    if (q > 0) unitPrice = Math.round(row.amount / q)
+  if (priceRow && priceRow.amount > 0) {
+    const pBasis: 'spec' | 'qty' = (priceRow.unitBasis === 'spec' || priceRow.unitBasis === 'qty')
+      ? priceRow.unitBasis : (priceRow.specValue ? 'spec' : 'qty')
+    const q = (priceRow.qtyValue ?? 1) * (pBasis === 'spec' ? (priceRow.specValue ?? 1) : 1)
+    if (q > 0) unitPrice = Math.round(priceRow.amount / q)
   }
   return {
     specUnit: row?.specUnit ?? null,
