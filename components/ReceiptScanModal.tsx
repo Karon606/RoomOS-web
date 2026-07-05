@@ -9,6 +9,10 @@ import { Btn } from '@/components/ui/Btn'
 
 type CropPt = { x: number; y: number }
 type CropCorners = { tl: CropPt; tr: CropPt; br: CropPt; bl: CropPt }
+type EdgeKey = 'top' | 'right' | 'bottom' | 'left'
+const EDGES: Record<EdgeKey, [keyof CropCorners, keyof CropCorners]> = {
+  top: ['tl', 'tr'], right: ['tr', 'br'], bottom: ['br', 'bl'], left: ['bl', 'tl'],
+}
 
 function gaussSolve(A: number[][], b: number[]): number[] {
   const n = b.length
@@ -122,20 +126,22 @@ export function dataUrlToFile(dataUrl: string, name: string): File {
 
 // ─── ReceiptScanModal ─────────────────────────────────────────────────────
 
-function CornerHandle({ cx, cy, containerRef, onMove, onStart, onEnd }: {
+function CornerHandle({ cx, cy, containerRef, onMove, onStart, onEnd, variant = 'corner' }: {
   cx: number; cy: number
   containerRef: React.RefObject<HTMLDivElement | null>
   onMove: (x: number, y: number) => void
   onStart?: () => void
   onEnd?: () => void
+  variant?: 'corner' | 'edge'   // edge = 변 중앙 핸들(작게·반전색) — 변 전체를 법선 방향으로 평행이동
 }) {
-  const SIZE = 28
+  const SIZE = variant === 'corner' ? 28 : 22
   return (
     <div
       style={{
         position: 'absolute', left: cx - SIZE / 2, top: cy - SIZE / 2,
         width: SIZE, height: SIZE, borderRadius: '50%',
-        background: 'var(--coral)', border: '3px solid white',
+        background: variant === 'corner' ? 'var(--coral)' : 'white',
+        border: variant === 'corner' ? '3px solid white' : '3px solid var(--coral)',
         cursor: 'grab', touchAction: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.5)', zIndex: 2,
       }}
       onPointerDown={e => {
@@ -244,7 +250,7 @@ export function ReceiptScanModal({ bitmap, onConfirm, onCancel }: {
   const dW = Math.round(bitmap.width * sc), dH = Math.round(bitmap.height * sc)
   const [corners, setCorners] = useState<CropCorners>(() => detectDocumentCorners(bitmap))
   const [processing, setProcessing] = useState(false)
-  const [activeCorner, setActiveCorner] = useState<keyof CropCorners | null>(null)
+  const [activeHandle, setActiveHandle] = useState<keyof CropCorners | EdgeKey | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -255,6 +261,31 @@ export function ReceiptScanModal({ bitmap, onConfirm, onCancel }: {
 
   const moveCorner = (key: keyof CropCorners, x: number, y: number) =>
     setCorners(prev => ({ ...prev, [key]: { x: x / dW, y: y / dH } }))
+
+  // 변 중앙 핸들 — 변 전체를 그 변의 90도(법선) 방향으로 평행이동(운영자 요청 2026-07-06).
+  // 포인터 이동의 법선 성분만 취해 변의 방향·길이는 유지, 양 끝점이 캔버스를 벗어나지 않게 t 클램프.
+  const moveEdge = (edge: EdgeKey, px: number, py: number) =>
+    setCorners(prev => {
+      const [k1, k2] = EDGES[edge]
+      const a = { x: prev[k1].x * dW, y: prev[k1].y * dH }
+      const b = { x: prev[k2].x * dW, y: prev[k2].y * dH }
+      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
+      const nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len
+      let t = (px - (a.x + b.x) / 2) * nx + (py - (a.y + b.y) / 2) * ny
+      let tMin = -Infinity, tMax = Infinity
+      const bound = (pos: number, n: number, limit: number) => {
+        if (Math.abs(n) < 1e-6) return
+        const lo = (0 - pos) / n, hi = (limit - pos) / n
+        tMin = Math.max(tMin, Math.min(lo, hi)); tMax = Math.min(tMax, Math.max(lo, hi))
+      }
+      bound(a.x, nx, dW); bound(a.y, ny, dH); bound(b.x, nx, dW); bound(b.y, ny, dH)
+      t = Math.max(tMin, Math.min(tMax, t))
+      return {
+        ...prev,
+        [k1]: { x: (a.x + nx * t) / dW, y: (a.y + ny * t) / dH },
+        [k2]: { x: (b.x + nx * t) / dW, y: (b.y + ny * t) / dH },
+      }
+    })
 
   const handleConfirm = async () => {
     setProcessing(true)
@@ -281,7 +312,7 @@ export function ReceiptScanModal({ bitmap, onConfirm, onCancel }: {
 
   return (
     <div className="fixed inset-0 z-[var(--z-lightbox)] flex flex-col items-center justify-center bg-black/92">
-      <p className="text-white text-sm font-medium mb-4 px-4 text-center">모서리를 드래그해서 영수증 테두리를 맞추세요</p>
+      <p className="text-white text-sm font-medium mb-4 px-4 text-center">모서리를 드래그해 맞추세요. 변 가운데 흰 점을 끌면 그 변 전체가 움직여요</p>
       <div ref={containerRef} className="relative" style={{ width: dW, height: dH, touchAction: 'none' }}>
         <canvas ref={canvasRef} width={dW} height={dH} className="block rounded-xl" />
         <svg className="absolute inset-0 pointer-events-none rounded-xl" width={dW} height={dH}>
@@ -293,18 +324,29 @@ export function ReceiptScanModal({ bitmap, onConfirm, onCancel }: {
           <CornerHandle key={key} cx={corners[key].x * dW} cy={corners[key].y * dH}
             containerRef={containerRef}
             onMove={(x, y) => moveCorner(key, x, y)}
-            onStart={() => setActiveCorner(key)}
-            onEnd={() => setActiveCorner(null)}
+            onStart={() => setActiveHandle(key)}
+            onEnd={() => setActiveHandle(null)}
           />
         ))}
-        {activeCorner && (
-          <CornerLoupe
-            bitmap={bitmap}
-            cornerX={corners[activeCorner].x * dW}
-            cornerY={corners[activeCorner].y * dH}
-            dW={dW} dH={dH}
-          />
-        )}
+        {(Object.keys(EDGES) as EdgeKey[]).map(edge => {
+          const [k1, k2] = EDGES[edge]
+          return (
+            <CornerHandle key={edge} variant="edge"
+              cx={(corners[k1].x + corners[k2].x) / 2 * dW}
+              cy={(corners[k1].y + corners[k2].y) / 2 * dH}
+              containerRef={containerRef}
+              onMove={(x, y) => moveEdge(edge, x, y)}
+              onStart={() => setActiveHandle(edge)}
+              onEnd={() => setActiveHandle(null)}
+            />
+          )
+        })}
+        {activeHandle && (() => {
+          const pos = activeHandle in EDGES
+            ? (() => { const [k1, k2] = EDGES[activeHandle as EdgeKey]; return { x: (corners[k1].x + corners[k2].x) / 2, y: (corners[k1].y + corners[k2].y) / 2 } })()
+            : corners[activeHandle as keyof CropCorners]
+          return <CornerLoupe bitmap={bitmap} cornerX={pos.x * dW} cornerY={pos.y * dH} dW={dW} dH={dH} />
+        })()}
       </div>
       <div className="flex gap-3 mt-6">
         <button type="button" onClick={onCancel}
