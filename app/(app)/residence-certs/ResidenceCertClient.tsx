@@ -1,5 +1,6 @@
 'use client'
 
+import { InfoHint } from '@/components/ui/InfoHint'
 import { useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -57,8 +58,9 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
   return (
     <div className="space-y-5 px-4 sm:px-6 py-5">
       <div>
-        <h1 className="text-xl font-bold text-[var(--warm-dark)]">실거주 확인서</h1>
-        <p className="text-xs text-[var(--warm-muted)] mt-0.5">거주중 입실자를 선택해 발급하면, 영업장 주소·면적·임대료·도장이 자동으로 채워집니다. 발급한 PDF는 아래 이력에 보관됩니다.</p>
+        <h1 className="text-xl font-bold text-[var(--warm-dark)]">실거주 확인서
+          <InfoHint title="실거주 확인서란?">거주중 입실자를 선택해 발급하면 영업장 주소·면적·임대료·도장이 자동으로 채워집니다. 발급한 PDF는 아래 이력에 보관됩니다.</InfoHint>
+        </h1>
       </div>
 
       {/* 새 확인서 발급 — 거주중 입실자 선택 */}

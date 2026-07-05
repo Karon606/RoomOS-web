@@ -22,6 +22,7 @@ import { SearchBar } from '@/components/ui/SearchBar'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { Badge } from '@/components/ui/Badge'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
+import { InfoHint } from '@/components/ui/InfoHint'
 
 // 비품 위치 섹션 마커 — §21.2 위치 아이콘(핀) 14px
 const PinMarker = () => (
@@ -442,11 +443,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       {/* 헤더 — 소모품 탭과 동일 골격: 제목 블록 → 버튼 줄 → 검색(§22.1) */}
       <div className="space-y-2">
         <div>
-          <h1 className="text-xl font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재</h1>
-          <p className="text-xs text-[var(--warm-muted)] mt-0.5">
-            품목으로 산 내구재(의자·거치대·수선유지 자재 등)를 방·공용부별로 모아 봅니다. 여분(미배정)은 방이나 공용부(주방·화장실·복도 등)에 배정할 수 있습니다. <span className="text-[var(--warm-mid)]">공용부는 ‘위치 관리’에서 추가합니다.</span>
-            {mergeMode && <span className="text-[var(--coral)]"> · 비품을 눌러 선택 → 방·공용부 일괄 배정 또는 합치기(대표로 통일).</span>}
-          </p>
+          <h1 className="text-xl font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재
+            <InfoHint title="비품·자재란?">품목으로 산 내구재(의자·거치대·수선유지 자재 등)를 방·공용부별로 모아 봅니다. 여분(미배정)은 방이나 공용부(주방·화장실·복도 등)에 배정할 수 있습니다. 공용부는 &lsquo;위치 관리&rsquo;에서 추가합니다.</InfoHint>
+          </h1>
+          {mergeMode && <p className="text-xs text-[var(--coral)] mt-0.5">비품을 눌러 선택 → 방·공용부 일괄 배정 또는 합치기(대표로 통일)</p>}
           <p className="text-xs mt-1">
             <span className="font-semibold text-[var(--warm-dark)]">{monthLabel} 구매</span>{' '}
             {monthBuys.length > 0

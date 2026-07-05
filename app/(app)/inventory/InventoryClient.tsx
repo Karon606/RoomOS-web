@@ -22,6 +22,7 @@ import { convertSpecValue, listCompatibleUnits, unitFactor } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
+import { InfoHint } from '@/components/ui/InfoHint'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type InventoryCategory, suggestInventoryAlias } from './constants'
@@ -281,8 +282,9 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h1 className="text-xl font-bold text-[var(--warm-dark)]">재고 관리 · 소모품·부식</h1>
-            <p className="text-xs text-[var(--warm-muted)] mt-0.5">부식·소모품·폐기물 사용량을 점검 기록 기반으로 추적합니다.</p>
+            <h1 className="text-xl font-bold text-[var(--warm-dark)]">재고 관리 · 소모품·부식
+              <InfoHint title="소모품·부식 재고란?">부식·소모품·폐기물 사용량을 점검(실사) 기록 기반으로 추적합니다. 구매는 수령 확인 시 더해지고, 소모량은 두 점검 사이의 차이로 계산되므로 주기적으로 점검을 기록해 주세요.</InfoHint>
+            </h1>
           </div>
           {/* 점검 진입 방식 토글 — §22.2 트랙형(보기 방식). 지출 '아이템별/주문별'과 동일 컴포넌트 */}
           <SegmentedControl size="sm" ariaLabel="점검 보기" className="shrink-0"

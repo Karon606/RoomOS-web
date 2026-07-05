@@ -2,6 +2,7 @@
 
 // 카드 정산 — '지출/기타수익'에서 분리한 독립 화면.
 // 미정산 신용카드 대금을 카드·청구월별로 묶어 '확정(마감)'과 '예정(진행 중)'으로 구분 표시 + 정산 처리.
+import { InfoHint } from '@/components/ui/InfoHint'
 import { useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
@@ -163,8 +164,9 @@ export default function CardSettlementClient({
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-[var(--warm-dark)]">카드 정산</h1>
-          <p className="text-sm text-[var(--warm-muted)] mt-0.5">신용카드로 결제된 미정산 지출을 카드·청구월별로 묶어 정산합니다. <span className="text-[var(--warm-mid)]">미정산은 월 무관 전체, 정산 완료 내역은 선택한 달 청구분.</span></p>
+          <h1 className="text-xl font-bold text-[var(--warm-dark)]">카드 정산
+            <InfoHint title="카드 정산이란?">신용카드로 결제된 미정산 지출을 카드·청구월별로 묶어 정산합니다. 미정산 목록은 월과 무관하게 전체가 보이고, 정산 완료 내역은 위에서 선택한 달의 청구분만 보입니다.</InfoHint>
+          </h1>
         </div>
         <MonthSelector />
       </div>
