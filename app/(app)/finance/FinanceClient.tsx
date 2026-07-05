@@ -40,6 +40,8 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
+import { MergeSheet } from '@/components/ui/inventory/MergeSheet'
+import { useLongPress } from '@/lib/useLongPress'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import {
   DEFAULT_RECURRING_DUE_DAY,
@@ -721,18 +723,30 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
   const [rows, setRows] = useState<{ vendor: string; count: number }[] | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<string | null>(null)
-  // 명시적 병합(신고 e32c60ab) — '같은 이름으로 바꾸면 합쳐짐'이 헷갈려 재고 합치기처럼 대상 선택형으로
-  const [mergeFor, setMergeFor] = useState<string | null>(null)
-  const [mergeTarget, setMergeTarget] = useState('')
-  const doMerge = async (src: string, count: number) => {
-    if (!mergeTarget) return
-    if (!(await confirmDialog({
-      title: `'${src}' → '${mergeTarget}' 합치기`,
-      message: `'${src}'의 지출 ${count}건이 '${mergeTarget}'(으)로 합쳐집니다.`,
-      confirmLabel: '합치기',
-    }))) return
-    setMergeFor(null); setMergeTarget('')
-    await apply(src, mergeTarget)
+  // 합치기 — 전 앱 정본 문법(§21.4·§22.6): 행 꾹(또는 '선택') → 다중 선택 → 하단 알약 '합치기'
+  // → MergeSheet에서 대표 선택. 행별 '합치기' 버튼도 병행(자재 카드별 합치기와 동일). 서버는 renameVendor 재사용.
+  const [selMode, setSelMode] = useState(false)
+  const [sel, setSel] = useState<Set<string>>(new Set())
+  const press = useLongPress()
+  const exitSel = () => { setSelMode(false); setSel(new Set()) }
+  const toggleSel = (v: string) => setSel(p => { const n = new Set(p); if (n.has(v)) n.delete(v); else n.add(v); return n })
+  const [sheet, setSheet] = useState<{ sourceLabel: string; sources: string[]; targets: { id: string; label: string }[] } | null>(null)
+  const [merging, setMerging] = useState(false)
+  const runMerge = async (destVendor: string) => {
+    if (!sheet) return
+    const sources = sheet.sources.filter(v => v !== destVendor)
+    setMerging(true)
+    const release = trackSave()
+    try {
+      let total = 0
+      for (const v of sources) {
+        const res = await renameVendor(v, destVendor)
+        if (!res.ok) { pushToast('error', res.error); return }
+        total += res.updated
+      }
+      pushToast('success', `'${destVendor}'(으)로 합침 — 지출 ${total}건 반영`)
+      setSheet(null); exitSel(); await load(); onChanged()
+    } finally { release(); setMerging(false) }
   }
   const load = () => getVendorUsage().then(setRows)
   useEffect(() => { load() }, [])
@@ -765,38 +779,63 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
           ) : rows.map(r => {
             const val = edits[r.vendor] ?? r.vendor
             const changed = val.trim() !== r.vendor
+            const checked = sel.has(r.vendor)
             return (
-              <Fragment key={r.vendor}>
-              <div className="flex items-center gap-1.5">
-                <input type="text" value={val} onChange={e => setEdits(p => ({ ...p, [r.vendor]: e.target.value }))}
-                  className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+              <div key={r.vendor}
+                className={`flex items-center gap-1.5 rounded-lg select-none ${selMode ? 'cursor-pointer -mx-1 px-1 py-0.5' : ''} ${checked ? 'bg-[var(--coral)]/5 ring-1 ring-inset ring-[var(--coral)]/30' : ''}`}
+                onClick={selMode ? () => toggleSel(r.vendor) : undefined}
+                {...press(!selMode ? () => { setSelMode(true); setSel(new Set([r.vendor])) } : undefined)}
+              >
+                {selMode && (
+                  <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-[5px] border transition-colors ${checked ? 'bg-[var(--coral)] border-[var(--coral)] text-white' : 'border-[var(--warm-border)] bg-[var(--cream)]'}`}>
+                    {checked && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>}
+                  </span>
+                )}
+                {selMode ? (
+                  <span className="flex-1 min-w-0 truncate py-1.5 text-sm text-[var(--warm-dark)]">{r.vendor}</span>
+                ) : (
+                  <input type="text" value={val} onChange={e => setEdits(p => ({ ...p, [r.vendor]: e.target.value }))}
+                    className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                )}
                 <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0 w-9 text-right">{r.count}건</span>
-                <button type="button" disabled={busy === r.vendor || !changed} onClick={() => apply(r.vendor, val)}
-                  className="text-xs px-2 py-1 rounded-lg bg-[var(--coral)] text-white disabled:opacity-30 shrink-0">저장</button>
-                <button type="button" disabled={busy === r.vendor}
-                  onClick={() => { setMergeFor(m => m === r.vendor ? null : r.vendor); setMergeTarget('') }}
-                  className={`text-xs px-1.5 py-1 shrink-0 transition-colors ${mergeFor === r.vendor ? 'text-[var(--coral)] font-semibold' : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>합치기</button>
-                <button type="button" disabled={busy === r.vendor} onClick={() => apply(r.vendor, '')}
-                  className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-1.5 py-1 shrink-0" title="구매처 비우기">비움</button>
+                {!selMode && (
+                  <>
+                    <button type="button" disabled={busy === r.vendor || !changed} onClick={() => apply(r.vendor, val)}
+                      className="text-xs px-2 py-1 rounded-lg bg-[var(--coral)] text-white disabled:opacity-30 shrink-0">저장</button>
+                    <button type="button" disabled={busy === r.vendor}
+                      onClick={() => setSheet({ sourceLabel: r.vendor, sources: [r.vendor], targets: (rows ?? []).filter(x => x.vendor !== r.vendor).map(x => ({ id: x.vendor, label: `${x.vendor} (${x.count}건)` })) })}
+                      className="text-xs px-1.5 py-1 shrink-0 text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">합치기</button>
+                    <button type="button" disabled={busy === r.vendor} onClick={() => apply(r.vendor, '')}
+                      className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-1.5 py-1 shrink-0" title="구매처 비우기">비움</button>
+                  </>
+                )}
               </div>
-              {mergeFor === r.vendor && (
-                <div className="flex items-center gap-1.5 pb-1 pl-2">
-                  <span className="text-xs text-[var(--warm-muted)] shrink-0">→ 합칠 대상</span>
-                  <select value={mergeTarget} onChange={e => setMergeTarget(e.target.value)}
-                    className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none">
-                    <option value="">선택하세요</option>
-                    {(rows ?? []).filter(x => x.vendor !== r.vendor).map(x => (
-                      <option key={x.vendor} value={x.vendor}>{x.vendor} ({x.count}건)</option>
-                    ))}
-                  </select>
-                  <button type="button" disabled={!mergeTarget || busy === r.vendor} onClick={() => doMerge(r.vendor, r.count)}
-                    className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--coral)] text-white disabled:opacity-30 shrink-0">합치기</button>
-                </div>
-              )}
-              </Fragment>
             )
           })}
       </div>
+      {/* 선택 토글 — §22.6 정본(버튼 + 행 꾹 누르기 병행) */}
+      <div className="px-5 pb-3 -mt-1 flex justify-end">
+        <Btn type="button" variant="secondary" size="sm" onClick={() => selMode ? exitSel() : setSelMode(true)}>
+          {selMode ? '선택 취소' : '선택'}
+        </Btn>
+      </div>
+      {selMode && sel.size > 0 && (
+        <SelectionPillBar count={sel.size} unit="곳" onClose={exitSel} aboveModal>
+          <PillButton primary disabled={sel.size < 2 || merging}
+            onClick={() => setSheet({
+              sourceLabel: `선택 ${sel.size}곳`,
+              sources: [...sel],
+              targets: (rows ?? []).filter(x => sel.has(x.vendor)).map(x => ({ id: x.vendor, label: `${x.vendor} (${x.count}건)` })),
+            })}>
+            합치기
+          </PillButton>
+        </SelectionPillBar>
+      )}
+      <MergeSheet open={!!sheet} z={260} onClose={() => setSheet(null)} pending={merging}
+        sourceLabel={sheet?.sourceLabel ?? ''} targets={sheet?.targets ?? []}
+        title="구매처 합치기" confirmLabel="합치기"
+        description="대표로 남길 구매처를 고르면 나머지 지출의 구매처가 대표로 바뀝니다."
+        onConfirm={runMerge} />
     </Modal>
   )
 }

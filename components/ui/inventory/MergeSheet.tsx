@@ -10,7 +10,7 @@ export type MergeTarget = { id: string; label: string }
 export function MergeSheet({
   open, onClose, sourceLabel, targets,
   title = '합치기', description, confirmLabel = '합치기',
-  onConfirm, pending = false,
+  onConfirm, pending = false, z = 200,
 }: {
   open: boolean
   onClose: () => void
@@ -21,6 +21,8 @@ export function MergeSheet({
   confirmLabel?: string
   onConfirm: (destId: string) => void
   pending?: boolean
+  /** 모달 위에서 열 때 260(=--z-modal-2). 기본은 페이지 레벨(--z-modal). */
+  z?: 200 | 260
 }) {
   const [destId, setDestId] = useState('')
   const [shown, setShown] = useState(false)
@@ -32,7 +34,7 @@ export function MergeSheet({
   const dest = targets.find(t => t.id === destId)
 
   return (
-    <div className="fixed inset-0 z-[var(--z-modal)] flex items-end justify-center" role="dialog" aria-modal="true">
+    <div className={`fixed inset-0 ${z === 260 ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-modal)]'} flex items-end justify-center`} role="dialog" aria-modal="true">
       <div className={`absolute inset-0 bg-[rgba(31,26,23,.45)] transition-opacity duration-200 ${shown ? 'opacity-100' : 'opacity-0'}`}
         onClick={onClose} />
       <div className={`relative w-full max-w-md rounded-t-[20px] bg-[var(--cream)] px-[18px] pb-5 pt-2 shadow-[0_-8px_32px_-12px_rgba(0,0,0,.35)] transition-transform duration-200 ${shown ? 'translate-y-0' : 'translate-y-full'}`}>

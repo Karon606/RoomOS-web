@@ -6,16 +6,17 @@
 import React from 'react'
 
 export function SelectionPillBar({
-  count, onClose, children, label = '선택', unit = '개',
+  count, onClose, children, label = '선택', unit = '개', aboveModal = false,
 }: {
   count: number
   onClose: () => void
   children: React.ReactNode      // PillButton 들 또는 서브플로(select 등)
   label?: string                 // 카운트 라벨(기본 '선택')
   unit?: string                  // 조수사(기본 '개'; 사람은 '명' 등)
+  aboveModal?: boolean           // 모달 안 선택 모드용 — 알약을 모달 위층(--z-modal-2)으로
 }) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+56px)] z-[var(--z-pill)] flex justify-center md:bottom-4">
+    <div className={`pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+56px)] ${aboveModal ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-pill)]'} flex justify-center md:bottom-4`}>
       <div className="pointer-events-auto mx-3.5 flex max-w-[calc(100vw-28px)] items-center gap-2 rounded-[15px] bg-[var(--pill-bg)] px-4 py-3 shadow-[0_8px_24px_-8px_rgba(0,0,0,.45)]">
         <span className="whitespace-nowrap text-[0.8125rem] font-semibold text-white">
           <span className="mono tnum text-[var(--sand)]">{count}</span>{unit} {label}
