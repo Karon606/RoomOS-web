@@ -123,7 +123,7 @@ export default function ErrorReportButton() {
         errorText: snapshot.err ?? undefined,
         userNote: note || undefined,
       })
-      if (res.ok) { pushToast('success', '오류가 신고되었습니다. 감사합니다!'); setOpen(false) }
+      if (res.ok) { pushToast('success', '오류가 신고되었습니다. 확인 후 처리할게요.'); setOpen(false) }
       else pushToast('error', res.error)
     } finally { setPending(false) }
   }
@@ -140,8 +140,8 @@ export default function ErrorReportButton() {
         onPointerCancel={endDrag}
         onContextMenu={e => e.preventDefault()}
         aria-label="오류 신고 (길게 눌러 위치 이동)"
-        title="오류 신고 — 길게 눌러 끌면 위치를 옮길 수 있어요"
-        className={`fixed z-[var(--z-toast,9999)] w-12 h-12 rounded-full shadow-lift flex items-center justify-center ${grabbing ? 'scale-110 ring-4 ring-white/60 cursor-grabbing' : 'transition-transform hover:scale-105 active:scale-95'} ${pos ? '' : 'bottom-4 right-4'}`}
+        title="오류 신고. 길게 눌러 끌면 위치를 옮길 수 있어요"
+        className={`fixed z-[var(--z-toast,9999)] w-12 h-12 rounded-full shadow-lift flex items-center justify-center ${grabbing ? 'scale-110 ring-4 ring-white/60 cursor-grabbing' : 'transition-transform active:scale-95'} ${pos ? '' : 'bottom-4 right-4'}`}
         style={{
           background: 'var(--coral)',
           color: '#fff',

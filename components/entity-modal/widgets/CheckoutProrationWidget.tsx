@@ -94,7 +94,7 @@ export function CheckoutProrationWidget({
         const res = await setCheckoutProration(leaseTermId, date, manualAmount)
         if (!res.ok) { pushToast('error', res.error); return }
         const adjusted = manualAmount !== res.calc.amount
-        pushToast('success', `퇴실 정산 적용 — ${fmtWon(manualAmount)}${adjusted ? ' (수동 조정)' : ` (${res.calc.daysUsed}일치)`}`)
+        pushToast('success', `퇴실 정산 적용 · ${fmtWon(manualAmount)}${adjusted ? ' (수동 조정)' : ` (${res.calc.daysUsed}일치)`}`)
         setShowForm(false); setCalc(null); setAmountInput(''); onChange?.()
       } finally { release() }
     })
@@ -107,7 +107,7 @@ export function CheckoutProrationWidget({
       try {
         const res = await clearCheckoutProration(leaseTermId)
         if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('success', '퇴실 정산 적용취소됨 — 직전 상태로 복원')
+        pushToast('success', '퇴실 정산 적용취소됨 · 직전 상태로 복원')
         setShowForm(false); onChange?.()
       } finally { release() }
     })
@@ -189,8 +189,8 @@ export function CheckoutProrationWidget({
               </div>
               <p className="text-[0.5625rem] text-[var(--warm-muted)]">
                 {refundMode === 'legal'
-                  ? `원칙(공정위) — 위약금 ${LEGAL_PENALTY_PCT}%를 제하고 남은 일수를 환불합니다.`
-                  : '선의 — 위약금 없이 사용한 일수만 청구하고 나머지를 환불합니다.'}
+                  ? `원칙(공정위). 위약금 ${LEGAL_PENALTY_PCT}%를 제하고 남은 일수를 환불합니다.`
+                  : '선의. 위약금 없이 사용한 일수만 청구하고 나머지를 환불합니다.'}
               </p>
             </div>
             <div className="space-y-1">
@@ -224,7 +224,7 @@ export function CheckoutProrationWidget({
               <div className="flex justify-between font-bold mt-1 pt-1 border-t" style={{ borderColor: 'var(--warm-border)', color: 'var(--success-fg)' }}>
                 <span>환불액</span><span className="tabular-nums">{fmtWon(refundAmt)}</span>
               </div>
-              <p className="text-[0.5625rem] text-[var(--warm-muted)] mt-1">참고용 — 보증금 환불(퇴실 처리)에서 이 금액을 함께 정산하세요.</p>
+              <p className="text-[0.5625rem] text-[var(--warm-muted)] mt-1">참고용. 보증금 환불(퇴실 처리)에서 이 금액을 함께 정산하세요.</p>
             </div>
           )
         })()}

@@ -1266,7 +1266,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       continue
     }
 
-    const text = `${g.roomNo}호 ${stateLabel} — 매칭 후보 ${g.candidates.length}명`
+    const text = `${g.roomNo}호 ${stateLabel} · 매칭 후보 ${g.candidates.length}명`
     const detail = g.candidates
       .map(c => `${c.rank}순위 ${c.tenantName}님 · ${c.matchedBy === 'conditions' ? '조건 매칭' : '호실 지정'}`)
       .join('\n')
@@ -1322,7 +1322,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         tenantId:  l.tenantId,
         leaseTermId: l.leaseId,
         roomId:    l.roomId,
-        detail:    `청구 예정액 ${fmtWon(l.upcomingPortion)}${daysLeft === 0 ? ' — 오늘이 납부일입니다.' : ` — ${daysLeft}일 후 납부 예정.`}`,
+        detail:    `청구 예정액 ${fmtWon(l.upcomingPortion)}${daysLeft === 0 ? '. 오늘이 납부일입니다.' : `. ${daysLeft}일 후 납부 예정.`}`,
         exactDate: fmtShortDate(dueDate),
         sortKey:   Math.abs(days),
       })

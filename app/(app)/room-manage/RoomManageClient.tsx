@@ -1287,28 +1287,28 @@ function uploadFileToDriveSession(
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const body = JSON.parse(xhr.responseText) as { id?: string }
-          if (!body.id) return reject(new Error(`Drive 응답에 파일 ID 없음 — ${dump()}`))
+          if (!body.id) return reject(new Error(`Drive 응답에 파일 ID 없음 · ${dump()}`))
           resolve(body.id)
         } catch (err) {
-          reject(new Error(`Drive 응답 파싱 실패 — ${(err as Error).message} | ${dump()}`))
+          reject(new Error(`Drive 응답 파싱 실패 · ${(err as Error).message} | ${dump()}`))
         }
       } else if (xhr.status === 0) {
         // CORS 차단 또는 네트워크 단절 시 일반적으로 status=0
-        reject(new Error(`Drive 응답 차단 (CORS 의심) — ${dump()}`))
+        reject(new Error(`Drive 응답 차단 (CORS 의심) · ${dump()}`))
       } else {
-        reject(new Error(`Drive 업로드 거절 — ${dump()}`))
+        reject(new Error(`Drive 업로드 거절 · ${dump()}`))
       }
     })
 
     xhr.onerror = () => settle(() => {
       // 가장 흔한 케이스: status=0 — CORS 또는 네트워크
-      reject(new Error(`네트워크/CORS 오류 — ${dump()}`))
+      reject(new Error(`네트워크/CORS 오류 · ${dump()}`))
     })
     xhr.upload.onerror = () => settle(() => {
-      reject(new Error(`업로드 전송 중 오류 — ${dump()}`))
+      reject(new Error(`업로드 전송 중 오류 · ${dump()}`))
     })
-    xhr.onabort = () => settle(() => reject(new Error(`업로드 중단 — ${dump()}`)))
-    xhr.ontimeout = () => settle(() => reject(new Error(`업로드 타임아웃 — ${dump()}`)))
+    xhr.onabort = () => settle(() => reject(new Error(`업로드 중단 · ${dump()}`)))
+    xhr.ontimeout = () => settle(() => reject(new Error(`업로드 타임아웃 · ${dump()}`)))
 
     xhr.send(file)
   })
@@ -1358,7 +1358,7 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
     if (!res.ok) { setError(res.error); return }
     pushToast('success', `${res.count}개 호실 업데이트 완료`)
     if ((res.skippedNegotiated ?? 0) > 0) {
-      pushToast('info', `협의 임대료(기준가와 다른 금액) 계약 ${res.skippedNegotiated}건은 덮어쓰지 않았습니다 — 필요하면 고객관리에서 개별 변경하세요.`)
+      pushToast('info', `협의 임대료(기준가와 다른 금액) 계약 ${res.skippedNegotiated}건은 덮어쓰지 않았습니다. 필요하면 고객관리에서 개별 변경하세요.`)
     }
     onDone()
   }
@@ -1414,7 +1414,7 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
 
         {!clearScheduled && scheduledRent != null && (
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">적용 예정일 <span className="text-[var(--danger-fg)]">*</span> <span className="text-[var(--warm-muted)]">(예약이용료가 적용될 날짜 — 없으면 적용 안 됨)</span></label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">적용 예정일 <span className="text-[var(--danger-fg)]">*</span> <span className="text-[var(--warm-muted)]">(예약이용료가 적용될 날짜 · 없으면 적용 안 됨)</span></label>
             <DatePicker name="batchRentUpdateDate" value={rentUpdateDateVal} onChange={setRentUpdateDateVal}
               className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
           </div>

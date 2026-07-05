@@ -89,7 +89,7 @@ export function SpecWizard({ open, onClose, onComplete, itemLabel, unitsOnly = f
 
   return (
     <Modal open={open} onClose={onClose} title="규격 단계별 입력" z={z} width="sm"
-      subtitle={itemLabel ? `${itemLabel} — 포장형태에 맞춰 차례대로 골라주세요` : '포장형태에 맞춰 차례대로 골라주세요'}>
+      subtitle={itemLabel ? `${itemLabel}. 포장형태에 맞춰 차례대로 골라주세요` : '포장형태에 맞춰 차례대로 골라주세요'}>
       <div className="p-5 space-y-4">
         {/* 단계 표시 */}
         <p className="text-[0.6875rem] text-[var(--warm-muted)]">

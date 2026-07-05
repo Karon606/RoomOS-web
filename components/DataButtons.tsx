@@ -59,7 +59,7 @@ function ConflictRow({
         <div className="text-xs text-[var(--warm-muted)] space-y-0.5">
           <p>기존 호실: {conflict.existingRoom ?? '없음'} ({conflict.existingStatus ?? '—'})</p>
           <p>새 호실: {conflict.incomingRoom ?? '없음'}</p>
-          {conflict.sameRoom && <p className="text-[var(--warning-fg)]">같은 호실 — 기존 입주자 퇴실 처리 필요</p>}
+          {conflict.sameRoom && <p className="text-[var(--warning-fg)]">같은 호실 · 기존 입주자 퇴실 처리 필요</p>}
         </div>
       )
     }
@@ -261,7 +261,7 @@ export default function DataButtons() {
         title={hasConflicts ? '중복 데이터 발견' : '가져오기 확인'}
         subtitle={[
           summaryParts.length > 0 ? summaryParts.join(' · ') : null,
-          hasConflicts ? `충돌 ${preview.conflicts.length}건 — 각 항목의 처리 방법을 선택하세요` : null,
+          hasConflicts ? `충돌 ${preview.conflicts.length}건. 각 항목의 처리 방법을 선택하세요` : null,
         ].filter(Boolean).join(' / ')}
         footer={
           <div className="flex gap-2">
@@ -286,7 +286,7 @@ export default function DataButtons() {
           {/* 충돌 목록 */}
           <div className="px-6 py-4 space-y-6">
             {conflictsBySheet.length === 0 && !preview.hasPaymentSheet && (
-              <p className="text-sm text-[var(--warm-muted)] text-center py-4">충돌 없음 — 모든 데이터를 가져올 수 있습니다.</p>
+              <p className="text-sm text-[var(--warm-muted)] text-center py-4">충돌 없음. 모든 데이터를 가져올 수 있습니다.</p>
             )}
             {conflictsBySheet.length === 0 && preview.hasPaymentSheet && (
               <p className="text-sm text-[var(--warm-muted)] text-center py-4">충돌이 없습니다. 아래 버튼으로 가져오기를 진행하세요.</p>

@@ -104,7 +104,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
         value={joinMsg}
         onChange={e => setJoinMsg(e.target.value)}
         rows={2}
-        placeholder="간단한 메시지 (선택) — 본인 소개 등"
+        placeholder="간단한 메시지 (선택) · 본인 소개 등"
         className="w-full rounded-sm px-3 py-2.5 text-sm outline-none resize-none"
         style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
       />
@@ -214,7 +214,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
               <button
                 onClick={() => handleSelect(p.propertyId)}
                 disabled={!p.isActive || isPending}
-                className="w-full text-left rounded-xl p-5 transition-all touch-manipulation
+                className="w-full text-left rounded-xl p-5 transition touch-manipulation
                   disabled:opacity-40 disabled:cursor-not-allowed
                   hover:border-[var(--coral)] active:scale-[0.98] active:opacity-80"
                 style={{ background: 'var(--cream)', border: `1px solid ${isLoading ? 'var(--coral)' : 'var(--warm-border)'}` }}

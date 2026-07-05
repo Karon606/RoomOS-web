@@ -52,7 +52,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
     if (!newMonth) return
     if (!(await confirmDialog({
       title: `귀속 월을 ${record.targetMonth} → ${newMonth} 로 변경할까요?`,
-      message: `${record.roomNo ?? '?'}호 ${record.tenantName}님 ${record.payDate} 입금 ${fmtMoney(record.actualAmount)} — 입금일·금액은 그대로 두고 매출 귀속 월만 바뀝니다.`,
+      message: `${record.roomNo ?? '?'}호 ${record.tenantName}님 ${record.payDate} 입금 ${fmtMoney(record.actualAmount)}. 입금일·금액은 그대로 두고 매출 귀속 월만 바뀝니다.`,
       level: 'caution', confirmLabel: '변경',
     }))) return
 

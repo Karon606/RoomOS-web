@@ -322,7 +322,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
   if (status === 'ACTIVE' && prevStatus === 'CHECKOUT_PENDING' && currentLease.checkoutProratedAmount != null) {
     // 거주중 복귀 — 적용돼 있던 퇴실예정일·정산·스냅샷 정리 (전환 버튼과 동일)
     prorationPatch = { expectedMoveOut: null, checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull }
-    prorationNotice = '거주중 복귀 — 퇴실 예정일과 적용돼 있던 퇴실 일할 정산을 해제했습니다.'
+    prorationNotice = '거주중 복귀. 퇴실 예정일과 적용돼 있던 퇴실 일할 정산을 해제했습니다.'
   } else if (newMoveOutIso !== prevMoveOutIso || (dueDay || null) !== (currentLease.dueDay ?? null)) {
     // 퇴실일/납부일이 바뀐 경우에만 — 적용 중이면 재계산, 미적용+퇴실예정이면 자동 적용.
     // (변동 없는 저장은 이 블록을 안 타므로 수동 조정 금액이 보존됨)
@@ -610,7 +610,7 @@ export async function recordDepositReturn(params: {
           date:      refundDate,
           amount:    withheld,
           category:  '보증금',
-          detail:    `${params.tenantName} 퇴실 — 보증금 미반환분`,
+          detail:    `${params.tenantName} 퇴실 · 보증금 미반환분`,
           payMethod: '보유 보증금',
           // 입주자 연결 — 수납관리 부가수익에서 누구 건인지 바로 확인
           tenantId:    params.tenantId,
@@ -875,7 +875,7 @@ export async function applyStatusTransition(input: {
       data.checkoutProratedAmount = null
       data.checkoutProratedMonth = null
       data.checkoutProrationUndo = Prisma.DbNull
-      if (lease.checkoutProratedAmount != null) notice = '거주중 복귀 — 적용돼 있던 퇴실 일할 정산을 해제했습니다.'
+      if (lease.checkoutProratedAmount != null) notice = '거주중 복귀. 적용돼 있던 퇴실 일할 정산을 해제했습니다.'
     } else if (input.expectedMoveOut !== undefined) {
       // 퇴실 예정일 변경 — 적용된 일할 정산이 있으면 무통보 삭제 대신 새 날짜 기준 재계산
       // (updateTenant 폼·changeDueDay 와 동일 정책: prorationDataForChange)
@@ -1462,7 +1462,7 @@ export async function previewCheckoutProration(
     const moveOutMonth = expectedMoveOut.slice(0, 7)
     const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
     const calc = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut, ymdOf(lease.moveInDate))
-    if (!calc) return { ok: false, error: '퇴실일이 납부일 이전이라 마지막 기간을 사용하지 않습니다 — 별도 정산 없이 그 달 청구가 자동으로 0원 처리되므로 일할 적용이 필요 없습니다.' }
+    if (!calc) return { ok: false, error: '퇴실일이 납부일 이전이라 마지막 기간을 사용하지 않습니다. 별도 정산 없이 그 달 청구가 자동으로 0원 처리되므로 일할 적용이 필요 없습니다.' }
     return { ok: true, calc, currentDueDay: lease.dueDay }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -1527,7 +1527,7 @@ function prorationDataForChange(
     if (!wasApplied) return { data: {}, notice: null }
     return {
       data: { checkoutProratedAmount: null, checkoutProratedMonth: null, checkoutProrationUndo: Prisma.DbNull },
-      notice: '퇴실일이 납부일 이전이 되어 마지막 달 청구가 자동으로 0원 처리됩니다 — 기존 일할 정산은 해제했습니다.',
+      notice: '퇴실일이 납부일 이전이 되어 마지막 달 청구가 자동으로 0원 처리됩니다. 기존 일할 정산은 해제했습니다.',
     }
   }
   // 적용취소 스냅샷 — 이미 적용 중이면 기존 스냅샷(최초 적용 직전) 유지, 신규 자동적용이면 현재 상태 기록.
@@ -1548,8 +1548,8 @@ function prorationDataForChange(
       checkoutProrationUndo: undo,
     },
     notice: wasApplied
-      ? `적용돼 있던 퇴실 일할 정산을 변경된 조건으로 재계산했습니다 — ${calc.daysUsed}일치 ${calc.amount.toLocaleString()}원.`
-      : `퇴실 일할 정산을 자동 적용했습니다 — ${calc.daysUsed}일치 ${calc.amount.toLocaleString()}원. (금액 조정은 '퇴실 정산'에서)`,
+      ? `적용돼 있던 퇴실 일할 정산을 변경된 조건으로 재계산했습니다 · ${calc.daysUsed}일치 ${calc.amount.toLocaleString()}원.`
+      : `퇴실 일할 정산을 자동 적용했습니다. ${calc.daysUsed}일치 ${calc.amount.toLocaleString()}원. (금액 조정은 '퇴실 정산'에서)`,
   }
 }
 
@@ -1612,7 +1612,7 @@ export async function setCheckoutProration(
     const moveOutMonth = expectedMoveOut.slice(0, 7)
     const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
     const calc = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut, ymdOf(lease.moveInDate))
-    if (!calc) return { ok: false, error: '퇴실일이 납부일 이전이라 마지막 기간을 사용하지 않습니다 — 별도 정산 없이 그 달 청구가 자동으로 0원 처리되므로 일할 적용이 필요 없습니다.' }
+    if (!calc) return { ok: false, error: '퇴실일이 납부일 이전이라 마지막 기간을 사용하지 않습니다. 별도 정산 없이 그 달 청구가 자동으로 0원 처리되므로 일할 적용이 필요 없습니다.' }
     // 수동 조정값이 있으면 그 값으로(0 이상 정수), 없으면 자동 일할액. undo 의 appliedAmount 도 이 값으로 기록.
     const finalAmount = (manualAmount != null && Number.isFinite(manualAmount) && manualAmount >= 0) ? Math.round(manualAmount) : calc.amount
 

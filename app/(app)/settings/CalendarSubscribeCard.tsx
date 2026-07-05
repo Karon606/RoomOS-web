@@ -97,9 +97,9 @@ export function CalendarSubscribeCard() {
           <details className="text-[0.6875rem] text-[var(--warm-muted)]">
             <summary className="cursor-pointer select-none text-[var(--warm-dark)] font-medium">구독 방법 안내</summary>
             <ul className="mt-2 space-y-1.5 leading-relaxed list-disc pl-4">
-              <li><b>아이폰·맥(애플 캘린더)</b> — “애플 캘린더에 추가”를 누르면 바로 구독됩니다. 안 되면 설정 → 캘린더 → 계정 → 캘린더 구독 추가에 구독 주소를 붙여넣으세요.</li>
-              <li><b>구글 캘린더(PC)</b> — “구글 캘린더에 추가”를 누르거나, 다른 캘린더 → URL로 추가에 구독 주소를 붙여넣으세요. 동기화까지 몇 시간 걸릴 수 있습니다.</li>
-              <li><b>윈도우(아웃룩)</b> — 캘린더 추가 → 웹에서 구독에 구독 주소를 붙여넣으세요.</li>
+              <li><b>아이폰·맥(애플 캘린더)</b>: “애플 캘린더에 추가”를 누르면 바로 구독됩니다. 안 되면 설정 &gt; 캘린더 &gt; 계정 &gt; 캘린더 구독 추가에 구독 주소를 붙여넣으세요.</li>
+              <li><b>구글 캘린더(PC)</b>: “구글 캘린더에 추가”를 누르거나, 다른 캘린더 &gt; URL로 추가에 구독 주소를 붙여넣으세요. 동기화까지 몇 시간 걸릴 수 있습니다.</li>
+              <li><b>윈도우(아웃룩)</b>: 캘린더 추가 &gt; 웹에서 구독에 구독 주소를 붙여넣으세요.</li>
               <li>구독 주소에는 영업장 일정이 담겨 있으니 외부에 공유하지 마세요. 유출 시 “주소 재발급”으로 무효화할 수 있습니다.</li>
             </ul>
           </details>

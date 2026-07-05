@@ -78,7 +78,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     startTransition(async () => {
       const res = await setAssetRowSpec(b.id, s.v.trim() ? Number(s.v) : null, s.u.trim() || null, s.t.trim() || null)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', '규격 저장됨 — 규격이 다르면 별도 카드로 분리됩니다')
+      pushToast('success', '규격 저장됨. 규격이 다르면 별도 카드로 분리됩니다')
       setDetailItem(null)
       router.refresh()
     })
@@ -273,7 +273,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       setRcvAsk(null)
       pushToast('success', !value ? '수령 대기로 변경됨'
         : qty != null && it.qtyValue != null && qty < it.qtyValue
-          ? `${fmtQty(qty)}${it.qtyUnit ?? '개'} 수령 완료 — 잔여 ${fmtQty(it.qtyValue - qty)}${it.qtyUnit ?? '개'}는 수령 대기 유지`
+          ? `${fmtQty(qty)}${it.qtyUnit ?? '개'} 수령 완료 · 잔여 ${fmtQty(it.qtyValue - qty)}${it.qtyUnit ?? '개'}는 수령 대기 유지`
           : '수령 완료')
       router.refresh()
     })
@@ -446,13 +446,13 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재
             <InfoHint title="비품·자재란?">품목으로 산 내구재(의자·거치대·수선유지 자재 등)를 방·공용부별로 모아 봅니다. 여분(미배정)은 방이나 공용부(주방·화장실·복도 등)에 배정할 수 있습니다. 공용부는 &lsquo;위치 관리&rsquo;에서 추가합니다.</InfoHint>
           </h1>
-          {mergeMode && <p className="text-xs text-[var(--coral)] mt-0.5">비품을 눌러 선택 → 방·공용부 일괄 배정 또는 합치기(대표로 통일)</p>}
+          {mergeMode && <p className="text-xs text-[var(--coral)] mt-0.5">비품을 눌러 선택하면 방·공용부 일괄 배정, 합치기(대표로 통일)를 할 수 있어요</p>}
           <p className="text-xs mt-1">
             <span className="font-semibold text-[var(--warm-dark)]">{monthLabel} 구매</span>{' '}
             {monthBuys.length > 0
               ? <span className="text-[var(--warm-mid)] tabular-nums">{monthBuys.length}건 · {won(monthBuys.reduce((s, b) => s + b.amount, 0))}</span>
               : <span className="text-[var(--warm-muted)]">없음</span>}
-            <span className="text-[var(--warm-muted)]"> — 배치 현황은 월 무관(누적)</span>
+            <span className="text-[var(--warm-muted)]"> · 배치 현황은 월 무관(누적)</span>
           </p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
@@ -575,7 +575,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         <Modal
           open
           onClose={() => setBatchAssign(null)}
-          title={`일괄 배정 — ${batchAssign.label}`}
+          title={`일괄 배정 · ${batchAssign.label}`}
           subtitle={`${batchAssign.rows.length}개 품목 · 품목별 배정 수량을 정하세요(기본 전량, 나머지는 여분 유지)`}
           width="sm"
           footer={

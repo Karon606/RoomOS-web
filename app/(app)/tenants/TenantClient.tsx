@@ -1442,7 +1442,7 @@ export default function TenantClient({
         return (
           <Modal open z={260} width="lg" dirty={detailEditDirty}
             onClose={() => { setDetailEditDirty(false); closeEdit() }}
-            title={`고객 정보 수정 — ${t.name}`}>
+            title={`고객 정보 수정 · ${t.name}`}>
               <form key={t.id} onSubmit={handleUpdateFromDetail} className="flex flex-col flex-1 overflow-hidden"
                 onInput={() => setDetailEditDirty(true)} onChange={() => setDetailEditDirty(true)}>
                 <input type="hidden" name="tenantId"    value={t.id} />
@@ -1505,7 +1505,7 @@ export default function TenantClient({
       {editTenant && (
         <Modal open width="lg" dirty={editTenantDirty}
           onClose={() => { setEditTenant(null); setEditTenantDirty(false) }}
-          title={`수정 — ${editTenant.name}`}>
+          title={`수정 · ${editTenant.name}`}>
             <form key={editTenant.id} onSubmit={handleUpdate} className="overflow-y-auto p-6 space-y-4"
               onInput={() => setEditTenantDirty(true)} onChange={() => setEditTenantDirty(true)}>
               <input type="hidden" name="tenantId"    value={editTenant.id} />
@@ -2313,7 +2313,7 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
                 <MoneyInput value={condMaxRent} onChange={setCondMaxRent} placeholder="최대 400,000원" />
               </div>
             ) : (
-              <p className="text-[0.6875rem] text-[var(--warm-muted)] pl-0.5">제한 없음 — 이용료 무관하게 매칭</p>
+              <p className="text-[0.6875rem] text-[var(--warm-muted)] pl-0.5">제한 없음 · 이용료 무관하게 매칭</p>
             )}
           </div>
         </>
@@ -2522,7 +2522,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           </div>
         </div>
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-[var(--warm-mid)]">본국 연락처 <span className="text-[0.625rem] text-[var(--warm-muted)] font-normal">(외국인 고객 — 국가 선택 시 자동 포맷)</span></label>
+          <label className="text-xs font-medium text-[var(--warm-mid)]">본국 연락처 <span className="text-[0.625rem] text-[var(--warm-muted)] font-normal">(외국인 고객 · 국가 선택 시 자동 포맷)</span></label>
           <IntlPhoneInput
             name="homeCountryContact"
             countryName="homeCountryCode"
@@ -3113,7 +3113,7 @@ function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () => void 
 
   return (
     <Modal open={open} onClose={onClose} title="단기 입실 요금 계산" width="sm"
-      subtitle="등록 없이 기간별 요금을 미리 계산합니다 — 실제 정산(일할)과 동일 규칙">
+      subtitle="등록 없이 기간별 요금을 미리 계산합니다 · 실제 정산(일할)과 동일 규칙">
       <div className="p-5 space-y-3">
         <label className="block">
           <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">호실 (선택 시 월세 자동)</span>
@@ -3172,7 +3172,7 @@ function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () => void 
               </span>
               <span className="text-lg font-bold tnum text-[var(--coral)]">{fmtWon(quote.total)}</span>
             </div>
-            <p className="text-[0.625rem] text-[var(--warm-muted)]">일할은 30일 기준 — 퇴실 정산과 동일한 계산입니다.</p>
+            <p className="text-[0.625rem] text-[var(--warm-muted)]">일할은 30일 기준. 퇴실 정산과 동일한 계산입니다.</p>
           </div>
         )}
 

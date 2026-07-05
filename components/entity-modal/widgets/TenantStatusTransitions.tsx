@@ -96,7 +96,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
     if (!def.field) {
       if (def.confirm) {
         const ok = await confirmDialog({
-          title: `${tenantName}님 — ${def.confirm}`,
+          title: `${tenantName}님 · ${def.confirm}`,
           confirmLabel: def.label,
           ...(def.tone === 'danger' ? { level: 'caution' as const } : {}),
         })
@@ -138,7 +138,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
           leaseTermId: lease.id, tenantId, toStatus: def.toStatus, ...(fields ?? {}),
         })
         if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('success', `${tenantName}님 — ${def.label} 완료`)
+        pushToast('success', `${tenantName}님 · ${def.label} 완료`)
         if (res.notice) pushToast('info', res.notice)
         setActive(null)
         onChange?.()
@@ -186,7 +186,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
       {active && (
         <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null}
           onClose={() => { if (!pending) setActive(null) }}
-          title={`${active.tenantName}님 — ${active.def.label}`}
+          title={`${active.tenantName}님 · ${active.def.label}`}
           footer={
             <div className="flex gap-2">
               <Btn variant="secondary" size="md" onClick={() => setActive(null)} disabled={pending} className="flex-1">취소</Btn>
@@ -237,7 +237,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
       {prorateAsk && (
         <Modal open z={260} width="sm"
           onClose={() => setProrateAsk(null)}
-          title={`${tenantName}님 — 퇴실 정산`}
+          title={`${tenantName}님 · 퇴실 정산`}
           footer={
             <div className="flex gap-2">
               <Btn variant="secondary" size="md" onClick={() => setProrateAsk(null)} className="flex-1">아니오</Btn>
@@ -255,7 +255,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
                 퇴실 예정일이 납입일과 가깝습니다. 선납 기준 <b>일할로 퇴실 정산</b>을 하시겠어요?
               </p>
               <p className="text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed">
-                · <b>예</b> — 수납 화면의 퇴실 정산으로 이동해 일수만큼 계산(미납 시 정산 후 입금 / 완납 시 환불).<br />
+                · <b>예</b> · 수납 화면의 퇴실 정산으로 이동해 일수만큼 계산(미납 시 정산 후 입금 / 완납 시 환불).<br />
                 · <b>아니오</b> — 퇴실 예정일만 저장(이번 달 풀 청구 유지).
               </p>
             </div>

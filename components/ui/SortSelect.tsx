@@ -43,7 +43,7 @@ export function SortSelect<T extends string>({
       <button
         type="button"
         onClick={onToggleDir}
-        aria-label={dir === 'asc' ? '오름차순 — 누르면 내림차순' : '내림차순 — 누르면 오름차순'}
+        aria-label={dir === 'asc' ? '오름차순 · 누르면 내림차순' : '내림차순 · 누르면 오름차순'}
         className="flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-[var(--warm-border)] bg-[var(--cream)] text-xs text-[var(--warm-mid)] transition-colors hover:border-[var(--coral)] hover:text-[var(--warm-dark)]"
       >
         {dir === 'asc' ? '↑' : '↓'}

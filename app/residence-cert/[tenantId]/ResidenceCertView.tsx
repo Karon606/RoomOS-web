@@ -108,7 +108,7 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         const msg = json?.error ?? `서버 오류 (${res.status})`
         pushToast('error', msg); return
       }
-      pushToast('success', '실거주 확인서 발급됨 — 발급 이력으로 이동합니다')
+      pushToast('success', '실거주 확인서 발급됨. 발급 이력으로 이동합니다')
       router.push('/residence-certs')
     } catch (err) {
       const msg = (err as Error).message ?? 'PDF 생성 실패'
@@ -145,7 +145,7 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         </button>
       </div>
 
-      <p className="no-print rc-hint">원본 양식 위에 바로 입력합니다. 칸을 눌러 수정하세요 — 보이는 그대로 발급됩니다.</p>
+      <p className="no-print rc-hint">원본 양식 위에 바로 입력합니다. 칸을 눌러 수정하세요. 보이는 그대로 발급됩니다.</p>
 
       <div className="rc-cage" style={{ width: RC_PAGE.w * scale, height: RC_PAGE.h * scale }}>
         <div className="rc-page" style={{ width: RC_PAGE.w, height: RC_PAGE.h, transform: `scale(${scale})` }}>

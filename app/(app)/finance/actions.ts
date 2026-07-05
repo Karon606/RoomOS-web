@@ -942,9 +942,9 @@ export async function detachShippingFromOrder(expenseId: string): Promise<{ ok: 
     if (remainingItems.length === 0) {
       await prisma.expense.deleteMany({ where: { orderId: exp.orderId, isShipping: true } })
       await prisma.expenseOrder.delete({ where: { id: exp.orderId } }).catch(() => {})
-      notice = '합배송 묶음을 해제했습니다 — 마지막 품목이라 배송비 라인과 주문도 정리했습니다.'
+      notice = '합배송 묶음을 해제했습니다. 마지막 품목이라 배송비 라인과 주문도 정리했습니다.'
     } else {
-      notice = `합배송 묶음에서 분리했습니다 — 주문에 남은 품목 ${remainingItems.length}건과 배송비는 유지됩니다.`
+      notice = `합배송 묶음에서 분리했습니다. 주문에 남은 품목 ${remainingItems.length}건과 배송비는 유지됩니다.`
     }
     revalidatePath('/finance')
     return { ok: true, notice }
@@ -1850,7 +1850,7 @@ export async function addReserveWithdrawDirect(input: { amount: number; date: st
     const propertyId = await getPropertyId()
     if (input.amount <= 0) return { ok: false, error: '금액은 0보다 커야 합니다.' }
     const balance = await getReserveBalance()
-    if (input.amount > balance) return { ok: false, error: `잔고 부족 — 현재 예비비 ${balance.toLocaleString()}원` }
+    if (input.amount > balance) return { ok: false, error: `잔고 부족 · 현재 예비비 ${balance.toLocaleString()}원` }
     await prisma.reserveTransaction.create({
       data: {
         propertyId,
@@ -1892,10 +1892,10 @@ export async function settleReserveFromExpense(input: { expenseId: string; amoun
 
     const settleAmount = input.amount ?? remaining
     if (settleAmount <= 0) return { ok: false, error: '정산 금액은 0보다 커야 합니다.' }
-    if (settleAmount > remaining) return { ok: false, error: `정산 가능 금액 초과 — 잔여 ${remaining.toLocaleString()}원` }
+    if (settleAmount > remaining) return { ok: false, error: `정산 가능 금액 초과 · 잔여 ${remaining.toLocaleString()}원` }
 
     const balance = await getReserveBalance()
-    if (settleAmount > balance) return { ok: false, error: `잔고 부족 — 현재 예비비 ${balance.toLocaleString()}원` }
+    if (settleAmount > balance) return { ok: false, error: `잔고 부족 · 현재 예비비 ${balance.toLocaleString()}원` }
 
     await prisma.reserveTransaction.create({
       data: {

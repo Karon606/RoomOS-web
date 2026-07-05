@@ -48,7 +48,7 @@ export function ItemNameMergePanel() {
     const res = await undoItemNameMerge(id)
     setBusy(null)
     if (!res.ok) { pushToast('error', res.error); return }
-    pushToast('success', '병합 적용취소됨 — 이름 원복')
+    pushToast('success', '병합 적용취소됨 · 이름 원복')
     setRuns(prev => prev.filter(r => r.id !== id))
   }
 

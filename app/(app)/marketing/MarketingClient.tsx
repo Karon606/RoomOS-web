@@ -281,7 +281,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
         <p className="text-xs font-semibold mb-1" style={{ color: 'var(--ink-2)' }}>
           섹션별 평균 체류시간 <span style={{ color: 'var(--warm-muted)', fontWeight: 400 }}>(영역별, 샘플 {fmt(stats.sectionSampleCount)}건)</span>
         </p>
-        <p className="text-[11px] mb-3" style={{ color: 'var(--warm-muted)' }}>방문자가 페이지의 어느 부분에서 더 오래 머물렀는지 — 화면 중앙에 머문 시간 기준</p>
+        <p className="text-[11px] mb-3" style={{ color: 'var(--warm-muted)' }}>방문자가 페이지의 어느 부분에서 더 오래 머물렀는지 · 화면 중앙에 머문 시간 기준</p>
         {stats.sections.length === 0 ? (
           <p className="text-xs text-center py-4" style={{ color: 'var(--warm-muted)' }}>
             아직 측정 데이터 없음 (공개 페이지 방문이 쌓이면 영역별로 표시됩니다)

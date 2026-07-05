@@ -406,7 +406,7 @@ export default function SettingsForm({
     const res = await approveJoinRequest(id, role)
     if (!res.ok) { showToast(res.error); return }
     setJoinRequests(prev => prev.filter(r => r.id !== id))
-    showToast('승인됨 — 멤버로 추가됐습니다.')
+    showToast('승인됨. 멤버로 추가됐습니다.')
     router.refresh()
   }
 
@@ -879,7 +879,7 @@ export default function SettingsForm({
 
         {/* 도움말 — 앱의 사고방식(사용성 감사 F2). 처음 쓰는 사람이 막히는 개념만 짧게. */}
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
-          <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">도움말 — 앱이 계산하는 방식</h2>
+          <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">도움말 · 앱이 계산하는 방식</h2>
           <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">처음 쓸 때 헷갈리기 쉬운 개념을 모았습니다. 항목을 누르면 펼쳐집니다.</p>
           <div className="space-y-1.5">
             {[
@@ -887,7 +887,7 @@ export default function SettingsForm({
               { q: '재고 숫자가 왜 안 변하나요?', a: '재고는 점검(실사) 기록을 기준으로 계산됩니다. 구매는 수령 확인 시 더해지고, 소모량은 두 점검 사이의 차이로 계산됩니다. 재고 관리에서 주기적으로 점검을 기록해 주세요.' },
               { q: '재고가 실제와 다르면 어떻게 하나요?', a: '재고 관리 > 더보기 > 전체 재고 보정으로 실측값을 입력하면 그 시점으로 리셋됩니다. 보정 구간의 차이는 소모량으로 잡지 않아 통계가 왜곡되지 않습니다.' },
               { q: '같은 품목이 여러 이름으로 갈라졌어요.', a: '재고 카드의 합치기(또는 이 페이지의 품명 병합)로 통일하세요. 한 번 고치면 별칭으로 학습되어 다음 영수증부터 자동으로 통일된 이름이 붙습니다.' },
-              { q: '영수증은 어디로 올리는 게 좋나요?', a: '바쁠 때는 홈의 찍어 올리기 — 던져두면 AI가 분류하고 나중에 검토·승인하면 됩니다. 지금 바로 정확히 입력하려면 지출 등록의 영수증 스캔을 쓰세요. 두 경로 모두 같은 학습을 공유합니다.' },
+              { q: '영수증은 어디로 올리는 게 좋나요?', a: '바쁠 때는 홈의 찍어 올리기. 던져두면 AI가 분류하고 나중에 검토·승인하면 됩니다. 지금 바로 정확히 입력하려면 지출 등록의 영수증 스캔을 쓰세요. 두 경로 모두 같은 학습을 공유합니다.' },
               { q: '실수로 저장했어요.', a: '저장 직후 뜨는 알림의 적용취소를 누르면 되돌아갑니다. 삭제·병합·일괄 수납 등 대부분의 동작에 적용취소가 있습니다.' },
               { q: '여러 항목을 한 번에 처리하고 싶어요.', a: '목록의 카드를 꾹 누르거나 상단의 선택 버튼을 누르면 다중 선택 모드가 됩니다. 하단 바에서 일괄 수납·일괄 배정·묶기 등을 실행할 수 있습니다.' },
             ].map(h => (
@@ -1355,8 +1355,8 @@ export default function SettingsForm({
                     onChange={e => setInviteRole(e.target.value as Role)}
                     className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
                   >
-                    <option value="MANAGER">관리자 — 등록·수정·삭제 가능</option>
-                    <option value="STAFF">스태프 — 조회만 가능</option>
+                    <option value="MANAGER">관리자 · 등록·수정·삭제 가능</option>
+                    <option value="STAFF">스태프 · 조회만 가능</option>
                   </select>
                   <Btn variant="primary" size="md" onClick={handleInvite}>
                     초대
@@ -1560,7 +1560,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
         </div>
 
         <div className="space-y-3">
-          <p className="text-xs font-medium text-[var(--warm-mid)]">섹션 (각 줄은 줄바꿈으로 구분 — &lsquo;- &rsquo;로 시작 권장)</p>
+          <p className="text-xs font-medium text-[var(--warm-mid)]">섹션 (각 줄은 줄바꿈으로 구분 · &lsquo;- &rsquo;로 시작 권장)</p>
           {template.sections.map((sec, idx) => (
             <div key={sec.id} className="rounded-xl p-3 space-y-2" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
               <div className="flex items-center gap-2">
@@ -1615,9 +1615,9 @@ function BizField({ label, value, onChange }: { label: string; value: string; on
 
 // ── 화면(테마) 탭 ─────────────────────────────────────────────────
 const FONT_SIZE_OPTIONS: { key: FontSizeLevel; label: string; desc: string; basePx: number }[] = [
-  { key: 'compact', label: '작게',   desc: '한 화면에 더 많은 정보 — 데이터 집중형',  basePx: 14 },
+  { key: 'compact', label: '작게',   desc: '한 화면에 더 많은 정보 · 데이터 집중형',  basePx: 14 },
   { key: 'default', label: '기본',   desc: '권장 크기',                               basePx: 16 },
-  { key: 'large',   label: '크게',   desc: '가독성 우선 — 눈이 불편한 경우 권장',     basePx: 18 },
+  { key: 'large',   label: '크게',   desc: '가독성 우선 · 눈이 불편한 경우 권장',     basePx: 18 },
   { key: 'xlarge',  label: '아주 크게', desc: '최대 크기',                            basePx: 20 },
 ]
 
@@ -1648,7 +1648,7 @@ function AppearanceTab() {
   const themeOptions: { key: ThemeMode; label: string; desc: string }[] = [
     { key: 'system', label: '시스템 따라', desc: '기기 설정(라이트/다크)에 자동으로 맞춤' },
     { key: 'light',  label: '라이트',     desc: '항상 밝은 화면' },
-    { key: 'dark',   label: '다크',       desc: '항상 어두운 화면 — 야간·OLED 권장' },
+    { key: 'dark',   label: '다크',       desc: '항상 어두운 화면 · 야간·OLED 권장' },
     { key: 'time',   label: '시간 기반',  desc: '오전 6시~오후 6시 라이트, 그 외 다크' },
   ]
 
@@ -1693,7 +1693,7 @@ function AppearanceTab() {
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5 space-y-4">
         <div>
           <h2 className="text-sm font-semibold text-[var(--warm-dark)]">글씨 크기</h2>
-          <p className="text-xs text-[var(--warm-muted)] mt-0.5">앱 전체 텍스트 크기 — 이 기기에만 적용됩니다</p>
+          <p className="text-xs text-[var(--warm-muted)] mt-0.5">앱 전체 텍스트 크기. 이 기기에만 적용됩니다</p>
         </div>
         <div className="grid grid-cols-2 gap-3">
           {FONT_SIZE_OPTIONS.map(o => {

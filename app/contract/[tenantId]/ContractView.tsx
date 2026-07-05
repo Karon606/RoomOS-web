@@ -266,10 +266,10 @@ export default function ContractView({ data }: { data: ContractData }) {
     setSignOpen(false)
     if (signTarget === 'disposal') {
       setDisposalSignatureDataUrl(url)
-      pushToast('info', '동의서 서명 적용됨 — 확인 후 \'계약서 저장\' 을 눌러주세요')
+      pushToast('info', '동의서 서명 적용됨 · 확인 후 \'계약서 저장\' 을 눌러주세요')
     } else {
       setSignatureDataUrl(url)
-      pushToast('info', '서명 적용됨 — 확인 후 \'계약서 저장\' 을 눌러주세요')
+      pushToast('info', '서명 적용됨 · 확인 후 \'계약서 저장\' 을 눌러주세요')
     }
   }
 
@@ -302,14 +302,14 @@ export default function ContractView({ data }: { data: ContractData }) {
       try { json = JSON.parse(text) } catch { /* not JSON */ }
       if (!res.ok || !json?.ok) {
         const msg = json?.error ?? `서버 오류 (${res.status}): ${text.slice(0, 200)}`
-        pushToast('error', `계약서 PDF 생성 실패 — ${msg}`)
+        pushToast('error', `계약서 PDF 생성 실패 · ${msg}`)
         return
       }
-      pushToast('success', '계약서 저장됨 — 입실자 정보로 이동합니다')
+      pushToast('success', '계약서 저장됨. 입실자 정보로 이동합니다')
       router.push(`/tenants?tenantId=${data.tenant.id}&tab=info`)
     } catch (err) {
       const msg = (err as Error).message ?? 'PDF 생성 실패'
-      pushToast('error', `계약서 PDF 생성 실패 — ${msg}`)
+      pushToast('error', `계약서 PDF 생성 실패 · ${msg}`)
     } finally {
       release()
       setContractSaving(false)
@@ -350,7 +350,7 @@ export default function ContractView({ data }: { data: ContractData }) {
     if (!res.ok) {
       const t = await res.text()
       pushToast('error', `PDF 생성 실패 (${res.status})`)
-      pushToast('error', `PDF 생성 실패 — ${t.slice(0, 200)}`)
+      pushToast('error', `PDF 생성 실패 · ${t.slice(0, 200)}`)
       return null
     }
     return res.blob()
@@ -419,7 +419,7 @@ export default function ContractView({ data }: { data: ContractData }) {
       a.click()
       a.remove()
       setTimeout(() => URL.revokeObjectURL(url), 60000)
-      pushToast('success', 'PDF 다운로드됨 — 파일에서 인쇄할 수 있어요')
+      pushToast('success', 'PDF 다운로드됨. 파일에서 인쇄할 수 있어요')
     } catch (err) {
       pushToast('error', (err as Error).message ?? 'PDF 생성 실패')
     } finally {
@@ -471,7 +471,7 @@ export default function ContractView({ data }: { data: ContractData }) {
         )}
         {editing && (
           <>
-            <span className="toolbar-status">편집 중 — 이 입실자 전용으로 저장됩니다</span>
+            <span className="toolbar-status">편집 중. 이 입실자 전용으로 저장됩니다</span>
             <button onClick={() => { setDraft(data.template); setEditing(false) }} disabled={pending} className="toolbar-btn-secondary">
               취소
             </button>

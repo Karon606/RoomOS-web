@@ -423,7 +423,7 @@ function AiImportModal({
                 <div className="w-7 h-7 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
                 <p className="text-xs font-medium text-[var(--warm-dark)]">AI 분석 중… {elapsed}초</p>
                 <p className="text-[0.6875rem] text-[var(--warm-muted)] text-center px-4">
-                  {elapsed < 10 ? '이미지를 전송하고 있습니다' : elapsed < 25 ? '공간 요소를 인식하고 있습니다' : '좌표를 계산하고 있습니다 — 거의 다 됐어요'}
+                  {elapsed < 10 ? '이미지를 전송하고 있습니다' : elapsed < 25 ? '공간 요소를 인식하고 있습니다' : '좌표를 계산하고 있습니다. 거의 다 됐어요'}
                 </p>
               </div>
             ) : (
@@ -1269,8 +1269,8 @@ export default function FloorPlanEditor({
           {drawingPolygon.points.length === 0
             ? '캔버스를 클릭하여 첫 번째 꼭짓점을 추가하세요'
             : drawingPolygon.points.length < 6
-              ? `꼭짓점 추가 중 (${Math.floor(drawingPolygon.points.length / 2)}개) — 최소 3개 필요`
-              : `꼭짓점 ${Math.floor(drawingPolygon.points.length / 2)}개 — 더블클릭하거나 완료 버튼을 눌러 닫으세요`}
+              ? `꼭짓점 추가 중 (${Math.floor(drawingPolygon.points.length / 2)}개) · 최소 3개 필요`
+              : `꼭짓점 ${Math.floor(drawingPolygon.points.length / 2)}개. 더블클릭하거나 완료 버튼을 눌러 닫으세요`}
         </div>
       )}
 

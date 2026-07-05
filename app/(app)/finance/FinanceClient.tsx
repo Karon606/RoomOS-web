@@ -380,7 +380,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     if (similar) {
       const useExisting = await confirmDialog({
         title: '비슷한 품목이 있어요',
-        message: `이미 '${similar}'(으)로 쓰신 적이 있어요. 같은 품목인가요?\n(다른 제품이면 '새 품목으로' — 입력한 '${label}' 그대로 등록)`,
+        message: `이미 '${similar}'(으)로 쓰신 적이 있어요. 같은 품목인가요?\n(다른 제품이면 '새 품목으로' · 입력한 '${label}' 그대로 등록)`,
         confirmLabel: `'${similar}'로`,
         cancelLabel: '새 품목으로',
       })
@@ -580,7 +580,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
               </div>
             </div>
           </div>
-          <p className="text-[0.5625rem] text-[var(--warm-muted)]">단가·금액 중 아는 값만 넣으면 나머지는 자동 계산돼요. 단가 라벨을 누르면 기준 전환(규격당 ↔ 완제품 1개당 — 장판 1롤당 등).</p>
+          <p className="text-[0.5625rem] text-[var(--warm-muted)]">단가·금액 중 아는 값만 넣으면 나머지는 자동 계산돼요. 단가 라벨을 누르면 기준 전환(규격당 ↔ 완제품 1개당 · 장판 1롤당 등).</p>
         </div>
       )}
     </div>
@@ -695,7 +695,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                             className="text-[0.625rem] text-[var(--coral)] hover:underline">+ 방 추가</button>
                           <span className={`text-[0.5625rem] ${allocOver ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'}`}>
                             방 배정 {allocSum} / 전체 {it.qtyValue || 0}
-                            {allocOver ? ' ⚠ 수량 초과' : allocRemain > 0.001 ? ` · 나머지 ${allocRemain}개 미배정` : ''}
+                            {allocOver ? ' · 수량 초과' : allocRemain > 0.001 ? ` · 나머지 ${allocRemain}개 미배정` : ''}
                           </span>
                         </div>
                       </div>
@@ -798,7 +798,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
         if (!res.ok) { pushToast('error', res.error); return }
         total += res.updated
       }
-      pushToast('success', `'${destVendor}'(으)로 합침 — 지출 ${total}건 반영`)
+      pushToast('success', `'${destVendor}'(으)로 합침 · 지출 ${total}건 반영`)
       setSheet(null); exitSel(); await load(); onChanged()
     } finally { release(); setMerging(false) }
   }
@@ -1411,7 +1411,7 @@ export default function FinanceClient({
             if (similar && similar !== it.label) {
               const useExisting = await confirmDialog({
                 title: '비슷한 품목이 있어요',
-                message: `영수증의 '${it.label}' — 이미 '${similar}'(으)로 쓰신 적이 있어요. 같은 품목인가요?\n(다른 제품이면 '새 품목으로' — '${it.label}' 그대로 등록)`,
+                message: `영수증의 '${it.label}'. 이미 '${similar}'(으)로 쓰신 적이 있어요. 같은 품목인가요?\n(다른 제품이면 '새 품목으로' · '${it.label}' 그대로 등록)`,
                 confirmLabel: `'${similar}'로`,
                 cancelLabel: '새 품목으로',
               })
@@ -1757,7 +1757,7 @@ export default function FinanceClient({
       setError(msg); pushToast('error', msg); return
     }
     if (addIsService && !DETAIL_OPTIONAL_CATEGORIES.includes(addExpCategory) && addItems.length === 0) {
-      const msg = '세부 항목을 1개 이상 추가하세요. (예: 도배 14만 · 장판 시공 5만 — 임대료·세금·공과금·관리비·보증금 반환은 비워도 됩니다)'
+      const msg = '세부 항목을 1개 이상 추가하세요. (예: 도배 14만 · 장판 시공 5만 · 임대료·세금·공과금·관리비·보증금 반환은 비워도 됩니다)'
       setError(msg); pushToast('error', msg); return
     }
     const fd = new FormData(e.currentTarget)
@@ -1772,7 +1772,7 @@ export default function FinanceClient({
           if (found) {
             const attach = await confirmDialog({
               title: '같은 주문번호의 주문이 있어요',
-              message: `주문 ${found.code} — 품목 ${found.count}건 · ${fmtWon(found.total)}.\n이 지출을 같은 주문으로 묶을까요? (한 주문에 판매점별 영수증이 여러 장인 경우)\n묶은 뒤에도 지출 상세에서 풀 수 있어요.`,
+              message: `주문 ${found.code} · 품목 ${found.count}건 · ${fmtWon(found.total)}.\n이 지출을 같은 주문으로 묶을까요? (한 주문에 판매점별 영수증이 여러 장인 경우)\n묶은 뒤에도 지출 상세에서 풀 수 있어요.`,
               confirmLabel: '같은 주문으로 묶기',
               cancelLabel: '따로 등록',
             })
@@ -2003,7 +2003,7 @@ export default function FinanceClient({
             className="px-5 py-4 space-y-2 text-left transition-colors hover:bg-[var(--canvas)]/60 cursor-pointer">
             <p className="text-xs font-medium text-[var(--warm-muted)] flex items-center justify-between">
               부가 수익 합계
-              <span className="text-[var(--coral)] font-medium">내역 보기 →</span>
+              <span className="text-[var(--coral)] font-medium">내역 보기 ›</span>
             </p>
             <p className="text-xl font-bold text-[var(--warm-dark)] num">
               <MoneyDisplay amount={totalIncomeSum} prefix="+" />
@@ -2579,7 +2579,7 @@ export default function FinanceClient({
                 {/* 활성화 예정 항목 (하단) */}
                 {pendingRecs.length > 0 && (
                   <div className="space-y-2 pt-2">
-                    <p className="text-xs font-semibold text-[var(--warm-muted)] px-1">활성화 예정 — 아직 내 부담이 아닌 항목</p>
+                    <p className="text-xs font-semibold text-[var(--warm-muted)] px-1">활성화 예정 · 아직 내 부담이 아닌 항목</p>
                     <div className="sm:hidden space-y-2">
                       {pendingRecs.map(rec => (
                         <div key={rec.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 opacity-50">
@@ -3331,7 +3331,7 @@ export default function FinanceClient({
                       className={`flex-1 px-3 py-2 transition-colors ${addIsService ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>서비스·무형</button>
                   </div>
                   <p className="text-[0.625rem] text-[var(--warm-muted)]">
-                    {addIsService ? '시공비·인건비 등 — 세부 항목으로 내역을 쪼개되, 재고/비품엔 안 잡힙니다.' : '실물 구매 — 품목을 입력해야 재고/비품에 잡힙니다.'}
+                    {addIsService ? '시공비·인건비 등. 세부 항목으로 내역을 쪼개되, 재고/비품엔 안 잡힙니다.' : '실물 구매. 품목을 입력해야 재고/비품에 잡힙니다.'}
                   </p>
                 </div>
                 <div className="space-y-1.5">
@@ -3735,7 +3735,7 @@ export default function FinanceClient({
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">전년동월 실적 (선택)</label>
                     <MoneyInput value={Number(recMgmtForm.priorYearAmount) || 0} onChange={v => setRecMgmtForm(p => ({ ...p, priorYearAmount: v > 0 ? String(v) : '' }))} placeholder="0원" />
-                    <p className="text-[0.625rem] text-[var(--warm-muted)]">작년 같은 달 실제 납부액 — 최근 3개월 평균과 함께 예상치 계산에 반영됩니다.</p>
+                    <p className="text-[0.625rem] text-[var(--warm-muted)]">작년 같은 달 실제 납부액. 최근 3개월 평균과 함께 예상치 계산에 반영됩니다.</p>
                   </div>
                 )}
                 <div className="space-y-1.5">

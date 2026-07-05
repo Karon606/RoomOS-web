@@ -641,7 +641,7 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
                         {m.qty > 0 ? fmtBarQty(m.qty) : '·'}
                       </span>
                       <div className="w-full flex items-end" style={{ height: '24px' }}>
-                        <div className="w-full rounded-sm transition-all"
+                        <div className="w-full rounded-sm transition-[width]"
                           title={`${monthNum}월: ${m.qty > 0 ? fmtQty(m.qty, stockUnit) : '기록 없음'}`}
                           style={{
                             height: `${h}%`,
@@ -1135,7 +1135,7 @@ function SettingsForm({ row, onCancel, onDone }: {
     if (!res.ok) { setUnitMsg(res.error); return }
     pushToast('success', `단위를 ${target}로 변경했습니다 (점검 ${res.convertedChecks}건 환산).`)
     if (res.unitlessReceipts > 0) {
-      pushToast('info', `⚠️ 단위가 비어 있는 과거 영수증 ${res.unitlessReceipts}건은 자동 환산되지 않습니다 — 타임라인에서 해당 구매의 규격 단위를 채워주세요.`)
+      pushToast('info', `단위가 비어 있는 과거 영수증 ${res.unitlessReceipts}건은 자동 환산되지 않습니다. 타임라인에서 해당 구매의 규격 단위를 채워주세요.`)
     }
     onDone()
   }
@@ -1178,7 +1178,7 @@ function SettingsForm({ row, onCancel, onDone }: {
         <input type="text" inputMode="numeric" value={thresholdDays}
           onChange={e => setThresholdDays(e.target.value.replace(/[^0-9]/g, ''))}
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-        <p className="text-[0.625rem] text-[var(--warm-muted)]">예: 3 → 소진 예상이 3일 이하면 알림</p>
+        <p className="text-[0.625rem] text-[var(--warm-muted)]">예: 3이면 소진 예상 3일 이하일 때 알림</p>
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">재고 추적 단위</label>
@@ -1278,7 +1278,7 @@ function MergeSection({ currentId, currentLabel, onDone }: {
     setPending(false)
     if (!res.ok) { pushToast('error', res.error); return }
     setOpen(false)
-    pushToast('success', `병합 완료 — 지출 ${res.movedExpenses}건, 점검 ${res.movedChecks}건, 무상입수 ${res.movedAdditions}건`)
+    pushToast('success', `병합 완료 · 지출 ${res.movedExpenses}건, 점검 ${res.movedChecks}건, 무상입수 ${res.movedAdditions}건`)
     onDone()
   }
 
@@ -2246,7 +2246,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
 
   return (
     <li className="border border-[var(--warm-border)] rounded-xl px-3 py-3 space-y-2 bg-[var(--canvas)]">
-      <p className="text-xs font-medium text-[var(--warm-mid)]">구매 수정 <span className="text-[0.625rem] font-normal text-[var(--warm-muted)]">— 수정 내용은 지출 페이지에도 반영됩니다</span></p>
+      <p className="text-xs font-medium text-[var(--warm-mid)]">구매 수정 <span className="text-[0.625rem] font-normal text-[var(--warm-muted)]">수정 내용은 지출 페이지에도 반영됩니다</span></p>
       {error && <p className="text-xs text-[var(--danger-fg)]">{error}</p>}
       <div className="grid grid-cols-2 gap-2">
         <div>
@@ -2698,7 +2698,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
       <label className={`flex items-start gap-2 cursor-pointer select-none rounded-lg border px-2.5 py-2 transition-colors ${reconcileMode ? 'bg-[var(--honey)]/10 border-[var(--honey)]/40' : 'bg-[var(--canvas)] border-[var(--warm-border)]'}`}>
         <input type="checkbox" checked={reconcileMode} onChange={e => setReconcileMode(e.target.checked)} className="mt-0.5 accent-[var(--coral)]" />
         <span className="text-[0.625rem] text-[var(--warm-mid)] leading-snug">
-          <strong className="text-[var(--warm-dark)]">전체 보정으로 기록</strong> — 실제 수량과 차이를 사용량으로 잡지 않습니다.<br />
+          <strong className="text-[var(--warm-dark)]">전체 보정으로 기록</strong>. 실제 수량과 차이를 사용량으로 잡지 않습니다.<br />
           계산 오차·분실 등으로 어긋난 재고를 실측값으로 다시 맞출 때 사용. (보충 완료 후 점검 권장)
         </span>
       </label>
@@ -3183,7 +3183,7 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
           <>
             {undos.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-[var(--warm-mid)]">되돌릴 수 있는 병합 — 합친 걸 원래대로 분리</p>
+                <p className="text-xs font-semibold text-[var(--warm-mid)]">되돌릴 수 있는 병합 · 합친 걸 원래대로 분리</p>
                 {undos.map(u => (
                   <div key={u.id} className="flex items-center gap-2 text-sm bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">
                     <span className="min-w-0 flex-1 truncate text-[var(--warm-dark)]">{u.label}</span>
@@ -3195,7 +3195,7 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
             )}
             {links.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-[var(--warm-mid)]">연결 — 이 라벨은 해당 카드로 추천</p>
+                <p className="text-xs font-semibold text-[var(--warm-mid)]">연결 · 이 라벨은 해당 카드로 추천</p>
                 {links.map(r => (
                   <div key={r.id} className="flex items-center gap-2 text-sm bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">
                     <span className="min-w-0 flex-1 truncate text-[var(--warm-dark)]">
@@ -3210,7 +3210,7 @@ function MergeRulesModal({ onClose }: { onClose: () => void }) {
             )}
             {mutes.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-[var(--warm-mid)]">거절 — 다시 추천 안 함</p>
+                <p className="text-xs font-semibold text-[var(--warm-mid)]">거절 · 다시 추천 안 함</p>
                 {mutes.map(r => (
                   <div key={r.id} className="flex items-center gap-2 text-sm bg-[var(--canvas)] border border-[var(--warm-border)]/60 rounded-lg px-3 py-2">
                     <span className="min-w-0 flex-1 truncate text-[var(--warm-dark)]">

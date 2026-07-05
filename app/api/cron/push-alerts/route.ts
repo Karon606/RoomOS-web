@@ -58,7 +58,7 @@ export async function GET(req: Request) {
     if (total === 0) continue
 
     const payload = JSON.stringify({
-      title: `스테이음 — 오늘 챙길 일 ${total}건`,
+      title: `스테이음 · 오늘 챙길 일 ${total}건`,
       body: parts.join(' · '),
       url: '/dashboard',
       badge: total,
@@ -84,7 +84,7 @@ export async function GET(req: Request) {
         data: {
           userId,
           source: 'cron-daily',
-          title: `스테이음 — 오늘 챙길 일 ${total}건`,
+          title: `스테이음 · 오늘 챙길 일 ${total}건`,
           body: parts.join(' · '),
           url: '/dashboard',
           badge: total,

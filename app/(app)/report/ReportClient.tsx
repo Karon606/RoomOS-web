@@ -88,7 +88,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
             {tab === 'past'
               ? '발생주의(매출 인식 월) 기준 연간 손익·미수 현황'
               : tab === 'forecast'
-              ? '향후 6개월 예상 매출·지출·순이익 — 호실 점유 일정 + 전년 동월/3개월 평균 기반'
+              ? '향후 6개월 예상 매출·지출·순이익 · 호실 점유 일정 + 전년 동월/3개월 평균 기반'
               : 'Gemini AI가 점유율·미수·회전율·지출 구조를 분석해 영업장 단위 진단·개선 제안을 제공합니다.'}
           </p>
         </div>
@@ -183,7 +183,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                   <span className="text-xs text-[var(--warm-dark)] w-20 shrink-0 truncate">{c.category}</span>
                   <div className="flex-1 h-5 bg-[var(--canvas)] rounded-full relative overflow-hidden">
                     <div
-                      className="absolute inset-y-0 left-0 rounded-full transition-all"
+                      className="absolute inset-y-0 left-0 rounded-full transition-[width]"
                       style={{ width: `${c.percent}%`, background: color }}
                     />
                   </div>

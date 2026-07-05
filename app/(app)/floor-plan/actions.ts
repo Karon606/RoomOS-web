@@ -211,7 +211,7 @@ export async function parseFloorPlanImage(
 
     if (!res.ok) {
       const errTxt = await res.text()
-      const hint = res.status === 503 ? ' (서버 과부하 — 잠시 후 다시 시도해 주세요)' : ''
+      const hint = res.status === 503 ? ' (서버 과부하 · 잠시 후 다시 시도해 주세요)' : ''
       return { ok: false, error: `Gemini API 오류 (${res.status})${hint}: ${errTxt.slice(0, 200)}` }
     }
     const json = await res.json()
@@ -264,7 +264,7 @@ export async function parseFloorPlanImage(
         const objs = extractCompleteObjects(cleaned)
         if (objs.length > 0) recovered = objs
       }
-      if (!recovered) return { ok: false, error: `JSON 파싱 실패 (${cleaned.length}자) — 응답: ${cleaned.slice(0, 120)}` }
+      if (!recovered) return { ok: false, error: `JSON 파싱 실패 (${cleaned.length}자) · 응답: ${cleaned.slice(0, 120)}` }
       parsed = recovered
     }
 

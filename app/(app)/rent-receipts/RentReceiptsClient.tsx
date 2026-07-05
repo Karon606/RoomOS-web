@@ -73,7 +73,7 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
                   <span className="min-w-0 truncate text-sm font-medium text-[var(--warm-dark)]">
                     {t.roomNo ? `${fmtRoomNo(t.roomNo)} · ` : ''}{t.tenantName}
                   </span>
-                  <span className="text-[var(--coral)] text-xs shrink-0">발급 →</span>
+                  <span className="text-[var(--coral)] text-xs shrink-0">발급 ›</span>
                 </Link>
               </li>
             ))}
