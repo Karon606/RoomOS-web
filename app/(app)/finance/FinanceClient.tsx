@@ -329,6 +329,33 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   const amtCls  = 'flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
   const textCls = 'w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
+  // 직전 구매 컨텍스트 프리필(운영자 요청 2026-07-06) — 규격·수량·단가 기준·단가까지, 전 품목 공통.
+  // 규격이 품명에 섞여 '라면 20개 (박스)' 같은 별도 품목이 생기는 것을 없애는 장치:
+  // 품목만 고르면 지난번 규격이 따라온다. 값은 전부 수정 가능.
+  function applyLastContext(last: NonNullable<Awaited<ReturnType<typeof getLastItemUnits>>>) {
+    setPrevUnits(last)
+    if (last.specText) { setSpecTextMode(true); setSpecText(last.specText) }
+    else if (last.specValue) setSpecValue(last.specValue)
+    if (last.specUnit) setSpecUnit(last.specUnit)
+    if (last.qtyUnit)  setQtyUnit(last.qtyUnit)
+    if (last.qtyValue) setQtyValue(last.qtyValue)
+    // 단가 기준은 직전 구매의 기준 그대로(장판을 10m당으로 계산했으면 계속 10m당) — 자동 추정이 덮지 않게 고정
+    if (last.unitBasis) { setUnitBasis(last.unitBasis); setBasisTouched(true) }
+    // 직전 단가 프리필 → 수량 입력만으로 금액 자동. 가격이 바뀌었으면 금액을 고치면 단가가 재역산된다.
+    if (last.unitPrice != null) { setPriceMode('unit'); setUnitStr(String(last.unitPrice)) }
+  }
+
+  // '직접 입력'에서 기존 품목명을 타이핑/제안 선택한 경우에도 동일 프리필 — 칩 선택과 경로만 다를 뿐 같은 품목.
+  const lastFetchedRef = useRef('')
+  async function maybePrefillCustom(raw: string) {
+    const label = raw.trim()
+    if (!label || lastFetchedRef.current === label) return
+    if (!detailSuggestions.includes(label)) return   // 기존 품목일 때만 (새 품명 타이핑 중 오발동 방지)
+    lastFetchedRef.current = label
+    const last = await getLastItemUnits(label)
+    if (last) applyLastContext(last)
+  }
+
   async function openPreset(label: string) {
     setActiveLabel(label)
     setSpecValue(''); setQtyValue(''); setAmountStr(''); setUnitStr(''); setPriceMode('amount'); setUnitBasis('spec'); setBasisTouched(false); setNoSpec(false); setSpecTextMode(false); setSpecText('')
@@ -338,21 +365,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     setFetching(true)
     try {
       const last = await getLastItemUnits(label)
-      if (last) {
-        setPrevUnits(last)
-        // 직전 구매 컨텍스트 프리필(운영자 요청 2026-07-06) — 규격·수량·단가 기준·단가까지.
-        // 규격이 품명에 섞여 '라면 20개 (박스)' 같은 별도 품목이 생기는 것을 없애는 장치:
-        // 품목만 고르면 지난번 규격이 따라온다. 값은 전부 수정 가능.
-        if (last.specText) { setSpecTextMode(true); setSpecText(last.specText) }
-        else if (last.specValue) setSpecValue(last.specValue)
-        if (last.specUnit) setSpecUnit(last.specUnit)
-        if (last.qtyUnit)  setQtyUnit(last.qtyUnit)
-        if (last.qtyValue) setQtyValue(last.qtyValue)
-        // 단가 기준은 직전 구매의 기준 그대로(장판을 10m당으로 계산했으면 계속 10m당) — 자동 추정이 덮지 않게 고정
-        if (last.unitBasis) { setUnitBasis(last.unitBasis); setBasisTouched(true) }
-        // 직전 단가 프리필 → 수량 입력만으로 금액 자동. 가격이 바뀌었으면 금액을 고치면 단가가 재역산된다.
-        if (last.unitPrice != null) { setPriceMode('unit'); setUnitStr(String(last.unitPrice)) }
-      }
+      if (last) applyLastContext(last)
       // 완전히 새로운 품목(과거 기록도 프리셋 기본값도 없음) → 단계별 입력 자동 안내
       if (!last && !def) setWizardOpen(true)
     } finally { setFetching(false) }
@@ -706,7 +719,9 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
           </div>
           <div className="space-y-1">
             <label className="text-[0.625rem] text-[var(--warm-muted)]">품목명</label>
-            <input type="text" placeholder="예: 고추장" value={customLabel} onChange={e => setCustomLabel(e.target.value)} className={textCls}
+            <input type="text" placeholder="예: 고추장" value={customLabel}
+              onChange={e => { setCustomLabel(e.target.value); maybePrefillCustom(e.target.value) }}
+              onBlur={e => maybePrefillCustom(e.target.value)} className={textCls}
               list="item-detail-suggestions" />
             {detailSuggestions.length > 0 && (
               <datalist id="item-detail-suggestions">{detailSuggestions.map(d => <option key={d} value={d} />)}</datalist>
