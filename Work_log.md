@@ -3,6 +3,12 @@
 마지막 업데이트: 2026-07-06
 브랜치: main
 
+## 2026-07-06 — 단기 입실 정책 템플릿(§4)·AI 지문 제거·전환 모션 통일 (운영자 지시)
+- **단기 입실 정책**: Property.shortStayPolicy Json(마이그레이션·제기역점 시드 완료) + lib/shortStay 순수함수(하네스 48케이스로 확장) + 요금 계산 시뮬 정책 카드 + 설정 오너 전용 수치 템플릿. 규칙: 최소 1주·주 단위·1달 이내 계약일수×1.5(1개월 상한)+청소비. [[short-stay-policy]]
+- **AI 지문 제거(1db0eaf)**: 사용자 노출 문자열 em dash 105곳·화살표 링크 11곳·이모지 2곳·느낌표 정리, transition-all/hover:scale 제거. 가이드 §25 신설(문장부호·톤·모션 금지 규칙).
+- **전환 모션(38a2ccb·8c596af·f7cdc6c)**: SegmentedControl·ViewTabs 슬라이딩 인디케이터(실측 left/width), 링크 탭 낙관 이동+라우트 간 위치 기억, BottomNav 슬라이드 바, Modal·ConfirmDialog 등장 모션 — 전부 reduced-motion 존중, §25.3 정본 등재. 통계 자체 탭 → ViewTabs 이관(§24 누락분, "수납만 움직임" 지적 후속).
+- **영수증 크롭 변 핸들(2a4ab3e)**: 변 중앙 흰 핸들 — 법선 방향 평행이동, 경계 클램프, 확대경 공용.
+
 ## 2026-07-06 — 격리 중앙화(§4)·금전 회귀 하네스·품목 정체성 (Fable 5 가치 리스트 + 운영자 지시)
 - **영업장 격리 중앙화(ee5225e, §4 승인)**: 보안 감사 미해결 항목 해소. lib/auth/propertyAccess 관문 신설(멤버십|소유주|슈퍼관리자, 요청당 1회 cache), 22개 파일 로컬 헬퍼 위임 교체, getMyRole STAFF 폴백 제거, layout 가드, API export·doc-file 403 게이트·import 2종 통일. 검증: verify-property-access.mjs 전 조합 diff — 정상 사용자 잠김 0. [[security-audit-2026-07]]
 - **금전 로직 회귀 하네스(823a748)**: scripts/test-money.ts 38케이스(일할·입주달 보정·팝업 경계·공정위 환불·단기견적 말일 클램프·할인 캡 + 견적=일할, 환불 사용분=일할 청구 정합). loop.md 1번에 필수 게이트 등재 — 돈 계산 수정 시 통과 필수, 기대값 변경은 4번 승인.

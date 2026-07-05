@@ -8,6 +8,7 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getMyRole, requireEdit, requireOwner } from '@/lib/role'
+import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 import { ROLE_LABEL, type Role } from '@/lib/role-types'
 import {
   createDriveResumableSession, setDrivePublicReadable, deleteFromDrive, buildDriveThumbnailUrl,
@@ -1106,4 +1107,28 @@ export async function exportAllData(): Promise<string> {
     tenantStatusLogs,
     tenantRequests,
   }, null, 2)
+}
+
+
+// ── 단기 입실 정책 (운영자 기준 2026-07-06, §4) ─────────────────────────────
+// 영업장별 수치 템플릿 — 시뮬레이션(고객 관리 > 요금 계산)이 이 값으로 계산한다.
+export async function getShortStayPolicy(): Promise<ShortStayPolicy> {
+  const propertyId = await getPropertyId()
+  const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { shortStayPolicy: true } })
+  return parseShortStayPolicy(prop?.shortStayPolicy)
+}
+
+export async function updateShortStayPolicy(input: ShortStayPolicy): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireOwner()   // 요금 기준 변경은 소유자만
+    const propertyId = await getPropertyId()
+    const policy = parseShortStayPolicy(input)   // 서버측 정규화(범위 밖 값은 기본값으로)
+    await prisma.property.update({ where: { id: propertyId }, data: { shortStayPolicy: policy } })
+    revalidatePath('/settings')
+    revalidatePath('/tenants')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
 }

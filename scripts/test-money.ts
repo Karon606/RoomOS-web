@@ -13,6 +13,7 @@ import {
   calcStayQuote,
 } from '../lib/prorate'
 import { discountForMonth, discountedRent } from '../lib/rentDiscount'
+import { calcShortStay, parseShortStayPolicy, stayDaysOf, SHORT_STAY_DEFAULTS } from '../lib/shortStay'
 
 let pass = 0
 let fail = 0
@@ -132,6 +133,37 @@ const RENT = 300000
     { discountType: 'amount', value: 200000, scope: 'permanent' },
   ], '2026-06', base), 0)
   eq('할인: percent 반올림 경계(33% of 335,000)', discountForMonth([{ discountType: 'percent', value: 33, scope: 'permanent' }], '2026-06', 335000), 110550)
+}
+
+// ── calcShortStay ── 단기 입실 정책(제기역점 기준: 주 단위 × 1.5, 1개월 상한, 청소비 2만)
+{
+  const P = { ...SHORT_STAY_DEFAULTS, enabled: true }   // 기본값 = 제기역점 수치
+  // 1주 = 계약 7일 × 1.5 = 10일치(버림) + 청소비 → "최소 10일 금액 + 2만"(운영자 기준 문장 그대로)
+  eq('단기: 1주', calcShortStay(P, RENT, 7), {
+    stayDays: 7, units: 1, contractDays: 7, billedDays: 10, baseAmount: 100000,
+    cleaningFee: 20000, total: 120000, cappedAtMonth: false, roundedUp: false,
+  })
+  // 2주 = 21일치 ("3주 비용")
+  eq('단기: 2주 = 3주분', [calcShortStay(P, RENT, 14)?.billedDays, calcShortStay(P, RENT, 14)?.total], [21, 230000])
+  // 3주 = 31.5일 → 1개월 상한 ("이미 1개월 비용 초과라 의미 없음")
+  const w3 = calcShortStay(P, RENT, 21)
+  eq('단기: 3주 = 1개월 상한', [w3?.billedDays, w3?.total, w3?.cappedAtMonth], [30, 320000, true])
+  // 10일 요청 → 주 단위 계약이므로 2주로 올림 (일할 아님)
+  const d10 = calcShortStay(P, RENT, 10)
+  eq('단기: 10일 → 2주 계약 올림', [d10?.units, d10?.contractDays, d10?.billedDays, d10?.roundedUp], [2, 14, 21, true])
+  // 3일 요청 → 최소 1주
+  const d3 = calcShortStay(P, RENT, 3)
+  eq('단기: 3일 → 최소 1주', [d3?.contractDays, d3?.billedDays, d3?.roundedUp], [7, 10, true])
+  // 상한 초과(31일) → null = 기존 월 견적으로
+  eq('단기: 31일은 정책 밖 → null', calcShortStay(P, RENT, 31), null)
+  // 비활성 → null
+  eq('단기: 비활성 → null', calcShortStay(SHORT_STAY_DEFAULTS, RENT, 7), null)
+  // 날짜 → 일수 (양끝 포함)
+  eq('단기: 6/20~6/26 = 7일', stayDaysOf('2026-06-20', '2026-06-26'), 7)
+  eq('단기: 역순 → null', stayDaysOf('2026-06-20', '2026-06-19'), null)
+  // JSON 방어 파싱 — 이상값은 기본값으로
+  eq('단기: 정책 파싱 방어', parseShortStayPolicy({ enabled: true, multiplier: 99, cleaningFee: -5 }),
+    { ...SHORT_STAY_DEFAULTS, enabled: true })
 }
 
 console.log(`\n금전 로직 회귀: ${pass} 통과 / ${fail} 실패`)

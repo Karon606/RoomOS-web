@@ -29,6 +29,7 @@ import { kstYmdStr } from '@/lib/kstDate'
 import { useUrlState } from '@/lib/useUrlState'
 import { useLongPress } from '@/lib/useLongPress'
 import { calcStayQuote } from '@/lib/prorate'
+import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
 import { withSave, trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Modal } from '@/components/ui/Modal'
@@ -3096,7 +3097,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
 // 방 선택 시 월세 자동(직접 수정 가능) + 입실·퇴실일 → 회차/일할 분해.
 // 계산은 lib/prorate.calcStayQuote — 실제 퇴실 정산(일할)과 동일 규칙이라 금액이 일치.
 function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [rooms, setRooms] = useState<Awaited<ReturnType<typeof getRoomsForQuote>> | null>(null)
+  const [data, setData] = useState<Awaited<ReturnType<typeof getRoomsForQuote>> | null>(null)
   const [roomId, setRoomId] = useState('')
   const [rentStr, setRentStr] = useState('')
   const [inDate, setInDate] = useState('')
@@ -3105,11 +3106,15 @@ function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () => void 
   useEffect(() => {
     if (!open) return
     setRoomId(''); setRentStr(''); setInDate(kstYmdStr()); setOutDate('')
-    getRoomsForQuote().then(setRooms).catch(() => setRooms([]))
+    getRoomsForQuote().then(setData).catch(() => setData(null))
   }, [open])
 
+  const rooms = data?.rooms
   const rent = Number(rentStr.replace(/[^0-9]/g, '')) || 0
-  const quote = rent > 0 && inDate && outDate ? calcStayQuote(rent, inDate, outDate) : null
+  // 단기 정책 우선 — 적용 범위(1달 이내 등) 안이면 주 단위 정책 요금, 밖이면 기존 월 단위+일할 견적
+  const stayDays = inDate && outDate ? stayDaysOf(inDate, outDate) : null
+  const short = data && rent > 0 && stayDays != null ? calcShortStay(data.shortStay, rent, stayDays) : null
+  const quote = !short && rent > 0 && inDate && outDate ? calcStayQuote(rent, inDate, outDate) : null
 
   return (
     <Modal open={open} onClose={onClose} title="단기 입실 요금 계산" width="sm"
@@ -3150,8 +3155,37 @@ function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () => void 
           </label>
         </div>
 
-        {rent > 0 && inDate && outDate && !quote && (
+        {rent > 0 && inDate && outDate && !quote && !short && (
           <p className="text-xs text-[var(--danger-fg)]">퇴실일이 입실일보다 빠릅니다.</p>
+        )}
+        {short && data && (
+          <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-4 space-y-2">
+            <p className="text-xs font-semibold text-[var(--warm-dark)]">
+              계약 {data.shortStay.unitDays === 7 ? `${short.units}주` : `${short.units} × ${data.shortStay.unitDays}일`}
+              <span className="font-normal text-[var(--warm-muted)]"> · 거주 {short.stayDays}일{short.roundedUp ? ` (단위 계약이라 ${short.contractDays}일로 올림)` : ''}</span>
+            </p>
+            <ul className="space-y-1">
+              <li className="flex items-baseline justify-between gap-2 text-xs">
+                <span className="text-[var(--warm-mid)]">
+                  기본요금 · {short.billedDays}일치{short.cappedAtMonth ? ' (1개월 요금 상한)' : ` (계약 ${short.contractDays}일 × ${data.shortStay.multiplier})`}
+                </span>
+                <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(short.baseAmount)}</span>
+              </li>
+              {short.cleaningFee > 0 && (
+                <li className="flex items-baseline justify-between gap-2 text-xs">
+                  <span className="text-[var(--warm-mid)]">청소비</span>
+                  <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(short.cleaningFee)}</span>
+                </li>
+              )}
+            </ul>
+            <div className="border-t border-[var(--warm-border)] pt-2 flex items-baseline justify-between">
+              <span className="text-xs text-[var(--warm-mid)]">단기 정책 요금</span>
+              <span className="text-lg font-bold tnum text-[var(--coral)]">{fmtWon(short.total)}</span>
+            </div>
+            <p className="text-[0.625rem] text-[var(--warm-muted)]">
+              {data.shortStay.unitDays}일 단위 계약(일할 아님) · {data.shortStay.thresholdDays}일 이하 거주에 적용. 수치는 설정에서 영업장별로 바꿀 수 있습니다.
+            </p>
+          </div>
         )}
         {quote && (
           <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-4 space-y-2">

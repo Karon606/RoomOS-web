@@ -22,6 +22,7 @@ import {
   createLogoUploadSession, finalizeLogo, deleteLogo,
   createAppLogoUploadSession, finalizeAppLogo, deleteAppLogo,
   type MemberWithUser, type RecurringExpenseRow, type ContractSettings, type RecurringItemInput,
+  getShortStayPolicy, updateShortStayPolicy,
 } from './actions'
 import { regenerateJoinCode, approveJoinRequest, rejectJoinRequest } from './memberActions'
 import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
@@ -47,6 +48,8 @@ import {
   DEFAULT_RECURRING_ALERT_DAYS_BEFORE,
 } from '@/lib/appConfig'
 import { trackSave, pushToast } from '@/lib/saveStatus'
+import { calcShortStay, type ShortStayPolicy } from '@/lib/shortStay'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 
 type Property = {
   id: string
@@ -876,6 +879,9 @@ export default function SettingsForm({
 
         {/* 품명 병합 (AI) — 비품·자재·소모품·부식 유사 품명 통일 */}
         <ItemNameMergePanel />
+
+        {/* 단기 입실 정책 — 영업장별 수치 템플릿(운영자 기준 2026-07-06). 오너 전용(§4 요금 기준). */}
+        {isOwner && <ShortStayPolicyCard />}
 
         {/* 도움말 — 앱의 사고방식(사용성 감사 F2). 처음 쓰는 사람이 막히는 개념만 짧게. */}
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
@@ -1908,6 +1914,82 @@ function BackupButton() {
 }
 
 // 위험 구역 — 오너 전용. 운영 종료(되돌림 가능)와 영구 삭제(불가) + 삭제 전 백업 안내.
+// 단기 입실 정책 카드 — 수치만 바꾸면 시뮬레이션(고객 관리 > 요금 계산)이 그대로 따라간다.
+// 제기역점 기준(시드): 최소 1주 · 주 단위 계약 · 1달 이내 = 계약일수 × 1.5 (1개월 상한) + 청소비 2만.
+function ShortStayPolicyCard() {
+  const [p, setP] = useState<ShortStayPolicy | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { getShortStayPolicy().then(setP).catch(() => setP(null)) }, [])
+
+  const numCls = 'w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-sm tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  const setNum = (k: 'unitDays' | 'minUnits' | 'thresholdDays' | 'multiplier' | 'cleaningFee') =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const v = e.target.value.replace(/[^0-9.]/g, '')
+      setP(prev => prev ? { ...prev, [k]: v === '' ? 0 : Number(v) } : prev)
+    }
+  // 미리보기 — 월세 60만 기준 최소 계약 요금 (수치 이해 확인용)
+  const preview = p?.enabled ? calcShortStay(p, 600000, p.unitDays * p.minUnits) : null
+
+  const save = async () => {
+    if (!p) return
+    setBusy(true)
+    const res = await updateShortStayPolicy(p)
+    setBusy(false)
+    if (res.ok) pushToast('success', '단기 입실 정책 저장됨')
+    else pushToast('error', res.error)
+  }
+
+  return (
+    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
+      <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">단기 입실 정책</h2>
+      <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
+        1달 이내 단기 거주의 요금 기준입니다. 여기 수치가 고객 관리의 요금 계산(시뮬레이션)에 바로 적용됩니다.
+      </p>
+      {!p ? (
+        <p className="text-xs text-[var(--warm-muted)]">불러오는 중…</p>
+      ) : (
+        <div className="space-y-3">
+          <SegmentedControl size="sm" ariaLabel="단기 정책 사용"
+            options={[{ value: 'on', label: '사용' }, { value: 'off', label: '사용 안 함' }]}
+            value={p.enabled ? 'on' : 'off'}
+            onChange={v => setP({ ...p, enabled: v === 'on' })} />
+          {p.enabled && (
+            <>
+              <div className="flex flex-wrap gap-3">
+                <label className="block">
+                  <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">계약 단위(일)</span>
+                  <input value={String(p.unitDays)} inputMode="numeric" onChange={setNum('unitDays')} className={numCls} />
+                </label>
+                <label className="block">
+                  <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">최소 계약(단위 수)</span>
+                  <input value={String(p.minUnits)} inputMode="numeric" onChange={setNum('minUnits')} className={numCls} />
+                </label>
+                <label className="block">
+                  <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">적용 상한(거주일)</span>
+                  <input value={String(p.thresholdDays)} inputMode="numeric" onChange={setNum('thresholdDays')} className={numCls} />
+                </label>
+                <label className="block">
+                  <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">청구 배율</span>
+                  <input value={String(p.multiplier)} inputMode="decimal" onChange={setNum('multiplier')} className={numCls} />
+                </label>
+                <label className="block">
+                  <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">청소비(원)</span>
+                  <input value={String(p.cleaningFee)} inputMode="numeric" onChange={setNum('cleaningFee')} className={numCls} />
+                </label>
+              </div>
+              <p className="text-[0.625rem] text-[var(--warm-muted)]">
+                계산: 거주일을 계약 단위로 올림 → 계약일수 × 배율 = 청구 일수(1개월 30일 상한) → 월세의 일할 + 청소비.
+                {preview && ` 예: 월세 60만 기준 최소 계약(${p.unitDays * p.minUnits}일) = ${preview.total.toLocaleString()}원`}
+              </p>
+            </>
+          )}
+          <Btn type="button" variant="primary" size="sm" onClick={save} disabled={busy}>{busy ? '저장 중…' : '정책 저장'}</Btn>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DangerZone({ propertyId, propertyName }: { propertyId: string; propertyName: string }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)

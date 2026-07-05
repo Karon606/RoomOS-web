@@ -11,6 +11,7 @@ import { requireEdit } from '@/lib/role'
 import { recordDepositReceived } from '@/app/(app)/rooms/actions'
 import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
+import { parseShortStayPolicy, type ShortStayPolicy } from '@/lib/shortStay'
 
 async function getPropertyId() {
   const { userId, propertyId } = await requirePropertyAccess()
@@ -1955,15 +1956,24 @@ export async function batchUpdateTenants(
 }
 
 // 단기 입실 요금 시뮬레이션용 — 방 목록(월세·사용중 여부). 등록 없이 견적만 낼 때 방 선택 → 월세 자동.
-export async function getRoomsForQuote(): Promise<{ id: string; roomNo: string; baseRent: number; occupied: boolean }[]> {
+export async function getRoomsForQuote(): Promise<{
+  rooms: { id: string; roomNo: string; baseRent: number; occupied: boolean }[]
+  shortStay: ShortStayPolicy   // 단기 입실 정책 — 시뮬이 이 수치로 계산(영업장별 템플릿)
+}> {
   const { propertyId } = await getPropertyId()
-  const rooms = await prisma.room.findMany({
-    where: { propertyId },
-    orderBy: { roomNo: 'asc' },
-    select: {
-      id: true, roomNo: true, baseRent: true,
-      leaseTerms: { where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } }, select: { id: true }, take: 1 },
-    },
-  })
-  return rooms.map(r => ({ id: r.id, roomNo: r.roomNo, baseRent: r.baseRent, occupied: r.leaseTerms.length > 0 }))
+  const [rooms, prop] = await Promise.all([
+    prisma.room.findMany({
+      where: { propertyId },
+      orderBy: { roomNo: 'asc' },
+      select: {
+        id: true, roomNo: true, baseRent: true,
+        leaseTerms: { where: { status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } }, select: { id: true }, take: 1 },
+      },
+    }),
+    prisma.property.findUnique({ where: { id: propertyId }, select: { shortStayPolicy: true } }),
+  ])
+  return {
+    rooms: rooms.map(r => ({ id: r.id, roomNo: r.roomNo, baseRent: r.baseRent, occupied: r.leaseTerms.length > 0 })),
+    shortStay: parseShortStayPolicy(prop?.shortStayPolicy),
+  }
 }
