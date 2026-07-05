@@ -1,5 +1,6 @@
 'use server'
 
+import { getPropertyAccess } from '@/lib/auth/propertyAccess'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
@@ -11,11 +12,7 @@ export type TrendRange = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'biannua
 export type TrendPoint = { label: string; revenue: number; expense: number; profit: number }
 
 async function getTrendPropertyId(): Promise<string | null> {
-  const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return null
-  const cookieStore = await cookies()
-  return cookieStore.get('selected_property_id')?.value ?? null
+  return (await getPropertyAccess())?.propertyId ?? null
 }
 
 function ds(d: Date) { return d.toISOString().slice(0, 10) }

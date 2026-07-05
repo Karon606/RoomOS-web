@@ -1,5 +1,6 @@
 'use server'
 
+import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -9,13 +10,8 @@ import prisma from '@/lib/prisma'
 // 범위 선택 시 클라가 같은 액션을 다시 호출 → 새 통계 받아 차트·표 재렌더.
 
 async function getPropertyId(): Promise<string> {
-  const supabase = await createClient()
-  const { data } = await supabase.auth.getClaims()
-  if (!data?.claims) redirect('/login')
-  const cookieStore = await cookies()
-  const id = cookieStore.get('selected_property_id')?.value
-  if (!id) redirect('/property-select')
-  return id
+  const { propertyId } = await requirePropertyAccess()
+  return propertyId
 }
 
 export type MarketingRange = 'today' | '7d' | '30d' | '90d' | '1y'

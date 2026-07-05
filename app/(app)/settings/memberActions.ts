@@ -4,6 +4,7 @@
 // 기존 settings/actions.ts 의 inviteMember/updateMemberRole/removeMember 와 중복 X (그건 이메일 직접 초대).
 // 여기는 "사용자가 참여 코드 입력 → 운영자 승인" 흐름 전용.
 
+import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
@@ -12,10 +13,8 @@ import { requireEdit, requireOwner } from '@/lib/role'
 import type { UserRole } from '@prisma/client'
 
 async function getPropertyId(): Promise<string> {
-  const cookieStore = await cookies()
-  const id = cookieStore.get('selected_property_id')?.value
-  if (!id) throw new Error('선택된 영업장이 없습니다.')
-  return id
+  const { propertyId } = await requirePropertyAccess()
+  return propertyId
 }
 
 async function getMyUserId(): Promise<string> {

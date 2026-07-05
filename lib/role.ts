@@ -1,44 +1,15 @@
-import { createClient } from './supabase/server'
-import { cookies } from 'next/headers'
-import prisma from './prisma'
-import { redirect } from 'next/navigation'
-import { isSuperAdminEmail } from './auth/access'
+import { requirePropertyAccess } from './auth/propertyAccess'
 
 export type { Role } from './role-types'
 export { ROLE_LABEL } from './role-types'
 import type { Role } from './role-types'
 
+// 격리 관문(requirePropertyAccess) 위에서 역할만 꺼낸다.
+// 기존과 달라진 점: 멤버도 소유주도 아닌 사용자에게 주던 STAFF 폴백(읽기 허용)을 제거 —
+// 무단 쿠키는 /property-select 로 보낸다(보안 감사 2026-07-04 §4 승인 2026-07-06).
 export async function getMyRole(): Promise<Role> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-
-  const cookieStore = await cookies()
-  const propertyId = cookieStore.get('selected_property_id')?.value
-  if (!propertyId) redirect('/property-select')
-
-  // 슈퍼관리자 = 어느 영업장이든 OWNER로 간주 (앱 전체 운영자 권한).
-  // env SUPER_ADMIN_EMAILS 또는 User.isSuperAdmin = true.
-  const me = await prisma.user.findUnique({
-    where: { id: user.id },
-    select: { isSuperAdmin: true, email: true },
-  })
-  if (isSuperAdminEmail(user.email ?? me?.email ?? null) || me?.isSuperAdmin) return 'OWNER'
-
-  const record = await prisma.userPropertyRole.findUnique({
-    where: { userId_propertyId: { userId: user.id, propertyId } },
-    select: { role: true },
-  })
-
-  if (!record) {
-    const property = await prisma.property.findUnique({
-      where: { id: propertyId },
-      select: { ownerId: true },
-    })
-    return property?.ownerId === user.id ? 'OWNER' : 'STAFF'
-  }
-
-  return record.role as Role
+  const { role } = await requirePropertyAccess()
+  return role
 }
 
 export function canEdit(role: Role): boolean {

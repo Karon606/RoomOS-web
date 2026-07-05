@@ -1,5 +1,6 @@
 // 저장된 서류(Drive PDF)를 같은 도메인으로 스트리밍 — 모바일 '공유'(첨부) 용.
 // 클라이언트가 이 바이트를 Blob/File 로 받아 navigator.share({ files }) 로 메일/메시지에 첨부.
+import { getPropertyAccess } from '@/lib/auth/propertyAccess'
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
@@ -14,9 +15,9 @@ export async function GET(req: Request) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
-    const cookieStore = await cookies()
-    const propertyId = cookieStore.get('selected_property_id')?.value
-    if (!propertyId) return NextResponse.json({ error: '영업장 미선택' }, { status: 400 })
+    const access = await getPropertyAccess()
+    if (!access) return NextResponse.json({ error: '접근 권한 없음' }, { status: 403 })
+    const propertyId = access.propertyId
 
     const id = new URL(req.url).searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id 필요' }, { status: 400 })

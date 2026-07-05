@@ -1,3 +1,4 @@
+import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { cookies } from 'next/headers'
 import { after } from 'next/server'
 import { fmtWon } from '@/lib/fmtMoney'
@@ -1599,9 +1600,7 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ month?: string }>
 }) {
-  const cookieStore = await cookies()
-  const propertyId = cookieStore.get('selected_property_id')?.value
-  if (!propertyId) redirect('/property-select')
+  const { propertyId } = await requirePropertyAccess()
 
   const { month } = await searchParams
   const targetMonth = month ?? kstMonthStr()

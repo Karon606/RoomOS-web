@@ -1,5 +1,6 @@
 'use server'
 
+import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { normalizeItemName, captureItemNameAliasPairs } from '@/lib/itemNameAlias'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { randomUUID } from 'node:crypto'
@@ -15,12 +16,7 @@ import { FINANCE_DETAIL_SUGGESTIONS_LIMIT } from '@/lib/appConfig'
 import { getInventoryCategoryConfig } from '@/app/(app)/inventory/categoryConfig'
 
 async function getPropertyId() {
-  const supabase = await createClient()
-  const { data } = await supabase.auth.getClaims()
-  if (!data?.claims) redirect('/login')
-  const cookieStore = await cookies()
-  const propertyId = cookieStore.get('selected_property_id')?.value
-  if (!propertyId) redirect('/property-select')
+  const { propertyId } = await requirePropertyAccess()
   return propertyId
 }
 

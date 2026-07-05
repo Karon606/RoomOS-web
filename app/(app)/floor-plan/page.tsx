@@ -1,3 +1,4 @@
+import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { getFloorPlan } from './actions'
 import prisma from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
@@ -6,12 +7,7 @@ import { redirect } from 'next/navigation'
 import FloorPlanEditor from './FloorPlanEditor'
 
 async function getPropertyId() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-  const cookieStore = await cookies()
-  const propertyId = cookieStore.get('selected_property_id')?.value
-  if (!propertyId) redirect('/property-select')
+  const { propertyId } = await requirePropertyAccess()
   return propertyId
 }
 

@@ -1,5 +1,6 @@
 'use server'
 
+import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
@@ -43,13 +44,8 @@ function rentCyclePeriod(dueDay: string | null, moveIn: Date | null): { start: s
 type BusinessInfo = { name?: string; registrationNo?: string; ceoName?: string; address?: string }
 
 async function requireAuthAndProperty() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-  const cookieStore = await cookies()
-  const propertyId = cookieStore.get('selected_property_id')?.value
-  if (!propertyId) redirect('/property-select')
-  return { userId: user.id, propertyId }
+  const { userId, propertyId } = await requirePropertyAccess()
+  return { userId, propertyId }
 }
 
 const fmtRoom = (v: string | null | undefined) => v ? (/^\d+$/.test(v.trim()) ? `${v.trim()}호` : v) : ''

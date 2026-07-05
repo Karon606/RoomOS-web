@@ -1,3 +1,4 @@
+import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -6,13 +7,7 @@ import MarketClient from './MarketClient'
 import { getRoomTypeOptions, getWindowTypeOptions, getRoomDirectionOptions } from '@/app/(app)/settings/actions'
 
 export default async function MarketAnalysisPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-
-  const cookieStore = await cookies()
-  const propertyId = cookieStore.get('selected_property_id')?.value
-  if (!propertyId) redirect('/property-select')
+  const { propertyId } = await requirePropertyAccess()
 
   const [property, surveys, roomTypes, windowTypes, directions] = await Promise.all([
     prisma.property.findUnique({

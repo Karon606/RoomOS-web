@@ -1,5 +1,6 @@
 'use server'
 
+import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
@@ -12,13 +13,8 @@ import { discountedRent } from '@/lib/rentDiscount'
 import { calcCheckoutProration, calcCheckoutRefund, type CheckoutProrationResult, type CheckoutRefundResult, type RefundMode } from '@/lib/prorate'
 
 async function getPropertyId() {
-  const supabase = await createClient()
-  const { data } = await supabase.auth.getClaims()
-  if (!data?.claims) redirect('/login')
-  const cookieStore = await cookies()
-  const propertyId = cookieStore.get('selected_property_id')?.value
-  if (!propertyId) redirect('/property-select')
-  return { user: data.claims, propertyId }
+  const { userId, propertyId } = await requirePropertyAccess()
+  return { user: { sub: userId }, propertyId }
 }
 
 // 입주자 목록 조회

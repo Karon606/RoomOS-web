@@ -1,3 +1,4 @@
+import { getPropertyAccess } from '@/lib/auth/propertyAccess'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
@@ -70,6 +71,12 @@ export default async function AppLayout({
 
   // 활성 영업장이 0개면 진입 불가 (데이터가 영업장 단위라 빈 컨텍스트면 로드 실패). 운영자는 /admin, 그 외엔 /property-select.
   if (properties.length === 0) redirect(isSuperAdmin ? '/admin' : '/property-select')
+
+  // 격리 관문: 선택 쿠키가 내 소속 영업장이 아니면 재선택으로 (역할 행 없는 레거시 소유주는 getPropertyAccess 가 허용).
+  // 슈퍼관리자는 제외 — 아래 관리자 뷰(isAdminView)로 전 영업장 전환을 허용하는 기존 규칙 유지.
+  if (!isSuperAdmin && currentPropertyId && !myPropertyIds.has(currentPropertyId)) {
+    if (!(await getPropertyAccess())) redirect('/property-select')
+  }
 
   // 슈퍼관리자가 본인 소속 아닌 영업장을 보고 있으면 = 관리자 뷰
   const isAdminView = isSuperAdmin && currentPropertyId != null && !myPropertyIds.has(currentPropertyId)

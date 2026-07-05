@@ -5,6 +5,7 @@
 // 2) PendingReceipt row 적재 (status='pending')
 // 3) 대시보드에서 사용자가 검토 → 승인(Expense 등록) 또는 거절
 
+import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { captureItemNameAliasPairs, normalizeItemName } from '@/lib/itemNameAlias'
 import prisma from '@/lib/prisma'
 import { uploadToDrive } from '@/lib/google-drive'
@@ -15,17 +16,13 @@ import { revalidatePath } from 'next/cache'
 const COOKIE_PROPERTY = 'selected_property_id'
 
 async function getUserId(): Promise<string> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('인증 필요')
-  return user.id
+  const { userId } = await requirePropertyAccess()
+  return userId
 }
 
 async function getPropertyId(): Promise<string> {
-  const cookieStore = await cookies()
-  const pid = cookieStore.get(COOKIE_PROPERTY)?.value
-  if (!pid) throw new Error('영업장이 선택되지 않았습니다.')
-  return pid
+  const { propertyId } = await requirePropertyAccess()
+  return propertyId
 }
 
 // Gemini 분류·추출 — '이게 뭐다' 판단 + 가능한 필드 추출.

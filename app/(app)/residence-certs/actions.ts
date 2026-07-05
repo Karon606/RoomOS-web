@@ -1,5 +1,6 @@
 'use server'
 
+import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
@@ -8,12 +9,7 @@ import prisma from '@/lib/prisma'
 import { requireEdit } from '@/lib/role'
 
 async function getPropertyId(): Promise<string> {
-  const supabase = await createClient()
-  const { data } = await supabase.auth.getClaims()
-  if (!data?.claims) redirect('/login')
-  const cookieStore = await cookies()
-  const propertyId = cookieStore.get('selected_property_id')?.value
-  if (!propertyId) redirect('/property-select')
+  const { propertyId } = await requirePropertyAccess()
   return propertyId
 }
 

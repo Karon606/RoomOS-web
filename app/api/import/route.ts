@@ -1,3 +1,5 @@
+import { canEdit } from '@/lib/role'
+import { getPropertyAccess } from '@/lib/auth/propertyAccess'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
@@ -461,14 +463,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const cookieStore = await cookies()
-  const propertyId = cookieStore.get('selected_property_id')?.value
-  if (!propertyId) return NextResponse.json({ error: 'No property' }, { status: 400 })
-
-  const hasAccess = await prisma.userPropertyRole.findFirst({
-    where: { userId: user.id, propertyId, role: { in: ['OWNER', 'MANAGER'] } },
-  })
-  if (!hasAccess) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const access = await getPropertyAccess()
+  if (!access || !canEdit(access.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const propertyId = access.propertyId
 
   const formData = await request.formData()
   const file = formData.get('file') as File | null

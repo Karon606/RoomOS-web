@@ -1,5 +1,6 @@
 'use server'
 
+import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { createClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
 import { cookies } from 'next/headers'
@@ -14,12 +15,7 @@ import { applyLocationCheck, type LocCheckPatch } from '@/lib/stockCheckMerge'
 import { convertSpecValue, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
 
 async function getPropertyId() {
-  const supabase = await createClient()
-  const { data } = await supabase.auth.getClaims()
-  if (!data?.claims) redirect('/login')
-  const cookieStore = await cookies()
-  const propertyId = cookieStore.get('selected_property_id')?.value
-  if (!propertyId) redirect('/property-select')
+  const { propertyId } = await requirePropertyAccess()
   return propertyId
 }
 
