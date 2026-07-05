@@ -2,6 +2,7 @@
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { normalizeItemName, captureItemNameAliasPairs } from '@/lib/itemNameAlias'
+import { computeSetHint, type SetHint } from '@/lib/setHint'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { randomUUID } from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
@@ -324,6 +325,7 @@ export type ReceiptOcrItem = {
   specValue?: string; specUnit?: string
   qtyValue?: string;  qtyUnit?: string
   amount: number
+  setHint?: SetHint   // 세트 상품 의심(주문 1=실물 N) — 클라이언트가 "1세트에 몇 개?" 되묻기용
 }
 export type ReceiptOcrResult = {
   date?: string         // YYYY-MM-DD
@@ -449,6 +451,13 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
       const pref = aliasMap.get(normalizeItemName(it.label))
       return { ...it, rawLabel: it.label, label: pref ?? it.label }
     })
+
+    // 세트 상품 의심 감지 — 온라인 영수증은 품목당 합계 위주라 실물 수량이 안 보임(운영자 2026-07-06).
+    // 라벨 'N개입' 표기 또는 과거 개당 단가의 정확한 N배면 힌트를 붙여 클라이언트가 되묻게 한다.
+    try {
+      const hints = await Promise.all(aliasedItems.map(it => computeSetHint(ocrPropertyId, it)))
+      hints.forEach((h, i) => { if (h) aliasedItems[i].setHint = h })
+    } catch { /* 힌트 실패해도 OCR 결과는 정상 반환 */ }
 
     return {
       ok: true,

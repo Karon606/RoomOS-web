@@ -12,7 +12,7 @@ import { useEffect, useRef, useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
-  uploadPendingReceipt, getPendingReceipts, approvePendingReceipt, rejectPendingReceipt,
+  uploadPendingReceipt, getPendingReceipts, approvePendingReceipt, rejectPendingReceipt, checkSetHint,
   type PendingReceiptRow,
 } from '@/app/(app)/dashboard/pendingReceipt'
 import { Btn } from '@/components/ui/Btn'
@@ -181,6 +181,27 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
   const [qtyUnit, setQtyUnit] = useState(row.qtyUnit ?? '개')
   const [specText, setSpecText] = useState('')
   const [wizOpen, setWizOpen] = useState(false)
+  // 세트 상품 의심(주문 1=실물 N) — 폼 열릴 때 1회 감지, 승인 전 "1세트에 몇 개?" 확인(운영자 2026-07-06)
+  const [setHint, setSetHint] = useState<Awaited<ReturnType<typeof checkSetHint>>>(null)
+  useEffect(() => {
+    if (!isInventory) return
+    const label = (row.itemLabel ?? '').trim()
+    if (!label) return
+    let alive = true
+    checkSetHint({
+      label, rawLabel: row.rawItemLabel ?? undefined,
+      amount: row.inferredAmount ?? 0,
+      qtyValue: row.qtyValue ?? undefined, specValue: row.specValue ?? undefined,
+    }).then(h => { if (alive) setSetHint(h) })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const applySetHint = () => {
+    if (!setHint) return
+    setSpecValue(String(setHint.count)); setSpecUnit('개')
+    if (!qtyUnit.trim() || qtyUnit === '개') setQtyUnit('세트')
+    setSetHint(null)
+  }
   const applyWizard = (r: SpecWizardResult) => {
     setSpecValue(r.specValue); setSpecUnit(r.specUnit); setSpecText(r.specText)
     if (r.qtyValue) setQtyValue(r.qtyValue); setQtyUnit(r.qtyUnit)
@@ -314,6 +335,23 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                     </div>
                   </div>
                 </div>
+                {setHint && !(Number(specValue) > 1) && (
+                  <div className="flex items-center gap-1.5 flex-wrap rounded-lg bg-[var(--cream)] ring-1 ring-[var(--coral)]/30 px-2 py-1.5">
+                    <span className="text-[0.625rem] text-[var(--warm-dark)] flex-1 min-w-[8rem]">
+                      {setHint.basis === 'price'
+                        ? `단가가 평소(${(setHint.histUnit ?? 0).toLocaleString()}원/개)의 ${setHint.count}배예요. 1세트에 ${setHint.count}개입인가요?`
+                        : `표기상 ${setHint.count}개입 세트로 보여요. 실물 ${setHint.count}개 맞나요?`}
+                    </span>
+                    <button type="button" onClick={applySetHint}
+                      className="px-2 py-1 text-[0.625rem] font-medium rounded-md bg-[var(--coral)] text-[var(--cream)]">
+                      네, {setHint.count}개입{setHint.perPiece > 0 ? ` (개당 ${setHint.perPiece.toLocaleString()}원)` : ''}
+                    </button>
+                    <button type="button" onClick={() => setSetHint(null)}
+                      className="px-2 py-1 text-[0.625rem] rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)]">
+                      아니요
+                    </button>
+                  </div>
+                )}
               </>
             )}
 

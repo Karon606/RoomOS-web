@@ -31,6 +31,7 @@ import MonthSelector from '@/components/layout/MonthSelector'
 import { Modal } from '@/components/ui/Modal'
 import { ReceiptScanModal, dataUrlToFile } from '@/components/ReceiptScanModal'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
+import type { SetHint } from '@/lib/setHint'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor } from '@/lib/chartColors'
@@ -130,6 +131,7 @@ const ITEM_DEFAULTS: Record<string, { specUnit: string; qtyUnit: string }> = {
 export type ItemPickState = {
   label: string
   ocrRaw?: string   // OCR 인식 원문 — 사용자가 이름을 바꿔 저장하면 별칭 학습(다음 영수증 자동 치환)
+  setHint?: SetHint // 세트 상품 의심(주문 1=실물 N) — 행에 "1세트에 몇 개?" 확인 칩 표시, 저장 시 제거
   specValue: string; specUnit: string
   specText?: string   // 서술형 규격(1200x600mm 등) — 표시·자재 구분용, 계산 비관여
   qtyValue: string; qtyUnit: string
@@ -418,6 +420,20 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
     onChange(items.filter((_, i) => i !== idx))
   }
 
+  // 세트 의심 확인 — "1세트 = N개" 승인 시 규격으로 흡수(품명 분리 금지 원칙), 개당 단가로 전환
+  function applySetHint(idx: number) {
+    const it = items[idx]; const h = it.setHint
+    if (!h) return
+    const qty = Number(it.qtyValue) || 1
+    patchItem(idx, {
+      specValue: String(h.count), specUnit: '개',
+      qtyUnit: !it.qtyUnit || it.qtyUnit === '개' ? '세트' : it.qtyUnit,
+      unitBasis: 'spec',
+      unitPrice: it.amount != null ? Math.round(it.amount / (qty * h.count)) : it.unitPrice,
+      setHint: undefined,
+    })
+  }
+
   function patchItem(idx: number, patch: Partial<ItemPickState>) {
     onChange(items.map((it, i) => i === idx ? { ...it, ...patch } : it))
   }
@@ -587,6 +603,23 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                   <span className="text-xs font-medium text-[var(--coral)] flex-1 min-w-0 truncate">{fmtItemDetail(it)}</span>
                   <button type="button" onClick={() => removeItem(idx)} className="text-[var(--coral)] hover:text-[var(--danger-fg)] leading-none text-sm shrink-0">×</button>
                 </div>
+                {it.setHint && !(Number(it.specValue) > 1) && (
+                  <div className="flex items-center gap-1.5 flex-wrap rounded-lg bg-[var(--cream)] ring-1 ring-[var(--coral)]/30 px-2 py-1.5">
+                    <span className="text-[0.625rem] text-[var(--warm-dark)] flex-1 min-w-[8rem]">
+                      {it.setHint.basis === 'price'
+                        ? `단가가 평소(${(it.setHint.histUnit ?? 0).toLocaleString()}원/개)의 ${it.setHint.count}배예요. 1세트에 ${it.setHint.count}개입인가요?`
+                        : `표기상 ${it.setHint.count}개입 세트로 보여요. 실물 ${it.setHint.count}개 맞나요?`}
+                    </span>
+                    <button type="button" onClick={() => applySetHint(idx)}
+                      className="px-2 py-1 text-[0.625rem] font-medium rounded-md bg-[var(--coral)] text-[var(--cream)]">
+                      네, {it.setHint.count}개입{it.setHint.perPiece > 0 ? ` (개당 ${it.setHint.perPiece.toLocaleString()}원)` : ''}
+                    </button>
+                    <button type="button" onClick={() => patchItem(idx, { setHint: undefined })}
+                      className="px-2 py-1 text-[0.625rem] rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)]">
+                      아니요
+                    </button>
+                  </div>
+                )}
                 {allowMulti && (
                   <div className="flex items-end gap-1.5 flex-wrap">
                     <label className="flex flex-col gap-0.5">
@@ -1388,7 +1421,7 @@ export default function FinanceClient({
           ocrItems = renamed
           // 인식된 품목은 항상 '품목 선택'(ItemSelector)으로 — 등록 폼은 모든 카테고리에서 품목 모듈을 쓰므로.
           // (이전엔 ITEM_PRESETS 있는 카테고리만 품목으로, 나머진 세부 항목 텍스트로 빠지던 문제)
-          setAddItems(ocrItems.map(it => ({ label: it.label, ocrRaw: it.rawLabel ?? it.label, specValue: it.specValue ?? '', specUnit: it.specUnit ?? '', qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '', amount: it.amount, unitPrice: it.amount != null ? Math.round(it.amount / ((Number(it.qtyValue) || 1) * (Number(it.specValue) || 1))) : undefined })))
+          setAddItems(ocrItems.map(it => ({ label: it.label, ocrRaw: it.rawLabel ?? it.label, setHint: it.setHint, specValue: it.specValue ?? '', specUnit: it.specUnit ?? '', qtyValue: it.qtyValue ?? '', qtyUnit: it.qtyUnit ?? '', amount: it.amount, unitPrice: it.amount != null ? Math.round(it.amount / ((Number(it.qtyValue) || 1) * (Number(it.specValue) || 1))) : undefined })))
           setAddExpAmount(ocrItems.reduce((s, it) => s + it.amount, 0))
         } else {
           setAddItems([])
@@ -3110,7 +3143,7 @@ export default function FinanceClient({
                     {/* 제출 detail = 표시 내용 + 배송비 표기(있으면) */}
                     <input type="hidden" name="detail" value={`${editItems.length > 0 ? fmtItemListDetail(editItems) : editExpDetail}${editHasShipping && (editShipping ?? 0) > 0 ? `${(editItems.length > 0 || editExpDetail) ? ' · ' : ''}배송비 ${fmtWon((editShipping ?? 0))}` : ''}`} />
                     {editItems.length > 0 && <>
-                      <input type="hidden" name="itemsJson" value={JSON.stringify(editIsDurable ? editItems.map(it => ({ ...it, allocations: undefined })) : editItems)} />
+                      <input type="hidden" name="itemsJson" value={JSON.stringify(editItems.map(it => ({ ...it, setHint: undefined, allocations: editIsDurable ? undefined : it.allocations })))} />
                       {editItems.length === 1 && (
                         <>
                           <input type="hidden" name="itemLabel" value={editItems[0].label} />
@@ -3389,7 +3422,7 @@ export default function FinanceClient({
                   {/* 제출 detail = 표시 내용 + 배송비 표기(있으면) */}
                   <input type="hidden" name="detail" value={`${addItems.length > 0 ? fmtItemListDetail(addItems) : addExpDetail}${addHasShipping && (addShipping ?? 0) > 0 ? `${(addItems.length > 0 || addExpDetail) ? ' · ' : ''}배송비 ${fmtWon((addShipping ?? 0))}` : ''}`} />
                   {addItems.length > 0 && <>
-                    <input type="hidden" name="itemsJson" value={JSON.stringify(addIsDurable ? addItems.map(it => ({ ...it, allocations: undefined })) : addItems)} />
+                    <input type="hidden" name="itemsJson" value={JSON.stringify(addItems.map(it => ({ ...it, setHint: undefined, allocations: addIsDurable ? undefined : it.allocations })))} />
                     {addItems.length === 1 && (
                       <>
                         <input type="hidden" name="itemLabel" value={addItems[0].label} />

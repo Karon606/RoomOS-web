@@ -7,6 +7,7 @@
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { captureItemNameAliasPairs, normalizeItemName } from '@/lib/itemNameAlias'
+import { computeSetHint, type SetHint } from '@/lib/setHint'
 import prisma from '@/lib/prisma'
 import { uploadToDrive } from '@/lib/google-drive'
 import { createClient } from '@/lib/supabase/server'
@@ -182,6 +183,7 @@ export type PendingReceiptRow = {
   inferredCategory: string | null
   notes: string | null
   itemLabel: string | null
+  rawItemLabel: string | null   // OCR 원문 품명 — 세트 의심 감지('N개입' 표기) 근거용
   specValue: string | null
   specUnit:  string | null
   qtyValue:  string | null
@@ -203,7 +205,7 @@ export async function getPendingReceipts(limit = 20): Promise<PendingReceiptRow[
       },
     })
     return rows.map(r => {
-      const parsed = (r.parsedJson as { notes?: string; itemLabel?: string; specValue?: string; specUnit?: string; qtyValue?: string; qtyUnit?: string } | null) ?? null
+      const parsed = (r.parsedJson as { notes?: string; itemLabel?: string; rawItemLabel?: string; specValue?: string; specUnit?: string; qtyValue?: string; qtyUnit?: string } | null) ?? null
       return {
         id: r.id,
         imageUrl: r.imageUrl,
@@ -214,6 +216,7 @@ export async function getPendingReceipts(limit = 20): Promise<PendingReceiptRow[
         inferredCategory: r.inferredCategory,
         notes: parsed?.notes ?? null,
         itemLabel: parsed?.itemLabel ?? null,
+        rawItemLabel: parsed?.rawItemLabel ?? null,
         specValue: parsed?.specValue ?? null,
         specUnit:  parsed?.specUnit  ?? null,
         qtyValue:  parsed?.qtyValue  ?? null,
@@ -224,6 +227,16 @@ export async function getPendingReceipts(limit = 20): Promise<PendingReceiptRow[
   } catch {
     return []
   }
+}
+
+// 세트 상품 의심 확인 — 승인 폼에서 "1세트에 몇 개?" 되묻기 근거(운영자 2026-07-06, 쿠팡 주문서 사례)
+export async function checkSetHint(input: {
+  label: string; rawLabel?: string; amount: number; qtyValue?: string; specValue?: string
+}): Promise<SetHint | null> {
+  try {
+    const propertyId = await getPropertyId()
+    return await computeSetHint(propertyId, input)
+  } catch { return null }
 }
 
 // 승인 → Expense 등록. final 에 itemLabel·spec·qty 포함되면 그 expense 가 곧 재고 보충 이벤트가 됨
