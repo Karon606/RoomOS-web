@@ -275,6 +275,7 @@ export async function setAssetAssignedAt(expenseIds: string[], dateStr: string |
 export async function addFreeAsset(input: {
   itemLabel: string; category: string
   specValue?: number | null; specUnit?: string | null
+  specText?: string | null
   qtyValue: number; qtyUnit?: string | null
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
@@ -296,9 +297,10 @@ export async function addFreeAsset(input: {
         itemLabel: label,
         specValue: input.specValue ?? null,
         specUnit: input.specUnit ?? null,
+        specText: input.specText?.trim() || null,
         qtyValue: qty,
         qtyUnit,
-        detail: buildAssetDetail({ itemLabel: label, specValue: input.specValue ?? null, specUnit: input.specUnit ?? null, qtyValue: qty, qtyUnit }),
+        detail: buildAssetDetail({ itemLabel: label, specValue: input.specValue ?? null, specUnit: input.specUnit ?? null, specText: input.specText?.trim() || null, qtyValue: qty, qtyUnit }),
         receivedAt: new Date(),    // 무상은 보통 손에 들어온 상태 → 수령 완료
         memo: '무상입수',
         isShipping: false,

@@ -7,6 +7,7 @@
 //   3) 사용자가 검토 후 [지출 등록] 또는 [재고 등록] 또는 [거절]
 
 import { ReceiptScanModal, tryDetectDocumentCorners, dataUrlToFile } from '@/components/ReceiptScanModal'
+import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -178,6 +179,12 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
   const [specUnit, setSpecUnit] = useState(row.specUnit ?? '')
   const [qtyValue, setQtyValue] = useState(row.qtyValue ?? '')
   const [qtyUnit, setQtyUnit] = useState(row.qtyUnit ?? '개')
+  const [specText, setSpecText] = useState('')
+  const [wizOpen, setWizOpen] = useState(false)
+  const applyWizard = (r: SpecWizardResult) => {
+    setSpecValue(r.specValue); setSpecUnit(r.specUnit); setSpecText(r.specText)
+    if (r.qtyValue) setQtyValue(r.qtyValue); setQtyUnit(r.qtyUnit)
+  }
 
   const handleApprove = () => {
     if (!category) { pushToast('error', '카테고리를 선택하세요'); return }
@@ -198,6 +205,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
           itemLabel: itemLabel.trim(),
           specValue: specValue || undefined,
           specUnit:  specUnit  || undefined,
+          specText:  specText.trim() || undefined,
           qtyValue:  qtyValue  || undefined,
           qtyUnit:   qtyUnit   || undefined,
         } : {}),
@@ -271,6 +279,8 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
 
         {editingMode && (
           <div className="space-y-1.5 pt-1">
+            <SpecWizard open={wizOpen} onClose={() => setWizOpen(false)} onComplete={applyWizard}
+              itemLabel={itemLabel || undefined} z={260} />
             {/* 재고 모드만 — 품목명·규격·수량 */}
             {isInventory && (
               <>
@@ -282,13 +292,17 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   <div>
-                    <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>규격 (선택)</label>
+                    <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>규격 (선택)
+                      <button type="button" onClick={() => setWizOpen(true)}
+                        className="ml-1.5 text-[0.625rem] font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-2">단계별</button>
+                    </label>
                     <div className="flex gap-1">
                       <input type="text" placeholder="300" value={specValue} onChange={e => setSpecValue(e.target.value)}
                         className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
                       <input type="text" placeholder="ml" value={specUnit} onChange={e => setSpecUnit(e.target.value)}
                         className="w-12 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-1.5 py-1 text-xs text-[var(--warm-dark)] outline-none" />
                     </div>
+                    {specText.trim() && <p className="mt-0.5 text-[0.625rem] text-[var(--coral)]">서술 규격: {specText}</p>}
                   </div>
                   <div>
                     <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>수량 *</label>

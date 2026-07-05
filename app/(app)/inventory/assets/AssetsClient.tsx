@@ -21,6 +21,7 @@ import { Modal } from '@/components/ui/Modal'
 import { SearchBar } from '@/components/ui/SearchBar'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { Badge } from '@/components/ui/Badge'
+import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 
 // 비품 위치 섹션 마커 — §21.2 위치 아이콘(핀) 14px
 const PinMarker = () => (
@@ -100,7 +101,11 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const assetLabels = useMemo(() => [...new Set(allItems.map(it => it.itemLabel).filter(Boolean))].sort(), [allItems])
 
   // 무상입수 — 무상으로 생긴 비품을 0원 Expense(재고자산)로 등록
-  const [freeForm, setFreeForm] = useState<null | { label: string; cat: string; spec: string; specUnit: string; qty: string; qtyUnit: string }>(null)
+  const [freeForm, setFreeForm] = useState<null | { label: string; cat: string; spec: string; specUnit: string; specText: string; qty: string; qtyUnit: string }>(null)
+  const [freeWizOpen, setFreeWizOpen] = useState(false)
+  const applyFreeWizard = (r: SpecWizardResult) => setFreeForm(f => f ? {
+    ...f, spec: r.specValue, specUnit: r.specUnit, specText: r.specText, qty: r.qtyValue || f.qty, qtyUnit: r.qtyUnit,
+  } : f)
   const submitFree = () => {
     if (!freeForm) return
     if (!freeForm.label.trim()) { pushToast('error', '품목명을 입력하세요.'); return }
@@ -110,6 +115,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         category: freeForm.cat,
         specValue: freeForm.spec.trim() ? Number(freeForm.spec) : null,
         specUnit: freeForm.specUnit.trim() || null,
+        specText: freeForm.specText.trim() || null,
         qtyValue: Number(freeForm.qty) > 0 ? Number(freeForm.qty) : 1,
         qtyUnit: freeForm.qtyUnit.trim() || '개',
       })
@@ -456,7 +462,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
             </Btn>
           )}
           <Btn variant="primary" size="md"
-            onClick={() => setFreeForm({ label: '', cat: assetCats[0] ?? '비품', spec: '', specUnit: '', qty: '1', qtyUnit: '개' })}>
+            onClick={() => setFreeForm({ label: '', cat: assetCats[0] ?? '비품', spec: '', specUnit: '', specText: '', qty: '1', qtyUnit: '개' })}>
             + 무상 비품
           </Btn>
         </div>
@@ -631,7 +637,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
             {/* 규격·수량 — 숫자 필드는 폭 고정으로 컴팩트(가로 정리) */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">규격 <span className="text-[var(--warm-muted)] font-normal">(선택)</span></span>
+                <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">규격 <span className="text-[var(--warm-muted)] font-normal">(선택)</span>
+                  <button type="button" onClick={() => setFreeWizOpen(true)}
+                    className="ml-2 text-[0.625rem] font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-2">단계별 입력</button>
+                </span>
                 <div className="flex gap-1.5">
                   <input value={freeForm.spec} disabled={pending} inputMode="decimal" placeholder="값"
                     onChange={e => setFreeForm(f => f ? { ...f, spec: e.target.value } : f)}
@@ -655,6 +664,11 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
             </div>
           </div>
         </Modal>
+      )}
+
+      {freeForm && (
+        <SpecWizard open={freeWizOpen} onClose={() => setFreeWizOpen(false)} onComplete={applyFreeWizard}
+          itemLabel={freeForm.label || undefined} z={260} />
       )}
 
       {/* 비품 상세 풀화면 — §21.5 본문 탭 진입. 구매 내역(영수증별)·현재 상태·합치기 */}

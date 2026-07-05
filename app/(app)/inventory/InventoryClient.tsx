@@ -21,6 +21,7 @@ import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { convertSpecValue, listCompatibleUnits, unitFactor } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type InventoryCategory, suggestInventoryAlias } from './constants'
@@ -665,6 +666,8 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
   const [label, setLabel]       = useState('')
   const [specUnit, setSpecUnit] = useState('')
   const [qtyUnit, setQtyUnit]   = useState('')
+  const [unitWizOpen, setUnitWizOpen] = useState(false)   // 단위 단계별 선택(포장형태→규격 단위)
+  const applyUnitWizard = (r: SpecWizardResult) => { setQtyUnit(r.qtyUnit); setSpecUnit(r.specUnit) }
   const [memo, setMemo]         = useState('')
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
@@ -690,6 +693,8 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
 
   return (
     <Modal open onClose={onClose} title="추적 품목 추가" width="md">
+      <SpecWizard open={unitWizOpen} onClose={() => setUnitWizOpen(false)} onComplete={applyUnitWizard}
+        itemLabel={label || undefined} unitsOnly z={260} />
       <form onSubmit={handleSubmit} id="add-tracked-item-form" className="px-5 sm:px-6 py-4 space-y-3">
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
@@ -706,7 +711,10 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">용량 단위</label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">용량 단위
+              <button type="button" onClick={() => setUnitWizOpen(true)}
+                className="ml-1.5 text-[0.625rem] font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-2">단계별 선택</button>
+            </label>
             <input type="text" value={specUnit} onChange={e => setSpecUnit(e.target.value)} placeholder="m, L, kg"
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
           </div>

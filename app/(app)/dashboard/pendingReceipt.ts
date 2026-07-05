@@ -239,6 +239,7 @@ export async function approvePendingReceipt(
     // 재고용 — 있으면 inventory 보충으로도 잡힘
     itemLabel?: string
     specValue?: string; specUnit?: string
+    specText?: string          // 치수·용도 서술(계산 비관여)
     qtyValue?: string;  qtyUnit?: string
   },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -277,6 +278,7 @@ export async function approvePendingReceipt(
         specUnit:  final.specUnit  || null,
         qtyUnit:   final.qtyUnit   || null,
         specValue: final.specValue ? parseFloat(final.specValue) : null,
+        specText:  final.specText?.trim() || null,
         qtyValue:  final.qtyValue  ? parseFloat(final.qtyValue)  : null,
       },
       select: { id: true },
