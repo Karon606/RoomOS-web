@@ -1,6 +1,7 @@
 'use server'
 
 import { normalizeItemName, captureItemNameAliasPairs } from '@/lib/itemNameAlias'
+import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { randomUUID } from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
@@ -2138,4 +2139,39 @@ export async function renameVendor(oldName: string, newName: string): Promise<{ 
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
+}
+
+
+// 품목 빠른 선택 — 실사용 이력 기반(운영자 지시 2026-07-06).
+// 최근 등록 5개 + 선택(등록) 횟수순으로 채워 항상 10개. 이력이 부족하면 기본 프리셋으로 보충 —
+// 수선유지비·서비스 등 '선택할 품목 0개' 상황 방지. 한 번도 안 쓴 프리셋은 이력이 쌓이면 자연히 밀려남.
+export async function getItemQuickPicks(category: string): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  const rows = await prisma.expense.groupBy({
+    by: ['itemLabel'],
+    where: { propertyId, category, itemLabel: { not: null }, isShipping: false, excludeFromInventory: false },
+    _count: { _all: true },
+    _max: { date: true },
+  })
+  const labels = rows.filter(r => r.itemLabel)
+  const byRecent = [...labels].sort((a, b) => (b._max.date?.getTime() ?? 0) - (a._max.date?.getTime() ?? 0))
+  const byCount  = [...labels].sort((a, b) => b._count._all - a._count._all)
+  const picks: string[] = []
+  const push = (l: string | null | undefined) => { if (l && !picks.includes(l) && picks.length < 10) picks.push(l) }
+  byRecent.slice(0, 5).forEach(r => push(r.itemLabel))
+  byCount.forEach(r => push(r.itemLabel))
+  for (const p of (ITEM_PRESETS[category] ?? [])) push(p)
+  return picks
+}
+
+
+// 지출 등록 폼 결제 기본값 — 직전 지출의 결제수단·계좌를 프리필(운영자 지시 2026-07-06).
+export async function getLastPayDefaults(): Promise<{ payMethod: string | null; financialAccountId: string | null; financeName: string | null } | null> {
+  const propertyId = await getPropertyId()
+  const row = await prisma.expense.findFirst({
+    where: { propertyId, isShipping: false },
+    orderBy: { createdAt: 'desc' },
+    select: { payMethod: true, financialAccountId: true, financeName: true },
+  })
+  return row ?? null
 }

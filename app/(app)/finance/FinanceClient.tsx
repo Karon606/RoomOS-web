@@ -6,7 +6,7 @@ import {
   addExpense, updateExpense, deleteExpense, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, findOrderByExternalNo,
   unsettleExpenses,
   saveFinancialAccount, deleteFinancialAccount, deactivateFinancialAccount,
-  recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits,
+  recordRecurringExpense, uploadExpenseReceipt, getLastItemUnits, getItemQuickPicks,
   analyzeReceiptWithGemini,
   addReserveDeposit, addReserveWithdrawDirect, settleReserveFromExpense, deleteReserveTransaction,
   setRecurringPendingAmount, clearRecurringPendingAmount,
@@ -31,6 +31,7 @@ import MonthSelector from '@/components/layout/MonthSelector'
 import { Modal } from '@/components/ui/Modal'
 import { ReceiptScanModal, dataUrlToFile } from '@/components/ReceiptScanModal'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
+import { ITEM_PRESETS } from '@/lib/itemPresets'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
@@ -96,17 +97,6 @@ const DETAIL_OPTIONAL_CATEGORIES = ['공과금', '관리비', '임대료', '세�
 
 // ── 품목 선택기 설정 ─────────────────────────────────────────────
 
-const ITEM_PRESETS: Record<string, string[]> = {
-  '부식비':  ['쌀', '김치', '라면', '식빵', '계란', '고추장', '된장'],
-  // 사이즈·포장 타입이 다르면 별도 카드로 추적되도록 라벨에 명시
-  '소모품비': ['물티슈', '키친타월 (롤)', '키친타월 (팝업)', '주방세제', '세탁세제', '화장실 휴지'],
-  '폐기물 처리비': [
-    '음식물쓰레기봉투 5L', '음식물쓰레기봉투 10L', '음식물쓰레기봉투 20L',
-    '재활용품수거봉투 20L', '재활용품수거봉투 50L', '재활용품수거봉투 100L',
-    '종량제쓰레기봉투 10L', '종량제쓰레기봉투 20L', '종량제쓰레기봉투 50L', '종량제쓰레기봉투 100L',
-    '음식물쓰레기 배출 스티커',
-  ],
-}
 
 const SPEC_UNITS = ['kg', 'g', 'ml', 'L', '매', 'm', 'cm', 'mm', '장', '개', '회', '인분', '봉지', '알', '권']
 const QTY_UNITS  = ['개', '박스', '롤', '팩', '포대', '망', '단', '봉', '포기', '병', '통', '세트']
@@ -267,8 +257,14 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   rooms?: { id: string; roomNo: string }[]   // 방별 분배용 (선택). 없으면 방 분배 UI 미표시.
   detailSuggestions?: string[]               // 과거 품목명 자동완성(구매처와 동일 방식)
 }) {
-  // 프리셋이 없는 카테고리도 '직접 입력'으로 품목·수량 추가 가능(옵션). 카테고리 커스터마이징 대응.
-  const presets = ITEM_PRESETS[category] ?? []
+  // 품목 빠른 선택 — 기본 프리셋을 즉시 보여주고, 이력 기반(최근5+빈도순, 항상 10개)으로 교체(운영자 지시 2026-07-06).
+  const [presets, setPresets] = useState<string[]>(ITEM_PRESETS[category] ?? [])
+  useEffect(() => {
+    let alive = true
+    setPresets(ITEM_PRESETS[category] ?? [])
+    getItemQuickPicks(category).then(p => { if (alive && p.length) setPresets(p) }).catch(() => {})
+    return () => { alive = false }
+  }, [category])
   const items = value
   const [activeLabel, setActiveLabel] = useState<string | null>(null)
   const [specValue, setSpecValue]     = useState('')
@@ -1135,7 +1131,7 @@ type CategoryTotal = { category: string; total: number }
 
 export default function FinanceClient({
   expenses, incomes, financialAccounts, incomeCategories, expenseCategories, paymentMethods, targetMonth, recurringExpensesWithStatus, rooms, prevMonth, prevMonthTotals, lastYearMonth, lastYearTotals, acquisitionDate, detailSuggestions, vendorSuggestions,
-  reserveBalance, reserveMonthly, reserveTxns, settleableExpenses,
+  reserveBalance, reserveMonthly, reserveTxns, settleableExpenses, lastPayDefaults,
   depositSummary, depositLedger, trackedCategories,
   initialTab,
 }: {
@@ -1159,6 +1155,7 @@ export default function FinanceClient({
   reserveMonthly: { deposit: number; withdraw: number; depositFromThisMonthRevenue: number }
   reserveTxns: ReserveTxn[]
   settleableExpenses: SettleableExpense[]
+  lastPayDefaults: { payMethod: string | null; financialAccountId: string | null; financeName: string | null } | null
   depositSummary: DepositPerTenant[]
   depositLedger: DepositLedgerEntry[]
   trackedCategories: string[]   // 재고 추적 카테고리(부식·소모품·폐기물 등). 그 외 물품은 비품·자재(수령 후 배정)
@@ -2074,7 +2071,7 @@ export default function FinanceClient({
             <Btn variant="secondary" size="md" onClick={() => { setShowExpSearch(true); setExpSearchQ(''); setExpSearchResults([]) }}>
               과거 내역 검색
             </Btn>
-            <Btn variant="primary" size="md" onClick={() => { setAddExpDirty(false); setShowAddExp(true); setAddExpMethod('계좌이체'); setAddExpAccId(''); setAddExpAccName(''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
+            <Btn variant="primary" size="md" onClick={() => { setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
               + 지출 등록
             </Btn>
           </div>
