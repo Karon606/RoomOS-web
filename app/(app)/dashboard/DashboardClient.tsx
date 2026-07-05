@@ -1930,7 +1930,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,252,247,0.55)', marginBottom: 8 }}>
             예상 매출
             <span style={{ fontSize: '0.5625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'rgba(255,252,247,0.5)' }}>(이번 달)</span>
-            <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.projectedRevenue) }} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full align-[-2px] text-[0.5625rem] font-bold" style={{ marginLeft: 6, background: 'rgba(127,127,127,0.22)', color: 'inherit' }}>?</button>
+            <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.projectedRevenue) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
           </p>
           <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
             {data.projectedRevenue.toLocaleString()}
@@ -1970,7 +1970,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
               <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--np-label)', marginBottom: 8 }}>
                 예상 순이익
                 <span style={{ fontSize: '0.5625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'var(--np-cap)' }}>(이번 달)</span>
-                <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.projectedNetProfit) }} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full align-[-2px] text-[0.5625rem] font-bold" style={{ marginLeft: 6, background: 'rgba(127,127,127,0.22)', color: 'inherit' }}>?</button>
+                <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.projectedNetProfit) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
               </p>
               <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: isPosExp ? 'var(--np-pos)' : 'var(--np-neg)' }}>
                 {isPosExp ? '+' : ''}{expectedNet.toLocaleString()}
@@ -1993,7 +1993,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             boxShadow: data.overdueAmount > 0 ? 'inset 3px 0 0 var(--danger-fg)' : undefined }}>
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             누적 미납
-            <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.overdue) }} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full align-[-2px] text-[0.5625rem] font-bold" style={{ marginLeft: 6, background: 'rgba(127,127,127,0.22)', color: 'inherit' }}>?</button>
+            <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.overdue) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
           </p>
           <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6, color: data.overdueAmount > 0 ? 'var(--tc)' : 'var(--ink-2)' }}>
             {data.overdueAmount.toLocaleString()}
@@ -2009,7 +2009,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         <Link href="/finance?tab=expense" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px' }}>
           <p style={{ fontSize: '0.65625rem', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--warm-muted)', marginBottom: 8 }}>
             예상 지출 <span style={{ fontSize: '0.5625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 4, color: 'var(--warm-muted)' }}>(이번 달)</span>
-            <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.expectedExpense) }} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full align-[-2px] text-[0.5625rem] font-bold" style={{ marginLeft: 6, background: 'rgba(127,127,127,0.22)', color: 'inherit' }}>?</button>
+            <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.expectedExpense) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
           </p>
           <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--ink-2)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
             {data.expectedExpense.toLocaleString()}
