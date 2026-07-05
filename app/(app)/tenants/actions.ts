@@ -306,7 +306,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
     select: {
       roomId: true, status: true, reservationConfirmedAt: true,
       // 퇴실 일할 정산 일관 유지용 — 폼으로 퇴실일/납부일 변경 시 재계산·해제·자동적용 판단
-      expectedMoveOut: true, dueDay: true,
+      expectedMoveOut: true, dueDay: true, moveInDate: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
       discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
     },
@@ -335,6 +335,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
         status: prevStatus,
         expectedMoveOut: currentLease.expectedMoveOut,
         rentAmount,
+        moveInDate: moveInDate ? moveInDate : currentLease.moveInDate,   // 폼 입력 우선(같이 바뀔 수 있음)
         checkoutProratedAmount: currentLease.checkoutProratedAmount,
         checkoutProratedMonth: currentLease.checkoutProratedMonth,
         checkoutProrationUndo: currentLease.checkoutProrationUndo,
@@ -858,7 +859,7 @@ export async function applyStatusTransition(input: {
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: input.leaseTermId },
       select: {
-        roomId: true, status: true, dueDay: true, rentAmount: true,
+        roomId: true, status: true, dueDay: true, rentAmount: true, moveInDate: true,
         expectedMoveOut: true, checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       },
@@ -1380,7 +1381,7 @@ export async function changeDueDay(
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: leaseTermId },
       select: {
-        dueDay: true, rentAmount: true, tenantId: true, status: true,
+        dueDay: true, rentAmount: true, tenantId: true, status: true, moveInDate: true,
         // 퇴실 일할 정산 재계산용 — 납부일이 바뀌면 일할 기간(납부일~퇴실일)도 달라짐
         expectedMoveOut: true, checkoutProratedAmount: true, checkoutProratedMonth: true, checkoutProrationUndo: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
@@ -1457,14 +1458,14 @@ export async function previewCheckoutProration(
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: leaseTermId },
       select: {
-        dueDay: true, rentAmount: true,
+        dueDay: true, rentAmount: true, moveInDate: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       },
     })
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
     const moveOutMonth = expectedMoveOut.slice(0, 7)
     const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
-    const calc = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut)
+    const calc = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut, ymdOf(lease.moveInDate))
     if (!calc) return { ok: false, error: '퇴실일이 납부일 이전이라 마지막 기간을 사용하지 않습니다 — 별도 정산 없이 그 달 청구가 자동으로 0원 처리되므로 일할 적용이 필요 없습니다.' }
     return { ok: true, calc, currentDueDay: lease.dueDay }
   } catch (err) {
@@ -1488,11 +1489,19 @@ type CheckoutProrationUndo = {
 // 전환 버튼 applyStatusTransition, 납입일 영구 변경 changeDueDay)가 이 헬퍼로 같은 결과를 낸다.
 // (경로마다 정산이 잔존/무통보 삭제되던 불일치 해소 — 2026-06-11 점검 후속)
 // 반환: leaseTerm.update 에 합칠 data 조각 + 사용자 안내문.
+// Date|string|null → 'YYYY-MM-DD' (DB @db.Date 는 UTC 자정 저장이라 toISOString 슬라이스가 정확)
+function ymdOf(d: Date | string | null | undefined): string | null {
+  if (!d) return null
+  const dt = d instanceof Date ? d : new Date(d)
+  return isNaN(dt.getTime()) ? null : dt.toISOString().slice(0, 10)
+}
+
 function prorationDataForChange(
   lease: {
     status: LeaseStatus
     expectedMoveOut: Date | string | null
     rentAmount: number
+    moveInDate: Date | string | null
     checkoutProratedAmount: number | null
     checkoutProratedMonth: string | null
     checkoutProrationUndo: unknown
@@ -1516,7 +1525,7 @@ function prorationDataForChange(
 
   const moveOutMonth = newExpectedMoveOut.slice(0, 7)
   const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
-  const calc = calcCheckoutProration(monthlyRent, newDueDay, newExpectedMoveOut)
+  const calc = calcCheckoutProration(monthlyRent, newDueDay, newExpectedMoveOut, ymdOf(lease.moveInDate))
   if (!calc) {
     // 퇴실일 ≤ 납부일 → 그 달 자동 0원(일할 불필요). 기존 적용분만 해제.
     if (!wasApplied) return { data: {}, notice: null }
@@ -1564,7 +1573,7 @@ export async function previewCheckoutRefund(
     const lease = await prisma.leaseTerm.findFirst({
       where: { id: leaseTermId, propertyId },
       select: {
-        dueDay: true, rentAmount: true,
+        dueDay: true, rentAmount: true, moveInDate: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
       },
     })
@@ -1576,7 +1585,7 @@ export async function previewCheckoutRefund(
       _sum: { actualAmount: true },
     })
     const prepaidAmount = Math.max(0, paidAgg._sum.actualAmount ?? 0)
-    const prorate = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut)
+    const prorate = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut, ymdOf(lease.moveInDate))
     const daysUsed = prorate ? prorate.daysUsed : 0   // 퇴실일 < 납부일이면 그 기간 미사용 = 0
     const refund = calcCheckoutRefund({ prepaidAmount, monthlyRent, daysUsed, mode })
     return { ok: true, refund, prepaidAmount }
@@ -1597,7 +1606,7 @@ export async function setCheckoutProration(
     const lease = await prisma.leaseTerm.findUnique({
       where: { id: leaseTermId },
       select: {
-        status: true, tenantId: true, dueDay: true, rentAmount: true,
+        status: true, tenantId: true, dueDay: true, rentAmount: true, moveInDate: true,
         expectedMoveOut: true, checkoutProratedAmount: true, checkoutProratedMonth: true,
         checkoutProrationUndo: true,
         discounts: { select: { discountType: true, value: true, scope: true, startMonth: true, endMonth: true } },
@@ -1606,7 +1615,7 @@ export async function setCheckoutProration(
     if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
     const moveOutMonth = expectedMoveOut.slice(0, 7)
     const monthlyRent = discountedRent(lease.discounts, moveOutMonth, lease.rentAmount)
-    const calc = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut)
+    const calc = calcCheckoutProration(monthlyRent, lease.dueDay, expectedMoveOut, ymdOf(lease.moveInDate))
     if (!calc) return { ok: false, error: '퇴실일이 납부일 이전이라 마지막 기간을 사용하지 않습니다 — 별도 정산 없이 그 달 청구가 자동으로 0원 처리되므로 일할 적용이 필요 없습니다.' }
     // 수동 조정값이 있으면 그 값으로(0 이상 정수), 없으면 자동 일할액. undo 의 appliedAmount 도 이 값으로 기록.
     const finalAmount = (manualAmount != null && Number.isFinite(manualAmount) && manualAmount >= 0) ? Math.round(manualAmount) : calc.amount

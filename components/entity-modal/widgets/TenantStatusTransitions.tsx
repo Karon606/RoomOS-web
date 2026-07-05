@@ -146,7 +146,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
         // 정산 자체는 자동 적용 안 함 — 예 선택 시에만 수납 모달의 퇴실 정산 위젯으로 이동.
         const mo = fields?.expectedMoveOut
         if (def.field === 'expectedMoveOut' && mo
-            && shouldOfferCheckoutProration(lease.rentAmount, lease.dueDay, mo, kstYmdStr())) {
+            && shouldOfferCheckoutProration(lease.rentAmount, lease.dueDay, mo, kstYmdStr(), lease.moveInDate ? new Date(lease.moveInDate).toISOString().slice(0, 10) : null)) {
           setProrateAsk({ date: mo })
         }
       } finally { release() }

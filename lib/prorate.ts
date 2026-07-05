@@ -48,6 +48,7 @@ export function calcCheckoutProration(
   monthlyRent: number,
   dueDay: string | null,
   expectedMoveOut: string,   // 'YYYY-MM-DD'
+  moveInYmd?: string | null, // 'YYYY-MM-DD' — 입주 달에 퇴실하면 기간 시작을 입주일로 올림(신고 6334bac4)
 ): CheckoutProrationResult | null {
   if (!monthlyRent || monthlyRent <= 0) return null
   const parts = expectedMoveOut.split('-').map(Number)
@@ -62,7 +63,14 @@ export function calcCheckoutProration(
     const n = parseInt(dueDay, 10)
     startDay = isNaN(n) ? 1 : Math.min(Math.max(n, 1), daysInMonth)
   }
-  // 퇴실일이 기간 시작(dueDay)보다 빠르면 그 달 기간 미사용 → 일할 청구 없음
+  // 입주한 그 달에 퇴실하는 중도퇴실 — 기간 시작은 입주일보다 앞설 수 없다.
+  // (납부일 1일 계약이 월 중 입주 후 그 달 퇴실하면 1일부터로 과다 청구되던 버그, 신고 6334bac4)
+  // 입주 달이 아니면 기존 동작 그대로(이미 그 달 기간을 납부일부터 사용).
+  if (moveInYmd && moveInYmd.slice(0, 7) === moveOutMonth) {
+    const mid = parseInt(moveInYmd.slice(8, 10), 10)
+    if (!isNaN(mid) && mid > startDay) startDay = mid
+  }
+  // 퇴실일이 기간 시작(dueDay/입주일)보다 빠르면 그 달 기간 미사용 → 일할 청구 없음
   if (d < startDay) return null
   const rawDays = d - startDay + 1
   const daysUsed = Math.max(1, Math.min(rawDays, PRORATE_BASE_DAYS))
@@ -81,8 +89,9 @@ export function shouldOfferCheckoutProration(
   dueDay: string | null,
   expectedMoveOut: string,   // 'YYYY-MM-DD'
   todayYmd: string,          // 'YYYY-MM-DD' (KST 오늘)
+  moveInYmd?: string | null, // 입주 달 퇴실 보정(위와 동일)
 ): boolean {
-  const calc = calcCheckoutProration(monthlyRent, dueDay, expectedMoveOut)
+  const calc = calcCheckoutProration(monthlyRent, dueDay, expectedMoveOut, moveInYmd)
   if (!calc || calc.reduction <= 0 || calc.daysUsed >= PRORATE_BASE_DAYS) return false
   const tp = todayYmd.split('-').map(Number)
   if (tp.length !== 3 || tp.some(n => isNaN(n))) return false
