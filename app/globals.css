@@ -237,6 +237,16 @@
 /* §18.5 버튼 스피너 회전 (Tailwind v4 기본 keyframes 미보장 — 직접 정의) */
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* §25.3 전환 모션 — 오버레이·패널 등장. 접근성: 모션 축소 설정이면 비활성(클래스가 no-op). */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes overlay-in { from { opacity: 0; } }
+  @keyframes panel-in   { from { opacity: 0; transform: translateY(10px) scale(0.97); } }
+  @keyframes view-in    { from { opacity: 0; transform: translateY(4px); } }
+  .anim-overlay-in { animation: overlay-in 160ms ease-out; }
+  .anim-panel-in   { animation: panel-in 200ms cubic-bezier(0.2, 0.8, 0.3, 1); }
+  .anim-view-in    { animation: view-in 180ms ease-out; }
+}
+
 /* v1.2 §08 접근성 — 모션 민감 사용자: 모든 애니메이션·전환 즉시 완료 상태로.
    (브랜드 로더 line-draw 포함. 가이드 규정이었으나 미구현 상태였음 — v1.3.1 작업에서 보강) */
 @media (prefers-reduced-motion: reduce) {

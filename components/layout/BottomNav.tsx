@@ -74,12 +74,25 @@ export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
     startTransition(() => { router.push(linkHref) })
   }
 
+  // 슬라이딩 인디케이터(§25.3) — 탭 7개 균등 폭이라 활성 인덱스 × (100/7)% 로 이동.
+  // 누르는 즉시(pending) 인디케이터가 먼저 움직여 라우팅 지연 동안에도 반응이 보인다.
+  const TAB_COUNT = NAV_ITEMS.length + 1
+  const pendingIdx = pendingHref ? NAV_ITEMS.findIndex(i => i.href === pendingHref) : -1
+  const activeIdx = pendingIdx >= 0 ? pendingIdx
+    : menuActive ? TAB_COUNT - 1
+    : NAV_ITEMS.findIndex(i => i.href === pathname)
+
   return (
     /* HIG: 탭 바는 화면 하단 고정, safe area 위에 콘텐츠 배치 */
     <nav
       className="fixed bottom-0 left-0 right-0 z-[var(--z-sticky)] md:hidden flex safe-b"
       style={{ background: 'var(--cream)', borderTop: '1px solid var(--warm-border)' }}
     >
+      {activeIdx >= 0 && (
+        <div aria-hidden
+          className="absolute top-0 h-[2px] rounded-full bg-[var(--coral)] motion-safe:transition-[left] motion-safe:duration-200 motion-safe:ease-out"
+          style={{ left: `calc(${activeIdx} * 100% / ${TAB_COUNT} + 100% / ${TAB_COUNT} / 4)`, width: `calc(100% / ${TAB_COUNT} / 2)` }} />
+      )}
       {NAV_ITEMS.map(({ href, label, Icon }) => {
         const isActive = pathname === href
         const isPending = pendingHref === href

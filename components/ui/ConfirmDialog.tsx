@@ -75,14 +75,14 @@ export function ConfirmHost() {
 
   return (
     <div
-      className="fixed inset-0 z-[var(--z-confirm)] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[var(--z-confirm)] flex items-center justify-center p-4 anim-overlay-in"
       style={{ background: 'var(--confirm-backdrop)' }}
       // 배경클릭: 일반만 닫힘(=취소), 주의·파괴적은 무시 (§9.2)
       onClick={() => { if (level === 'normal') done(false) }}
     >
       <div
         role="alertdialog" aria-modal="true" aria-label={opts.title}
-        className="bg-[var(--cream)] rounded-2xl shadow-lift w-full"
+        className="bg-[var(--cream)] rounded-2xl shadow-lift w-full anim-panel-in"
         style={{
           maxWidth: isDanger && opts.impact?.length ? 'var(--confirm-w-impact)' : 'var(--confirm-w)',
           padding: 24,

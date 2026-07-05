@@ -90,7 +90,7 @@ export function Modal({
   const zClass = z === 380 ? 'z-[var(--z-report)]' : z === 280 ? 'z-[var(--z-modal-3)]' : z === 260 ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-modal)]'
   return (
     <div
-      className={`fixed inset-0 bg-black/70 ${zClass} flex items-center justify-center`}
+      className={`fixed inset-0 bg-black/70 ${zClass} flex items-center justify-center anim-overlay-in`}
       // 안전 영역(상태바·다이내믹 아일랜드·홈 인디케이터)을 피해 패딩 —
       // 모달 헤더의 닫기 버튼이 상태바에 가려지지 않도록.
       style={{
@@ -102,7 +102,7 @@ export function Modal({
       onClick={dirty ? undefined : onClose}
     >
       <div
-        className={`bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl shadow-lift w-full ${WIDTH_CLS[width]} flex flex-col`}
+        className={`bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl shadow-lift w-full ${WIDTH_CLS[width]} flex flex-col anim-panel-in`}
         // 뷰포트 기준 calc — 안전영역 안쪽으로 최대 높이 한정 (% 는 안 풀려 헤더가 잘림)
         style={{ maxHeight: 'calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem)' }}
         onClick={e => e.stopPropagation()}

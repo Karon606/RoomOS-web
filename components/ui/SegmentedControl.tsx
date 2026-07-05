@@ -5,10 +5,12 @@
 //
 // 디자인 (Brand Guide):
 //   트랙: r-md(10) · border · bg cream-2 (페이지 톤 → 살짝 들어간 슬롯 느낌)
-//   활성 세그먼트: 떠오른 cream 칩(r-sm 계열 7) + shadow
+//   활성 세그먼트: 떠오른 cream 칩(r-sm 계열 7) + shadow — 칩이 탭 사이를 미끄러져 이동(§25.3)
 //   비활성: 투명 배경 + 뮤트 텍스트
+// 슬라이딩 칩: 세그먼트 폭이 제각각이라 offsetLeft/offsetWidth 실측으로 위치·크기를 잡고
+// left·width 트랜지션으로 이동. reduced-motion이면 트랜지션 없이 즉시 점프.
 
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 export type SegmentOption<T extends string> = {
   value: T
@@ -35,16 +37,34 @@ export function SegmentedControl<T extends string>({
   ariaLabel?: string
 }) {
   const seg = size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3.5 py-1.5 text-sm'
+  const btnRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const [thumb, setThumb] = useState<{ left: number; top: number; width: number; height: number } | null>(null)
+  const activeIdx = options.findIndex(o => o.value === value)
+
+  useLayoutEffect(() => {
+    const el = btnRefs.current[activeIdx]
+    if (!el) { setThumb(null); return }
+    const measure = () => setThumb({ left: el.offsetLeft, top: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight })
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    if (el.parentElement) ro.observe(el.parentElement)
+    return () => ro.disconnect()
+  }, [activeIdx, options.length, size])
 
   return (
     <div
       role="tablist"
       aria-label={ariaLabel}
-      className={`inline-flex items-center gap-0.5 p-0.5 rounded-[10px] border border-[var(--warm-border)] bg-[var(--cream-2)] ${
+      className={`relative inline-flex items-center gap-0.5 p-0.5 rounded-[10px] border border-[var(--warm-border)] bg-[var(--cream-2)] ${
         scroll ? 'max-w-full overflow-x-auto scrollbar-hide' : ''
       } ${className ?? ''}`}
     >
-      {options.map(opt => {
+      {thumb && (
+        <div aria-hidden className="absolute rounded-[7px] bg-[var(--cream)] shadow-sm motion-safe:transition-[left,width,top,height] motion-safe:duration-200 motion-safe:ease-out"
+          style={{ left: thumb.left, top: thumb.top, width: thumb.width, height: thumb.height }} />
+      )}
+      {options.map((opt, i) => {
         const active = opt.value === value
         return (
           <button
@@ -52,10 +72,11 @@ export function SegmentedControl<T extends string>({
             type="button"
             role="tab"
             aria-selected={active}
+            ref={el => { btnRefs.current[i] = el }}
             onClick={() => onChange(opt.value)}
-            className={`${seg} shrink-0 font-medium rounded-[7px] whitespace-nowrap transition-colors ${
+            className={`${seg} relative z-[1] shrink-0 font-medium rounded-[7px] whitespace-nowrap transition-colors ${
               active
-                ? 'bg-[var(--cream)] text-[var(--warm-dark)] shadow-sm'
+                ? `text-[var(--warm-dark)]${thumb ? '' : ' bg-[var(--cream)] shadow-sm'}`
                 : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'
             }`}
           >

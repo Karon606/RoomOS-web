@@ -1134,6 +1134,16 @@ interface ViewTabsProps {
 - **데스크톱 hover 확대(hover:scale) 금지**. 터치 피드백 `active:scale-95~0.98`은 모바일 관행이라 허용.
 - 그라데이션 배경·글로우 금지(현행 0건 유지). 그림자는 기존 토큰(shadow-lift 등)만.
 
+**정본 전환 모션 (2026-07-06 시공)** — 모두 `motion-safe`/`prefers-reduced-motion` 존중:
+- **슬라이딩 인디케이터**: SegmentedControl(cream 칩)·ViewTabs(코랄 채움)는 활성 표시가 탭 사이를
+  200ms ease-out으로 미끄러진다(offsetLeft/offsetWidth 실측, left·width 트랜지션). 하단 내비는
+  상단 2px 코랄 바가 탭 폭 1/2 길이로 이동 — 누르는 즉시(pending) 먼저 움직여 라우팅 지연을 가린다.
+- **오버레이 등장**: `.anim-overlay-in`(배경 160ms 페이드) + `.anim-panel-in`(패널 200ms 떠오름,
+  translateY 10px + scale .97) — Modal·ConfirmDialog 적용. MergeSheet는 기존 슬라이드업 유지.
+- **콘텐츠 전환**: `.anim-view-in`(180ms, 4px 상승 페이드) — 뷰 교체 패널에 선택 적용.
+  key 리마운트는 내부 상태를 초기화하므로 상태 없는 표시 전용 컨테이너에만 쓸 것.
+- 새 모션 추가 시 이 목록의 지속시간(160~200ms)·이징을 재사용 — 화면마다 다른 속도 금지.
+
 ### 25.4 적용 시점
 - 새 UI 문자열·컴포넌트 작성 시 항상. loop.md 1번 UI/UX 정합 게이트의 "가이드 § 확인"에 이 §가 포함된다.
 - 점검 명령: 사용자 노출 문자열에서 ` — `·`→`(전환 표기 외)·이모지·`요!` 검색이 0이어야 한다.
