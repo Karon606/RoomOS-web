@@ -30,6 +30,7 @@ import { Loading } from '@/components/ui/Loading'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { Modal } from '@/components/ui/Modal'
 import { ReceiptScanModal, dataUrlToFile } from '@/components/ReceiptScanModal'
+import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { chartColor } from '@/lib/chartColors'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
@@ -283,6 +284,15 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   const [noSpec, setNoSpec]           = useState(false)   // 규격 없음(수량만) — 켜면 규격 입력 숨김
   const [specTextMode, setSpecTextMode] = useState(false)  // 서술형 규격(사이즈 등) — 계산 비관여, 개당 단가 강제
   const [specText, setSpecText]       = useState('')
+  // 규격 단계별 입력(위저드) — 새 품목(과거 단위·프리셋 기본값 없음)이면 자동, 버튼으로 상시 호출
+  const [wizardOpen, setWizardOpen]   = useState(false)
+  const applyWizard = (r: SpecWizardResult) => {
+    setQtyUnit(r.qtyUnit); if (r.qtyValue) setQtyValue(r.qtyValue)
+    if (r.specText) { setSpecTextMode(true); setNoSpec(false); setSpecText(r.specText); setSpecValue(''); setSpecUnit('') }
+    else if (r.specValue) { setSpecTextMode(false); setSpecText(''); setNoSpec(false); setSpecValue(r.specValue); setSpecUnit(r.specUnit) }
+    else { setNoSpec(true); setSpecTextMode(false); setSpecText(''); setSpecValue(''); setSpecUnit('') }
+    setUnitBasis(r.unitBasis); setBasisTouched(true)
+  }
 
   // category 변경 시 active picker 입력만 초기화 (items는 부모가 관리)
   useEffect(() => {
@@ -335,6 +345,8 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
         if (last.specUnit) setSpecUnit(last.specUnit)
         if (last.qtyUnit)  setQtyUnit(last.qtyUnit)
       }
+      // 완전히 새로운 품목(과거 기록도 프리셋 기본값도 없음) → 단계별 입력 자동 안내
+      if (!last && !def) setWizardOpen(true)
     } finally { setFetching(false) }
   }
 
@@ -465,7 +477,13 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
             className="w-3 h-3 accent-[var(--coral)]" />
           서술형 규격 (사이즈 등)
         </label>
+        <button type="button" onClick={() => setWizardOpen(true)}
+          className="text-[0.625rem] font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-2">
+          단계별 입력
+        </button>
       </div>
+      <SpecWizard open={wizardOpen} onClose={() => setWizardOpen(false)} onComplete={applyWizard}
+        itemLabel={activeLabel ?? customLabel ?? undefined} z={260} />
       <div className={`grid ${noSpec ? 'grid-cols-1' : 'grid-cols-2'} gap-2`}>
         {specTextMode && (
         <div className="space-y-1">
