@@ -278,7 +278,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   const [basisTouched, setBasisTouched] = useState(false)
   const [customLabel, setCustomLabel] = useState('')
   const [fetching, setFetching]       = useState(false)
-  const [prevUnits, setPrevUnits]     = useState<{ specUnit: string | null; qtyUnit: string | null; trackUnit?: string | null } | null>(null)
+  const [prevUnits, setPrevUnits]     = useState<Awaited<ReturnType<typeof getLastItemUnits>>>(null)
   const [noSpec, setNoSpec]           = useState(false)   // 규격 없음(수량만) — 켜면 규격 입력 숨김
   const [specTextMode, setSpecTextMode] = useState(false)  // 서술형 규격(사이즈 등) — 계산 비관여, 개당 단가 강제
   const [specText, setSpecText]       = useState('')
@@ -340,8 +340,18 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
       const last = await getLastItemUnits(label)
       if (last) {
         setPrevUnits(last)
+        // 직전 구매 컨텍스트 프리필(운영자 요청 2026-07-06) — 규격·수량·단가 기준·단가까지.
+        // 규격이 품명에 섞여 '라면 20개 (박스)' 같은 별도 품목이 생기는 것을 없애는 장치:
+        // 품목만 고르면 지난번 규격이 따라온다. 값은 전부 수정 가능.
+        if (last.specText) { setSpecTextMode(true); setSpecText(last.specText) }
+        else if (last.specValue) setSpecValue(last.specValue)
         if (last.specUnit) setSpecUnit(last.specUnit)
         if (last.qtyUnit)  setQtyUnit(last.qtyUnit)
+        if (last.qtyValue) setQtyValue(last.qtyValue)
+        // 단가 기준은 직전 구매의 기준 그대로(장판을 10m당으로 계산했으면 계속 10m당) — 자동 추정이 덮지 않게 고정
+        if (last.unitBasis) { setUnitBasis(last.unitBasis); setBasisTouched(true) }
+        // 직전 단가 프리필 → 수량 입력만으로 금액 자동. 가격이 바뀌었으면 금액을 고치면 단가가 재역산된다.
+        if (last.unitPrice != null) { setPriceMode('unit'); setUnitStr(String(last.unitPrice)) }
       }
       // 완전히 새로운 품목(과거 기록도 프리셋 기본값도 없음) → 단계별 입력 자동 안내
       if (!last && !def) setWizardOpen(true)

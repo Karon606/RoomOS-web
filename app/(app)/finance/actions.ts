@@ -192,21 +192,50 @@ export async function uploadExpenseReceipt(formData: FormData): Promise<{ ok: tr
   }
 }
 
-export async function getLastItemUnits(
-  itemLabel: string,
-): Promise<{ specUnit: string | null; qtyUnit: string | null; trackUnit: string | null } | null> {
+// 품목 선택 시 직전 구매 컨텍스트 전체를 불러온다(운영자 요청 2026-07-06):
+// 단위뿐 아니라 규격 값·서술 규격·수량·단가 기준·단가까지 — "장판을 고르면 지난번 183cm x 10m 규격과
+// 그때의 단가 기준(10m당 등)이 그대로" 재현되어, 규격을 품명에 섞어 새 품목을 만들 이유를 없앤다.
+export type LastItemContext = {
+  specUnit: string | null; qtyUnit: string | null; trackUnit: string | null
+  specValue: string | null            // 직전 규격 값 (예: '20')
+  specText: string | null             // 직전 서술 규격 (예: '183cm x 10m x 1.8T')
+  unitBasis: 'spec' | 'qty' | null    // 직전 단가 기준 — 규격당/완제품당 유지
+  qtyValue: string | null             // 직전 수량
+  unitPrice: number | null            // 직전 단가 (금액 ÷ 기준수량 역산)
+}
+
+export async function getLastItemUnits(itemLabel: string): Promise<LastItemContext | null> {
   const propertyId = await getPropertyId()
   const [row, tracked] = await Promise.all([
     prisma.expense.findFirst({
       where: { propertyId, itemLabel },
-      select: { specUnit: true, qtyUnit: true },
+      select: { specValue: true, specUnit: true, specText: true, unitBasis: true, qtyValue: true, qtyUnit: true, amount: true },
       orderBy: { createdAt: 'desc' },
     }),
     // 품목의 재고 추적 단위 — '수량' 품목(종량제봉투 등)은 개당 단가가 기본이 되도록(오류신고 c7cf6180)
     prisma.trackedItem.findFirst({ where: { propertyId, label: itemLabel }, select: { trackUnit: true } }),
   ])
   if (!row && !tracked) return null
-  return { specUnit: row?.specUnit ?? null, qtyUnit: row?.qtyUnit ?? null, trackUnit: tracked?.trackUnit ?? null }
+  // 단가 역산 — 입력 폼과 동일 산식: 기준수량 = 수량 × (규격당 기준이면 규격 값).
+  // unitBasis 미기록(구 데이터)이면 규격 값이 있을 때 'spec'(폼 기본값과 동일 관례).
+  const basis: 'spec' | 'qty' | null = row
+    ? ((row.unitBasis === 'spec' || row.unitBasis === 'qty') ? row.unitBasis : (row.specValue ? 'spec' : 'qty'))
+    : null
+  let unitPrice: number | null = null
+  if (row && row.amount > 0) {
+    const q = (row.qtyValue ?? 1) * (basis === 'spec' ? (row.specValue ?? 1) : 1)
+    if (q > 0) unitPrice = Math.round(row.amount / q)
+  }
+  return {
+    specUnit: row?.specUnit ?? null,
+    qtyUnit: row?.qtyUnit ?? null,
+    trackUnit: tracked?.trackUnit ?? null,
+    specValue: row?.specValue != null ? String(row.specValue) : null,
+    specText: row?.specText ?? null,
+    unitBasis: basis,
+    qtyValue: row?.qtyValue != null ? String(row.qtyValue) : null,
+    unitPrice,
+  }
 }
 
 type ItemPick = {
