@@ -1132,3 +1132,52 @@ export async function updateShortStayPolicy(input: ShortStayPolicy): Promise<{ o
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
+
+
+// ── 품목 세부스펙 사전 관리 (신고 ba9feb6b) ─────────────────────────────────
+// 지출 저장 시 자동 적립된 색상·사이즈·치수 옵션 — 여기서 수정·삭제.
+export type ItemSpecGroup = { itemLabel: string; options: { id: string; label: string }[] }
+
+export async function listItemSpecOptions(): Promise<ItemSpecGroup[]> {
+  const propertyId = await getPropertyId()
+  const rows = await prisma.itemSpecOption.findMany({
+    where: { propertyId },
+    orderBy: [{ itemLabel: 'asc' }, { createdAt: 'asc' }],
+    select: { id: true, itemLabel: true, label: true },
+  })
+  const map = new Map<string, { id: string; label: string }[]>()
+  for (const r of rows) {
+    const g = map.get(r.itemLabel) ?? []
+    g.push({ id: r.id, label: r.label })
+    map.set(r.itemLabel, g)
+  }
+  return [...map.entries()].map(([itemLabel, options]) => ({ itemLabel, options }))
+}
+
+export async function renameItemSpecOption(id: string, label: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const next = label.trim()
+    if (!next) return { ok: false, error: '세부스펙을 입력하세요.' }
+    await prisma.itemSpecOption.update({ where: { id, propertyId }, data: { label: next } })
+    revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function deleteItemSpecOption(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    await prisma.itemSpecOption.delete({ where: { id, propertyId } })
+    revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}

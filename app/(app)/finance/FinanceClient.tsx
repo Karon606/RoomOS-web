@@ -512,7 +512,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
           <input type="checkbox" checked={specTextMode}
             onChange={e => { setSpecTextMode(e.target.checked); if (e.target.checked) { setNoSpec(false); setSpecValue(''); setSpecUnit(''); if (!qtyUnit.trim()) setQtyUnit('개') } else setSpecText('') }}
             className="w-3 h-3 accent-[var(--coral)]" />
-          서술형 규격 (사이즈 등)
+          세부스펙 (색상·사이즈 등)
         </label>
         <button type="button" onClick={() => setWizardOpen(true)}
           className="text-[0.625rem] font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-2">
@@ -524,9 +524,23 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
       <div className={`grid ${noSpec ? 'grid-cols-1' : 'grid-cols-2'} gap-2`}>
         {specTextMode && (
         <div className="space-y-1">
-          <label className="text-[0.625rem] text-[var(--warm-muted)]">규격 (서술)</label>
-          <input type="text" placeholder="예: 1200x600x720mm" value={specText}
+          <label className="text-[0.625rem] text-[var(--warm-muted)]">세부스펙 <span className="font-normal">(단가와 무관한 구분 정보 — 색상·사이즈·치수)</span></label>
+          {(prevUnits?.specOptions?.length ?? 0) > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {prevUnits!.specOptions.map(o => (
+                <button key={o} type="button" onClick={() => setSpecText(specText === o ? '' : o)}
+                  className={`px-2 py-1 text-[0.625rem] rounded-md border transition-colors ${
+                    specText === o
+                      ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--cream)]'
+                      : 'bg-[var(--cream)] border-[var(--warm-border)] text-[var(--warm-mid)] hover:border-[var(--coral)]'}`}>
+                  {o}
+                </button>
+              ))}
+            </div>
+          )}
+          <input type="text" placeholder="예: 폭 183cm · 두께 1.8T, 싱글/그레이" value={specText}
             onChange={e => setSpecText(e.target.value)} className={textCls} />
+          <p className="text-[0.5625rem] text-[var(--warm-muted)]">새로 입력한 세부스펙은 저장 시 자동으로 목록에 추가됩니다. 관리는 설정에서.</p>
         </div>
         )}
         {!noSpec && !specTextMode && (
@@ -1314,6 +1328,8 @@ export default function FinanceClient({
   const [editReceiptUrl, setEditReceiptUrl] = useState('')
   const [receiptUploading, setReceiptUploading] = useState(false)
   const [addExpCategory, setAddExpCategory]   = useState(EXPENSE_CATEGORIES[0])
+  // 신고 6f264a8f: 사용자가 카테고리를 직접 고른 뒤에는 어떤 자동 채움(OCR 등)도 덮지 않는다
+  const userPickedCategoryRef = useRef(false)
   // 영수증 스캔 (공통)
   const [addExpVendor, setAddExpVendor]       = useState('')
   const [addExpAmount, setAddExpAmount]       = useState<number | undefined>(undefined)
@@ -1384,7 +1400,7 @@ export default function FinanceClient({
         if (d.date) setAddExpDate(d.date)
         if (d.vendor) setAddExpVendor(d.vendor)
         if (d.orderNo) setAddExtOrderNo(d.orderNo)
-        if (d.category && EXPENSE_CATEGORIES.includes(d.category)) setAddExpCategory(d.category)
+        if (!userPickedCategoryRef.current && d.category && EXPENSE_CATEGORIES.includes(d.category)) setAddExpCategory(d.category)
         if (d.items.length > 0) {
           // 부가세 별도 영수증 보정(오류신고 ba364142) — 품목 합이 최종금액(totalAmount)보다
           // 딱 부가세만큼(약 10%) 작으면 과세금액으로 인식된 것 → 부가세를 품목별 비례 배분해 최종가로.
@@ -2129,7 +2145,7 @@ export default function FinanceClient({
             <Btn variant="secondary" size="md" onClick={() => { setShowExpSearch(true); setExpSearchQ(''); setExpSearchResults([]) }}>
               과거 내역 검색
             </Btn>
-            <Btn variant="primary" size="md" onClick={() => { setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
+            <Btn variant="primary" size="md" onClick={() => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
               + 지출 등록
             </Btn>
           </div>
@@ -3337,7 +3353,8 @@ export default function FinanceClient({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
                   <select name="category" value={addExpCategory}
-                    onChange={e => setAddExpCategory(e.target.value)}
+                    onChange={e => { userPickedCategoryRef.current = true; setAddExpCategory(e.target.value) }}
+                    onBlur={e => { if (e.currentTarget.value !== addExpCategory) { userPickedCategoryRef.current = true; setAddExpCategory(e.currentTarget.value) } }}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>

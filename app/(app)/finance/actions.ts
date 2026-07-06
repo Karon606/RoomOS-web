@@ -198,6 +198,7 @@ export async function uploadExpenseReceipt(formData: FormData): Promise<{ ok: tr
 // 그때의 단가 기준(10m당 등)이 그대로" 재현되어, 규격을 품명에 섞어 새 품목을 만들 이유를 없앤다.
 export type LastItemContext = {
   specUnit: string | null; qtyUnit: string | null; trackUnit: string | null
+  specOptions: string[]               // 품목 세부스펙 사전 (색상·사이즈·치수 칩 — 신고 ba9feb6b)
   specValue: string | null            // 직전 규격 값 (예: '20')
   specText: string | null             // 직전 서술 규격 (예: '183cm x 10m x 1.8T')
   unitBasis: 'spec' | 'qty' | null    // 직전 단가 기준 — 규격당/완제품당 유지
@@ -223,7 +224,13 @@ export async function getLastItemUnits(itemLabel: string): Promise<LastItemConte
     // 품목의 재고 추적 단위 — '수량' 품목(종량제봉투 등)은 개당 단가가 기본이 되도록(오류신고 c7cf6180)
     prisma.trackedItem.findFirst({ where: { propertyId, label: itemLabel }, select: { trackUnit: true } }),
   ])
-  if (!row && !tracked) return null
+  const specOptions = await prisma.itemSpecOption.findMany({
+    where: { propertyId, itemLabel },
+    orderBy: { createdAt: 'asc' },
+    take: 20,
+    select: { label: true },
+  }).then(rows => rows.map(r => r.label)).catch(() => [] as string[])
+  if (!row && !tracked && specOptions.length === 0) return null
   // 단가 역산 — 입력 폼과 동일 산식: 기준수량 = 수량 × (규격당 기준이면 규격 값).
   // unitBasis 미기록(구 데이터)이면 규격 값이 있을 때 'spec'(폼 기본값과 동일 관례).
   const basis: 'spec' | 'qty' | null = row
@@ -240,6 +247,7 @@ export async function getLastItemUnits(itemLabel: string): Promise<LastItemConte
     specUnit: row?.specUnit ?? null,
     qtyUnit: row?.qtyUnit ?? null,
     trackUnit: tracked?.trackUnit ?? null,
+    specOptions,
     specValue: row?.specValue != null ? String(row.specValue) : null,
     specText: row?.specText ?? null,
     unitBasis: basis,
@@ -482,6 +490,21 @@ async function captureItemNameAliases(propertyId: string, items: ItemPick[]): Pr
   await captureItemNameAliasPairs(propertyId, items.map(it => ({ raw: it.ocrRaw, label: it.label })))
 }
 
+// 저장 시 세부스펙 적립(신고 ba9feb6b) — 품목별 사전(item_spec_options)에 upsert.
+// 한 번 입력한 색상·사이즈·치수는 다음 입력에서 칩으로 재사용, 설정에서 수정·삭제. best-effort.
+async function captureItemSpecOptions(propertyId: string, items: ItemPick[]): Promise<void> {
+  for (const it of items) {
+    const label = it.label?.trim()
+    const spec = it.specText?.trim()
+    if (!label || !spec) continue
+    await prisma.itemSpecOption.upsert({
+      where: { propertyId_itemLabel_label: { propertyId, itemLabel: label, label: spec } },
+      update: {},
+      create: { propertyId, itemLabel: label, label: spec },
+    }).catch(() => {})
+  }
+}
+
 export async function addExpense(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -642,6 +665,8 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
       }))
       await prisma.$transaction(ops)
       await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
+    await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
+      await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
       revalidatePath('/finance')
       return { ok: true }
     }

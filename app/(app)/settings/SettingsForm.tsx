@@ -23,6 +23,7 @@ import {
   createAppLogoUploadSession, finalizeAppLogo, deleteAppLogo,
   type MemberWithUser, type RecurringExpenseRow, type ContractSettings, type RecurringItemInput,
   getShortStayPolicy, updateShortStayPolicy,
+  listItemSpecOptions, renameItemSpecOption, deleteItemSpecOption, type ItemSpecGroup,
 } from './actions'
 import { regenerateJoinCode, approveJoinRequest, rejectJoinRequest } from './memberActions'
 import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
@@ -879,6 +880,9 @@ export default function SettingsForm({
 
         {/* 품명 병합 (AI) — 비품·자재·소모품·부식 유사 품명 통일 */}
         <ItemNameMergePanel />
+
+        {/* 품목 세부스펙 사전 — 지출 저장 시 자동 적립된 색상·사이즈·치수 관리(신고 ba9feb6b) */}
+        <ItemSpecOptionsPanel />
 
         {/* 단기 입실 정책 — 영업장별 수치 템플릿(운영자 기준 2026-07-06). 오너 전용(§4 요금 기준). */}
         {isOwner && <ShortStayPolicyCard />}
@@ -1914,6 +1918,68 @@ function BackupButton() {
 }
 
 // 위험 구역 — 오너 전용. 운영 종료(되돌림 가능)와 영구 삭제(불가) + 삭제 전 백업 안내.
+// 품목 세부스펙 사전 — 단가 무관 구분 정보(색상·사이즈·치수)의 품목별 옵션 관리.
+// 지출 저장 시 자동 적립되고, 지출 폼의 세부스펙 칩으로 재사용된다(신고 ba9feb6b).
+function ItemSpecOptionsPanel() {
+  const [groups, setGroups] = useState<ItemSpecGroup[] | null>(null)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editVal, setEditVal] = useState('')
+  const reload = () => listItemSpecOptions().then(setGroups).catch(() => setGroups([]))
+  useEffect(() => { reload() }, [])
+
+  const saveRename = async (id: string) => {
+    const res = await renameItemSpecOption(id, editVal)
+    if (res.ok) { setEditId(null); pushToast('success', '세부스펙 수정됨'); reload() }
+    else pushToast('error', res.error)
+  }
+  const remove = async (id: string, label: string) => {
+    const ok = await confirmDialog({ title: '세부스펙 삭제', message: `'${label}' 옵션을 목록에서 삭제할까요? 기존 지출 기록은 바뀌지 않습니다.`, confirmLabel: '삭제' })
+    if (!ok) return
+    const res = await deleteItemSpecOption(id)
+    if (res.ok) { pushToast('success', '삭제됨'); reload() }
+    else pushToast('error', res.error)
+  }
+
+  if (groups !== null && groups.length === 0) return null   // 아직 적립된 게 없으면 카드 숨김
+  return (
+    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
+      <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">품목 세부스펙</h2>
+      <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
+        단가와 무관한 구분 정보(색상·사이즈·치수)입니다. 지출 입력 때 저장한 값이 자동으로 쌓이고, 품목 선택 시 칩으로 재사용됩니다.
+      </p>
+      {!groups ? (
+        <p className="text-xs text-[var(--warm-muted)]">불러오는 중…</p>
+      ) : (
+        <div className="space-y-3">
+          {groups.map(g => (
+            <div key={g.itemLabel}>
+              <p className="text-xs font-semibold text-[var(--warm-dark)] mb-1">{g.itemLabel}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {g.options.map(o => editId === o.id ? (
+                  <span key={o.id} className="inline-flex items-center gap-1">
+                    <input value={editVal} onChange={e => setEditVal(e.target.value)} autoFocus
+                      onKeyDown={e => { if (e.key === 'Enter') saveRename(o.id); if (e.key === 'Escape') setEditId(null) }}
+                      className="w-40 bg-[var(--canvas)] border border-[var(--coral)] rounded-md px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
+                    <Btn type="button" variant="primary" size="sm" onClick={() => saveRename(o.id)}>저장</Btn>
+                    <Btn type="button" variant="secondary" size="sm" onClick={() => setEditId(null)}>취소</Btn>
+                  </span>
+                ) : (
+                  <span key={o.id} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 text-xs rounded-md border border-[var(--warm-border)] bg-[var(--canvas)] text-[var(--warm-dark)]">
+                    <button type="button" onClick={() => { setEditId(o.id); setEditVal(o.label) }}
+                      className="hover:text-[var(--coral)]" title="수정">{o.label}</button>
+                    <button type="button" onClick={() => remove(o.id, o.label)}
+                      className="text-[var(--warm-muted)] hover:text-[var(--danger-fg)] px-1 leading-none" aria-label={`${o.label} 삭제`}>×</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // 단기 입실 정책 카드 — 수치만 바꾸면 시뮬레이션(고객 관리 > 요금 계산)이 그대로 따라간다.
 // 제기역점 기준(시드): 최소 1주 · 주 단위 계약 · 1달 이내 = 계약일수 × 1.5 (1개월 상한) + 청소비 2만.
 function ShortStayPolicyCard() {

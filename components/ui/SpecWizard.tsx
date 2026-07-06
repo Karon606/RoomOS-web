@@ -26,7 +26,7 @@ const GROUPS: Group[] = [
   { id: 'bottle', label: '통 · 병',    hint: '세제·락스 등 용기',        units: ['통', '병'],                        specUnits: ['ml', 'L', 'g', 'kg'],       mode: 'spec',  basis: 'spec' },
   { id: 'bag',    label: '봉 · 팩',    hint: '봉지·팩 포장',             units: ['봉', '팩', '봉지', '포기'],         specUnits: ['g', 'kg', '매', '개', '인분'], mode: 'spec',  basis: 'spec' },
   { id: 'box',    label: '박스 · 묶음', hint: '겉포장(개입 수 등)',       units: ['박스', '세트', '포대', '망', '단'], specUnits: ['개', '매', 'g', 'kg'],       mode: 'spec',  basis: 'spec' },
-  { id: 'roll',   label: '롤',        hint: '감긴 자재(장판·랩 등)',     units: ['롤'],                              specUnits: ['m', '매', '장'],             mode: 'spec',  basis: 'qty'  },
+  { id: 'roll',   label: '롤',        hint: '감긴 자재(장판·랩 등)',     units: ['롤'],                              specUnits: ['m', '매', '장'],             mode: 'spec',  basis: 'spec' },
   { id: 'piece',  label: '낱개',      hint: '개별 물건(봉투·의자 등)',   units: ['개', '장', '매', '알', '권'],       specUnits: [],                            mode: 'piece', basis: 'qty'  },
   { id: 'free',   label: '기타',      hint: '직접 입력',                units: [],                                  specUnits: ['kg', 'g', 'ml', 'L', '매', 'm', 'cm', 'mm', '장', '개', '회', '인분', '알', '권'], mode: 'free', basis: 'spec' },
 ]

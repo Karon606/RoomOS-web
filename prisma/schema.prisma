@@ -196,6 +196,7 @@ model Property {
   residenceCertFiles  ResidenceCertFile[]
   rentReceiptFiles    RentReceiptFile[]
   itemNameAliases     ItemNameAlias[]
+  itemSpecOptions     ItemSpecOption[]
   itemNameMergeRuns   ItemNameMergeRun[]
   assetAssignmentLogs AssetAssignmentLog[]
 
@@ -204,6 +205,21 @@ model Property {
 
 // 품명 별칭/통일 — 영수증 OCR 학습·자동완성·환경설정 품명 병합이 공유.
 // aliasKey(정규화된 원문) → preferredLabel(통일명). 같은 영업장 내 유일.
+// 품목 세부스펙 사전 (2026-07-06, 신고 ba9feb6b) — 단가에 영향 없는 구분 정보(폭·두께·색상·사이즈)의
+// 품목별 재사용 옵션. 지출 저장 시 자동 적립(captureItemSpecOptions), 설정에서 수정·삭제.
+model ItemSpecOption {
+  id         String   @id @default(uuid()) @db.Uuid
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  itemLabel  String   // 품목명 — 이 품목에서 재사용할 세부스펙
+  label      String   // 세부스펙 표기 (예: '폭 183cm · 두께 1.8T', '싱글/그레이')
+  createdAt  DateTime @default(now())
+
+  @@unique([propertyId, itemLabel, label])
+  @@index([propertyId, itemLabel])
+  @@map("item_spec_options")
+}
+
 model ItemNameAlias {
   id             String   @id @default(uuid()) @db.Uuid
   propertyId     String   @db.Uuid
