@@ -2179,7 +2179,7 @@ export default function FinanceClient({
                         {g.items.map(it => (
                           <li key={it.id} className="flex items-baseline justify-between gap-2 text-[0.625rem]">
                             <span className="text-[var(--warm-muted)] shrink-0 tabular-nums">{kstYmdStr(new Date(it.date)).slice(5)}</span>
-                            <span className="flex-1 min-w-0 truncate text-[var(--warm-mid)]">{it.detail || it.category}{it.vendor ? ` · ${it.vendor}` : ''}</span>
+                            <span className="flex-1 min-w-0 truncate text-[var(--warm-mid)]">{it.detail || it.category}</span>
                             <span className="shrink-0 tabular-nums text-[var(--warm-dark)]"><MoneyDisplay amount={it.amount} /></span>
                           </li>
                         ))}
@@ -2401,7 +2401,8 @@ export default function FinanceClient({
                                     : <span className="text-[0.625rem] text-[var(--warm-dark)] font-medium bg-[var(--honey)]/20 px-1.5 rounded">{roomChipText(grp)}</span>)}
                                   {isUnsettled && <span className="text-[0.625rem] text-[var(--danger-fg)] font-medium">· 미정산</span>}
                                 </div>
-                                <p className="text-sm text-[var(--warm-dark)] truncate">{[e.vendor, e.detail].filter(Boolean).join(' · ') || '—'}</p>
+                                {/* 구매처는 리스트에서 숨김 — 상세에서만(운영자 지시 2026-07-06). 검색은 구매처로도 가능. */}
+                                <p className="text-sm text-[var(--warm-dark)] truncate">{e.detail || e.vendor || '—'}</p>
                                 {grp && (item.groupKind === 'order'
                                   ? <p className="text-[0.6875rem] text-[var(--coral)] truncate mt-0.5">{e.order?.code ? `주문 ${e.order.code}` : '주문 묶음'}{e.order?.externalOrderNo ? ` · 쇼핑몰 ${e.order.externalOrderNo}` : ''}{grp.some(r => r.isShipping) ? ' · 배송비 포함' : ''}</p>
                                   : <p className="text-[0.6875rem] text-[var(--coral)] truncate mt-0.5">{roomsLabel(grp)}</p>)}
