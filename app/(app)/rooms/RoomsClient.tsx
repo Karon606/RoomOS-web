@@ -244,7 +244,7 @@ export default function RoomsClient({
   const entityModal = useEntityModal()
   // 수납 / 부가수익 탭 — 부가수익은 /finance에서 이동(2026-07-02, 과납·보증금 몰수 등 수납 파생 수익)
   const [viewTab, setViewTab] = useState<'rooms' | 'income'>(initialTab ?? 'rooms')
-  const [filter, setFilter] = useState<'all' | 'unpaid' | 'checkout' | 'awaiting' | 'paid' | 'adjusted'>('all')
+  const [filter, setFilter] = useState<'all' | 'unpaid' | 'checkout' | 'awaiting' | 'paid' | 'adjusted' | 'vacant'>('all')
   const [floorFilter, setFloorFilter] = useState('')
   const [colVis, setColVis] = useState<Record<ColKey, boolean>>(DEFAULT_VIS)
   const [vacantColVis, setVacantColVis] = useState<Record<VacantColKey, boolean>>(DEFAULT_VACANT_VIS)
@@ -616,6 +616,7 @@ export default function RoomsClient({
             { value: 'awaiting', label: `납부 예정 ${awaitingCount}실` },
             { value: 'paid',     label: `완납 ${paidCount}실` },
             { value: 'adjusted', label: `임시 조정 ${adjustedCount}실` },
+            { value: 'vacant',   label: `공실 ${vacants.length}실` },
           ]}
         />
         {allFloors.length > 1 && (
@@ -660,6 +661,7 @@ export default function RoomsClient({
         </div> {/* /ml-auto group */}
       </div>
 
+      {filter !== 'vacant' && (<>
       {/* 모바일 정렬 */}
       <div className="sm:hidden">
         <SortSelect<SortKey>
@@ -1002,8 +1004,12 @@ export default function RoomsClient({
             </tbody>
           </table>
       </div>
+      </>)}
 
-      {/* 공실 섹션 — 열 설정 버튼은 페이지 상단으로 이주(공실 0실에도 항상 보이게) */}
+      {/* 공실 섹션 — 상단 상태 필터의 '공실'과 연동: 필터 선택 시 본 목록 자리에 이 섹션만 표시 */}
+      {filter === 'vacant' && vacants.length === 0 && (
+        <p className="text-xs text-[var(--warm-muted)] text-center py-10">공실이 없습니다.</p>
+      )}
       {vacants.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
@@ -62,7 +62,6 @@ export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
   // 클릭 즉시 시각 피드백 — Next.js 라우팅이 비동기라 사용자가 누른 직후 아무 반응이 없어
   // 여러 번 누르게 되는 문제 해결 (사용자 피드백 2026-06-01).
   const [pendingHref, setPendingHref] = useState<string | null>(null)
-  const [, startTransition] = useTransition()
   // 라우팅 완료(또는 pathname 변경) 시 pending 해제
   useEffect(() => { setPendingHref(null) }, [pathname])
 
@@ -71,7 +70,10 @@ export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
     if (pathname === href) return
     setPendingHref(href)
     const linkHref = month ? `${href}?month=${month}` : href
-    startTransition(() => { router.push(linkHref) })
+    // startTransition 으로 감싸지 않는다 — 트랜지션은 기존 화면을 유지하고 Suspense 폴백을 억제해서
+    // 탭 인디케이터만 먼저 움직이고 스켈레톤 없이 옛 페이지가 늦게까지 남는 증상의 원인(운영자 신고 2026-07-06).
+    // 일반 push 는 다른 내비(사이드바 Link)와 동일하게 loading.tsx 스켈레톤을 바로 띄운다.
+    router.push(linkHref)
   }
 
   // 슬라이딩 인디케이터(§25.3) — 탭 7개 균등 폭이라 활성 인덱스 × (100/7)% 로 이동.
