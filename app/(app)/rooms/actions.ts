@@ -21,6 +21,7 @@ async function getPropertyId() {
 type RoomRow = {
   roomId: string; roomNo: string; type: string | null; floor: string | null; windowType: string | null; direction: string | null
   isVacant: boolean; tenantId: string | null; tenantName: string | null; contact: string | null
+  noMoveInReport: boolean   // 전입신고 불가 방 — 공실 카드·행 배지(2026-07-06)
   status: string | null; expected: number; dueDay: string | null; currentPaid: number
   carryOver: number; totalPaid: number; balance: number; isPaid: boolean
   leaseTermId: string | null; depositAmount: number; cleaningFee: number; accumulatedUnpaid: number
@@ -164,7 +165,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
         floor: room.floor ?? null, windowType: room.windowType ?? null, direction: room.direction ?? null,
-        isVacant: false, tenantId: lease.tenant.id,
+        isVacant: false, noMoveInReport: room.noMoveInReport, tenantId: lease.tenant.id,
         tenantName: lease.tenant.name,
         contact: lease.tenant.contacts[0]?.contactValue ?? null,
         status: 'RESERVED', expected: lease.rentAmount, dueDay: lease.dueDay,
@@ -191,7 +192,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
         floor: room.floor ?? null, windowType: room.windowType ?? null, direction: room.direction ?? null,
-        isVacant: false, tenantId: lease.tenant.id,
+        isVacant: false, noMoveInReport: room.noMoveInReport, tenantId: lease.tenant.id,
         tenantName: lease.tenant.name,
         contact: lease.tenant.contacts[0]?.contactValue ?? null,
         status: lease.status, expected, dueDay: lease.dueDay,
@@ -457,7 +458,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       return {
         roomId: room.id, roomNo: room.roomNo, type: room.type,
         floor: room.floor ?? null, windowType: room.windowType ?? null, direction: room.direction ?? null,
-        isVacant: false, tenantId: lease.tenant.id,
+        isVacant: false, noMoveInReport: room.noMoveInReport, tenantId: lease.tenant.id,
         tenantName: lease.tenant.name,
         contact: lease.tenant.contacts[0]?.contactValue ?? null,
         status: lease.status, expected: viewBill, dueDay: effectiveDueDay,
@@ -486,7 +487,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     return {
       roomId: room.id, roomNo: room.roomNo, type: room.type,
       floor: room.floor ?? null, windowType: room.windowType ?? null, direction: room.direction ?? null,
-      isVacant: false, tenantId: lease.tenant.id,
+      isVacant: false, noMoveInReport: room.noMoveInReport, tenantId: lease.tenant.id,
       tenantName: lease.tenant.name,
       contact: lease.tenant.contacts[0]?.contactValue ?? null,
       status: lease.status, expected: viewBill, dueDay: overrideIsFullDate ? lease.dueDay : effectiveDueDay,
@@ -521,7 +522,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       return [{
         roomId: room.id, roomNo: room.roomNo, type: room.type,
         floor: room.floor ?? null, windowType: room.windowType ?? null, direction: room.direction ?? null,
-        isVacant: true, tenantId: null, tenantName: null,
+        isVacant: true, noMoveInReport: room.noMoveInReport, tenantId: null, tenantName: null,
         contact: null, status: null, expected: 0, dueDay: null,
         currentPaid: 0, carryOver: 0, totalPaid: 0,
         balance: 0, isPaid: false, leaseTermId: null,
@@ -1460,6 +1461,7 @@ export async function getLeaseSettlementInfo(leaseTermId: string, targetMonth: s
     windowType: lease.room?.windowType ?? null,
     direction: lease.room?.direction ?? null,
     isVacant: false,
+    noMoveInReport: lease.room?.noMoveInReport ?? false,
     tenantId: lease.tenant.id,
     tenantName: lease.tenant.name,
     contact: lease.tenant.contacts[0]?.contactValue ?? null,

@@ -27,7 +27,8 @@ export async function getRooms() {
     include: {
       photos: { orderBy: { sortOrder: 'asc' } },
       leaseTerms: {
-        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+        // NON_RESIDENT 포함 — 창고·사무실 점유 표시(방 nonResidentVacant 설정과 연동, 2026-07-06)
+        where: { status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
         select: {
           id: true,
           status: true,
@@ -37,7 +38,7 @@ export async function getRooms() {
         // ACTIVE > CHECKOUT_PENDING > RESERVED 우선순위 정렬
         // (예약자보다 거주자가 호실의 '주' 점유자)
         orderBy: { status: 'asc' },
-        take: 1,
+        take: 2,   // 거주 계약 + 비거주 계약 동시 존재 대비
       },
     },
     orderBy: { roomNo: 'asc' },
@@ -120,6 +121,9 @@ export async function updateRoom(formData: FormData): Promise<{ ok: true } | { o
   const direction  = (formData.get('direction') as string) || null
   const areaPyeong = formData.get('areaPyeong') ? Number(formData.get('areaPyeong')) : null
   const areaM2     = formData.get('areaM2') ? Number(formData.get('areaM2')) : null
+  // 방 특성 (2026-07-06) — 체크박스: 켜짐 '1', 꺼짐 미전송
+  const noMoveInReport    = formData.get('noMoveInReport') === '1'
+  const nonResidentVacant = formData.get('nonResidentVacant') !== '0'   // 기본 켜짐(공실로 표시)
 
   // 가격 예약 시스템 필드
   const scheduledRentRaw = formData.get('scheduledRent')
@@ -155,6 +159,8 @@ export async function updateRoom(formData: FormData): Promise<{ ok: true } | { o
       floor,
       windowType: windowType || null,
       direction:  direction || null,
+      noMoveInReport,
+      nonResidentVacant,
       areaPyeong,
       areaM2,
       scheduledRent,

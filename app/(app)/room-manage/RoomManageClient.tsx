@@ -47,6 +47,8 @@ type Room = {
   nonResidentRentDate: Date | string | null
   memo: string | null
   isVacant: boolean
+  noMoveInReport: boolean        // 전입신고 불가 방 — 카드 배지 + 등록 경고(2026-07-06)
+  nonResidentVacant: boolean     // 비거주 점유 시 공실로 표시할지 (false = 창고·사무실)
   floor: string | null
   windowType: string | null
   direction: string | null
@@ -55,7 +57,7 @@ type Room = {
   photos: Photo[]
   leaseTerms: {
     id: string
-    status: string                 // ACTIVE | RESERVED | CHECKOUT_PENDING
+    status: string                 // ACTIVE | RESERVED | CHECKOUT_PENDING | NON_RESIDENT
     tenantId: string
     tenant: { id: string; name: string } | null
   }[]
@@ -69,9 +71,15 @@ type RoomStatus = {
   badge: { tone: BadgeTone; label: string } | null
 }
 function getRoomStatus(r: Room): RoomStatus {
-  const lease = r.leaseTerms[0]
+  // 거주 계약 우선, 없으면 비거주 계약 — 비거주만 있을 때는 방 설정(nonResidentVacant)에 따라
+  // 공실(현행) 또는 점유(창고·사무실)로 표시(운영자 요청 2026-07-06)
+  const lease = r.leaseTerms.find(l => l.status !== 'NON_RESIDENT') ?? r.leaseTerms[0]
   if (!lease)
     return { label: '공실', kind: 'vacant', badge: null }
+  if (lease.status === 'NON_RESIDENT')
+    return r.nonResidentVacant
+      ? { label: '공실', kind: 'vacant', badge: { tone: 'info', label: '비거주' } }
+      : { label: '비거주', kind: 'resident', badge: { tone: 'info', label: '비거주' } }
   if (lease.status === 'RESERVED')
     // 라벨 '예약' 통일 — 수납(rooms)·고객관리·lib/statusColors 와 동일 용어 (화면마다 '입실 예정/예약' 혼용 제거)
     return { label: '예약', kind: 'vacant', badge: { tone: 'movein', label: '예약' } }
@@ -83,8 +91,9 @@ function getRoomStatus(r: Room): RoomStatus {
 // 상태 빠른 필터 키 — 공실/예약/거주중/퇴실예정. getRoomStatus 와 동일한 분기.
 type RoomStatusKey = 'vacant' | 'reserved' | 'active' | 'checkout'
 function roomStatusKey(r: Room): RoomStatusKey {
-  const lease = r.leaseTerms[0]
+  const lease = r.leaseTerms.find(l => l.status !== 'NON_RESIDENT') ?? r.leaseTerms[0]
   if (!lease) return 'vacant'
+  if (lease.status === 'NON_RESIDENT') return r.nonResidentVacant ? 'vacant' : 'active'
   if (lease.status === 'RESERVED') return 'reserved'
   if (lease.status === 'CHECKOUT_PENDING') return 'checkout'
   return 'active'
@@ -765,6 +774,7 @@ export default function RoomManageClient({
                       </span>
                     )}
                     {rs.badge && <StatusBadge tone={rs.badge.tone}>{rs.badge.label}</StatusBadge>}
+                    {room.noMoveInReport && <StatusBadge tone="exit">전입신고 불가</StatusBadge>}
                   </div>
                   {cardFields.tenant && tenant && <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{tenant}</p>}
                   <div className="space-y-0.5 pt-0.5">
@@ -1049,6 +1059,23 @@ export default function RoomManageClient({
             </div>
             <AreaInput defaultPyeong={editRoom.areaPyeong} defaultM2={editRoom.areaM2} />
             <Field label="메모" name="memo" defaultValue={editRoom.memo ?? ''} />
+
+            {/* 방 특성 (2026-07-06, 운영자 요청 — 415 창고·사무실 사례) */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">방 특성</label>
+              <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer">
+                <input type="checkbox" name="noMoveInReport" value="1" defaultChecked={editRoom.noMoveInReport}
+                  className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                전입신고 불가 <span className="text-[var(--warm-muted)]">(등록 시 경고 + 카드에 표시)</span>
+              </label>
+              <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer">
+                <input type="checkbox" defaultChecked={!editRoom.nonResidentVacant}
+                  onChange={e => { const h = e.currentTarget.form?.elements.namedItem('nonResidentVacant') as HTMLInputElement | null; if (h) h.value = e.currentTarget.checked ? '0' : '1' }}
+                  className="w-3.5 h-3.5 accent-[var(--coral)]" />
+                비거주 점유 시 공실로 표시하지 않음 <span className="text-[var(--warm-muted)]">(창고·사무실 등)</span>
+              </label>
+              <input type="hidden" name="nonResidentVacant" defaultValue={editRoom.nonResidentVacant ? '1' : '0'} />
+            </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">

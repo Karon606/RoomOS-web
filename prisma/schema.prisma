@@ -307,6 +307,9 @@ model Room {
   nonResidentScheduled Int?                   // 비거주 예약 이용료
   nonResidentRentDate  DateTime?  @db.Date    // 비거주 예약 이용료 적용 예정일
   isVacant   Boolean    @default(true)
+  // 방 특성 (2026-07-06, 운영자 요청 — 415 창고·사무실 사례)
+  noMoveInReport    Boolean @default(false)  // 전입신고 불가 방 — 등록 시 경고 + 카드 배지
+  nonResidentVacant Boolean @default(true)   // 비거주 점유 시 공실로 표시할지 (false = 창고·사무실처럼 점유로 취급)
   areaPyeong Float?
   areaM2     Float?
   floor      String?                    // 층 (자동 유추 또는 수동 입력)

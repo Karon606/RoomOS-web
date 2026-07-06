@@ -262,7 +262,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     }),
     // 희망 이동 호실용 공실 목록 (조건 매칭에 type/windowType/direction/baseRent 사용)
     prisma.room.findMany({
-      where: { propertyId, isVacant: true },
+      // 비거주 점유 중 + '공실 표시 안 함' 방(창고·사무실)은 이동 후보에서 제외 (2026-07-06)
+      where: {
+        propertyId, isVacant: true,
+        NOT: { nonResidentVacant: false, leaseTerms: { some: { status: 'NON_RESIDENT' } } },
+      },
       select: { roomNo: true, type: true, floor: true, windowType: true, direction: true, baseRent: true },
     }),
     // 희망 이동 호실/조건 계약 (예약/투어/거주중/퇴실예정 — 호실 또는 조건 보유자)
