@@ -304,7 +304,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                   <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setOpenMenu(null)} />
                   <div className="absolute left-0 top-full z-[var(--z-dropdown)] mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-1.5 shadow-lift">
                     <button type="button" disabled={seedPending || isPending} onClick={() => { setOpenMenu(null); handleSeed() }}
-                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)] disabled:opacity-50">{seedPending ? '처리 중…' : '지출에서 자동 등록'}</button>
+                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)] disabled:opacity-50">{seedPending ? '처리 중…' : '과거 지출 일괄 불러오기'}<span className="block text-[0.625rem] text-[var(--warm-muted)]">새 지출은 저장 시 자동 등록됩니다</span></button>
                     <button type="button" onClick={() => { setOpenMenu(null); setShowReconcile(true) }}
                       className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">전체 재고 보정<span className="block text-[0.625rem] text-[var(--warm-muted)]">실제와 다를 때 실측값으로 리셋</span></button>
                   </div>

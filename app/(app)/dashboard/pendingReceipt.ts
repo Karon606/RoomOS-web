@@ -8,6 +8,7 @@
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
 import { captureItemNameAliasPairs, normalizeItemName } from '@/lib/itemNameAlias'
 import { computeSetHint, type SetHint } from '@/lib/setHint'
+import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
 import prisma from '@/lib/prisma'
 import { uploadToDrive } from '@/lib/google-drive'
 import { createClient } from '@/lib/supabase/server'
@@ -272,6 +273,8 @@ export async function approvePendingReceipt(
     if (final.itemLabel && inferredLabel) {
       await captureItemNameAliasPairs(propertyId, [{ raw: inferredLabel, label: final.itemLabel }]).catch(() => {})
     }
+    // 재고 카드 자동 생성 — 승인 즉시 재고에 잡히게(신고 269baf9f)
+    if (final.itemLabel) await seedTrackedItemsFromExpenses([final.itemLabel]).catch(() => {})
 
     const exp = await prisma.expense.create({
       data: {

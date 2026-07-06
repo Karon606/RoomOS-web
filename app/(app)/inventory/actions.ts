@@ -1249,7 +1249,9 @@ function deriveSubLabel(base: string, specValue: number | null, specUnit: string
   return parts.length > 0 ? `${base} ${parts.join(' ')}` : base
 }
 
-export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; created: number; migrated: number; skippedArchived: number; decisions: MergeDecision[] } | { ok: false; error: string }> {
+// onlyLabels: 지출 저장 직후 그 품목들만 증분 시드(자동 카드 생성, 신고 269baf9f).
+// 미지정 = 전체 스캔(재고 화면의 '과거 지출 일괄 불러오기' 버튼). 병합 규칙(LINK/MUTE)·중복 판정은 동일 경로.
+export async function seedTrackedItemsFromExpenses(onlyLabels?: string[]): Promise<{ ok: true; created: number; migrated: number; skippedArchived: number; decisions: MergeDecision[] } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -1258,7 +1260,7 @@ export async function seedTrackedItemsFromExpenses(): Promise<{ ok: true; create
       where: {
         propertyId,
         category: { in: trackedCats },
-        itemLabel: { not: null },
+        itemLabel: onlyLabels && onlyLabels.length ? { in: onlyLabels } : { not: null },
       },
       select: { id: true, category: true, itemLabel: true, specValue: true, specUnit: true, qtyUnit: true },
     })

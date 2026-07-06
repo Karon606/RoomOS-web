@@ -15,6 +15,7 @@ import { uploadToDrive } from '@/lib/google-drive'
 import type { SettleStatus } from '@prisma/client'
 import { FINANCE_DETAIL_SUGGESTIONS_LIMIT } from '@/lib/appConfig'
 import { getInventoryCategoryConfig } from '@/app/(app)/inventory/categoryConfig'
+import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
 
 async function getPropertyId() {
   const { propertyId } = await requirePropertyAccess()
@@ -666,7 +667,11 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
       await prisma.$transaction(ops)
       await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
     await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
+      // 재고 카드 자동 생성 — 추적 카테고리 품목이면 버튼 없이 바로 재고에 잡히게(신고 269baf9f)
+      await seedTrackedItemsFromExpenses(ocrCaptureItems.map(it => it.label).filter(Boolean)).catch(() => {})
       await captureItemSpecOptions(propertyId, ocrCaptureItems).catch(() => {})
+      // 재고 카드 자동 생성 — 추적 카테고리 품목이면 버튼 없이 바로 재고에 잡히게(신고 269baf9f)
+      await seedTrackedItemsFromExpenses(ocrCaptureItems.map(it => it.label).filter(Boolean)).catch(() => {})
       revalidatePath('/finance')
       return { ok: true }
     }
