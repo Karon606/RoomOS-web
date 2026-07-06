@@ -144,7 +144,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   }
   const [isPending, startTransition] = useTransition()
   const [showAdd, setShowAdd]             = useState(false)
-  const [showMore, setShowMore]           = useState(false)   // 헤더 ⋯ 더보기
+  const [openMenu, setOpenMenu]           = useState<'input' | 'manage' | null>(null)   // 헤더 그룹 버튼(입력·점검 / 관리·설정)
   const [showLocations, setShowLocations] = useState(false)
   const [detailId, setDetailId]           = useState<string | null>(null)
   const [error, setError]                 = useState('')
@@ -296,27 +296,34 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             <Btn variant="secondary" size="md" onClick={() => { selectMode ? exitSelectMode() : setSelectMode(true) }}>
               {selectMode ? '선택 취소' : '선택'}
             </Btn>
-            {/* 6+개 헤더 버튼 → 주요 1개(품목 추가) + ⋯ 더보기(점검·입력 / 관리·설정 그룹) */}
+            {/* 성격별 그룹 버튼 — 잡동사니 더보기 대신 기능군마다 버튼 + 하위 메뉴(운영자 지시 2026-07-06) */}
             <div className="relative">
-              <Btn variant="secondary" size="md" onClick={() => setShowMore(v => !v)}>⋯ 더보기</Btn>
-              {showMore && (
+              <Btn variant="secondary" size="md" onClick={() => setOpenMenu(v => v === 'input' ? null : 'input')}>입력·점검</Btn>
+              {openMenu === 'input' && (
                 <>
-                  <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setShowMore(false)} />
+                  <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setOpenMenu(null)} />
                   <div className="absolute left-0 top-full z-[var(--z-dropdown)] mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-1.5 shadow-lift">
-                    <p className="px-2 pt-1 pb-1 text-[0.625rem] font-semibold text-[var(--warm-muted)]">입력·점검</p>
-                    <button type="button" disabled={seedPending || isPending} onClick={() => { setShowMore(false); handleSeed() }}
+                    <button type="button" disabled={seedPending || isPending} onClick={() => { setOpenMenu(null); handleSeed() }}
                       className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)] disabled:opacity-50">{seedPending ? '처리 중…' : '지출에서 자동 등록'}</button>
-                    <button type="button" onClick={() => { setShowMore(false); setShowReconcile(true) }}
+                    <button type="button" onClick={() => { setOpenMenu(null); setShowReconcile(true) }}
                       className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">전체 재고 보정<span className="block text-[0.625rem] text-[var(--warm-muted)]">실제와 다를 때 실측값으로 리셋</span></button>
-                    <div className="my-1 border-t border-[var(--warm-border)]" />
-                    <p className="px-2 pt-0.5 pb-1 text-[0.625rem] font-semibold text-[var(--warm-muted)]">관리·설정</p>
-                    <button type="button" onClick={() => { setShowMore(false); setShowLocations(true) }}
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="relative">
+              <Btn variant="secondary" size="md" onClick={() => setOpenMenu(v => v === 'manage' ? null : 'manage')}>관리·설정</Btn>
+              {openMenu === 'manage' && (
+                <>
+                  <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setOpenMenu(null)} />
+                  <div className="absolute left-0 top-full z-[var(--z-dropdown)] mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-1.5 shadow-lift">
+                    <button type="button" onClick={() => { setOpenMenu(null); setShowLocations(true) }}
                       className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">위치 관리</button>
-                    <button type="button" onClick={() => { setShowMore(false); setShowCatSettings(true) }}
+                    <button type="button" onClick={() => { setOpenMenu(null); setShowCatSettings(true) }}
                       className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">카테고리 설정</button>
-                    <button type="button" onClick={() => { setShowMore(false); setShowExcluded(true) }}
+                    <button type="button" onClick={() => { setOpenMenu(null); setShowExcluded(true) }}
                       className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">숨김 품목{archivedCount > 0 ? ` (${archivedCount})` : ''}</button>
-                    <button type="button" onClick={() => { setShowMore(false); setShowMergeRules(true) }}
+                    <button type="button" onClick={() => { setOpenMenu(null); setShowMergeRules(true) }}
                       className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">병합 적용취소·규칙<span className="block text-[0.625rem] text-[var(--warm-muted)]">갈라진 품목명 통일 관리</span></button>
                   </div>
                 </>
