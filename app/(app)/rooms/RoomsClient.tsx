@@ -9,6 +9,7 @@ import { formatPhone } from '@/lib/formatPhone'
 import { useUrlState } from '@/lib/useUrlState'
 import { useLongPress } from '@/lib/useLongPress'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { InfoHint } from '@/components/ui/InfoHint'
 import { SortSelect } from '@/components/ui/SortSelect'
 import { RoomCard } from '@/components/ui/RoomCard'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -585,9 +586,14 @@ export default function RoomsClient({
           <p className="text-sm text-[var(--warm-dark)]">
             <span className="text-xs text-[var(--warm-muted)]">수납 </span>
             <span className="font-bold text-[var(--success-fg)] num">{fmtWon(collectedSum)}</span>
-            <span className="text-[var(--warm-muted)]"> / 예상 </span>
+            <span className="text-[var(--warm-muted)]"> / 이 달 청구액 </span>
             <span className="font-semibold num">{fmtWon(expectedSum)}</span>
             <span className="text-xs text-[var(--warm-muted)]"> ({collectPct}%)</span>
+            <InfoHint title="이 달 청구액">
+              이 화면 목록에 있는 계약들의 이번 달 이용료 청구 합계입니다. 일할·무청구 퇴실월이 반영됩니다.
+              홈의 예상 매출과 다른 이유: 홈은 여기에 부가수익, 퇴실 완료자의 이 달 귀속 인식분,
+              예약 확정자의 그 달 전액까지 더한 사업 전체 전망이라 보통 더 큽니다.
+            </InfoHint>
           </p>
           {maxSum > expectedSum && (
             <span className="text-[0.6875rem] text-[var(--warm-muted)] num">만실 시 {fmtWon(maxSum)}</span>
