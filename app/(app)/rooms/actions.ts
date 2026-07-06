@@ -364,6 +364,9 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
     // (인수월 양도인 처리 / 미래월 / 퇴실 무청구이면 0)
     const skipViewMonthBilled = (targetMonth === acqMonthStr && acqMonthPrePaid) || prevOwnerMonths.has(targetMonth) || isFutureMonth || checkoutNoBilling
     const viewBilled = skipViewMonthBilled ? 0 : viewBill
+    // 행 표시용 청구액 — 무청구 퇴실월·양도인 월·인수 선납월은 0(홈 예상 매출과 동일 규칙, 2026-07-07).
+    // 미래월은 표시 목적상 청구 예정액을 그대로 보여준다(잔액 계산만 스킵).
+    const rowExpected = ((targetMonth === acqMonthStr && acqMonthPrePaid) || prevOwnerMonths.has(targetMonth) || checkoutNoBilling) ? 0 : viewBill
     const viewBalance = receivedThisMonth - viewBilled                 // viewMonth 정산 (음수=미수, 양수=선납)
 
     // 이월액 — 이전 달 누적 (양수=과거 선납, 음수=과거 미수). #14: 월별 할인 반영 합산.
@@ -461,7 +464,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
         isVacant: false, noMoveInReport: room.noMoveInReport, tenantId: lease.tenant.id,
         tenantName: lease.tenant.name,
         contact: lease.tenant.contacts[0]?.contactValue ?? null,
-        status: lease.status, expected: viewBill, dueDay: effectiveDueDay,
+        status: lease.status, expected: rowExpected, dueDay: effectiveDueDay,
         currentPaid: 0, carryOver: displayCarryOver,
         totalPaid: 0, balance: cumulativeBalance,
         isPaid,
@@ -490,7 +493,7 @@ export async function getRoomPaymentStatus(targetMonth: string): Promise<RoomRow
       isVacant: false, noMoveInReport: room.noMoveInReport, tenantId: lease.tenant.id,
       tenantName: lease.tenant.name,
       contact: lease.tenant.contacts[0]?.contactValue ?? null,
-      status: lease.status, expected: viewBill, dueDay: overrideIsFullDate ? lease.dueDay : effectiveDueDay,
+      status: lease.status, expected: rowExpected, dueDay: overrideIsFullDate ? lease.dueDay : effectiveDueDay,
       currentPaid: realCurrentPaid, carryOver: displayCarryOver,
       totalPaid: realCurrentPaid, balance: cumulativeBalance, isPaid,
       leaseTermId: lease.id, depositAmount: lease.depositAmount, cleaningFee: lease.cleaningFee ?? 0,
