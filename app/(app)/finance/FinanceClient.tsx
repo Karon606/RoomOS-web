@@ -837,7 +837,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
 
   return (
     <Modal open onClose={onClose} title="구매처 관리"
-      subtitle="이름을 고치면 표기만 바뀝니다. 다른 구매처와 합치려면 행의 '합치기'로 대상을 고르세요. 비우면 그 지출들의 구매처 표시가 사라집니다."
+      subtitle="이름을 고치면 표기만 바뀝니다. 합치기는 합칠 구매처들을 선택한 뒤 남을 대표를 고르는 방식입니다. 비우면 그 지출들의 구매처 표시가 사라집니다."
       width="md" dirty={dirty}>
       <div className="px-5 py-3 space-y-1.5" onInput={() => setDirty(true)}>
           {rows === null ? (
@@ -871,7 +871,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
                     <button type="button" disabled={busy === r.vendor || !changed} onClick={() => apply(r.vendor, val)}
                       className="text-xs px-2 py-1 rounded-lg bg-[var(--coral)] text-white disabled:opacity-30 shrink-0">저장</button>
                     <button type="button" disabled={busy === r.vendor}
-                      onClick={() => setSheet({ sourceLabel: r.vendor, sources: [r.vendor], targets: (rows ?? []).filter(x => x.vendor !== r.vendor).map(x => ({ id: x.vendor, label: `${x.vendor} (${x.count}건)` })) })}
+                      onClick={() => { setSelMode(true); setSel(new Set([r.vendor])); pushToast('info', '합칠 구매처를 더 선택한 뒤 아래 합치기를 누르세요. 대표(남을 이름)는 다음 화면에서 고릅니다.') }}
                       className="text-xs px-1.5 py-1 shrink-0 text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">합치기</button>
                     <button type="button" disabled={busy === r.vendor} onClick={() => apply(r.vendor, '')}
                       className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-1.5 py-1 shrink-0" title="구매처 비우기">비움</button>
