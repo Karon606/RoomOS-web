@@ -1439,7 +1439,7 @@ export default function TenantClient({
             onClose={() => { setDetailEditDirty(false); closeEdit() }}
             title={`고객 정보 수정 · ${t.name}`}>
               <form key={t.id} onSubmit={handleUpdateFromDetail} className="flex flex-col flex-1 overflow-hidden"
-                onInput={() => setDetailEditDirty(true)} onChange={() => setDetailEditDirty(true)}>
+                onInput={() => requestAnimationFrame(() => setDetailEditDirty(true))} onChange={() => setDetailEditDirty(true)}>
                 <input type="hidden" name="tenantId"    value={t.id} />
                 <input type="hidden" name="leaseTermId" value={t.leaseTerms[0]?.id ?? ''} />
                 <div className="overflow-y-auto p-6 space-y-4 flex-1">
@@ -1479,7 +1479,7 @@ export default function TenantClient({
         <Modal open width="lg" dirty={addTenantDirty}
           onClose={() => { setShowAdd(false); setAddTenantDirty(false) }} title="고객 등록">
             <form onSubmit={handleAdd} className="overflow-y-auto p-6 space-y-4"
-              onInput={() => setAddTenantDirty(true)} onChange={() => setAddTenantDirty(true)}>
+              onInput={() => requestAnimationFrame(() => setAddTenantDirty(true))} onChange={() => setAddTenantDirty(true)}>
               <TenantForm rooms={rooms} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} />
               <div className="flex gap-2 pt-2">
                 <Btn type="button" variant="secondary" size="md" onClick={() => setShowAdd(false)}
@@ -1501,7 +1501,7 @@ export default function TenantClient({
           onClose={() => { setEditTenant(null); setEditTenantDirty(false) }}
           title={`수정 · ${editTenant.name}`}>
             <form key={editTenant.id} onSubmit={handleUpdate} className="overflow-y-auto p-6 space-y-4"
-              onInput={() => setEditTenantDirty(true)} onChange={() => setEditTenantDirty(true)}>
+              onInput={() => requestAnimationFrame(() => setEditTenantDirty(true))} onChange={() => setEditTenantDirty(true)}>
               <input type="hidden" name="tenantId"    value={editTenant.id} />
               <input type="hidden" name="leaseTermId" value={editTenant.leaseTerms[0]?.id ?? ''} />
               <TenantForm rooms={rooms} tenant={editTenant} error={error} />
@@ -3023,7 +3023,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
   return (
     <Modal open onClose={onClose} width="md" dirty={dirty}
       title="고객 일괄 편집" subtitle={`${selectedIds.length}명 선택됨 · 입력하지 않은 항목은 변경되지 않습니다`}>
-      <div className="px-6 py-4 space-y-4" onInput={() => setDirty(true)} onChange={() => setDirty(true)}>
+      <div className="px-6 py-4 space-y-4" onInput={() => requestAnimationFrame(() => setDirty(true))} onChange={() => setDirty(true)}>
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
 
           <div className="space-y-1.5">

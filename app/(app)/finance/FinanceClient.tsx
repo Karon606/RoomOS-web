@@ -839,7 +839,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
     <Modal open onClose={onClose} title="구매처 관리"
       subtitle="이름을 고치면 표기만 바뀝니다. 합치기는 합칠 구매처들을 선택한 뒤 남을 대표를 고르는 방식입니다. 비우면 그 지출들의 구매처 표시가 사라집니다."
       width="md" dirty={dirty}>
-      <div className="px-5 py-3 space-y-1.5" onInput={() => setDirty(true)}>
+      <div className="px-5 py-3 space-y-1.5" onInput={() => requestAnimationFrame(() => setDirty(true))}>
           {rows === null ? (
             <SkeletonRows rows={4} className="py-2" />
           ) : rows.length === 0 ? (
@@ -1330,20 +1330,6 @@ export default function FinanceClient({
   const [addExpCategory, setAddExpCategory]   = useState(EXPENSE_CATEGORIES[0])
   // 신고 6f264a8f: 사용자가 카테고리를 직접 고른 뒤에는 어떤 자동 채움(OCR 등)도 덮지 않는다
   const userPickedCategoryRef = useRef(false)
-  // ── 진단(?debug=1 전용, Safari 첫 변경 유실 추적 — 원인 확정 후 제거) ──
-  const [dbgLog, setDbgLog] = useState<string[]>([])
-  const dbgSelectRef = (el: HTMLSelectElement | null) => {
-    if (!el || typeof window === 'undefined' || !window.location.search.includes('debug=1')) return
-    const flagged = el as HTMLSelectElement & { __dbg?: boolean }
-    if (flagged.__dbg) return
-    flagged.__dbg = true
-    for (const ev of ['mousedown', 'focus', 'input', 'change', 'blur'] as const) {
-      el.addEventListener(ev, () => {
-        const stamp = `${ev}:${el.value}`
-        setDbgLog(l => [...l.slice(-9), stamp])
-      })
-    }
-  }
   // 영수증 스캔 (공통)
   const [addExpVendor, setAddExpVendor]       = useState('')
   const [addExpAmount, setAddExpAmount]       = useState<number | undefined>(undefined)
@@ -3028,7 +3014,7 @@ export default function FinanceClient({
               </>
             ) : (
               <form key={detailExp.id + '-edit'} onSubmit={handleUpdateExp} className="flex flex-col flex-1 overflow-hidden"
-                onInput={() => setExpEditDirty(true)} onChange={() => setExpEditDirty(true)}>
+                onInput={() => requestAnimationFrame(() => setExpEditDirty(true))} onChange={() => setExpEditDirty(true)}>
                 <input type="hidden" name="id" value={detailExp.id} />
                 <input type="hidden" name="financialAccountId" value={editExpAccId} />
                 <input type="hidden" name="financeName" value={editExpAccName} />
@@ -3311,8 +3297,11 @@ export default function FinanceClient({
         <Modal open width="sm" dirty={addExpDirty}
           onClose={() => { setShowAddExp(false); setAddExpDirty(false) }}
           title="지출 등록">
+            {/* dirty 의 onInput 은 rAF 지연 필수 — 셀렉트의 input·change 사이에 리렌더가 끼면
+                React 가 컨트롤드 값(옛 상태)으로 DOM 을 복원해 change 가 옛 값을 들고 온다(첫 변경 유실, 신고 6f264a8f).
+                onChange 는 대상 핸들러와 같은 배치라 안전. 새 폼에도 같은 패턴을 쓸 것. */}
             <form onSubmit={handleAddExp} className="flex flex-col flex-1 overflow-hidden"
-              onInput={() => setAddExpDirty(true)} onChange={() => setAddExpDirty(true)}>
+              onInput={() => requestAnimationFrame(() => setAddExpDirty(true))} onChange={() => setAddExpDirty(true)}>
               <input type="hidden" name="financialAccountId" value={addExpAccId} />
               <input type="hidden" name="financeName" value={addExpAccName} />
               <input type="hidden" name="roomId" value={(addIsDurable || addItems.some(it => (it.allocations?.length ?? 0) > 0)) ? '' : addExpRoomId} />
@@ -3367,17 +3356,11 @@ export default function FinanceClient({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
-                  <select name="category" value={addExpCategory} ref={dbgSelectRef}
+                  <select name="category" value={addExpCategory}
                     onChange={e => { userPickedCategoryRef.current = true; setAddExpCategory(e.target.value) }}
-                    onBlur={e => { if (e.currentTarget.value !== addExpCategory) { userPickedCategoryRef.current = true; setAddExpCategory(e.currentTarget.value) } }}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
-                  {typeof window !== 'undefined' && window.location.search.includes('debug=1') && (
-                    <p className="text-[0.625rem] tabular-nums text-[var(--warm-muted)] break-all">
-                      debug 상태값: {addExpCategory} | 이벤트: {dbgLog.join(' → ') || '(없음)'}
-                    </p>
-                  )}
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>

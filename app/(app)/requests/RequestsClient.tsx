@@ -181,7 +181,7 @@ export default function RequestsClient({
       <Modal open={showAddForm} onClose={() => { setShowAddForm(false); setAddDirty(false) }}
         title="새 요청 등록" width="md" dirty={addDirty}>
         <form className="space-y-3" onSubmit={e => e.preventDefault()}
-          onInput={() => setAddDirty(true)} onChange={() => setAddDirty(true)}>
+          onInput={() => requestAnimationFrame(() => setAddDirty(true))} onChange={() => setAddDirty(true)}>
 
           {/* 대상 선택 */}
           <div className="space-y-1">
