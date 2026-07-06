@@ -1330,6 +1330,20 @@ export default function FinanceClient({
   const [addExpCategory, setAddExpCategory]   = useState(EXPENSE_CATEGORIES[0])
   // 신고 6f264a8f: 사용자가 카테고리를 직접 고른 뒤에는 어떤 자동 채움(OCR 등)도 덮지 않는다
   const userPickedCategoryRef = useRef(false)
+  // ── 진단(?debug=1 전용, Safari 첫 변경 유실 추적 — 원인 확정 후 제거) ──
+  const [dbgLog, setDbgLog] = useState<string[]>([])
+  const dbgSelectRef = (el: HTMLSelectElement | null) => {
+    if (!el || typeof window === 'undefined' || !window.location.search.includes('debug=1')) return
+    const flagged = el as HTMLSelectElement & { __dbg?: boolean }
+    if (flagged.__dbg) return
+    flagged.__dbg = true
+    for (const ev of ['mousedown', 'focus', 'input', 'change', 'blur'] as const) {
+      el.addEventListener(ev, () => {
+        const stamp = `${ev}:${el.value}`
+        setDbgLog(l => [...l.slice(-9), stamp])
+      })
+    }
+  }
   // 영수증 스캔 (공통)
   const [addExpVendor, setAddExpVendor]       = useState('')
   const [addExpAmount, setAddExpAmount]       = useState<number | undefined>(undefined)
@@ -3353,14 +3367,16 @@ export default function FinanceClient({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">카테고리 *</label>
-                  <select name="category" value={addExpCategory}
+                  <select name="category" value={addExpCategory} ref={dbgSelectRef}
                     onChange={e => { userPickedCategoryRef.current = true; setAddExpCategory(e.target.value) }}
                     onBlur={e => { if (e.currentTarget.value !== addExpCategory) { userPickedCategoryRef.current = true; setAddExpCategory(e.currentTarget.value) } }}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                   {typeof window !== 'undefined' && window.location.search.includes('debug=1') && (
-                    <p className="text-[0.625rem] tabular-nums text-[var(--warm-muted)]">debug 상태값: {addExpCategory}</p>
+                    <p className="text-[0.625rem] tabular-nums text-[var(--warm-muted)] break-all">
+                      debug 상태값: {addExpCategory} | 이벤트: {dbgLog.join(' → ') || '(없음)'}
+                    </p>
                   )}
                 </div>
                 <div className="space-y-1.5">
