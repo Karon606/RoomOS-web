@@ -590,9 +590,9 @@ export default function RoomsClient({
             <span className="font-semibold num">{fmtWon(expectedSum)}</span>
             <span className="text-xs text-[var(--warm-muted)]"> ({collectPct}%)</span>
             <InfoHint title="이 달 청구액">
-              이 화면 목록에 있는 계약들의 이번 달 이용료 청구 합계입니다. 일할·무청구 퇴실월이 반영됩니다.
-              홈의 예상 매출과 다른 이유: 홈은 여기에 부가수익, 퇴실 완료자의 이 달 귀속 인식분,
-              예약 확정자의 그 달 전액까지 더한 사업 전체 전망이라 보통 더 큽니다.
+              이 화면 목록에 있는 계약들의 이번 달 이용료 청구 합계입니다. 일할과 무청구 퇴실월(납부일 이전 퇴실)이 반영됩니다.
+              홈의 예상 매출은 여기에 부가수익, 퇴실 완료자의 이 달 귀속 인식분, 예약 확정자의 그 달 전액을 더한
+              사업 전체 전망입니다. 그런 항목이 없는 달엔 두 숫자가 같고, 있는 달엔 홈이 그만큼 커집니다.
             </InfoHint>
           </p>
           {maxSum > expectedSum && (
