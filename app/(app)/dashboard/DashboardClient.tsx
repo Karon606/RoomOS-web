@@ -6,6 +6,7 @@ import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { Btn } from '@/components/ui/Btn'
+import { StayQuoteModal } from '@/components/StayQuoteModal'
 import { Loading } from '@/components/ui/Loading'
 import { DatePicker } from '@/components/ui/DatePicker'
 import MonthSelector from '@/components/layout/MonthSelector'
@@ -1816,6 +1817,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
   const [dashTenantId, setDashTenantId]           = useState<string | null>(null)
   const [tenantInfoId, setTenantInfoId]           = useState<string | null>(null)
   const [selectedAlert, setSelectedAlert]         = useState<AlertItem | null>(null)
+  const [quoteOpen, setQuoteOpen] = useState(false)   // 단기 입실 요금 계산(홈 헤더, 고객 관리에서 이관 2026-07-06)
   const [recordingAlert, setRecordingAlert]       = useState<AlertItem | null>(null)
   const [unpaidExpanded, setUnpaidExpanded]       = useState(false)
   const [activityExpanded, setActivityExpanded]   = useState(false)
@@ -1905,10 +1907,13 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         )
       })()}
 
-      {/* ── 기간(월) 셀렉터 — 우측 정렬 ────────────────────────────── */}
-      <div className="flex justify-end">
+      {/* ── 기간(월) 셀렉터 + 요금 계산 — 우측 정렬 ────────────────────── */}
+      {/* 요금 계산: 문의 전화 시 홈에서 바로 견적(고객 관리에서 이관, 운영자 지시 2026-07-06) */}
+      <div className="flex justify-end items-center gap-2">
+        <Btn type="button" variant="secondary" size="md" onClick={() => setQuoteOpen(true)}>요금 계산</Btn>
         <MonthSelector />
       </div>
+      <StayQuoteModal open={quoteOpen} onClose={() => setQuoteOpen(false)} />
 
       {/* ── Row 1: 알림 ─────────────────────────────────────────── */}
       <AlertsStrip alerts={data.alerts} onOpenAlert={setSelectedAlert} />

@@ -1,6 +1,8 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
+import { StayQuoteModal } from '@/components/StayQuoteModal'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { StayeumWordmark } from '@/components/brand/StayeumWordmark'
 import { signOut } from '@/app/property-select/actions'
@@ -334,6 +336,7 @@ function MobileMenu({
 }: {
   pathname: string; month: string | null; user: AppUser; isSuperAdmin?: boolean; onClose?: () => void
 }) {
+  const [quoteOpen, setQuoteOpen] = useState(false)   // 요금 계산(도구 타일)
   return (
     <div className="fixed inset-0 z-[var(--z-drawer)] flex flex-col md:hidden safe-b" style={{ background: 'var(--cream)' }}>
       {/* 헤더: 로고 + 닫기 */}
@@ -371,7 +374,23 @@ function MobileMenu({
             </div>
           </div>
         ))}
+
+        {/* 도구 — 페이지 이동 없는 즉시 도구(요금 계산: 홈 헤더와 동일 모달) */}
+        <div className="mb-1.5">
+          <div className="px-1.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wide" style={{ color: 'rgba(120,90,60,0.45)' }}>
+            도구
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            <button type="button" onClick={() => setQuoteOpen(true)}
+              className="flex flex-col items-center justify-center gap-1.5 rounded-xl py-3 px-1 text-center transition-colors min-h-[64px]"
+              style={{ background: 'var(--canvas)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
+              <svg {...ico} width={19} height={19}><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8.5 7.5h7"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 15.5h.01M12 15.5h.01M15.5 15.5h.01"/></svg>
+              <span className="text-[0.6875rem] font-medium leading-tight">요금 계산</span>
+            </button>
+          </div>
+        </div>
       </div>
+      <StayQuoteModal open={quoteOpen} onClose={() => setQuoteOpen(false)} />
 
       {/* 계정 (하단 고정) */}
       <div className="shrink-0 flex items-center gap-2 px-3 py-2" style={{ borderTop: '1px solid var(--warm-border)' }}>
