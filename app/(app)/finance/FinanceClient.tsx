@@ -3359,6 +3359,9 @@ export default function FinanceClient({
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
+                  {typeof window !== 'undefined' && window.location.search.includes('debug=1') && (
+                    <p className="text-[0.625rem] tabular-nums text-[var(--warm-muted)]">debug 상태값: {addExpCategory}</p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>
