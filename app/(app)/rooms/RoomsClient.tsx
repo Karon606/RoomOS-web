@@ -643,20 +643,25 @@ export default function RoomsClient({
           {selectMode ? '선택 취소' : '선택'}
         </Btn>
 
-        {/* 공실 카드 항목 — §22 공용 DisplayFieldsMenu */}
-        <DisplayFieldsMenu
-          fields={VACANT_COL_DEFS}
-          visible={vacantColVis as Record<string, boolean>}
-          onToggle={k => setVacantColVis(v => ({ ...v, [k as VacantColKey]: !v[k as VacantColKey] }))}
-          label="공실 카드 항목"
-        />
-
-        {/* 표시 항목 — §22 공용 DisplayFieldsMenu (표 컬럼 + 카드 정보 통합) */}
+        {/* 표시 항목 — 점유·공실 카드 항목을 버튼 하나로(운영자 지적 2026-07-06, '공실 카드 항목' 별도 버튼 제거) */}
         <DisplayFieldsMenu
           fields={COL_DEFS}
           visible={colVis as Record<string, boolean>}
           onToggle={k => setColVis(v => ({ ...v, [k as ColKey]: !v[k as ColKey] }))}
-          heading="이 화면에 보일 정보 선택"
+          sections={[
+            {
+              heading: '이 화면에 보일 정보 선택',
+              fields: COL_DEFS,
+              visible: colVis as Record<string, boolean>,
+              onToggle: k => setColVis(v => ({ ...v, [k as ColKey]: !v[k as ColKey] })),
+            },
+            {
+              heading: '공실 카드 항목',
+              fields: VACANT_COL_DEFS,
+              visible: vacantColVis as Record<string, boolean>,
+              onToggle: k => setVacantColVis(v => ({ ...v, [k as VacantColKey]: !v[k as VacantColKey] })),
+            },
+          ]}
         />
         </div> {/* /ml-auto group */}
       </div>

@@ -38,10 +38,18 @@ export function useDisplayFields(storageKey: string, fields: readonly FieldDef[]
   return [visible, toggle] as const
 }
 
+export type FieldSection = {
+  heading: string
+  fields: readonly FieldDef[]
+  visible: Record<string, boolean>
+  onToggle: (key: string) => void
+}
+
 export function DisplayFieldsMenu({
   fields,
   visible,
   onToggle,
+  sections,
   className,
   label = '표시 항목',
   heading = '카드에 표시할 항목',
@@ -49,6 +57,8 @@ export function DisplayFieldsMenu({
   fields: readonly FieldDef[]
   visible: Record<string, boolean>
   onToggle: (key: string) => void
+  /** 여러 그룹을 한 메뉴에 — 공실/점유처럼 상태별 항목을 버튼 하나로(운영자 지적 2026-07-06). 지정 시 fields/visible/onToggle 대신 사용 */
+  sections?: FieldSection[]
   className?: string
   label?: string                  // 버튼 라벨(기본 '표시 항목'; 예: '공실 카드 항목')
   heading?: string                // 드롭다운 상단 안내문
@@ -82,7 +92,20 @@ export function DisplayFieldsMenu({
         {label}
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 z-50 min-w-[184px] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2">
+        <div className="absolute right-0 mt-2 z-50 min-w-[184px] max-h-[70vh] overflow-y-auto bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl shadow-lift p-2">
+          {sections ? sections.map((s, si) => (
+            <div key={s.heading} className={si > 0 ? 'mt-1.5 pt-1.5 border-t border-[var(--warm-border)]/60' : ''}>
+              <p className="px-2 pt-1 pb-1.5 text-[0.6875rem] font-medium text-[var(--warm-muted)]">{s.heading}</p>
+              {s.fields.map(f => (
+                <label key={f.key}
+                  className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-[var(--cream-soft)] transition-colors">
+                  <input type="checkbox" checked={s.visible[f.key] ?? false} onChange={() => s.onToggle(f.key)}
+                    className="w-4 h-4 accent-[var(--coral)]" />
+                  <span className="text-sm text-[var(--warm-dark)]">{f.label}</span>
+                </label>
+              ))}
+            </div>
+          )) : (<>
           <p className="px-2 pt-1 pb-1.5 text-[0.6875rem] font-medium text-[var(--warm-muted)]">
             {heading}
           </p>
@@ -100,6 +123,7 @@ export function DisplayFieldsMenu({
               <span className="text-sm text-[var(--warm-dark)]">{f.label}</span>
             </label>
           ))}
+          </>)}
         </div>
       )}
     </div>
