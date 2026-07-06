@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import {
-  savePayment, saveDepositPayment, getTargetMonthOptions, type SavePaymentResult,
+  savePayment, saveDepositPayment, getTargetMonthOptions, getTenantLastPayMethod, type SavePaymentResult,
 } from '@/app/(app)/rooms/actions'
 import { addExtraIncome } from '@/app/(app)/finance/actions'
 import { MoneyInput } from '@/components/ui/MoneyInput'
@@ -70,11 +70,16 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
   const [showSpecialModes, setShowSpecialModes] = useState(false) // 보증금/청소비 분리 모드 토글 (기본 숨김)
   const [error, setError] = useState<string>('')
 
-  // lastPayMethod localStorage 동기화
+  // 결제수단 프리필 — 이 고객의 직전 방식 우선(고객마다 계좌/카드/현금이 고정적, 운영자 요청 2026-07-06).
+  // 첫 수납(기록 없음)만 기기 최근 방식으로 폴백.
   useEffect(() => {
-    const last = typeof window !== 'undefined' ? localStorage.getItem('stayeum-last-pay-method') : null
-    if (last) setPayMethod(last)
-  }, [])
+    let active = true
+    const deviceLast = typeof window !== 'undefined' ? localStorage.getItem('stayeum-last-pay-method') : null
+    if (deviceLast) setPayMethod(deviceLast)
+    if (!room.tenantId) return
+    getTenantLastPayMethod(room.tenantId).then(m => { if (active && m) setPayMethod(m) }).catch(() => {})
+    return () => { active = false }
+  }, [room.tenantId])
 
   // 귀속월 옵션 fetch
   useEffect(() => {

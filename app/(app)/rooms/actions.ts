@@ -1729,3 +1729,17 @@ export async function getRoomExpenses(roomId: string): Promise<{
     items: rows.map(r => ({ id: r.id, date: r.date.toISOString().slice(0, 10), category: r.category, amount: r.amount, vendor: r.vendor, memo: r.memo, detail: r.detail, itemLabel: r.itemLabel })),
   }
 }
+
+
+// 고객별 최근 결제수단 — 수납 폼 프리필용(운영자 요청 2026-07-06).
+// 특정 고객은 카드/현금을 고정적으로 쓰므로 '기기에서 마지막으로 쓴 방식'(전역)이 아니라
+// 그 고객의 직전 기록을 따른다. 기록이 없으면 null(호출부가 기기 최근 → 계좌이체 순 폴백).
+export async function getTenantLastPayMethod(tenantId: string): Promise<string | null> {
+  const propertyId = await getPropertyId()
+  const rec = await prisma.paymentRecord.findFirst({
+    where: { tenantId, payMethod: { not: null }, leaseTerm: { propertyId } },
+    orderBy: [{ payDate: 'desc' }, { createdAt: 'desc' }],
+    select: { payMethod: true },
+  })
+  return rec?.payMethod ?? null
+}

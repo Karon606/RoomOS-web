@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { Btn } from '@/components/ui/Btn'
 import { StayQuoteModal } from '@/components/StayQuoteModal'
+import { getTenantLastPayMethod } from '@/app/(app)/rooms/actions'
 import { Loading } from '@/components/ui/Loading'
 import { DatePicker } from '@/components/ui/DatePicker'
 import MonthSelector from '@/components/layout/MonthSelector'
@@ -1149,10 +1150,15 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
   const [payDate, setPayDate] = useState(kstYmdStr())
   const [isDepositMode, setIsDepositMode] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  // 직전에 사용한 납부방법 — 연속 수납 입력 시 자동 prefill (전역 공유)
+  // 납부방법 prefill — 이 고객의 직전 방식 우선, 기록 없으면 기기 최근(운영자 요청 2026-07-06)
   const [lastPayMethod, setLastPayMethod] = useState(() =>
     typeof window !== 'undefined' ? (localStorage.getItem('stayeum-last-pay-method') ?? '') : ''
   )
+  useEffect(() => {
+    let active = true
+    getTenantLastPayMethod(tenantId).then(m => { if (active && m) setLastPayMethod(m) }).catch(() => {})
+    return () => { active = false }
+  }, [tenantId])
   const [editAmount, setEditAmount] = useState(0)
   const [editDate, setEditDate] = useState('')
   const [editPayMethod, setEditPayMethod] = useState('')
