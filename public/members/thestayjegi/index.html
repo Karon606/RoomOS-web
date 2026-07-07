@@ -374,10 +374,27 @@ footer {
 .floater.kakao { background: #FEE500; color: #3C1E1E; }
 .floater.kakao:hover { color: #3C1E1E; }
 
+/* ---------- Transit (bus) ---------- */
+.transit { margin-top: 72px; border-top: 1px solid var(--line); padding-top: 48px; }
+.transit-title { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+.transit-sub { margin-top: 8px; font-size: 14px; color: var(--ink-soft); text-wrap: pretty; }
+.transit-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 28px; }
+.transit-card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius-md); padding: 28px 26px 24px; }
+.transit-stop { font-size: 15.5px; font-weight: 700; }
+.transit-stop small { display: block; font-weight: 500; font-size: 12.5px; color: var(--ink-soft); margin-top: 4px; }
+.bus-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.bus-badge { display: inline-flex; align-items: center; height: 30px; padding: 0 13px; border-radius: 15px; font-size: 13.5px; font-weight: 700; color: #fff; letter-spacing: 0.02em; }
+.bus-badge.trunk { background: #0068B7; }
+.bus-badge.branch { background: #53B332; }
+.transit-note { margin-top: 16px; font-size: 13px; color: var(--ink-soft); }
+.bus-legend { display: flex; gap: 16px; margin-top: 18px; font-size: 12.5px; color: var(--ink-soft); }
+.bus-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 960px) {
   .amenities-grid { grid-template-columns: repeat(2, 1fr); }
   .loc-grid { grid-template-columns: 1fr; gap: 48px; }
+  .transit-groups { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
   section { padding: 92px 0; }
@@ -639,6 +656,9 @@ footer {
           <span class="loc-chip" style="background: transparent; border: 1px solid rgba(24,42,33,0.3); color: var(--forest-deep);">
             <span data-en="Line 1">1호선</span>
           </span>
+          <span class="loc-chip" style="background: transparent; border: 1px solid rgba(24,42,33,0.3); color: var(--forest-deep);">
+            <span data-en="Sinseol-dong Stn. (Line 2 &middot; Ui) &middot; 10 min">신설동역(2호선&middot;우이신설) &middot; 도보 10분</span>
+          </span>
         </div>
       </div>
       <div class="loc-steps reveal d2">
@@ -654,6 +674,32 @@ footer {
           <div class="loc-num">03</div>
           <p data-en="Arrive at floors 4–5 of the <strong>'Imo-ne Jjukkumi'</strong> building."><strong>'임오네쭈꾸미'</strong> 건물 4, 5층 도착</p>
         </div>
+      </div>
+    </div>
+
+    <!-- 버스 — 도보 3분 내 정류장 (출처: 공식 블로그 대중교통 분석) -->
+    <div class="transit reveal">
+      <div class="transit-title" data-en="10+ bus stops within a 3-minute walk">도보 3분 안에 버스정류장 10여 곳</div>
+      <p class="transit-sub" data-en="Seoul Station, Jongno, Yeouido, Gangnam, Korea Univ. &mdash; one bus, no transfers.">서울역&middot;종로&middot;여의도&middot;강남&middot;고려대까지, 환승 없이 버스 한 번에 닿습니다.</p>
+      <div class="transit-groups">
+        <div class="transit-card">
+          <div class="transit-stop" data-en="Wangsan-ro BRT &middot; Yongdu-dong Sageori">왕산로 중앙차로 &middot; 용두동사거리(중)<small data-en="Trunk lines crossing Seoul east&ndash;west">서울 동서를 관통하는 간선 &middot; 도보 3분</small></div>
+          <div class="bus-badges">
+            <span class="bus-badge trunk">105</span><span class="bus-badge trunk">201</span><span class="bus-badge trunk">260</span><span class="bus-badge trunk">261</span><span class="bus-badge trunk">262</span><span class="bus-badge trunk">270</span><span class="bus-badge trunk">271</span><span class="bus-badge trunk">272</span><span class="bus-badge trunk">420</span><span class="bus-badge trunk">421</span><span class="bus-badge trunk">720</span>
+          </div>
+          <p class="transit-note" data-en="To Seoul Stn. &middot; Jongno &middot; Yeouido &middot; Gangnam &middot; Sangam">서울역 &middot; 종로 &middot; 여의도 &middot; 강남 &middot; 상암 방면</p>
+        </div>
+        <div class="transit-card">
+          <div class="transit-stop" data-en="Cheonggyecheon-ro &middot; Yongdu Market area">청계천로 &middot; 용두시장앞 &middot; 서울시동부병원<small data-en="Branch lines to nearby districts &amp; campuses">대학가&middot;인근 지역 연결 &middot; 도보 3분</small></div>
+          <div class="bus-badges">
+            <span class="bus-badge trunk">241</span><span class="bus-badge branch">1017</span><span class="bus-badge branch">1222</span><span class="bus-badge branch">1227</span><span class="bus-badge branch">2013</span><span class="bus-badge branch">2222</span>
+          </div>
+          <p class="transit-note" data-en="To Korea Univ. &middot; Univ. of Seoul &middot; Gangbyeon Stn. &middot; Nonhyeon">고려대 &middot; 시립대 &middot; 강변역 &middot; 논현역 방면</p>
+        </div>
+      </div>
+      <div class="bus-legend">
+        <span><i style="background:#0068B7"></i><span data-en="Trunk (blue)">간선버스</span></span>
+        <span><i style="background:#53B332"></i><span data-en="Branch (green)">지선버스</span></span>
       </div>
     </div>
   </div>
@@ -672,6 +718,10 @@ footer {
       <a class="btn btn-outline" href="https://open.kakao.com/o/s9QRRKqi" target="_blank" rel="noopener">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
         <span data-en="KakaoTalk Chat">카톡 상담</span>
+      </a>
+      <a class="btn btn-outline" href="https://blog.naver.com/thestayjegi" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5 A1.5 1.5 0 0 1 5.5 4 H18.5 A1.5 1.5 0 0 1 20 5.5 V15.5 A1.5 1.5 0 0 1 18.5 17 H13 L9 21 V17 H5.5 A1.5 1.5 0 0 1 4 15.5 Z"></path><line x1="8" y1="9" x2="16" y2="9"></line><line x1="8" y1="12.5" x2="13" y2="12.5"></line></svg>
+        <span data-en="Naver Blog">네이버 블로그</span>
       </a>
     </div>
     <p class="contact-meta reveal d3">
@@ -704,7 +754,7 @@ footer {
   <div class="footer-line"></div>
   <div class="footer-legal">
     <span data-en="9, Wangsan-ro 16-gil, Dongdaemun-gu, Seoul &middot; 4F–5F">서울 동대문구 왕산로16길 9, 4~5층</span><br>
-    <span>010-9218-7935 &middot; KakaoTalk TheStayJegi</span>
+    <span>010-9218-7935 &middot; KakaoTalk TheStayJegi &middot; <a href="https://blog.naver.com/thestayjegi" target="_blank" rel="noopener" style="color: inherit; text-decoration: underline; text-underline-offset: 3px;">blog.naver.com/thestayjegi</a></span>
   </div>
 </footer>
 
