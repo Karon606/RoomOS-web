@@ -62,8 +62,8 @@ a:hover { color: var(--forest); }
 .nav-logo { display: flex; align-items: center; gap: 10px; flex-shrink: 0; color: var(--cream); transition: color 0.4s ease; }
 .nav-logo svg { width: 19px; height: 24.5px; }
 .nav-logo span {
-  font-family: var(--serif-en); font-size: 17px; font-weight: 600;
-  letter-spacing: 0.22em; color: var(--cream); white-space: nowrap;
+  font-family: 'Raleway', sans-serif; font-size: 13px; font-weight: 700;
+  letter-spacing: 0.18em; color: var(--cream); white-space: nowrap;
   transition: color 0.4s ease;
 }
 .nav-links { display: flex; gap: 28px; margin-left: auto; }
@@ -399,8 +399,13 @@ footer {
 @media (max-width: 720px) {
   section { padding: 92px 0; }
   .nav-links { display: none; }
-  .nav-inner { gap: 12px; }
-  .nav-cta { margin-left: auto; }
+  .nav-inner { gap: 10px; padding: 0 14px; }
+  .nav-cta { margin-left: auto; height: 32px; padding: 0 14px; font-size: 12.5px; flex-shrink: 0; }
+  .nav-logo { min-width: 0; }
+  .nav-logo svg { width: 15px; height: 19.4px; flex-shrink: 0; }
+  .nav-logo span { font-size: 10.5px; letter-spacing: 0.14em; }
+  .lang-toggle { height: 32px; }
+  .lang-toggle button { padding: 0 10px; font-size: 11px; }
   .amenities-grid { grid-template-columns: 1fr; }
   .gallery-grid { grid-template-columns: 1fr; }
   .room-card { flex-basis: 280px; }
@@ -619,8 +624,8 @@ footer {
 
     <div class="gallery-grid">
       <div class="gallery-item reveal" data-full="/members/thestayjegi/images/IMG_8941.JPG">
-        <img src="/members/thestayjegi/images/IMG_8941.JPG" alt="401호 객실 — 자연광이 드는 공간" loading="lazy">
-        <span class="gallery-tag" data-en="Room 401">401호</span>
+        <img src="/members/thestayjegi/images/IMG_8941.JPG" alt="401호 객실 — 원룸 외창/프리미엄 II" loading="lazy">
+        <span class="gallery-tag" data-en="Room 401 &middot; Premium II">401호 &middot; 외창 프리미엄 II</span>
       </div>
       <div class="gallery-item reveal d1" data-full="/members/thestayjegi/images/room-418.jpg">
         <img src="/members/thestayjegi/images/room-418.jpg" alt="418호 객실 — 원룸 외창/프리미엄 I" loading="lazy">
@@ -631,8 +636,8 @@ footer {
         <span class="gallery-tag" data-en="Room 408 &middot; Standard">408호 &middot; 외창 스탠다드</span>
       </div>
       <div class="gallery-item reveal d1" data-full="/members/thestayjegi/images/IMG_8936.JPG">
-        <img src="/members/thestayjegi/images/IMG_8936.JPG" alt="422호 객실 — 수납 공간과 개별 욕실" loading="lazy">
-        <span class="gallery-tag" data-en="Room 422">422호</span>
+        <img src="/members/thestayjegi/images/IMG_8936.JPG" alt="422호 객실 — 원룸 내창/스탠다드" loading="lazy">
+        <span class="gallery-tag" data-en="Room 422 &middot; Inner Standard">422호 &middot; 내창 스탠다드</span>
       </div>
     </div>
   </div>
