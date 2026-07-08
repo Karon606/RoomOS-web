@@ -796,10 +796,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                     onKeyDown={e => { if (e.key === 'Enter' && adjQty?.id === it.id) runAdjustQty(it, adjQty.v) }}
                     className="w-20 h-9 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 text-sm tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                   <span className="text-xs text-[var(--warm-mid)]">{it.qtyUnit ?? '개'}</span>
-                  {adjQty?.id === it.id && adjQty.v && Number(adjQty.v) !== (it.qtyValue ?? 0) && (
-                    <button type="button" disabled={pending} onClick={() => runAdjustQty(it, adjQty.v)}
-                      className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">적용</button>
-                  )}
+                  <button type="button"
+                    disabled={pending || !(adjQty?.id === it.id && adjQty.v.trim() !== '' && Number(adjQty.v) !== (it.qtyValue ?? 0))}
+                    onClick={() => adjQty && runAdjustQty(it, adjQty.v)}
+                    className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-35">저장</button>
                   <span className="text-[0.625rem] text-[var(--warm-muted)]">줄이면 여분으로, 늘리면 여분에서 가져와요</span>
                 </div>
               )}
@@ -813,6 +813,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                     ? <button type="button" onClick={() => saveAssignedAt(it, '')} disabled={pending}
                         className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">비우기</button>
                     : <span className="text-[0.6875rem] text-[var(--warm-muted)]">미상</span>}
+                  <span className="text-[0.625rem] text-[var(--warm-muted)]">날짜를 고르면 바로 저장돼요</span>
                 </div>
               )}
               {(() => {
