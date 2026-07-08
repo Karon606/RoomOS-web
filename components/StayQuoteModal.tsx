@@ -100,6 +100,12 @@ export function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () =
               <span className="text-xs text-[var(--warm-mid)]">단기 정책 요금</span>
               <span className="text-lg font-bold tnum text-[var(--coral)]">{fmtWon(short.total)}</span>
             </div>
+            {short.deposit > 0 && (
+              <p className="text-[0.6875rem] text-[var(--warm-mid)] flex items-baseline justify-between">
+                <span>보증금 (요금과 별도 · 퇴실 시 환불)</span>
+                <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(short.deposit)}</span>
+              </p>
+            )}
             <p className="text-[0.625rem] text-[var(--warm-muted)]">
               {data.shortStay.unitDays}일 단위 계약(일할 아님) · {data.shortStay.thresholdDays}일 이하 거주에 적용. 수치는 설정에서 영업장별로 바꿀 수 있습니다.
             </p>

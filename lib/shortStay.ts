@@ -14,11 +14,12 @@ export type ShortStayPolicy = {
   multiplier: number      // 청구 배율 (1.5 = 계약일수의 1.5배 일수만큼 청구)
   cleaningFee: number     // 단기 청소비 (원)
   roundTo: number         // 기본요금 절삭 단위 (1000 = 천원 단위 반올림, 1 = 절삭 없음)
+  deposit: number         // 단기 보증금 (원) — 요금 아님, 퇴실 시 환불 (운영자 요청 2026-07-09)
 }
 
 // 신규 영업장 기본값 — 정책 미사용. 제기역점 값은 시드로 저장돼 있음.
 export const SHORT_STAY_DEFAULTS: ShortStayPolicy = {
-  enabled: false, unitDays: 7, minUnits: 1, thresholdDays: 30, multiplier: 1.5, cleaningFee: 20000, roundTo: 1000,
+  enabled: false, unitDays: 7, minUnits: 1, thresholdDays: 30, multiplier: 1.5, cleaningFee: 20000, roundTo: 1000, deposit: 0,
 }
 
 // DB Json 값 → 정책 (필드 누락·이상값은 기본값으로 방어)
@@ -38,6 +39,7 @@ export function parseShortStayPolicy(raw: unknown): ShortStayPolicy {
     multiplier: num(o.multiplier, d.multiplier, 1, 5),
     cleaningFee: Math.round(num(o.cleaningFee, d.cleaningFee, 0, 10_000_000)),
     roundTo: Math.round(num(o.roundTo, d.roundTo, 1, 100_000)),
+    deposit: Math.round(num(o.deposit, d.deposit, 0, 100_000_000)),
   }
 }
 
@@ -48,7 +50,8 @@ export type ShortStayQuote = {
   billedDays: number     // 청구 일수 = floor(계약일수 × 배율), 1개월(30일) 상한
   baseAmount: number     // 월세 × 청구일수 / 30 을 roundTo 단위로 반올림 (운영자 기준: 천원 단위)
   cleaningFee: number
-  total: number          // baseAmount + cleaningFee
+  total: number          // baseAmount + cleaningFee (보증금 미포함 — 환불성이라 요금이 아님)
+  deposit: number        // 별도 보증금 (퇴실 시 환불)
   cappedAtMonth: boolean // 배율 적용 결과가 1개월을 넘어 상한에 걸림 (3주부터)
   roundedUp: boolean     // 요청 기간이 계약 단위·최소 계약으로 올림됨 (예: 10일 요청 → 2주 계약)
 }
@@ -88,6 +91,7 @@ export function calcShortStay(policy: ShortStayPolicy, monthlyRent: number, stay
     stayDays, units, contractDays, billedDays, baseAmount,
     cleaningFee: policy.cleaningFee,
     total: baseAmount + policy.cleaningFee,
+    deposit: policy.deposit,
     cappedAtMonth: rawBilled > PRORATE_BASE_DAYS,
     roundedUp: stayDays < contractDays,
   }

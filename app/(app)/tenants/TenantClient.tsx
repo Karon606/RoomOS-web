@@ -2677,9 +2677,10 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
                     <p className="text-[0.6875rem] text-[var(--warm-dark)]">
                       {days}일 → {short.units}주 계약{short.cappedAtMonth ? ' (1개월 상한 적용)' : ''} ·
                       사용료 {fmtWon(short.baseAmount)} + 청소비 {fmtWon(short.cleaningFee)} = <span className="font-bold">{fmtWon(short.total)}</span>
+                      {short.deposit > 0 && <span className="text-[var(--warm-muted)]"> · 보증금 {fmtWon(short.deposit)} 별도(퇴실 시 환불)</span>}
                     </p>
                     <button type="button"
-                      onClick={() => { setRentAmount(short.baseAmount); setCleaningFeeVal(short.cleaningFee) }}
+                      onClick={() => { setRentAmount(short.baseAmount); setCleaningFeeVal(short.cleaningFee); if (short.deposit > 0) setDepositAmountVal(short.deposit) }}
                       className="min-h-[32px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity">
                       이 금액 채우기
                     </button>

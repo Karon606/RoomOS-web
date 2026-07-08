@@ -141,7 +141,7 @@ const RENT = 300000
   // 1주 = 계약 7일 × 1.5 = 10일치(버림) + 청소비 → "최소 10일 금액 + 2만"(운영자 기준 문장 그대로)
   eq('단기: 1주', calcShortStay(P, RENT, 7), {
     stayDays: 7, units: 1, contractDays: 7, billedDays: 10, baseAmount: 100000,
-    cleaningFee: 20000, total: 120000, cappedAtMonth: false, roundedUp: false,
+    cleaningFee: 20000, total: 120000, deposit: 0, cappedAtMonth: false, roundedUp: false,   // deposit: 단기 보증금(환불성) 추가 2026-07-09
   })
   // 2주 = 21일치 ("3주 비용")
   eq('단기: 2주 = 3주분', [calcShortStay(P, RENT, 14)?.billedDays, calcShortStay(P, RENT, 14)?.total], [21, 230000])
