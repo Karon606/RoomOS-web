@@ -485,7 +485,8 @@ function buildSplitOps(exps: ExpRow[], propertyId: string, data: MoveData, qty: 
   const totalQty = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
   const movedQty = (qty == null || qty >= totalQty) ? totalQty : Math.max(1, qty)
   let need = movedQty
-  const sorted = [...exps].sort((a, b) => (b.qtyValue ?? 1) - (a.qtyValue ?? 1))
+  // 선입선출 — 오래된 구매분부터 차감(운영자 확인 2026-07-09). 같은 날짜 안에서는 큰 행부터(분할 최소화).
+  const sorted = [...exps].sort((a, b) => a.date.getTime() - b.date.getTime() || (b.qtyValue ?? 1) - (a.qtyValue ?? 1))
   const ops: Prisma.PrismaPromise<unknown>[] = []
   const touched: string[] = []
   for (const e of sorted) {

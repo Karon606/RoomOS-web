@@ -50,7 +50,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
 }) {
   const router = useRouter()
   // 위치 옮기기 — 카드·상세 공용 단일 흐름(어디로+얼마나+배정일+미리보기), 운영자 요청 2026-07-08
-  const [move, setMove] = useState<{ it: AssetItem; to: string; qty: string; date: string } | null>(null)
+  const [move, setMove] = useState<{ it: AssetItem; to: string; qty: string; date: string; src: string } | null>(null)   // src: '' = 오래된 구매부터, 'YYYY-MM-DD' = 그 구매분에서만
   // 부분 수령(분할 배송) — 수량>1 이면 몇 개 왔는지 물어봄(기본 전체). 잔여는 수령 대기 유지.
   const [rcvAsk, setRcvAsk] = useState<string | null>(null)   // 대상 AssetItem id
   const [rcvQty, setRcvQty] = useState('1')
@@ -253,11 +253,23 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [move, moveSrc])
 
+  // 구매분(날짜)별 행 그룹 — 옮기기에서 특정 구매분만 차감할 때 사용
+  const buysOf = (it: AssetItem) => {
+    const m = new Map<string, { qty: number; ids: string[] }>()
+    for (const b of it.breakdown) {
+      const g = m.get(b.date) ?? { qty: 0, ids: [] }
+      g.qty += b.qty ?? 1; g.ids.push(b.id); m.set(b.date, g)
+    }
+    return m
+  }
+
   // 옮기기 실행 — 미배정 복귀도 부분 수량 지원(서버 통합 경로). 빈 수량 = 전량.
   const runMove = () => {
     if (!move) return
     const it = moveSrc ?? move.it
-    const max = it.qtyValue ?? 1
+    const buy = move.src ? buysOf(it).get(move.src) : null
+    const ids = buy ? buy.ids : it.ids
+    const max = buy ? buy.qty : (it.qtyValue ?? 1)
     let q = Number(move.qty)
     if (move.qty === '' || !(q > 0)) q = max
     q = Math.min(q, max)
@@ -266,7 +278,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     const destLabel = toNone ? '미배정(여분)' : placeName(move.to)
     const fromLabel = curPlace(it)
     startTransition(async () => {
-      const res = await assignAggregateToTarget(it.ids, target, q >= max ? null : q, toNone ? null : (move.date || null))
+      const res = await assignAggregateToTarget(ids, target, q >= max ? null : q, toNone ? null : (move.date || null))
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', `${fromLabel} → ${destLabel} · ${fmtQty(q)}${it.qtyUnit ?? '개'} 옮겼습니다`)
       if (q >= max) setMove(null)                                // 전량 이동 — 출발지 비움
@@ -400,7 +412,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   </button>
                 )}
                 <button type="button" disabled={pending}
-                  onClick={() => setMove({ it, to: '', qty: '', date: kstYmdStr() })}
+                  onClick={() => setMove({ it, to: '', qty: '', date: kstYmdStr(), src: '' })}
                   className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
                   {placed ? '옮기기' : '배정하기'}
                 </button>
@@ -734,7 +746,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 <span className="text-xs text-[var(--warm-muted)]">총 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'} · {won(it.amount)} · 구매 {it.count}건</span>
                 {/* 잘못 배정 즉시 수정 — 옮기기 모달 직행(운영자 요청 2026-07-08 단순화) */}
                 <button type="button"
-                  onClick={() => setMove({ it, to: '', qty: '', date: kstYmdStr() })}
+                  onClick={() => setMove({ it, to: '', qty: '', date: kstYmdStr(), src: '' })}
                   className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors">
                   {it.roomNo || it.locationName ? '옮기기' : '배정하기'}
                 </button>
@@ -851,7 +863,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       {/* 위치 옮기기 — 단일 흐름: 어디로 + 얼마나 + 배정일 + 미리보기 (§ 재고 옮기기와 동일 문법) */}
       {move && (() => {
         const it = moveSrc ?? move.it
-        const max = it.qtyValue ?? 1
+        const buys = buysOf(it)
+        const buyDates = [...buys.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+        const buy = move.src ? buys.get(move.src) : undefined
+        const max = buy ? buy.qty : (it.qtyValue ?? 1)
         const unit = it.qtyUnit ?? '개'
         const qNum = Number(move.qty)
         const q = move.qty === '' ? max : qNum > 0 ? Math.min(qNum, max) : 0
@@ -891,6 +906,19 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   )}
                 </select>
               </label>
+              {buyDates.length > 1 && (
+                <label className="block">
+                  <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">어느 구매분에서 뺄까요?</span>
+                  <select value={move.src && buys.has(move.src) ? move.src : ''} disabled={pending}
+                    onChange={e => setMove(m => m ? { ...m, src: e.target.value, qty: '' } : m)}
+                    className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                    <option value="">오래된 구매분부터 자동</option>
+                    {buyDates.map(([d, g]) => (
+                      <option key={d} value={d}>{d.slice(2)} 구매분 · {fmtQty(g.qty)}{unit}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="block">
                 <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">얼마나?</span>
                 <div className="flex items-center gap-1.5">
@@ -917,6 +945,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 {same
                   ? <p className="text-[var(--warm-muted)]">지금 있는 곳과 같은 곳입니다. 다른 곳을 골라주세요.</p>
                   : <p className="text-[var(--warm-dark)]">{from} → <span className="font-semibold">{dest}</span> · {q > 0 ? `${fmtQty(q)}${unit}` : '수량을 입력하세요'}{q > 0 && q < max ? ` (나머지 ${fmtQty(Math.round((max - q) * 1000) / 1000)}${unit}는 ${from}에 남음)` : ''}</p>}
+                {q > 0 && !same && (
+                  <p className="mt-0.5 text-[var(--warm-muted)]">{buy ? `${move.src.slice(2)} 구매분에서 차감` : buyDates.length > 1 ? '오래된 구매분부터 차감' : ''}</p>
+                )}
               </div>
             </div>
           </Modal>
