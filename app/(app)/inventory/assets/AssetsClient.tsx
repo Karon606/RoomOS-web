@@ -237,14 +237,29 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     const i = d.lastIndexOf(' x ')
     return [i > 0 ? d.slice(0, i) : d, x.qtyUnit ?? '', x.category ?? '', x.isService ? 'S' : ''].join('|')
   }
+  const samePlaceAs = (a: AssetItem) => (x: AssetItem) =>
+    (x.roomId ?? null) === (a.roomId ?? null) && (x.locationId ?? null) === (a.locationId ?? null) && !!x.isCommon === !!a.isCommon
 
-  // 옮기기 실행 — 미배정 복귀도 부분 수량 지원(서버 통합 경로)
+  // 옮기기 출발지 라이브 추적 — refresh 후에도 남은 수량으로 계속(연속 배정, 운영자 요청 2026-07-09)
+  const moveSrc = useMemo(() => {
+    if (!move) return null
+    return allItems.find(x => x.id === move.it.id)
+      ?? allItems.find(x => itemIdentity(x) === itemIdentity(move.it) && samePlaceAs(move.it)(x))
+      ?? null
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [move, allItems])
+  useEffect(() => {
+    if (move && !moveSrc) setMove(null)   // 출발지가 비면(전량 이동 반영) 옮기기 모달만 닫음
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [move, moveSrc])
+
+  // 옮기기 실행 — 미배정 복귀도 부분 수량 지원(서버 통합 경로). 빈 수량 = 전량.
   const runMove = () => {
     if (!move) return
-    const it = move.it
+    const it = moveSrc ?? move.it
     const max = it.qtyValue ?? 1
     let q = Number(move.qty)
-    if (!(q > 0)) q = max
+    if (move.qty === '' || !(q > 0)) q = max
     q = Math.min(q, max)
     const toNone = move.to === ''
     const target = (toNone ? { kind: 'none' } : { kind: move.to.startsWith('room:') ? 'room' : 'location', id: move.to.split(':')[1] }) as Parameters<typeof assignAggregateToTarget>[1]
@@ -253,8 +268,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     startTransition(async () => {
       const res = await assignAggregateToTarget(it.ids, target, q >= max ? null : q, toNone ? null : (move.date || null))
       if (!res.ok) { pushToast('error', res.error); return }
-      setMove(null); setDetailItem(null)
       pushToast('success', `${fromLabel} → ${destLabel} · ${fmtQty(q)}${it.qtyUnit ?? '개'} 옮겼습니다`)
+      if (q >= max) setMove(null)                                // 전량 이동 — 출발지 비움
+      else setMove(m => m ? { ...m, qty: '' } : m)               // 남은 수량으로 계속
       router.refresh()
     })
   }
@@ -384,7 +400,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   </button>
                 )}
                 <button type="button" disabled={pending}
-                  onClick={() => setMove({ it, to: '', qty: fmtQty(it.qtyValue ?? 1), date: kstYmdStr() })}
+                  onClick={() => setMove({ it, to: '', qty: '', date: kstYmdStr() })}
                   className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
                   {placed ? '옮기기' : '배정하기'}
                 </button>
@@ -697,7 +713,12 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
 
       {/* 비품 상세 풀화면 — §21.5 본문 탭 진입. 구매 내역(영수증별)·현재 상태·합치기 */}
       {detailItem && (() => {
-        const it = detailItem
+        // 라이브 파생 — 옮긴 뒤에도 상세를 유지(연속 배정). 그 위치가 비면 같은 품목의 다른 위치 카드로 따라감.
+        const candidates = allItems.filter(x => itemIdentity(x) === itemIdentity(detailItem))
+        const it = allItems.find(x => x.id === detailItem.id)
+          ?? candidates.find(samePlaceAs(detailItem))
+          ?? candidates.sort((a, b) => (b.qtyValue ?? 0) - (a.qtyValue ?? 0))[0]
+        if (!it) return null
         const loc = it.roomNo ? fmtRoomNo(it.roomNo) : it.locationName ? it.locationName : it.isCommon ? '공용 자재' : '미배정(여분)'
         const sibs = allItems.filter(s => s.id !== it.id && s.category === it.category)
         return (
@@ -713,7 +734,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 <span className="text-xs text-[var(--warm-muted)]">총 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'} · {won(it.amount)} · 구매 {it.count}건</span>
                 {/* 잘못 배정 즉시 수정 — 옮기기 모달 직행(운영자 요청 2026-07-08 단순화) */}
                 <button type="button"
-                  onClick={() => setMove({ it, to: '', qty: fmtQty(it.qtyValue ?? 1), date: kstYmdStr() })}
+                  onClick={() => setMove({ it, to: '', qty: '', date: kstYmdStr() })}
                   className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors">
                   {it.roomNo || it.locationName ? '옮기기' : '배정하기'}
                 </button>
@@ -829,11 +850,11 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
 
       {/* 위치 옮기기 — 단일 흐름: 어디로 + 얼마나 + 배정일 + 미리보기 (§ 재고 옮기기와 동일 문법) */}
       {move && (() => {
-        const it = move.it
+        const it = moveSrc ?? move.it
         const max = it.qtyValue ?? 1
         const unit = it.qtyUnit ?? '개'
         const qNum = Number(move.qty)
-        const q = qNum > 0 ? Math.min(qNum, max) : 0
+        const q = move.qty === '' ? max : qNum > 0 ? Math.min(qNum, max) : 0
         const over = qNum > max
         const from = curPlace(it)
         const toNone = move.to === ''
@@ -873,7 +894,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
               <label className="block">
                 <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">얼마나?</span>
                 <div className="flex items-center gap-1.5">
-                  <input value={move.qty} disabled={pending} inputMode="decimal"
+                  <input value={move.qty} disabled={pending} inputMode="decimal" placeholder={`전량(${fmtQty(max)})`}
                     onChange={e => setMove(m => m ? { ...m, qty: e.target.value } : m)}
                     className="w-24 h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                   <span className="text-sm text-[var(--warm-mid)]">{unit}</span>
