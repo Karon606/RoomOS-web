@@ -251,22 +251,23 @@ function findSimilarItemName(input: string, candidates: string[]): string | null
   return best?.name ?? null
 }
 
-function ItemSelector({ category, value, onChange, allowMulti = true, rooms = [], detailSuggestions = [] }: {
+function ItemSelector({ category, value, onChange, allowMulti = true, rooms = [], detailSuggestions = [], isService = false }: {
   category: string
   value: ItemPickState[]
   onChange: (data: ItemPickState[]) => void
   allowMulti?: boolean
   rooms?: { id: string; roomNo: string }[]   // 방별 분배용 (선택). 없으면 방 분배 UI 미표시.
   detailSuggestions?: string[]               // 과거 품목명 자동완성(구매처와 동일 방식)
+  isService?: boolean                        // 서비스·무형 — 추천이 서비스 이력으로 분리(신고 99c30054)
 }) {
-  // 품목 빠른 선택 — 기본 프리셋을 즉시 보여주고, 이력 기반(최근5+빈도순, 항상 10개)으로 교체(운영자 지시 2026-07-06).
-  const [presets, setPresets] = useState<string[]>(ITEM_PRESETS[category] ?? [])
+  // 품목 빠른 선택 — 유형(물품/서비스)→카테고리 계층 추천, 부족분은 상위 단계로 보충해 항상 10개(신고 6b79c725).
+  const [presets, setPresets] = useState<string[]>(isService ? [] : (ITEM_PRESETS[category] ?? []))
   useEffect(() => {
     let alive = true
-    setPresets(ITEM_PRESETS[category] ?? [])
-    getItemQuickPicks(category).then(p => { if (alive && p.length) setPresets(p) }).catch(() => {})
+    setPresets(isService ? [] : (ITEM_PRESETS[category] ?? []))
+    getItemQuickPicks(category, { service: isService }).then(p => { if (alive && p.length) setPresets(p) }).catch(() => {})
     return () => { alive = false }
-  }, [category])
+  }, [category, isService])
   const items = value
   const [activeLabel, setActiveLabel] = useState<string | null>(null)
   const [specValue, setSpecValue]     = useState('')
@@ -1278,9 +1279,9 @@ export default function FinanceClient({
   // 다중선택 묶기 — 카드 꾹 누르면 선택 모드 진입, 탭으로 추가 선택, 하단 바에서 '한 주문으로 묶기'
   const [mergeMode, setMergeMode] = useState(false)
   const [mergeSel, setMergeSel] = useState<Set<string>>(new Set())
-  const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lpFired = useRef(false)
-  const cancelLongPress = () => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null } }
+  // 정본 useLongPress 로 통일(신고 2fdbffcb) — 수제 구현은 onPointerMove 에서 즉시 취소라
+  // 터치의 미세 떨림에도 발화가 안 됐다(10px 슬롭 없음). 훅이 발화 후 click 도 캡처에서 삼킨다.
+  const pressExp = useLongPress()
   // 그룹(주문/방 묶음)이면 멤버 id 전부, 아니면 단일 id
   const expIdsOf = (exp: Expense, groupRows?: Expense[]) => (groupRows && groupRows.length ? groupRows.filter(r => !r.isShipping).map(r => r.id) : [exp.id])
   const isExpSelected = (exp: Expense, groupRows?: Expense[]) => { const ids = expIdsOf(exp, groupRows); return ids.length > 0 && ids.every(id => mergeSel.has(id)) }
@@ -1289,12 +1290,6 @@ export default function FinanceClient({
       const n = new Set(prev); const ids = expIdsOf(exp, groupRows); const all = ids.every(id => n.has(id))
       ids.forEach(id => all ? n.delete(id) : n.add(id)); return n
     })
-  }
-  const startLongPress = (exp: Expense, groupRows?: Expense[]) => {
-    if (mergeMode) return
-    lpFired.current = false
-    cancelLongPress()
-    lpTimer.current = setTimeout(() => { lpFired.current = true; setMergeMode(true); toggleExpSel(exp, groupRows) }, 500)   // §22 공통 제스처 500ms 통일
   }
   const exitMergeMode = () => { setMergeMode(false); setMergeSel(new Set()) }
   const handleMergeSelected = () => {
@@ -2379,14 +2374,10 @@ export default function FinanceClient({
                           <Fragment key={e.id}>{dateHead}
                           <div key={e.id}
                             onClick={() => {
-                              if (lpFired.current) { lpFired.current = false; return }
                               if (mergeMode) { toggleExpSel(e, grp); return }
                               if (grp) { setGroupDetail(grp) } else { setDetailExp(e); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }
                             }}
-                            onPointerDown={() => startLongPress(e, grp)}
-                            onPointerMove={cancelLongPress}
-                            onPointerUp={cancelLongPress}
-                            onPointerLeave={cancelLongPress}
+                            {...pressExp(mergeMode ? undefined : () => { setMergeMode(true); toggleExpSel(e, grp) })}
                             className={`bg-[var(--cream)] border rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity select-none ${sel ? 'border-[var(--coral)] ring-2 ring-[var(--coral)]/40 bg-[var(--coral-pale)]' : isUnsettled ? 'border-[var(--danger-ring)]' : 'border-[var(--warm-border)]'}`}>
                             <div className="flex items-start justify-between gap-2">
                               {mergeMode && (
@@ -2499,14 +2490,10 @@ export default function FinanceClient({
                               <Fragment key={e.id}>{dayHead}
                               <tr
                                 onClick={() => {
-                                  if (lpFired.current) { lpFired.current = false; return }
                                   if (mergeMode) { toggleExpSel(e, grp); return }
                                   if (grp) { setGroupDetail(grp) } else { setDetailExp(e); setDetailExpEdit(false); setAttachShipSiblings([]); setError('') }
                                 }}
-                                onPointerDown={() => startLongPress(e, grp)}
-                                onPointerMove={cancelLongPress}
-                                onPointerUp={cancelLongPress}
-                                onPointerLeave={cancelLongPress}
+                                {...pressExp(mergeMode ? undefined : () => { setMergeMode(true); toggleExpSel(e, grp) })}
                                 className={`border-b border-[var(--warm-border)]/50 transition-colors cursor-pointer select-none ${selRow ? 'bg-[var(--coral-pale)] ring-1 ring-inset ring-[var(--coral)]/40' : 'hover:bg-[var(--canvas)]/40'}`}>
                                 <td className="px-4 py-3 text-xs text-[var(--warm-mid)] overflow-hidden"><span className="truncate block">{mergeMode ? (selRow ? '☑ ' : '☐ ') : ''}{fmtDate(e.date)}</span></td>
                                 <td className="px-4 py-3 overflow-hidden">
@@ -3077,6 +3064,7 @@ export default function FinanceClient({
                         onChange={setEditItems}
                         rooms={editIsDurable ? [] : rooms}
                         detailSuggestions={detailSuggestions}
+                        isService={!!detailExp?.excludeFromInventory}
                       />
                       {editIsDurable && (
                         <p className="text-[0.625rem] text-[var(--warm-muted)]">비품·자재는 <strong className="text-[var(--warm-mid)]">재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
@@ -3378,7 +3366,7 @@ export default function FinanceClient({
                 )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">{addIsService ? '세부 항목' : '품목 선택'}{addIsService && DETAIL_OPTIONAL_CATEGORIES.includes(addExpCategory) ? '' : ' *'} <span className="text-[var(--warm-muted)] font-normal">{addIsService ? '(시공·작업별로 금액을 쪼개세요)' : '(여러 품목 추가 가능)'}</span></label>
-                  <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={addIsDurable ? [] : rooms} detailSuggestions={detailSuggestions} />
+                  <ItemSelector category={addExpCategory} value={addItems} onChange={setAddItems} rooms={addIsDurable ? [] : rooms} detailSuggestions={detailSuggestions} isService={addIsService} />
                   {addIsDurable && (
                     <p className="text-[0.625rem] text-[var(--warm-muted)]">비품·자재는 <strong className="text-[var(--warm-mid)]">수령 후 재고 &gt; 비품·자재</strong> 탭에서 방·공용부에 배정합니다.</p>
                   )}

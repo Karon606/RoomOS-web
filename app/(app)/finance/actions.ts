@@ -1653,7 +1653,7 @@ export async function recordRecurringExpense(data: {
     const propertyId = await getPropertyId()
     const recurring = await prisma.recurringExpense.findUnique({
       where: { id: data.recurringExpenseId },
-      select: { category: true, title: true, payMethod: true, financialAccountId: true },
+      select: { category: true, title: true, payMethod: true, financialAccountId: true, vendor: true },
     })
     if (!recurring) return { ok: false, error: '고정 지출 항목을 찾을 수 없습니다.' }
 
@@ -1673,6 +1673,7 @@ export async function recordRecurringExpense(data: {
           amount:              recordedAmount,
           category:            recurring.category,
           detail:              recurring.title,
+          vendor:              recurring.vendor ?? null,
           payMethod:           data.payMethod ?? recurring.payMethod ?? '계좌이체',
           financialAccountId:  resolvedAccountId,
           memo:                data.memo ?? null,
@@ -2218,22 +2219,48 @@ export async function renameVendor(oldName: string, newName: string): Promise<{ 
 // 품목 빠른 선택 — 실사용 이력 기반(운영자 지시 2026-07-06).
 // 최근 등록 5개 + 선택(등록) 횟수순으로 채워 항상 10개. 이력이 부족하면 기본 프리셋으로 보충 —
 // 수선유지비·서비스 등 '선택할 품목 0개' 상황 방지. 한 번도 안 쓴 프리셋은 이력이 쌓이면 자연히 밀려남.
-export async function getItemQuickPicks(category: string): Promise<string[]> {
+// 품목 빠른선택 — 입력이 진행될수록 좁아지는 계층 추천(신고 6b79c725·99c30054, 운영자 확정 2026-07-08):
+// ① 유형(물품/서비스·무형)별 이력만 ② 카테고리 선택 시 그 카테고리 이력으로 좁힘.
+// 각 단계에서 후보가 10개 미만이면 바로 위 단계(유형 전체) 이력으로 부족분만 보충 — 항상 10개 유지.
+// 서비스·무형은 서비스로 등록된 항목(도배·시공 등)만 추천된다(물품과 완전 분리).
+export async function getItemQuickPicks(category: string, opts?: { service?: boolean }): Promise<string[]> {
   const propertyId = await getPropertyId()
-  const rows = await prisma.expense.groupBy({
+  const service = !!opts?.service
+  const rank = (rows: { itemLabel: string | null; _count: { _all: number }; _max: { date: Date | null } }[]) => {
+    const labels = rows.filter(r => r.itemLabel)
+    const byRecent = [...labels].sort((a, b) => (b._max.date?.getTime() ?? 0) - (a._max.date?.getTime() ?? 0))
+    const byCount  = [...labels].sort((a, b) => b._count._all - a._count._all)
+    return { byRecent, byCount }
+  }
+  const picks: string[] = []
+  const push = (l: string | null | undefined) => { if (l && !picks.includes(l) && picks.length < 10) picks.push(l) }
+
+  // 1단계: 유형 + 카테고리
+  const catRows = await prisma.expense.groupBy({
     by: ['itemLabel'],
-    where: { propertyId, category, itemLabel: { not: null }, isShipping: false, excludeFromInventory: false },
+    where: { propertyId, category, itemLabel: { not: null }, isShipping: false, excludeFromInventory: service },
     _count: { _all: true },
     _max: { date: true },
   })
-  const labels = rows.filter(r => r.itemLabel)
-  const byRecent = [...labels].sort((a, b) => (b._max.date?.getTime() ?? 0) - (a._max.date?.getTime() ?? 0))
-  const byCount  = [...labels].sort((a, b) => b._count._all - a._count._all)
-  const picks: string[] = []
-  const push = (l: string | null | undefined) => { if (l && !picks.includes(l) && picks.length < 10) picks.push(l) }
-  byRecent.slice(0, 5).forEach(r => push(r.itemLabel))
-  byCount.forEach(r => push(r.itemLabel))
-  for (const p of (ITEM_PRESETS[category] ?? [])) push(p)
+  const cat = rank(catRows)
+  cat.byRecent.slice(0, 5).forEach(r => push(r.itemLabel))
+  cat.byCount.forEach(r => push(r.itemLabel))
+
+  // 2단계 보충: 부족하면 유형 전체 이력에서 채움(카테고리 무관)
+  if (picks.length < 10) {
+    const allRows = await prisma.expense.groupBy({
+      by: ['itemLabel'],
+      where: { propertyId, itemLabel: { not: null }, isShipping: false, excludeFromInventory: service },
+      _count: { _all: true },
+      _max: { date: true },
+    })
+    const all = rank(allRows)
+    all.byRecent.slice(0, 5).forEach(r => push(r.itemLabel))
+    all.byCount.forEach(r => push(r.itemLabel))
+  }
+
+  // 3단계 보충: 물품이면 카테고리 기본 프리셋(서비스는 이력만)
+  if (!service) for (const p of (ITEM_PRESETS[category] ?? [])) push(p)
   return picks
 }
 

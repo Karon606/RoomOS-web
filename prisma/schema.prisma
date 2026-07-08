@@ -873,6 +873,7 @@ model RecurringExpense {
   category        String
   dueDay          Int
   payMethod           String?
+  vendor              String?   // 구매처(청구 기관 — 한전·수도 등). 기록 시 지출 vendor 로 전파(신고 6d1cf1ea)
   financialAccountId  String?   @db.Uuid
   financialAccount    FinancialAccount? @relation(fields: [financialAccountId], references: [id], onDelete: SetNull)
   isAutoDebit     Boolean   @default(false)

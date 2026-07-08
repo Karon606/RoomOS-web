@@ -304,7 +304,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         onClick={() => setDetailItem(it)}
         onLongPress={!mergeMode ? () => { setMergeMode(true); toggleMergeSel(it.id) } : undefined}
         title={it.itemLabel}
-        badges={it.amount === 0 ? <span className="inline-flex items-center rounded-full bg-[var(--info-bg)] text-[var(--info-fg)] text-[0.625rem] font-semibold px-1.5 py-0.5">무상</span> : undefined}
+        badges={<>
+          {it.isService && <span className="inline-flex items-center rounded-full bg-[var(--canvas)] text-[var(--warm-mid)] text-[0.625rem] font-semibold px-1.5 py-0.5 border border-[var(--warm-border)]">서비스</span>}
+          {it.amount === 0 && <span className="inline-flex items-center rounded-full bg-[var(--info-bg)] text-[var(--info-fg)] text-[0.625rem] font-semibold px-1.5 py-0.5">무상</span>}
+        </>}
         meta={[boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, it.vendor, it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category, won(it.amount)].filter(Boolean).join(' · ')}
         value={it.qtyValue != null ? `${fmtQty(it.qtyValue)}${it.qtyUnit ?? '개'}` : `${it.count}건`}
         expanded={!mergeMode && it.count > 1 && expanded.has(it.id)}
@@ -687,6 +690,12 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 <Badge tone={it.roomNo || it.locationName ? 'pale-green' : 'neutral'}>{loc}</Badge>
                 {it.isCommon && <Badge tone="inspect">공용 자재</Badge>}
                 <span className="text-xs text-[var(--warm-muted)]">총 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'} · {won(it.amount)} · 구매 {it.count}건</span>
+                {/* 잘못 배정 즉시 수정(신고 afd24b6d) — 선택 모드의 일괄 배정 흐름으로 이 카드만 연결 */}
+                <button type="button"
+                  onClick={() => { setDetailItem(null); setMergeMode(true); setMergeSel(new Set([it.id])); setPillMode('assign') }}
+                  className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--coral)] hover:border-[var(--coral)] transition-colors">
+                  {it.roomNo || it.locationName ? '배정 변경' : '배정하기'}
+                </button>
               </div>
               {(it.roomNo || it.locationName) && (
                 <div className="flex items-center gap-2">

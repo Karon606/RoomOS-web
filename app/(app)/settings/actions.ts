@@ -891,6 +891,7 @@ export type RecurringExpenseRow = {
   category: string
   dueDay: number
   payMethod: string | null
+  vendor: string | null
   financialAccountId: string | null
   financialAccountName: string | null
   isAutoDebit: boolean
@@ -914,7 +915,7 @@ export async function getRecurringExpenses(): Promise<RecurringExpenseRow[]> {
     orderBy: { dueDay: 'asc' },
     select: {
       id: true, title: true, amount: true, category: true, dueDay: true,
-      payMethod: true, financialAccountId: true,
+      payMethod: true, vendor: true, financialAccountId: true,
       financialAccount: { select: { brand: true, alias: true } },
       isAutoDebit: true, isVariable: true, alertDaysBefore: true,
       isActive: true, activeSince: true, priorYearAmount: true, memo: true,
@@ -940,7 +941,7 @@ function deriveFromItems(items: RecurringItemInput[]): { amount: number; isVaria
 
 export async function addRecurringExpense(data: {
   title: string; amount: number; category: string; dueDay: number
-  payMethod?: string; financialAccountId?: string | null; isAutoDebit?: boolean; isVariable?: boolean; alertDaysBefore?: number; activeSince?: string; priorYearAmount?: number; memo?: string
+  payMethod?: string; vendor?: string; financialAccountId?: string | null; isAutoDebit?: boolean; isVariable?: boolean; alertDaysBefore?: number; activeSince?: string; priorYearAmount?: number; memo?: string
   // #1 관리비 묶음: 세부항목. 있으면 amount/isVariable은 세부에서 파생.
   items?: RecurringItemInput[]
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
@@ -969,7 +970,7 @@ export async function addRecurringExpense(data: {
 
 export async function updateRecurringExpense(id: string, data: Partial<{
   title: string; amount: number; category: string; dueDay: number
-  payMethod: string | null; financialAccountId: string | null; isAutoDebit: boolean; isVariable: boolean; alertDaysBefore: number; isActive: boolean; activeSince: string | null; priorYearAmount: number | null; memo: string | null
+  payMethod: string | null; vendor: string | null; financialAccountId: string | null; isAutoDebit: boolean; isVariable: boolean; alertDaysBefore: number; isActive: boolean; activeSince: string | null; priorYearAmount: number | null; memo: string | null
   // #1 관리비 묶음: 세부항목 전체 교체(있으면 amount/isVariable 파생). undefined면 항목 미변경.
   items: RecurringItemInput[]
 }>): Promise<{ ok: true } | { ok: false; error: string }> {

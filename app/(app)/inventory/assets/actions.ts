@@ -45,6 +45,7 @@ export type AssetItem = {
   locationId: string | null     // 공용부(StorageLocation) 배정 시
   locationName: string | null
   isCommon: boolean             // 공용 자재(페인트 등) 표시
+  isService: boolean            // 서비스·무형(시공비) — 자산 아님, 방별 비용 집계용
   assignedAt: string | null     // 방/공용부 배정일(대표=최근). null=미배정 또는 미상
   breakdown: { id: string; date: string; qty: number | null; amount: number; specValue: number | null; specUnit: string | null; specText: string | null }[]   // 합산 펼치기 — 개별 구매 내역(행별 규격 수정용 id 포함)
 }
@@ -66,13 +67,14 @@ type RawAsset = {
   category: string; vendor: string | null
   roomId: string | null; roomNo: string | null; locationId: string | null; locationName: string | null
   isCommon: boolean; received: boolean; assignedAt: string | null
+  isService: boolean               // 서비스·무형(시공비 등) — 방별 비용에 포함, 카드에 칩 표시
 }
 
 // 한 버킷의 행들을 동일 품목끼리 묶어 AssetItem[] 로 집계
 function aggregateAssets(list: RawAsset[]): AssetItem[] {
   const map = new Map<string, { spec: number | null; specUnit: string | null; specText: string | null; rows: RawAsset[] }>()
   for (const r of list) {
-    const key = [r.itemLabel, r.specValue ?? '', r.specUnit ?? '', r.specText ?? '', r.qtyUnit ?? '', r.category, r.isCommon ? 'C' : ''].join('␟')
+    const key = [r.itemLabel, r.specValue ?? '', r.specUnit ?? '', r.specText ?? '', r.qtyUnit ?? '', r.category, r.isCommon ? 'C' : '', r.isService ? 'S' : ''].join('␟')
     const g = map.get(key) ?? { spec: r.specValue, specUnit: r.specUnit, specText: r.specText, rows: [] }
     g.rows.push(r); map.set(key, g)
   }
@@ -91,7 +93,7 @@ function aggregateAssets(list: RawAsset[]): AssetItem[] {
       detail: buildAssetDetail({ itemLabel: rep.itemLabel, specValue: g.spec, specUnit: g.specUnit, specText: g.specText, qtyValue, qtyUnit: rep.qtyUnit }),
       amount, qtyValue, qtyUnit: rep.qtyUnit, category: rep.category, vendor: rep.vendor,
       roomId: rep.roomId, roomNo: rep.roomNo, locationId: rep.locationId, locationName: rep.locationName,
-      isCommon: rep.isCommon, assignedAt,
+      isCommon: rep.isCommon, isService: rep.isService, assignedAt,
       breakdown: rows.map(r => ({ id: r.id, date: r.date, qty: r.qtyValue, amount: r.amount, specValue: r.specValue, specUnit: r.specUnit, specText: r.specText }))
         .sort((a, b) => b.date.localeCompare(a.date)),
     })
@@ -110,8 +112,13 @@ export async function getDurableItems(): Promise<AssetsData> {
       propertyId,
       itemLabel: { not: null },
       isShipping: false,
-      excludeFromInventory: false,
       category: { notIn: trackedCats },
+      // 물품(내구재)은 전부, 서비스·무형은 방/공용부에 귀속된 것만(방별 투자 비용 복원, 신고 54fb838b)
+      OR: [
+        { excludeFromInventory: false },
+        { excludeFromInventory: true, roomId: { not: null } },
+        { excludeFromInventory: true, assignedLocationId: { not: null } },
+      ],
     },
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     select: {
@@ -121,7 +128,7 @@ export async function getDurableItems(): Promise<AssetsData> {
       room: { select: { roomNo: true } },
       assignedLocationId: true,
       assignedLocation: { select: { name: true } },
-      isCommonAsset: true, receivedAt: true, assignedAt: true,
+      isCommonAsset: true, receivedAt: true, assignedAt: true, excludeFromInventory: true,
     },
   })
 
@@ -131,7 +138,7 @@ export async function getDurableItems(): Promise<AssetsData> {
     category: r.category, vendor: r.vendor,
     roomId: r.roomId, roomNo: r.room?.roomNo ?? null,
     locationId: r.assignedLocationId, locationName: r.assignedLocation?.name ?? null,
-    isCommon: r.isCommonAsset, received: r.receivedAt != null,
+    isCommon: r.isCommonAsset, received: r.receivedAt != null, isService: r.excludeFromInventory,
     assignedAt: r.assignedAt ? r.assignedAt.toISOString().slice(0, 10) : null,
   }))
 
