@@ -453,24 +453,25 @@ async function placeLabel(propertyId: string, roomId: string | null, locId: stri
 async function logAssignment(
   propertyId: string, itemLabel: string | null,
   from: { kind: string; label: string | null }, to: { kind: string; label: string | null }, qty: number | null,
+  assignedAt?: Date | null,   // 운영자 지정 배정일 — 이력 표시는 이 값 우선(없으면 기록 시각)
 ) {
   if (from.kind === to.kind && from.label === to.label) return   // 변화 없음
   try {
     await prisma.assetAssignmentLog.create({
-      data: { propertyId, itemLabel, fromKind: from.kind, fromLabel: from.label, toKind: to.kind, toLabel: to.label, qty },
+      data: { propertyId, itemLabel, fromKind: from.kind, fromLabel: from.label, toKind: to.kind, toLabel: to.label, qty, assignedAt: assignedAt ?? null },
     })
   } catch { /* asset_assignment_log 미적용 — 무시 */ }
 }
 
 // 비품 한 품목의 배정 변경 이력(최근순). 테이블 미적용 시 빈 배열.
-export type AssetAssignmentLogRow = { id: string; itemLabel: string | null; fromKind: string; fromLabel: string | null; toKind: string; toLabel: string | null; qty: number | null; createdAt: string }
+export type AssetAssignmentLogRow = { id: string; itemLabel: string | null; fromKind: string; fromLabel: string | null; toKind: string; toLabel: string | null; qty: number | null; assignedAt: string | null; createdAt: string }
 export async function getAssetAssignmentLog(itemLabel: string): Promise<AssetAssignmentLogRow[]> {
   try {
     const propertyId = await getPropertyId()
     const rows = await prisma.assetAssignmentLog.findMany({
       where: { propertyId, itemLabel }, orderBy: { createdAt: 'desc' }, take: 30,
     })
-    return rows.map(r => ({ id: r.id, itemLabel: r.itemLabel, fromKind: r.fromKind, fromLabel: r.fromLabel, toKind: r.toKind, toLabel: r.toLabel, qty: r.qty, createdAt: r.createdAt.toISOString().slice(0, 10) }))
+    return rows.map(r => ({ id: r.id, itemLabel: r.itemLabel, fromKind: r.fromKind, fromLabel: r.fromLabel, toKind: r.toKind, toLabel: r.toLabel, qty: r.qty, assignedAt: r.assignedAt ? r.assignedAt.toISOString().slice(0, 10) : null, createdAt: r.createdAt.toISOString().slice(0, 10) }))
   } catch { return [] }
 }
 
@@ -545,7 +546,7 @@ export async function assignAggregateToTarget(
     await prisma.$transaction(ops)
     if (isNone) for (const g of touchedGroups) await mergeUnassignedGroup(propertyId, g)
     await logAssignment(propertyId, rep0.itemLabel, fromState,
-      isNone ? { kind: 'none', label: '미배정' } : await placeLabel(propertyId, tData.roomId, tData.assignedLocationId, false), movedQty)
+      isNone ? { kind: 'none', label: '미배정' } : await placeLabel(propertyId, tData.roomId, tData.assignedLocationId, false), movedQty, assignedAtVal)
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
     return { ok: true }
   } catch (err) {

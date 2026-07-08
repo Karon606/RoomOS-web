@@ -264,6 +264,7 @@ model AssetAssignmentLog {
   toKind      String
   toLabel     String?
   qty         Float?   // 이동 수량(있으면)
+  assignedAt  DateTime? // 운영자가 지정한 배정일(방/공용부 배정 시) — 이력 표시는 이 값 우선
   createdAt   DateTime @default(now())
 
   @@index([propertyId, itemLabel])

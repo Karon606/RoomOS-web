@@ -838,7 +838,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                       <li key={r.id} className="flex items-center justify-between gap-2 text-xs">
                         <span className="min-w-0 truncate text-[var(--warm-dark)]">{r.fromLabel ?? '미배정'} <span className="text-[var(--warm-muted)]">→</span> {r.toLabel ?? '미배정'}</span>
                         <span className="flex shrink-0 items-center gap-1.5">
-                          <span className="tabular-nums text-[var(--warm-muted)]">{r.qty != null ? `${fmtQty(r.qty)}${it.qtyUnit ?? '개'} · ` : ''}{r.createdAt.slice(2)}</span>
+                          <span className="tabular-nums text-[var(--warm-muted)]">{r.qty != null ? `${fmtQty(r.qty)}${it.qtyUnit ?? '개'} · ` : ''}{(r.assignedAt ?? r.createdAt).slice(2)}</span>
                           <button type="button" onClick={() => runRevertLog(r)} disabled={pending}
                             className="min-h-[30px] inline-flex items-center px-1.5 text-[0.6875rem] font-semibold text-[var(--coral)] hover:underline disabled:opacity-40">되돌리기</button>
                           <button type="button" onClick={() => runDeleteLog(r)} disabled={pending}
