@@ -109,7 +109,8 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     let alive = true
     getAssetAssignmentLog(detailItem.itemLabel).then(r => { if (alive) setLogRows(r) }).catch(() => {})
     return () => { alive = false }
-  }, [detailItem])
+    // data 도 의존성에 포함 — 상세를 유지한 채 옮기면(연속 배정) 이력도 따라 갱신돼야 한다(운영자 신고 2026-07-09)
+  }, [detailItem, data])
   const toggleMergeSel = (id: string) => setMergeSel(prev => {
     const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
   })
@@ -771,7 +772,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 const totalQ = sorted.reduce((s, x) => s + (x.qtyValue ?? 0), 0)
                 return (
                   <div>
-                    <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">지금 어디에 있나
+                    <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">배치 현황
                       <span className="ml-1.5 font-normal text-[var(--warm-muted)]">총 {fmtQty(totalQ)}{it.qtyUnit ?? '개'} · {sorted.length}곳</span>
                     </p>
                     <ul className="flex flex-wrap gap-1.5">
