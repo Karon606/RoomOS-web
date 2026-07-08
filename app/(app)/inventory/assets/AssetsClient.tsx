@@ -11,6 +11,7 @@ import { ViewTabs } from '@/components/ui/ViewTabs'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
+import { kstYmdStr } from '@/lib/kstDate'
 import { assignAggregateToTarget, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
 import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // §10 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
@@ -65,7 +66,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const [mergeSel, setMergeSel]   = useState<Set<string>>(new Set())   // 선택된 AssetItem id
   const [pillMode, setPillMode] = useState<'menu' | 'assign'>('menu')   // 하단 바 단계
   // 일괄 배정 수량 시트 — 대상 고른 뒤 품목별 수량(기본 전량) 입력
-  const [batchAssign, setBatchAssign] = useState<{ target: Target; label: string; rows: { it: AssetItem; qty: string }[] } | null>(null)
+  const [batchAssign, setBatchAssign] = useState<{ target: Target; label: string; assignedAt: string; rows: { it: AssetItem; qty: string }[] } | null>(null)
   const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setPillMode('menu') }
   // 합치기 바텀시트 — §21.4 MergeSheet 단일 통일(카드별·선택 공용)
   const [sheet, setSheet] = useState<{ sourceLabel: string; targets: MergeTarget[]; onConfirm: (destId: string) => void } | null>(null)
@@ -169,6 +170,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     setBatchAssign({
       target: { kind: k === 'room' ? 'room' : 'location', id },
       label,
+      assignedAt: kstYmdStr(),   // 배정일 — 기본 오늘, 시트에서 변경 가능(운영자 요청 2026-07-08)
       rows: selItems.map(it => ({ it, qty: String(it.qtyValue ?? 1) })),
     })
   }
@@ -193,7 +195,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       return { ids: r.it.ids, qty: q >= max ? null : q }   // 전량이면 null
     })
     startTransition(async () => {
-      const res = await batchAssignAssets({ items, target })
+      const res = await batchAssignAssets({ items, target, assignedAt: batchAssign.assignedAt || null })
       if (!res.ok) { pushToast('error', res.error); return }
       setBatchAssign(null); exitMerge()
       pushToast('success', `${batchAssign.label}에 ${res.assigned}개 품목 배정됨`, {
@@ -588,6 +590,13 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
             </div>
           }
         >
+          <div className="mb-3 flex items-center gap-2">
+            <span className="text-xs font-medium text-[var(--warm-mid)] shrink-0">배정일</span>
+            <input type="date" value={batchAssign.assignedAt}
+              onChange={e => setBatchAssign(b => b ? { ...b, assignedAt: e.target.value } : b)}
+              className="h-9 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+            <span className="text-[0.625rem] text-[var(--warm-muted)]">기본 오늘 · 나중에 카드 상세에서도 수정 가능</span>
+          </div>
           <ul className="space-y-2">
             {batchAssign.rows.map((r, idx) => {
               const max = r.it.qtyValue ?? 1

@@ -476,6 +476,7 @@ export async function getAssetAssignmentLog(itemLabel: string): Promise<AssetAss
 
 export async function assignAggregateToTarget(
   expenseIds: string[], target: AssignTarget, qty: number | null,
+  assignedAtYmd?: string | null,   // 배정일 직접 지정(YYYY-MM-DD, 미지정 = 오늘) — 운영자 요청 2026-07-08
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -499,8 +500,10 @@ export async function assignAggregateToTarget(
     }
 
     const tData = targetData(target)
-    // 배정일 — 방/공용부 배정 시 '지금'을 기본값으로. 이후 상세에서 수정 가능. 공용 자재(대상 없음)는 미상(null).
-    const assignedAtVal = (tData.roomId || tData.assignedLocationId) ? new Date() : null
+    // 배정일 — 방/공용부 배정 시 기본 '지금', 직접 지정 가능(이후 상세에서 수정 가능). 공용 자재는 미상(null).
+    const assignedAtVal = (tData.roomId || tData.assignedLocationId)
+      ? (assignedAtYmd ? new Date(assignedAtYmd) : new Date())
+      : null
     const totalQty = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
     const movedQty = (qty == null || qty >= totalQty) ? totalQty : Math.max(1, qty)
     let need = (qty == null || qty >= totalQty) ? totalQty : Math.max(1, qty)
@@ -558,7 +561,7 @@ export type AssetAssignUndo = {
 }
 
 export async function batchAssignAssets(
-  input: { items: { ids: string[]; qty: number | null }[]; target: AssignTarget },
+  input: { items: { ids: string[]; qty: number | null }[]; target: AssignTarget; assignedAt?: string | null },
 ): Promise<{ ok: true; assigned: number; undo: AssetAssignUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
@@ -579,7 +582,7 @@ export async function batchAssignAssets(
     let assigned = 0
     for (const it of items) {
       const before = new Set((await prisma.expense.findMany({ where: { propertyId }, select: { id: true } })).map(e => e.id))
-      const res = await assignAggregateToTarget(it.ids, input.target, it.qty)
+      const res = await assignAggregateToTarget(it.ids, input.target, it.qty, input.assignedAt ?? null)
       if (!res.ok) continue
       assigned++
       const after = await prisma.expense.findMany({ where: { propertyId }, select: { id: true } })
