@@ -474,6 +474,53 @@ export async function getAssetAssignmentLog(itemLabel: string): Promise<AssetAss
   } catch { return [] }
 }
 
+// ============================================================
+// 이동 연산 공통 — 수량 큰 행부터 통째 소진해 분할 최소화, 마지막만 쪼갬(금액 비례 분배).
+//   data.assignedAt 을 생략하면 행의 기존 배정일을 유지한다(이력 되돌리기용).
+// ============================================================
+type ExpRow = Prisma.ExpenseGetPayload<Record<string, never>>
+type MoveData = { roomId: string | null; assignedLocationId: string | null; isCommonAsset: boolean; assignedAt?: Date | null }
+function buildSplitOps(exps: ExpRow[], propertyId: string, data: MoveData, qty: number | null):
+  { ops: Prisma.PrismaPromise<unknown>[]; movedQty: number; touchedGroups: string[] } {
+  const totalQty = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
+  const movedQty = (qty == null || qty >= totalQty) ? totalQty : Math.max(1, qty)
+  let need = movedQty
+  const sorted = [...exps].sort((a, b) => (b.qtyValue ?? 1) - (a.qtyValue ?? 1))
+  const ops: Prisma.PrismaPromise<unknown>[] = []
+  const touched: string[] = []
+  for (const e of sorted) {
+    if (need <= 1e-9) break
+    const eq = e.qtyValue ?? 1
+    if (e.allocationGroupId) touched.push(e.allocationGroupId)
+    if (eq <= need + 1e-9) {
+      ops.push(prisma.expense.update({ where: { id: e.id }, data }))
+      need -= eq
+    } else {
+      const assignedAmount = Math.round(e.amount * (need / eq))
+      const remainAmount = e.amount - assignedAmount
+      const remainQty = Math.round((eq - need) * 1000) / 1000
+      const groupId = e.allocationGroupId ?? randomUUID()
+      if (!e.allocationGroupId) touched.push(groupId)
+      ops.push(prisma.expense.update({ where: { id: e.id }, data: { qtyValue: remainQty, amount: remainAmount, allocationGroupId: groupId, detail: buildAssetDetail({ ...e, qtyValue: remainQty }) } }))
+      ops.push(prisma.expense.create({ data: {
+        date: e.date, amount: assignedAmount, category: e.category,
+        detail: buildAssetDetail({ ...e, qtyValue: need }),
+        vendor: e.vendor, memo: e.memo, payMethod: e.payMethod, settleStatus: e.settleStatus,
+        receiptUrl: e.receiptUrl, receiptUrls: e.receiptUrls, financeName: e.financeName,
+        itemLabel: e.itemLabel, specValue: e.specValue, specUnit: e.specUnit, specText: e.specText,
+        qtyValue: need, qtyUnit: e.qtyUnit,
+        receivedAt: e.receivedAt, excludeFromInventory: e.excludeFromInventory,
+        allocationGroupId: groupId, orderId: e.orderId, isShipping: e.isShipping,
+        propertyId, roomId: data.roomId, assignedLocationId: data.assignedLocationId, isCommonAsset: data.isCommonAsset,
+        assignedAt: 'assignedAt' in data ? data.assignedAt : e.assignedAt,
+        financialAccountId: e.financialAccountId, recurringExpenseId: e.recurringExpenseId, receivedLocationId: e.receivedLocationId,
+      } }))
+      need = 0
+    }
+  }
+  return { ops, movedQty, touchedGroups: [...new Set(touched)] }
+}
+
 export async function assignAggregateToTarget(
   expenseIds: string[], target: AssignTarget, qty: number | null,
   assignedAtYmd?: string | null,   // 배정일 직접 지정(YYYY-MM-DD, 미지정 = 오늘) — 운영자 요청 2026-07-08
@@ -489,61 +536,87 @@ export async function assignAggregateToTarget(
 
     const rep0 = exps[0]
     const fromState = await placeLabel(propertyId, rep0.roomId, rep0.assignedLocationId, rep0.isCommonAsset)
-
-    if (target.kind === 'none') {
-      await prisma.$transaction(exps.map(e => prisma.expense.update({ where: { id: e.id }, data: { roomId: null, assignedLocationId: null, isCommonAsset: false, assignedAt: null } })))
-      const groups = [...new Set(exps.map(e => e.allocationGroupId).filter(Boolean) as string[])]
-      for (const g of groups) await mergeUnassignedGroup(propertyId, g)
-      await logAssignment(propertyId, rep0.itemLabel, fromState, { kind: 'none', label: '미배정' }, exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0))
-      revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
-      return { ok: true }
-    }
-
-    const tData = targetData(target)
-    // 배정일 — 방/공용부 배정 시 기본 '지금', 직접 지정 가능(이후 상세에서 수정 가능). 공용 자재는 미상(null).
-    const assignedAtVal = (tData.roomId || tData.assignedLocationId)
-      ? (assignedAtYmd ? new Date(assignedAtYmd) : new Date())
-      : null
-    const totalQty = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
-    const movedQty = (qty == null || qty >= totalQty) ? totalQty : Math.max(1, qty)
-    let need = (qty == null || qty >= totalQty) ? totalQty : Math.max(1, qty)
-    // 수량 큰 행부터 통째 소진 → 분할 최소화. 마지막 부분만 쪼갬.
-    const sorted = [...exps].sort((a, b) => (b.qtyValue ?? 1) - (a.qtyValue ?? 1))
-    const ops: Prisma.PrismaPromise<unknown>[] = []
-    for (const e of sorted) {
-      if (need <= 1e-9) break
-      const eq = e.qtyValue ?? 1
-      if (eq <= need + 1e-9) {
-        ops.push(prisma.expense.update({ where: { id: e.id }, data: { ...tData, isCommonAsset: false, assignedAt: assignedAtVal } }))
-        need -= eq
-      } else {
-        const assignedAmount = Math.round(e.amount * (need / eq))
-        const remainAmount = e.amount - assignedAmount
-        const remainQty = Math.round((eq - need) * 1000) / 1000
-        const groupId = e.allocationGroupId ?? randomUUID()
-        ops.push(prisma.expense.update({ where: { id: e.id }, data: { qtyValue: remainQty, amount: remainAmount, allocationGroupId: groupId, detail: buildAssetDetail({ ...e, qtyValue: remainQty }) } }))
-        ops.push(prisma.expense.create({ data: {
-          date: e.date, amount: assignedAmount, category: e.category,
-          detail: buildAssetDetail({ ...e, qtyValue: need }),
-          vendor: e.vendor, memo: e.memo, payMethod: e.payMethod, settleStatus: e.settleStatus,
-          receiptUrl: e.receiptUrl, receiptUrls: e.receiptUrls, financeName: e.financeName,
-          itemLabel: e.itemLabel, specValue: e.specValue, specUnit: e.specUnit,
-          qtyValue: need, qtyUnit: e.qtyUnit,
-          receivedAt: e.receivedAt, excludeFromInventory: e.excludeFromInventory,
-          allocationGroupId: groupId, orderId: e.orderId, isShipping: e.isShipping,
-          propertyId, roomId: tData.roomId, assignedLocationId: tData.assignedLocationId, assignedAt: assignedAtVal,
-          financialAccountId: e.financialAccountId, recurringExpenseId: e.recurringExpenseId, receivedLocationId: e.receivedLocationId,
-        } }))
-        need = 0
-      }
-    }
+    const isNone = target.kind === 'none'
+    const tData = isNone ? { roomId: null, assignedLocationId: null } : targetData(target)
+    // 배정일 — 방/공용부 배정 시 기본 '지금', 직접 지정 가능(이후 상세에서 수정). 미배정 복귀는 비움.
+    const assignedAtVal = isNone ? null : (assignedAtYmd ? new Date(assignedAtYmd) : new Date())
+    const { ops, movedQty, touchedGroups } = buildSplitOps(exps, propertyId, { ...tData, isCommonAsset: false, assignedAt: assignedAtVal }, qty)
     await prisma.$transaction(ops)
-    await logAssignment(propertyId, rep0.itemLabel, fromState, await placeLabel(propertyId, tData.roomId, tData.assignedLocationId, false), movedQty)
+    if (isNone) for (const g of touchedGroups) await mergeUnassignedGroup(propertyId, g)
+    await logAssignment(propertyId, rep0.itemLabel, fromState,
+      isNone ? { kind: 'none', label: '미배정' } : await placeLabel(propertyId, tData.roomId, tData.assignedLocationId, false), movedQty)
     revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
     return { ok: true }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '배정에 실패했습니다.' }
+  }
+}
+
+// ============================================================
+// 배정 이력 되돌리기·삭제 — 이력 라벨(방번호·공용부명)로 위치를 복원해 역이동.
+//   되돌리면 그 이력 행이 함께 삭제되고 새 이력은 남지 않는다(운영자 요청 2026-07-08).
+// ============================================================
+async function resolvePlace(propertyId: string, kind: string, label: string | null):
+  Promise<{ roomId: string | null; locationId: string | null; isCommon: boolean } | { error: string }> {
+  if (kind === 'room') {
+    const no = (label ?? '').replace(/호$/, '')
+    const room = await prisma.room.findFirst({ where: { propertyId, roomNo: no }, select: { id: true } })
+    if (!room) return { error: `'${label}' 방을 찾을 수 없습니다.` }
+    return { roomId: room.id, locationId: null, isCommon: false }
+  }
+  if (kind === 'location') {
+    const loc = await prisma.storageLocation.findFirst({ where: { propertyId, name: label ?? '' }, select: { id: true } })
+    if (!loc) return { error: `'${label}' 공용부를 찾을 수 없습니다.` }
+    return { roomId: null, locationId: loc.id, isCommon: false }
+  }
+  return { roomId: null, locationId: null, isCommon: kind === 'common' }
+}
+
+export async function revertAssignmentLog(logId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const log = await prisma.assetAssignmentLog.findFirst({ where: { id: logId, propertyId } })
+    if (!log) return { ok: false, error: '이력을 찾을 수 없습니다.' }
+    const to = await resolvePlace(propertyId, log.toKind, log.toLabel)
+    if ('error' in to) return { ok: false, error: to.error }
+    const from = await resolvePlace(propertyId, log.fromKind, log.fromLabel)
+    if ('error' in from) return { ok: false, error: from.error }
+    // 지금 '간 곳(to)'에 남아 있는 같은 품목 행에서 그만큼 되가져온다
+    const exps = await prisma.expense.findMany({ where: {
+      propertyId, itemLabel: log.itemLabel,
+      roomId: to.roomId, assignedLocationId: to.locationId,
+      ...(to.roomId || to.locationId ? {} : { isCommonAsset: to.isCommon }),
+    } })
+    const avail = exps.reduce((s, e) => s + (e.qtyValue ?? 1), 0)
+    if (!exps.length || (log.qty != null && avail + 1e-9 < log.qty))
+      return { ok: false, error: `${log.toLabel ?? '해당 위치'}에 되돌릴 수량이 남아 있지 않습니다(이후 다른 곳으로 옮겨진 것 같아요). 이 이력은 삭제만 할 수 있습니다.` }
+    const isNone = !from.roomId && !from.locationId && !from.isCommon
+    const data: MoveData = { roomId: from.roomId, assignedLocationId: from.locationId, isCommonAsset: from.isCommon }
+    if (isNone || from.isCommon) data.assignedAt = null   // 미배정·공용 복귀는 배정일 비움, 방·공용부 복귀는 기존 배정일 유지
+    const { ops, touchedGroups } = buildSplitOps(exps, propertyId, data, log.qty)
+    ops.push(prisma.assetAssignmentLog.delete({ where: { id: log.id } }))
+    await prisma.$transaction(ops)
+    if (isNone) for (const g of touchedGroups) await mergeUnassignedGroup(propertyId, g)
+    revalidatePath('/inventory/assets'); revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
+  }
+}
+
+export async function deleteAssignmentLog(logId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    await prisma.assetAssignmentLog.deleteMany({ where: { id: logId, propertyId } })
+    revalidatePath('/inventory/assets')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
   }
 }
 

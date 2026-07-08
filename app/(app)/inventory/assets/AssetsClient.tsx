@@ -12,9 +12,10 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
-import { assignAggregateToTarget, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
+import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
 import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // §10 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { InventoryCard } from '@/components/ui/inventory/InventoryCard'
 import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
@@ -48,12 +49,11 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   locations: { id: string; name: string }[]
 }) {
   const router = useRouter()
-  const [picking, setPicking] = useState<string | null>(null)   // 배정 picker 가 열린 항목 id
-  const [qtyAsk, setQtyAsk] = useState<{ it: AssetItem; target: Target; label: string } | null>(null)
+  // 위치 옮기기 — 카드·상세 공용 단일 흐름(어디로+얼마나+배정일+미리보기), 운영자 요청 2026-07-08
+  const [move, setMove] = useState<{ it: AssetItem; to: string; qty: string; date: string } | null>(null)
   // 부분 수령(분할 배송) — 수량>1 이면 몇 개 왔는지 물어봄(기본 전체). 잔여는 수령 대기 유지.
   const [rcvAsk, setRcvAsk] = useState<string | null>(null)   // 대상 AssetItem id
   const [rcvQty, setRcvQty] = useState('1')
-  const [qtyVal, setQtyVal] = useState('1')
   const [pending, startTransition] = useTransition()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())   // 합산 펼친 항목 id
   const toggleExpand = (id: string) => setExpanded(prev => {
@@ -62,11 +62,20 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
 
   // 선택 모드 — 여러 비품을 골라 ① 방·공용부 일괄 배정 ② 대표 골라 합치기(MergeSheet). 카드별 '합치기'도 병행.
   const [mergeMode, setMergeMode] = useState(false)
+  // 대분류 — 미배정(여분)·공용 자재·방·공용부 세 그룹 중 하나만 표시(운영자 요청 2026-07-08). 마지막 선택 유지.
+  const [group, setGroup] = useState<'unassigned' | 'common' | 'placed'>(() => {
+    if (typeof window === 'undefined') return 'unassigned'
+    try { const g = localStorage.getItem('stayeum-assets-group'); return g === 'common' || g === 'placed' ? g : 'unassigned' } catch { return 'unassigned' }
+  })
+  const pickGroup = (g: 'unassigned' | 'common' | 'placed') => {
+    setGroup(g)
+    try { localStorage.setItem('stayeum-assets-group', g) } catch { /* 무시 */ }
+  }
   // 섹션 접기 — 기본 닫힘(스크롤 부담 완화, 운영자 요청 2026-07-08). 연 섹션은 닫기 전까지 기기에 유지.
-  const [openSecs, setOpenSecs] = useState<Set<string>>(new Set())
-  useEffect(() => {
-    try { setOpenSecs(new Set(JSON.parse(localStorage.getItem('stayeum-assets-open-sections') ?? '[]') as string[])) } catch { /* 손상 시 전부 닫힘 */ }
-  }, [])
+  const [openSecs, setOpenSecs] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set()
+    try { return new Set(JSON.parse(localStorage.getItem('stayeum-assets-open-sections') ?? '[]') as string[]) } catch { return new Set() }
+  })
   const toggleSec = (k: string) => setOpenSecs(prev => {
     const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k)
     try { localStorage.setItem('stayeum-assets-open-sections', JSON.stringify([...n])) } catch { /* 저장 실패 무시 */ }
@@ -215,55 +224,50 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     })
   }
 
-  // 배정 해제(미배정으로) — 묶음(ids) 전체
-  const unassign = (it: AssetItem) => {
+  // 위치 이름 헬퍼
+  const placeName = (v: string) => {
+    const [k, id] = v.split(':')
+    return k === 'room' ? fmtRoomNo(rooms.find(r => r.id === id)?.roomNo ?? '') : (locations.find(l => l.id === id)?.name ?? '')
+  }
+  const curPlace = (it: AssetItem) =>
+    it.roomNo ? fmtRoomNo(it.roomNo) : it.locationName ?? (it.isCommon ? '공용 자재' : '미배정(여분)')
+
+  // 옮기기 실행 — 미배정 복귀도 부분 수량 지원(서버 통합 경로)
+  const runMove = () => {
+    if (!move) return
+    const it = move.it
+    const max = it.qtyValue ?? 1
+    let q = Number(move.qty)
+    if (!(q > 0)) q = max
+    q = Math.min(q, max)
+    const toNone = move.to === ''
+    const target = (toNone ? { kind: 'none' } : { kind: move.to.startsWith('room:') ? 'room' : 'location', id: move.to.split(':')[1] }) as Parameters<typeof assignAggregateToTarget>[1]
+    const destLabel = toNone ? '미배정(여분)' : placeName(move.to)
+    const fromLabel = curPlace(it)
     startTransition(async () => {
-      const res = await assignAggregateToTarget(it.ids, { kind: 'none' }, null)
-      setPicking(null)
+      const res = await assignAggregateToTarget(it.ids, target, q >= max ? null : q, toNone ? null : (move.date || null))
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', '배정 해제됨')
+      setMove(null); setDetailItem(null)
+      pushToast('success', `${fromLabel} → ${destLabel} · ${fmtQty(q)}${it.qtyUnit ?? '개'} 옮겼습니다`)
       router.refresh()
     })
   }
 
-  // 통째 배정 — 묶음 전체
-  const assignWhole = (it: AssetItem, target: Target, label: string) => {
+  // 배정 이력 되돌리기(원상복구 + 이력 자동 삭제) / 이력 삭제
+  const runRevertLog = (r: AssetAssignmentLogRow) => startTransition(async () => {
+    const res = await revertAssignmentLog(r.id)
+    if (!res.ok) { pushToast('error', res.error); return }
+    pushToast('success', '되돌렸습니다 (이 이력은 지워짐)')
+    setDetailItem(null)
+    router.refresh()
+  })
+  const runDeleteLog = (r: AssetAssignmentLogRow) => {
+    if (!window.confirm('이 이력 기록만 지웁니다 (배정 상태는 그대로). 지울까요?')) return
     startTransition(async () => {
-      const res = await assignAggregateToTarget(it.ids, target, null)
-      setPicking(null)
+      const res = await deleteAssignmentLog(r.id)
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', `${label}에 배정됨`)
-      router.refresh()
-    })
-  }
-
-  // 대상 선택 — 수량 2개 이상이면 몇 개 배정할지 물어봄(기본 1), 아니면 통째
-  const onPickTarget = (it: AssetItem, value: string) => {
-    setPicking(null)
-    if (!value) { unassign(it); return }
-    const [kind, id] = value.split(':')
-    const target: Target = { kind: kind === 'room' ? 'room' : 'location', id }
-    const label = kind === 'room'
-      ? fmtRoomNo(rooms.find(r => r.id === id)?.roomNo ?? '')
-      : (locations.find(l => l.id === id)?.name ?? '공용부')
-    const qty = it.qtyValue ?? 0
-    if (qty >= 2) { setQtyVal('1'); setQtyAsk({ it, target, label }) }
-    else assignWhole(it, target, label)
-  }
-
-  const confirmPartial = () => {
-    if (!qtyAsk) return
-    const max = qtyAsk.it.qtyValue ?? 1
-    let q = Number(qtyVal)
-    if (!(q > 0)) q = 1
-    if (q > max) q = max
-    const { it, target, label } = qtyAsk
-    startTransition(async () => {
-      const res = await assignAggregateToTarget(it.ids, target, q)
-      setQtyAsk(null)
-      if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', q >= (it.qtyValue ?? 0) ? `${label}에 전체 배정됨` : `${label}에 ${fmtQty(q)}${it.qtyUnit ?? '개'} 배정됨`)
-      router.refresh()
+      setLogRows(rows => rows.filter(x => x.id !== r.id))
+      pushToast('info', '이력을 지웠습니다')
     })
   }
 
@@ -303,9 +307,6 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       router.refresh()
     })
   }
-
-  const currentValue = (it: AssetItem) =>
-    it.roomId ? `room:${it.roomId}` : it.locationId ? `loc:${it.locationId}` : ''
 
   const ItemRow = ({ it, placed, awaitingReceipt, siblings = [] }: { it: AssetItem; placed: boolean; awaitingReceipt?: boolean; siblings?: AssetItem[] }) => (
     <li className="list-none">
@@ -364,38 +365,6 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
                 수령 완료
               </button>
-            ) : qtyAsk?.it.id === it.id ? (
-              <>
-                <span className="text-[0.6875rem] text-[var(--warm-muted)]">
-                  {qtyAsk.label}에 (전체 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'} 중)
-                </span>
-                <input autoFocus type="number" min={1} max={it.qtyValue ?? undefined} step="any"
-                  value={qtyVal} disabled={pending}
-                  onChange={e => setQtyVal(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') confirmPartial() }}
-                  className="w-16 text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums" />
-                <span className="text-[0.6875rem] text-[var(--warm-muted)]">{it.qtyUnit ?? '개'}</span>
-                <button type="button" onClick={confirmPartial} disabled={pending}
-                  className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">배정</button>
-                <button type="button" onClick={() => setQtyAsk(null)} disabled={pending} className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
-              </>
-            ) : picking === it.id ? (
-              <>
-                <select autoFocus disabled={pending} defaultValue={currentValue(it)}
-                  onChange={e => onPickTarget(it, e.target.value)}
-                  className="text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none max-w-[60vw]">
-                  <option value="">미배정(여분)</option>
-                  <optgroup label="방">
-                    {rooms.map(r => <option key={r.id} value={`room:${r.id}`}>{fmtRoomNo(r.roomNo)}</option>)}
-                  </optgroup>
-                  {locations.length > 0 && (
-                    <optgroup label="공용부">
-                      {locations.map(l => <option key={l.id} value={`loc:${l.id}`}>{l.name}</option>)}
-                    </optgroup>
-                  )}
-                </select>
-                <button type="button" onClick={() => setPicking(null)} className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
-              </>
             ) : (
               <>
                 <button type="button" onClick={() => markReceived(it, false)} disabled={pending}
@@ -408,9 +377,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                     {it.isCommon ? '공용 해제' : '공용 자재로'}
                   </button>
                 )}
-                <button type="button" onClick={() => setPicking(it.id)} disabled={pending}
+                <button type="button" disabled={pending}
+                  onClick={() => setMove({ it, to: '', qty: fmtQty(it.qtyValue ?? 1), date: kstYmdStr() })}
                   className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors disabled:opacity-40">
-                  {placed ? '배정 변경' : '배정'}
+                  {placed ? '옮기기' : '배정하기'}
                 </button>
                 {siblings.length > 0 && (
                   <button type="button" onClick={() => openCardMerge(it, siblings)} disabled={pending}
@@ -433,6 +403,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const hit = (it: AssetsData['pending'][number]) => !q || `${it.itemLabel} ${it.vendor ?? ''} ${it.category} ${it.specText ?? ''}`.toLowerCase().includes(q)
   const sumAmt = (l: AssetsData['pending']) => l.reduce((s, it) => s + it.amount, 0)
   const secOpen = (k: string) => !!q || openSecs.has(k)
+  // 대분류 표시 — 검색 중엔 전 그룹 통합 검색
+  const showUn = !!q || group === 'unassigned'
+  const showCo = !!q || group === 'common'
+  const showPl = !!q || group === 'placed'
   const secProps = (k: string) => ({ collapsible: true, collapsed: !secOpen(k), onToggle: () => toggleSec(k),
     trailing: <span className="text-[0.6875rem] text-[var(--warm-muted)]">{secOpen(k) ? '접기' : '펼치기'}</span> })
   const vPending    = data.pending.filter(hit)
@@ -494,24 +468,30 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         />
       ) : (
         <>
-          {/* 수령 대기 — 주문했지만 아직 안 받은 비품 (맨 위) */}
+          {/* 대분류 — 미배정(여분) · 공용 자재 · 방·공용부 (검색 중엔 전체 통합 검색이라 숨김) */}
+          {!q && (
+            <SegmentedControl ariaLabel="비품 대분류" size="md" scroll value={group} onChange={pickGroup} options={[
+              { value: 'unassigned', label: <>미배정(여분) <span className="mono text-[0.6875rem] text-[var(--warm-muted)]">{data.pending.length + data.unassigned.length}</span></> },
+              { value: 'common', label: <>공용 자재 <span className="mono text-[0.6875rem] text-[var(--warm-muted)]">{data.common.length}</span></> },
+              { value: 'placed', label: <>방·공용부 <span className="mono text-[0.6875rem] text-[var(--warm-muted)]">{data.rooms.length + data.locations.length}</span></> },
+            ]} />
+          )}
+          {/* 수령 대기 — 주문했지만 아직 안 받은 비품 (미배정 그룹 맨 위) */}
           {searchEmpty && <EmptyState title="검색 결과가 없습니다" description="다른 검색어로 시도해 보세요." />}
-          {vPending.length > 0 && (
+          {showUn && vPending.length > 0 && (
             <section className="space-y-2">
-              <SectionHeader name={<>수령 대기 <CoralTag>도착 전</CoralTag></>} count={`${vPending.length}건 · ${won(q ? sumAmt(vPending) : data.pendingTotal)}`} {...secProps('pending')} />
-              {secOpen('pending') && (
+              <SectionHeader name={<>수령 대기 <CoralTag>도착 전</CoralTag></>} count={`${vPending.length}건 · ${won(q ? sumAmt(vPending) : data.pendingTotal)}`} />
               <ul className="space-y-1.5">
                 {vPending.map(it => <ItemRow key={it.id} it={it} placed={false} awaitingReceipt siblings={siblingsOf(data.pending, it)} />)}
               </ul>
-              )}
             </section>
           )}
 
-          {/* 미배정(여분) — 먼저. 검색 중 무결과면 섹션 자체를 숨김 */}
-          {(!q || vUnassigned.length > 0) && (
+          {/* 미배정(여분) — 검색 중 무결과면 섹션 자체를 숨김 */}
+          {showUn && (!q || vUnassigned.length > 0) && (
           <section className="space-y-2">
-            <SectionHeader name="미배정 (여분)" count={`${vUnassigned.length}건 · ${won(q ? sumAmt(vUnassigned) : data.unassignedTotal)}`} {...secProps('unassigned')} />
-            {!secOpen('unassigned') ? null : vUnassigned.length === 0 ? (
+            <SectionHeader name="미배정 (여분)" count={`${vUnassigned.length}건 · ${won(q ? sumAmt(vUnassigned) : data.unassignedTotal)}`} />
+            {vUnassigned.length === 0 ? (
               <p className="text-xs text-[var(--warm-muted)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-3 text-center">미배정 비품이 없습니다.</p>
             ) : (
               <ul className="space-y-1.5">
@@ -522,10 +502,12 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           )}
 
           {/* 공용 자재 — 페인트·공구 등 방/공용부 배분 안 하는 공용 비품 */}
-          {vCommon.length > 0 && (
+          {showCo && (
             <section className="space-y-2">
-              <SectionHeader name={<>공용 자재 <CoralTag>배분 안 함</CoralTag></>} count={`${vCommon.length}건 · ${won(q ? sumAmt(vCommon) : data.commonTotal)}`} {...secProps('common')} />
-              {secOpen('common') && (
+              <SectionHeader name={<>공용 자재 <CoralTag>배분 안 함</CoralTag></>} count={`${vCommon.length}건 · ${won(q ? sumAmt(vCommon) : data.commonTotal)}`} />
+              {vCommon.length === 0 ? (
+                !q && <p className="text-xs text-[var(--warm-muted)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-3 text-center">공용 자재가 없습니다. 카드의 &lsquo;공용 자재로&rsquo;로 표시할 수 있어요.</p>
+              ) : (
               <ul className="space-y-1.5">
                 {vCommon.map(it => <ItemRow key={it.id} it={it} placed={false} siblings={siblingsOf(data.common, it)} />)}
               </ul>
@@ -534,7 +516,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           )}
 
           {/* 방별 */}
-          {vRooms.map(g => (
+          {showPl && !q && vRooms.length === 0 && vLocations.length === 0 && (
+            <p className="text-xs text-[var(--warm-muted)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-3 text-center">방·공용부에 배정된 비품이 아직 없습니다. 미배정(여분)에서 &lsquo;배정하기&rsquo;를 눌러 옮겨보세요.</p>
+          )}
+          {showPl && vRooms.map(g => (
             <section key={g.roomId} className="space-y-2">
               <SectionHeader marker={<PinMarker />} name={fmtRoomNo(g.roomNo)} count={`${g.fItems.length}건 · ${won(q ? sumAmt(g.fItems) : g.total)}`} {...secProps('room:' + g.roomId)} />
               {secOpen('room:' + g.roomId) && (
@@ -546,7 +531,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           ))}
 
           {/* 공용부별 */}
-          {vLocations.map(g => (
+          {showPl && vLocations.map(g => (
             <section key={g.locationId} className="space-y-2">
               <SectionHeader marker={<PinMarker />} name={<>{g.name} <CoralTag>공용부</CoralTag></>} count={`${g.fItems.length}건 · ${won(q ? sumAmt(g.fItems) : g.total)}`} {...secProps('loc:' + g.locationId)} />
               {secOpen('loc:' + g.locationId) && (
@@ -720,11 +705,11 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 <Badge tone={it.roomNo || it.locationName ? 'pale-green' : 'neutral'}>{loc}</Badge>
                 {it.isCommon && <Badge tone="inspect">공용 자재</Badge>}
                 <span className="text-xs text-[var(--warm-muted)]">총 {fmtQty(it.qtyValue ?? 0)}{it.qtyUnit ?? '개'} · {won(it.amount)} · 구매 {it.count}건</span>
-                {/* 잘못 배정 즉시 수정(신고 afd24b6d) — 선택 모드의 일괄 배정 흐름으로 이 카드만 연결 */}
+                {/* 잘못 배정 즉시 수정 — 옮기기 모달 직행(운영자 요청 2026-07-08 단순화) */}
                 <button type="button"
-                  onClick={() => { setDetailItem(null); setMergeMode(true); setMergeSel(new Set([it.id])); setPillMode('assign') }}
-                  className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--coral)] hover:border-[var(--coral)] transition-colors">
-                  {it.roomNo || it.locationName ? '배정 변경' : '배정하기'}
+                  onClick={() => setMove({ it, to: '', qty: fmtQty(it.qtyValue ?? 1), date: kstYmdStr() })}
+                  className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors">
+                  {it.roomNo || it.locationName ? '옮기기' : '배정하기'}
                 </button>
               </div>
               {(it.roomNo || it.locationName) && (
@@ -773,11 +758,18 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
               {logRows.length > 0 && (
                 <div>
                   <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">배정 변경 이력</p>
+                  <p className="mb-1.5 text-[0.625rem] text-[var(--warm-muted)]">되돌리기 = 그 이동을 원상복구하고 이력도 지웁니다 · 지우기 = 기록만 지웁니다</p>
                   <ul className="space-y-1">
                     {logRows.map(r => (
-                      <li key={r.id} className="flex items-baseline justify-between gap-2 text-xs">
-                        <span className="text-[var(--warm-dark)]">{r.fromLabel ?? '미배정'} <span className="text-[var(--warm-muted)]">→</span> {r.toLabel ?? '미배정'}</span>
-                        <span className="tabular-nums text-[var(--warm-muted)]">{r.qty != null ? `${fmtQty(r.qty)}${it.qtyUnit ?? '개'} · ` : ''}{r.createdAt.slice(2)}</span>
+                      <li key={r.id} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="min-w-0 truncate text-[var(--warm-dark)]">{r.fromLabel ?? '미배정'} <span className="text-[var(--warm-muted)]">→</span> {r.toLabel ?? '미배정'}</span>
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          <span className="tabular-nums text-[var(--warm-muted)]">{r.qty != null ? `${fmtQty(r.qty)}${it.qtyUnit ?? '개'} · ` : ''}{r.createdAt.slice(2)}</span>
+                          <button type="button" onClick={() => runRevertLog(r)} disabled={pending}
+                            className="min-h-[30px] inline-flex items-center px-1.5 text-[0.6875rem] font-semibold text-[var(--coral)] hover:underline disabled:opacity-40">되돌리기</button>
+                          <button type="button" onClick={() => runDeleteLog(r)} disabled={pending}
+                            className="min-h-[30px] inline-flex items-center px-1 text-[0.6875rem] text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-40">지우기</button>
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -789,6 +781,81 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   다른 품목과 합치기
                 </button>
               )}
+            </div>
+          </Modal>
+        )
+      })()}
+
+      {/* 위치 옮기기 — 단일 흐름: 어디로 + 얼마나 + 배정일 + 미리보기 (§ 재고 옮기기와 동일 문법) */}
+      {move && (() => {
+        const it = move.it
+        const max = it.qtyValue ?? 1
+        const unit = it.qtyUnit ?? '개'
+        const qNum = Number(move.qty)
+        const q = qNum > 0 ? Math.min(qNum, max) : 0
+        const over = qNum > max
+        const from = curPlace(it)
+        const toNone = move.to === ''
+        const dest = toNone ? '미배정(여분)' : placeName(move.to)
+        const same = (toNone && !it.roomId && !it.locationId && !it.isCommon)
+          || (!!it.roomId && move.to === `room:${it.roomId}`)
+          || (!!it.locationId && move.to === `loc:${it.locationId}`)
+        return (
+          <Modal open onClose={() => setMove(null)} z={260} width="xs"
+            title={`옮기기 · ${it.itemLabel}`}
+            subtitle={`지금 ${from}에 ${fmtQty(max)}${unit} 있습니다`}
+            footer={
+              <div className="flex gap-2 justify-end">
+                <Btn variant="secondary" size="md" onClick={() => setMove(null)} disabled={pending}>취소</Btn>
+                <Btn variant="primary" size="md" onClick={runMove} disabled={pending || over || same || q <= 0}>
+                  {pending ? '옮기는 중…' : '옮기기'}
+                </Btn>
+              </div>
+            }>
+            <div className="space-y-3 px-5 sm:px-6 py-4">
+              <label className="block">
+                <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">어디로 옮길까요?</span>
+                <select value={move.to} disabled={pending}
+                  onChange={e => setMove(m => m ? { ...m, to: e.target.value } : m)}
+                  className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+                  <option value="">미배정(여분)으로</option>
+                  <optgroup label="방">
+                    {rooms.map(r => <option key={r.id} value={'room:' + r.id}>{fmtRoomNo(r.roomNo)}</option>)}
+                  </optgroup>
+                  {locations.length > 0 && (
+                    <optgroup label="공용부">
+                      {locations.map(l => <option key={l.id} value={'loc:' + l.id}>{l.name}</option>)}
+                    </optgroup>
+                  )}
+                </select>
+              </label>
+              <label className="block">
+                <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">얼마나?</span>
+                <div className="flex items-center gap-1.5">
+                  <input value={move.qty} disabled={pending} inputMode="decimal"
+                    onChange={e => setMove(m => m ? { ...m, qty: e.target.value } : m)}
+                    className="w-24 h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  <span className="text-sm text-[var(--warm-mid)]">{unit}</span>
+                  <button type="button" disabled={pending}
+                    onClick={() => setMove(m => m ? { ...m, qty: fmtQty(max) } : m)}
+                    className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">전부</button>
+                </div>
+                {over && <p className="mt-1 text-[0.6875rem] text-[var(--danger-fg)]">지금 있는 수량({fmtQty(max)}{unit})보다 많아요.</p>}
+              </label>
+              {!toNone && (
+                <label className="block">
+                  <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">배정일 <span className="text-[var(--warm-muted)] font-normal">(기본 오늘 · 나중에 수정 가능)</span></span>
+                  <input type="date" value={move.date} disabled={pending}
+                    onChange={e => setMove(m => m ? { ...m, date: e.target.value } : m)}
+                    className="h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                </label>
+              )}
+              <div className="rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2.5 text-xs">
+                <p className="font-semibold text-[var(--warm-mid)] mb-0.5">이렇게 바뀝니다</p>
+                {same
+                  ? <p className="text-[var(--warm-muted)]">지금 있는 곳과 같은 곳입니다. 다른 곳을 골라주세요.</p>
+                  : <p className="text-[var(--warm-dark)]">{from} → <span className="font-semibold">{dest}</span> · {q > 0 ? `${fmtQty(q)}${unit}` : '수량을 입력하세요'}{q > 0 && q < max ? ` (나머지 ${fmtQty(Math.round((max - q) * 1000) / 1000)}${unit}는 ${from}에 남음)` : ''}</p>}
+              </div>
             </div>
           </Modal>
         )
