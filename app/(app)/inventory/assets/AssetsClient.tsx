@@ -62,6 +62,16 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
 
   // 선택 모드 — 여러 비품을 골라 ① 방·공용부 일괄 배정 ② 대표 골라 합치기(MergeSheet). 카드별 '합치기'도 병행.
   const [mergeMode, setMergeMode] = useState(false)
+  // 섹션 접기 — 기본 닫힘(스크롤 부담 완화, 운영자 요청 2026-07-08). 연 섹션은 닫기 전까지 기기에 유지.
+  const [openSecs, setOpenSecs] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    try { setOpenSecs(new Set(JSON.parse(localStorage.getItem('stayeum-assets-open-sections') ?? '[]') as string[])) } catch { /* 손상 시 전부 닫힘 */ }
+  }, [])
+  const toggleSec = (k: string) => setOpenSecs(prev => {
+    const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k)
+    try { localStorage.setItem('stayeum-assets-open-sections', JSON.stringify([...n])) } catch { /* 저장 실패 무시 */ }
+    return n
+  })
   const [search, setSearch] = useState('')   // §22.1 상시 검색 — 품목·구매처·카테고리 클라 필터
   const [mergeSel, setMergeSel]   = useState<Set<string>>(new Set())   // 선택된 AssetItem id
   const [pillMode, setPillMode] = useState<'menu' | 'assign'>('menu')   // 하단 바 단계
@@ -422,6 +432,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   const q = search.trim().toLowerCase()
   const hit = (it: AssetsData['pending'][number]) => !q || `${it.itemLabel} ${it.vendor ?? ''} ${it.category} ${it.specText ?? ''}`.toLowerCase().includes(q)
   const sumAmt = (l: AssetsData['pending']) => l.reduce((s, it) => s + it.amount, 0)
+  const secOpen = (k: string) => !!q || openSecs.has(k)
+  const secProps = (k: string) => ({ collapsible: true, collapsed: !secOpen(k), onToggle: () => toggleSec(k),
+    trailing: <span className="text-[0.6875rem] text-[var(--warm-muted)]">{secOpen(k) ? '접기' : '펼치기'}</span> })
   const vPending    = data.pending.filter(hit)
   const vUnassigned = data.unassigned.filter(hit)
   const vCommon     = data.common.filter(hit)
@@ -485,18 +498,20 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           {searchEmpty && <EmptyState title="검색 결과가 없습니다" description="다른 검색어로 시도해 보세요." />}
           {vPending.length > 0 && (
             <section className="space-y-2">
-              <SectionHeader name={<>수령 대기 <CoralTag>도착 전</CoralTag></>} count={`${vPending.length}건 · ${won(q ? sumAmt(vPending) : data.pendingTotal)}`} />
+              <SectionHeader name={<>수령 대기 <CoralTag>도착 전</CoralTag></>} count={`${vPending.length}건 · ${won(q ? sumAmt(vPending) : data.pendingTotal)}`} {...secProps('pending')} />
+              {secOpen('pending') && (
               <ul className="space-y-1.5">
                 {vPending.map(it => <ItemRow key={it.id} it={it} placed={false} awaitingReceipt siblings={siblingsOf(data.pending, it)} />)}
               </ul>
+              )}
             </section>
           )}
 
           {/* 미배정(여분) — 먼저. 검색 중 무결과면 섹션 자체를 숨김 */}
           {(!q || vUnassigned.length > 0) && (
           <section className="space-y-2">
-            <SectionHeader name="미배정 (여분)" count={`${vUnassigned.length}건 · ${won(q ? sumAmt(vUnassigned) : data.unassignedTotal)}`} />
-            {vUnassigned.length === 0 ? (
+            <SectionHeader name="미배정 (여분)" count={`${vUnassigned.length}건 · ${won(q ? sumAmt(vUnassigned) : data.unassignedTotal)}`} {...secProps('unassigned')} />
+            {!secOpen('unassigned') ? null : vUnassigned.length === 0 ? (
               <p className="text-xs text-[var(--warm-muted)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-3 text-center">미배정 비품이 없습니다.</p>
             ) : (
               <ul className="space-y-1.5">
@@ -509,30 +524,36 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           {/* 공용 자재 — 페인트·공구 등 방/공용부 배분 안 하는 공용 비품 */}
           {vCommon.length > 0 && (
             <section className="space-y-2">
-              <SectionHeader name={<>공용 자재 <CoralTag>배분 안 함</CoralTag></>} count={`${vCommon.length}건 · ${won(q ? sumAmt(vCommon) : data.commonTotal)}`} />
+              <SectionHeader name={<>공용 자재 <CoralTag>배분 안 함</CoralTag></>} count={`${vCommon.length}건 · ${won(q ? sumAmt(vCommon) : data.commonTotal)}`} {...secProps('common')} />
+              {secOpen('common') && (
               <ul className="space-y-1.5">
                 {vCommon.map(it => <ItemRow key={it.id} it={it} placed={false} siblings={siblingsOf(data.common, it)} />)}
               </ul>
+              )}
             </section>
           )}
 
           {/* 방별 */}
           {vRooms.map(g => (
             <section key={g.roomId} className="space-y-2">
-              <SectionHeader marker={<PinMarker />} name={fmtRoomNo(g.roomNo)} count={`${g.fItems.length}건 · ${won(q ? sumAmt(g.fItems) : g.total)}`} />
+              <SectionHeader marker={<PinMarker />} name={fmtRoomNo(g.roomNo)} count={`${g.fItems.length}건 · ${won(q ? sumAmt(g.fItems) : g.total)}`} {...secProps('room:' + g.roomId)} />
+              {secOpen('room:' + g.roomId) && (
               <ul className="space-y-1.5">
                 {g.fItems.map(it => <ItemRow key={it.id} it={it} placed siblings={siblingsOf(g.items, it)} />)}
               </ul>
+              )}
             </section>
           ))}
 
           {/* 공용부별 */}
           {vLocations.map(g => (
             <section key={g.locationId} className="space-y-2">
-              <SectionHeader marker={<PinMarker />} name={<>{g.name} <CoralTag>공용부</CoralTag></>} count={`${g.fItems.length}건 · ${won(q ? sumAmt(g.fItems) : g.total)}`} />
+              <SectionHeader marker={<PinMarker />} name={<>{g.name} <CoralTag>공용부</CoralTag></>} count={`${g.fItems.length}건 · ${won(q ? sumAmt(g.fItems) : g.total)}`} {...secProps('loc:' + g.locationId)} />
+              {secOpen('loc:' + g.locationId) && (
               <ul className="space-y-1.5">
                 {g.fItems.map(it => <ItemRow key={it.id} it={it} placed siblings={siblingsOf(g.items, it)} />)}
               </ul>
+              )}
             </section>
           ))}
         </>
