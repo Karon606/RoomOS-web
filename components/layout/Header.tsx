@@ -58,6 +58,7 @@ export default function Header({
   return (
     /* relative z-[var(--z-sticky)]: 헤더가 사이드바(z-50)보다 항상 위 → 드롭다운 겹침 방지 */
     <header
+      data-peek-hide
       className="h-14 md:h-16 flex items-center justify-between gap-2 px-3 md:px-6 shrink-0 relative z-[100]"
       style={{ background: 'var(--cream)', borderBottom: '1px solid var(--warm-border)' }}
     >

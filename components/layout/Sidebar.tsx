@@ -316,6 +316,7 @@ export default function Sidebar({
     <>
       {/* ── 태블릿(md) + 데스크탑(lg): in-flow 사이드바 ── */}
       <aside
+        data-peek-hide
         className="hidden md:flex md:w-16 lg:w-[220px] flex-col shrink-0"
         style={style}
       >

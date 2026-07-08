@@ -2,6 +2,7 @@
 
 import React from 'react'
 import { confirmDialog } from './ConfirmDialog'
+import { PeekSheet } from './PeekSheet'
 
 type Width = 'xs' | 'sm' | 'md' | 'lg' | '2xl'
 
@@ -48,6 +49,12 @@ export function Modal({
   // dirty 닫기 정책 — Esc/X 는 "작성 중인 내용이 있습니다" 확인을 거친다.
   // ref 로 들고 있어 Esc 핸들러 재등록 없이 최신값 사용. asking 플래그는
   // 확인 다이얼로그가 떠 있는 동안 Esc 연타로 다이얼로그가 중첩되는 것을 막는다.
+  // 살짝 보기 — 입력을 잃지 않고 다른 페이지를 작은 창으로 참조(전 모달 공통, 운영자 아이디어 2026-07-09)
+  const [peek, setPeek] = React.useState(false)
+  const [framed, setFramed] = React.useState(false)
+  React.useEffect(() => {
+    try { setFramed(window.self !== window.top) } catch { setFramed(true) }
+  }, [])
   const dirtyRef = React.useRef(dirty)
   dirtyRef.current = dirty
   const askingRef = React.useRef(false)
@@ -126,6 +133,14 @@ export function Modal({
               </div>
               {headerExtra}
             </div>
+            {!framed && (
+              <button
+                type="button"
+                onClick={() => setPeek(true)}
+                className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] w-11 h-11 flex items-center justify-center rounded-lg hover:bg-[var(--canvas)] transition-colors shrink-0"
+                title="살짝 보기 — 입력 유지한 채 다른 페이지 확인"
+              ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.6"/></svg></button>
+            )}
             <button
               type="button"
               onClick={() => void requestClose()}
@@ -143,6 +158,7 @@ export function Modal({
           </div>
         )}
       </div>
+      <PeekSheet open={peek} onClose={() => setPeek(false)} />
     </div>
   )
 }

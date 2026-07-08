@@ -6,6 +6,7 @@ import prisma from '@/lib/prisma'
 import AppShell from '@/components/layout/AppShell'
 import { EntityModalProvider } from '@/components/entity-modal/EntityModal'
 import ClearAppBadge from '@/components/ClearAppBadge'
+import PeekFrameGuard from '@/components/PeekFrameGuard'
 import BreadcrumbTracker from '@/components/BreadcrumbTracker'
 import ErrorReportButton from '@/components/ErrorReportButton'
 import { isSuperAdminEmail } from '@/lib/auth/access'
@@ -90,6 +91,7 @@ export default async function AppLayout({
       isAdminView={isAdminView}
     >
       <ClearAppBadge />
+      <PeekFrameGuard />
       <BreadcrumbTracker />
       <EntityModalProvider>
         {children}

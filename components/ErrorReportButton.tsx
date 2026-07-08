@@ -132,6 +132,7 @@ export default function ErrorReportButton() {
     <>
       <button
         ref={btnRef}
+        data-peek-hide
         type="button"
         onClick={openModal}
         onPointerDown={onPointerDown}

@@ -530,3 +530,6 @@ a, button, [role="button"], input[type="button"], input[type="submit"], input[ty
   table { page-break-inside: auto; }
   tr { page-break-inside: avoid; page-break-after: auto; }
 }
+
+/* 살짝 보기(PeekSheet iframe) — 프레임 안에서는 앱 크롬(헤더·하단탭·사이드바·오류신고 버튼)을 숨긴다 */
+html[data-peek-frame='1'] [data-peek-hide] { display: none !important; }
