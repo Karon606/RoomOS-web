@@ -139,7 +139,7 @@ export async function getDurableItems(): Promise<AssetsData> {
     roomId: r.roomId, roomNo: r.room?.roomNo ?? null,
     locationId: r.assignedLocationId, locationName: r.assignedLocation?.name ?? null,
     isCommon: r.isCommonAsset, received: r.receivedAt != null, isService: r.excludeFromInventory,
-    assignedAt: r.assignedAt ? r.assignedAt.toISOString().slice(0, 10) : null,
+    assignedAt: r.assignedAt ? kstYmd(r.assignedAt) : null,
   }))
 
   const roomBuckets = new Map<string, RawAsset[]>()
@@ -463,6 +463,9 @@ async function logAssignment(
   } catch { /* asset_assignment_log 미적용 — 무시 */ }
 }
 
+// 날짜 표시는 KST 기준 — UTC slice 는 자정 근처·+09 저장값에서 하루 밀린다(운영자 신고 2026-07-09)
+const kstYmd = (d: Date) => new Date(d.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10)
+
 // 비품 한 품목의 배정 변경 이력(최근순). 테이블 미적용 시 빈 배열.
 export type AssetAssignmentLogRow = { id: string; itemLabel: string | null; fromKind: string; fromLabel: string | null; toKind: string; toLabel: string | null; qty: number | null; assignedAt: string | null; createdAt: string }
 export async function getAssetAssignmentLog(itemLabel: string): Promise<AssetAssignmentLogRow[]> {
@@ -471,7 +474,7 @@ export async function getAssetAssignmentLog(itemLabel: string): Promise<AssetAss
     const rows = await prisma.assetAssignmentLog.findMany({
       where: { propertyId, itemLabel }, orderBy: { createdAt: 'desc' }, take: 30,
     })
-    return rows.map(r => ({ id: r.id, itemLabel: r.itemLabel, fromKind: r.fromKind, fromLabel: r.fromLabel, toKind: r.toKind, toLabel: r.toLabel, qty: r.qty, assignedAt: r.assignedAt ? r.assignedAt.toISOString().slice(0, 10) : null, createdAt: r.createdAt.toISOString().slice(0, 10) }))
+    return rows.map(r => ({ id: r.id, itemLabel: r.itemLabel, fromKind: r.fromKind, fromLabel: r.fromLabel, toKind: r.toKind, toLabel: r.toLabel, qty: r.qty, assignedAt: r.assignedAt ? kstYmd(r.assignedAt) : null, createdAt: kstYmd(r.createdAt) }))
   } catch { return [] }
 }
 
