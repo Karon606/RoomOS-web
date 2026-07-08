@@ -231,6 +231,12 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   }
   const curPlace = (it: AssetItem) =>
     it.roomNo ? fmtRoomNo(it.roomNo) : it.locationName ?? (it.isCommon ? '공용 자재' : '미배정(여분)')
+  // 같은 품목(라벨+사양) 판별 — 수량 부분만 다른 카드끼리 묶는다 ("지금 어디에 있나")
+  const itemIdentity = (x: AssetItem) => {
+    const d = x.detail ?? x.itemLabel
+    const i = d.lastIndexOf(' x ')
+    return [i > 0 ? d.slice(0, i) : d, x.qtyUnit ?? '', x.category ?? '', x.isService ? 'S' : ''].join('|')
+  }
 
   // 옮기기 실행 — 미배정 복귀도 부분 수량 지원(서버 통합 경로)
   const runMove = () => {
@@ -724,6 +730,41 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                     : <span className="text-[0.6875rem] text-[var(--warm-muted)]">미상</span>}
                 </div>
               )}
+              {(() => {
+                const places = allItems.filter(s => itemIdentity(s) === itemIdentity(it))
+                if (places.length <= 1) return null
+                const rank = (x: AssetItem) => x.roomNo ? 1 : x.locationName ? 2 : x.isCommon ? 3 : 0
+                const sorted = [...places].sort((a, b) => rank(a) - rank(b) || (a.roomNo ?? a.locationName ?? '').localeCompare(b.roomNo ?? b.locationName ?? ''))
+                const totalQ = sorted.reduce((s, x) => s + (x.qtyValue ?? 0), 0)
+                return (
+                  <div>
+                    <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">지금 어디에 있나
+                      <span className="ml-1.5 font-normal text-[var(--warm-muted)]">총 {fmtQty(totalQ)}{it.qtyUnit ?? '개'} · {sorted.length}곳</span>
+                    </p>
+                    <ul className="flex flex-wrap gap-1.5">
+                      {sorted.map(pl => {
+                        const isCur = pl.id === it.id
+                        const isPending = data.pending.some(x => x.id === pl.id)
+                        return (
+                          <li key={pl.id}>
+                            <button type="button" onClick={() => { if (!isCur) setDetailItem(pl) }}
+                              className={[
+                                'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors',
+                                isCur
+                                  ? 'border-[var(--coral)] bg-[var(--coral)]/10 text-[var(--warm-dark)] cursor-default'
+                                  : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)] hover:border-[var(--coral)]/50 hover:text-[var(--warm-dark)]',
+                              ].join(' ')}>
+                              {curPlace(pl)}{isPending ? ' (수령 대기)' : ''}
+                              <span className="mono font-semibold tabular-nums">{fmtQty(pl.qtyValue ?? pl.count)}{it.qtyUnit ?? '개'}</span>
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    <p className="mt-1 text-[0.625rem] text-[var(--warm-muted)]">눌러서 그 위치 카드로 이동할 수 있어요</p>
+                  </div>
+                )
+              })()}
               <div>
                 <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">구매 내역</p>
                 <ul className="space-y-1.5">
