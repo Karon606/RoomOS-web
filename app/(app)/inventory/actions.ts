@@ -2104,3 +2104,96 @@ export async function setItemHub(trackedItemId: string, locationId: string | nul
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
+
+
+// ── 위치 간 재고 이동·맞바꿈 (운영자 요청 2026-07-08) ─────────────────────────
+// 허브 자동 차감(점검 폼)과 별개의 명시적 이동. 총량 불변 점검을 만들어 기록하므로
+// 소모량 통계에 영향이 없다(§4 — 이동은 소모가 아님). 기존 점검·허브 UX 는 불변.
+
+export type ItemLocationStock = { id: string; name: string; isHub: boolean; qty: number }
+
+// 품목의 위치별 현재 수량 — 직전 점검 breakdown + 이후 입수분(점검 base 계산과 동일 규칙)
+async function currentLocationBreakdown(trackedItemId: string, propertyId: string, hubLocationId: string | null) {
+  const lastCheck = await prisma.stockCheck.findFirst({
+    where: { trackedItemId },
+    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+    include: { locationBreakdown: true },
+  })
+  const base = new Map<string, number>()
+  for (const lb of lastCheck?.locationBreakdown ?? []) base.set(lb.storageLocationId, lb.remainingQty)
+  const addMap = await additionsSinceCheckByLocation(trackedItemId, lastCheck, hubLocationId, propertyId)
+  for (const [loc, q] of addMap) base.set(loc, (base.get(loc) ?? 0) + q)
+  return base
+}
+
+export async function getItemLocationStock(trackedItemId: string): Promise<{ ok: true; locations: ItemLocationStock[] } | { ok: false; error: string }> {
+  try {
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id: trackedItemId, propertyId }, select: { hubLocationId: true } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    const [allLocs, breakdown] = await Promise.all([
+      prisma.storageLocation.findMany({ where: { propertyId }, orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, isHub: true } }),
+      currentLocationBreakdown(trackedItemId, propertyId, it.hubLocationId),
+    ])
+    return { ok: true, locations: allLocs.map(l => ({ ...l, qty: Math.max(0, breakdown.get(l.id) ?? 0) })) }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function transferLocationStock(data: {
+  trackedItemId: string
+  fromLocationId: string
+  toLocationId: string
+  qty?: number        // 미지정 = 전량 이동
+  swap?: boolean      // true = 두 위치 수량을 통째로 맞바꿈(qty 무시)
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id: data.trackedItemId, propertyId } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    if (data.fromLocationId === data.toLocationId) return { ok: false, error: '같은 위치로는 옮길 수 없습니다.' }
+    const locs = await prisma.storageLocation.findMany({ where: { propertyId, id: { in: [data.fromLocationId, data.toLocationId] } }, select: { id: true, name: true } })
+    const fromLoc = locs.find(l => l.id === data.fromLocationId)
+    const toLoc = locs.find(l => l.id === data.toLocationId)
+    if (!fromLoc || !toLoc) return { ok: false, error: '위치를 찾을 수 없습니다.' }
+
+    const breakdown = await currentLocationBreakdown(data.trackedItemId, propertyId, it.hubLocationId)
+    const fromQty = Math.max(0, breakdown.get(data.fromLocationId) ?? 0)
+    const toQty = Math.max(0, breakdown.get(data.toLocationId) ?? 0)
+
+    let memo: string
+    if (data.swap) {
+      if (fromQty === 0 && toQty === 0) return { ok: false, error: '두 위치 모두 재고가 없습니다.' }
+      breakdown.set(data.fromLocationId, toQty)
+      breakdown.set(data.toLocationId, fromQty)
+      memo = `맞바꿈: ${fromLoc.name} ↔ ${toLoc.name}`
+    } else {
+      const move = data.qty != null ? data.qty : fromQty
+      if (!(move > 0)) return { ok: false, error: '옮길 수량을 입력해주세요.' }
+      if (move > fromQty) return { ok: false, error: `${fromLoc.name}의 재고(${fromQty})보다 많이 옮길 수 없습니다.` }
+      breakdown.set(data.fromLocationId, fromQty - move)
+      breakdown.set(data.toLocationId, toQty + move)
+      memo = `이동: ${fromLoc.name} → ${toLoc.name} ${move}`
+    }
+
+    const entries = [...breakdown.entries()].filter(([, q]) => q > 0 || true)   // 0 도 기록(이월 명시)
+    const total = entries.reduce((s, [, q]) => s + Math.max(0, q), 0)
+    await prisma.stockCheck.create({
+      data: {
+        trackedItemId: data.trackedItemId,
+        date: new Date(),
+        remainingQty: total,   // 총량 불변 — 소모량 계산에 이동이 잡히지 않음
+        memo,
+        locationBreakdown: { create: entries.map(([storageLocationId, q]) => ({ storageLocationId, remainingQty: Math.max(0, q) })) },
+      },
+    })
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '이동에 실패했습니다.' }
+  }
+}

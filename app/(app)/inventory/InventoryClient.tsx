@@ -72,6 +72,7 @@ import {
   getMergeUndos,
   unmergeTrackedItem,
   setInventoryCategories,
+  getItemLocationStock, transferLocationStock, type ItemLocationStock,
 } from './actions'
 import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow } from './constants'
 
@@ -2731,11 +2732,162 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
 }
 
 // ── 위치별 일괄 점검 — 모달(inline=false) / 인라인 패널(inline=true) 양용
+// 위치 간 재고 이동·맞바꿈 (운영자 요청 2026-07-08) — "무엇을 → 어디서 → 어디로 → 얼마나" 한 화면.
+// 총량 불변 점검으로 기록되어 소모 통계에 영향 없음. 점검 폼의 허브 자동 차감 UX 는 그대로.
+function TransferStockModal({ rows, onClose, onDone }: {
+  rows: InventoryRow[]
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [itemId, setItemId] = useState('')
+  const [locStock, setLocStock] = useState<ItemLocationStock[] | null>(null)
+  const [fromId, setFromId] = useState('')
+  const [toId, setToId] = useState('')
+  const [qtyStr, setQtyStr] = useState('')
+  const [swapMode, setSwapMode] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const item = rows.find(r => r.id === itemId) ?? null
+  const unit = item ? (item.trackUnit === 'qty' ? (item.qtyUnit ?? '개') : (item.specUnit ?? item.qtyUnit ?? '개')) : '개'
+  const fromLoc = locStock?.find(l => l.id === fromId) ?? null
+  const toLoc = locStock?.find(l => l.id === toId) ?? null
+  const qty = Number(qtyStr) || 0
+  const moveQty = swapMode ? 0 : (qtyStr === '' ? (fromLoc?.qty ?? 0) : qty)
+  const canSubmit = !!item && !!fromLoc && !!toLoc && fromId !== toId
+    && (swapMode ? ((fromLoc?.qty ?? 0) > 0 || (toLoc?.qty ?? 0) > 0) : (moveQty > 0 && moveQty <= (fromLoc?.qty ?? 0)))
+
+  const pickItem = async (id: string) => {
+    setItemId(id); setLocStock(null); setFromId(''); setToId(''); setQtyStr(''); setSwapMode(false)
+    if (!id) return
+    const res = await getItemLocationStock(id)
+    if (res.ok) setLocStock(res.locations)
+    else pushToast('error', res.error)
+  }
+
+  const chip = (on: boolean, disabled = false) =>
+    `min-h-[40px] px-3 rounded-lg border text-sm font-medium transition-colors ${disabled ? 'opacity-40' : ''} ${
+      on ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--cream)]'
+         : 'bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)]'}`
+
+  const submit = async () => {
+    if (!canSubmit || !item) return
+    setBusy(true)
+    const release = trackSave()
+    try {
+      const res = await transferLocationStock({
+        trackedItemId: item.id, fromLocationId: fromId, toLocationId: toId,
+        ...(swapMode ? { swap: true } : { qty: moveQty }),
+      })
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', swapMode
+        ? `${fromLoc!.name} ↔ ${toLoc!.name} 맞바꿈 완료`
+        : `${fromLoc!.name} → ${toLoc!.name} ${moveQty}${unit} 이동 완료`)
+      onDone()
+    } finally { release(); setBusy(false) }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="재고 옮기기" width="sm"
+      subtitle="위치에서 위치로 옮기거나 두 위치를 통째로 맞바꿉니다. 총 재고는 변하지 않아요.">
+      <div className="p-5 space-y-4">
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-[var(--warm-mid)]">1. 무엇을 옮길까요?</label>
+          <select value={itemId} onChange={e => pickItem(e.target.value)}
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+            <option value="">품목 선택…</option>
+            {rows.map(r => <option key={r.id} value={r.id}>{r.label} ({r.category})</option>)}
+          </select>
+        </div>
+
+        {item && locStock && (
+          <>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">2. 어디에서 꺼낼까요?</label>
+              <div className="flex flex-wrap gap-1.5">
+                {locStock.filter(l => l.qty > 0 || swapMode).map(l => (
+                  <button key={l.id} type="button" className={chip(fromId === l.id)}
+                    onClick={() => { setFromId(l.id); if (toId === l.id) setToId('') }}>
+                    {l.name}{l.isHub ? ' (허브)' : ''} · {fmtQty(l.qty, unit)}
+                  </button>
+                ))}
+              </div>
+              {locStock.every(l => l.qty <= 0) && !swapMode && (
+                <p className="text-[0.625rem] text-[var(--warm-muted)]">재고가 있는 위치가 없습니다.</p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">3. 어디로 옮길까요?</label>
+              <div className="flex flex-wrap gap-1.5">
+                {locStock.filter(l => l.id !== fromId).map(l => (
+                  <button key={l.id} type="button" className={chip(toId === l.id)}
+                    onClick={() => setToId(l.id)}>
+                    {l.name}{l.isHub ? ' (허브)' : ''} · {fmtQty(l.qty, unit)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer">
+              <input type="checkbox" checked={swapMode}
+                onChange={e => { setSwapMode(e.target.checked); setQtyStr('') }}
+                className="w-3.5 h-3.5 accent-[var(--coral)]" />
+              두 위치의 재고를 통째로 맞바꾸기
+            </label>
+
+            {!swapMode && fromLoc && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[var(--warm-mid)]">4. 얼마나 옮길까요?</label>
+                <div className="flex items-center gap-1.5">
+                  <input value={qtyStr} inputMode="decimal"
+                    onChange={e => setQtyStr(e.target.value.replace(/[^0-9.]/g, ''))}
+                    placeholder={fmtQty(fromLoc.qty, null)}
+                    className="w-24 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  <span className="text-xs text-[var(--warm-muted)]">{unit}</span>
+                  <Btn type="button" variant="secondary" size="sm" onClick={() => setQtyStr(String(fromLoc.qty))}>전부</Btn>
+                </div>
+                {moveQty > (fromLoc.qty ?? 0) && (
+                  <p className="text-[0.625rem] text-[var(--danger-fg)]">{fromLoc.name}에 있는 {fmtQty(fromLoc.qty, unit)}보다 많이 옮길 수 없어요.</p>
+                )}
+              </div>
+            )}
+
+            {fromLoc && toLoc && canSubmit && (
+              <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] px-3.5 py-2.5 text-xs text-[var(--warm-dark)] space-y-0.5">
+                <p className="font-semibold text-[var(--warm-mid)]">이렇게 바뀝니다</p>
+                {swapMode ? (
+                  <>
+                    <p>{fromLoc.name}: {fmtQty(fromLoc.qty, unit)} → <strong>{fmtQty(toLoc.qty, unit)}</strong></p>
+                    <p>{toLoc.name}: {fmtQty(toLoc.qty, unit)} → <strong>{fmtQty(fromLoc.qty, unit)}</strong></p>
+                  </>
+                ) : (
+                  <>
+                    <p>{fromLoc.name}: {fmtQty(fromLoc.qty, unit)} → <strong>{fmtQty(fromLoc.qty - moveQty, unit)}</strong></p>
+                    <p>{toLoc.name}: {fmtQty(toLoc.qty, unit)} → <strong>{fmtQty(toLoc.qty + moveQty, unit)}</strong></p>
+                  </>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="flex gap-2 pt-1">
+          <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={onClose}>취소</Btn>
+          <Btn type="button" variant="primary" size="md" className="flex-1" onClick={submit} disabled={!canSubmit || busy}>
+            {busy ? '처리 중…' : swapMode ? '맞바꾸기' : '옮기기'}
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraftChange }: {
   rows: InventoryRow[]; onClose: () => void; onDone: () => void; inline?: boolean; onDraftChange?: () => void
 }) {
   const [locs, setLocs] = useState<StorageLocationItem[]>([])
   const [locId, setLocId] = useState('')
+  const [transferOpen, setTransferOpen] = useState(false)   // 위치 간 이동·맞바꿈(운영자 요청 2026-07-08)
   const [date, setDate] = useState(kstYmdStr())
   const [pending, setPending] = useState(false)
   const [draftPending, setDraftPending] = useState(false)
@@ -2938,7 +3090,15 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
                 className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
             </div>
           </div>
+          {/* 위치 간 이동 — 점검(허브 자동 차감)과 별개의 명시적 이동·맞바꿈 */}
+          <div className="flex justify-end">
+            <Btn type="button" variant="secondary" size="sm" onClick={() => setTransferOpen(true)}>재고 옮기기</Btn>
+          </div>
         </div>
+        {transferOpen && (
+          <TransferStockModal rows={rows} onClose={() => setTransferOpen(false)}
+            onDone={() => { setTransferOpen(false); onDone() }} />
+        )}
 
         <div className={inline ? 'px-5 py-3 space-y-3' : 'flex-1 overflow-y-auto px-5 py-3 space-y-3'}>
           {!locId ? (
