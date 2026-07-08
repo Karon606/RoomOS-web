@@ -1916,7 +1916,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
       {/* ── 기간(월) 셀렉터 + 요금 계산 — 우측 정렬 ────────────────────── */}
       {/* 요금 계산: 문의 전화 시 홈에서 바로 견적(고객 관리에서 이관, 운영자 지시 2026-07-06) */}
       <div className="flex justify-end items-center gap-2">
-        <Btn type="button" variant="secondary" size="md" onClick={() => setQuoteOpen(true)}>요금 계산</Btn>
+        <Btn type="button" variant="secondary" size="md" onClick={() => setQuoteOpen(true)}>단기 요금 계산</Btn>
         <MonthSelector />
       </div>
       <StayQuoteModal open={quoteOpen} onClose={() => setQuoteOpen(false)} />

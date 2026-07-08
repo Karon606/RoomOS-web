@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
+import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
 import { getRoomsForQuote } from './actions'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -2336,6 +2337,15 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   const [inquiryTimeVal, setInquiryTimeVal] = useState(initialInquiry.time)
   const [reservationConfirmed, setReservationConfirmed] = useState(!!lease?.reservationConfirmedAt)
   const [isShortTerm, setIsShortTerm] = useState(!!lease?.isShortTerm)
+  // 단기 요금 자동 계산 — 홈 '단기 요금 계산'과 동일 로직(calcShortStay), 운영자 요청 2026-07-09
+  const [shortQuoteData, setShortQuoteData] = useState<Awaited<ReturnType<typeof getRoomsForQuote>> | null>(null)
+  const [shortIn, setShortIn] = useState('')
+  const [shortOut, setShortOut] = useState('')
+  useEffect(() => {
+    if (!isShortTerm || shortQuoteData) return
+    getRoomsForQuote().then(setShortQuoteData).catch(() => { /* 정책 로드 실패 시 계산기만 미표시 */ })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isShortTerm])
   const inquiryAtCombined = inquiryDateVal
     ? `${inquiryDateVal}T${inquiryTimeVal || '00:00'}`
     : ''
@@ -2645,6 +2655,44 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed pl-6">
             체크 시 호실 선택 후에도 월 이용료/보증금/청소비가 자동 채워지지 않고 모두 수동 입력합니다. 호실의 표준 가격에는 영향이 없으며 퇴실 후 다음 입주자는 다시 자동 채워집니다.
           </p>
+          {isShortTerm && (() => {
+            const baseRent = shortQuoteData?.rooms.find(r => r.id === selectedRoomId)?.baseRent
+              ?? rooms.find(r => r.id === selectedRoomId)?.baseRent ?? 0
+            const days = shortIn && shortOut ? stayDaysOf(shortIn, shortOut) : null
+            const short = shortQuoteData && baseRent > 0 && days != null
+              ? calcShortStay(shortQuoteData.shortStay, baseRent, days) : null
+            return (
+              <div className="pl-6 pt-1 space-y-2">
+                <p className="text-[0.6875rem] font-medium text-[var(--warm-mid)]">단기 요금 자동 계산 <span className="font-normal text-[var(--warm-muted)]">(홈의 단기 요금 계산과 같은 규칙)</span></p>
+                <div className="grid grid-cols-2 gap-2">
+                  <DatePicker value={shortIn} onChange={setShortIn} placeholder="입실일"
+                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none" />
+                  <DatePicker value={shortOut} onChange={setShortOut} placeholder="퇴실일"
+                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none" />
+                </div>
+                {!selectedRoomId ? (
+                  <p className="text-[0.625rem] text-[var(--warm-muted)]">호실을 고르면 그 방의 표준가로 자동 계산합니다</p>
+                ) : short && days != null ? (
+                  <div className="rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] px-2.5 py-2 space-y-1">
+                    <p className="text-[0.6875rem] text-[var(--warm-dark)]">
+                      {days}일 → {short.units}주 계약{short.cappedAtMonth ? ' (1개월 상한 적용)' : ''} ·
+                      사용료 {fmtWon(short.baseAmount)} + 청소비 {fmtWon(short.cleaningFee)} = <span className="font-bold">{fmtWon(short.total)}</span>
+                    </p>
+                    <button type="button"
+                      onClick={() => { setRentAmount(short.baseAmount); setCleaningFeeVal(short.cleaningFee) }}
+                      className="min-h-[32px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity">
+                      이 금액 채우기
+                    </button>
+                    <span className="ml-2 text-[0.625rem] text-[var(--warm-muted)]">채운 뒤 아래에서 자유롭게 수정할 수 있어요</span>
+                  </div>
+                ) : days != null && shortQuoteData && days > shortQuoteData.shortStay.thresholdDays ? (
+                  <p className="text-[0.625rem] text-[var(--warning-fg)]">단기 정책 범위({shortQuoteData.shortStay.thresholdDays}일)를 넘는 기간입니다. 월 단위로 입력해 주세요.</p>
+                ) : (
+                  <p className="text-[0.625rem] text-[var(--warm-muted)]">입실일과 퇴실일을 고르면 요금이 자동 계산됩니다</p>
+                )}
+              </div>
+            )
+          })()}
         </div>
 
         {/* 호실 — 상태에 따라 선택 규칙 다름 */}
