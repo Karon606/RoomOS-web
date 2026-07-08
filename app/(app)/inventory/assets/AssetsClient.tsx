@@ -50,6 +50,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
 }) {
   const router = useRouter()
   // 위치 옮기기 — 카드·상세 공용 단일 흐름(어디로+얼마나+배정일+미리보기), 운영자 요청 2026-07-08
+  const [adjQty, setAdjQty] = useState<{ id: string; v: string } | null>(null)   // 배정 수량 직접 조절 입력(카드별)
   const [move, setMove] = useState<{ it: AssetItem; to: string; qty: string; date: string; src: string } | null>(null)   // src: '' = 오래된 구매부터, 'YYYY-MM-DD' = 그 구매분에서만
   // 부분 수령(분할 배송) — 수량>1 이면 몇 개 왔는지 물어봄(기본 전체). 잔여는 수령 대기 유지.
   const [rcvAsk, setRcvAsk] = useState<string | null>(null)   // 대상 AssetItem id
@@ -285,6 +286,39 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       if (q >= max) setMove(null)                                // 전량 이동 — 출발지 비움
       else setMove(m => m ? { ...m, qty: '' } : m)               // 남은 수량으로 계속
       router.refresh()
+    })
+  }
+
+  // 배정 수량 직접 조절 — 줄이면 여분으로 반환, 늘리면 여분에서 가져옴(운영자 요청 2026-07-09)
+  const runAdjustQty = (it: AssetItem, v: string) => {
+    const cur = it.qtyValue ?? 0
+    const next = Number(v)
+    const unit = it.qtyUnit ?? '개'
+    if (!(next > 0)) { pushToast('error', '0보다 큰 수량을 입력하세요. 전부 빼려면 옮기기를 쓰세요.'); return }
+    if (Math.abs(next - cur) < 1e-9) return
+    if (next < cur) {
+      const delta = Math.round((cur - next) * 1000) / 1000
+      startTransition(async () => {
+        const res = await assignAggregateToTarget(it.ids, { kind: 'none' }, delta)
+        if (!res.ok) { pushToast('error', res.error); return }
+        pushToast('success', `${curPlace(it)} ${fmtQty(next)}${unit}로 조절했습니다 (${fmtQty(delta)}${unit}는 여분으로)`)
+        setAdjQty(null); router.refresh()
+      })
+      return
+    }
+    const delta = Math.round((next - cur) * 1000) / 1000
+    const spare = allItems.find(x =>
+      itemIdentity(x) === itemIdentity(it) && !x.roomId && !x.locationId && !x.isCommon && !data.pending.some(pd => pd.id === x.id))
+    if (!spare || (spare.qtyValue ?? 0) + 1e-9 < delta) {
+      pushToast('error', `여분이 부족합니다 (여분 ${fmtQty(spare?.qtyValue ?? 0)}${unit} · ${fmtQty(delta)}${unit} 필요)`)
+      return
+    }
+    const target = (it.roomId ? { kind: 'room', id: it.roomId } : { kind: 'location', id: it.locationId! }) as Parameters<typeof assignAggregateToTarget>[1]
+    startTransition(async () => {
+      const res = await assignAggregateToTarget(spare.ids, target, delta, it.assignedAt ?? null)
+      if (!res.ok) { pushToast('error', res.error); return }
+      pushToast('success', `여분에서 ${fmtQty(delta)}${unit} 가져와 ${fmtQty(next)}${unit}로 조절했습니다`)
+      setAdjQty(null); router.refresh()
     })
   }
 
@@ -752,6 +786,23 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   {it.roomNo || it.locationName ? '옮기기' : '배정하기'}
                 </button>
               </div>
+              {(it.roomNo || it.locationName) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-medium text-[var(--warm-mid)] shrink-0">이 위치 수량</span>
+                  <input inputMode="decimal" disabled={pending}
+                    value={adjQty?.id === it.id ? adjQty.v : ''}
+                    placeholder={fmtQty(it.qtyValue ?? 0)}
+                    onChange={e => setAdjQty({ id: it.id, v: e.target.value })}
+                    onKeyDown={e => { if (e.key === 'Enter' && adjQty?.id === it.id) runAdjustQty(it, adjQty.v) }}
+                    className="w-20 h-9 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 text-sm tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
+                  <span className="text-xs text-[var(--warm-mid)]">{it.qtyUnit ?? '개'}</span>
+                  {adjQty?.id === it.id && adjQty.v && Number(adjQty.v) !== (it.qtyValue ?? 0) && (
+                    <button type="button" disabled={pending} onClick={() => runAdjustQty(it, adjQty.v)}
+                      className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">적용</button>
+                  )}
+                  <span className="text-[0.625rem] text-[var(--warm-muted)]">줄이면 여분으로, 늘리면 여분에서 가져와요</span>
+                </div>
+              )}
               {(it.roomNo || it.locationName) && (
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium text-[var(--warm-mid)] shrink-0">배정일</span>
