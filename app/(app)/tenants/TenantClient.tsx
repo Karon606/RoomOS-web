@@ -2658,19 +2658,19 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               })()
               const effective = contactAlertVal || def
               return (
-                <div className="rounded-lg bg-[var(--canvas)]/60 border border-[var(--warm-border)] px-2.5 py-2 space-y-1">
-                  <p className="text-[0.6875rem] text-[var(--warm-dark)]">
-                    연락 알림: <span className="font-semibold">{effective}</span>부터 홈·종에 &lsquo;연락할 때&rsquo;로 떠요
-                    {!contactAlertVal && <span className="text-[var(--warm-muted)]"> (기본: 희망일 {contactLeadDays}일 전)</span>}
-                  </p>
-                  <div className="flex items-center gap-1.5">
-                    <DatePicker name="contactAlertDate" value={contactAlertVal} onChange={setContactAlertVal} placeholder="다른 날짜로 바꾸기"
-                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-xs text-[var(--warm-dark)] outline-none" />
-                    {contactAlertVal && (
-                      <button type="button" onClick={() => setContactAlertVal('')}
-                        className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">기본값으로</button>
-                    )}
-                  </div>
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-xs font-medium text-[var(--warm-mid)]">연락 알림일</span>
+                  {/* 날짜를 탭하면 달력이 열려 바로 변경(운영자 요청 2026-07-10). 저장값은 직접 지정했을 때만 */}
+                  <DatePicker value={effective} onChange={setContactAlertVal}
+                    className="!w-auto inline-flex items-center px-1 text-sm font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-4" />
+                  <input type="hidden" name="contactAlertDate" value={contactAlertVal} />
+                  <span className="text-[0.625rem] text-[var(--warm-muted)]">
+                    {contactAlertVal ? '직접 지정' : `기본 · 희망일 ${contactLeadDays}일 전`} · 이 날부터 홈·종에 알림
+                  </span>
+                  {contactAlertVal && (
+                    <button type="button" onClick={() => setContactAlertVal('')}
+                      className="min-h-[28px] inline-flex items-center text-[0.625rem] px-1.5 text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">기본값으로</button>
+                  )}
                 </div>
               )
             })()}
