@@ -70,7 +70,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
       'BEGIN:VEVENT', `UID:${uid}@stayeum`, `DTSTAMP:${dtstamp}`,
       `DTSTART;VALUE=DATE:${start}`,
       `DTEND;VALUE=DATE:${ymd(end.getFullYear(), end.getMonth() + 1, end.getDate())}`,
-      `SUMMARY:${esc(summary)}`, ...(desc ? [`DESCRIPTION:${esc(desc)}`] : []), 'END:VEVENT',
+      `SUMMARY:${esc(summary)}`, ...(desc ? [`DESCRIPTION:${esc(desc)}`] : []),
+      // 당일 오전 9시 알림(운영자 지정 2026-07-10) — 종일 이벤트 시작(자정)+9시간. 구글은 구독 알람 무시, 애플은 지원.
+      'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${esc(summary)}`, 'TRIGGER;RELATED=START:PT9H', 'END:VALARM',
+      'END:VEVENT',
     )
   }
 
