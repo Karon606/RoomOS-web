@@ -109,7 +109,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5 space-y-2">
         <h1 className="text-base font-bold text-[var(--warm-dark)]">발생주의 데이터 진단</h1>
         <p className="text-xs text-[var(--warm-mid)] leading-relaxed">
-          각 수납 기록의 <span className="font-semibold">실제 입금일(payDate)</span>과 <span className="font-semibold">귀속 월(targetMonth)</span>을 비교합니다.
+          각 수납 기록의 <span className="font-semibold">실제 입금일</span>과 <span className="font-semibold">귀속 월(어느 달 이용료로 잡혔는지)</span>을 비교합니다.
           양도인 record(인수일 이전 입금)는 정상으로 분류되어 제외됩니다. 변경되는 것은 해당 기록의 <span className="font-semibold">귀속 월</span>뿐 — 입금일·금액·납부방식은 그대로 유지됩니다.
         </p>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--warm-mid)] pt-2">

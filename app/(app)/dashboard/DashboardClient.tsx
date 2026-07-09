@@ -1961,7 +1961,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                 </div>
                 {/* §23.1 — 보조 1줄(달성도). 완료/예정/미납 건 상세는 수납 관리로 이동 */}
                 <p style={{ fontSize: '0.65625rem', color: 'rgba(255,252,247,0.55)', lineHeight: 1.5 }}>
-                  수납 {fmtWon(data.totalRevenue)} · 달성 <em style={{ fontStyle: 'normal', color: 'var(--rev-change)', fontWeight: 700 }}>{pct}%</em>
+                  수납+기타 {fmtWon(data.totalRevenue)} · 달성 <em style={{ fontStyle: 'normal', color: 'var(--rev-change)', fontWeight: 700 }}>{pct}%</em>
                 </p>
               </>
             )
@@ -2326,7 +2326,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                   <div>
                     <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: `1px solid ${DIVIDER_COLOR}` }}>
                       <div className="flex items-center gap-2">
-                        <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>이달 미수납</h3>
+                        <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>이달 미수납 <span style={{ fontSize: '0.625rem', fontWeight: 400, color: 'var(--warm-muted)' }}>납부일 전 인원 포함</span></h3>
                         <span className="rounded-full text-[0.5625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
                       </div>
                       {data.unpaidCount > 0 && (
@@ -2367,6 +2367,10 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                     ) : l.daysOverdue != null && l.daysOverdue >= 1 ? (
                                       <span className="rounded-full text-[0.5625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--warning-bg)', color: 'var(--warning-fg)' }}>
                                         미납
+                                      </span>
+                                    ) : l.daysOverdue != null && l.daysOverdue < 0 ? (
+                                      <span className="rounded-full text-[0.5625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>
+                                        납부일 전
                                       </span>
                                     ) : null}
                                   </p>

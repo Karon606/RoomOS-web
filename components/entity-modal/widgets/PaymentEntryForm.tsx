@@ -168,13 +168,13 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
       {!isDepositMode && !isCleaningFeeMode && (
         <>
           <p className="text-[0.625rem] text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed">
-            기본은 미수가 있는 가장 오래된 월부터 자동 충당(FIFO·발생주의)입니다. 특정 월로 귀속시키려면 아래에서 직접 선택하세요.
+            받은 돈은 가장 오래 밀린 달부터 자동으로 채웁니다. 특정 달 이용료로 넣고 싶으면 아래에서 직접 선택하세요.
           </p>
           <div className="space-y-1">
             <label className="text-xs text-[var(--warm-muted)]">귀속월</label>
             <select value={forcedTm} onChange={e => setForcedTm(e.target.value as 'auto' | string)}
               className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
-              <option value="auto">자동 (FIFO · 가장 오래된 미수월부터)</option>
+              <option value="auto">자동 — 오래 밀린 달부터 채움</option>
               {tmOptions.map(o => {
                 const [y, m] = o.month.split('-')
                 const tag = o.status === 'paid' ? '완납'
@@ -185,7 +185,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
             </select>
             {forcedTm !== 'auto' && (
               <p className="text-[0.625rem] text-[var(--warning-fg)] leading-relaxed">
-                FIFO 우회 — 입력 금액이 한 달 이용료를 초과하면 그 다음 달로 이월됩니다.
+                직접 선택 — 입력 금액이 그 달 이용료보다 많으면 남는 금액은 다음 달로 넘어갑니다.
               </p>
             )}
           </div>
@@ -246,7 +246,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
               </p>
             ) : (
               <p className="text-xs text-[var(--warm-muted)]">
-                보증금만 수납 (이용료 포함하려면 금액을 늘리세요 — 초과분은 {targetMonth} 이용료로 처리)
+                보증금만 수납 (이용료 포함하려면 금액을 늘리세요 — 초과분은 {`${Number(targetMonth.slice(0, 4))}년 ${Number(targetMonth.slice(5, 7))}월`} 이용료로 처리)
               </p>
             )
           )}

@@ -355,7 +355,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       ) : rows.length === 0 ? (
         <EmptyState
           title="추적할 품목이 아직 없습니다"
-          description="'지출에서 자동 등록' 버튼을 누르면 부식·소모품·폐기물 카테고리에서 입력된 품목이 자동 등록됩니다."
+          description="지출 관리에서 부식·소모품·폐기물 카테고리로 구매를 등록하면 품목이 여기에 자동으로 잡힙니다. 별도 등록이 필요하면 위의 '+ 품목 추가'를 누르세요."
         />
       ) : (
         <>
@@ -414,7 +414,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                           </button>
                           <button type="button" onClick={() => handleQuickReceive(g.key, ids)} disabled={receivingKey === g.key}
                             className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
-                            {receivingKey === g.key ? '처리 중' : '수령 완료'}
+                            {receivingKey === g.key ? '처리 중' : '수령 확인'}
                           </button>
                         </div>
                       </div>
@@ -555,7 +555,7 @@ function InventoryCard({ row, onOpen, onArchive, selectMode, isSelected, hasDraf
       badges={<>
         {hasDraft && <Badge tone="inspect">점검 중</Badge>}
         {lowStock && <Badge tone="danger" mono>소진 임박</Badge>}
-        {row.pendingPurchases.length > 0 && <Badge tone="warn" mono>{row.pendingPurchases.length}건 수령대기</Badge>}
+        {row.pendingPurchases.length > 0 && <Badge tone="warn" mono>{row.pendingPurchases.length}건 수령 대기</Badge>}
       </>}
       meta={<span style={{ color: tint?.fg }}>{row.category}</span>}
       value={fmtQty(row.currentStock, stockUnit)}

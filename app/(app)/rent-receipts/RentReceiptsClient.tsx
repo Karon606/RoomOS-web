@@ -58,7 +58,7 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
       </div>
 
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-[var(--warm-dark)]">새 영수증 발급</h2>
+        <h2 className="text-sm font-semibold text-[var(--warm-dark)]">새 확인서 발급</h2>
         <SearchBar value={tenantQuery} onChange={setTenantQuery} placeholder="이름·호실로 입실자 찾기" />
         {tenants.length === 0 ? (
           <p className="text-xs text-[var(--warm-muted)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-4 text-center">거주중인 입실자가 없습니다.</p>
@@ -88,7 +88,7 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
         )}
         {fileRows.length === 0 ? (
           <EmptyState
-            title={files.length === 0 ? '발급한 영수증이 아직 없습니다' : '조건에 맞는 영수증이 없습니다'}
+            title={files.length === 0 ? '발급한 확인서가 아직 없습니다' : '조건에 맞는 확인서가 없습니다'}
             description={files.length === 0 ? '위에서 입실자를 선택해 발급하면 여기에 모입니다.' : '검색어를 조정해 보세요.'}
           />
         ) : (

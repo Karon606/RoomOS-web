@@ -144,7 +144,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
       })
       if (!res.ok) { pushToast('error', res.error); return }
       setFreeForm(null)
-      pushToast('success', '무상 비품이 등록되었습니다')
+      pushToast('success', '무상 입수로 등록되었습니다')
       router.refresh()
     })
   }
@@ -499,7 +499,10 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           { id: 'consumables', label: '소모품·부식', href: '/inventory' },
           { id: 'assets',      label: '비품·자재',   href: '/inventory/assets' },
         ]} />
-        <div className="self-end md:self-auto"><MonthSelector /></div>
+        <div className="self-end md:self-auto text-right">
+          <MonthSelector />
+          <p className="mt-0.5 text-[0.625rem] text-[var(--warm-muted)]">월은 &lsquo;이달 구매&rsquo; 요약에만 적용 — 아래 배치 현황은 누적</p>
+        </div>
       </div>
       {/* 헤더 — 소모품 탭과 동일 골격: 제목 블록 → 버튼 줄 → 검색(§22.1) */}
       <div className="space-y-2">
@@ -524,7 +527,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           )}
           <Btn variant="primary" size="md"
             onClick={() => setFreeForm({ label: '', cat: assetCats[0] ?? '비품', spec: '', specUnit: '', specText: '', qty: '1', qtyUnit: '개' })}>
-            + 무상 비품
+            + 무상 입수
           </Btn>
         </div>
         {!isEmpty && <SearchBar value={search} onChange={setSearch} placeholder="품목명, 구매처, 카테고리 검색" />}

@@ -277,10 +277,10 @@ function TenantsTab({ data }: { data: DashboardData }) {
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard label="전체 입주자"  value={`${data.totalTenants}명`}               sub="현재 계약 기준" />
-        <StatCard label="거주중"       value={`${data.statusCounts.active}명`}         sub="ACTIVE"        colorStyle={{ color: 'var(--success-fg)' }} />
-        <StatCard label="입실 예정"    value={`${data.statusCounts.reserved}명`}       sub="RESERVED"      colorStyle={{ color: 'var(--info-fg)' }} />
-        <StatCard label="퇴실 예정"    value={`${data.statusCounts.checkout}명`}       sub="CHECKOUT"      colorStyle={{ color: 'var(--warning-fg)' }} />
-        <StatCard label="비거주자"     value={`${data.statusCounts.nonResident}명`}    sub="NON_RESIDENT"  colorStyle={{ color: 'var(--warning-fg)' }} />
+        <StatCard label="거주중"       value={`${data.statusCounts.active}명`}         sub="현재 거주"        colorStyle={{ color: 'var(--success-fg)' }} />
+        <StatCard label="입실 예정"    value={`${data.statusCounts.reserved}명`}       sub="예약·입주 대기"      colorStyle={{ color: 'var(--info-fg)' }} />
+        <StatCard label="퇴실 예정"    value={`${data.statusCounts.checkout}명`}       sub="퇴실 예정"      colorStyle={{ color: 'var(--warning-fg)' }} />
+        <StatCard label="비거주자"     value={`${data.statusCounts.nonResident}명`}    sub="방 미거주 계약"  colorStyle={{ color: 'var(--warning-fg)' }} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

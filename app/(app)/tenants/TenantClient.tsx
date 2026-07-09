@@ -926,7 +926,7 @@ export default function TenantClient({
 
       {/* 헤더 */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-bold text-[var(--warm-dark)]">고객 관리</h1>
+        <h1 className="text-xl font-bold text-[var(--warm-dark)]">입주자 관리</h1>
         <div className="flex items-center gap-2">
           <Btn type="button" variant="secondary" size="md"
             onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
@@ -934,7 +934,7 @@ export default function TenantClient({
           </Btn>
           <Btn variant="primary" size="md"
             onClick={() => { setAddTenantDirty(false); setShowAdd(true); setError('') }}>
-            + 고객 등록
+            + 입주자 등록
           </Btn>
         </div>
       </div>
@@ -951,7 +951,7 @@ export default function TenantClient({
           value={statusFilter}
           onChange={setStatusFilter}
           options={[
-            { value: 'living',           label: `거주중 ${countLiving}` },
+            { value: 'living',           label: `거주중 ${countLiving} (퇴실예정 포함)` },
             { value: 'CHECKOUT_PENDING', label: `퇴실 예정 ${countCheckout}` },
             { value: 'NON_RESIDENT',     label: `비거주자 ${countNonRes}` },
             { value: 'RESERVED',         label: `예약 ${countReserved}` },
@@ -1482,7 +1482,7 @@ export default function TenantClient({
       {/* ── 입주자 추가 모달 ────────────────────────────────────────── */}
       {showAdd && (
         <Modal open width="lg" dirty={addTenantDirty}
-          onClose={() => { setShowAdd(false); setAddTenantDirty(false) }} title="고객 등록">
+          onClose={() => { setShowAdd(false); setAddTenantDirty(false) }} title="입주자 등록">
             <form onSubmit={handleAdd} className="overflow-y-auto p-6 space-y-4"
               onInput={() => requestAnimationFrame(() => setAddTenantDirty(true))} onChange={() => setAddTenantDirty(true)}>
               <TenantForm rooms={rooms} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
@@ -2665,7 +2665,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                     className="!w-auto inline-flex items-center px-1 text-sm font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-4" />
                   <input type="hidden" name="contactAlertDate" value={contactAlertVal} />
                   <span className="text-[0.625rem] text-[var(--warm-muted)]">
-                    {contactAlertVal ? '직접 지정' : `기본 · 희망일 ${contactLeadDays}일 전`} · 이 날부터 홈·종에 알림
+                    {contactAlertVal ? '직접 지정' : `기본 · 희망일 ${contactLeadDays}일 전`} · 이 날부터 홈 화면과 알림(종 아이콘)에 표시
                   </span>
                   {contactAlertVal && (
                     <button type="button" onClick={() => setContactAlertVal('')}

@@ -92,11 +92,11 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
       </div>
 
       <p className="text-xs leading-relaxed" style={{ color: 'var(--warm-muted)' }}>
-        부식 잔량 확인, 청소 점검, 소모품 체크 등 운영 점검 To-Do입니다. 도래일 N일 이내(또는 경과)는 대시보드 알림에도 표시됩니다.
+        쌀·김치 같은 부식 잔량 확인, 청소 점검, 소모품 체크 등 운영 점검 To-Do입니다. 예정일이 N일 이내(또는 지난) 항목은 대시보드 알림에도 표시됩니다.
       </p>
 
       {/* 점검 필요 섹션 */}
-      <Section title={`점검 필요 ${due.length}건`} hint="도래일 N일 이내 또는 경과">
+      <Section title={`점검 필요 ${due.length}건`} hint="예정일 N일 이내 또는 지남">
         {due.length === 0 ? (
           <EmptyHint label="현재 점검이 필요한 항목이 없습니다." />
         ) : (
@@ -372,7 +372,7 @@ function FormModal({
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>알림 시작 (도래일 N일 전부터)</label>
+            <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>알림 시작 (예정일 N일 전부터)</label>
             <div className="flex items-center gap-2">
               <input type="number" min={0} max={30} value={alertDaysBefore}
                 onFocus={e => e.currentTarget.select()}
