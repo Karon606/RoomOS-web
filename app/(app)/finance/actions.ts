@@ -886,11 +886,13 @@ export async function updateExpense(formData: FormData): Promise<{ ok: true } | 
         settleStatus:       baseSettleStatus,
         roomId:             roomId || null,
         excludeFromInventory,
-        itemLabel:          itemLabel || null,
-        specUnit:           specUnit || null,
-        qtyUnit:            qtyUnit || null,
-        specValue:          specValueRaw ? parseFloat(specValueRaw) : null,
-        qtyValue:           qtyValueRaw  ? parseFloat(qtyValueRaw)  : null,
+        // 폼이 품목 필드를 아예 안 보낸 편집(카테고리만 수정 등)에서는 기존 값 보존 —
+        // null 덮어쓰기로 품목 연결이 끊겨 재고에서 증발하던 버그(종량제봉투 2026-07-10)
+        ...(formData.has('itemLabel') ? { itemLabel: itemLabel || null } : {}),
+        ...(formData.has('specUnit') ? { specUnit: specUnit || null } : {}),
+        ...(formData.has('qtyUnit') ? { qtyUnit: qtyUnit || null } : {}),
+        ...(formData.has('specValue') ? { specValue: specValueRaw ? parseFloat(specValueRaw) : null } : {}),
+        ...(formData.has('qtyValue') ? { qtyValue: qtyValueRaw ? parseFloat(qtyValueRaw) : null } : {}),
         ...(receiptUrl !== null && receiptUrl !== undefined ? { receiptUrl: receiptUrl || null } : {}),
       },
     })
