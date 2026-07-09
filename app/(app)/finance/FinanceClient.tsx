@@ -4023,7 +4023,7 @@ export default function FinanceClient({
                       router.refresh()
                     })
                   }}>
-                  {isPending ? '기록 중...' : '지출로 기록 (정산 완료)'}
+                  {isPending ? '기록 중...' : '지출로 기록 (납부 완료)'}
                 </Btn>
               </div>
               {/* 금액만 저장 — 결제일 전에 금액만 미리 입력해 두는 모드. 지출은 생성하지 않음(정산 안 함). */}
@@ -4042,7 +4042,7 @@ export default function FinanceClient({
                   })
                 }}
                 className="w-full px-4 py-2.5 bg-[var(--canvas)] border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-xs font-medium rounded-xl hover:bg-[var(--coral)]/5 disabled:opacity-60 transition-colors">
-                금액만 저장 (정산 안 함 · 나중에 납부)
+                금액만 저장 (아직 납부 전)
               </button>
               <p className="text-[0.625rem] text-[var(--warm-muted)] text-center leading-relaxed">
                 ‘지출로 기록’은 바로 정산 처리돼요. 금액만 미리 적어둘 땐 아래 버튼을 쓰세요.
@@ -4331,7 +4331,7 @@ function ReserveTab({
   }
 
   const typeLabel = (t: ReserveTxn['type']) =>
-    t === 'DEPOSIT' ? '적립' : t === 'WITHDRAW_DIRECT' ? '직접 인출' : '사후 정산'
+    t === 'DEPOSIT' ? '적립' : t === 'WITHDRAW_DIRECT' ? '직접 인출' : '지출 차감'
   const typeColor = (t: ReserveTxn['type']) =>
     t === 'DEPOSIT' ? 'text-[var(--success-fg)]' : 'text-[var(--warning-fg)]'
 
@@ -4381,7 +4381,7 @@ function ReserveTab({
           </button>
           <button onClick={() => setMode('settle')}
             className="px-3 py-3 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl text-sm text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
-            지출을 예비비로 정산
+            지출을 예비비에서 차감
           </button>
         </div>
       )}
@@ -4393,7 +4393,7 @@ function ReserveTab({
             <h3 className="text-sm font-semibold text-[var(--warm-dark)]">
               {mode === 'deposit' && '예비비 적립'}
               {mode === 'withdraw' && '예비비에서 직접 지출'}
-              {mode === 'settle' && '기존 지출을 예비비로 정산'}
+              {mode === 'settle' && '기존 지출을 예비비에서 차감'}
             </h3>
             <button onClick={reset} className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">취소</button>
           </div>

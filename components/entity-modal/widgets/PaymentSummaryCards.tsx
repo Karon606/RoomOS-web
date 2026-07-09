@@ -21,13 +21,13 @@ export function PaymentSummaryCards({ settlement, month }: { settlement: Settlem
           <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]"><MoneyDisplay amount={settlement.totalPaid} /></p>
         </div>
         <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-          <p className="text-xs text-[var(--warm-muted)]">잔액</p>
+          <p className="text-xs text-[var(--warm-muted)]">잔액 <span className="text-[0.5625rem]">(+선납 · −미수)</span></p>
           <p className={`text-sm font-bold mt-0.5 ${settlement.balance >= 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
             {settlement.balance > 0 ? `+${fmtWon(settlement.balance)}` : settlement.balance < 0 ? `−${fmtWon(Math.abs(settlement.balance))}` : '0원'}
           </p>
         </div>
         <div className="bg-[var(--canvas)] rounded-xl p-3 text-center">
-          <p className="text-xs text-[var(--warm-muted)]">이월액</p>
+          <p className="text-xs text-[var(--warm-muted)]">이월액 <span className="text-[0.5625rem]">(지난달에서 넘어옴)</span></p>
           <p className="text-sm font-bold mt-0.5 text-[var(--coral)]">
             {settlement.carryOver !== 0 ? `${settlement.carryOver > 0 ? '+' : '−'}${fmtWon(Math.abs(settlement.carryOver))}` : '0원'}
           </p>
