@@ -12,6 +12,7 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { STATUS_LABEL, statusException } from '@/lib/statusColors'
 import { TenantBasicInfo } from '../widgets/TenantBasicInfo'
+import { ShortStayInfoWidget } from '../widgets/ShortStayInfoWidget'
 import { TenantContactInfo } from '../widgets/TenantContactInfo'
 import { TenantContractInfo } from '../widgets/TenantContractInfo'
 import { TenantAdditionalInfo } from '../widgets/TenantAdditionalInfo'
@@ -59,6 +60,8 @@ export function TenantBody({ tenantId }: { tenantId: string }) {
       <TenantBasicInfo tenant={tenant} />
       <TenantContactInfo contacts={tenant.contacts} email={tenant.email} />
       {lease && <TenantContractInfo lease={lease} />}
+      {/* 단기 희망 고객 — 기간·방 컨디션별 요금 박스(운영자 확정 2026-07-10 a안) */}
+      {lease && lease.isShortTerm && <ShortStayInfoWidget lease={lease} />}
       {lease && <TenantAdditionalInfo lease={lease} />}
 
       {tenant.memo && (

@@ -31,7 +31,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
   const leases = await prisma.leaseTerm.findMany({
     where: { propertyId: property.id, status: { in: ['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'] } },
     select: {
-      id: true, dueDay: true, rentAmount: true, expectedMoveOut: true, status: true,
+      id: true, dueDay: true, rentAmount: true, expectedMoveOut: true, status: true, isShortTerm: true, moveInDate: true,
       checkoutProratedAmount: true, checkoutProratedMonth: true,
       room: { select: { roomNo: true } },
       tenant: { select: { name: true } },
@@ -93,6 +93,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
         while (m > 12) { m -= 12; y += 1 }
         if (moMonth && y * 100 + m > moMonth) break
         const monthStr = `${y}-${String(m).padStart(2, '0')}`
+        // 단기 입주자 — 1개월 미만 거주라 매월 반복 일정 무의미(운영자 지시 2026-07-10).
+        // 입주한 달만 표시하고, 퇴실 처리(status 변경)되면 피드에서 자동 소멸.
+        if (l.isShortTerm) {
+          const mi = l.moveInDate ? new Date(l.moveInDate) : null
+          const miMonth = mi ? `${mi.getFullYear()}-${String(mi.getMonth() + 1).padStart(2, '0')}` : null
+          if (!miMonth || monthStr !== miMonth) continue
+        }
         const lastDay = new Date(y, m, 0).getDate()
         const day = l.dueDay.includes('말') ? lastDay : Math.min(Math.max(parseInt(l.dueDay, 10) || 1, 1), lastDay)
         // 퇴실월: 퇴실일이 납부일 이전이면 그 기간 미사용 → 청구 없음(이용료 일정 생략)

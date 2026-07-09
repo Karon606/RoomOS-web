@@ -65,15 +65,19 @@ export function TenantContractInfo({ lease }: { lease: Lease }) {
   return (
     <Section title="계약 정보">
       <Grid>
+        {/* 좌우상하 순서: 금액류 → 납부방식·문의 일시 → 입주 희망일·퇴실 예정일(나란히) → 연락 알림일 (운영자 확정 2026-07-10) */}
         <Item label="월 이용료" value={<MoneyDisplay amount={lease.rentAmount} />} />
         <Item label="보증금"   value={<MoneyDisplay amount={lease.depositAmount} />} />
         <Item label="청소비"   value={<MoneyDisplay amount={lease.cleaningFee} />} />
         <Item label="납부일"   value={fmtDueDay(lease.dueDay)} />
         <Item label="납부방식" value={PT_LABEL[lease.paymentTiming] ?? lease.paymentTiming} />
-        <Item
-          label={isPending ? '입주 희망일' : '입주일'}
-          value={fmtDate(lease.moveInDate)}
-        />
+        {!['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(lease.status) && lease.inquiryAt
+          ? <Item label="입실 문의 일시" value={fmtDateTime(lease.inquiryAt)} />
+          : <Item label={isPending ? '입주 희망일' : '입주일'} value={fmtDate(lease.moveInDate)} />}
+        {!['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(lease.status) && lease.inquiryAt && (
+          <Item label={isPending ? '입주 희망일' : '입주일'} value={fmtDate(lease.moveInDate)} />
+        )}
+        {isPending && lease.expectedMoveOut && <Item label="퇴실 예정일" value={fmtDate(lease.expectedMoveOut)} />}
         {/* 연락 알림일 — 이 날부터 홈·종에 '연락할 때' 알림(운영자 요청 2026-07-10: 상세에 보여야 안심) */}
         {isPending && lease.status !== 'CANCELLED' && lease.moveInDate && (() => {
           const lead = lease.property?.contactLeadDays ?? 14
@@ -87,13 +91,10 @@ export function TenantContractInfo({ lease }: { lease: Lease }) {
               value={`${fmtDate(eff)}${lease.contactAlertDate ? ' (직접 지정)' : ` (희망일 ${lead}일 전)`}`} />
           )
         })()}
-        {!['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(lease.status) && lease.inquiryAt && (
-          <Item label="입실 문의 일시" value={fmtDateTime(lease.inquiryAt)} />
-        )}
         {!isPending && (
           <Item label="거주기간" value={calcStayPeriod(lease.moveInDate, lease.moveOutDate ?? undefined)} />
         )}
-        {lease.expectedMoveOut && <Item label="퇴실 예정일" value={fmtDate(lease.expectedMoveOut)} />}
+        {!isPending && lease.expectedMoveOut && <Item label="퇴실 예정일" value={fmtDate(lease.expectedMoveOut)} />}
         {lease.moveOutDate && <Item label="퇴실일" value={fmtDate(lease.moveOutDate)} />}
       </Grid>
     </Section>
