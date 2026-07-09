@@ -151,6 +151,7 @@ model Property {
   // null = 정책 미사용(기본). 예: {"enabled":true,"unitDays":7,"minUnits":1,"thresholdDays":30,"multiplier":1.5,"cleaningFee":20000}
   shortStayPolicy  Json?
   bankAccount      String?   // 입금 계좌번호 (월세 영수증 납부방법에 자동 반영). 예 "○○은행 123-456 (예금주)"
+  contactLeadDays  Int       @default(14)  // 잠재고객 연락 알림 — 입주 희망일 며칠 전부터(운영자별 기준, 기본 14)
   // 퇴실 환불 규정 (영업장별) — 조기 퇴실 시 환불액 산정. 비면 위약금/고정 1일당 없음.
   refundPenaltyWithinDays Int?     // 입주 후 N일 이내 퇴실 시 위약금 적용 (null/0 = 위약금 없음)
   refundPenaltyPct        Int?     // 위약금율 — 잔 입실료의 P%

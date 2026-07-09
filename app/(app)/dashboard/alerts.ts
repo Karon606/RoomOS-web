@@ -48,6 +48,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   const today = new Date(k.year, k.month - 1, k.day)
   const tomorrow = new Date(today.getTime() + 86400000)
   const trackedCats = await getTrackedCategories(propertyId)
+  const contactLeadDays = (await prisma.property.findUnique({ where: { id: propertyId }, select: { contactLeadDays: true } }))?.contactLeadDays ?? 14
 
   const [unpaidStatus, inventory, checkoutLeases, tourLeases, moveInLeases, pendingReceipts, contactLeases] = await Promise.all([
     computeUnpaidStatus(propertyId),
@@ -74,7 +75,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     prisma.leaseTerm.findMany({
       where: {
         propertyId, status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] }, reservationConfirmedAt: null,
-        moveInDate: { gte: today, lt: new Date(today.getTime() + 14 * 86400000) },
+        moveInDate: { gte: today, lt: new Date(today.getTime() + contactLeadDays * 86400000) },
       },
       select: { id: true, moveInDate: true, isShortTerm: true, room: { select: { id: true, roomNo: true } }, tenant: { select: { id: true, name: true } } },
     }),

@@ -64,6 +64,7 @@ type Property = {
   defaultCleaningFee: number | null
   defaultAreaM2: number | null
   bankAccount: string | null
+  contactLeadDays?: number | null
   refundClauseInContract: boolean
   disposalConsentTemplate: unknown
   publicSlug: string | null
@@ -812,6 +813,16 @@ export default function SettingsForm({
                 placeholder="예: 카카오뱅크 3333-01-2345678 (김건우)"
                 autoComplete="off"
                 className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--warm-mid)]">잠재고객 연락 알림 (며칠 전부터)</label>
+              <p className="text-xs text-[var(--warm-muted)]">문의·투어·미확정 예약 고객의 입주 희망일이 이 일수 안으로 들어오면 &lsquo;연락할 때&rsquo; 알림이 홈과 종에 뜹니다. 기본 14일.</p>
+              <div className="flex items-center gap-2">
+                <input type="text" name="contactLeadDays" inputMode="numeric"
+                  defaultValue={String(property?.contactLeadDays ?? 14)}
+                  className="w-24 px-3 py-2.5 rounded-sm text-sm tabular-nums outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
+                <span className="text-sm text-[var(--warm-mid)]">일 전부터</span>
+              </div>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">공개 페이지 슬러그</label>

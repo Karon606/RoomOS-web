@@ -1250,10 +1250,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
   // 잠재 고객 연락(D-14) — 입주 희망일 2주 전부터 빈방 가능 여부 연락 안내(운영자 기준 2026-07-10)
   {
     const t0 = new Date(); t0.setHours(0, 0, 0, 0)
+    const leadDays = (await prisma.property.findUnique({ where: { id: propertyId }, select: { contactLeadDays: true } }))?.contactLeadDays ?? 14
     const contactLeases = await prisma.leaseTerm.findMany({
       where: {
         propertyId, status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] }, reservationConfirmedAt: null,
-        moveInDate: { gte: t0, lt: new Date(t0.getTime() + 14 * 86400000) },
+        moveInDate: { gte: t0, lt: new Date(t0.getTime() + leadDays * 86400000) },
       },
       select: { id: true, moveInDate: true, isShortTerm: true, room: { select: { roomNo: true } }, tenant: { select: { id: true, name: true } } },
     })
@@ -1266,7 +1267,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
         dotColor:  'var(--coral)',
         timeLabel: dayLabel(daysUntil(l.moveInDate)),
         tenantId:  l.tenant.id,
-        detail:    '입주 희망일이 2주 안입니다. 빈방이 나올지, 어렵겠는지 미리 연락해 주세요.',
+        detail:    `입주 희망일이 ${leadDays}일 안입니다. 빈방이 나올지, 어렵겠는지 미리 연락해 주세요.`,
         exactDate: fmtShortDate(l.moveInDate),
       })
     }
