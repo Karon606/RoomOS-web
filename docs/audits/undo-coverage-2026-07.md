@@ -9,6 +9,12 @@
 - 납입일 영구 변경: undoChangeDueDay(납입일·일할 정산 필드 원복 + 조정 기록 삭제) + 토스트 적용취소
 - 예정 가격 즉시 적용: undoApplyScheduledRent(월세·예약 필드·계약별 금액 스냅샷 복원) + 토스트 적용취소
 
+## 2026-07-10 (2차) 추가 구현
+- 지출→재고 자동 등록: 단일 품목 저장 경로에도 seedTrackedItemsFromExpenses 적용(다품목과 동일). 서비스·비추적 카테고리는 seed 내부에서 제외.
+- 지출 카테고리 수정 시 재고 품목 동기화: confirmDialog('같이 변경/지출만') → syncTrackedItemCategory(대상에 동명 품목 있으면 거부·병합 안내).
+- 요청 '완료 해제': unresolveTenantRequest + 요청 페이지 완료 뱃지 옆 버튼.
+- 무상 자산 삭제: 0원 지출 행이라 가계부에서 기존 deleteExpense로 삭제 가능 — 별도 기능 불요로 재분류.
+
 ## 잔여 백로그 (구현 순서 제안)
 | 심각도 | 기능 | 위치 | 메모 |
 |---|---|---|---|
@@ -16,7 +22,7 @@
 | 중 | 요청 완료 해제 | tenants/actions.ts resolveTenantRequest | resolvedAt null 복원 액션 + UI '완료 해제' |
 | 중 | 입고 확인·일괄 확인·재고 이동 전용 undo | inventory/actions.ts confirmReceipt·confirmAllPending·transferLocationStock | 생성 stockCheck 삭제로 부분 원복만 가능 — 분할 지출 원복 포함 전용 역함수 필요 |
 | 낮음 | 배치도 저장 버전 이력 | floor-plan/actions.ts saveFloorPlan | 직전 1개 스냅샷이라도 |
-| 낮음 | 정기지출 묶기 해제 | settings/actions.ts groupRecurringExpenses | ungroup 액션 |
+| 낮음 | 정기지출 묶기 해제 | settings/actions.ts groupRecurringExpenses | 부모→원본(sourceIds) 링크가 저장되지 않아 스키마 보강(부모에 sourceIds Json) 후 ungroup 구현 필요 |
 | 낮음 | 무상 자산 추가 삭제 | assets/actions.ts addFreeAsset | 0원 지출 행 전용 삭제 |
 | 낮음 | 가입요청 승인/거절 원복 | settings/memberActions.ts | 멤버 제거/재승인으로 대체 가능해 후순위 |
 | 참고 | 예약 인상 자동 적용(applyScheduledRents) | room-manage/actions.ts | 페이지 진입 시 자동 실행 — 예약의 '이행'이라 undo 대상 아님. 잘못 예약했으면 적용 전 예약 수정, 적용 후엔 월세 수정으로 원복. checkoutWithDepositRefund 내부 반환 기록도 동일 패턴 필요(후속) |

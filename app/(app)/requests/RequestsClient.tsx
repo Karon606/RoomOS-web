@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   resolveTenantRequest,
+  unresolveTenantRequest,
   deleteTenantRequest,
   createTenantRequest,
   getActiveTenantsForRequests,
@@ -406,6 +407,16 @@ export default function RequestsClient({
                   )}
                   {resolved && (
                     <span className="text-[0.625rem] text-[var(--success-fg)]">완료 {fmtDate(r.resolvedAt)}</span>
+                  )}
+                  {resolved && (
+                    <button type="button" disabled={pending}
+                      onClick={() => startTransition(async () => {
+                        const res = await unresolveTenantRequest(r.id)
+                        if (!res.ok) { pushToast('error', res.error); return }
+                        pushToast('info', '완료를 해제했습니다 (미완료로 복귀)')
+                        router.refresh()
+                      })}
+                      className="min-h-[26px] inline-flex items-center text-[0.625rem] px-1.5 py-0.5 rounded-md text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">완료 해제</button>
                   )}
                 </div>
 

@@ -2222,3 +2222,23 @@ export async function deleteTrackedItemIfEmpty(id: string): Promise<{ ok: true }
     return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
   }
 }
+
+// ── 지출 카테고리 수정 → 재고 품목 카테고리 동기화(운영자 확인 후 호출, 2026-07-10)
+//    같은 라벨 품목이 대상 카테고리에 이미 있으면 꼬임 방지를 위해 거부(병합은 재고 관리에서).
+export async function syncTrackedItemCategory(label: string, fromCategory: string, toCategory: string): Promise<{ ok: true; moved: boolean } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    if (!label.trim() || fromCategory === toCategory) return { ok: true, moved: false }
+    const item = await prisma.trackedItem.findFirst({ where: { propertyId, label, category: fromCategory } })
+    if (!item) return { ok: true, moved: false }
+    const clash = await prisma.trackedItem.findFirst({ where: { propertyId, label, category: toCategory }, select: { id: true } })
+    if (clash) return { ok: false, error: `'${toCategory}'에 같은 이름의 품목이 이미 있습니다. 재고 관리에서 병합해 주세요.` }
+    await prisma.trackedItem.update({ where: { id: item.id }, data: { category: toCategory } })
+    revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true, moved: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '동기화에 실패했습니다.' }
+  }
+}

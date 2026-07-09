@@ -695,6 +695,9 @@ export async function addExpense(formData: FormData): Promise<{ ok: true } | { o
     if (shippingCreate) ops.push(shippingCreate)
     await prisma.$transaction(ops)
     await captureItemNameAliases(propertyId, ocrCaptureItems).catch(() => {})
+    // 재고 카드 자동 등록 — 다품목 경로와 동일(운영자 요청 2026-07-10: 일일이 불러오기 제거).
+    // 추적 카테고리·물품 여부는 seed 내부에서 판별, 서비스(excludeFromInventory)는 제외됨.
+    if (itemLabel) await seedTrackedItemsFromExpenses([itemLabel]).catch(() => {})
     revalidatePath('/finance')
     return { ok: true }
   } catch (err) {

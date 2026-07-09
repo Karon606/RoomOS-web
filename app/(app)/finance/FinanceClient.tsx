@@ -19,7 +19,7 @@ import {
   getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, groupRecurringExpenses,
   type RecurringExpenseRow,
 } from '@/app/(app)/settings/actions'
-import { includeExpenseInInventory } from '@/app/(app)/inventory/actions'
+import { includeExpenseInInventory, syncTrackedItemCategory } from '@/app/(app)/inventory/actions'
 import { useRouter } from 'next/navigation'
 import { recordDepositReceived } from '@/app/(app)/rooms/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -1815,6 +1815,22 @@ export default function FinanceClient({
       try {
         const res = await updateExpense(fd)
         if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        // 카테고리 변경 + 품목 있음 → 재고 품목도 같이 옮길지 확인(종량제봉투 꼬임 재발 방지, 운영자 요청 2026-07-10)
+        {
+          const newCat = String(fd.get('category') ?? '')
+          const label = detailExp?.itemLabel ?? ''
+          if (label && newCat && detailExp && newCat !== detailExp.category) {
+            if (await confirmDialog({
+              title: '재고 품목 카테고리도 같이 바꿀까요?',
+              message: `'${label}' 품목이 '${detailExp.category}' 재고에 등록돼 있다면 '${newCat}'(으)로 함께 이동합니다. 안 바꾸면 재고와 지출의 카테고리가 어긋날 수 있어요.`,
+              confirmLabel: '같이 변경', cancelLabel: '지출만',
+            })) {
+              const sync = await syncTrackedItemCategory(label, detailExp.category, newCat)
+              if (!sync.ok) pushToast('error', sync.error)
+              else if (sync.moved) pushToast('success', `재고 품목을 '${newCat}'(으)로 옮겼습니다`)
+            }
+          }
+        }
         // 배송비 '별도 지출로 묶기(합배송)' — 수정 저장 후 주문 묶기/해제 처리.
         // 배송비 라인 자체는 제외(자기 자신을 묶으려다 오류 + 반쪽 저장이 되던 문제).
         if (detailExp && !detailExp.isShipping) {

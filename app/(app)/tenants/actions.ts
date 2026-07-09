@@ -1387,6 +1387,19 @@ export async function resolveTenantRequest(id: string, memo?: string): Promise<{
   }
 }
 
+// 요청 완료 해제 — 실수로 완료 처리한 요청을 미완료로 복귀(감사 2026-07-10: 삭제만 있던 문제)
+export async function unresolveTenantRequest(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await getPropertyId()
+    await prisma.tenantRequest.update({ where: { id }, data: { resolvedAt: null } })
+    revalidatePath('/tenants'); revalidatePath('/requests'); revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
 // 납입일 영구 변경 + 일할 조정 기록 생성
 export async function changeDueDay(
   leaseTermId: string,
