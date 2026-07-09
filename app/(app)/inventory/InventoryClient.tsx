@@ -16,6 +16,7 @@ import { SectionHeader, DotMarker } from '@/components/ui/inventory/SectionHeade
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { InventoryCard as InvCard } from '@/components/ui/inventory/InventoryCard'
 import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
+import { mergeItemNames } from '@/app/(app)/finance/actions'   // 수령 대기 품명 합치기(OCR 풀네임 → 기존 품목, §10 별칭 학습 포함)
 import MonthSelector from '@/components/layout/MonthSelector'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { convertSpecValue, listCompatibleUnits, unitFactor } from '@/lib/units'
@@ -254,6 +255,23 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   }
   const searching = search.trim().length > 0
   const grouped = groupedAll.filter(g => searching || catTab === '__all__' || g.cat === catTab)
+  // 수령 대기 합치기 — OCR 풀네임 품목을 기존 품목으로(별칭 학습 → 다음 영수증부터 자동 치환)
+  const [pendMerge, setPendMerge] = useState<{ label: string; category: string } | null>(null)
+  const runPendMerge = (destId: string) => {
+    if (!pendMerge) return
+    const target = rows.find(r => r.id === destId)
+    if (!target) return
+    const src = pendMerge
+    startTransition(async () => {
+      const res = await mergeItemNames(target.label, [src.label])
+      if (!res.ok) { pushToast('error', res.error); return }
+      const orphan = rows.find(r => r.label === src.label && r.category === src.category)
+      if (orphan) await deleteTrackedItemIfEmpty(orphan.id).catch(() => {})
+      setPendMerge(null)
+      pushToast('success', `'${target.label}'(으)로 합쳤습니다`, { detail: '이 구매가 그 품목 재고로 잡히고, 다음 영수증부터 자동 치환됩니다. 적용취소는 환경설정 품명 병합.' })
+      router.refresh()
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -348,7 +366,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
           // spec 추적 품목은 qtyValue × specValue (예: 40개입 3박스 → 120개). 단위는 specUnit.
           const usesSpec = (trackUnit: string, specValue: number | null) => trackUnit !== 'qty' && !!specValue && specValue > 0
           const specQtyOf = (qtyValue: number, specValue: number | null, trackUnit: string) =>
-            usesSpec(trackUnit, specValue) ? qtyValue * (specValue as number) : qtyValue
+            Math.round((usesSpec(trackUnit, specValue) ? qtyValue * (specValue as number) : qtyValue) * 1000) / 1000   // 2.7×6=16.200000003 방지
           // 같은 품목(label|category)끼리 묶기 — 비품의 '합산 N건'과 동일 패턴
           const groupMap = new Map<string, { key: string; label: string; category: string; qtyUnit: string | null; trackUnit: 'spec' | 'qty'; specUnit: string | null; items: typeof flat }>()
           for (const f of flat) {
@@ -367,7 +385,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
               <ul className="space-y-1.5">
                 {groups.map(g => {
                   // 규격 환산 합계(재고 단위) + 원래 박스 수 — 예: "120개 (3박스)"
-                  const totalQty = g.items.reduce((s, f) => s + specQtyOf(f.p.qtyValue || 0, f.p.specValue, g.trackUnit), 0)
+                  const totalQty = Math.round(g.items.reduce((s, f) => s + specQtyOf(f.p.qtyValue || 0, f.p.specValue, g.trackUnit), 0) * 1000) / 1000
                   const unit = g.trackUnit === 'qty' ? (g.qtyUnit ?? '개') : (g.specUnit ?? g.qtyUnit ?? '개')
                   const rawBoxSum = g.items.reduce((s, f) => s + (f.p.qtyValue || 0), 0)
                   const boxUnit = g.items[0].p.qtyUnit
@@ -389,10 +407,16 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                             </button>
                           )}
                         </div>
-                        <button type="button" onClick={() => handleQuickReceive(g.key, ids)} disabled={receivingKey === g.key}
-                          className="shrink-0 text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
-                          {receivingKey === g.key ? '처리 중' : '수령 완료'}
-                        </button>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button type="button" onClick={() => setPendMerge({ label: g.label, category: g.category })}
+                            className="text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                            합치기
+                          </button>
+                          <button type="button" onClick={() => handleQuickReceive(g.key, ids)} disabled={receivingKey === g.key}
+                            className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
+                            {receivingKey === g.key ? '처리 중' : '수령 완료'}
+                          </button>
+                        </div>
                       </div>
                       {g.items.length > 1 && expanded && (
                         <ul className="mt-1.5 pl-2.5 border-l-2 border-[var(--warm-border)] space-y-0.5">
@@ -482,6 +506,16 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         </SelectionPillBar>
       )}
 
+      {/* 수령 대기 품명 합치기 — 대표(기존 품목)를 고르면 이 구매의 품명이 그쪽으로 통일 */}
+      {pendMerge && (
+        <MergeSheet open onClose={() => setPendMerge(null)}
+          sourceLabel={pendMerge.label}
+          targets={[...rows].filter(r => !(r.label === pendMerge.label && r.category === pendMerge.category))
+            .sort((a, b) => (a.category === pendMerge.category ? 0 : 1) - (b.category === pendMerge.category ? 0 : 1))
+            .map(r => ({ id: r.id, label: `${r.label} · ${r.category}` })) as MergeTarget[]}
+          description="고른 품목의 이름으로 이 구매(및 같은 이름의 지출)가 통일되고, 그 품목 재고로 잡힙니다. 다음 영수증부터는 자동 치환됩니다. 적용취소는 환경설정 '품명 병합'."
+          onConfirm={runPendMerge} pending={isPending} />
+      )}
       {/* 합치기 — §21.4 MergeSheet 단일(선택 알약·상세 공용). 방향 고지 + §10 적용취소 */}
       {sheet && (
         <MergeSheet open onClose={() => setSheet(null)}
