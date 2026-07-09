@@ -18,6 +18,11 @@ type LeaseLite = {
 }
 
 const WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창' }
+// 컴팩트 금액 — 470000 → '47만', 335000 → '33.5만'
+const manCompact = (n: number) => {
+  const man = n / 10000
+  return `${Number.isInteger(man) ? man : Math.round(man * 10) / 10}만`
+}
 const toYmd = (d: Date | string | null) => (d ? new Date(d).toISOString().slice(0, 10) : '')
 const fmtMD = (d: Date | string | null) => {
   if (!d) return '미정'
@@ -41,7 +46,7 @@ export function ShortStayInfoWidget({ lease }: { lease: LeaseLite }) {
     const map = new Map<string, { label: string; rent: number; roomNos: string[] }>()
     for (const r of pool) {
       if (!r.baseRent || r.baseRent <= 0) continue   // 사무실 등 비대상
-      const label = [r.type ?? '방', r.windowType ? WINDOW_LABEL[r.windowType] ?? r.windowType : null].filter(Boolean).join(' ')
+      const label = [r.type ?? '방', r.windowType ? WINDOW_LABEL[r.windowType] ?? r.windowType : null, r.tier].filter(Boolean).join(' ')
       const key = `${label}|${r.baseRent}`
       const g = map.get(key) ?? { label, rent: r.baseRent, roomNos: [] }
       g.roomNos.push(r.roomNo)
@@ -82,7 +87,7 @@ export function ShortStayInfoWidget({ lease }: { lease: LeaseLite }) {
                 return (
                   <li key={`${g.label}|${g.rent}`} className="flex items-baseline justify-between gap-2 text-xs">
                     <span className="min-w-0 truncate text-[var(--warm-mid)]">
-                      {g.label} <span className="text-[var(--warm-muted)]">({fmtWon(g.rent)}{wishCount > 0 ? ` · ${g.roomNos.join(', ')}호` : ` · ${g.roomNos.length}개 방`})</span>
+                      {g.label} <span className="text-[var(--warm-muted)]">{manCompact(g.rent)}{wishCount > 0 ? ` · ${g.roomNos.join(', ')}호` : ''}</span>
                     </span>
                     <span className="shrink-0 tabular-nums font-semibold text-[var(--warm-dark)]">{q ? fmtWon(q.total) : '기간 초과(월 단위)'}</span>
                   </li>
