@@ -33,6 +33,7 @@ export default async function TenantsPage({
       today={kstYmdStr()}
       defaultDeposit={settings?.defaultDeposit ?? null}
       defaultCleaningFee={settings?.defaultCleaningFee ?? null}
+      contactLeadDays={settings?.contactLeadDays ?? 14}
       myRole={myRole}
     />
   )

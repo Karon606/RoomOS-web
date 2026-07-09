@@ -70,7 +70,7 @@ type LeaseTerm = {
   cleaningFee: number; dueDay: string | null
   overrideDueDay: string | null; overrideDueDayMonth: string | null; overrideDueDayReason: string | null
   moveInDate: string | Date | null; moveOutDate: string | Date | null
-  expectedMoveOut: string | Date | null; tourDate: string | Date | null; inquiryAt: string | Date | null
+  expectedMoveOut: string | Date | null; contactAlertDate?: string | Date | null; tourDate: string | Date | null; inquiryAt: string | Date | null
   reservationConfirmedAt: string | Date | null
   isShortTerm: boolean
   paymentTiming: string
@@ -289,13 +289,14 @@ function loadColVis(): Record<ColKey, boolean> | null {
 // ── 메인 컴포넌트 ─────────────────────────────────────────────────
 
 export default function TenantClient({
-  initialTenants, rooms, targetMonth, today, defaultDeposit, defaultCleaningFee, myRole,
+  initialTenants, rooms, targetMonth, today, defaultDeposit, defaultCleaningFee, contactLeadDays = 14, myRole,
 }: {
   initialTenants: Tenant[]
   rooms: Room[]
   targetMonth: string
   today: string              // 'YYYY-MM-DD' 서버 KST 기준 — 거주기간·D-day 가 SSR/클라 동일하게(하이드레이션 안전)
   defaultDeposit: number | null
+  contactLeadDays?: number
   defaultCleaningFee: number | null
   myRole: string
 }) {
@@ -1447,7 +1448,7 @@ export default function TenantClient({
                 <input type="hidden" name="tenantId"    value={t.id} />
                 <input type="hidden" name="leaseTermId" value={t.leaseTerms[0]?.id ?? ''} />
                 <div className="overflow-y-auto p-6 space-y-4 flex-1">
-                  <TenantForm rooms={rooms} tenant={t} error={error} />
+                  <TenantForm rooms={rooms} tenant={t} error={error} contactLeadDays={contactLeadDays} />
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <Btn type="button" variant="secondary" size="md" onClick={closeEdit} className="flex-1">취소</Btn>
@@ -1484,7 +1485,7 @@ export default function TenantClient({
           onClose={() => { setShowAdd(false); setAddTenantDirty(false) }} title="고객 등록">
             <form onSubmit={handleAdd} className="overflow-y-auto p-6 space-y-4"
               onInput={() => requestAnimationFrame(() => setAddTenantDirty(true))} onChange={() => setAddTenantDirty(true)}>
-              <TenantForm rooms={rooms} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} />
+              <TenantForm rooms={rooms} error={error} defaultDeposit={defaultDeposit} defaultCleaningFee={defaultCleaningFee} contactLeadDays={contactLeadDays} />
               <div className="flex gap-2 pt-2">
                 <Btn type="button" variant="secondary" size="md" onClick={() => setShowAdd(false)}
                   className="flex-1">
@@ -1508,7 +1509,7 @@ export default function TenantClient({
               onInput={() => requestAnimationFrame(() => setEditTenantDirty(true))} onChange={() => setEditTenantDirty(true)}>
               <input type="hidden" name="tenantId"    value={editTenant.id} />
               <input type="hidden" name="leaseTermId" value={editTenant.leaseTerms[0]?.id ?? ''} />
-              <TenantForm rooms={rooms} tenant={editTenant} error={error} />
+              <TenantForm rooms={rooms} tenant={editTenant} error={error} contactLeadDays={contactLeadDays} />
               <div className="flex gap-2 pt-2">
                 <Btn type="button" variant="secondary" size="md" onClick={() => setEditTenant(null)}
                   className="flex-1">
@@ -2322,9 +2323,9 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
 
 // ── 폼 컴포넌트 (추가/수정 공용) ─────────────────────────────────
 
-function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }: {
+function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, contactLeadDays = 14 }: {
   rooms: Room[]; tenant?: Tenant; error?: string
-  defaultDeposit?: number | null; defaultCleaningFee?: number | null
+  defaultDeposit?: number | null; defaultCleaningFee?: number | null; contactLeadDays?: number
 }) {
   const lease     = tenant?.leaseTerms[0]
   const primary   = tenant?.contacts.find(c => c.isPrimary)
@@ -2344,6 +2345,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   const [shortQuoteData, setShortQuoteData] = useState<Awaited<ReturnType<typeof getRoomsForQuote>> | null>(null)
   // 입실일 = 입주 희망일(moveInDateVal)과 동일 값(운영자 지적 2026-07-10: 따로 입력할 필요 없음)
   const [shortOut, setShortOut] = useState(toDateInput(lease?.expectedMoveOut))
+  const [contactAlertVal, setContactAlertVal] = useState(toDateInput(lease?.contactAlertDate ?? null))
   useEffect(() => {
     if (!isShortTerm || shortQuoteData) return
     getRoomsForQuote().then(setShortQuoteData).catch(() => { /* 정책 로드 실패 시 계산기만 미표시 */ })
@@ -2644,6 +2646,34 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
               placeholder="입주 희망일 선택"
               className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
             />
+            {/* 연락 알림일 — 이 날부터 '연락할 때' 알림. 비우면 영업장 기본(입주 희망일 N일 전). 운영자 요청 2026-07-10 */}
+            {moveInDateVal && (() => {
+              const def = (() => {
+                const d = new Date(moveInDateVal + 'T00:00:00')
+                if (isNaN(d.getTime())) return ''
+                d.setDate(d.getDate() - contactLeadDays)
+                const today = new Date(); today.setHours(0, 0, 0, 0)
+                const eff = d < today ? today : d
+                return `${eff.getFullYear()}-${String(eff.getMonth() + 1).padStart(2, '0')}-${String(eff.getDate()).padStart(2, '0')}`
+              })()
+              const effective = contactAlertVal || def
+              return (
+                <div className="rounded-lg bg-[var(--canvas)]/60 border border-[var(--warm-border)] px-2.5 py-2 space-y-1">
+                  <p className="text-[0.6875rem] text-[var(--warm-dark)]">
+                    연락 알림: <span className="font-semibold">{effective}</span>부터 홈·종에 &lsquo;연락할 때&rsquo;로 떠요
+                    {!contactAlertVal && <span className="text-[var(--warm-muted)]"> (기본: 희망일 {contactLeadDays}일 전)</span>}
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <DatePicker name="contactAlertDate" value={contactAlertVal} onChange={setContactAlertVal} placeholder="다른 날짜로 바꾸기"
+                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-xs text-[var(--warm-dark)] outline-none" />
+                    {contactAlertVal && (
+                      <button type="button" onClick={() => setContactAlertVal('')}
+                        className="min-h-[30px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">기본값으로</button>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )}
 

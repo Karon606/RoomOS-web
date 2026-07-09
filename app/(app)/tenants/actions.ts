@@ -89,6 +89,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
   const dueDay           = formData.get('dueDay') as string
   const moveInDate       = formData.get('moveInDate') as string
   const expectedMoveOut  = formData.get('expectedMoveOut') as string
+  const contactAlertDate = formData.get('contactAlertDate') as string | null
   const paymentTiming    = (formData.get('paymentTiming') as PaymentTiming) || 'PREPAID'
   const contactType      = (formData.get('contactType') as ContactType) || 'PHONE'
   const contactValue     = formData.get('contactValue') as string
@@ -191,6 +192,7 @@ export async function addTenant(formData: FormData): Promise<{ ok: true } | { ok
           dueDay: dueDay || null,
           moveInDate: moveInDate ? new Date(moveInDate) : null,
           expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
+          contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
           tourDate: tourDate ? new Date(tourDate) : null,
           inquiryAt: inquiryAt ? new Date(inquiryAt) : null,
           reservationConfirmedAt: isReservedConfirmed ? new Date() : null,
@@ -273,6 +275,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
   const dueDay             = formData.get('dueDay') as string
   const moveInDate         = formData.get('moveInDate') as string
   const expectedMoveOut    = formData.get('expectedMoveOut') as string
+  const contactAlertDate   = formData.get('contactAlertDate') as string | null
   const paymentTiming      = (formData.get('paymentTiming') as PaymentTiming) || 'PREPAID'
   const payMethod          = formData.get('payMethod') as string
   const cashReceipt        = formData.get('cashReceipt') as string
@@ -451,6 +454,7 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
       dueDay: dueDay || null,
       moveInDate: moveInDate ? new Date(moveInDate) : null,
       expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
+      contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
       tourDate: tourDate ? new Date(tourDate) : null,
       inquiryAt: inquiryAt ? new Date(inquiryAt) : null,
       reservationConfirmedAt: isReservedConfirmed

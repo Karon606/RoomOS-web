@@ -466,6 +466,7 @@ model LeaseTerm {
   cleaningFee        Int                @default(0)
   paymentTiming      PaymentTiming      @default(PREPAID)
   dueDay             String?            // "15", "말일" 등 자유 텍스트
+  contactAlertDate   DateTime?          // 잠재고객 연락 알림 시작일 직접 지정 — 비우면 영업장 기본(입주 희망일 N일 전)
   overrideDueDay     String?            // 특정 월 임시 납부일
   overrideDueDayMonth String?           // 적용 대상 월 "YYYY-MM"
   overrideDueDayReason String?          // 조정 사유

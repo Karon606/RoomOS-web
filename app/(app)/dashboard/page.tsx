@@ -1254,7 +1254,11 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
     const contactLeases = await prisma.leaseTerm.findMany({
       where: {
         propertyId, status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] }, reservationConfirmedAt: null,
-        moveInDate: { gte: t0, lt: new Date(t0.getTime() + leadDays * 86400000) },
+        moveInDate: { gte: t0 },
+        OR: [
+          { contactAlertDate: { lte: t0 } },
+          { contactAlertDate: null, moveInDate: { lt: new Date(t0.getTime() + leadDays * 86400000) } },
+        ],
       },
       select: { id: true, moveInDate: true, isShortTerm: true, room: { select: { roomNo: true } }, tenant: { select: { id: true, name: true } } },
     })

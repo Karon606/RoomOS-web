@@ -75,7 +75,11 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     prisma.leaseTerm.findMany({
       where: {
         propertyId, status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] }, reservationConfirmedAt: null,
-        moveInDate: { gte: today, lt: new Date(today.getTime() + contactLeadDays * 86400000) },
+        moveInDate: { gte: today },
+        OR: [
+          { contactAlertDate: { lte: today } },   // 고객별 지정일 도래
+          { contactAlertDate: null, moveInDate: { lt: new Date(today.getTime() + contactLeadDays * 86400000) } },
+        ],
       },
       select: { id: true, moveInDate: true, isShortTerm: true, room: { select: { id: true, roomNo: true } }, tenant: { select: { id: true, name: true } } },
     }),
