@@ -6,7 +6,7 @@ import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
 import { getRoomsForQuote } from './actions'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addTenant, updateTenant, deleteTenant, recordDepositReturn,
+import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn,
   getContractFiles, deleteContractFile, createContractScanUploadSession, finalizeContractScan,
   batchUpdateTenants,
   type ContractFileRow,
@@ -695,7 +695,10 @@ export default function TenantClient({
         if (fromDetail) { setDetailTenant(null); setDetailEditMode(false); clearTenantUrlParams() }
         else setEditTenant(null)
         refresh()
-        pushToast('success', '보증금 환불 + 퇴실 처리됨')
+        const { refundId, extraIncomeId } = refundRes
+        pushToast('success', '보증금 환불 + 퇴실 처리됨', {
+          action: { label: '반환기록 취소', run: () => { void undoDepositReturn(refundId, extraIncomeId).then(r => { if (r.ok) { pushToast('info', '보증금 반환 기록을 지웠습니다 (퇴실 상태는 유지 — 필요 시 상태 변경으로 복구)'); refresh() } else pushToast('error', r.error) }) } },
+        })
       } finally { release() }
     })
   }

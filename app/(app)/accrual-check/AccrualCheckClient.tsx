@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { moveRecordTargetMonth, bulkApplyLatePayments, type SuspectRecord, type SuspectCategory } from './actions'
+import { pushToast } from '@/lib/saveStatus'
+import { moveRecordTargetMonth, bulkApplyLatePayments, undoTargetMonthMoves, type SuspectRecord, type SuspectCategory, type TargetMonthUndo } from './actions'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -63,6 +64,12 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
         ...prev,
         suspects: prev.suspects.filter(s => s.id !== record.id),
       }))
+      const undo = res.undo
+      if (undo && undo.length > 0) {
+        pushToast('success', '귀속 월을 이동했습니다', {
+          action: { label: '적용취소', run: () => { void undoTargetMonthMoves(undo).then(r => { if (r.ok) { pushToast('info', '귀속 월 이동을 적용취소했습니다'); router.refresh() } else pushToast('error', r.error) }) } },
+        })
+      }
       router.refresh()
     })
   }
@@ -87,6 +94,12 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
         ...prev,
         suspects: prev.suspects.filter(s => s.category !== 'late-payment'),
       }))
+      const undo: TargetMonthUndo = res.undo
+      if (undo.length > 0) {
+        pushToast('success', `지연 입금 ${res.moved}건을 이동했습니다`, {
+          action: { label: '적용취소', run: () => { void undoTargetMonthMoves(undo).then(r => { if (r.ok) { pushToast('info', `${r.restored}건을 원래 월로 복원했습니다`); router.refresh() } else pushToast('error', r.error) }) } },
+        })
+      }
       router.refresh()
     })
   }

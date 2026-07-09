@@ -5,7 +5,7 @@
 
 import { useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
-import { changeDueDay } from '@/app/(app)/tenants/actions'
+import { changeDueDay, undoChangeDueDay } from '@/app/(app)/tenants/actions'
 import { calcProRata, PRORATE_BASE_DAYS } from '@/lib/prorate'
 import { Btn } from '@/components/ui/Btn'
 import { withSave, pushToast } from '@/lib/saveStatus'
@@ -29,6 +29,12 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
     const adjustAmount = calc.type === 'extra' ? -calc.amount : calc.amount
     startTransition(async () => {
       const res = await withSave(() => changeDueDay(leaseTermId, input.trim(), targetMonth, adjustAmount), { success: '납입일 변경됨' })
+      if (res.ok && res.undo) {
+        const u = res.undo
+        pushToast('info', '변경을 취소하려면 적용취소를 누르세요', {
+          action: { label: '적용취소', run: () => { void undoChangeDueDay(u).then(r => { if (r.ok) pushToast('info', '납입일 변경을 적용취소했습니다'); else pushToast('error', r.error) }) } },
+        })
+      }
       if (res.ok) {
         if (res.notice) pushToast('info', res.notice)
         setShowForm(false); setInput(''); onChange?.()

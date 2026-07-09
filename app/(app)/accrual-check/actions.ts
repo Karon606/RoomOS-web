@@ -155,16 +155,19 @@ export async function analyzePaymentTargetMonth(): Promise<{
 
 // "지연 입금" 카테고리 record들을 일괄로 추정 귀속 월(직전 월)로 이동
 // 사용자가 진단 페이지에서 한 번에 처리할 수 있도록
-export async function bulkApplyLatePayments(): Promise<{ ok: true; moved: number } | { ok: false; error: string }> {
+export type TargetMonthUndo = { recordId: string; targetMonth: string; seqNo: number }[]
+
+export async function bulkApplyLatePayments(): Promise<{ ok: true; moved: number; undo: TargetMonthUndo } | { ok: false; error: string }> {
   try {
     const { suspects } = await analyzePaymentTargetMonth()
     const targets = suspects.filter(s => s.category === 'late-payment' && s.inferredAccrualMonth)
     let moved = 0
+    const undo: TargetMonthUndo = []
     for (const s of targets) {
       const res = await moveRecordTargetMonth(s.id, s.inferredAccrualMonth!)
-      if (res.ok) moved++
+      if (res.ok) { moved++; if (res.undo) undo.push(...res.undo) }
     }
-    return { ok: true, moved }
+    return { ok: true, moved, undo }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -175,7 +178,7 @@ export async function bulkApplyLatePayments(): Promise<{ ok: true; moved: number
 export async function moveRecordTargetMonth(
   recordId: string,
   newTargetMonth: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; undo?: TargetMonthUndo } | { ok: false; error: string }> {
   try {
     const { propertyId } = await getPropertyId()
 
@@ -188,7 +191,7 @@ export async function moveRecordTargetMonth(
       select: { leaseTermId: true, targetMonth: true, seqNo: true, actualAmount: true },
     })
     if (!record) return { ok: false, error: '기록을 찾을 수 없습니다.' }
-    if (record.targetMonth === newTargetMonth) return { ok: true }
+    if (record.targetMonth === newTargetMonth) return { ok: true, undo: [] }
 
     // 새 월의 다음 seqNo 결정 (unique 제약 [leaseTermId, targetMonth, seqNo])
     const lastInNewMonth = await prisma.paymentRecord.findFirst({
@@ -210,7 +213,34 @@ export async function moveRecordTargetMonth(
     revalidatePath('/dashboard')
     revalidatePath('/finance')
 
-    return { ok: true }
+    return { ok: true, undo: [{ recordId, targetMonth: record.targetMonth, seqNo: record.seqNo }] }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 귀속월 이동 적용취소 — 스냅샷(원래 월·seqNo)으로 복원. seqNo 충돌 시 그 월의 다음 번호로.
+export async function undoTargetMonthMoves(undo: TargetMonthUndo): Promise<{ ok: true; restored: number } | { ok: false; error: string }> {
+  try {
+    const { propertyId } = await getPropertyId()
+    let restored = 0
+    for (const u of undo) {
+      const rec = await prisma.paymentRecord.findFirst({ where: { id: u.recordId, propertyId }, select: { leaseTermId: true } })
+      if (!rec) continue
+      const clash = await prisma.paymentRecord.findFirst({
+        where: { leaseTermId: rec.leaseTermId, targetMonth: u.targetMonth, seqNo: u.seqNo, NOT: { id: u.recordId } }, select: { id: true } })
+      let seqNo = u.seqNo
+      if (clash) {
+        const last = await prisma.paymentRecord.findFirst({
+          where: { leaseTermId: rec.leaseTermId, targetMonth: u.targetMonth }, orderBy: { seqNo: 'desc' }, select: { seqNo: true } })
+        seqNo = (last?.seqNo ?? 0) + 1
+      }
+      await prisma.paymentRecord.update({ where: { id: u.recordId }, data: { targetMonth: u.targetMonth, seqNo } })
+      restored++
+    }
+    revalidatePath('/accrual-check'); revalidatePath('/rooms'); revalidatePath('/dashboard'); revalidatePath('/finance')
+    return { ok: true, restored }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

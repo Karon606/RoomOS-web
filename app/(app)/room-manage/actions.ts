@@ -411,19 +411,34 @@ export async function applyScheduledRents() {
 
 // ── 단일 호실 즉시 적용 ──────────────────────────────────────────────
 // 공실 상태에서 예정 가격을 즉시 baseRent에 반영. 활성 계약이 있으면 rentAmount도 동기화.
-export async function applyScheduledRentNow(roomId: string): Promise<{ ok: true; newRent: number } | { ok: false; error: string }> {
+export type ScheduledRentUndo = {
+  roomId: string; prevBaseRent: number; prevScheduledRent: number; prevRentUpdateDate: string | null
+  leases: { id: string; prevRentAmount: number }[]
+}
+
+export async function applyScheduledRentNow(roomId: string): Promise<{ ok: true; newRent: number; undo: ScheduledRentUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
 
     const room = await prisma.room.findFirst({
       where: { id: roomId, propertyId },
-      select: { scheduledRent: true },
+      select: { baseRent: true, scheduledRent: true, rentUpdateDate: true },
     })
     if (!room) return { ok: false, error: '호실을 찾을 수 없습니다.' }
     if (room.scheduledRent == null) return { ok: false, error: '예정 가격이 설정되어 있지 않습니다.' }
 
     const newRent = room.scheduledRent
+    // 되돌리기 스냅샷 — 적용 전 월세·예약 필드·활성 계약별 rentAmount (감사 2026-07-10)
+    const leases = await prisma.leaseTerm.findMany({
+      where: { roomId, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+      select: { id: true, rentAmount: true },
+    })
+    const undo: ScheduledRentUndo = {
+      roomId, prevBaseRent: room.baseRent, prevScheduledRent: newRent,
+      prevRentUpdateDate: room.rentUpdateDate ? room.rentUpdateDate.toISOString() : null,
+      leases: leases.map(l => ({ id: l.id, prevRentAmount: l.rentAmount })),
+    }
 
     await prisma.room.update({
       where: { id: roomId },
@@ -442,7 +457,29 @@ export async function applyScheduledRentNow(roomId: string): Promise<{ ok: true;
     revalidatePath('/room-manage')
     revalidatePath('/rooms')
     revalidatePath('/tenants')
-    return { ok: true, newRent }
+    return { ok: true, newRent, undo }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 예정 가격 즉시 적용 적용취소 — 월세·예약 필드·계약별 금액을 스냅샷으로 복원
+export async function undoApplyScheduledRent(u: ScheduledRentUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const room = await prisma.room.findFirst({ where: { id: u.roomId, propertyId }, select: { id: true } })
+    if (!room) return { ok: false, error: '호실을 찾을 수 없습니다.' }
+    await prisma.$transaction([
+      prisma.room.update({ where: { id: u.roomId }, data: {
+        baseRent: u.prevBaseRent, scheduledRent: u.prevScheduledRent,
+        rentUpdateDate: u.prevRentUpdateDate ? new Date(u.prevRentUpdateDate) : null,
+      } }),
+      ...u.leases.map(l => prisma.leaseTerm.update({ where: { id: l.id }, data: { rentAmount: l.prevRentAmount } })),
+    ])
+    revalidatePath('/room-manage'); revalidatePath('/rooms'); revalidatePath('/tenants')
+    return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

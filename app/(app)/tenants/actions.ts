@@ -566,7 +566,7 @@ export async function recordDepositReturn(params: {
   tenantName: string
   reason?: string
   memo?: string
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; refundId: string; extraIncomeId: string | null } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
@@ -577,7 +577,7 @@ export async function recordDepositReturn(params: {
     const refundDate = new Date(params.date)
 
     // 환불 이력 — 반환·미반환 양쪽 합쳐 한 건으로 기록
-    await prisma.depositRefund.create({
+    const refund = await prisma.depositRefund.create({
       data: {
         propertyId,
         tenantId:       params.tenantId,
@@ -590,6 +590,7 @@ export async function recordDepositReturn(params: {
       },
     })
 
+    let extraIncomeId: string | null = null
     if (withheld > 0) {
       // 보증금 카테고리 보장 — 없으면 추가
       const property = await prisma.property.findUnique({
@@ -605,7 +606,7 @@ export async function recordDepositReturn(params: {
         })
       }
 
-      await prisma.extraIncome.create({
+      const inc = await prisma.extraIncome.create({
         data: {
           propertyId,
           date:      refundDate,
@@ -618,9 +619,27 @@ export async function recordDepositReturn(params: {
           leaseTermId: params.leaseTermId,
         },
       })
+      extraIncomeId = inc.id
     }
     revalidatePath('/finance')
     revalidatePath('/dashboard')
+    return { ok: true, refundId: refund.id, extraIncomeId }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 보증금 반환 기록 적용취소 — 반환 이력 + 미반환분 부가수입을 함께 삭제(감사 2026-07-10: 되돌리기 전무 보완)
+export async function undoDepositReturn(refundId: string, extraIncomeId: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    await prisma.$transaction([
+      prisma.depositRefund.deleteMany({ where: { id: refundId, propertyId } }),
+      ...(extraIncomeId ? [prisma.extraIncome.deleteMany({ where: { id: extraIncomeId, propertyId } })] : []),
+    ])
+    revalidatePath('/finance'); revalidatePath('/dashboard')
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
@@ -1370,7 +1389,7 @@ export async function changeDueDay(
   newDueDay: string,
   targetMonth: string,
   adjustAmount: number, // 양수 = 과입금(환불), 음수 = 추가납부 필요
-): Promise<{ ok: true; notice?: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; notice?: string; undo: DueDayChangeUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
@@ -1395,6 +1414,18 @@ export async function changeDueDay(
       false,
     )
 
+    // 되돌리기 스냅샷 — 납입일·일할 정산 필드 원값(감사 2026-07-10: 되돌리기 전무 보완)
+    const undoSnap: DueDayChangeUndo = {
+      leaseTermId,
+      prevDueDay: lease.dueDay,
+      prevProration: {
+        checkoutProratedAmount: lease.checkoutProratedAmount,
+        checkoutProratedMonth: lease.checkoutProratedMonth,
+        checkoutProrationUndo: lease.checkoutProrationUndo,
+      },
+      adjustRecordId: null,
+    }
+
     await prisma.leaseTerm.update({
       where: { id: leaseTermId },
       data: { dueDay: newDueDay.trim(), ...pr.data },
@@ -1410,7 +1441,7 @@ export async function changeDueDay(
       const absAmt = Math.abs(adjustAmount)
       const typeLabel = isRefund ? '과입금' : '추가납부'
 
-      await prisma.paymentRecord.create({
+      const adj = await prisma.paymentRecord.create({
         data: {
           leaseTermId,
           tenantId:      lease.tenantId,
@@ -1424,12 +1455,44 @@ export async function changeDueDay(
           memo: `[납입일변경] ${lease.dueDay ?? '?'}일→${newDueDay} 변경, 일할 ${absAmt.toLocaleString()}원 (${typeLabel})`,
         },
       })
+      undoSnap.adjustRecordId = adj.id
     }
 
     revalidatePath('/tenants')
     revalidatePath('/rooms')
     revalidatePath('/dashboard')
-    return pr.notice ? { ok: true, notice: pr.notice } : { ok: true }
+    return pr.notice ? { ok: true, notice: pr.notice, undo: undoSnap } : { ok: true, undo: undoSnap }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 납입일 변경 적용취소 — 납입일·일할 정산 필드 원복 + 생성된 조정 기록 삭제
+export type DueDayChangeUndo = {
+  leaseTermId: string
+  prevDueDay: string | null
+  prevProration: { checkoutProratedAmount: number | null; checkoutProratedMonth: string | null; checkoutProrationUndo: unknown }
+  adjustRecordId: string | null
+}
+
+export async function undoChangeDueDay(u: DueDayChangeUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    const lease = await prisma.leaseTerm.findFirst({ where: { id: u.leaseTermId, propertyId }, select: { id: true } })
+    if (!lease) return { ok: false, error: '계약 정보를 찾을 수 없습니다.' }
+    await prisma.$transaction([
+      prisma.leaseTerm.update({ where: { id: u.leaseTermId }, data: {
+        dueDay: u.prevDueDay,
+        checkoutProratedAmount: u.prevProration.checkoutProratedAmount,
+        checkoutProratedMonth: u.prevProration.checkoutProratedMonth,
+        checkoutProrationUndo: u.prevProration.checkoutProrationUndo == null ? Prisma.DbNull : (u.prevProration.checkoutProrationUndo as Prisma.InputJsonValue),
+      } }),
+      ...(u.adjustRecordId ? [prisma.paymentRecord.deleteMany({ where: { id: u.adjustRecordId, propertyId } })] : []),
+    ])
+    revalidatePath('/tenants'); revalidatePath('/rooms'); revalidatePath('/dashboard')
+    return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
