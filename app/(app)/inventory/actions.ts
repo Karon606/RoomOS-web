@@ -2197,3 +2197,28 @@ export async function transferLocationStock(data: {
     return { ok: false, error: (err as Error).message ?? '이동에 실패했습니다.' }
   }
 }
+
+// ── 기록 없는 품목 진짜 삭제 — 카테고리 착오 등으로 자동 생성된 품목의 되돌리기(신고 f3454e4c).
+//    지출·점검·입수 기록이 하나라도 있으면 거부(그 경우 '숨기기'). §10 되돌리기 원칙.
+export async function deleteTrackedItemIfEmpty(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id, propertyId } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    const [expCount, checkCount, addCount] = await Promise.all([
+      prisma.expense.count({ where: { propertyId, category: it.category, itemLabel: it.label } }),
+      prisma.stockCheck.count({ where: { trackedItemId: id } }),
+      prisma.stockAddition.count({ where: { trackedItemId: id } }),
+    ])
+    if (expCount + checkCount + addCount > 0) {
+      return { ok: false, error: `기록이 있어 삭제할 수 없습니다 (지출 ${expCount}·점검 ${checkCount}·입수 ${addCount}건). 대신 '숨김'을 사용하세요.` }
+    }
+    await prisma.trackedItem.delete({ where: { id } })
+    revalidatePath('/inventory')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
+  }
+}

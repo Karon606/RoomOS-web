@@ -3,6 +3,11 @@
 마지막 업데이트: 2026-07-08
 브랜치: main
 
+## 2026-07-09 (밤 2) — 오류신고 6건: 종량제봉투 사건·품목별 옮기기·납부방법 데이터 정정
+- **종량제봉투 사건(4건 묶음)**: 부식비로 지출 등록 → 같은 라벨 품목이 부식비/L추적으로 자동 생성(500L 표시·허브 없음). 지출은 운영자가 이미 삭제, 유령 품목은 스크립트로 삭제. 재발 방지 2종: ① 품목 상세 푸터 '삭제'(지출·점검·입수 0건일 때만 진짜 삭제, deleteTrackedItemIfEmpty) ② 지출 폼 품목 선택 시 다른 카테고리의 재고 품목과 라벨 일치하면 경고 배너(getLastItemUnits.trackedCategories).
+- **품목별 재고 옮기기(0d911b19)**: 품목 상세 푸터 '재고 옮기기' — TransferStockModal에 initialItemId 프리셀렉트로 재사용.
+- **납부방법 추천(7446b3a5)**: 로직은 입주자 우선(#5)이 이미 정상. 원인은 6월 데이터 뒤바뀜 — 408 신창오 현금→계좌이체, 507·509 계좌이체→현금 정정(월세 행만, 보증금 행은 운영자 확인 대기). getTenantLastPayMethod에 보증금 제외 추가(기준 통일).
+
 ## 2026-07-09 (밤) — 미납 안내 문자 Phase 1 (/docs/stayeum_payment_spec.md)
 - **스펙 문서**: /docs/stayeum_payment_spec.md 보존(Phase 2 백로그 — CODEF 계좌 자동확인·스토리지 마이그레이션 — 삭제 금지). AGENTS.md 에 참조 한 줄.
 - **스키마**: sms_templates·sms_logs 신설(propertyId 격리 — 스펙의 owner_id RLS 를 저장소 패턴에 맞게 적응), payment_records 에 paymentConfirmedAt/paymentConfirmedBy/bankTxRef(Phase 2 CODEF 대비, 미사용). 마이그레이션 적용 완료(migrate_sms_templates_logs.sql).

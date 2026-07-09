@@ -753,6 +753,11 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
             <button type="button" onClick={() => setActiveLabel(null)}
               className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none">✕</button>
           </div>
+          {prevUnits && prevUnits.trackedCategories.length > 0 && !prevUnits.trackedCategories.includes(category) && (
+            <p className="text-[0.6875rem] text-[var(--warning-fg)] bg-[var(--warning-bg)] rounded-lg px-2.5 py-1.5">
+              이 품목은 &lsquo;{prevUnits.trackedCategories.join(', ')}&rsquo; 카테고리의 재고 품목이에요. 지금 카테고리(&lsquo;{category}&rsquo;)로 저장하면 같은 이름의 품목이 하나 더 생깁니다. 카테고리를 확인해 주세요.
+            </p>
+          )}
           {SpecQtyInputs()}
           <Btn variant="primary" size="sm" fullWidth onClick={() => confirmAdd(activeLabel)}>추가</Btn>
         </div>

@@ -205,6 +205,7 @@ export type LastItemContext = {
   unitBasis: 'spec' | 'qty' | null    // 직전 단가 기준 — 규격당/완제품당 유지
   qtyValue: string | null             // 직전 수량
   unitPrice: number | null            // 직전 단가 (금액 ÷ 기준수량 역산)
+  trackedCategories: string[]         // 이 품목명이 재고 품목으로 등록된 카테고리들 — 착오 등록 경고용(신고 1f99d83c)
 }
 
 export async function getLastItemUnits(itemLabel: string): Promise<LastItemContext | null> {
@@ -223,7 +224,8 @@ export async function getLastItemUnits(itemLabel: string): Promise<LastItemConte
       orderBy: { createdAt: 'desc' },
     }),
     // 품목의 재고 추적 단위 — '수량' 품목(종량제봉투 등)은 개당 단가가 기본이 되도록(오류신고 c7cf6180)
-    prisma.trackedItem.findFirst({ where: { propertyId, label: itemLabel }, select: { trackUnit: true } }),
+    // 카테고리 목록 포함 — 다른 카테고리로 잘못 등록하면 같은 품목이 하나 더 생기므로 폼에서 경고
+    prisma.trackedItem.findMany({ where: { propertyId, label: itemLabel, isArchived: false }, select: { trackUnit: true, category: true } }),
   ])
   const specOptions = await prisma.itemSpecOption.findMany({
     where: { propertyId, itemLabel },
@@ -231,7 +233,7 @@ export async function getLastItemUnits(itemLabel: string): Promise<LastItemConte
     take: 20,
     select: { label: true },
   }).then(rows => rows.map(r => r.label)).catch(() => [] as string[])
-  if (!row && !tracked && specOptions.length === 0) return null
+  if (!row && tracked.length === 0 && specOptions.length === 0) return null
   // 단가 역산 — 입력 폼과 동일 산식: 기준수량 = 수량 × (규격당 기준이면 규격 값).
   // unitBasis 미기록(구 데이터)이면 규격 값이 있을 때 'spec'(폼 기본값과 동일 관례).
   const basis: 'spec' | 'qty' | null = row
@@ -247,13 +249,14 @@ export async function getLastItemUnits(itemLabel: string): Promise<LastItemConte
   return {
     specUnit: row?.specUnit ?? null,
     qtyUnit: row?.qtyUnit ?? null,
-    trackUnit: tracked?.trackUnit ?? null,
+    trackUnit: tracked[0]?.trackUnit ?? null,
     specOptions,
     specValue: row?.specValue != null ? String(row.specValue) : null,
     specText: row?.specText ?? null,
     unitBasis: basis,
     qtyValue: row?.qtyValue != null ? String(row.qtyValue) : null,
     unitPrice,
+    trackedCategories: tracked.map(t => t.category),
   }
 }
 

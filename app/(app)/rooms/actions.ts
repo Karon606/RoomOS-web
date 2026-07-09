@@ -1740,7 +1740,7 @@ export async function getRoomExpenses(roomId: string): Promise<{
 export async function getTenantLastPayMethod(tenantId: string): Promise<string | null> {
   const propertyId = await getPropertyId()
   const rec = await prisma.paymentRecord.findFirst({
-    where: { tenantId, payMethod: { not: null }, leaseTerm: { propertyId } },
+    where: { tenantId, payMethod: { not: null }, isDeposit: false, leaseTerm: { propertyId } },
     orderBy: [{ payDate: 'desc' }, { createdAt: 'desc' }],
     select: { payMethod: true },
   })

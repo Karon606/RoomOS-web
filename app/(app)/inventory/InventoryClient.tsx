@@ -35,6 +35,7 @@ import {
   updateTrackedItem,
   changeTrackedItemUnit,
   archiveTrackedItem,
+  deleteTrackedItemIfEmpty,
   getArchivedTrackedItems,
   unarchiveTrackedItem,
   mergeTrackedItems,
@@ -786,6 +787,20 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
   ])
   useEffect(() => { reload() }, [trackedItemId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [transferOpen, setTransferOpen] = useState(false)   // 품목별 재고 옮기기(신고 0d911b19)
+
+  const handleDeleteItem = async () => {
+    if (!(await confirmDialog({ title: '이 품목을 삭제할까요?', message: '지출·점검·입수 기록이 하나도 없는 품목만 삭제됩니다(잘못 생성된 품목 정리용). 기록이 있으면 숨김을 사용하세요.', level: 'danger', confirmLabel: '삭제' }))) return
+    startTransition(async () => {
+      const release = trackSave()
+      try {
+        const res = await deleteTrackedItemIfEmpty(trackedItemId)
+        if (res.ok) { onChange(); onClose(); pushToast('success', '품목을 삭제했습니다') }
+        else { setError(res.error); pushToast('error', res.error) }
+      } finally { release() }
+    })
+  }
+
   const handleArchive = async () => {
     if (!(await confirmDialog({ title: '이 품목을 숨길까요?', message: '재고 카드 목록에서 사라집니다 (당분간 사용하지 않을 품목용). 점검·무상입수·지출 기록은 모두 보존되며, 헤더의 "숨김 품목" 메뉴에서 언제든 복구할 수 있습니다.', confirmLabel: '숨김' }))) return
     startTransition(async () => {
@@ -840,8 +855,10 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       footer={isViewMode ? (
         <div className="flex items-center gap-2 flex-wrap">
           <Btn variant="secondary" size="sm" onClick={handleArchive} disabled={pending}>숨김</Btn>
+          <Btn variant="secondary" size="sm" onClick={handleDeleteItem} disabled={pending}>삭제</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setMode('settings')}>설정</Btn>
           <div className="flex-1" />
+          <Btn variant="secondary" size="sm" onClick={() => setTransferOpen(true)}>재고 옮기기</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setMode('reconcile')}>보정 끼워넣기</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setMode('addition')}>+ 무상 입수</Btn>
           <Btn variant="primary" size="sm" onClick={() => setMode('check')}>재고 점검</Btn>
@@ -998,6 +1015,12 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
             )}
           </div>
         </>
+      )}
+      {/* 품목별 재고 옮기기 — 이 품목 프리셀렉트(신고 0d911b19). 점검 모달의 옮기기와 동일 컴포넌트 */}
+      {transferOpen && (
+        <TransferStockModal rows={[row]} initialItemId={row.id}
+          onClose={() => setTransferOpen(false)}
+          onDone={() => { setTransferOpen(false); reload(); onChange() }} />
       )}
     </Modal>
   )
@@ -2734,12 +2757,14 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
 // ── 위치별 일괄 점검 — 모달(inline=false) / 인라인 패널(inline=true) 양용
 // 위치 간 재고 이동·맞바꿈 (운영자 요청 2026-07-08) — "무엇을 → 어디서 → 어디로 → 얼마나" 한 화면.
 // 총량 불변 점검으로 기록되어 소모 통계에 영향 없음. 점검 폼의 허브 자동 차감 UX 는 그대로.
-function TransferStockModal({ rows, onClose, onDone }: {
+function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
   rows: InventoryRow[]
   onClose: () => void
   onDone: () => void
+  initialItemId?: string   // 품목 상세에서 진입 시 그 품목 프리셀렉트(신고 0d911b19)
 }) {
   const [itemId, setItemId] = useState('')
+  useEffect(() => { if (initialItemId) void pickItem(initialItemId) }, [])   // eslint-disable-line react-hooks/exhaustive-deps
   const [locStock, setLocStock] = useState<ItemLocationStock[] | null>(null)
   const [fromId, setFromId] = useState('')
   const [toId, setToId] = useState('')
