@@ -2342,8 +2342,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
   const [isShortTerm, setIsShortTerm] = useState(!!lease?.isShortTerm)
   // 단기 요금 자동 계산 — 홈 '단기 요금 계산'과 동일 로직(calcShortStay), 운영자 요청 2026-07-09
   const [shortQuoteData, setShortQuoteData] = useState<Awaited<ReturnType<typeof getRoomsForQuote>> | null>(null)
-  const [shortIn, setShortIn] = useState('')
-  const [shortOut, setShortOut] = useState('')
+  // 입실일 = 입주 희망일(moveInDateVal)과 동일 값(운영자 지적 2026-07-10: 따로 입력할 필요 없음)
+  const [shortOut, setShortOut] = useState(toDateInput(lease?.expectedMoveOut))
   useEffect(() => {
     if (!isShortTerm || shortQuoteData) return
     getRoomsForQuote().then(setShortQuoteData).catch(() => { /* 정책 로드 실패 시 계산기만 미표시 */ })
@@ -2661,18 +2661,26 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee }
           {isShortTerm && (() => {
             const baseRent = shortQuoteData?.rooms.find(r => r.id === selectedRoomId)?.baseRent
               ?? rooms.find(r => r.id === selectedRoomId)?.baseRent ?? 0
-            const days = shortIn && shortOut ? stayDaysOf(shortIn, shortOut) : null
+            const days = moveInDateVal && shortOut ? stayDaysOf(moveInDateVal, shortOut) : null
             const short = shortQuoteData && baseRent > 0 && days != null
               ? calcShortStay(shortQuoteData.shortStay, baseRent, days) : null
             return (
               <div className="pl-6 pt-1 space-y-2">
                 <p className="text-[0.6875rem] font-medium text-[var(--warm-mid)]">단기 요금 자동 계산 <span className="font-normal text-[var(--warm-muted)]">(홈의 단기 요금 계산과 같은 규칙)</span></p>
                 <div className="grid grid-cols-2 gap-2">
-                  <DatePicker value={shortIn} onChange={setShortIn} placeholder="입실일"
-                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none" />
-                  <DatePicker value={shortOut} onChange={setShortOut} placeholder="퇴실일"
-                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none" />
+                  <div>
+                    <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-0.5">입실일 = 입주 희망일</span>
+                    <DatePicker value={moveInDateVal} onChange={setMoveInDateVal} placeholder="입실일"
+                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none w-full" />
+                  </div>
+                  <div>
+                    <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-0.5">퇴실일 (예정 퇴실일로 저장)</span>
+                    <DatePicker value={shortOut} onChange={setShortOut} placeholder="퇴실일"
+                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none w-full" />
+                  </div>
                 </div>
+                {/* 문의 단계(거주 전)에는 퇴실일 필드가 폼에 없어 여기 값으로 저장 — 거주 단계는 기존 퇴실일 필드 사용 */}
+                {roomIsOptional && shortOut && <input type="hidden" name="expectedMoveOut" value={shortOut} />}
                 {!selectedRoomId ? (
                   <p className="text-[0.625rem] text-[var(--warm-muted)]">호실을 고르면 그 방의 표준가로 자동 계산합니다</p>
                 ) : short && days != null ? (

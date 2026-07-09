@@ -3,6 +3,10 @@
 마지막 업데이트: 2026-07-08
 브랜치: main
 
+## 2026-07-10 (2) — 단기 날짜 폼 연결 + 잠재고객 연락 알림(D-14)
+- 단기 희망 계산기: 입실일 = 입주 희망일(moveInDateVal) 단일화, 퇴실일은 문의 단계에서 예정 퇴실일(expectedMoveOut)로 저장(hidden, 거주 단계는 기존 필드). 운영자 지적: 계산기 날짜가 폼과 따로 놀아 저장 안 되던 문제.
+- 잠재고객 연락 알림: 입주 희망일 D-14 이내(WAITING_TOUR/TOUR_DONE/미확정 RESERVED) — 벨·푸시(alerts.ts category contact, 미납 다음 순위) + 홈 스트립(page.tsx, '연락할 때') 노출. 기준 14일은 alerts.ts·page.tsx 상수(운영자 논의 여지).
+
 ## 2026-07-10 — 되돌리기 전수 감사 + 상위 4건 구현 · 6월 납부방법 확정
 - **감사**: 저장 기능 92개 전수(docs/audits/undo-coverage-2026-07.md) — 삭제 있음 66, 되돌리기 있음 20, 공백 12건.
 - **구현(높음 4)**: 귀속월 이동(단건·연체 일괄) 스냅샷 undo+토스트 / 보증금 반환 기록 undoDepositReturn / 납입일 영구 변경 undoChangeDueDay(dueDay·일할 필드·조정 기록) / 예정 가격 즉시 적용 undoApplyScheduledRent(방·계약 금액 스냅샷).

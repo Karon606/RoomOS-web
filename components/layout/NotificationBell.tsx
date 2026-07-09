@@ -14,6 +14,7 @@ import type { AlertItem, AlertCategory } from '@/app/(app)/dashboard/alerts'
 // 카테고리별 점 색 (대시보드 알림 톤과 맞춤)
 const DOT: Record<AlertCategory, string> = {
   unpaid:   'var(--tc)',
+  contact:  'var(--coral)',
   checkout: 'var(--viz-4)',
   movein:   'var(--success)',
   tour:     'var(--viz-2)',

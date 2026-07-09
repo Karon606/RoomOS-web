@@ -83,7 +83,7 @@ export type DashboardData = {
   jobDist:           { label: string; count: number; percent: number }[]
   rooms:             { id: string; roomNo: string; isVacant: boolean; tenantName: string | null; tenantId: string | null; tenantStatus: string | null; nonResidentName: string | null; nonResidentId: string | null; type: string | null; tier: string | null; floor: string | null; windowType: string | null; direction: string | null; areaPyeong: number | null; areaM2: number | null; baseRent: number; scheduledRent: number | null; rentUpdateDate: string | null }[]
   nonResidentItems:  { roomNo: string; tenantId: string; tenantName: string; rentAmount: number; payStatus: 'paid' | 'awaiting' | 'unpaid' }[]
-  alerts:            { category?: 'unpaid' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
+  alerts:            { category?: 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory'; text: string; link: string; dotColor: string; timeLabel: string; tenantId?: string; detail?: string; exactDate?: string; recurringExpenseId?: string; recurringAmount?: number; recurringDueDate?: string; recurringCategory?: string; recurringPayMethod?: string; recurringIsVariable?: boolean; recurringHistoricalAvg?: number; wishCandidates?: { tenantId: string; tenantName: string; rank: number; matchedBy: 'rooms' | 'conditions' }[]; wishRoomNo?: string; reservationDueLeaseId?: string; reservationDueRoomNo?: string | null; moveOutLeaseId?: string; moveOutDepositAmount?: number; moveOutCleaningFee?: number; moveOutTenantName?: string; sortKey?: number; leaseTermId?: string; roomId?: string | null }[]
   expectedExpense:   number
   hasExpenseHistory: boolean
   activity:          { text: string; timeLabel: string; dotColor: string; link: string; tenantId: string; tenantName: string; roomNo: string; amount: number; badgeLabel?: string; badgeTone?: 'prepay' | 'late' }[]
@@ -530,10 +530,11 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
 
 // ── 알림 스트립 — 카테고리별 그룹핑 (iOS 알림센터 스타일) ────────────
 
-type AlertCat = 'unpaid' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'other'
-const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'upcoming', 'moveout', 'movein', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
+type AlertCat = 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'other'
+const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'contact', 'upcoming', 'moveout', 'movein', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
 const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
   unpaid:    { label: '누적 미수',    color: 'var(--tc)' },
+  contact:   { label: '연락할 때',    color: 'var(--coral)' },
   upcoming:  { label: '납부 예정',    color: 'var(--viz-4)' },
   moveout:   { label: '퇴실 예정',    color: 'var(--viz-4)' },
   movein:    { label: '입실 희망',    color: 'var(--camel)' },

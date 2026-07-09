@@ -14,7 +14,7 @@ import { getTrackedCategories } from '@/app/(app)/inventory/categoryConfig'
 import { computeInventoryOverview } from '@/app/(app)/inventory/overview'
 import { computeUnpaidStatus } from '@/app/(app)/dashboard/unpaid'
 
-export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt'
+export type AlertCategory = 'unpaid' | 'checkout' | 'tour' | 'movein' | 'lowstock' | 'receipt' | 'contact'
 
 export type AlertItem = {
   id: string            // 목록 key (고유)
@@ -34,6 +34,7 @@ export type AlertItem = {
 const CATEGORY_LABEL: Record<AlertCategory, string> = {
   unpaid: '미납', checkout: '오늘 퇴실', tour: '오늘 투어',
   movein: '오늘 입주', lowstock: '재고 소진 임박', receipt: '수령 대기',
+  contact: '연락할 때',
 }
 
 function fmtMoney(n: number): string {
@@ -48,7 +49,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   const tomorrow = new Date(today.getTime() + 86400000)
   const trackedCats = await getTrackedCategories(propertyId)
 
-  const [unpaidStatus, inventory, checkoutLeases, tourLeases, moveInLeases, pendingReceipts] = await Promise.all([
+  const [unpaidStatus, inventory, checkoutLeases, tourLeases, moveInLeases, pendingReceipts, contactLeases] = await Promise.all([
     computeUnpaidStatus(propertyId),
     computeInventoryOverview(propertyId),
     prisma.leaseTerm.findMany({
@@ -67,6 +68,15 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       where: { propertyId, category: { in: trackedCats }, itemLabel: { not: null }, receivedAt: null, excludeFromInventory: false },
       select: { id: true, itemLabel: true, vendor: true, amount: true, date: true },
       orderBy: { date: 'asc' },
+    }),
+    // 잠재 고객 연락 — 입주 희망일 D-14 이내(운영자 기준 2026-07-10): 빈방 가능 여부를 먼저 알려주기.
+    // 예약 확정(방 확보) 건은 제외 — 입주 당일 알림이 따로 있다. 해소(상태 변경·희망일 경과) 전까지 매일.
+    prisma.leaseTerm.findMany({
+      where: {
+        propertyId, status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] }, reservationConfirmedAt: null,
+        moveInDate: { gte: today, lt: new Date(today.getTime() + 14 * 86400000) },
+      },
+      select: { id: true, moveInDate: true, isShortTerm: true, room: { select: { id: true, roomNo: true } }, tenant: { select: { id: true, name: true } } },
     }),
   ])
 
@@ -90,6 +100,21 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       roomNo: l.roomNo,
       tenantName: l.tenantName,
       urgency: 1000 + Math.max(0, l.daysOverdue ?? 0),
+    })
+  }
+
+  // 잠재 고객 연락(D-14) — 미납 다음 순위. 희망일이 가까울수록 급함.
+  for (const l of contactLeases) {
+    if (!l.moveInDate) continue
+    const dLeft = Math.ceil((l.moveInDate.getTime() - today.getTime()) / 86400000)
+    const md = `${l.moveInDate.getMonth() + 1}/${l.moveInDate.getDate()}`
+    items.push({
+      id: `contact-${l.id}`, category: 'contact',
+      title: roomName(l.room?.roomNo, l.tenant.name),
+      subtitle: `입주 희망 ${md} (D-${dLeft})${l.isShortTerm ? ' · 단기' : ''} — 빈방 가능 여부 연락`,
+      tenantId: l.tenant.id, leaseTermId: l.id,
+      roomId: l.room?.id ?? null, roomNo: l.room?.roomNo, tenantName: l.tenant.name,
+      urgency: 900 - dLeft * 10,
     })
   }
 
