@@ -33,6 +33,7 @@ import { recordRecurringExpense } from '@/app/(app)/finance/actions'
 import { confirmReservationToActive, checkoutTenant, checkoutWithDepositRefund } from '@/app/(app)/tenants/actions'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
+import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModal'
 import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appConfig'
 
 const fmtRoomNo = (no: string | null | undefined) =>
@@ -1826,6 +1827,8 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
   const [quoteOpen, setQuoteOpen] = useState(false)   // 단기 입실 요금 계산(홈 헤더, 고객 관리에서 이관 2026-07-06)
   const [recordingAlert, setRecordingAlert]       = useState<AlertItem | null>(null)
   const [unpaidExpanded, setUnpaidExpanded]       = useState(false)
+  // 미납 안내 문자 — 입금확인 스텝 + 템플릿 발송 (/docs/stayeum_payment_spec.md Phase 1)
+  const [smsTarget, setSmsTarget] = useState<UnpaidSmsTarget | null>(null)
   const [activityExpanded, setActivityExpanded]   = useState(false)
 
   // 방 현황 차원 그룹화 — 사용자가 차원을 다중·순서대로 골라 호실 카드 묶음 단위가 바뀜.
@@ -1872,6 +1875,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
 
   return (
     <div className="space-y-3.5">
+      {smsTarget && <UnpaidSmsModal target={smsTarget} onClose={() => setSmsTarget(null)} />}
 
       {/* ── 시작 체크리스트(온보딩) — 신규 영업장: 무엇부터 할지 3단계 안내 ── */}
       {data.onboarding && (() => {
@@ -2338,11 +2342,14 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                           {visibleUnpaid.map((l, i) => {
                             const dl = daysLabel(l.daysOverdue)
                             return (
-                              <button
+                              <div
                                 key={i}
-                                onClick={() => setDashTenantId(l.tenantId)}
-                                className="w-full flex items-center gap-3 px-5 py-3 hover:opacity-70 active:opacity-50 transition-opacity text-left"
+                                className="w-full flex items-center gap-3 px-5 py-3"
                                 style={{ borderBottom: i < visibleUnpaid.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}
+                              >
+                              <button
+                                onClick={() => setDashTenantId(l.tenantId)}
+                                className="flex-1 min-w-0 flex items-center gap-3 hover:opacity-70 active:opacity-50 transition-opacity text-left"
                               >
                                 <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
                                   style={{ background: 'var(--cream-3)', fontSize: '0.6875rem', color: 'var(--ink-mute)' }}>
@@ -2364,10 +2371,19 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                   </p>
                                   <p className="text-[0.625rem] font-medium mt-0.5" style={{ color: dl.color }}>{dl.text}</p>
                                 </div>
-                                <span className="rounded-full shrink-0 text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--danger-bg)', color: 'var(--tc)' }}>
+                              </button>
+                              <div className="flex flex-col items-end gap-1 shrink-0">
+                                <span className="rounded-full text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'var(--danger-bg)', color: 'var(--tc)' }}>
                                   {fmtKorMoney(l.unpaidAmount)}
                                 </span>
-                              </button>
+                                {/* 안내문자 — 입금확인 스텝을 거쳐 템플릿 발송(오발송 방지) */}
+                                <button type="button"
+                                  onClick={() => setSmsTarget({ leaseId: l.leaseId, tenantId: l.tenantId, tenantName: l.tenantName, roomNo: l.roomNo, unpaidAmount: l.unpaidAmount, daysOverdue: l.daysOverdue })}
+                                  className="min-h-[30px] inline-flex items-center text-[0.625rem] px-2 py-0.5 rounded-md border border-[var(--coral)]/45 text-[var(--coral)] hover:bg-[var(--coral)]/10 transition-colors">
+                                  안내문자
+                                </button>
+                              </div>
+                              </div>
                             )
                           })}
                         </div>

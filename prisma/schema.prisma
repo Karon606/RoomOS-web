@@ -199,6 +199,8 @@ model Property {
   itemSpecOptions     ItemSpecOption[]
   itemNameMergeRuns   ItemNameMergeRun[]
   assetAssignmentLogs AssetAssignmentLog[]
+  smsTemplates        SmsTemplate[]
+  smsLogs             SmsLog[]
 
   @@map("properties")
 }
@@ -269,6 +271,47 @@ model AssetAssignmentLog {
 
   @@index([propertyId, itemLabel])
   @@map("asset_assignment_log")
+}
+
+// ============================================================
+// 미납 안내 문자 — 템플릿 + 발송 시도 이력 (/docs/stayeum_payment_spec.md Phase 1)
+//   실제 발송은 운영자 폰의 문자앱(sms: 링크)에서 이뤄지므로 이력은 '발송 시도' 기록.
+//   sentVia 는 Phase 2(솔라피 등 API 발송) 확장 대비.
+// ============================================================
+model SmsTemplate {
+  id         String   @id @default(uuid()) @db.Uuid
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  name       String   // "1차 안내" 등
+  body       String   // 변수({이름}{호수}{미납금액}{납기일}{경과일수}{계좌번호}) 포함 원문
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  logs       SmsLog[]
+
+  @@index([propertyId, sortOrder])
+  @@map("sms_templates")
+}
+
+model SmsLog {
+  id           String    @id @default(uuid()) @db.Uuid
+  propertyId   String    @db.Uuid
+  property     Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenantId     String    @db.Uuid
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leaseTermId  String?   @db.Uuid
+  templateId   String?   @db.Uuid
+  template     SmsTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  renderedBody String    // 변수 치환 완료된 실제 본문
+  overdueAmount Int?
+  overdueDays   Int?
+  paymentCheckConfirmedAt DateTime?  // 발송 전 '입금내역 확인' 다이얼로그 통과 시각
+  sentVia      String    @default("manual_sms")  // Phase 2: 'solapi' 등
+  createdAt    DateTime  @default(now())
+
+  @@index([propertyId, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("sms_logs")
 }
 
 // ============================================================
@@ -371,6 +414,7 @@ model Tenant {
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   contacts       TenantContact[]
+  smsLogs        SmsLog[]
   leaseTerms     LeaseTerm[]
   paymentRecords PaymentRecord[]
   statusLogs     TenantStatusLog[]
@@ -542,6 +586,9 @@ model PaymentRecord {
   isPaid         Boolean  @default(false)
   isDeposit      Boolean  @default(false)
   isPrevOwner    Boolean  @default(false)  // 양도인 정산 — 이 달은 양도인이 받음 (현 소유주 장부·미납 제외)
+  paymentConfirmedAt DateTime?  // 입금 확인 처리 시각 (Phase 2 CODEF 자동확인 대비 — /docs/stayeum_payment_spec.md)
+  paymentConfirmedBy String?    // 'manual' | 'codef_auto'
+  bankTxRef          String?    // Phase 2: CODEF 거래내역 매칭 키(중복 처리 방지)
   payDate        DateTime @db.Date
   payMethod      String?
   memo           String?

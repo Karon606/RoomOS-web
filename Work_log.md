@@ -3,6 +3,13 @@
 마지막 업데이트: 2026-07-08
 브랜치: main
 
+## 2026-07-09 (밤) — 미납 안내 문자 Phase 1 (/docs/stayeum_payment_spec.md)
+- **스펙 문서**: /docs/stayeum_payment_spec.md 보존(Phase 2 백로그 — CODEF 계좌 자동확인·스토리지 마이그레이션 — 삭제 금지). AGENTS.md 에 참조 한 줄.
+- **스키마**: sms_templates·sms_logs 신설(propertyId 격리 — 스펙의 owner_id RLS 를 저장소 패턴에 맞게 적응), payment_records 에 paymentConfirmedAt/paymentConfirmedBy/bankTxRef(Phase 2 CODEF 대비, 미사용). 마이그레이션 적용 완료(migrate_sms_templates_logs.sql).
+- **발송 플로우**: 홈 '누적 미납' 각 행에 [안내문자] → ① 입금내역 확인 다이얼로그(통과 시각 기록) → ② 템플릿 선택·변수({이름}{호수}{미납금액}{납기일}{경과일수}{계좌번호}) 치환 미리보기(자유 수정) → ③ sms: 링크(iOS &body / 그 외 ?body)로 문자앱. 클릭 시 sms_logs 에 '발송 시도' 기록(sentVia manual_sms).
+- **환경설정**: '미납 안내 문자 템플릿' 카드(추가·수정·삭제, 변수 안내). {계좌번호} = 기존 '입금 계좌번호' 설정 재사용.
+- 검증: 빌드 통과, 금전 하네스 51/51(스키마 추가 컬럼 무영향), 새 파일 eslint 클린.
+
 ## 2026-07-09 — 살짝 보기(PeekSheet)·배정 이력 날짜·선입선출 후속
 - **살짝 보기**: 모든 모달 헤더의 눈 아이콘 → 하단 시트에 같은 오리진 iframe(홈/방/입주자/수납/지출/재고 칩). 입력 상태 유지, 마지막 페이지 기억. 프레임 안에서는 PeekFrameGuard(html[data-peek-frame])가 크롬([data-peek-hide]: Header·BottomNav·Sidebar·오류신고 버튼) 숨김 + 모달의 살짝 보기 버튼 숨김(중첩 방지). 운영자 아이디어(교차 참조 범용화).
 - **배정 이력 날짜**: 이력에 assignedAt 컬럼 추가(마이그레이션 적용) — 표시는 지정 배정일 우선(없으면 기록일). 기존 3건 6/7 백필. KST 표시 수정(UTC 절단으로 6/7이 6/6으로 보이던 신고 — 지출 행 배정일 표시도 동일 수정).

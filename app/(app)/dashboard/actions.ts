@@ -274,3 +274,79 @@ ${trendText}
   const text = parts.find(p => p.text && !p.thought)?.text ?? parts.find(p => p.text)?.text
   return text ?? '분석 결과를 가져올 수 없습니다.'
 }
+
+// ============================================================
+// 미납 안내 문자 발송 플로우 (/docs/stayeum_payment_spec.md Phase 1)
+//   실제 발송은 운영자 폰 문자앱(sms: 링크) — 여기서는 컨텍스트 조회와 '발송 시도' 이력만.
+// ============================================================
+export type UnpaidSmsContext = {
+  ok: true
+  phone: string | null          // 없으면 발송 불가 안내
+  tenantName: string
+  roomNo: string
+  dueDayLabel: string           // "15일" | "말일" | ''
+  bankAccount: string           // 환경설정 입금 계좌 (없으면 '')
+  templates: { id: string; name: string; body: string }[]
+} | { ok: false; error: string }
+
+export async function getUnpaidSmsContext(leaseId: string): Promise<UnpaidSmsContext> {
+  try {
+    const access = await getPropertyAccess()
+    if (!access) return { ok: false, error: '접근 권한이 없습니다.' }
+    const propertyId = access.propertyId
+    const lease = await prisma.leaseTerm.findFirst({
+      where: { id: leaseId, propertyId },
+      select: {
+        dueDay: true,
+        room: { select: { roomNo: true } },
+        tenant: { select: { name: true, contacts: { where: { contactType: 'PHONE' }, orderBy: { createdAt: 'asc' }, select: { contactValue: true }, take: 1 } } },
+      },
+    })
+    if (!lease) return { ok: false, error: '입주 정보를 찾을 수 없습니다.' }
+    const [prop, templates] = await Promise.all([
+      prisma.property.findUnique({ where: { id: propertyId }, select: { bankAccount: true } }),
+      prisma.smsTemplate.findMany({ where: { propertyId }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true, body: true } }),
+    ])
+    const rawDue = (lease.dueDay ?? '').trim()
+    const dueDayLabel = rawDue ? (/^\d+$/.test(rawDue) ? `${rawDue}일` : rawDue) : ''
+    return {
+      ok: true,
+      phone: lease.tenant.contacts[0]?.contactValue?.trim() || null,
+      tenantName: lease.tenant.name,
+      roomNo: lease.room?.roomNo ?? '',
+      dueDayLabel,
+      bankAccount: prop?.bankAccount ?? '',
+      templates,
+    }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '조회에 실패했습니다.' }
+  }
+}
+
+export async function logSmsAttempt(input: {
+  tenantId: string; leaseTermId: string | null; templateId: string | null
+  renderedBody: string; overdueAmount: number | null; overdueDays: number | null
+  paymentCheckConfirmedAt: string   // ISO — 기능1 확인 다이얼로그 통과 시각
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const access = await getPropertyAccess()
+    if (!access) return { ok: false, error: '접근 권한이 없습니다.' }
+    if (!input.renderedBody.trim()) return { ok: false, error: '본문이 비어 있습니다.' }
+    await prisma.smsLog.create({ data: {
+      propertyId: access.propertyId,
+      tenantId: input.tenantId,
+      leaseTermId: input.leaseTermId,
+      templateId: input.templateId,
+      renderedBody: input.renderedBody,
+      overdueAmount: input.overdueAmount,
+      overdueDays: input.overdueDays,
+      paymentCheckConfirmedAt: new Date(input.paymentCheckConfirmedAt),
+      sentVia: 'manual_sms',
+    } })
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '이력 기록에 실패했습니다.' }
+  }
+}

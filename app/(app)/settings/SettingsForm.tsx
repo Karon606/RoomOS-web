@@ -24,6 +24,7 @@ import {
   type MemberWithUser, type RecurringExpenseRow, type ContractSettings, type RecurringItemInput,
   getShortStayPolicy, updateShortStayPolicy,
   listItemSpecOptions, renameItemSpecOption, deleteItemSpecOption, type ItemSpecGroup,
+  getSmsTemplates, saveSmsTemplate, deleteSmsTemplate, type SmsTemplateRow,
 } from './actions'
 import { regenerateJoinCode, approveJoinRequest, rejectJoinRequest } from './memberActions'
 import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
@@ -887,6 +888,7 @@ export default function SettingsForm({
 
         {/* 단기 입실 정책 — 영업장별 수치 템플릿(운영자 기준 2026-07-06). 오너 전용(§4 요금 기준). */}
         {isOwner && <ShortStayPolicyCard />}
+        <SmsTemplateCard />
 
         {/* 도움말 — 앱의 사고방식(사용성 감사 F2). 처음 쓰는 사람이 막히는 개념만 짧게. */}
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
@@ -1983,6 +1985,92 @@ function ItemSpecOptionsPanel() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 미납 안내 문자 템플릿 카드 — 대시보드 '누적 미납'의 [안내문자]가 이 템플릿을 사용
+// (/docs/stayeum_payment_spec.md Phase 1). 변수는 발송 시점에 자동 치환.
+function SmsTemplateCard() {
+  const [list, setList] = useState<SmsTemplateRow[] | null>(null)
+  const [edit, setEdit] = useState<{ id?: string; name: string; body: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { getSmsTemplates().then(setList).catch(() => setList([])) }, [])
+
+  const reload = () => getSmsTemplates().then(setList).catch(() => {})
+  const save = async () => {
+    if (!edit) return
+    setBusy(true)
+    const res = await saveSmsTemplate(edit)
+    setBusy(false)
+    if (!res.ok) { pushToast('error', res.error); return }
+    pushToast('success', '템플릿 저장됨')
+    setEdit(null); void reload()
+  }
+  const remove = async (row: SmsTemplateRow) => {
+    if (!(await confirmDialog({ title: `'${row.name}' 템플릿을 삭제할까요?`, message: '보낸 문자 이력은 그대로 남습니다.', confirmLabel: '삭제', level: 'caution' }))) return
+    setBusy(true)
+    const res = await deleteSmsTemplate(row.id)
+    setBusy(false)
+    if (!res.ok) { pushToast('error', res.error); return }
+    pushToast('info', '템플릿을 삭제했습니다')
+    void reload()
+  }
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+
+  return (
+    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
+      <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">미납 안내 문자 템플릿</h2>
+      <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
+        홈 &lsquo;누적 미납&rsquo;의 [안내문자]에서 골라 쓰는 문구입니다. 변수는 보낼 때 자동으로 채워집니다:
+        {' '}<span className="mono text-[0.6875rem]">{'{이름} {호수} {미납금액} {납기일} {경과일수} {계좌번호}'}</span>
+      </p>
+      {!list ? (
+        <p className="text-xs text-[var(--warm-muted)]">불러오는 중…</p>
+      ) : (
+        <div className="space-y-2.5">
+          {list.length === 0 && !edit && (
+            <p className="text-xs text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5">
+              아직 템플릿이 없습니다. 예: &ldquo;[더스테이 제기역점] {'{이름}'}님, {'{호수}'}호 월 이용료 {'{미납금액}'}원의 납기일({'{납기일}'})이 지났습니다. 아래 계좌로 입금 부탁드립니다. {'{계좌번호}'}&rdquo;
+            </p>
+          )}
+          <ul className="space-y-1.5">
+            {list.map(row => (
+              <li key={row.id} className="flex items-center gap-2 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)]/50 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-[var(--warm-dark)] truncate">{row.name}</p>
+                  <p className="text-[0.6875rem] text-[var(--warm-muted)] truncate">{row.body}</p>
+                </div>
+                <button type="button" disabled={busy} onClick={() => setEdit({ id: row.id, name: row.name, body: row.body })}
+                  className="min-h-[30px] shrink-0 inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors disabled:opacity-40">수정</button>
+                <button type="button" disabled={busy} onClick={() => void remove(row)}
+                  className="min-h-[30px] shrink-0 inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md text-[var(--warm-muted)] hover:text-[var(--danger-fg)] transition-colors disabled:opacity-40">삭제</button>
+              </li>
+            ))}
+          </ul>
+          {edit ? (
+            <div className="space-y-2 rounded-xl border border-[var(--coral)]/40 bg-[var(--canvas)]/50 p-3">
+              <label className="block">
+                <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">템플릿 이름</span>
+                <input value={edit.name} disabled={busy} placeholder="예: 1차 안내"
+                  onChange={e => setEdit(v => v ? { ...v, name: e.target.value } : v)} className={inputCls} />
+              </label>
+              <label className="block">
+                <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">문자 내용 (변수 그대로 적으면 보낼 때 치환)</span>
+                <textarea value={edit.body} disabled={busy} rows={5}
+                  onChange={e => setEdit(v => v ? { ...v, body: e.target.value } : v)}
+                  className={`${inputCls} leading-relaxed`} />
+              </label>
+              <div className="flex gap-2 justify-end">
+                <Btn type="button" variant="secondary" size="sm" onClick={() => setEdit(null)} disabled={busy}>취소</Btn>
+                <Btn type="button" variant="primary" size="sm" onClick={() => void save()} disabled={busy}>{busy ? '저장 중…' : '저장'}</Btn>
+              </div>
+            </div>
+          ) : (
+            <Btn type="button" variant="secondary" size="sm" onClick={() => setEdit({ name: '', body: '' })}>+ 템플릿 추가</Btn>
+          )}
         </div>
       )}
     </div>

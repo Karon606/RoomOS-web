@@ -1182,3 +1182,55 @@ export async function deleteItemSpecOption(id: string): Promise<{ ok: true } | {
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
   }
 }
+
+// ============================================================
+// 미납 안내 문자 템플릿 (/docs/stayeum_payment_spec.md Phase 1)
+//   지원 변수: {이름} {호수} {미납금액} {납기일} {경과일수} {계좌번호}
+// ============================================================
+export type SmsTemplateRow = { id: string; name: string; body: string; sortOrder: number }
+
+export async function getSmsTemplates(): Promise<SmsTemplateRow[]> {
+  const propertyId = await getPropertyId()
+  const rows = await prisma.smsTemplate.findMany({
+    where: { propertyId }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    select: { id: true, name: true, body: true, sortOrder: true },
+  })
+  return rows
+}
+
+export async function saveSmsTemplate(input: { id?: string; name: string; body: string }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const name = input.name.trim()
+    const body = input.body.trim()
+    if (!name) return { ok: false, error: '템플릿 이름을 입력하세요.' }
+    if (!body) return { ok: false, error: '문자 내용을 입력하세요.' }
+    if (input.id) {
+      const r = await prisma.smsTemplate.updateMany({ where: { id: input.id, propertyId }, data: { name, body } })
+      if (r.count === 0) return { ok: false, error: '템플릿을 찾을 수 없습니다.' }
+      revalidatePath('/settings')
+      return { ok: true, id: input.id }
+    }
+    const last = await prisma.smsTemplate.findFirst({ where: { propertyId }, orderBy: { sortOrder: 'desc' }, select: { sortOrder: true } })
+    const row = await prisma.smsTemplate.create({ data: { propertyId, name, body, sortOrder: (last?.sortOrder ?? -1) + 1 } })
+    revalidatePath('/settings')
+    return { ok: true, id: row.id }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '저장에 실패했습니다.' }
+  }
+}
+
+export async function deleteSmsTemplate(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    await prisma.smsTemplate.deleteMany({ where: { id, propertyId } })
+    revalidatePath('/settings')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
+  }
+}
