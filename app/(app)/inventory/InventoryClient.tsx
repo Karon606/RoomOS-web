@@ -236,36 +236,24 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
     })
   }
 
-  const [seedPending, setSeedPending] = useState(false)
-  const handleSeed = async () => {
-    setSeedPending(true)
-    const release = trackSave()
-    try {
-      const res = await seedTrackedItemsFromExpenses()
-      if (!res.ok) { pushToast('error', res.error); return }
-      router.refresh()
-      const parts: string[] = []
-      if (res.created > 0) parts.push(`${res.created}개 품목 추가`)
-      if (res.migrated > 0) parts.push(`${res.migrated}개 지출 라벨 정리 (사이즈/포장 변형 분리)`)
-      if (res.skippedArchived > 0) parts.push(`삭제된 품목과 매칭되는 지출 ${res.skippedArchived}건은 건너뜀`)
-      if (res.decisions.length > 0) parts.push(`${res.decisions.length}건 병합 확인 필요`)
-      const summary = parts.length > 0 ? parts.join(' · ') : '추가할 품목이 없습니다 (이미 등록됨).'
-      pushToast('success', summary)
-      // 후보가 있으면 병합 확인 모달 — 사용자가 어느 카드로 넣을지/새로 만들지 선택
-      if (res.decisions.length > 0) setMergeDecisions(res.decisions)
-    } finally {
-      setSeedPending(false)
-      release()
-    }
-  }
-
   // 카테고리별 그룹 — 설정된 카테고리 순서 + 표시 별칭. 설정 밖 카테고리(과거 등록분)는 뒤에 자체 표시.
   const extraCats = Array.from(new Set(rows.map(r => r.category))).filter(c => !trackedCats.includes(c))
-  const grouped = [...trackedCats, ...extraCats].map(cat => ({
+  const groupedAll = [...trackedCats, ...extraCats].map(cat => ({
     cat,
     alias: aliasOf(cat),
     rows: visibleRows.filter(r => r.category === cat),
   }))
+  // 카테고리 상단 탭 — 비품·자재 대분류와 같은 문법(운영자 요청 2026-07-10). 마지막 선택 기억, 검색 중엔 전체.
+  const [catTab, setCatTab] = useState<string>(() => {
+    if (typeof window === 'undefined') return '__all__'
+    try { return localStorage.getItem('stayeum-inventory-cat') ?? '__all__' } catch { return '__all__' }
+  })
+  const pickCatTab = (v: string) => {
+    setCatTab(v)
+    try { localStorage.setItem('stayeum-inventory-cat', v) } catch { /* 무시 */ }
+  }
+  const searching = search.trim().length > 0
+  const grouped = groupedAll.filter(g => searching || catTab === '__all__' || g.cat === catTab)
 
   return (
     <div className="space-y-4">
@@ -305,8 +293,6 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                 <>
                   <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setOpenMenu(null)} />
                   <div className="absolute left-0 top-full z-[var(--z-dropdown)] mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-1.5 shadow-lift">
-                    <button type="button" disabled={seedPending || isPending} onClick={() => { setOpenMenu(null); handleSeed() }}
-                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)] disabled:opacity-50">{seedPending ? '처리 중…' : '과거 지출 일괄 불러오기'}<span className="block text-[0.625rem] text-[var(--warm-muted)]">새 지출은 저장 시 자동 등록됩니다</span></button>
                     <button type="button" onClick={() => { setOpenMenu(null); setShowReconcile(true) }}
                       className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">전체 재고 보정<span className="block text-[0.625rem] text-[var(--warm-muted)]">실제와 다를 때 실측값으로 리셋</span></button>
                   </div>
@@ -433,6 +419,13 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             </section>
           )
         })()}
+        {!searching && (
+          <SegmentedControl ariaLabel="소모품 카테고리" size="md" scroll value={groupedAll.some(g => g.cat === catTab) ? catTab : '__all__'} onChange={pickCatTab}
+            options={[
+              { value: '__all__', label: <>전체 <span className="mono text-[0.6875rem] text-[var(--warm-muted)]">{groupedAll.reduce((s, g) => s + g.rows.length, 0)}</span></> },
+              ...groupedAll.map(g => ({ value: g.cat, label: <>{g.alias} <span className="mono text-[0.6875rem] text-[var(--warm-muted)]">{g.rows.length}</span></> })),
+            ]} />
+        )}
         {grouped.map(g => g.rows.length > 0 && (
           <section key={g.cat} className="space-y-2">
             <SectionHeader marker={<DotMarker color={tintOf(g.cat).fg} />} name={g.alias} count={`${g.rows.length}품목`} />
