@@ -84,7 +84,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
     if (counts['late-payment'] === 0) return
     if (!(await confirmDialog({
       title: `지연 입금 ${counts['late-payment']}건을 모두 직전 월로 이동할까요?`,
-      message: '각 기록은 입금일이 속한 월의 직전 월 매출로 재분류됩니다. 입금일·금액은 그대로 유지됩니다.',
+      message: '각 기록이 입금일 직전 달의 매출로 다시 분류됩니다. 입금일·금액은 그대로지만 홈·리포트의 월별 숫자가 바뀝니다. 실행 직후 뜨는 적용취소로 되돌릴 수 있습니다.',
       level: 'caution', confirmLabel: '일괄 이동',
     }))) return
     startTransition(async () => {

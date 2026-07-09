@@ -1997,7 +1997,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
               </div>
               {/* §23.1 — 보조 1줄(현재 장부·지출 반영도). 남은 지출·예비비 이체 상세는 지출/기타수익으로 이동 */}
               <p style={{ fontSize: '0.65625rem', color: 'var(--np-cap)', lineHeight: 1.5 }}>
-                현재 장부 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{fmtKorMoney(currentNet)}</em> · 지출 <em style={{ fontStyle: 'normal', color: 'var(--np-pos)', fontWeight: 700 }}>{expenseBooked}%</em> 반영
+                지금까지 기록 기준 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{fmtKorMoney(currentNet)}</em> · 이달 지출의 <em style={{ fontStyle: 'normal', color: 'var(--np-pos)', fontWeight: 700 }}>{expenseBooked}%</em>가 기록됨
               </p>
             </div>
           )
@@ -2044,6 +2044,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                 {/* §23.1 — 보조 1줄(통제가능성 막대 범례). 현재까지·전월/전년 추세는 지출/기타수익으로 이동 */}
                 <p style={{ fontSize: '0.625rem', color: 'var(--warm-muted)', lineHeight: 1.5 }}>
                   <span style={{ color: 'var(--ink-2)' }}>●</span> 고정(정액) {fmtKorMoney(t.immovable)} · <span style={{ color: 'var(--warm-mid)' }}>●</span> 고정(변동) {fmtKorMoney(t.variable)} · <span style={{ color: 'var(--coral)' }}>●</span> 수시 {fmtKorMoney(t.savable)}
+                  <span style={{ display: 'block' }}>정액=매달 같은 금액 · 변동=매달 다른 고정비 · 수시=그때그때 쓰는 돈</span>
                 </p>
               </>
             )
