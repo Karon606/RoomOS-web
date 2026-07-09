@@ -24,7 +24,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
   const cleanToken = (token || '').replace(/\.ics$/i, '')
   const property = await prisma.property.findUnique({
     where: { calendarToken: cleanToken },
-    select: { id: true, name: true },
+    select: { id: true, name: true, contactLeadDays: true },
   })
   if (!property) return new Response('Not found', { status: 404 })
 
@@ -39,8 +39,24 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
     },
   })
 
+  // 납입 여부 — 이미 낸 달은 '납부 예정' 대신 실제 입금일에 '납입완료'로 표시(운영자 요청 2026-07-10).
+  // 구독 캘린더는 피드를 주기적으로 다시 가져가므로, 납입되는 순간부터 예정 이벤트는 자동으로 사라진다.
   const now = new Date(Date.now() + 9 * 3600000) // KST
   const ty = now.getUTCFullYear(), tm = now.getUTCMonth() + 1
+  const monthStrs: string[] = []
+  for (let i = 0; i < 6; i++) { let y = ty, m = tm + i; while (m > 12) { m -= 12; y += 1 } monthStrs.push(`${y}-${String(m).padStart(2, '0')}`) }
+  const pays = await prisma.paymentRecord.findMany({
+    where: { propertyId: property.id, targetMonth: { in: monthStrs }, isDeposit: false, isPrevOwner: false },
+    select: { leaseTermId: true, targetMonth: true, actualAmount: true, payDate: true },
+  })
+  const paidMap = new Map<string, { sum: number; lastPay: Date }>()
+  for (const r of pays) {
+    const k = `${r.leaseTermId}|${r.targetMonth}`
+    const cur = paidMap.get(k) ?? { sum: 0, lastPay: r.payDate }
+    cur.sum += r.actualAmount
+    if (r.payDate > cur.lastPay) cur.lastPay = r.payDate
+    paidMap.set(k, cur)
+  }
   const dtstamp = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}${String(now.getUTCDate()).padStart(2, '0')}T000000Z`
 
   const lines: string[] = [
@@ -83,9 +99,36 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
           ? l.checkoutProratedAmount
           : discountedRent(l.discounts, monthStr, l.rentAmount)
         if (amount <= 0) continue
-        ev(`rent-${l.id}-${monthStr}`, y, m, day, `${who} 이용료 ${manWon(amount)}`, '납부 예정일')
+        const paid = paidMap.get(`${l.id}|${monthStr}`)
+        if (paid && paid.sum >= amount) {
+          // 이미 납입 완료 — 예정 이벤트 대신 실제 입금일에 완료 표시(다음 동기화 때 예정은 사라짐)
+          const pd = paid.lastPay
+          ev(`rent-paid-${l.id}-${monthStr}`, pd.getFullYear(), pd.getMonth() + 1, pd.getDate(), `${who} 납입완료`, `이용료 ${manWon(amount)} 입금 확인`)
+        } else {
+          ev(`rent-${l.id}-${monthStr}`, y, m, day, `${who} 이용료 ${manWon(amount)}`, '납부 예정일')
+        }
       }
     }
+  }
+
+  // 잠재고객 연락 알림일 — 문의·투어·미확정 예약, 입주 희망일이 아직 안 지난 건
+  const leadDays = property.contactLeadDays ?? 14
+  const contactLeases = await prisma.leaseTerm.findMany({
+    where: {
+      propertyId: property.id, status: { in: ['WAITING_TOUR', 'TOUR_DONE', 'RESERVED'] },
+      reservationConfirmedAt: null, moveInDate: { not: null, gte: new Date(Date.UTC(ty, tm - 1, now.getUTCDate())) },
+    },
+    select: { id: true, moveInDate: true, contactAlertDate: true, isShortTerm: true, room: { select: { roomNo: true } }, tenant: { select: { name: true } } },
+  })
+  for (const l of contactLeases) {
+    if (!l.moveInDate) continue
+    const who = [fmtRoom(l.room?.roomNo), l.tenant.name].filter(Boolean).join(' ')
+    const base = l.contactAlertDate ? new Date(l.contactAlertDate) : (() => { const d = new Date(l.moveInDate); d.setDate(d.getDate() - leadDays); return d })()
+    const mi = new Date(l.moveInDate)
+    ev(`contact-${l.id}`, base.getFullYear(), base.getMonth() + 1, base.getDate(),
+      `${who} 연락${l.isShortTerm ? ' (단기)' : ''}`,
+      `입주 희망 ${mi.getMonth() + 1}/${mi.getDate()} — 빈방 가능 여부 안내 연락`)
+    ev(`wishin-${l.id}`, mi.getFullYear(), mi.getMonth() + 1, mi.getDate(), `${who} 입주 희망일`, '')
   }
 
   lines.push('END:VCALENDAR')
