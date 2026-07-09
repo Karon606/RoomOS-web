@@ -9,10 +9,14 @@ import { subscribePending, subscribeToast, type Toast, type ToastKind } from '@/
 
 type Live = Toast & { count: number }
 
+// 토스트 칩 팔레트는 모드 불변(항상 어두운 서피스 + 크림 텍스트).
+// info 가 var(--ink) 를 쓰면 다크모드에서 --ink 가 밝은 크림(--d-ink)으로 뒤집혀
+// 크림 글자와 겹쳐 안 보임(운영자 신고 2026-07-10) — 가이드 §"다크 전환은 토큰 치환만" 위반 사례.
+// 그래서 라이트 모드의 ink 원값을 고정값으로 사용한다(다른 종류들과 동일한 모드 불변 방식).
 const KIND_STYLE: Record<ToastKind, { bg: string; border?: string }> = {
   success: { bg: '#1E2E14', border: 'rgba(78,104,52,.45)' },
   error:   { bg: '#5A1A10', border: 'rgba(160,60,46,.5)' },
-  info:    { bg: 'var(--ink)' },
+  info:    { bg: '#3D2418' },
   urgent:  { bg: 'var(--tc-d)', border: 'rgba(160,60,46,.5)' },
 }
 
