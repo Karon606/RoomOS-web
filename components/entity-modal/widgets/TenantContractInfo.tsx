@@ -15,6 +15,8 @@ type Lease = {
   moveOutDate: Date | string | null
   expectedMoveOut: Date | string | null
   inquiryAt: Date | string | null
+  contactAlertDate?: Date | string | null            // 연락 알림 시작일 지정(없으면 기본)
+  property?: { contactLeadDays: number } | null      // 영업장 기본 리드타임
 }
 
 const PT_LABEL: Record<string, string> = { PREPAID: '선납', POSTPAID: '후납' }
@@ -72,6 +74,19 @@ export function TenantContractInfo({ lease }: { lease: Lease }) {
           label={isPending ? '입주 희망일' : '입주일'}
           value={fmtDate(lease.moveInDate)}
         />
+        {/* 연락 알림일 — 이 날부터 홈·종에 '연락할 때' 알림(운영자 요청 2026-07-10: 상세에 보여야 안심) */}
+        {isPending && lease.status !== 'CANCELLED' && lease.moveInDate && (() => {
+          const lead = lease.property?.contactLeadDays ?? 14
+          const base = lease.contactAlertDate ? new Date(lease.contactAlertDate) : (() => {
+            const d = new Date(lease.moveInDate as string | Date); d.setDate(d.getDate() - lead); return d
+          })()
+          const today = new Date(); today.setHours(0, 0, 0, 0)
+          const eff = base < today ? today : base
+          return (
+            <Item label="연락 알림일"
+              value={`${fmtDate(eff)}${lease.contactAlertDate ? ' (직접 지정)' : ` (희망일 ${lead}일 전)`}`} />
+          )
+        })()}
         {!['ACTIVE', 'CHECKOUT_PENDING', 'NON_RESIDENT'].includes(lease.status) && lease.inquiryAt && (
           <Item label="입실 문의 일시" value={fmtDateTime(lease.inquiryAt)} />
         )}

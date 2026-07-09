@@ -1394,7 +1394,9 @@ export async function getTenantDetail(tenantId: string) {
           rentAmount: true, depositAmount: true, cleaningFee: true,
           dueDay: true, paymentTiming: true,
           moveInDate: true, moveOutDate: true, expectedMoveOut: true, inquiryAt: true,
+          contactAlertDate: true,   // 잠재고객 연락 알림 시작일(지정) — 상세 표시용
           registrationStatus: true, payMethod: true, cashReceipt: true,
+          property: { select: { contactLeadDays: true } },
           visitRoute: true, wishRooms: true, wishConditions: true, contractUrl: true,
           room: { select: { id: true, roomNo: true } },
           paymentRecords: {
