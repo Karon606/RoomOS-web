@@ -25,6 +25,11 @@ async function getPropertyId() {
   return propertyId
 }
 
+async function getPropertyIdWithUser() {
+  const { userId, propertyId } = await requirePropertyAccess()
+  return { user: { sub: userId }, propertyId }
+}
+
 // ── 캘린더 구독(.ics) 토큰 ────────────────────────────────────────
 const genCalToken = () => `${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
 
@@ -1195,13 +1200,13 @@ export async function deleteItemSpecOption(id: string): Promise<{ ok: true } | {
 // AI(제미나이) 설정 — 본인 API 키(BYOK) + 모델. 공지 AI 다듬기는 키 등록 시 사용 가능.
 // 키는 서버 전용 — 클라이언트에는 마스킹(앞 6자)만 내려준다.
 // ============================================================
-export type AiSettings = { keyMasked: string | null; model: string | null; usedThisMonth: number; limit: number }
+export type AiSettings = { keyMasked: string | null; model: string | null; usedThisMonth: number; limit: number; isOwner: boolean }
 
 // 공용 키 무료 사용 현황 — AI 실행 직후 UI가 잔여를 토스트로 보여줄 때 사용(본인 키면 own: true)
 export async function getAiQuotaStatus(): Promise<{ own: boolean; used: number; remaining: number; limit: number }> {
   const propertyId = await getPropertyId()
-  const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { geminiApiKey: true } })
-  if (p?.geminiApiKey?.trim()) return { own: true, used: 0, remaining: 0, limit: FREE_MONTHLY_AI_LIMIT }
+  const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { owner: { select: { geminiApiKey: true } } } })
+  if (p?.owner?.geminiApiKey?.trim()) return { own: true, used: 0, remaining: 0, limit: FREE_MONTHLY_AI_LIMIT }
   const month = new Date().toISOString().slice(0, 7)
   const row = await prisma.aiUsage.findUnique({ where: { propertyId_month: { propertyId, month } }, select: { count: true } })
   const used = Math.min(row?.count ?? 0, FREE_MONTHLY_AI_LIMIT)
@@ -1209,23 +1214,30 @@ export async function getAiQuotaStatus(): Promise<{ own: boolean; used: number; 
 }
 
 export async function getAiSettings(): Promise<AiSettings> {
-  const propertyId = await getPropertyId()
-  const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { geminiApiKey: true, geminiModel: true } })
-  const key = p?.geminiApiKey?.trim() || null
+  const { user, propertyId } = await getPropertyIdWithUser()
+  const p = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { ownerId: true, owner: { select: { geminiApiKey: true, geminiModel: true } } },
+  })
+  const key = p?.owner?.geminiApiKey?.trim() || null
   const month = new Date().toISOString().slice(0, 7)
   const row = await prisma.aiUsage.findUnique({ where: { propertyId_month: { propertyId, month } }, select: { count: true } }).catch(() => null)
   return {
     keyMasked: key ? `${key.slice(0, 6)}${'*'.repeat(Math.max(4, key.length - 6))}` : null,
-    model: p?.geminiModel ?? null,
+    model: p?.owner?.geminiModel ?? null,
     usedThisMonth: Math.min(row?.count ?? 0, FREE_MONTHLY_AI_LIMIT),
     limit: FREE_MONTHLY_AI_LIMIT,
+    isOwner: p?.ownerId === user.sub,
   }
 }
 
 export async function saveAiSettings(input: { apiKey?: string | null; model?: string | null }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    const propertyId = await getPropertyId()
+    const { user, propertyId } = await getPropertyIdWithUser()
+    // 키는 소유 관리자 계정에 저장(그 관리자의 모든 영업장 공유) — 소유자 본인만 변경 가능
+    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { ownerId: true } })
+    if (!p || p.ownerId !== user.sub) return { ok: false, error: 'AI 설정은 영업장 소유 관리자 계정에서만 변경할 수 있습니다.' }
     const data: { geminiApiKey?: string | null; geminiModel?: string | null } = {}
     if (input.apiKey !== undefined) {
       const k = (input.apiKey ?? '').trim()
@@ -1233,7 +1245,7 @@ export async function saveAiSettings(input: { apiKey?: string | null; model?: st
       data.geminiApiKey = k || null
     }
     if (input.model !== undefined) data.geminiModel = (input.model ?? '').trim() || null
-    await prisma.property.update({ where: { id: propertyId }, data })
+    await prisma.user.update({ where: { id: user.sub }, data })
     revalidatePath('/settings')
     return { ok: true }
   } catch (err) {

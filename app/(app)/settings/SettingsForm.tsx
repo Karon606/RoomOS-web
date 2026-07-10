@@ -2022,12 +2022,13 @@ function AiSettingsCard() {
   const [loaded, setLoaded] = useState(false)
   const [keyMasked, setKeyMasked] = useState<string | null>(null)
   const [usage, setUsage] = useState<{ used: number; limit: number } | null>(null)
+  const [isOwner, setIsOwner] = useState(true)
   const [model, setModel] = useState('')
   const [keyInput, setKeyInput] = useState('')
   const [editingKey, setEditingKey] = useState(false)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
-    getAiSettings().then(r => { setKeyMasked(r.keyMasked); setModel(r.model ?? ''); setUsage({ used: r.usedThisMonth, limit: r.limit }); setLoaded(true) }).catch(() => setLoaded(true))
+    getAiSettings().then(r => { setKeyMasked(r.keyMasked); setModel(r.model ?? ''); setUsage({ used: r.usedThisMonth, limit: r.limit }); setIsOwner(r.isOwner); setLoaded(true) }).catch(() => setLoaded(true))
   }, [])
 
   const saveKey = async (apiKey: string | null) => {
@@ -2055,7 +2056,7 @@ function AiSettingsCard() {
       </h2>
       <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
         영수증·계약서 인식, 문자 다듬기, 재무 분석 등 모든 AI 기능에 사용됩니다. 키가 없어도 월 {usage?.limit ?? 10}회까지 무료 체험이 되고,
-        본인 키를 등록하면 제한 없이 사용됩니다. 발급 방법은 제목 옆 안내를 확인하세요.
+        키를 등록하면 제한 없이 사용됩니다. 키는 영업장 소유 관리자 계정에 저장되어 그 관리자의 모든 영업장에 함께 적용됩니다. 발급 방법은 제목 옆 안내를 확인하세요.
       </p>
       {!keyMasked && usage && (
         <p className="text-xs mb-3 rounded-lg px-3 py-2 bg-[var(--canvas)] border border-[var(--warm-border)]">
@@ -2068,7 +2069,11 @@ function AiSettingsCard() {
         <SkeletonRows rows={2} />
       ) : (
         <div className="space-y-3">
-          {keyMasked && !editingKey ? (
+          {!isOwner ? (
+            <p className="text-xs text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2.5">
+              {keyMasked ? `등록된 키: ${keyMasked}` : '등록된 키가 없습니다.'} · AI 설정은 영업장 소유 관리자 계정에서 관리합니다.
+            </p>
+          ) : keyMasked && !editingKey ? (
             <div className="flex items-center gap-2">
               <span className="mono text-xs text-[var(--warm-dark)] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2 flex-1 truncate">{keyMasked}</span>
               <Btn type="button" variant="secondary" size="sm" disabled={busy} onClick={() => setEditingKey(true)}>변경</Btn>
@@ -2084,7 +2089,7 @@ function AiSettingsCard() {
           )}
           <label className="block max-w-xs">
             <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">모델</span>
-            <select value={model} onChange={e => void saveModel(e.target.value)} disabled={!keyMasked}
+            <select value={model} onChange={e => void saveModel(e.target.value)} disabled={!keyMasked || !isOwner}
               className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] disabled:opacity-50">
               <option value="">기본 (gemini-2.5-flash · 빠름)</option>
               <option value="gemini-2.5-pro">gemini-2.5-pro (고급 · 느리지만 문장력 우수)</option>

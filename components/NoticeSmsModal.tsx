@@ -6,6 +6,7 @@
 // 예: '4층·5층 + 외창' = 4층이거나 5층이면서 외창인 사람. 실제 발송은 폰 문자앱에서 완료(이력은 '발송 시도').
 
 import { useEffect, useMemo, useState } from 'react'
+import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { Modal } from '@/components/ui/Modal'
@@ -360,6 +361,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
                 다듬기 전으로
               </Btn>
             )}
+            <AiQuotaHint />
           </div>
           <span className="text-[0.625rem] text-[var(--warm-muted)] tabular-nums shrink-0">{body.trim().length}자</span>
         </div>

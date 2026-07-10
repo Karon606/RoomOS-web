@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { Stage, Layer, Rect, Text, Group, Transformer, Line, Circle, Image as KonvaImage } from 'react-konva'
 import {
@@ -418,6 +419,7 @@ function AiImportModal({
         <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
           평면도 사진을 업로드하면 AI가 방, 복도, 계단 등을 자동으로 인식하여 추가합니다.
         </p>
+        <AiQuotaHint />
         {!preview ? (
           <>
             {pending ? (

@@ -6,6 +6,7 @@
 // 본 컴포넌트가 React 내부 setter 트릭으로 채운다.
 
 import { useRef, useState } from 'react'
+import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
@@ -107,6 +108,7 @@ export function OcrToolbar({ onContract, onIdCard }: {
             onClick={() => idRef.current?.click()}>
             {busy === 'id' ? '분석 중...' : '신분증'}
           </Btn>
+          <AiQuotaHint />
           {/* capture 미지정 — 촬영뿐 아니라 앨범/파일의 기존 스캔본도 올릴 수 있게(촬영 강제 X) */}
           <input ref={contractRef} type="file" accept="image/*" className="hidden" onChange={handleContract} />
           <input ref={idRef} type="file" accept="image/*" className="hidden" onChange={handleId} />

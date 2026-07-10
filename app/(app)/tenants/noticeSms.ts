@@ -151,8 +151,8 @@ export async function polishNoticeText(draft: string): Promise<{ ok: true; text:
     const access = await consumeGeminiAccess()
     if (!access.ok) return { ok: false, error: access.error }
     const apiKey = access.apiKey
-    const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true, geminiModel: true } })
-    const model = access.own ? (prop?.geminiModel?.trim() || 'gemini-2.5-flash') : 'gemini-2.5-flash'
+    const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true, owner: { select: { geminiModel: true } } } })
+    const model = access.own ? (prop?.owner?.geminiModel?.trim() || 'gemini-2.5-flash') : 'gemini-2.5-flash'
     const propName = prop?.name?.trim() || '관리실'
 
     const prompt = `너는 고시원(원룸텔) 운영자를 돕는 공지 문자 작성자다. 발신 주체는 '${propName}'이다.

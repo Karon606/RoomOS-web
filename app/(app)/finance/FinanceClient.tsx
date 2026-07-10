@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
+import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -2953,7 +2954,7 @@ export default function FinanceClient({
                   )}
                   {detailExp.receiptUrl && (
                     <div className="pt-2">
-                      <p className="text-xs text-[var(--warm-muted)] mb-1.5">영수증</p>
+                      <p className="text-xs text-[var(--warm-muted)] mb-1.5">영수증 <AiQuotaHint className="ml-1" /></p>
                       <a href={detailExp.receiptUrl} target="_blank" rel="noopener noreferrer">
                         <img src={detailExp.receiptUrl} className="rounded-xl border border-[var(--warm-border)] w-full max-h-48 object-contain" alt="영수증" />
                       </a>

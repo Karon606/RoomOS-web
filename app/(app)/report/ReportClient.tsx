@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { useRouter } from 'next/navigation'
@@ -505,6 +506,7 @@ function AISection() {
             영업장의 강점·약점과 향후 30일 실행 가능한 개선안을 제안합니다.
           </p>
           <Btn variant="primary" size="lg" onClick={handleAnalyze}>진단 시작</Btn>
+          <div><AiQuotaHint /></div>
         </div>
       )}
 

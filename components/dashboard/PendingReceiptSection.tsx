@@ -7,6 +7,7 @@
 //   3) 사용자가 검토 후 [지출 등록] 또는 [재고 등록] 또는 [거절]
 
 import { ReceiptScanModal, tryDetectDocumentCorners, dataUrlToFile } from '@/components/ReceiptScanModal'
+import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import { useEffect, useRef, useState, useTransition } from 'react'
@@ -107,6 +108,7 @@ export function PendingReceiptSection() {
         <div>
           <h2 className="text-sm font-bold" style={{ color: 'var(--warm-dark)' }}>찍어 올리기 · 등록 대기</h2>
           <p className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>영수증/물품 사진을 올리면 AI 가 분류하고, 검토 후 등록</p>
+          <AiQuotaHint />
         </div>
         <Btn variant="primary" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
           {uploading ? '업로드 중...' : '사진 올리기'}

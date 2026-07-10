@@ -25,8 +25,9 @@ export async function consumeGeminiAccess(): Promise<GeminiAccess> {
   } catch { /* 세션 밖(크론 등) — 공용 키·카운트 없이 */ }
 
   if (propertyId) {
-    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { geminiApiKey: true } })
-    const own = p?.geminiApiKey?.trim()
+    // 키는 영업장 소유 관리자(User) 소유 — 같은 관리자의 모든 영업장이 공유, 직원이 실행해도 소유자 키
+    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { owner: { select: { geminiApiKey: true } } } })
+    const own = p?.owner?.geminiApiKey?.trim()
     if (own) return { ok: true, apiKey: own, own: true, remaining: null }
   }
 
@@ -49,8 +50,8 @@ export async function consumeGeminiAccess(): Promise<GeminiAccess> {
 export async function getGeminiApiKey(): Promise<string | null> {
   try {
     const { propertyId } = await requirePropertyAccess()
-    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { geminiApiKey: true } })
-    if (p?.geminiApiKey?.trim()) return p.geminiApiKey.trim()
+    const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { owner: { select: { geminiApiKey: true } } } })
+    if (p?.owner?.geminiApiKey?.trim()) return p.owner.geminiApiKey.trim()
   } catch { /* 세션 밖에서는 공용 키로 */ }
   return process.env.GEMINI_API_KEY || null
 }

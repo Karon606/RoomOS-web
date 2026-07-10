@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
+import { AiQuotaHint } from '@/components/ui/AiQuotaHint'
 import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { ViewTabs } from '@/components/ui/ViewTabs'
@@ -375,6 +376,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
           <div>
             <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>Gemini AI 재무 분석</h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--warm-muted)' }}>{targetMonth} 운영 데이터 기반 AI 분석</p>
+            <AiQuotaHint className="mt-0.5" />
           </div>
           <button onClick={handleAnalyze} disabled={isPending}
             className="flex items-center gap-2 px-4 py-2 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60"
