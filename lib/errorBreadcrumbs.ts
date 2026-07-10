@@ -40,6 +40,12 @@ export function installErrorCapture() {
   })
   window.addEventListener('unhandledrejection', (e) => {
     const reason = (e as PromiseRejectionEvent).reason
-    recordCrumb('error', `unhandledrejection: ${typeof reason === 'object' ? JSON.stringify(reason).slice(0, 200) : String(reason)}`)
+    // Error 객체는 message/stack이 열거 불가라 JSON.stringify가 '{}'가 됨 — message를 우선 추출
+    const text = reason instanceof Error
+      ? `${reason.name}: ${reason.message}`
+      : typeof reason === 'object' && reason !== null
+        ? ((reason as { message?: string }).message ?? JSON.stringify(reason))
+        : String(reason)
+    recordCrumb('error', `unhandledrejection: ${text.slice(0, 200)}`)
   })
 }

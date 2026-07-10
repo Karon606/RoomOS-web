@@ -1824,6 +1824,10 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
     const propertyId = await getPropertyId()
     let expense = await prisma.expense.findFirst({ where: { id: expenseId, propertyId } })
     if (!expense) return { ok: false, error: '구매 내역을 찾을 수 없습니다.' }
+    // 멱등 — 이미 수령 확인된 지출이면 그대로 성공 반환. 응답 유실 후 재클릭·스테일 탭의
+    // 재호출이 자동 점검을 또 만들어 입고량이 이중 가산되는 것을 막는다(createStockCheck의
+    // 중복 제출 가드와 같은 취지). 수령 취소(undo)는 receivedAt을 null로 되돌리므로 재수령은 정상 동작.
+    if (expense.receivedAt) return { ok: true }
 
     // 부분 수령 — 요청 수량이 전체 미만이면 행 분할 후, 수령 분할행에 대해 아래 기존 흐름을 그대로 태운다
     // (자동 점검·허브 배치가 수령 수량만 반영됨). 잔여 행은 수령 대기 유지.
@@ -1883,13 +1887,11 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
         ?? item.locations[0].storageLocationId
     }
 
-    await prisma.expense.update({
-      where: { id: expense.id },
-      data: { receivedAt, ...(effectiveLocationId ? { receivedLocationId: effectiveLocationId } : {}) },
-    })
-
     // 배치 위치 + 수량이 있으면 자동 점검 생성(해당 위치 잔량에 수령량 가산). 위치 없는 단일 버킷
     // 품목(locations 0개)은 자동 점검 없이 receivedAt 만 — 점검 시 총량을 직접 세므로 누락 없음.
+    // receivedAt 갱신과 점검 생성은 아래에서 한 트랜잭션으로 커밋 — 중간 실패 시 '수령 확인은 됐는데
+    // 잔량에는 안 잡힌' 상태(장부 과소)가 되던 문제 방지.
+    let autoCheck: Parameters<typeof prisma.stockCheck.create>[0]['data'] | null = null
     if (effectiveLocationId && item && expense.qtyValue && expense.qtyValue > 0) {
       // 규격 추적이면 영수증 규격값을 품목 단위로 환산(L→ml 등) 후 입수량 산출
       const spec = item.trackUnit === 'spec' && expense.specValue
@@ -1921,25 +1923,31 @@ export async function confirmReceipt(expenseId: string, locationId?: string, rec
         const totalQty = allLocs.reduce((s, l) => s + l.qty, 0)
 
         const unit = item.trackUnit === 'spec' ? (item.specUnit ?? '') : (item.qtyUnit ?? '')
-        await prisma.stockCheck.create({
-          data: {
-            trackedItemId: item.id,
-            // 자동 점검의 date는 receivedAt(=현재 시각) 기준 — 사용자가 나중에 수령일을 수정하면
-            // updateExpenseFromInventory에서 sourceExpenseId로 찾아 동기화한다.
-            date: receivedAt,
-            remainingQty: totalQty,
-            memo: `[수령 자동] +${receivedQty}${unit}`,
-            sourceExpenseId: expenseId,
-            locationBreakdown: {
-              create: allLocs.filter(l => l.qty > 0).map(l => ({
-                storageLocationId: l.storageLocationId,
-                remainingQty: l.qty,
-              })),
-            },
+        autoCheck = {
+          trackedItemId: item.id,
+          // 자동 점검의 date는 receivedAt(=현재 시각) 기준 — 사용자가 나중에 수령일을 수정하면
+          // updateExpenseFromInventory에서 sourceExpenseId로 찾아 동기화한다.
+          date: receivedAt,
+          remainingQty: totalQty,
+          memo: `[수령 자동] +${receivedQty}${unit}`,
+          sourceExpenseId: expenseId,
+          locationBreakdown: {
+            create: allLocs.filter(l => l.qty > 0).map(l => ({
+              storageLocationId: l.storageLocationId,
+              remainingQty: l.qty,
+            })),
           },
-        })
+        }
       }
     }
+
+    await prisma.$transaction([
+      prisma.expense.update({
+        where: { id: expense.id },
+        data: { receivedAt, ...(effectiveLocationId ? { receivedLocationId: effectiveLocationId } : {}) },
+      }),
+      ...(autoCheck ? [prisma.stockCheck.create({ data: autoCheck })] : []),
+    ])
 
     revalidatePath('/inventory')
     return { ok: true }

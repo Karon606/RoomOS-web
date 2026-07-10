@@ -219,10 +219,14 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
             setReceivedIds(prev => { const n = new Set(prev); for (const id of expenseIds) n.delete(id); return n })
             pushToast('info', '수령을 취소하고 수령 대기로 되돌렸습니다')
             router.refresh()
-          })() } },
+          })().catch(() => pushToast('error', '수령 취소 중 통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.')) } },
         })
       }
-    })().finally(() => { setReceivingKey(null); release() })
+    })()
+      // 통신 실패(배포 교체·오프라인)가 unhandledrejection으로만 남고 화면엔 아무 표시가 없어
+      // 재클릭을 유도하던 문제 — 서버는 멱등 가드가 있지만 사용자에겐 실패를 알려야 한다.
+      .catch(() => pushToast('error', '수령 확인 중 통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'))
+      .finally(() => { setReceivingKey(null); release() })
   }
 
   const toggleSelect = (id: string) => setSelected(prev => {
@@ -865,7 +869,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     deleteStockCheck(id).then(res => {
       if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '점검 기록 삭제됨') }).finally(release) }
       else { setLoadingId(null); setError(res.error); pushToast('error', res.error); release() }
-    }).catch(() => { setLoadingId(null); release() })
+    }).catch(() => { setLoadingId(null); pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'); release() })
   }
 
   const handleDeleteAddition = async (id: string) => {
@@ -875,7 +879,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     deleteStockAddition(id).then(res => {
       if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '입수 기록 삭제됨') }).finally(release) }
       else { setLoadingId(null); setError(res.error); pushToast('error', res.error); release() }
-    }).catch(() => { setLoadingId(null); release() })
+    }).catch(() => { setLoadingId(null); pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'); release() })
   }
 
   const handleConfirmReceipt = (expenseId: string, locationId?: string, qty?: number) => {
@@ -884,7 +888,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     confirmReceipt(expenseId, locationId, qty).then(res => {
       if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '수령 확인 완료') }).finally(release) }
       else { setLoadingId(null); setError(res.error); pushToast('error', res.error); release() }
-    }).catch(() => { setLoadingId(null); release() })
+    }).catch(() => { setLoadingId(null); pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'); release() })
   }
 
   const detailStockUnit = data ? (data.item.trackUnit === 'qty' ? data.item.qtyUnit : (data.item.specUnit ?? data.item.qtyUnit)) : null
