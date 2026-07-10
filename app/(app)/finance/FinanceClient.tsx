@@ -3422,7 +3422,7 @@ export default function FinanceClient({
                     <input type="checkbox" checked={addOrderMode}
                       onChange={e => { setAddOrderMode(e.target.checked); if (e.target.checked) { setAddHasShipping(false); setAddShipping(undefined) } else setAddOrderShipping(undefined) }}
                       className="w-3.5 h-3.5 accent-[var(--coral)]" />
-                    <span><strong>별도 지출로 묶기 (합배송)</strong> · 배송비 1건 + 주문번호로 묶음</span>
+                    <span><strong>별도 지출로 묶기 (합배송)</strong> · 배송비가 지출 1건으로 따로 생기고 이 품목들과 주문번호로 묶입니다 (위 &lsquo;배송비&rsquo;는 품목 금액에 합산)</span>
                   </label>
                   {addOrderMode && (
                     <div className="pl-5 space-y-2">

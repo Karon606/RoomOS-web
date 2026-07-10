@@ -533,7 +533,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
 type AlertCat = 'unpaid' | 'contact' | 'upcoming' | 'moveout' | 'movein' | 'tour' | 'wish' | 'request' | 'recurring' | 'inventory' | 'other'
 const CATEGORY_ORDER: AlertCat[] = ['unpaid', 'contact', 'upcoming', 'moveout', 'movein', 'tour', 'wish', 'request', 'recurring', 'inventory', 'other']
 const CATEGORY_META: Record<AlertCat, { label: string; color: string }> = {
-  unpaid:    { label: '누적 미수',    color: 'var(--tc)' },
+  unpaid:    { label: '누적 미납',    color: 'var(--tc)' },
   contact:   { label: '연락할 때',    color: 'var(--coral)' },
   upcoming:  { label: '납부 예정',    color: 'var(--viz-4)' },
   moveout:   { label: '퇴실 예정',    color: 'var(--viz-4)' },
