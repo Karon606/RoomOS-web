@@ -44,7 +44,9 @@
 - **D3 완료(2배치)**: RoleProvider/useCanEdit — 입주자·수납·호실·지출·재고·비품의 편집 진입 버튼을 뷰어(STAFF)에게 숨김(서버 requireEdit 최종 방어).
 - **B4 완료**: accrual·alerts·report 로컬 금액 포맷터 제거 → 정본 fmtWon. (marketing fmt는 방문 수 카운트라 금액 아님 — 제외)
 - **B5 1단계**: lib/fmtDate.ts 정본 신설(fmtDateDot/fmtDateKor/fmtMD) — 로컬 fmtDate 치환 스윕은 다음 단계.
-- 남은 것: B5 치환 스윕, B1~B3(Btn·ModalFooterActions·배지 채택 스윕), C 문법 성문화(가이드 §), D1·D2·D4~D6 페이지 정렬.
+- **B5-2 완료(2026-07-10)**: 로컬 fmtDate 16곳 lib/fmtDate 치환. **C 완료**: 가이드 §26 성문화 + C2(토스트 단일화 14곳)·C3(finance 선택 버튼)·C4(점검·입수 삭제 undo)·C5(choiceDialog 3지선다)·C6(재고 검색 탭 스코프) 코드 반영.
+- **D 대부분 완료(2026-07-10)**: D2 이중 패딩 5페이지, D4 인라인 로딩 5곳 SkeletonRows, D5 발급 쌍둥이 h1+InfoHint·EmptyState, D6 loading.tsx 4라우트(rooms·finance·report·market).
+- 남은 것: B1~B3(Btn·ModalFooterActions·배지 채택 스윕), D1(마케팅·시세 인라인 style 전면 재정렬 — 대규모, 별도 배치), D5 잔여(타 페이지 빈 상태), C 경미 항목(confirm level·impact·라벨 표기).
 
 ## 우선순위 제안
 1. **A1~A5 (상용화 차단)** — 다른 영업장에서 오작동·법적 문서 오류
