@@ -41,6 +41,7 @@ import { STATUS_LABEL, leaseCardKind, statusException, leaseTipTone } from '@/li
 import { RoomCard } from '@/components/ui/RoomCard'
 import { StatusBadge, statusTipColor, statusRowTint } from '@/components/ui/StatusBadge'
 import { DisplayFieldsMenu, useDisplayFields, type FieldDef } from '@/components/ui/DisplayFieldsMenu'
+import { NoticeSmsModal } from '@/components/NoticeSmsModal'
 
 const fmtRoomNo = (no: string | null | undefined) =>
   no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—'
@@ -326,6 +327,7 @@ export default function TenantClient({
   ) as Record<ColKey, boolean>
 
   const [showAdd, setShowAdd]             = useState(false)
+  const [showNoticeSms, setShowNoticeSms] = useState(false)   // 단체 공지 문자 (R4)
   // §13.2 — 폼 모달 입력 보호(dirty). 입력 시작 후 배경클릭 무시, Esc/X 확인(Modal 내장).
   const [addTenantDirty, setAddTenantDirty] = useState(false)
   const [editTenantDirty, setEditTenantDirty] = useState(false)
@@ -919,12 +921,17 @@ export default function TenantClient({
         </div>
       )}
 
+      {showNoticeSms && <NoticeSmsModal onClose={() => setShowNoticeSms(false)} />}
+
       {/* 헤더 */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl font-bold text-[var(--warm-dark)]">입주자 관리</h1>
         {/* 뷰어(STAFF)에게는 편집 진입 숨김 — 서버 requireEdit가 최종 방어(감사 D3) */}
         {canEdit && (
         <div className="flex items-center gap-2">
+          <Btn type="button" variant="secondary" size="md" onClick={() => setShowNoticeSms(true)}>
+            단체 문자
+          </Btn>
           <Btn type="button" variant="secondary" size="md"
             onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
             {selectMode ? '선택 취소' : '선택'}

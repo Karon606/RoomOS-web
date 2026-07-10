@@ -305,7 +305,7 @@ export async function getUnpaidSmsContext(leaseId: string): Promise<UnpaidSmsCon
     if (!lease) return { ok: false, error: '입주 정보를 찾을 수 없습니다.' }
     const [prop, templates] = await Promise.all([
       prisma.property.findUnique({ where: { id: propertyId }, select: { bankAccount: true } }),
-      prisma.smsTemplate.findMany({ where: { propertyId }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true, body: true } }),
+      prisma.smsTemplate.findMany({ where: { propertyId, kind: 'unpaid' }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true, body: true } }),
     ])
     const rawDue = (lease.dueDay ?? '').trim()
     const dueDayLabel = rawDue ? (/^\d+$/.test(rawDue) ? `${rawDue}일` : rawDue) : ''

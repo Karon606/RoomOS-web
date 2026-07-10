@@ -1196,16 +1196,16 @@ export async function deleteItemSpecOption(id: string): Promise<{ ok: true } | {
 // ============================================================
 export type SmsTemplateRow = { id: string; name: string; body: string; sortOrder: number }
 
-export async function getSmsTemplates(): Promise<SmsTemplateRow[]> {
+export async function getSmsTemplates(kind: 'unpaid' | 'notice' = 'unpaid'): Promise<SmsTemplateRow[]> {
   const propertyId = await getPropertyId()
   const rows = await prisma.smsTemplate.findMany({
-    where: { propertyId }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    where: { propertyId, kind }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     select: { id: true, name: true, body: true, sortOrder: true },
   })
   return rows
 }
 
-export async function saveSmsTemplate(input: { id?: string; name: string; body: string }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+export async function saveSmsTemplate(input: { id?: string; name: string; body: string; kind?: 'unpaid' | 'notice' }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -1219,8 +1219,9 @@ export async function saveSmsTemplate(input: { id?: string; name: string; body: 
       revalidatePath('/settings')
       return { ok: true, id: input.id }
     }
-    const last = await prisma.smsTemplate.findFirst({ where: { propertyId }, orderBy: { sortOrder: 'desc' }, select: { sortOrder: true } })
-    const row = await prisma.smsTemplate.create({ data: { propertyId, name, body, sortOrder: (last?.sortOrder ?? -1) + 1 } })
+    const kind = input.kind ?? 'unpaid'
+    const last = await prisma.smsTemplate.findFirst({ where: { propertyId, kind }, orderBy: { sortOrder: 'desc' }, select: { sortOrder: true } })
+    const row = await prisma.smsTemplate.create({ data: { propertyId, name, body, kind, sortOrder: (last?.sortOrder ?? -1) + 1 } })
     revalidatePath('/settings')
     return { ok: true, id: row.id }
   } catch (err) {

@@ -286,6 +286,7 @@ model SmsTemplate {
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   name       String   // "1차 안내" 등
   body       String   // 변수({이름}{호수}{미납금액}{납기일}{경과일수}{계좌번호}) 포함 원문
+  kind       String   @default("unpaid")  // 'unpaid' 미납 안내 / 'notice' 단체 공지 (R4)
   sortOrder  Int      @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -309,6 +310,7 @@ model SmsLog {
   overdueDays   Int?
   paymentCheckConfirmedAt DateTime?  // 발송 전 '입금내역 확인' 다이얼로그 통과 시각
   sentVia      String    @default("manual_sms")  // Phase 2: 'solapi' 등
+  kind         String    @default("unpaid")       // 'unpaid' / 'notice' — 단체 공지 이력 구분 (R4)
   createdAt    DateTime  @default(now())
 
   @@index([propertyId, createdAt])
