@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
+import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   addExpense, updateExpense, deleteExpense, attachShippingToOrder, detachShippingFromOrder, mergeExpensesIntoOrder, findOrderByExternalNo,
@@ -1163,12 +1164,6 @@ function toDateInput(d: Date | string | null | undefined) {
   return kstYmdStr(new Date(d))
 }
 
-function fmtDate(d: Date | string | null | undefined) {
-  if (!d) return '—'
-  const dt = new Date(d)
-  const DAYS = ['일', '월', '화', '수', '목', '금', '토']
-  return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})`
-}
 
 function accName(a: FAcc | { brand: string; alias: string | null } | null) {
   if (!a) return ''

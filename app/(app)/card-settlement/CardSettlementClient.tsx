@@ -3,6 +3,7 @@
 // 카드 정산 — '지출/기타수익'에서 분리한 독립 화면.
 // 미정산 신용카드 대금을 카드·청구월별로 묶어 '확정(마감)'과 '예정(진행 중)'으로 구분 표시 + 정산 처리.
 import { InfoHint } from '@/components/ui/InfoHint'
+import { fmtMD } from '@/lib/fmtDate'
 import { useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
@@ -136,7 +137,7 @@ export default function CardSettlementClient({
         {g.items.map(item => (
           <div key={item.id} className="flex items-center justify-between text-xs gap-2">
             <span className="text-[var(--warm-mid)] min-w-0 truncate">
-              {new Date(item.date).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
+              {fmtMD(item.date)}
               &nbsp;
               <span className="text-[var(--warm-muted)]">{item.category}</span>
               {item.detail && <span className="text-[var(--warm-muted)]"> · {item.detail}</span>}

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { fmtDateDot } from '@/lib/fmtDate'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
@@ -1706,7 +1707,7 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
             {info.birthdate && (
               <div className="flex justify-between">
                 <span className="text-[var(--warm-muted)]">생년월일</span>
-                <span className="text-[var(--warm-dark)]">{new Date(info.birthdate).toLocaleDateString('ko-KR')}</span>
+                <span className="text-[var(--warm-dark)]">{fmtDateDot(info.birthdate)}</span>
               </div>
             )}
             {info.nationality && (
@@ -1768,13 +1769,13 @@ function TenantQuickModal({ tenantId, onClose }: { tenantId: string; onClose: ()
                 {lease.moveInDate && (
                   <div className="flex justify-between mb-1">
                     <span className="text-[var(--warm-muted)]">입실일</span>
-                    <span className="text-[var(--warm-dark)]">{new Date(lease.moveInDate).toLocaleDateString('ko-KR')}</span>
+                    <span className="text-[var(--warm-dark)]">{fmtDateDot(lease.moveInDate)}</span>
                   </div>
                 )}
                 {(lease.expectedMoveOut ?? lease.moveOutDate) && (
                   <div className="flex justify-between mb-1">
                     <span className="text-[var(--warm-muted)]">퇴실(예정)</span>
-                    <span className="text-[var(--warm-dark)]">{new Date((lease.expectedMoveOut ?? lease.moveOutDate)!).toLocaleDateString('ko-KR')}</span>
+                    <span className="text-[var(--warm-dark)]">{fmtDateDot(lease.expectedMoveOut ?? lease.moveOutDate)}</span>
                   </div>
                 )}
               </div>

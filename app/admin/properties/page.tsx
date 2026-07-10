@@ -1,9 +1,8 @@
 import { getPropertiesOverview, enterPropertyAsAdmin } from '../actions'
+import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import EnterButton from './EnterButton'
 import { EmptyState } from '@/components/ui/EmptyState'
 
-const fmtDate = (d: Date) =>
-  new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
 
 export default async function AdminPropertiesPage() {
   const properties = await getPropertiesOverview()

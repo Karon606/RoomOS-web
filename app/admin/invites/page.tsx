@@ -1,8 +1,7 @@
 import { getInviteCodes } from '../actions'
+import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import InvitesClient from './InvitesClient'
 
-const fmtDate = (d: Date) =>
-  new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
 
 export default async function AdminInvitesPage() {
   const codes = await getInviteCodes()

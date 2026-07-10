@@ -1,8 +1,7 @@
 import { getSignups } from '../actions'
+import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import UsersClient from './UsersClient'
 
-const fmtDate = (d: Date) =>
-  new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
 
 export default async function AdminUsersPage() {
   const users = await getSignups()

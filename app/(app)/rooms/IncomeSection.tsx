@@ -4,6 +4,7 @@
 // 과납분·보증금 미반환분 등 수납 파생 수익이 대부분이라 수납 흐름 옆에 둔다(운영자 결정).
 // 손익 합산(대시보드·리포트)은 기존 그대로 — 데이터·액션(finance/actions)은 이동하지 않고 화면만 이곳에.
 import { useState, useTransition } from 'react'
+import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { useRouter } from 'next/navigation'
 import { addExtraIncome, updateExtraIncome, deleteExtraIncome, type getExtraIncomes } from '@/app/(app)/finance/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -27,12 +28,6 @@ function toDateInput(d: Date | string | null | undefined) {
   if (!d) return ''
   const dt = new Date(d)
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
-}
-function fmtDate(d: Date | string | null | undefined) {
-  if (!d) return '—'
-  const dt = new Date(d)
-  const DAYS = ['일', '월', '화', '수', '목', '금', '토']
-  return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})`
 }
 function accName(a: { brand: string; alias: string | null } | null) {
   if (!a) return ''

@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
+import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -13,10 +14,6 @@ import { ShareDocButton } from '@/components/ui/ShareDocButton'
 import { SearchBar } from '@/components/ui/SearchBar'
 
 const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
-const fmtDate = (d: Date | string) => {
-  const t = new Date(d)
-  return `${t.getFullYear()}.${String(t.getMonth() + 1).padStart(2, '0')}.${String(t.getDate()).padStart(2, '0')}`
-}
 
 export default function RentReceiptsClient({ files, tenants }: { files: RentReceiptListRow[]; tenants: IssuableTenant[] }) {
   const router = useRouter()

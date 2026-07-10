@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition, useRef } from 'react'
+import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -108,11 +109,6 @@ const fmtQty = (val: number | null, unit: string | null) => {
   return `${rounded}${unit ?? ''}`
 }
 
-const fmtDate = (d: Date | string | null) => {
-  if (!d) return '—'
-  const dt = new Date(d)
-  return `${dt.getFullYear()}.${String(dt.getMonth() + 1).padStart(2, '0')}.${String(dt.getDate()).padStart(2, '0')}`
-}
 
 const fmtTime = (d: Date | string) => {
   const dt = new Date(d)

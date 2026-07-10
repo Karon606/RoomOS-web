@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
+import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
 import { getRoomsForQuote, undoBatchUpdateTenants } from './actions'
@@ -176,12 +177,6 @@ function splitDateTime(d: string | Date | null | undefined): { date: string; tim
   return { date, time: `${hh}:${mm}` }
 }
 
-function fmtDate(d: string | Date | null | undefined): string {
-  if (!d) return '—'
-  const dt = new Date(d)
-  const DAYS = ['일', '월', '화', '수', '목', '금', '토']
-  return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})`
-}
 
 function fmtDateTime(d: string | Date | null | undefined): string {
   if (!d) return '—'

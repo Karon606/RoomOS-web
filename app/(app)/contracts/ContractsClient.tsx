@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
+import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useRouter } from 'next/navigation'
 import { Btn } from '@/components/ui/Btn'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -14,10 +15,6 @@ import type { ContractListRow } from './actions'
 import { SearchBar } from '@/components/ui/SearchBar'
 
 const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
-const fmtDate = (d: Date | string) => {
-  const t = new Date(d)
-  return `${t.getFullYear()}.${String(t.getMonth() + 1).padStart(2, '0')}.${String(t.getDate()).padStart(2, '0')}`
-}
 
 const SOURCE_LABEL: Record<string, string> = { GENERATED: '앱 서명', UPLOADED: '스캔 업로드' }
 

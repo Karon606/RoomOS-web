@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useCallback } from 'react'
+import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import {
   createSurvey,
   updateSurveyStrategy,
@@ -87,10 +88,6 @@ function parseRoomPrices(raw: unknown): RoomPrice[] {
   )
 }
 
-function fmtDate(d: Date | string) {
-  const date = typeof d === 'string' ? new Date(d) : d
-  return date.toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })
-}
 
 function fmtMoney(n: number) {
   return n.toLocaleString('ko-KR') + '원'

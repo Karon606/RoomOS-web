@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect } from 'react'
+import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
@@ -132,10 +133,6 @@ function getDirectionLabel(val: string) {
   return DIRECTION_LABEL[val] ?? val
 }
 
-function fmtDate(d: Date | string | null | undefined): string {
-  if (!d) return '—'
-  return new Date(d).toISOString().slice(0, 10)
-}
 
 function deriveFloor(roomNo: string): string {
   const digits = roomNo.replace(/\D/g, '')

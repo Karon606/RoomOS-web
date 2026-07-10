@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useMemo } from 'react'
+import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -36,8 +37,6 @@ const CATEGORY_COLORS: Record<string, { bg: string; fg: string; ring: string }> 
   기타: { bg: 'bg-stone-50',  fg: 'text-stone-700',  ring: 'ring-stone-200'  },
 }
 
-const fmtDate = (d: Date | string | null | undefined) =>
-  d ? new Date(d).toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
 
 // 타임스탬프의 KST 월(YYYY-MM) — 월 경계는 한국시간 기준.
 function kstMonthOf(d: Date | string): string {
