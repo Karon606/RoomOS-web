@@ -190,6 +190,8 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   // 수령 대기 — 비품·자재와 동일하게 상단 섹션에서 인라인 '수령 완료'로 통일 (#2)
   // 같은 품목 다건은 비품의 '합산 N건'처럼 묶어 한 번에 수령(키 = label|category).
   const [receivingKey, setReceivingKey] = useState<string | null>(null)
+  // 수령 완료 즉시 카드 숨김(낙관적) — refresh 지연 시 카드가 남아 중복 클릭되던 신고(2026-07-10)
+  const [receivedIds, setReceivedIds] = useState<Set<string>>(new Set())
   const [pendExpanded, setPendExpanded] = useState<Set<string>>(new Set())
   const togglePendExpand = (key: string) => setPendExpanded(prev => {
     const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n
@@ -207,10 +209,12 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       }
       if (bad) pushToast('error', bad.error)
       else {
+        setReceivedIds(prev => new Set([...prev, ...expenseIds]))   // 즉시 숨김 — refresh 대기 없이
         router.refresh()
         pushToast('success', '수령 확인 완료', {
           action: { label: '수령 취소', run: () => { void (async () => {
             for (const id of [...expenseIds].reverse()) { const r = await undoConfirmReceipt(id); if (!r.ok) { pushToast('error', r.error); return } }
+            setReceivedIds(prev => { const n = new Set(prev); for (const id of expenseIds) n.delete(id); return n })
             pushToast('info', '수령을 취소하고 수령 대기로 되돌렸습니다')
             router.refresh()
           })() } },
@@ -370,7 +374,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       ) : (
         <>
         {(() => {
-          const flat = visibleRows.flatMap(r => r.pendingPurchases.map(p => ({ p, label: r.label, category: r.category, qtyUnit: r.qtyUnit, trackUnit: r.trackUnit, specUnit: r.specUnit })))
+          const flat = visibleRows.flatMap(r => r.pendingPurchases.map(p => ({ p, label: r.label, category: r.category, qtyUnit: r.qtyUnit, trackUnit: r.trackUnit, specUnit: r.specUnit }))).filter(f => !receivedIds.has(f.p.id))
           if (flat.length === 0) return null
           // 수령 대기 수량도 재고 계산(overview sumPurchases)과 동일 기준으로 규격 환산:
           // spec 추적 품목은 qtyValue × specValue (예: 40개입 3박스 → 120개). 단위는 specUnit.
