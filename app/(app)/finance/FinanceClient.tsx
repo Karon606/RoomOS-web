@@ -3545,7 +3545,7 @@ export default function FinanceClient({
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">영수증</label>
+                  <label className="text-xs font-medium text-[var(--warm-mid)]">영수증 <AiQuotaHint className="ml-1" /></label>
                   <input type="hidden" name="receiptUrl" value={addReceiptUrl} />
                   {scanCropped && scanTargetRef.current === 'add' ? (
                     <div className="space-y-2">

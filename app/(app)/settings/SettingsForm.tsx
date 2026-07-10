@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
+import { AiKeyGuide } from '@/components/ui/AiQuotaHint'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { fmtWon } from '@/lib/fmtMoney'
@@ -2052,7 +2053,7 @@ function AiSettingsCard() {
   return (
     <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
       <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">AI 설정 (제미나이 API 키)
-        <InfoHint title="API 키 발급 방법">제미나이 유료 구독과 무관하게 누구나 무료로 발급됩니다. ① aistudio.google.com 접속 ② 구글 계정 로그인 ③ &lsquo;API 키 만들기(Get API key)&rsquo; 클릭 ④ 만들어진 키를 복사해 아래에 붙여넣기. 무료 한도로 충분히 사용 가능하며, 한도를 넘겨 쓰려면 구글에 종량제 결제를 등록해야 합니다. 키 사용 요금은 본인 구글 계정으로 청구되며 이 앱과는 무관합니다.</InfoHint>
+        <InfoHint title="API 키 무료 발급"><AiKeyGuide /></InfoHint>
       </h2>
       <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
         영수증·계약서 인식, 문자 다듬기, 재무 분석 등 모든 AI 기능에 사용됩니다. 키가 없어도 월 {usage?.limit ?? 10}회까지 무료 체험이 되고,

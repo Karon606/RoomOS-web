@@ -8,9 +8,19 @@ import { useEffect, useState } from 'react'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { getAiQuotaStatus } from '@/app/(app)/settings/actions'
 
-// 발급 안내 정본 문구 — 환경설정 AI 카드와 동일 출처
-export const AI_KEY_GUIDE =
-  '제미나이 유료 구독과 무관하게 누구나 무료로 발급됩니다. ① aistudio.google.com 접속 ② 구글 계정 로그인 ③ ‘API 키 만들기(Get API key)’ 클릭 ④ 만들어진 키를 복사해 환경설정의 AI 설정에 붙여넣기. 등록하면 월 무료 한도 없이 제한 없이 사용됩니다. 무료 한도로 충분히 사용 가능하며, 한도를 넘겨 쓰려면 구글에 종량제 결제를 등록해야 합니다. 키 사용 요금은 본인 구글 계정으로 청구되며 이 앱과는 무관합니다.'
+// 발급 안내 정본 — 단계는 한 줄씩(가독성, 운영자 지적 2026-07-11). 환경설정 AI 카드와 동일 출처.
+export function AiKeyGuide() {
+  return (
+    <span className="block space-y-1">
+      <span className="block">제미나이 유료 구독과 무관하게 누구나 무료로 발급됩니다.</span>
+      <span className="block mt-1">① aistudio.google.com 접속</span>
+      <span className="block">② 구글 계정 로그인</span>
+      <span className="block">③ &lsquo;API 키 만들기(Get API key)&rsquo; 클릭</span>
+      <span className="block">④ 만들어진 키를 복사해 환경설정의 AI 설정에 붙여넣기</span>
+      <span className="block mt-1">등록하면 월 무료 한도(10회) 제한 없이 사용됩니다. 구글 무료 한도로 충분히 쓸 수 있고, 그 이상 쓰려면 구글에 종량제 결제를 등록해야 합니다. 키 사용 요금은 본인 구글 계정으로 청구되며 이 앱과는 무관합니다.</span>
+    </span>
+  )
+}
 
 type Quota = { own: boolean; remaining: number; limit: number }
 
@@ -30,7 +40,7 @@ export function AiQuotaHint({ className = '' }: { className?: string }) {
       <span className={q.remaining === 0 ? 'text-[var(--danger-fg)] font-medium' : ''}>
         무료 AI {q.remaining}회 남음
       </span>
-      <InfoHint title="본인 API 키로 제한 없이 쓰기">{AI_KEY_GUIDE}</InfoHint>
+      <InfoHint title="API 키 무료 발급"><AiKeyGuide /></InfoHint>
     </span>
   )
 }
