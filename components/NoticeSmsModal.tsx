@@ -23,14 +23,13 @@ const BATCH_SIZE = 20   // sms: URL 길이 제한 대비 수신자 분할 단위
 type Dim = {
   key: string
   label: string
-  core?: boolean   // true = 항상 노출(층·창문), 나머지는 '조건 더보기'
   get: (t: NoticeSmsTarget) => string | null
   fmt?: (v: string) => string
   order?: (a: string, b: string) => number
 }
 const DIMS: Dim[] = [
-  { key: 'floor', label: '층', core: true, get: t => t.floor || null, fmt: v => `${v}층`, order: (a, b) => Number(a) - Number(b) },
-  { key: 'window', label: '창문', core: true, get: t => t.windowType, fmt: v => WINDOW_LABEL[v] ?? v },
+  { key: 'floor', label: '층', get: t => t.floor || null, fmt: v => `${v}층`, order: (a, b) => Number(a) - Number(b) },
+  { key: 'window', label: '창문', get: t => t.windowType, fmt: v => WINDOW_LABEL[v] ?? v },
   { key: 'direction', label: '방향', get: t => t.direction },
   { key: 'tier', label: '방 등급', get: t => t.tier },
   { key: 'roomType', label: '방 타입', get: t => t.roomType },
@@ -48,7 +47,9 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
   const [targets, setTargets] = useState<NoticeSmsTarget[] | null>(null)
   const [loadError, setLoadError] = useState('')
   const [sel, setSel] = useState<Record<string, Set<string>>>({})   // 축별 선택 값
-  const [moreOpen, setMoreOpen] = useState(false)
+  // 조건 추가/수정 인라인 편집기 — null=닫힘, 'pick-dim'=축 목록, 그 외=해당 축 값 선택 중
+  const [editing, setEditing] = useState<null | 'pick-dim' | string>(null)
+  const [draft, setDraft] = useState<Set<string>>(new Set())
   const [checked, setChecked] = useState<Set<string>>(new Set())    // leaseTermId 기준(개별 보정)
 
   const [templates, setTemplates] = useState<SmsTemplateRow[]>([])
@@ -80,8 +81,8 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
     return map
   }, [targets])
   const visibleDims = DIMS.filter(d => dimOptions.has(d.key))
-  const coreDims = visibleDims.filter(d => d.core)
-  const moreDims = visibleDims.filter(d => !d.core)
+  const activeDims = visibleDims.filter(d => sel[d.key]?.size)
+  const addableDims = visibleDims.filter(d => !sel[d.key]?.size)
 
   const matches = (t: NoticeSmsTarget, s: Record<string, Set<string>>) =>
     DIMS.every(d => {
@@ -91,20 +92,26 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
       return v != null && set.has(v)
     })
 
-  // 조건 토글 — 바꿀 때마다 수신자 체크를 조건 일치자(번호 있는)로 재설정
-  const toggleCond = (dimKey: string, v: string) => {
-    setSel(prev => {
-      const next: Record<string, Set<string>> = { ...prev }
-      const set = new Set(next[dimKey] ?? [])
-      if (set.has(v)) set.delete(v); else set.add(v)
-      next[dimKey] = set
-      setChecked(new Set((targets ?? []).filter(t => t.phone && matches(t, next)).map(t => t.leaseTermId)))
-      return next
-    })
+  // 조건 적용/삭제 — 바꿀 때마다 수신자 체크를 조건 일치자(번호 있는)로 재설정
+  const applySel = (next: Record<string, Set<string>>) => {
+    setSel(next)
+    setChecked(new Set((targets ?? []).filter(t => t.phone && matches(t, next)).map(t => t.leaseTermId)))
   }
-  const clearConds = () => {
-    setSel({})
-    setChecked(new Set((targets ?? []).filter(t => t.phone).map(t => t.leaseTermId)))
+  const applyDraft = (dimKey: string) => {
+    const next = { ...sel }
+    if (draft.size === 0) delete next[dimKey]
+    else next[dimKey] = new Set(draft)
+    applySel(next)
+    setEditing(null)
+  }
+  const removeCond = (dimKey: string) => {
+    const next = { ...sel }
+    delete next[dimKey]
+    applySel(next)
+  }
+  const openDimEditor = (dimKey: string) => {
+    setDraft(new Set(sel[dimKey] ?? []))
+    setEditing(dimKey)
   }
 
   const hasCond = DIMS.some(d => sel[d.key]?.size)
@@ -184,30 +191,19 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
       .catch(() => pushToast('error', '템플릿 저장에 실패했습니다'))
   }
 
-  const chipCls = (active: boolean) => [
+  const valueChip = (active: boolean) => [
     'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
     active
       ? 'border-[var(--coral)] bg-[var(--coral)]/10 text-[var(--warm-dark)]'
       : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)]',
   ].join(' ')
-
-  const DimRow = ({ d }: { d: Dim }) => (
-    <div className="flex items-start gap-2">
-      <span className="shrink-0 w-14 pt-1.5 text-xs font-medium text-[var(--warm-mid)]">{d.label}</span>
-      <div className="flex flex-wrap gap-1.5 min-w-0">
-        {(dimOptions.get(d.key) ?? []).map(v => (
-          <button key={v} type="button" onClick={() => toggleCond(d.key, v)} className={chipCls(!!sel[d.key]?.has(v))}>
-            {d.fmt ? d.fmt(v) : v}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
+  const fmtVal = (d: Dim, v: string) => (d.fmt ? d.fmt(v) : v)
 
   if (step === 'pick') {
+    const editingDim = editing && editing !== 'pick-dim' ? visibleDims.find(d => d.key === editing) : null
     return (
       <Modal open onClose={onClose} title="단체 공지 문자" width="sm"
-        subtitle="조건을 골라 수신자를 좁히고, 목록에서 개별 조정할 수 있습니다"
+        subtitle="필요한 조건만 추가해 수신자를 좁히고, 목록에서 개별 조정할 수 있습니다"
         footer={
           <div className="flex items-center gap-2 justify-between w-full">
             <span className="text-xs text-[var(--warm-muted)]">수신 {recipients.length}명</span>
@@ -226,32 +222,77 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
             <SkeletonRows rows={4} />
           ) : (
             <>
-              <div className="space-y-2">
-                {coreDims.map(d => <DimRow key={d.key} d={d} />)}
-                {moreOpen && moreDims.map(d => <DimRow key={d.key} d={d} />)}
-                <div className="flex items-center gap-3 pl-16">
-                  {moreDims.length > 0 && (
-                    <button type="button" onClick={() => setMoreOpen(o => !o)}
-                      className="text-xs text-[var(--coral)] font-medium">
-                      {moreOpen ? '조건 접기' : `조건 더보기 (${moreDims.map(d => d.label).slice(0, 3).join('·')} 등)`}
-                    </button>
-                  )}
-                  {hasCond && (
-                    <button type="button" onClick={clearConds}
-                      className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] underline underline-offset-2">
-                      조건 지우기
-                    </button>
-                  )}
-                </div>
-              </div>
-              <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
-                같은 줄에서 여러 개를 고르면 그중 하나만 맞아도 포함됩니다. 줄이 다른 조건은 모두 만족해야 합니다.
+              {/* 보낼 대상 문장 — 조건이 없으면 '전체'임을 명시(모호함 제거) */}
+              <p className="text-sm">
+                <span className="text-[var(--warm-muted)]">보낼 대상 · </span>
+                <span className="font-semibold text-[var(--warm-dark)]">
+                  {hasCond ? condLabel : '전체 입주자'}
+                </span>
+                <span className="text-[var(--warm-muted)]"> · {shownTargets.length}명</span>
               </p>
-              {hasCond && (
-                <p className="text-xs rounded-lg px-3 py-2 bg-[var(--cream)] border border-[var(--warm-border)]">
-                  <span className="text-[var(--warm-muted)]">선택 조건 · </span>
-                  <span className="font-semibold text-[var(--warm-dark)]">{condLabel}</span>
-                  <span className="text-[var(--warm-muted)]"> · {shownTargets.length}명 일치</span>
+
+              {/* 걸어둔 조건 칩 — 몸통 탭=수정, ×=삭제 */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {activeDims.map(d => (
+                  <span key={d.key} className="inline-flex items-center gap-1 rounded-full border border-[var(--coral)] bg-[var(--coral)]/10 pl-3 pr-1.5 py-1 text-xs font-medium text-[var(--warm-dark)]">
+                    <button type="button" onClick={() => openDimEditor(d.key)}>
+                      {d.label}: {[...sel[d.key]].sort(d.order ?? ((a, b) => a.localeCompare(b, 'ko'))).map(v => fmtVal(d, v)).join('·')}
+                    </button>
+                    <button type="button" aria-label={`${d.label} 조건 삭제`} onClick={() => removeCond(d.key)}
+                      className="grid place-items-center w-5 h-5 rounded-full text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--coral)]/15">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="11" height="11" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </button>
+                  </span>
+                ))}
+                {editing === null && addableDims.length > 0 && (
+                  <button type="button" onClick={() => setEditing('pick-dim')}
+                    className="rounded-full border border-dashed border-[var(--warm-border)] px-3 py-1.5 text-xs font-medium text-[var(--coral)] hover:border-[var(--coral)] transition-colors">
+                    + 조건 추가
+                  </button>
+                )}
+              </div>
+
+              {/* 인라인 편집기 1단계 — 조건 축 고르기 */}
+              {editing === 'pick-dim' && (
+                <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-3 space-y-2">
+                  <p className="text-xs font-medium text-[var(--warm-mid)]">어떤 조건으로 좁힐까요?</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {addableDims.map(d => (
+                      <button key={d.key} type="button" onClick={() => openDimEditor(d.key)} className={valueChip(false)}>
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                  <button type="button" onClick={() => setEditing(null)}
+                    className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] underline underline-offset-2">닫기</button>
+                </div>
+              )}
+
+              {/* 인라인 편집기 2단계 — 값 고르기(여러 개 가능) */}
+              {editingDim && (
+                <div className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] p-3 space-y-2">
+                  <p className="text-xs font-medium text-[var(--warm-mid)]">
+                    {editingDim.label} 선택 <span className="font-normal text-[var(--warm-muted)]">(여러 개를 고르면 그중 하나만 맞아도 포함됩니다)</span>
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(dimOptions.get(editingDim.key) ?? []).map(v => (
+                      <button key={v} type="button" className={valueChip(draft.has(v))}
+                        onClick={() => setDraft(prev => { const n = new Set(prev); if (n.has(v)) n.delete(v); else n.add(v); return n })}>
+                        {fmtVal(editingDim, v)}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Btn type="button" variant="primary" size="sm" onClick={() => applyDraft(editingDim.key)}>적용</Btn>
+                    <Btn type="button" variant="ghost" size="sm" onClick={() => setEditing(null)}>취소</Btn>
+                    <span className="text-[0.625rem] text-[var(--warm-muted)]">아무것도 안 고르고 적용하면 이 조건이 빠집니다.</span>
+                  </div>
+                </div>
+              )}
+
+              {activeDims.length >= 2 && (
+                <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
+                  조건이 여러 개면 모두 만족하는 사람에게만 보냅니다.
                 </p>
               )}
               <ul className="max-h-60 overflow-y-auto divide-y divide-[var(--warm-border)] rounded-xl border border-[var(--warm-border)]">
