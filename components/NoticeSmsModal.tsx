@@ -135,11 +135,17 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
     return out
   }, [recipients])
 
-  // iOS는 sms:번호들&body=, 그 외는 ?body= (미납 문자와 동일한 UA 분기). 수신자 구분자는 iOS 콤마, 그 외 세미콜론.
+  // 다중 수신자 — iOS는 'sms:번호1,번호2' 형식에서 첫 번호만 인식(운영자 실기기 확인 2026-07-10).
+  // iOS는 sms://open?addresses=번호1,번호2&body= 형식이 다중 수신을 지원한다. 그 외(안드로이드)는 세미콜론 나열.
   const smsHref = (list: NoticeSmsTarget[]) => {
     const isIos = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/.test(navigator.userAgent)
-    const nums = list.map(t => (t.phone ?? '').replace(/[^0-9+]/g, '')).join(isIos ? ',' : ';')
-    return `sms:${nums}${isIos ? '&' : '?'}body=${encodeURIComponent(body)}`
+    const enc = encodeURIComponent(body)
+    if (isIos) {
+      const nums = list.map(t => (t.phone ?? '').replace(/[^0-9+]/g, '')).join(',')
+      return `sms://open?addresses=${nums}&body=${enc}`
+    }
+    const nums = list.map(t => (t.phone ?? '').replace(/[^0-9+]/g, '')).join(';')
+    return `sms:${nums}?body=${enc}`
   }
 
   const logBatch = (idx: number, list: NoticeSmsTarget[]) => {
@@ -292,32 +298,33 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
             </select>
           </label>
         )}
-        <label className="block">
-          <span className="flex items-center justify-between text-xs font-medium text-[var(--warm-mid)] mb-1">
-            <span>보낼 내용 <span className="font-normal text-[var(--warm-muted)]">(모두에게 같은 내용이 갑니다)</span></span>
-            <span className="flex items-center gap-2">
-              {prevDraft != null && (
-                <button type="button" className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] underline underline-offset-2"
-                  onClick={() => { setBody(prevDraft); setPrevDraft(null) }}>
-                  다듬기 전으로
-                </button>
-              )}
-              <button type="button" disabled={aiPending || !body.trim()} onClick={runPolish}
-                className="text-[var(--coral)] disabled:text-[var(--warm-muted)] font-medium">
-                {aiPending ? '다듬는 중…' : 'AI 다듬기'}
-              </button>
-            </span>
-          </span>
-          <textarea value={body} rows={6} onChange={e => setBody(e.target.value)}
+        <div>
+          <label htmlFor="notice-sms-body" className="block text-xs font-medium text-[var(--warm-mid)] mb-1">
+            보낼 내용 <span className="font-normal text-[var(--warm-muted)]">(모두에게 같은 내용이 갑니다)</span>
+          </label>
+          <textarea id="notice-sms-body" value={body} rows={6} onChange={e => setBody(e.target.value)}
             placeholder="예: 7월 15일(수) 오전 10시부터 12시까지 전 층 수도 점검이 있습니다."
             className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] leading-relaxed" />
-        </label>
+        </div>
+        {/* 버튼은 label 밖에 — label 안에 두면 본문 드래그 선택이 버튼 클릭으로 이어질 수 있다 */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Btn type="button" variant="secondary" size="sm" disabled={aiPending || !body.trim()} onClick={runPolish}>
+              {aiPending ? '다듬는 중…' : 'AI 다듬기'}
+            </Btn>
+            {prevDraft != null && (
+              <Btn type="button" variant="ghost" size="sm" onClick={() => { setBody(prevDraft); setPrevDraft(null) }}>
+                다듬기 전으로
+              </Btn>
+            )}
+          </div>
+          <span className="text-[0.625rem] text-[var(--warm-muted)] tabular-nums shrink-0">{body.trim().length}자</span>
+        </div>
         <div className="flex items-center justify-between">
           <button type="button" onClick={saveAsTemplate}
             className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] underline underline-offset-2">
             이 내용을 템플릿으로 저장
           </button>
-          <span className="text-[0.625rem] text-[var(--warm-muted)] tabular-nums">{body.trim().length}자</span>
         </div>
         <div className="space-y-1.5">
           {batches.map((list, i) => (

@@ -143,18 +143,26 @@ export async function logNoticeSmsAttempt(input: {
 export async function polishNoticeText(draft: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
-    await getPropertyId()
+    const propertyId = await getPropertyId()
     const src = draft.trim()
     if (!src) return { ok: false, error: '다듬을 초안을 먼저 입력하세요.' }
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
+    const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } })
+    const propName = prop?.name?.trim() || '관리실'
 
-    const prompt = `아래는 고시원(원룸텔) 운영자가 입주자 전체 또는 일부에게 보낼 공지 문자 초안이다.
-정중하고 간결한 공지 톤으로 다듬어라. 규칙:
-- 핵심 내용(날짜·시간·장소·요청 사항)은 빠뜨리지 말 것
-- 이모지·느낌표·과장 표현 금지, 존댓말 사용
-- 문자 1~2통 분량(한글 180자 이내 권장)으로 압축
-- 다듬어진 본문만 출력(설명·머리말 금지)
+    const prompt = `너는 고시원(원룸텔) 운영자를 돕는 공지 문자 작성자다. 발신 주체는 '${propName}'이다.
+아래 초안을 입주자에게 바로 보낼 수 있는 완성된 공지 문자로 만들어라.
+
+규칙:
+- 초안이 "~공지 써줘" 같은 요청문이면, 요청 내용을 실제 공지 본문으로 작성한다(요청 문구를 그대로 남기지 않는다).
+- 첫 문장은 "[${propName}]"으로 시작한다.
+- 초안에 있는 정보(날짜·시간·장소·요청 사항)만 사용한다. 초안에 없는 정보는 지어내지 말고 그 항목은
+  아예 언급하지 않는다. 예를 들어 초안에 날짜가 없으면 날짜를 쓰지 않는다(임의의 날짜 생성 금지).
+  [날짜]·[이름] 같은 대괄호 빈칸도 절대 만들지 않는다.
+- 이모지·느낌표·과장 표현 금지, 정중한 존댓말.
+- 한글 180자 이내로 완결된 문장으로 끝낸다.
+- 다듬어진 본문만 출력한다(설명·머리말·따옴표 금지).
 
 초안:
 ${src}`
@@ -166,7 +174,9 @@ ${src}`
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: 500 },
+          // thinkingBudget 0 — 2.5-flash는 기본으로 사고 토큰이 maxOutputTokens를 잠식해
+          // 본문이 중간에 잘려 나오던 문제(운영자 신고 2026-07-10). 짧은 문구 다듬기라 사고 불필요.
+          generationConfig: { temperature: 0.2, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
         }),
       }
     )
