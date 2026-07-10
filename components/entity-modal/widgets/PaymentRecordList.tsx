@@ -5,6 +5,7 @@
 // 양도인 record 는 양도인 색 표시.
 
 import { useEffect, useState, useTransition } from 'react'
+import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import { fmtWon } from '@/lib/fmtMoney'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
@@ -19,10 +20,6 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 type Record = Awaited<ReturnType<typeof getPaymentsByLease>>['records'][number]
 type TmOption = Awaited<ReturnType<typeof getTargetMonthOptions>>[number]
 
-const fmtDate = (d: Date | string) => {
-  const dt = new Date(d)
-  return `${dt.getFullYear()}.${String(dt.getMonth() + 1).padStart(2, '0')}.${String(dt.getDate()).padStart(2, '0')}`
-}
 
 export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange, reloadSignal }: {
   leaseTermId: string

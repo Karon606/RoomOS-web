@@ -4,6 +4,7 @@
 // 등록(생성) + 완료 처리 + 삭제 + 처리 이력 펼침/접힘.
 
 import { useEffect, useState, useTransition } from 'react'
+import { fmtMD as fmtDate } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
   createTenantRequest, resolveTenantRequest, deleteTenantRequest, getTenantRequests,
@@ -16,7 +17,6 @@ import { Section } from './Section'
 
 type Request = Awaited<ReturnType<typeof getTenantRequests>>[number]
 
-const fmtDate = (d: string | Date | null) => d ? new Date(d).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }) : '—'
 
 export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
   const [requests, setRequests] = useState<Request[] | null>(null)

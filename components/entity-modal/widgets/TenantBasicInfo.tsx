@@ -1,6 +1,7 @@
 // 고객의 핵심 정보 — 이름·호실·영어이름·성별·국적·직업·생년월일·기초수급자.
 
 import { flagByName } from '@/components/ui/CountrySelect'
+import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { Section, Grid, Item } from './Section'
 
 type Tenant = {
@@ -20,12 +21,6 @@ const GENDER_LABEL: Record<string, string> = {
   MALE: '남성', FEMALE: '여성', OTHER: '기타', UNKNOWN: '—',
 }
 const fmtRoomNo = (no?: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '—')
-const fmtDate = (d: Date | string | null) => {
-  if (!d) return '—'
-  const dt = new Date(d)
-  const DAYS = ['일', '월', '화', '수', '목', '금', '토']
-  return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${DAYS[dt.getDay()]})`
-}
 
 export function TenantBasicInfo({ tenant }: { tenant: Tenant }) {
   const lease = tenant.leaseTerms[0]
