@@ -187,7 +187,15 @@ ${src}`
     if (res.status === 400 || res.status === 401 || res.status === 403) {
       return { ok: false, error: '등록된 API 키가 유효하지 않습니다. 환경설정의 AI 설정에서 키를 확인해 주세요.' }
     }
-    if (res.status === 429) return { ok: false, error: 'API 사용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.' }
+    if (res.status === 429) {
+      // pro 계열은 무료 티어 일일 한도가 매우 작다 — 모델 전환을 안내(운영자 사례 2026-07-11)
+      return {
+        ok: false,
+        error: model !== 'gemini-2.5-flash'
+          ? `선택한 모델(${model})의 무료 한도에 도달했습니다. 환경설정의 AI 설정에서 모델을 '기본 (빠름)'으로 바꾸면 바로 사용할 수 있습니다.`
+          : 'API 사용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.',
+      }
+    }
     if (!res.ok) return { ok: false, error: `AI 응답 실패 (${res.status})` }
     const json = await res.json()
     const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? ''
