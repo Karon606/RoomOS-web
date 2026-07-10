@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { useRouter } from 'next/navigation'
 import type { AnnualSummary, ForecastSummary, PropertyDiagnostics } from './actions'
@@ -489,7 +490,7 @@ function AISection() {
     startTransition(async () => {
       const res = await analyzePropertyWithGemini()
       if (!res.ok) setError(res.error)
-      else { setText(res.text); setData(res.data) }
+      else { setText(res.text); setData(res.data); void notifyAiQuota() }
     })
   }
 

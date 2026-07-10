@@ -205,6 +205,7 @@ model Property {
   assetAssignmentLogs AssetAssignmentLog[]
   smsTemplates        SmsTemplate[]
   smsLogs             SmsLog[]
+  aiUsages            AiUsage[]
 
   @@map("properties")
 }
@@ -282,6 +283,18 @@ model AssetAssignmentLog {
 //   실제 발송은 운영자 폰의 문자앱(sms: 링크)에서 이뤄지므로 이력은 '발송 시도' 기록.
 //   sentVia 는 Phase 2(솔라피 등 API 발송) 확장 대비.
 // ============================================================
+// 공용 AI 키 월 사용량 — 영업장별 무료 체험 카운터(본인 키 등록 시 카운트 안 함)
+model AiUsage {
+  id         String   @id @default(uuid()) @db.Uuid
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  month      String   // 'YYYY-MM'
+  count      Int      @default(0)
+
+  @@unique([propertyId, month], map: "ai_usage_property_month")
+  @@map("ai_usage")
+}
+
 model SmsTemplate {
   id         String   @id @default(uuid()) @db.Uuid
   propertyId String   @db.Uuid

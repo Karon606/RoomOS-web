@@ -1,6 +1,7 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { FREE_MONTHLY_AI_LIMIT } from '@/lib/geminiKey'
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
@@ -1194,13 +1195,31 @@ export async function deleteItemSpecOption(id: string): Promise<{ ok: true } | {
 // AI(제미나이) 설정 — 본인 API 키(BYOK) + 모델. 공지 AI 다듬기는 키 등록 시 사용 가능.
 // 키는 서버 전용 — 클라이언트에는 마스킹(앞 6자)만 내려준다.
 // ============================================================
-export type AiSettings = { keyMasked: string | null; model: string | null }
+export type AiSettings = { keyMasked: string | null; model: string | null; usedThisMonth: number; limit: number }
+
+// 공용 키 무료 사용 현황 — AI 실행 직후 UI가 잔여를 토스트로 보여줄 때 사용(본인 키면 own: true)
+export async function getAiQuotaStatus(): Promise<{ own: boolean; used: number; remaining: number; limit: number }> {
+  const propertyId = await getPropertyId()
+  const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { geminiApiKey: true } })
+  if (p?.geminiApiKey?.trim()) return { own: true, used: 0, remaining: 0, limit: FREE_MONTHLY_AI_LIMIT }
+  const month = new Date().toISOString().slice(0, 7)
+  const row = await prisma.aiUsage.findUnique({ where: { propertyId_month: { propertyId, month } }, select: { count: true } })
+  const used = Math.min(row?.count ?? 0, FREE_MONTHLY_AI_LIMIT)
+  return { own: false, used, remaining: FREE_MONTHLY_AI_LIMIT - used, limit: FREE_MONTHLY_AI_LIMIT }
+}
 
 export async function getAiSettings(): Promise<AiSettings> {
   const propertyId = await getPropertyId()
   const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { geminiApiKey: true, geminiModel: true } })
   const key = p?.geminiApiKey?.trim() || null
-  return { keyMasked: key ? `${key.slice(0, 6)}${'*'.repeat(Math.max(4, key.length - 6))}` : null, model: p?.geminiModel ?? null }
+  const month = new Date().toISOString().slice(0, 7)
+  const row = await prisma.aiUsage.findUnique({ where: { propertyId_month: { propertyId, month } }, select: { count: true } }).catch(() => null)
+  return {
+    keyMasked: key ? `${key.slice(0, 6)}${'*'.repeat(Math.max(4, key.length - 6))}` : null,
+    model: p?.geminiModel ?? null,
+    usedThisMonth: Math.min(row?.count ?? 0, FREE_MONTHLY_AI_LIMIT),
+    limit: FREE_MONTHLY_AI_LIMIT,
+  }
 }
 
 export async function saveAiSettings(input: { apiKey?: string | null; model?: string | null }): Promise<{ ok: true } | { ok: false; error: string }> {

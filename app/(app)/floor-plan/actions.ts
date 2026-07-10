@@ -1,6 +1,7 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { consumeGeminiAccess } from '@/lib/geminiKey'
 import prisma from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
@@ -166,8 +167,9 @@ export async function parseFloorPlanImage(
 ): Promise<{ ok: true; elements: FloorPlanElement[] } | { ok: false; error: string }> {
   try {
     await getPropertyId()
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
+    const ai = await consumeGeminiAccess()
+    if (!ai.ok) return { ok: false, error: ai.error }
+    const apiKey = ai.apiKey
 
     const prompt = `이것은 건물 평면도(floor plan) 이미지입니다. 이미지에 보이는 각 공간 구역을 인식하여 JSON 배열로 응답하세요.
 

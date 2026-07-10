@@ -6,6 +6,7 @@
 // 본 컴포넌트가 React 내부 setter 트릭으로 채운다.
 
 import { useRef, useState } from 'react'
+import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import {
@@ -56,6 +57,7 @@ export function OcrToolbar({ onContract, onIdCard }: {
       const { b64, mime } = await fileToBase64(f)
       const res = await analyzeContractWithGemini(b64, mime)
       if (!res.ok) { pushToast('error', res.error); return }
+      void notifyAiQuota()
       const filled = Object.values(res.data).filter(v => v != null && v !== '').length
       if (filled === 0) { pushToast('error', '계약서에서 추출할 정보를 찾지 못했습니다.'); return }
       onContract(res.data)
@@ -72,6 +74,7 @@ export function OcrToolbar({ onContract, onIdCard }: {
       const { b64, mime } = await fileToBase64(f)
       const res = await analyzeIdCardWithGemini(b64, mime)
       if (!res.ok) { pushToast('error', res.error); return }
+      void notifyAiQuota()
       const filled = Object.values(res.data).filter(v => v != null && v !== '').length
       if (filled === 0) { pushToast('error', '신분증에서 추출할 정보를 찾지 못했습니다.'); return }
       onIdCard(res.data)

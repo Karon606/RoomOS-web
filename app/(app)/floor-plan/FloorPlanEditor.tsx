@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { Stage, Layer, Rect, Text, Group, Transformer, Line, Circle, Image as KonvaImage } from 'react-konva'
 import {
   type FloorPlanData, type FloorPlanElement, type FloorData,
@@ -404,6 +405,7 @@ function AiImportModal({
     const res = await parseFloorPlanImage(base64, file.type || 'image/jpeg', canvasWidth, canvasHeight)
     setPending(false)
     if (!res.ok) { setError(res.error); return }
+    void notifyAiQuota()
     if (res.elements.length === 0) { setError('평면도 요소를 찾을 수 없습니다. 더 선명한 이미지를 사용해보세요.'); return }
     setPreview(res.elements)
   }

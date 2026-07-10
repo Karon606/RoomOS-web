@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
+import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { ViewTabs } from '@/components/ui/ViewTabs'
 import { analyzeDashboardWithGemini, getTrendData, type TrendRange, type TrendPoint } from '../dashboard/actions'
@@ -360,6 +361,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
       try {
         const result = await analyzeDashboardWithGemini(data, targetMonth)
         setAiText(result)
+        if (!result.startsWith('[오류]')) void notifyAiQuota()
       } catch (e) {
         setError((e as Error).message)
       }

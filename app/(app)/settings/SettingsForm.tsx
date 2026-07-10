@@ -2021,12 +2021,13 @@ function ItemSpecOptionsPanel() {
 function AiSettingsCard() {
   const [loaded, setLoaded] = useState(false)
   const [keyMasked, setKeyMasked] = useState<string | null>(null)
+  const [usage, setUsage] = useState<{ used: number; limit: number } | null>(null)
   const [model, setModel] = useState('')
   const [keyInput, setKeyInput] = useState('')
   const [editingKey, setEditingKey] = useState(false)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
-    getAiSettings().then(r => { setKeyMasked(r.keyMasked); setModel(r.model ?? ''); setLoaded(true) }).catch(() => setLoaded(true))
+    getAiSettings().then(r => { setKeyMasked(r.keyMasked); setModel(r.model ?? ''); setUsage({ used: r.usedThisMonth, limit: r.limit }); setLoaded(true) }).catch(() => setLoaded(true))
   }, [])
 
   const saveKey = async (apiKey: string | null) => {
@@ -2053,8 +2054,16 @@ function AiSettingsCard() {
         <InfoHint title="API 키 발급 방법">제미나이 유료 구독과 무관하게 누구나 무료로 발급됩니다. ① aistudio.google.com 접속 ② 구글 계정 로그인 ③ &lsquo;API 키 만들기(Get API key)&rsquo; 클릭 ④ 만들어진 키를 복사해 아래에 붙여넣기. 무료 한도로 충분히 사용 가능하며, 한도를 넘겨 쓰려면 구글에 종량제 결제를 등록해야 합니다. 키 사용 요금은 본인 구글 계정으로 청구되며 이 앱과는 무관합니다.</InfoHint>
       </h2>
       <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
-        단체 공지 문자의 &lsquo;AI 다듬기&rsquo;에 사용됩니다. 본인 키를 등록해야 동작하며, 발급 방법은 제목 옆 안내를 확인하세요.
+        영수증·계약서 인식, 문자 다듬기, 재무 분석 등 모든 AI 기능에 사용됩니다. 키가 없어도 월 {usage?.limit ?? 10}회까지 무료 체험이 되고,
+        본인 키를 등록하면 제한 없이 사용됩니다. 발급 방법은 제목 옆 안내를 확인하세요.
       </p>
+      {!keyMasked && usage && (
+        <p className="text-xs mb-3 rounded-lg px-3 py-2 bg-[var(--canvas)] border border-[var(--warm-border)]">
+          <span className="text-[var(--warm-muted)]">이번 달 무료 사용 · </span>
+          <span className="font-semibold text-[var(--warm-dark)] tabular-nums">{usage.used} / {usage.limit}회</span>
+          {usage.used >= usage.limit && <span className="text-[var(--danger-fg)]"> · 한도 도달</span>}
+        </p>
+      )}
       {!loaded ? (
         <SkeletonRows rows={2} />
       ) : (

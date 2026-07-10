@@ -6,6 +6,7 @@
 // 예: '4층·5층 + 외창' = 4층이거나 5층이면서 외창인 사람. 실제 발송은 폰 문자앱에서 완료(이력은 '발송 시도').
 
 import { useEffect, useMemo, useState } from 'react'
+import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
@@ -164,6 +165,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
         if (!r.ok) { pushToast('error', r.error); return }
         setPrevDraft(body)
         setBody(r.text)
+        void notifyAiQuota()
       })
       .catch(() => pushToast('error', 'AI 다듬기 중 통신 오류가 발생했습니다'))
       .finally(() => setAiPending(false))

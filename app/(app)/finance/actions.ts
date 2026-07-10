@@ -1,6 +1,7 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { normalizeItemName, captureItemNameAliasPairs } from '@/lib/itemNameAlias'
 import { computeSetHint, type SetHint } from '@/lib/setHint'
 import { ITEM_PRESETS } from '@/lib/itemPresets'
@@ -353,8 +354,9 @@ export async function analyzeReceiptWithGemini(imageBase64: string, mimeType: st
     await requireEdit()
     const ocrPropertyId = await getPropertyId()
     if (!imageBase64) return { ok: false, error: '이미지 데이터가 비어있습니다.' }
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
+    const ai = await consumeGeminiAccess()
+    if (!ai.ok) return { ok: false, error: ai.error }
+    const apiKey = ai.apiKey
 
     // 이 사업장 품목 사전 — 과거 입력(사용자가 수정해 확정한 최종명)과 관행 단위를 프롬프트에 제공해
     // 인식 결과가 운영자가 쓰는 이름·단위로 수렴하게 함(수정할수록 정확해지는 튜닝 루프 — 오류신고 4e2ffe04).
@@ -1183,8 +1185,9 @@ export async function clusterItemNamesWithAI(): Promise<{ ok: true; clusters: It
     })
     const names = [...new Set(rows.map(r => (r.itemLabel ?? '').trim()).filter(Boolean))]
     if (names.length < 2) return { ok: true, clusters: [] }
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
+    const ai = await consumeGeminiAccess()
+    if (!ai.ok) return { ok: false, error: ai.error }
+    const apiKey = ai.apiKey
     const prompt = `다음은 한 매장 지출 품목명 목록입니다. 같은 물건을 가리키는 것으로 보이는 이름끼리 그룹으로 묶고 각 그룹 대표명을 추천하세요.
 규칙:
 - 표기·띄어쓰기·줄임말·용량표기 차이로 같은 물건이면 한 그룹 (예: "코카콜라 500","코카콜라500ml","코크500" → 한 그룹)

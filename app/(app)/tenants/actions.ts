@@ -1,6 +1,7 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
@@ -1017,8 +1018,9 @@ ${paymentLines || '  수납 기록 없음'}
 
 분석 결과를 실용적이고 구체적으로 작성해주세요.`
 
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) return '[오류] Gemini API 키가 설정되지 않았습니다.'
+  const ai = await consumeGeminiAccess()
+  if (!ai.ok) return `[오류] ${ai.error}`
+  const apiKey = ai.apiKey
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
@@ -1062,8 +1064,9 @@ export async function analyzeContractWithGemini(imageBase64: string, mimeType: s
     await requireEdit()
     await getPropertyId()
     if (!imageBase64) return { ok: false, error: '이미지 데이터가 비어있습니다.' }
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
+    const ai = await consumeGeminiAccess()
+    if (!ai.ok) return { ok: false, error: ai.error }
+    const apiKey = ai.apiKey
 
     const prompt = `이 계약서/임대차 계약 문서를 분석하고 입주자 정보를 JSON 으로만 응답하세요. 다른 설명·마크다운·코드블록 없이 순수 JSON.
 
@@ -1164,8 +1167,9 @@ export async function analyzeIdCardWithGemini(imageBase64: string, mimeType: str
     await requireEdit()
     await getPropertyId()
     if (!imageBase64) return { ok: false, error: '이미지 데이터가 비어있습니다.' }
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
+    const ai = await consumeGeminiAccess()
+    if (!ai.ok) return { ok: false, error: ai.error }
+    const apiKey = ai.apiKey
 
     const prompt = `이 사진이 한국 주민등록증·운전면허증·외국인등록증 중 하나라고 보고 다음 필드를 추출. 순수 JSON 만 응답. 마크다운·코드블록 X.
 

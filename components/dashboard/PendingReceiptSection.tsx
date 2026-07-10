@@ -7,6 +7,7 @@
 //   3) 사용자가 검토 후 [지출 등록] 또는 [재고 등록] 또는 [거절]
 
 import { ReceiptScanModal, tryDetectDocumentCorners, dataUrlToFile } from '@/components/ReceiptScanModal'
+import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
@@ -81,6 +82,7 @@ export function PendingReceiptSection() {
       const res = await uploadPendingReceipt(fd)
       if (!res.ok) { pushToast('error', res.error); return }
       pushToast('success', '업로드 + AI 분류 완료')
+      void notifyAiQuota()
       await reload()
     } finally { setUploading(false) }
   }

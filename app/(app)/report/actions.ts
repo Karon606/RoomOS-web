@@ -1,6 +1,7 @@
 'use server'
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
@@ -737,8 +738,9 @@ ${scheduledLines}
 3. **개선이 필요한 점**: 우선 해결해야 할 약점 1~2개
 4. **실행 제안**: 향후 30일 내 시도해볼 구체 액션 2~3개`
 
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
+    const ai = await consumeGeminiAccess()
+    if (!ai.ok) return { ok: false, error: ai.error }
+    const apiKey = ai.apiKey
 
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,

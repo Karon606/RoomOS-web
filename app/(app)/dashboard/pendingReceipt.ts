@@ -6,6 +6,7 @@
 // 3) 대시보드에서 사용자가 검토 → 승인(Expense 등록) 또는 거절
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { captureItemNameAliasPairs, normalizeItemName } from '@/lib/itemNameAlias'
 import { computeSetHint, type SetHint } from '@/lib/setHint'
 import { seedTrackedItemsFromExpenses } from '@/app/(app)/inventory/actions'
@@ -44,8 +45,9 @@ type GeminiResult = {
 }
 
 async function analyzeImage(imageBase64: string, mimeType: string): Promise<GeminiResult> {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) throw new Error('GEMINI_API_KEY 미설정')
+  const ai = await consumeGeminiAccess()
+  if (!ai.ok) throw new Error(ai.error)
+  const apiKey = ai.apiKey
 
   const prompt = `이 사진이 무엇인지 판단하고 핵심 정보를 JSON 으로만 응답하세요.
 

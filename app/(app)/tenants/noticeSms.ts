@@ -3,6 +3,7 @@
 // 단체 공지 문자 서버 액션 — 조건(층·창) 대상 조회·공지 템플릿·발송 이력·AI 문구 다듬기 (R4, 신고 4fad73fa)
 
 import { requirePropertyAccess } from '@/lib/auth/propertyAccess'
+import { consumeGeminiAccess } from '@/lib/geminiKey'
 import prisma from '@/lib/prisma'
 import { requireEdit } from '@/lib/role'
 
@@ -146,11 +147,12 @@ export async function polishNoticeText(draft: string): Promise<{ ok: true; text:
     const propertyId = await getPropertyId()
     const src = draft.trim()
     if (!src) return { ok: false, error: '다듬을 초안을 먼저 입력하세요.' }
-    // BYOK — AI 다듬기는 영업장 본인 키 등록 시 사용(운영자 결정 2026-07-10). 앱 공용 키 폴백 없음.
-    const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true, geminiApiKey: true, geminiModel: true } })
-    const apiKey = prop?.geminiApiKey?.trim()
-    if (!apiKey) return { ok: false, error: '환경설정의 AI 설정에서 본인 제미나이 API 키를 등록하면 사용할 수 있습니다. 발급 방법은 그 옆 안내를 참고하세요.' }
-    const model = prop?.geminiModel?.trim() || 'gemini-2.5-flash'
+    // 키 정책(운영자 확정): 본인 키 있으면 그 키(+선택 모델)로 무제한, 없으면 공용 키 월 10회 무료 체험.
+    const access = await consumeGeminiAccess()
+    if (!access.ok) return { ok: false, error: access.error }
+    const apiKey = access.apiKey
+    const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true, geminiModel: true } })
+    const model = access.own ? (prop?.geminiModel?.trim() || 'gemini-2.5-flash') : 'gemini-2.5-flash'
     const propName = prop?.name?.trim() || '관리실'
 
     const prompt = `너는 고시원(원룸텔) 운영자를 돕는 공지 문자 작성자다. 발신 주체는 '${propName}'이다.

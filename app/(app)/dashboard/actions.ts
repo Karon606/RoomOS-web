@@ -1,6 +1,7 @@
 'use server'
 
 import { getPropertyAccess } from '@/lib/auth/propertyAccess'
+import { consumeGeminiAccess } from '@/lib/geminiKey'
 import { createClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import prisma from '@/lib/prisma'
@@ -198,8 +199,9 @@ export async function analyzeDashboardWithGemini(
   data: DashboardData,
   targetMonth: string
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) return '[오류] Gemini API 키가 설정되지 않았습니다.'
+  const ai = await consumeGeminiAccess()
+  if (!ai.ok) return `[오류] ${ai.error}`
+  const apiKey = ai.apiKey
 
   const paymentRate = (data.paidCount + data.unpaidCount) > 0
     ? Math.round((data.paidCount / (data.paidCount + data.unpaidCount)) * 100)

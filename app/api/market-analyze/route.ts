@@ -12,6 +12,7 @@ export async function POST(req: NextRequest) {
     const { data: auth } = await supabase.auth.getClaims()
     if (!auth?.claims) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    // edge 런타임 — DB(카운터) 접근 불가라 공용 키 직접 사용(월 10회 카운트 제외, 저빈도)
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) {
       return NextResponse.json({ error: 'Gemini API 키가 설정되지 않았습니다.' }, { status: 500 })

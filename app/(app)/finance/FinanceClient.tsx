@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
+import { notifyAiQuota } from '@/lib/aiQuotaToast'
 import { fmtDateKor as fmtDate } from '@/lib/fmtDate'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import {
@@ -1403,6 +1404,7 @@ export default function FinanceClient({
       const res = await analyzeReceiptWithGemini(cropped.base64, 'image/jpeg')
       if (!res.ok) { setScanOcrError(res.error) }
       else {
+        void notifyAiQuota()
         const d = res.data
         if (d.date) setAddExpDate(d.date)
         if (d.vendor) setAddExpVendor(d.vendor)
