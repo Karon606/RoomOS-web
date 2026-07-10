@@ -26,7 +26,7 @@ import { recordDepositReceived } from '@/app/(app)/rooms/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { useCanEdit } from '@/components/RoleContext'
 import { Loading } from '@/components/ui/Loading'
 import MonthSelector from '@/components/layout/MonthSelector'
@@ -1461,11 +1461,10 @@ export default function FinanceClient({
     setScanBitmap(prev => { prev?.close?.(); return null })
     setScanCropped(result)
     if (scanTargetRef.current === 'add') {
-      if (await confirmDialog({ title: '영수증을 분석해서 자동 입력할까요?', message: '날짜·금액·품목을 자동으로 채웁니다. 첨부만 할 수도 있습니다.', confirmLabel: '자동 분석', cancelLabel: '영수증만 첨부' })) {
-        void ocrCropped(result)
-      } else {
-        void uploadCropped(result)
-      }
+      // §26.5 — 취소·Esc·배경 클릭은 아무것도 하지 않는다(첨부는 별도 버튼).
+      const choice = await choiceDialog({ title: '영수증을 분석해서 자동 입력할까요?', message: '날짜·금액·품목을 자동으로 채웁니다. 첨부만 할 수도 있습니다.', confirmLabel: '자동 분석', altLabel: '영수증만 첨부', cancelLabel: '취소' })
+      if (choice === 'confirm') void ocrCropped(result)
+      else if (choice === 'alt') void uploadCropped(result)
     }
   }
 
@@ -2339,7 +2338,14 @@ export default function FinanceClient({
             return (
               <>
                 {/* 보기 토글 — 아이템별 / 주문별(같은 주문 묶음 + 배송비) */}
-                <div className="flex items-center justify-end">
+                <div className="flex items-center justify-end gap-2">
+                  {/* §26.3 — 선택 모드 진입은 명시 버튼, 롱프레스는 보조 (감사 C3) */}
+                  {canEditUi && !isEmpty && (
+                    <Btn type="button" variant="secondary" size="sm"
+                      onClick={() => { mergeMode ? exitMergeMode() : setMergeMode(true) }}>
+                      {mergeMode ? '선택 취소' : '선택'}
+                    </Btn>
+                  )}
                   <SegmentedControl
                     size="sm"
                     ariaLabel="지출 보기"

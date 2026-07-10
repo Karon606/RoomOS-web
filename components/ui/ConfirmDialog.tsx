@@ -18,19 +18,32 @@ export type ConfirmOptions = {
   // danger 전용 — 영향 목록 (건수는 반드시 실데이터)
   impact?: { label: string; count?: number | string }[]
   irreversibleNote?: string     // danger 기본: '이 동작은 되돌릴 수 없습니다.'
+  // §26.5 — 제3의 동작 버튼(choiceDialog 전용). 취소는 항상 무변경이어야 하므로
+  // '취소에 실 동작을 싣던' 자리를 이 버튼이 대체한다.
+  altLabel?: string
 }
 
-type Pending = { opts: ConfirmOptions; resolve: (ok: boolean) => void }
+type ConfirmResult = 'confirm' | 'alt' | 'cancel'
+type Pending = { opts: ConfirmOptions; resolve: (r: ConfirmResult) => void }
 
 let listener: ((p: Pending | null) => void) | null = null
 let queue: Pending[] = []
 
-export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
-  return new Promise<boolean>(resolve => {
+function present(opts: ConfirmOptions): Promise<ConfirmResult> {
+  return new Promise<ConfirmResult>(resolve => {
     const p: Pending = { opts, resolve }
     if (listener) listener(p)
     else queue.push(p)   // 호스트 미마운트 시 폴백 — 마운트 직후 처리
   })
+}
+
+export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
+  return present(opts).then(r => r === 'confirm')
+}
+
+// §26.5 3지선다 — 확인/제3 동작/취소. 취소·Esc·배경 클릭은 null(무변경).
+export function choiceDialog(opts: ConfirmOptions & { altLabel: string }): Promise<'confirm' | 'alt' | null> {
+  return present(opts).then(r => (r === 'cancel' ? null : r))
 }
 
 // alert() 대체 — 확인 버튼 하나짜리 안내
@@ -57,7 +70,7 @@ export function ConfirmHost() {
   useEffect(() => {
     if (!pending) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); done(false) }
+      if (e.key === 'Escape') { e.stopPropagation(); done('cancel') }
     }
     // 공용 Modal 의 Esc 스택보다 먼저 받도록 capture
     window.addEventListener('keydown', onKey, true)
@@ -71,14 +84,14 @@ export function ConfirmHost() {
   const isDanger = level === 'danger'
   const isCaution = level === 'caution'
 
-  const done = (ok: boolean) => { pending.resolve(ok); setPending(null) }
+  const done = (r: ConfirmResult) => { pending.resolve(r); setPending(null) }
 
   return (
     <div
       className="fixed inset-0 z-[var(--z-confirm)] flex items-center justify-center p-4 anim-overlay-in"
       style={{ background: 'var(--confirm-backdrop)' }}
       // 배경클릭: 일반만 닫힘(=취소), 주의·파괴적은 무시 (§9.2)
-      onClick={() => { if (level === 'normal') done(false) }}
+      onClick={() => { if (level === 'normal') done('cancel') }}
     >
       <div
         role="alertdialog" aria-modal="true" aria-label={opts.title}
@@ -135,7 +148,7 @@ export function ConfirmHost() {
         {/* 버튼 — 취소 좌 · 확인 우, 높이 40px */}
         <div className="mt-5 flex justify-end gap-2">
           {opts.cancelLabel !== '' && (
-            <button ref={cancelRef} type="button" onClick={() => done(false)}
+            <button ref={cancelRef} type="button" onClick={() => done('cancel')}
               className={`h-10 px-4 rounded-lg text-sm font-medium transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2 ${
                 level === 'normal'
                   ? 'bg-transparent hover:bg-[var(--cream-soft)] text-[var(--warm-mid)]'
@@ -144,7 +157,13 @@ export function ConfirmHost() {
               {opts.cancelLabel ?? '취소'}
             </button>
           )}
-          <button type="button" onClick={() => done(true)}
+          {opts.altLabel && (
+            <button type="button" onClick={() => done('alt')}
+              className="h-10 px-4 rounded-lg text-sm font-medium bg-[var(--cream-soft)] hover:bg-[var(--sand)] text-[var(--warm-dark)] border border-[var(--warm-border)] transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2">
+              {opts.altLabel}
+            </button>
+          )}
+          <button type="button" onClick={() => done('confirm')}
             className={`h-10 px-4 rounded-lg text-sm font-semibold text-white transition-colors duration-[var(--dur-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--tc)]/30 focus-visible:ring-offset-2 ${
               isDanger ? 'bg-[var(--tc)] hover:bg-[var(--tc-d)]' : 'bg-[var(--persimmon)] hover:bg-[var(--persimmon-d)]'
             }`}>
