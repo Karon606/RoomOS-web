@@ -917,18 +917,58 @@ export async function updateStockCheck(id: string, data: {
   }
 }
 
-export async function deleteStockCheck(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+// §26.4 — 삭제 스냅샷(적용취소용). 같은 id로 복원해 타 참조가 살아난다.
+export type StockCheckUndo = {
+  id: string; trackedItemId: string; date: string; remainingQty: number
+  memo: string | null; isReconcile: boolean; sourceExpenseId: string | null
+  locations: { storageLocationId: string; remainingQty: number; restockedQty: number | null; fromHubQty: number | null; fromLocationId: string | null }[]
+}
+
+export async function deleteStockCheck(id: string): Promise<{ ok: true; undo: StockCheckUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
-    const c = await prisma.stockCheck.findUnique({ where: { id }, include: { trackedItem: true } })
+    const c = await prisma.stockCheck.findUnique({ where: { id }, include: { trackedItem: true, locationBreakdown: true } })
     if (!c || c.trackedItem.propertyId !== propertyId) return { ok: false, error: '점검 기록을 찾을 수 없습니다.' }
+    const undo: StockCheckUndo = {
+      id: c.id, trackedItemId: c.trackedItemId, date: c.date.toISOString(), remainingQty: c.remainingQty,
+      memo: c.memo, isReconcile: c.isReconcile, sourceExpenseId: c.sourceExpenseId,
+      locations: c.locationBreakdown.map(lb => ({
+        storageLocationId: lb.storageLocationId, remainingQty: lb.remainingQty,
+        restockedQty: lb.restockedQty, fromHubQty: lb.fromHubQty, fromLocationId: lb.fromLocationId,
+      })),
+    }
     await prisma.stockCheck.delete({ where: { id } })
+    revalidatePath('/inventory')
+    return { ok: true, undo }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 점검 삭제 적용취소 — 스냅샷 그대로 재생성
+export async function undoDeleteStockCheck(undo: StockCheckUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id: undo.trackedItemId, propertyId } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    const exists = await prisma.stockCheck.findUnique({ where: { id: undo.id }, select: { id: true } })
+    if (exists) return { ok: true }   // 중복 클릭 멱등
+    await prisma.stockCheck.create({
+      data: {
+        id: undo.id, trackedItemId: undo.trackedItemId, date: new Date(undo.date),
+        remainingQty: undo.remainingQty, memo: undo.memo, isReconcile: undo.isReconcile,
+        sourceExpenseId: undo.sourceExpenseId,
+        locationBreakdown: { create: undo.locations },
+      },
+    })
     revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
-    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+    return { ok: false, error: (err as Error).message ?? '복원에 실패했습니다.' }
   }
 }
 
@@ -1105,18 +1145,50 @@ export async function createStockAddition(data: {
   }
 }
 
-export async function deleteStockAddition(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export type StockAdditionUndo = {
+  id: string; trackedItemId: string; date: string; addedQty: number
+  source: string | null; memo: string | null; storageLocationId: string | null
+}
+
+export async function deleteStockAddition(id: string): Promise<{ ok: true; undo: StockAdditionUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
     const a = await prisma.stockAddition.findUnique({ where: { id }, include: { trackedItem: true } })
     if (!a || a.trackedItem.propertyId !== propertyId) return { ok: false, error: '입수 기록을 찾을 수 없습니다.' }
+    const undo: StockAdditionUndo = {
+      id: a.id, trackedItemId: a.trackedItemId, date: a.date.toISOString(),
+      addedQty: a.addedQty, source: a.source, memo: a.memo, storageLocationId: a.storageLocationId,
+    }
     await prisma.stockAddition.delete({ where: { id } })
+    revalidatePath('/inventory')
+    return { ok: true, undo }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 입수 삭제 적용취소 — 스냅샷 재생성
+export async function undoDeleteStockAddition(undo: StockAdditionUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const it = await prisma.trackedItem.findFirst({ where: { id: undo.trackedItemId, propertyId } })
+    if (!it) return { ok: false, error: '품목을 찾을 수 없습니다.' }
+    const exists = await prisma.stockAddition.findUnique({ where: { id: undo.id }, select: { id: true } })
+    if (exists) return { ok: true }
+    await prisma.stockAddition.create({
+      data: {
+        id: undo.id, trackedItemId: undo.trackedItemId, date: new Date(undo.date),
+        addedQty: undo.addedQty, source: undo.source, memo: undo.memo, storageLocationId: undo.storageLocationId,
+      },
+    })
     revalidatePath('/inventory')
     return { ok: true }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
-    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+    return { ok: false, error: (err as Error).message ?? '복원에 실패했습니다.' }
   }
 }
 

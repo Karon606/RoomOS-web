@@ -77,7 +77,7 @@ import {
   unmergeTrackedItem,
   setInventoryCategories,
   getItemLocationStock, transferLocationStock,
-  undoConfirmReceipt, type ItemLocationStock,
+  undoConfirmReceipt, undoDeleteStockCheck, undoDeleteStockAddition, type ItemLocationStock,
 } from './actions'
 import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow } from './constants'
 
@@ -873,7 +873,12 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     setLoadingId(id)
     const release = trackSave()
     deleteStockCheck(id).then(res => {
-      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '점검 기록 삭제됨') }).finally(release) }
+      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '점검 기록 삭제됨', {
+        action: { label: '적용취소', run: () => { void undoDeleteStockCheck(res.undo).then(r => {
+          if (r.ok) { pushToast('info', '점검 기록을 복원했습니다'); reload().then(onChange).catch(() => { /* 표시 갱신 실패는 새로고침으로 */ }) }
+          else pushToast('error', r.error)
+        }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) } },
+      }) }).finally(release) }
       else { setLoadingId(null); pushToast('error', res.error); release() }
     }).catch(() => { setLoadingId(null); pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'); release() })
   }
@@ -883,7 +888,12 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     setLoadingId(id)
     const release = trackSave()
     deleteStockAddition(id).then(res => {
-      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '입수 기록 삭제됨') }).finally(release) }
+      if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '입수 기록 삭제됨', {
+        action: { label: '적용취소', run: () => { void undoDeleteStockAddition(res.undo).then(r => {
+          if (r.ok) { pushToast('info', '입수 기록을 복원했습니다'); reload().then(onChange).catch(() => { /* 표시 갱신 실패는 새로고침으로 */ }) }
+          else pushToast('error', r.error)
+        }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) } },
+      }) }).finally(release) }
       else { setLoadingId(null); pushToast('error', res.error); release() }
     }).catch(() => { setLoadingId(null); pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'); release() })
   }
@@ -1604,6 +1614,12 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
         const res = await deleteStockAddition(entry.id)
         setSavePending(false)
         if (!res.ok) { setEditError(res.error); return }
+        pushToast('success', '입수 기록 삭제됨', {
+          action: { label: '적용취소', run: () => { void undoDeleteStockAddition(res.undo).then(r => {
+            if (r.ok) { pushToast('info', '입수 기록을 복원했습니다'); onChanged() }
+            else pushToast('error', r.error)
+          }).catch(() => pushToast('error', '복원 중 통신 오류가 발생했습니다')) } },
+        })
         onChanged()
       }}
       pending={savePending}
