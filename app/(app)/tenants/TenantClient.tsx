@@ -1111,7 +1111,7 @@ export default function TenantClient({
                     className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)]" />
                 </div>
 
-                <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ background: 'rgba(244,98,58,0.08)', color: 'var(--warm-dark)' }}>
+                <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ background: 'color-mix(in srgb, var(--coral) 8%, transparent)', color: 'var(--warm-dark)' }}>
                   <div className="flex justify-between">
                     <span className="text-[var(--warm-muted)]">환불</span>
                     <span className="font-medium">{fmtWon(depositReturnAmt)}</span>

@@ -158,7 +158,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
         <div className="flex items-center gap-1" style={{
           padding: '1px', borderRadius: 9,
           border: '1px solid ' + (customDate ? 'var(--persimmon)' : 'var(--warm-border)'),
-          background: customDate ? 'rgba(160,60,46,.06)' : 'transparent',
+          background: customDate ? 'color-mix(in srgb, var(--persimmon) 7%, transparent)' : 'transparent',
         }}>
           <DatePicker value={customDate ?? ''} onChange={handleDate} maxDate={todayStr()}
             placeholder="특정 날짜"

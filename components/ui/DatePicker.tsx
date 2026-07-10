@@ -175,7 +175,7 @@ export function DatePicker({
                     style={isSelected
                       ? { background: 'var(--coral)', color: '#fff' }
                       : isToday
-                        ? { background: 'rgba(244,98,58,0.12)', color: 'var(--coral)', fontWeight: 700 }
+                        ? { background: 'color-mix(in srgb, var(--coral) 12%, transparent)', color: 'var(--coral)', fontWeight: 700 }
                         : { color: dow === 0 ? 'var(--danger-fg)' : dow === 6 ? 'var(--info-fg)' : 'var(--warm-dark)' }
                     }
                   >
@@ -240,7 +240,7 @@ export function DatePicker({
                     style={isSelected
                       ? { background: 'var(--coral)', color: '#fff' }
                       : isCurrent
-                        ? { background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }
+                        ? { background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }
                         : { color: 'var(--warm-mid)' }}>
                     {label}
                   </button>
@@ -293,7 +293,7 @@ export function DatePicker({
                     style={isSelected
                       ? { background: 'var(--coral)', color: '#fff' }
                       : isViewYear
-                        ? { background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }
+                        ? { background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }
                         : { color: 'var(--warm-mid)' }}>
                     {yr}
                   </button>

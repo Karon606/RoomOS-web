@@ -393,7 +393,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
         )}
         {error && <p className="text-[var(--danger-fg)] text-sm py-4 text-center">{error}</p>}
         {aiText && !isPending && (
-          <div className="rounded-xl p-4" style={{ background: 'var(--coral-pale)', border: '1px solid rgba(244,98,58,0.2)' }}>
+          <div className="rounded-xl p-4" style={{ background: 'var(--coral-pale)', border: '1px solid color-mix(in srgb, var(--coral) 20%, transparent)' }}>
             <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--warm-dark)' }}>{aiText}</div>
             <button onClick={handleAnalyze} className="mt-3 text-xs" style={{ color: 'var(--coral)' }}>↻ 다시 분석</button>
           </div>

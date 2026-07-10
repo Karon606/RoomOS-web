@@ -212,7 +212,7 @@ function CheckoutRefundModal({
             )}
           </div>
 
-          <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ background: 'rgba(244,98,58,0.08)', color: 'var(--warm-dark)' }}>
+          <div className="rounded-lg px-3 py-2.5 text-xs space-y-1" style={{ background: 'color-mix(in srgb, var(--coral) 8%, transparent)', color: 'var(--warm-dark)' }}>
             <div className="flex justify-between">
               <span style={{ color: 'var(--warm-muted)' }}>환불</span>
               <span className="font-medium">{fmtWon(refund)}</span>
@@ -630,7 +630,7 @@ function AlertsStrip({ alerts, onOpenAlert }: {
           <h3 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>알림</h3>
           <span className="rounded-full text-[0.5625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>미처리</span>
         </div>
-        <span className="rounded-full text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>
+        <span className="rounded-full text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }}>
           {alerts.length}건
         </span>
       </div>
@@ -1118,7 +1118,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
         )}
         {error && <p className="text-[var(--danger-fg)] text-sm py-4 text-center">{error}</p>}
         {aiText && (
-          <div className="rounded-xl p-4" style={{ background: 'var(--coral-pale)', border: '1px solid rgba(244,98,58,0.2)' }}>
+          <div className="rounded-xl p-4" style={{ background: 'var(--coral-pale)', border: '1px solid color-mix(in srgb, var(--coral) 20%, transparent)' }}>
             <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--warm-dark)' }}>
               {aiText}
               {isLoading && <span className="inline-block w-1.5 h-4 bg-current opacity-70 animate-pulse ml-0.5 align-middle" />}
@@ -2336,7 +2336,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                         <span className="rounded-full text-[0.5625rem] font-semibold px-1.5 py-0.5" style={{ background: 'var(--canvas)', color: 'var(--warm-muted)' }}>{basisLabel}</span>
                       </div>
                       {data.unpaidCount > 0 && (
-                        <span className="rounded-full text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'rgba(244,98,58,0.1)', color: 'var(--coral)' }}>
+                        <span className="rounded-full text-[0.625rem] font-semibold px-2 py-0.5" style={{ background: 'color-mix(in srgb, var(--coral) 10%, transparent)', color: 'var(--coral)' }}>
                           {data.unpaidCount}건
                         </span>
                       )}

@@ -431,7 +431,7 @@ export default function DataButtons() {
                   <button key={opt.value} onClick={() => setExportScope(opt.value)}
                     className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-colors"
                     style={{
-                      background: exportScope === opt.value ? 'rgba(244,98,58,0.08)' : 'var(--canvas)',
+                      background: exportScope === opt.value ? 'color-mix(in srgb, var(--coral) 8%, transparent)' : 'var(--canvas)',
                       border: `1.5px solid ${exportScope === opt.value ? 'var(--coral)' : 'var(--warm-border)'}`,
                     }}>
                     <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0"

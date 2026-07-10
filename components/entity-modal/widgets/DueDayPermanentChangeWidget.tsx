@@ -52,7 +52,7 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
           </div>
           <button type="button" onClick={() => { setShowForm(true); setInput('') }}
             className="text-[0.6875rem] px-2 py-1 rounded transition-colors shrink-0"
-            style={{ color: 'var(--coral)', border: '1px solid rgba(160,60,46,0.35)' }}>
+            style={{ color: 'var(--coral)', border: '1px solid color-mix(in srgb, var(--coral) 35%, transparent)' }}>
             변경
           </button>
         </div>
@@ -83,9 +83,9 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
         {calc && calc.type !== 'none' && (
           <div className="rounded-lg px-3 py-2 text-xs font-medium"
             style={{
-              background: calc.type === 'extra' ? 'rgba(160,60,46,0.10)' : 'rgba(122,154,82,0.12)',
-              color: calc.type === 'extra' ? 'var(--coral-dark)' : 'var(--success-fg)',
-              border: `1px solid ${calc.type === 'extra' ? 'rgba(160,60,46,0.20)' : 'rgba(122,154,82,0.25)'}`,
+              background: calc.type === 'extra' ? 'var(--danger-bg)' : 'var(--success-bg)',
+              color: calc.type === 'extra' ? 'var(--danger-fg)' : 'var(--success-fg)',
+              border: `1px solid ${calc.type === 'extra' ? 'var(--danger-ring)' : 'var(--success-ring)'}`,
             }}>
             {calc.type === 'extra'
               ? `납입일 ${calc.days}일 늦어짐 → 추가납부 ${fmtWon(calc.amount)} 발생`

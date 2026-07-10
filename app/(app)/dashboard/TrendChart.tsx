@@ -24,7 +24,7 @@ export default function TrendChart({ mode, data }: { mode: 'area' | 'bar'; data:
             <stop offset="95%" stopColor="var(--neutral-fg)" stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="color-mix(in srgb, var(--ink) 8%, transparent)" vertical={false} />
         <XAxis dataKey="label" tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
         <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} width={52} />
         <Tooltip
@@ -39,7 +39,7 @@ export default function TrendChart({ mode, data }: { mode: 'area' | 'bar'; data:
     /* ── 월간 이상: Grouped Bar Chart ── */
     <ResponsiveContainer width="100%" height={176}>
       <BarChart data={data} margin={{ top: 4, right: 8, left: 4, bottom: 0 }} barCategoryGap="28%">
-        <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="color-mix(in srgb, var(--ink) 8%, transparent)" vertical={false} />
         <XAxis dataKey="label" tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
         <YAxis tickFormatter={v => v === 0 ? '0' : `${v}만`} tick={{ fontSize: '0.625rem', fill: 'var(--ink-m)' }} axisLine={false} tickLine={false} width={52} />
         <Tooltip

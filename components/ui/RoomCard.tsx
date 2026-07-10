@@ -63,9 +63,9 @@ export function RoomCard({
   }
   const k = KIND[kind]
   const style: CSSProperties = selected
-    ? { background: 'var(--cream)', borderColor: 'var(--coral)', borderWidth: 2, boxShadow: '0 0 0 2px rgba(160,60,46,0.20)' }
+    ? { background: 'var(--cream)', borderColor: 'var(--coral)', borderWidth: 2, boxShadow: '0 0 0 2px color-mix(in srgb, var(--coral) 20%, transparent)' }
     : overdue
-      ? { background: 'rgba(160,60,46,0.045)', borderColor: 'var(--card-neutral-bd)', borderLeftColor: 'var(--coral)', borderLeftWidth: 3 }
+      ? { background: 'color-mix(in srgb, var(--coral) 4.5%, transparent)', borderColor: 'var(--card-neutral-bd)', borderLeftColor: 'var(--coral)', borderLeftWidth: 3 }
       : tipColor
         ? { background: tipBg ?? k.bg, borderColor: k.bd, borderLeftColor: tipColor, borderLeftWidth: 3, opacity: k.opacity }
         : kind === 'vacant'

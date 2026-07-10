@@ -150,7 +150,7 @@ function Btn({
   const styles: Record<string, React.CSSProperties> = {
     primary: { background: 'var(--coral)', color: 'white' },
     secondary: { background: 'var(--canvas)', color: 'var(--warm-dark)', border: '1px solid var(--warm-border)' },
-    danger: { background: 'var(--coral-pale)', color: 'var(--coral-dark)', border: '1px solid rgba(160,60,46,.25)' },
+    danger: { background: 'var(--coral-pale)', color: 'var(--coral-dark)', border: '1px solid color-mix(in srgb, var(--coral) 25%, transparent)' },
   }
   return (
     <button type={type} className={base} style={styles[variant]} onClick={onClick} disabled={disabled}>
@@ -1463,8 +1463,8 @@ export default function MarketClient({
                                 style={{
                                   fontSize: '0.75rem',
                                   padding: '4px 10px',
-                                  background: 'rgba(244,98,58,0.08)',
-                                  border: '1px solid rgba(244,98,58,0.2)',
+                                  background: 'color-mix(in srgb, var(--coral) 8%, transparent)',
+                                  border: '1px solid color-mix(in srgb, var(--coral) 20%, transparent)',
                                   color: 'var(--coral)',
                                   fontWeight: 600,
                                 }}

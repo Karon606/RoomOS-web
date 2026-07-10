@@ -206,7 +206,7 @@ function NavContent({
                 fontWeight: 600,
                 letterSpacing: '0.07em',
                 textTransform: 'uppercase',
-                color: 'rgba(120,90,60,0.45)',
+                color: 'var(--warm-muted)',
               }}
             >
               {group.label}
@@ -230,7 +230,7 @@ function NavContent({
                   style={isActive ? {
                     color: 'var(--coral)',
                     fontWeight: 500,
-                    background: 'rgba(244,98,58,0.06)',
+                    background: 'color-mix(in srgb, var(--coral) 7%, transparent)',
                     borderLeftColor: 'var(--coral)',
                   } : {
                     color: 'var(--warm-muted)',
@@ -354,7 +354,7 @@ function MobileMenu({
       <div className="flex-1 overflow-y-auto px-3 py-2">
         {NAV_GROUPS.map(group => (
           <div key={group.label} className="mb-1.5">
-            <div className="px-1.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wide" style={{ color: 'rgba(120,90,60,0.45)' }}>
+            <div className="px-1.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wide" style={{ color: 'var(--warm-muted)' }}>
               {group.label}
             </div>
             <div className="grid grid-cols-3 gap-1.5">
@@ -365,7 +365,7 @@ function MobileMenu({
                   <Link key={href} href={linkHref} onClick={onClose}
                     className="flex flex-col items-center justify-center gap-1.5 rounded-xl py-3 px-1 text-center transition-colors min-h-[64px]"
                     style={isActive
-                      ? { background: 'rgba(244,98,58,0.08)', color: 'var(--coral)', border: '1px solid rgba(244,98,58,0.3)' }
+                      ? { background: 'color-mix(in srgb, var(--coral) 8%, transparent)', color: 'var(--coral)', border: '1px solid color-mix(in srgb, var(--coral) 30%, transparent)' }
                       : { background: 'var(--canvas)', color: 'var(--warm-mid)', border: '1px solid var(--warm-border)' }}>
                     <Icon />
                     <span className="text-[0.6875rem] font-medium leading-tight">{label}</span>
@@ -378,7 +378,7 @@ function MobileMenu({
 
         {/* 도구 — 페이지 이동 없는 즉시 도구(요금 계산: 홈 헤더와 동일 모달) */}
         <div className="mb-1.5">
-          <div className="px-1.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wide" style={{ color: 'rgba(120,90,60,0.45)' }}>
+          <div className="px-1.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wide" style={{ color: 'var(--warm-muted)' }}>
             도구
           </div>
           <div className="grid grid-cols-3 gap-1.5">

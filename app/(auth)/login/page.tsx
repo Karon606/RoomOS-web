@@ -38,7 +38,7 @@ export default async function LoginPage({
           {message === 'password_updated' && (
             <div className="rounded-xl p-3"
                  style={{ background: 'var(--success-bg)', border: '1px solid var(--success-bg)' }}>
-              <p className="text-sm" style={{ color: '#059669' }}>비밀번호가 변경됐습니다. 새 비밀번호로 로그인해주세요.</p>
+              <p className="text-sm" style={{ color: 'var(--success-fg)' }}>비밀번호가 변경됐습니다. 새 비밀번호로 로그인해주세요.</p>
             </div>
           )}
 

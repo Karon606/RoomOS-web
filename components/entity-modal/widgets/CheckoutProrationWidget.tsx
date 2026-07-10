@@ -138,7 +138,7 @@ export function CheckoutProrationWidget({
             )}
             <button type="button" onClick={() => { setShowForm(true); setDate(expectedMoveOut ?? ''); setCalc(null); setCalcErr(null) }}
               className="text-[0.6875rem] px-2 py-1 rounded transition-colors"
-              style={{ color: 'var(--coral)', border: '1px solid rgba(160,60,46,0.35)' }}>
+              style={{ color: 'var(--coral)', border: '1px solid color-mix(in srgb, var(--coral) 35%, transparent)' }}>
               {isApplied ? '다시 정산' : '정산'}
             </button>
           </div>
@@ -164,7 +164,7 @@ export function CheckoutProrationWidget({
 
         {calc && (
           <div className="rounded-lg px-3 py-2 text-xs font-medium"
-            style={{ background: 'rgba(122,154,82,0.12)', color: 'var(--success-fg)', border: '1px solid rgba(122,154,82,0.25)' }}>
+            style={{ background: 'var(--success-bg)', color: 'var(--success-fg)', border: '1px solid var(--success-ring)' }}>
             {fmtMonth(calc.moveOutMonth)} 청구 → <b>{fmtWon(calc.amount)}</b> ({calc.daysUsed}일치)
             <span className="block mt-0.5 font-normal" style={{ color: 'var(--warm-muted)' }}>
               한 달 {fmtWon(calc.fullAmount)} ÷ {PRORATE_BASE_DAYS}일 × {calc.daysUsed}일 · 감액 {fmtWon(calc.reduction)}

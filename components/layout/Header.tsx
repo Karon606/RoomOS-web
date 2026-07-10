@@ -97,7 +97,7 @@ export default function Header({
                   return (
                     <button key={p.id} type="button" onClick={() => onSelectProperty(p.id)}
                       className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-left transition-colors min-h-[44px] hover:bg-[var(--canvas)]"
-                      style={{ color: 'var(--warm-dark)', background: active ? 'rgba(244,98,58,0.06)' : undefined }}>
+                      style={{ color: 'var(--warm-dark)', background: active ? 'color-mix(in srgb, var(--coral) 6%, transparent)' : undefined }}>
                       {p.appLogoUrl && (
                         <img src={p.appLogoUrl} alt="" className="w-5 h-5 rounded-full object-cover shrink-0"
                           style={{ border: '1px solid var(--warm-border)' }} />

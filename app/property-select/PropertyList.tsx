@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { selectProperty, signOut, createProperty, requestJoinByCode, reactivateProperty } from './actions'
 
 const ROLE_STYLE: Record<string, { bg: string; color: string }> = {
-  OWNER:   { bg: 'rgba(244,98,58,0.12)', color: 'var(--persimmon-d)' },
+  OWNER:   { bg: 'color-mix(in srgb, var(--coral) 12%, transparent)', color: 'var(--persimmon-d)' },
   MANAGER: { bg: 'rgba(122,106,90,0.12)', color: 'var(--ink-3)' },
   STAFF:   { bg: 'var(--neutral-bg)', color: 'var(--neutral-fg)' },
 }
