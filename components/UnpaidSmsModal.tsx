@@ -93,7 +93,7 @@ export function UnpaidSmsModal({ target, onClose }: { target: UnpaidSmsTarget; o
         <div className="px-5 sm:px-6 py-4 space-y-2">
           <p className="text-sm font-semibold text-[var(--warm-dark)]">은행 입금내역을 확인하셨나요?</p>
           <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
-            야간(매너모드 중)에 입금된 내역이 있을 수 있습니다. 통장 입금내역을 먼저 확인한 뒤 안내 문자를 보내 주세요.
+            미처 확인하지 못한 입금이 있을 수 있습니다. 통장 입금내역을 먼저 확인한 뒤 안내 문자를 보내 주세요.
           </p>
           <p className="text-xs text-[var(--warm-mid)]">
             대상: <span className="font-semibold text-[var(--warm-dark)]">{target.roomNo && /^\d+$/.test(target.roomNo) ? `${target.roomNo}호 ` : ''}{target.tenantName}</span>
