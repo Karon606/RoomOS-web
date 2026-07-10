@@ -9,7 +9,7 @@ export async function notifyAiQuota(): Promise<void> {
     const q = await getAiQuotaStatus()
     if (q.own) return
     pushToast('info', `이번 달 무료 AI ${q.remaining}회 남음 (${q.used}/${q.limit} 사용)`, {
-      detail: '환경설정의 AI 설정에서 본인 API 키를 등록하면 제한 없이 사용됩니다.',
+      detail: '환경설정의 AI 설정에서 본인 API 키를 등록하면 제한 없이 사용됩니다. 키는 aistudio.google.com에서 구독과 무관하게 무료 발급됩니다.',
     })
   } catch { /* 잔여 안내 실패는 기능에 영향 없음 */ }
 }

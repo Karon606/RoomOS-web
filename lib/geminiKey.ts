@@ -14,7 +14,8 @@ export type GeminiAccess =
 
 const QUOTA_ERROR =
   `이번 달 무료 AI 사용량(월 ${FREE_MONTHLY_AI_LIMIT}회)을 모두 사용했습니다. ` +
-  `환경설정의 AI 설정에서 본인 API 키를 등록하면 제한 없이 사용할 수 있습니다 (구독과 무관하게 무료 발급).`
+  `환경설정의 AI 설정에서 본인 API 키를 등록하면 제한 없이 사용할 수 있습니다. ` +
+  `키는 aistudio.google.com에서 구독과 무관하게 무료 발급됩니다.`
 
 /** 키 결정 + 공용 키면 월 사용량 1회 소모. 호출 직전에 부른다. */
 export async function consumeGeminiAccess(): Promise<GeminiAccess> {
