@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
+import { useCanEdit } from '@/components/RoleContext'
 import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
 import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // §10 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
@@ -48,6 +49,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
   rooms: { id: string; roomNo: string }[]
   locations: { id: string; name: string }[]
 }) {
+  const canEditUi = useCanEdit()   // 뷰어(STAFF) 편집 버튼 숨김(감사 D3)
   const router = useRouter()
   // 위치 옮기기 — 카드·상세 공용 단일 흐름(어디로+얼마나+배정일+미리보기), 운영자 요청 2026-07-08
   const [adjQty, setAdjQty] = useState<{ id: string; v: string } | null>(null)   // 배정 수량 직접 조절 입력(카드별)
@@ -519,6 +521,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
             <span className="text-[var(--warm-muted)]"> · 배치 현황은 월 무관(누적)</span>
           </p>
         </div>
+        {canEditUi && (
         <div className="flex gap-2 flex-wrap items-center">
           {!isEmpty && (
             <Btn variant="secondary" size="md" onClick={() => mergeMode ? exitMerge() : setMergeMode(true)}>
@@ -530,6 +533,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
             + 무상 입수
           </Btn>
         </div>
+        )}
         {!isEmpty && <SearchBar value={search} onChange={setSearch} placeholder="품목명, 구매처, 카테고리 검색" />}
       </div>
 

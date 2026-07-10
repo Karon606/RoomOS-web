@@ -22,6 +22,7 @@ import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { convertSpecValue, listCompatibleUnits, unitFactor } from '@/lib/units'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { useCanEdit } from '@/components/RoleContext'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import { InfoHint } from '@/components/ui/InfoHint'
 import { SearchBar } from '@/components/ui/SearchBar'
@@ -130,6 +131,7 @@ const isSameKstDay = (a: Date, b: Date) => {
 }
 
 export default function InventoryClient({ initialRows, targetMonth, categories, allExpenseCategories }: { initialRows: InventoryRow[]; targetMonth: string; categories: InventoryCategory[]; allExpenseCategories: string[] }) {
+  const canEditUi = useCanEdit()   // 뷰어(STAFF) 편집 버튼 숨김(감사 D3)
   // 재고 카테고리(cat) → 표시 별칭(alias) 맵 + 카테고리 cat 목록(순서 보존)
   const aliasOf = (cat: string) => categories.find(c => c.cat === cat)?.alias ?? cat
   const trackedCats = categories.map(c => c.cat)
@@ -315,9 +317,11 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         </div>
         {viewMode === 'item' && (
           <div className="flex gap-2 flex-wrap items-center">
+            {canEditUi && (
             <Btn variant="secondary" size="md" onClick={() => { selectMode ? exitSelectMode() : setSelectMode(true) }}>
               {selectMode ? '선택 취소' : '선택'}
             </Btn>
+            )}
             {/* 성격별 그룹 버튼 — 잡동사니 더보기 대신 기능군마다 버튼 + 하위 메뉴(운영자 지시 2026-07-06) */}
             <div className="relative">
               <Btn variant="secondary" size="md" onClick={() => setOpenMenu(v => v === 'input' ? null : 'input')}>입력·점검</Btn>

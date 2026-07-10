@@ -26,6 +26,7 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { useCanEdit } from '@/components/RoleContext'
 import { Loading } from '@/components/ui/Loading'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { Modal } from '@/components/ui/Modal'
@@ -1249,6 +1250,7 @@ export default function FinanceClient({
   trackedCategories: string[]   // 재고 추적 카테고리(부식·소모품·폐기물 등). 그 외 물품은 비품·자재(수령 후 배정)
   initialTab?: Tab
 }) {
+  const canEditUi = useCanEdit()   // 뷰어(STAFF) 편집 버튼 숨김(감사 D3)
   const router = useRouter()
   const [tab, setTab] = useState<Tab>(initialTab ?? 'expense')
 
@@ -2171,9 +2173,11 @@ export default function FinanceClient({
             <Btn variant="secondary" size="md" onClick={() => { setShowExpSearch(true); setExpSearchQ(''); setExpSearchResults([]) }}>
               과거 내역 검색
             </Btn>
+            {canEditUi && (
             <Btn variant="primary" size="md" onClick={() => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
               + 지출 등록
             </Btn>
+            )}
           </div>
 
           {/* 방별 지출 (이번 달) — '대상 호실' 배정된 지출을 방별로 합산 + 방별 항목 펼치기 */}
