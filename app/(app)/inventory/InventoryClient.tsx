@@ -74,7 +74,8 @@ import {
   getMergeUndos,
   unmergeTrackedItem,
   setInventoryCategories,
-  getItemLocationStock, transferLocationStock, type ItemLocationStock,
+  getItemLocationStock, transferLocationStock,
+  undoConfirmReceipt, type ItemLocationStock,
 } from './actions'
 import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow } from './constants'
 
@@ -205,7 +206,16 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         if (!r.ok) { bad = r as { ok: false; error: string }; break }
       }
       if (bad) pushToast('error', bad.error)
-      else { router.refresh(); pushToast('success', '수령 확인 완료') }
+      else {
+        router.refresh()
+        pushToast('success', '수령 확인 완료', {
+          action: { label: '수령 취소', run: () => { void (async () => {
+            for (const id of [...expenseIds].reverse()) { const r = await undoConfirmReceipt(id); if (!r.ok) { pushToast('error', r.error); return } }
+            pushToast('info', '수령을 취소하고 수령 대기로 되돌렸습니다')
+            router.refresh()
+          })() } },
+        })
+      }
     })().finally(() => { setReceivingKey(null); release() })
   }
 
@@ -2831,9 +2841,15 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
         ...(swapMode ? { swap: true } : { qty: moveQty }),
       })
       if (!res.ok) { pushToast('error', res.error); return }
-      pushToast('success', swapMode
-        ? `${fromLoc!.name} ↔ ${toLoc!.name} 맞바꿈 완료`
-        : `${fromLoc!.name} → ${toLoc!.name} ${moveQty}${unit} 이동 완료`)
+      {
+        const checkId = res.checkId
+        pushToast('success', swapMode
+          ? `${fromLoc!.name} ↔ ${toLoc!.name} 맞바꿈 완료`
+          : `${fromLoc!.name} → ${toLoc!.name} ${moveQty}${unit} 이동 완료`, {
+          // 이동은 '총량 불변 점검'으로 기록되므로, 그 점검을 지우면 직전 배치로 복원(§10)
+          action: { label: '적용취소', run: () => { void deleteStockCheck(checkId).then(r => { if (r.ok) pushToast('info', '이동을 적용취소했습니다 (이전 배치로 복원)'); else pushToast('error', r.error) }) } },
+        })
+      }
       onDone()
     } finally { release(); setBusy(false) }
   }

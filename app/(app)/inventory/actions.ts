@@ -2148,7 +2148,7 @@ export async function transferLocationStock(data: {
   toLocationId: string
   qty?: number        // 미지정 = 전량 이동
   swap?: boolean      // true = 두 위치 수량을 통째로 맞바꿈(qty 무시)
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; checkId: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -2181,7 +2181,7 @@ export async function transferLocationStock(data: {
 
     const entries = [...breakdown.entries()].filter(([, q]) => q > 0 || true)   // 0 도 기록(이월 명시)
     const total = entries.reduce((s, [, q]) => s + Math.max(0, q), 0)
-    await prisma.stockCheck.create({
+    const created = await prisma.stockCheck.create({
       data: {
         trackedItemId: data.trackedItemId,
         date: new Date(),
@@ -2191,7 +2191,7 @@ export async function transferLocationStock(data: {
       },
     })
     revalidatePath('/inventory')
-    return { ok: true }
+    return { ok: true, checkId: created.id }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '이동에 실패했습니다.' }
@@ -2240,5 +2240,26 @@ export async function syncTrackedItemCategory(label: string, fromCategory: strin
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '동기화에 실패했습니다.' }
+  }
+}
+
+
+// 수령 확인 적용취소 — 이 지출로 생성된 자동 점검을 지우고 수령 대기로 복귀(감사 백로그 2026-07-10)
+export async function undoConfirmReceipt(expenseId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const exp = await prisma.expense.findFirst({ where: { id: expenseId, propertyId }, select: { id: true, receivedAt: true } })
+    if (!exp) return { ok: false, error: '지출을 찾을 수 없습니다.' }
+    if (!exp.receivedAt) return { ok: true }
+    await prisma.$transaction([
+      prisma.stockCheck.deleteMany({ where: { sourceExpenseId: expenseId } }),
+      prisma.expense.update({ where: { id: expenseId }, data: { receivedAt: null, receivedLocationId: null } }),
+    ])
+    revalidatePath('/inventory'); revalidatePath('/finance')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
   }
 }

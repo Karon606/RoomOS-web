@@ -20,7 +20,7 @@
 |---|---|---|---|
 | ~~중~~ | ~~입주자/호실 일괄 수정 undo~~ | **완료(2026-07-10)** — undoBatchUpdateTenants/undoBatchUpdateRooms 스냅샷+토스트 적용취소(동기화 계약 임대료 포함) | |
 | 중 | 요청 완료 해제 | tenants/actions.ts resolveTenantRequest | resolvedAt null 복원 액션 + UI '완료 해제' |
-| 중 | 입고 확인·일괄 확인·재고 이동 전용 undo | inventory/actions.ts confirmReceipt·confirmAllPending·transferLocationStock | 생성 stockCheck 삭제로 부분 원복만 가능 — 분할 지출 원복 포함 전용 역함수 필요 |
+| ~~중~~ | ~~입고 확인·재고 이동 undo~~ | **완료(2026-07-10)** — undoConfirmReceipt(자동 점검 삭제+수령 대기 복귀, 일괄은 역순)·이동은 생성 점검 id 반환+토스트 적용취소. 부분 수령 분할 행 병합은 후속 |
 | ~~낮음~~ | ~~배치도 저장 버전 이력~~ | **완료(2026-07-10)** — floorPlanPrevData 스왑 + 저장 토스트 적용취소 | |
 | ~~낮음~~ | ~~정기지출 묶기 해제~~ | **완료(2026-07-10)** — groupSourceIds 저장 + ungroupRecurringExpense + 설정 행 버튼 | |
 | 낮음 | 무상 자산 추가 삭제 | assets/actions.ts addFreeAsset | 0원 지출 행 전용 삭제 |
