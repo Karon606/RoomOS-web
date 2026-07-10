@@ -18,7 +18,7 @@
 ## 잔여 백로그 (구현 순서 제안)
 | 심각도 | 기능 | 위치 | 메모 |
 |---|---|---|---|
-| 중 | 입주자/호실 일괄 수정 undo | tenants/actions.ts batchUpdateTenants · room-manage/actions.ts batchUpdateRooms | 일괄 수납(batchRecordRentPayment)과 같은 스냅샷 패턴 적용 |
+| ~~중~~ | ~~입주자/호실 일괄 수정 undo~~ | **완료(2026-07-10)** — undoBatchUpdateTenants/undoBatchUpdateRooms 스냅샷+토스트 적용취소(동기화 계약 임대료 포함) | |
 | 중 | 요청 완료 해제 | tenants/actions.ts resolveTenantRequest | resolvedAt null 복원 액션 + UI '완료 해제' |
 | 중 | 입고 확인·일괄 확인·재고 이동 전용 undo | inventory/actions.ts confirmReceipt·confirmAllPending·transferLocationStock | 생성 stockCheck 삭제로 부분 원복만 가능 — 분할 지출 원복 포함 전용 역함수 필요 |
 | 낮음 | 배치도 저장 버전 이력 | floor-plan/actions.ts saveFloorPlan | 직전 1개 스냅샷이라도 |

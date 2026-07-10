@@ -498,7 +498,7 @@ export async function batchUpdateRooms(
     windowType?: string | null
     direction?: string | null
   },
-): Promise<{ ok: true; count: number; skippedNegotiated?: number } | { ok: false; error: string }> {
+): Promise<{ ok: true; count: number; skippedNegotiated?: number; undo: BatchRoomsUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
@@ -516,6 +516,26 @@ export async function batchUpdateRooms(
     const prevRents = data.baseRent != null
       ? await prisma.room.findMany({ where: { id: { in: roomIds }, propertyId }, select: { id: true, baseRent: true } })
       : []
+
+    // 되돌리기 스냅샷 — 바뀔 필드들의 원값(감사 백로그 2026-07-10)
+    const keys = Object.keys(data)
+    const beforeRooms = await prisma.room.findMany({
+      where: { id: { in: roomIds }, propertyId },
+      select: { id: true, type: true, tier: true, baseRent: true, scheduledRent: true, rentUpdateDate: true, windowType: true, direction: true },
+    })
+    const beforeLeases = data.baseRent != null
+      ? await prisma.leaseTerm.findMany({
+          where: { roomId: { in: roomIds }, status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING'] } },
+          select: { id: true, rentAmount: true },
+        })
+      : []
+    const undo: BatchRoomsUndo = {
+      rooms: beforeRooms.map(b => ({ id: b.id, fields: Object.fromEntries(keys.map(k => {
+        const v = (b as Record<string, unknown>)[k]
+        return [k, v instanceof Date ? v.toISOString() : (v ?? null)]
+      })) })),
+      leases: beforeLeases.map(l => ({ id: l.id, rentAmount: l.rentAmount })),
+    }
 
     const r = await prisma.room.updateMany({
       where: { id: { in: roomIds }, propertyId },
@@ -546,9 +566,31 @@ export async function batchUpdateRooms(
     revalidatePath('/room-manage')
     revalidatePath('/rooms')
     revalidatePath('/tenants')
-    return { ok: true, count: r.count, skippedNegotiated }
+    return { ok: true, count: r.count, skippedNegotiated, undo }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+// 호실 일괄 수정 적용취소 — 방 필드·동기화된 계약 임대료를 스냅샷으로 복원(§10)
+export type BatchRoomsUndo = {
+  rooms: { id: string; fields: Record<string, unknown> }[]
+  leases: { id: string; rentAmount: number }[]
+}
+
+export async function undoBatchUpdateRooms(u: BatchRoomsUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    await prisma.$transaction([
+      ...u.rooms.map(x => prisma.room.updateMany({ where: { id: x.id, propertyId }, data: Object.fromEntries(Object.entries(x.fields).map(([k, v]) => [k, k === 'rentUpdateDate' && typeof v === 'string' ? new Date(v) : v])) as never })),
+      ...u.leases.map(l => prisma.leaseTerm.updateMany({ where: { id: l.id }, data: { rentAmount: l.rentAmount } })),
+    ])
+    revalidatePath('/room-manage'); revalidatePath('/rooms'); revalidatePath('/tenants')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
   }
 }

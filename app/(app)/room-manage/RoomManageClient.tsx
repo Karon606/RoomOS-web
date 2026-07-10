@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, batchUpdateRooms } from './actions'
+import { addRoom, updateRoom, createPhotoUploadSession, finalizeRoomPhoto, deleteRoomPhoto, batchUpdateRooms, undoBatchUpdateRooms } from './actions'
 import { AreaInput } from '@/components/ui/AreaInput'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
@@ -1383,7 +1383,12 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
     const res = await batchUpdateRooms(selectedIds, data)
     setPending(false)
     if (!res.ok) { setError(res.error); return }
-    pushToast('success', `${res.count}개 호실 업데이트 완료`)
+    {
+      const u = res.undo
+      pushToast('success', `${res.count}개 호실 업데이트 완료`, {
+        action: { label: '적용취소', run: () => { void undoBatchUpdateRooms(u).then(r => { if (r.ok) pushToast('info', '일괄 수정을 적용취소했습니다 (동기화된 계약 임대료 포함 복원)'); else pushToast('error', r.error) }) } },
+      })
+    }
     if ((res.skippedNegotiated ?? 0) > 0) {
       pushToast('info', `협의 임대료(기준가와 다른 금액) 계약 ${res.skippedNegotiated}건은 덮어쓰지 않았습니다. 필요하면 고객관리에서 개별 변경하세요.`)
     }

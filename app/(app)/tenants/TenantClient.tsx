@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react'
 import { fmtWon } from '@/lib/fmtMoney'
 import { calcShortStay, stayDaysOf } from '@/lib/shortStay'
-import { getRoomsForQuote } from './actions'
+import { getRoomsForQuote, undoBatchUpdateTenants } from './actions'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDepositReturn,
@@ -3122,7 +3122,12 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
     const res = await batchUpdateTenants(selectedIds, data)
     setPending(false)
     if (!res.ok) { setError(res.error); return }
-    pushToast('success', `고객 ${res.tenantCount}명${res.leaseCount > 0 ? `, 계약 ${res.leaseCount}건` : ''} 업데이트 완료`)
+    {
+      const u = res.undo
+      pushToast('success', `입주자 ${res.tenantCount}명${res.leaseCount > 0 ? `, 계약 ${res.leaseCount}건` : ''} 업데이트 완료`, {
+        action: { label: '적용취소', run: () => { void undoBatchUpdateTenants(u).then(r => { if (r.ok) pushToast('info', '일괄 수정을 적용취소했습니다'); else pushToast('error', r.error) }) } },
+      })
+    }
     onDone()
   }
 

@@ -1988,7 +1988,7 @@ export async function batchUpdateTenants(
     dueDay?: string | null
     status?: string
   },
-): Promise<{ ok: true; tenantCount: number; leaseCount: number } | { ok: false; error: string }> {
+): Promise<{ ok: true; tenantCount: number; leaseCount: number; undo: BatchTenantsUndo } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { propertyId } = await getPropertyId()
@@ -2006,7 +2006,15 @@ export async function batchUpdateTenants(
     let tenantCount = 0
     let leaseCount = 0
 
+    // 되돌리기 스냅샷 — 덮어쓰기 전 원값(감사 백로그 2026-07-10, 일괄 수납 undo와 동일 패턴)
+    const undo: BatchTenantsUndo = { tenants: [], leases: [] }
+
     if (Object.keys(tenantFields).length > 0) {
+      const before = await prisma.tenant.findMany({
+        where: { id: { in: tenantIds }, propertyId },
+        select: { id: true, nationality: true, gender: true },
+      })
+      undo.tenants = before.map(b => ({ id: b.id, fields: Object.fromEntries(Object.keys(tenantFields).map(k => [k, (b as Record<string, unknown>)[k] ?? null])) }))
       const r = await prisma.tenant.updateMany({
         where: { id: { in: tenantIds }, propertyId },
         data: tenantFields,
@@ -2015,6 +2023,14 @@ export async function batchUpdateTenants(
     }
 
     if (Object.keys(leaseFields).length > 0) {
+      const before = await prisma.leaseTerm.findMany({
+        where: {
+          tenantId: { in: tenantIds },
+          status: { in: ['ACTIVE', 'RESERVED', 'CHECKOUT_PENDING', 'WAITING_TOUR', 'TOUR_DONE', 'NON_RESIDENT'] },
+        },
+        select: { id: true, depositAmount: true, dueDay: true, status: true },
+      })
+      undo.leases = before.map(b => ({ id: b.id, fields: Object.fromEntries(Object.keys(leaseFields).map(k => [k, (b as Record<string, unknown>)[k] ?? null])) }))
       const r = await prisma.leaseTerm.updateMany({
         where: {
           tenantId: { in: tenantIds },
@@ -2028,7 +2044,7 @@ export async function batchUpdateTenants(
     if (tenantCount === 0 && leaseCount === 0) return { ok: false, error: '변경할 항목이 없습니다.' }
     revalidatePath('/tenants')
     revalidatePath('/rooms')
-    return { ok: true, tenantCount, leaseCount }
+    return { ok: true, tenantCount, leaseCount, undo }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
@@ -2055,5 +2071,28 @@ export async function getRoomsForQuote(): Promise<{
   return {
     rooms: rooms.map(r => ({ id: r.id, roomNo: r.roomNo, baseRent: r.baseRent, type: r.type, windowType: r.windowType, tier: r.tier, occupied: r.leaseTerms.length > 0 })),
     shortStay: parseShortStayPolicy(prop?.shortStayPolicy),
+  }
+}
+
+
+// 입주자 일괄 수정 적용취소 — 항목별 원값 복원(§10)
+export type BatchTenantsUndo = {
+  tenants: { id: string; fields: Record<string, unknown> }[]
+  leases: { id: string; fields: Record<string, unknown> }[]
+}
+
+export async function undoBatchUpdateTenants(u: BatchTenantsUndo): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { propertyId } = await getPropertyId()
+    await prisma.$transaction([
+      ...u.tenants.map(x => prisma.tenant.updateMany({ where: { id: x.id, propertyId }, data: x.fields as never })),
+      ...u.leases.map(x => prisma.leaseTerm.updateMany({ where: { id: x.id, propertyId }, data: x.fields as never })),
+    ])
+    revalidatePath('/tenants'); revalidatePath('/rooms')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
   }
 }
