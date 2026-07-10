@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { pushToast } from '@/lib/saveStatus'
+import { fmtWon } from '@/lib/fmtMoney'
 import { moveRecordTargetMonth, bulkApplyLatePayments, undoTargetMonthMoves, type SuspectRecord, type SuspectCategory, type TargetMonthUndo } from './actions'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
@@ -31,7 +32,7 @@ const CATEGORY_COLOR: Record<SuspectCategory, string> = {
   'mismatch-other': 'bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]',
 }
 
-function fmtMoney(n: number) { return n.toLocaleString('ko-KR') + '원' }
+// 금액 표기는 정본 fmtWon 사용(감사 B4 — 로컬 재정의 금지)
 function fmtDueDay(d: string | null): string {
   if (!d) return '—'
   if (d.includes('말')) return '말일'
@@ -53,7 +54,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
     if (!newMonth) return
     if (!(await confirmDialog({
       title: `귀속 월을 ${record.targetMonth} → ${newMonth} 로 변경할까요?`,
-      message: `${record.roomNo ?? '?'}호 ${record.tenantName}님 ${record.payDate} 입금 ${fmtMoney(record.actualAmount)}. 입금일·금액은 그대로 두고 매출 귀속 월만 바뀝니다.`,
+      message: `${record.roomNo ?? '?'}호 ${record.tenantName}님 ${record.payDate} 입금 ${fmtWon(record.actualAmount)}. 입금일·금액은 그대로 두고 매출 귀속 월만 바뀝니다.`,
       level: 'caution', confirmLabel: '변경',
     }))) return
 
@@ -174,7 +175,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
                   <span className="text-[var(--warm-muted)]">·</span>
                   <span className="text-[var(--warm-mid)]">{s.payDate} 입금</span>
                   <span className="text-[var(--warm-muted)]">·</span>
-                  <span className="font-semibold text-[var(--warm-dark)]">{fmtMoney(s.actualAmount)}</span>
+                  <span className="font-semibold text-[var(--warm-dark)]">{fmtWon(s.actualAmount)}</span>
                   {s.payMethod && (
                     <>
                       <span className="text-[var(--warm-muted)]">·</span>

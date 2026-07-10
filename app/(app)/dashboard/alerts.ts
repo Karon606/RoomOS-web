@@ -9,6 +9,7 @@
 // 대시보드의 넓은 AlertsStrip(납부예정·위시·요청·고정지출 포함)과는 의도적으로 별개 — 종은 푸시와 동일 범위.
 
 import prisma from '@/lib/prisma'
+import { fmtWon } from '@/lib/fmtMoney'
 import { kstYmd } from '@/lib/kstDate'
 import { getTrackedCategories } from '@/app/(app)/inventory/categoryConfig'
 import { computeInventoryOverview } from '@/app/(app)/inventory/overview'
@@ -37,9 +38,7 @@ const CATEGORY_LABEL: Record<AlertCategory, string> = {
   contact: '연락할 때',
 }
 
-function fmtMoney(n: number): string {
-  return n.toLocaleString('ko-KR')
-}
+// 금액 표기는 정본 fmtWon 사용(감사 B4)
 
 /** propertyId 의 "오늘 챙길 일" 알림 목록 — 긴급도순 정렬해서 반환. */
 export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
@@ -98,7 +97,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
       id: `unpaid-${l.leaseId}`,
       category: 'unpaid',
       title: roomName(l.roomNo, l.tenantName),
-      subtitle: [`월세 ${fmtMoney(l.unpaidAmount)}원 미납`, overdueLabel].filter(Boolean).join(' · '),
+      subtitle: [`월세 ${fmtWon(l.unpaidAmount)} 미납`, overdueLabel].filter(Boolean).join(' · '),
       tenantId: l.tenantId,
       leaseTermId: l.leaseId,
       roomId: l.roomId,
@@ -171,7 +170,7 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     items.push({
       id: `receipt-${e.id}`, category: 'receipt',
       title: e.itemLabel ?? '품목',
-      subtitle: [e.vendor, e.amount > 0 ? `${fmtMoney(e.amount)}원` : '', '수령 대기'].filter(Boolean).join(' · '),
+      subtitle: [e.vendor, e.amount > 0 ? fmtWon(e.amount) : '', '수령 대기'].filter(Boolean).join(' · '),
       href: '/inventory',
       urgency: 300,
     })

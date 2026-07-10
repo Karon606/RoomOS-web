@@ -8,7 +8,7 @@ import { analyzePropertyWithGemini } from './actions'
 import { Btn } from '@/components/ui/Btn'
 import { fmtKorMoney, fmtWon } from '@/lib/fmtMoney'
 
-const fmt = (n: number) => n === 0 ? '—' : n.toLocaleString('ko-KR') + '원'
+const fmt = (n: number) => n === 0 ? '—' : fmtWon(n)   // 0 특례만 로컬, 표기는 정본(감사 B4)
 const fmtMan = (n: number) => n === 0 ? '—' : fmtKorMoney(n).replace(/원$/, '')
 
 export default function ReportClient({ summary, years, forecast }: { summary: AnnualSummary; years: string[]; forecast: ForecastSummary }) {
