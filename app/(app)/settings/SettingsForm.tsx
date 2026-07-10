@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
+import { InfoHint } from '@/components/ui/InfoHint'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
@@ -26,6 +27,7 @@ import {
   getShortStayPolicy, updateShortStayPolicy,
   listItemSpecOptions, renameItemSpecOption, deleteItemSpecOption, type ItemSpecGroup,
   getSmsTemplates, saveSmsTemplate, deleteSmsTemplate, type SmsTemplateRow,
+  getAiSettings, saveAiSettings,
 } from './actions'
 import { regenerateJoinCode, approveJoinRequest, rejectJoinRequest } from './memberActions'
 import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
@@ -901,6 +903,7 @@ export default function SettingsForm({
         {/* 단기 입실 정책 — 영업장별 수치 템플릿(운영자 기준 2026-07-06). 오너 전용(§4 요금 기준). */}
         {isOwner && <ShortStayPolicyCard />}
         <SmsTemplateCard />
+        <AiSettingsCard />
 
         {/* 도움말 — 앱의 사고방식(사용성 감사 F2). 처음 쓰는 사람이 막히는 개념만 짧게. */}
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
@@ -2008,6 +2011,76 @@ function ItemSpecOptionsPanel() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// AI(제미나이) 설정 카드 — 본인 API 키(BYOK). 공지 'AI 다듬기'가 이 키로 동작(미등록 시 비활성 안내).
+function AiSettingsCard() {
+  const [loaded, setLoaded] = useState(false)
+  const [keyMasked, setKeyMasked] = useState<string | null>(null)
+  const [model, setModel] = useState('')
+  const [keyInput, setKeyInput] = useState('')
+  const [editingKey, setEditingKey] = useState(false)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    getAiSettings().then(r => { setKeyMasked(r.keyMasked); setModel(r.model ?? ''); setLoaded(true) }).catch(() => setLoaded(true))
+  }, [])
+
+  const saveKey = async (apiKey: string | null) => {
+    setBusy(true)
+    const res = await saveAiSettings({ apiKey })
+    setBusy(false)
+    if (!res.ok) { pushToast('error', res.error); return }
+    pushToast('success', apiKey ? 'API 키를 저장했습니다' : 'API 키를 삭제했습니다')
+    setEditingKey(false); setKeyInput('')
+    const r = await getAiSettings().catch(() => null)
+    if (r) { setKeyMasked(r.keyMasked); setModel(r.model ?? '') }
+  }
+  const saveModel = async (m: string) => {
+    setModel(m)
+    const res = await saveAiSettings({ model: m || null })
+    if (!res.ok) pushToast('error', res.error)
+    else pushToast('success', '모델 설정을 저장했습니다')
+  }
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+
+  return (
+    <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 mt-4">
+      <h2 className="text-sm font-semibold text-[var(--warm-dark)] mb-1">AI 설정 (제미나이 API 키)
+        <InfoHint title="API 키 발급 방법">제미나이 유료 구독과 무관하게 누구나 무료로 발급됩니다. ① aistudio.google.com 접속 ② 구글 계정 로그인 ③ &lsquo;API 키 만들기(Get API key)&rsquo; 클릭 ④ 만들어진 키를 복사해 아래에 붙여넣기. 무료 한도로 충분히 사용 가능하며, 한도를 넘겨 쓰려면 구글에 종량제 결제를 등록해야 합니다. 키 사용 요금은 본인 구글 계정으로 청구되며 이 앱과는 무관합니다.</InfoHint>
+      </h2>
+      <p className="text-xs text-[var(--warm-muted)] leading-relaxed mb-3">
+        단체 공지 문자의 &lsquo;AI 다듬기&rsquo;에 사용됩니다. 본인 키를 등록해야 동작하며, 발급 방법은 제목 옆 안내를 확인하세요.
+      </p>
+      {!loaded ? (
+        <SkeletonRows rows={2} />
+      ) : (
+        <div className="space-y-3">
+          {keyMasked && !editingKey ? (
+            <div className="flex items-center gap-2">
+              <span className="mono text-xs text-[var(--warm-dark)] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2 flex-1 truncate">{keyMasked}</span>
+              <Btn type="button" variant="secondary" size="sm" disabled={busy} onClick={() => setEditingKey(true)}>변경</Btn>
+              <Btn type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void saveKey(null)}>삭제</Btn>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <input type="password" value={keyInput} onChange={e => setKeyInput(e.target.value)}
+                placeholder="발급받은 API 키 붙여넣기" className={inputCls} autoComplete="off" />
+              <Btn type="button" variant="primary" size="sm" disabled={busy || !keyInput.trim()} onClick={() => void saveKey(keyInput)}>저장</Btn>
+              {keyMasked && <Btn type="button" variant="ghost" size="sm" disabled={busy} onClick={() => { setEditingKey(false); setKeyInput('') }}>취소</Btn>}
+            </div>
+          )}
+          <label className="block max-w-xs">
+            <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">모델</span>
+            <select value={model} onChange={e => void saveModel(e.target.value)} disabled={!keyMasked}
+              className="w-full h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] disabled:opacity-50">
+              <option value="">기본 (gemini-2.5-flash · 빠름)</option>
+              <option value="gemini-2.5-pro">gemini-2.5-pro (고급 · 느리지만 문장력 우수)</option>
+            </select>
+          </label>
         </div>
       )}
     </div>

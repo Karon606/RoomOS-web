@@ -129,6 +129,8 @@ model Property {
   phone       String?
   description String?
   joinCode    String?   @unique  // 영업장 참여 코드 — 사용자가 입력하면 운영자에게 참여 요청 전송
+  geminiApiKey String?  // AI(제미나이) 본인 API 키 — 공지 AI 다듬기용(BYOK, 구독과 무관·무료 발급). 서버 전용, 클라엔 마스킹만
+  geminiModel  String?  // 선택 모델 ID (null = 기본 gemini-2.5-flash)
   publicSlug  String?   @unique  // 공개 랜딩 페이지 slug (예: 'thestayjegi') — /members/<slug> + 트래픽 매칭용
   isActive         Boolean   @default(true)
   acquisitionDate      DateTime? @db.Date

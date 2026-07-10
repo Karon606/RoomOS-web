@@ -1191,6 +1191,39 @@ export async function deleteItemSpecOption(id: string): Promise<{ ok: true } | {
 }
 
 // ============================================================
+// AI(제미나이) 설정 — 본인 API 키(BYOK) + 모델. 공지 AI 다듬기는 키 등록 시 사용 가능.
+// 키는 서버 전용 — 클라이언트에는 마스킹(앞 6자)만 내려준다.
+// ============================================================
+export type AiSettings = { keyMasked: string | null; model: string | null }
+
+export async function getAiSettings(): Promise<AiSettings> {
+  const propertyId = await getPropertyId()
+  const p = await prisma.property.findUnique({ where: { id: propertyId }, select: { geminiApiKey: true, geminiModel: true } })
+  const key = p?.geminiApiKey?.trim() || null
+  return { keyMasked: key ? `${key.slice(0, 6)}${'*'.repeat(Math.max(4, key.length - 6))}` : null, model: p?.geminiModel ?? null }
+}
+
+export async function saveAiSettings(input: { apiKey?: string | null; model?: string | null }): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const data: { geminiApiKey?: string | null; geminiModel?: string | null } = {}
+    if (input.apiKey !== undefined) {
+      const k = (input.apiKey ?? '').trim()
+      if (k && !/^[A-Za-z0-9_-]{20,}$/.test(k)) return { ok: false, error: 'API 키 형식이 올바르지 않습니다. 복사한 키를 그대로 붙여넣어 주세요.' }
+      data.geminiApiKey = k || null
+    }
+    if (input.model !== undefined) data.geminiModel = (input.model ?? '').trim() || null
+    await prisma.property.update({ where: { id: propertyId }, data })
+    revalidatePath('/settings')
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '저장에 실패했습니다.' }
+  }
+}
+
+// ============================================================
 // 미납 안내 문자 템플릿 (/docs/stayeum_payment_spec.md Phase 1)
 //   지원 변수: {이름} {호수} {미납금액} {납기일} {경과일수} {계좌번호}
 // ============================================================

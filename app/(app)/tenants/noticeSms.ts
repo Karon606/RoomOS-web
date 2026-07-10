@@ -146,9 +146,11 @@ export async function polishNoticeText(draft: string): Promise<{ ok: true; text:
     const propertyId = await getPropertyId()
     const src = draft.trim()
     if (!src) return { ok: false, error: '다듬을 초안을 먼저 입력하세요.' }
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY가 설정되지 않았습니다.' }
-    const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } })
+    // BYOK — AI 다듬기는 영업장 본인 키 등록 시 사용(운영자 결정 2026-07-10). 앱 공용 키 폴백 없음.
+    const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true, geminiApiKey: true, geminiModel: true } })
+    const apiKey = prop?.geminiApiKey?.trim()
+    if (!apiKey) return { ok: false, error: '환경설정의 AI 설정에서 본인 제미나이 API 키를 등록하면 사용할 수 있습니다. 발급 방법은 그 옆 안내를 참고하세요.' }
+    const model = prop?.geminiModel?.trim() || 'gemini-2.5-flash'
     const propName = prop?.name?.trim() || '관리실'
 
     const prompt = `너는 고시원(원룸텔) 운영자를 돕는 공지 문자 작성자다. 발신 주체는 '${propName}'이다.
@@ -168,7 +170,7 @@ export async function polishNoticeText(draft: string): Promise<{ ok: true; text:
 ${src}`
 
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -180,6 +182,10 @@ ${src}`
         }),
       }
     )
+    if (res.status === 400 || res.status === 401 || res.status === 403) {
+      return { ok: false, error: '등록된 API 키가 유효하지 않습니다. 환경설정의 AI 설정에서 키를 확인해 주세요.' }
+    }
+    if (res.status === 429) return { ok: false, error: 'API 사용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.' }
     if (!res.ok) return { ok: false, error: `AI 응답 실패 (${res.status})` }
     const json = await res.json()
     const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? ''
