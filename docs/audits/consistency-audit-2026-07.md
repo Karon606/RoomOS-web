@@ -39,6 +39,13 @@
 - D6 loading.tsx 없는 잦은 전환 라우트(rooms·finance·report·market)
 - (그 외: h1 크기 3종, 제목 '섹션 · 탭' 규칙 미일관, report raw 버튼/셀렉트, floor-plan h-screen 셸 깨짐, '처리 중...' 표기 3종)
 
+## 진행 현황 (2026-07-10)
+- **A1~A6 전건 완료·배포**: 실거주 확인서 비서울 발급 차단(유추 금지, 운영자 정정 반영), 재고·지출 카테고리 설정 기반, 추적단위 키워드 휴리스틱, 계약서 {{청소비}} 변수화, placeholder 일반화.
+- **D3 완료(2배치)**: RoleProvider/useCanEdit — 입주자·수납·호실·지출·재고·비품의 편집 진입 버튼을 뷰어(STAFF)에게 숨김(서버 requireEdit 최종 방어).
+- **B4 완료**: accrual·alerts·report 로컬 금액 포맷터 제거 → 정본 fmtWon. (marketing fmt는 방문 수 카운트라 금액 아님 — 제외)
+- **B5 1단계**: lib/fmtDate.ts 정본 신설(fmtDateDot/fmtDateKor/fmtMD) — 로컬 fmtDate 치환 스윕은 다음 단계.
+- 남은 것: B5 치환 스윕, B1~B3(Btn·ModalFooterActions·배지 채택 스윕), C 문법 성문화(가이드 §), D1·D2·D4~D6 페이지 정렬.
+
 ## 우선순위 제안
 1. **A1~A5 (상용화 차단)** — 다른 영업장에서 오작동·법적 문서 오류
 2. **D3 권한 가드** — 상용 멀티유저 기본기
