@@ -845,14 +845,11 @@ export default function MarketClient({
   const recommendedPrices = displayAiResult ? extractRecommendedPrices(displayAiResult) : []
 
   return (
-    <div
-      className="flex flex-col min-h-full"
-      style={{ background: 'var(--canvas)', padding: '20px 16px', gap: 16 }}
-    >
+    <div className="flex flex-col min-h-full gap-4">
       {/* Page Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--warm-dark)' }}>시세 조사</h1>
+          <h1 className="text-xl font-bold text-[var(--warm-dark)]">시세 조사</h1>
           <p style={{ fontSize: '0.8125rem', color: 'var(--warm-muted)', marginTop: 2 }}>{property.name}</p>
         </div>
         <Btn onClick={handleNewSurvey} disabled={isPending} variant="primary">

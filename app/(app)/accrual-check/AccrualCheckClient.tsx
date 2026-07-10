@@ -106,7 +106,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
   }
 
   return (
-    <div className="space-y-4 p-4 max-w-5xl mx-auto">
+    <div className="space-y-4 max-w-5xl mx-auto">
       <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-5 space-y-2">
         <h1 className="text-base font-bold text-[var(--warm-dark)]">발생주의 데이터 진단</h1>
         <p className="text-xs text-[var(--warm-mid)] leading-relaxed">

@@ -66,7 +66,7 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
   }
 
   return (
-    <div className="space-y-4 px-4 sm:px-6 py-5">
+    <div className="space-y-4">
       <div className="space-y-2">
         <div>
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">계약서</h1>

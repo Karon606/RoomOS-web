@@ -53,7 +53,7 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
   }
 
   return (
-    <div className="space-y-5 px-4 sm:px-6 py-5">
+    <div className="space-y-5">
       <div>
         <h1 className="text-xl font-bold text-[var(--warm-dark)]">실거주 확인서
           <InfoHint title="실거주 확인서란?">거주중 입실자를 선택해 발급하면 영업장 주소·면적·임대료·도장이 자동으로 채워집니다. 발급한 PDF는 아래 이력과 연결된 Google Drive에 보관됩니다.</InfoHint>
