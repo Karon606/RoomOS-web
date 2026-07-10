@@ -12,7 +12,8 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
-import { getNoticeSmsTargets, logNoticeSmsAttempt, polishNoticeText, type NoticeSmsTarget } from '@/app/(app)/tenants/noticeSms'
+import { getNoticeSmsTargets, logNoticeSmsAttempt, polishNoticeText, switchAiModelForQuota, getAiModelRestorePrompt, resolveAiModelRestore, type NoticeSmsTarget } from '@/app/(app)/tenants/noticeSms'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { getSmsTemplates, saveSmsTemplate, type SmsTemplateRow } from '@/app/(app)/settings/actions'
 
 const WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창', WINDOW: '창문', NO_WINDOW: '무창' }
@@ -68,6 +69,19 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
       })
       .catch(() => setLoadError('대상을 불러오지 못했습니다. 다시 열어 주세요.'))
     getSmsTemplates('notice').then(setTemplates).catch(() => { /* 템플릿은 없어도 진행 가능 */ })
+    // pro 한도로 flash 전환했던 사용자 — 무료 한도 초기화가 지났으면 복귀 제안(승인 시에만 변경)
+    getAiModelRestorePrompt().then(async p => {
+      if (!p.due) return
+      const yes = await confirmDialog({
+        title: '고급 모델 무료 한도가 초기화됐습니다',
+        message: `다듬기 모델을 다시 고급(${p.model})으로 바꿀까요? 아니요를 누르면 기본(빠름)을 유지합니다.`,
+        confirmLabel: '고급으로 변경',
+        cancelLabel: '기본 유지',
+      })
+      const r = await resolveAiModelRestore(yes)
+      if (!r.ok) pushToast('error', r.error)
+      else if (yes) pushToast('success', '다듬기 모델을 고급으로 되돌렸습니다')
+    }).catch(() => { /* 제안 실패는 무시 */ })
   }, [])
 
   // 축별 선택지 — 실데이터에서 도출. 2종 미만이면 그 축은 숨김(걸러지는 게 없음).
@@ -144,12 +158,13 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
     return out
   }, [recipients])
 
-  // 다중 수신자 — iOS는 'sms:번호1,번호2' 형식에서 첫 번호만 인식(운영자 실기기 확인 2026-07-10).
-  // iOS는 sms://open?addresses=번호1,번호2&body= 형식이 다중 수신을 지원한다. 그 외(안드로이드)는 세미콜론 나열.
+  // 다중 수신자 — 애플(아이폰·아이패드·맥 전부 메시지앱)은 'sms:번호1,번호2' 형식에서 첫 번호만
+  // 인식(운영자 실기기 확인 2026-07-10~11). sms://open?addresses=번호1,번호2&body= 형식만 다중 수신 지원.
+  // 그 외(안드로이드)는 세미콜론 나열.
   const smsHref = (list: NoticeSmsTarget[]) => {
-    const isIos = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/.test(navigator.userAgent)
+    const isApple = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)
     const enc = encodeURIComponent(body)
-    if (isIos) {
+    if (isApple) {
       const nums = list.map(t => (t.phone ?? '').replace(/[^0-9+]/g, '')).join(',')
       return `sms://open?addresses=${nums}&body=${enc}`
     }
@@ -165,18 +180,32 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
       .catch(() => pushToast('error', '이력 기록에 실패했습니다'))
   }
 
-  const runPolish = () => {
+  const runPolish = async () => {
     if (aiPending || !body.trim()) return
     setAiPending(true)
-    polishNoticeText(body)
-      .then(r => {
-        if (!r.ok) { pushToast('error', r.error); return }
-        setPrevDraft(body)
-        setBody(r.text)
-        void notifyAiQuota()
-      })
-      .catch(() => pushToast('error', 'AI 다듬기 중 통신 오류가 발생했습니다'))
-      .finally(() => setAiPending(false))
+    try {
+      let r = await polishNoticeText(body)
+      // 고급 모델 무료 한도 도달 — 그 자리에서 기본 모델 전환을 승인받고 즉시 재시도(운영자 설계)
+      if (!r.ok && r.code === 'model-quota') {
+        const yes = await confirmDialog({
+          title: '고급 모델의 무료 한도에 도달했습니다',
+          message: '기본 모델(빠름)로 바꿔서 지금 바로 다듬을까요? 무료 한도가 초기화되면 다시 고급으로 바꿀지 물어봅니다.',
+          confirmLabel: '기본 모델로 계속',
+        })
+        if (!yes) return
+        const sw = await switchAiModelForQuota(r.model ?? 'gemini-2.5-pro')
+        if (!sw.ok) { pushToast('error', sw.error); return }
+        r = await polishNoticeText(body)
+      }
+      if (!r.ok) { pushToast('error', r.error); return }
+      setPrevDraft(body)
+      setBody(r.text)
+      void notifyAiQuota()
+    } catch {
+      pushToast('error', 'AI 다듬기 중 통신 오류가 발생했습니다')
+    } finally {
+      setAiPending(false)
+    }
   }
 
   const saveAsTemplate = () => {

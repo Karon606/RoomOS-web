@@ -141,7 +141,7 @@ export async function logNoticeSmsAttempt(input: {
 }
 
 // AI 문구 다듬기 — 운영자 초안을 공지 톤(정중·간결)으로. 채택은 운영자가 결정.
-export async function polishNoticeText(draft: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+export async function polishNoticeText(draft: string): Promise<{ ok: true; text: string } | { ok: false; error: string; code?: 'model-quota'; model?: string }> {
   try {
     await requireEdit()
     const propertyId = await getPropertyId()
@@ -188,13 +188,11 @@ ${src}`
       return { ok: false, error: '등록된 API 키가 유효하지 않습니다. 환경설정의 AI 설정에서 키를 확인해 주세요.' }
     }
     if (res.status === 429) {
-      // pro 계열은 무료 티어 일일 한도가 매우 작다 — 모델 전환을 안내(운영자 사례 2026-07-11)
-      return {
-        ok: false,
-        error: model !== 'gemini-2.5-flash'
-          ? `선택한 모델(${model})의 무료 한도에 도달했습니다. 환경설정의 AI 설정에서 모델을 '기본 (빠름)'으로 바꾸면 바로 사용할 수 있습니다.`
-          : 'API 사용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.',
+      // pro 계열은 무료 티어 일일 한도가 매우 작다 — 그 자리에서 기본 모델 전환을 제안(운영자 설계 2026-07-11)
+      if (model !== 'gemini-2.5-flash') {
+        return { ok: false, code: 'model-quota', model, error: `선택한 모델(${model})의 무료 한도에 도달했습니다.` }
       }
+      return { ok: false, error: 'API 사용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.' }
     }
     if (!res.ok) return { ok: false, error: `AI 응답 실패 (${res.status})` }
     const json = await res.json()
@@ -204,5 +202,80 @@ ${src}`
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? 'AI 다듬기에 실패했습니다.' }
+  }
+}
+
+// ── 모델 한도 전환·복귀 (운영자 설계 2026-07-11) ─────────────────────
+// pro 무료 한도 도달 시 그 자리에서 flash 전환을 승인받아 적용하고, 무료 한도가
+// 초기화되는 시각(구글 기준 태평양시 자정)이 지나면 원래 모델 복귀를 제안한다.
+
+// 다음 태평양시 자정(무료 한도 초기화 시각) — DST를 Intl로 처리
+function nextPacificMidnight(): Date {
+  const now = new Date()
+  for (let h = 1; h <= 30; h++) {
+    const cand = new Date(now.getTime() + h * 3600_000)
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', hour12: false }).format(cand)
+    if (parts === '0' || parts === '00' || parts === '24') {
+      // 해당 시(時)의 정각으로 스냅
+      return new Date(Math.floor(cand.getTime() / 3600_000) * 3600_000)
+    }
+  }
+  return new Date(now.getTime() + 24 * 3600_000)
+}
+
+// 한도 도달 승인 후: 기본 모델로 전환 + 복귀 제안 예약(소유자만 — 모델은 소유자 소유)
+export async function switchAiModelForQuota(fromModel: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { userId, propertyId } = await requirePropertyAccess()
+    const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { ownerId: true } })
+    if (!prop || prop.ownerId !== userId) {
+      return { ok: false, error: '모델 설정은 영업장 소유 관리자 계정에서만 바꿀 수 있습니다. 환경설정의 AI 설정을 확인해 주세요.' }
+    }
+    await prisma.user.update({
+      where: { id: userId },
+      data: { geminiModel: 'gemini-2.5-flash', geminiRestoreModel: fromModel, geminiRestoreAt: nextPacificMidnight() },
+    })
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '전환에 실패했습니다.' }
+  }
+}
+
+// 복귀 제안이 필요한 상태인지(소유자 본인 + 초기화 시각 경과)
+export async function getAiModelRestorePrompt(): Promise<{ due: boolean; model?: string }> {
+  try {
+    const { userId, propertyId } = await requirePropertyAccess()
+    const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { ownerId: true } })
+    if (!prop || prop.ownerId !== userId) return { due: false }
+    const u = await prisma.user.findUnique({ where: { id: userId }, select: { geminiRestoreModel: true, geminiRestoreAt: true } })
+    if (u?.geminiRestoreModel && u.geminiRestoreAt && u.geminiRestoreAt.getTime() <= Date.now()) {
+      return { due: true, model: u.geminiRestoreModel }
+    }
+    return { due: false }
+  } catch {
+    return { due: false }
+  }
+}
+
+// 복귀 응답 처리 — 승인이면 원래 모델로, 거절이면 예약만 해제(flash 유지)
+export async function resolveAiModelRestore(accept: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const { userId } = await requirePropertyAccess()
+    const u = await prisma.user.findUnique({ where: { id: userId }, select: { geminiRestoreModel: true } })
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(accept && u?.geminiRestoreModel ? { geminiModel: u.geminiRestoreModel } : {}),
+        geminiRestoreModel: null,
+        geminiRestoreAt: null,
+      },
+    })
+    return { ok: true }
+  } catch (err) {
+    if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '처리에 실패했습니다.' }
   }
 }

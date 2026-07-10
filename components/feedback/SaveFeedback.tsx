@@ -138,10 +138,11 @@ export default function SaveFeedback() {
                 )}
               </div>
               {t.action && (
+                /* 토스트는 모드 불변 다크 칩 — --sand는 다크에서 어두워지므로 고정 라이트 샌드 */
                 <button type="button"
                   onClick={() => { t.action!.run(); remove(t.id) }}
                   className="shrink-0 -my-2.5 -mr-3 px-3 self-stretch text-[13px] font-bold hover:underline"
-                  style={{ color: 'var(--sand)', minHeight: 44 }}>
+                  style={{ color: '#F2D9B8', minHeight: 44 }}>
                   {t.action.label}
                 </button>
               )}

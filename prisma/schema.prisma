@@ -110,6 +110,8 @@ model User {
   // AI(제미나이) 본인 API 키 — 소유한 모든 영업장에 적용(BYOK). 서버 전용, 클라엔 마스킹만
   geminiApiKey String?
   geminiModel  String?                         // 선택 모델 ID (null = 기본 gemini-2.5-flash)
+  geminiRestoreModel String?                   // pro 한도로 flash 전환 시 복귀 제안할 모델
+  geminiRestoreAt    DateTime?                 // 무료 한도 초기화 예상 시각(태평양시 자정) — 지나면 복귀 제안
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
