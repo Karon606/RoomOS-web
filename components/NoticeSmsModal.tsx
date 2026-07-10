@@ -4,6 +4,7 @@
 // (R4, 신고 4fad73fa) 실제 발송은 운영자 폰 문자앱에서 완료되므로 이력은 '발송 시도' 기록이다.
 
 import { useEffect, useMemo, useState } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
@@ -139,7 +140,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
           {loadError ? (
             <p className="text-xs text-[var(--danger-fg)]">{loadError}</p>
           ) : !targets ? (
-            <p className="text-xs text-[var(--warm-muted)]">입주자를 불러오는 중…</p>
+            <SkeletonRows rows={4} />
           ) : (
             <>
               <div className="flex flex-wrap gap-1.5">

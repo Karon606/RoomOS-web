@@ -5,6 +5,7 @@
 // 여기 남는 이력은 '발송 시도' 기록이다. API 발송(Phase 2)은 sentVia 확장으로 대비.
 
 import { useEffect, useState } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { Modal } from '@/components/ui/Modal'
 import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
@@ -123,7 +124,7 @@ export function UnpaidSmsModal({ target, onClose }: { target: UnpaidSmsTarget; o
       }>
       <div className="px-5 sm:px-6 py-4 space-y-3">
         {!ctx ? (
-          <p className="text-xs text-[var(--warm-muted)]">불러오는 중…</p>
+          <SkeletonRows rows={3} />
         ) : !ctx.ok ? (
           <p className="text-xs text-[var(--danger-fg)]">{ctx.error}</p>
         ) : (

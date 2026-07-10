@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
+import { SkeletonRows } from '@/components/ui/Skeleton'
 import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
 import { DEFAULT_DISPOSAL_CONSENT, type DisposalConsentTemplate } from '@/lib/contract'
@@ -1981,7 +1982,7 @@ function ItemSpecOptionsPanel() {
         단가와 무관한 구분 정보(색상·사이즈·치수)입니다. 지출 입력 때 저장한 값이 자동으로 쌓이고, 품목 선택 시 칩으로 재사용됩니다.
       </p>
       {!groups ? (
-        <p className="text-xs text-[var(--warm-muted)]">불러오는 중…</p>
+        <SkeletonRows rows={3} />
       ) : (
         <div className="space-y-3">
           {groups.map(g => (
@@ -2050,7 +2051,7 @@ function SmsTemplateCard() {
         {' '}<span className="mono text-[0.6875rem]">{'{이름} {호수} {미납금액} {납기일} {경과일수} {계좌번호}'}</span>
       </p>
       {!list ? (
-        <p className="text-xs text-[var(--warm-muted)]">불러오는 중…</p>
+        <SkeletonRows rows={3} />
       ) : (
         <div className="space-y-2.5">
           {list.length === 0 && !edit && (
@@ -2131,7 +2132,7 @@ function ShortStayPolicyCard() {
         1달 이내 단기 거주의 요금 기준입니다. 여기 수치가 고객 관리의 요금 계산(시뮬레이션)에 바로 적용됩니다.
       </p>
       {!p ? (
-        <p className="text-xs text-[var(--warm-muted)]">불러오는 중…</p>
+        <SkeletonRows rows={3} />
       ) : (
         <div className="space-y-3">
           <SegmentedControl size="sm" ariaLabel="단기 정책 사용"
