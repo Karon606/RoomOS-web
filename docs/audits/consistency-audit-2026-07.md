@@ -18,7 +18,7 @@
 - B3 모달 취소 버튼 3종(텍스트링크/아웃라인/Btn secondary), ModalFooterActions 채택 2/22
 - B4 금액 포맷터 로컬 재정의 5파일(만원 축약 vs 풀 콤마 혼용) — **lib에 표시용 정본 부재가 근본 원인**
 - B5 날짜 포맷 4종 혼용(YYYY.MM.DD / 년월일(요일) / locale 2-digit / M/D) — 정본 포맷터 부재
-- B6 라이트 전용 리터럴 색 잔존(dashboard 구분선 rgba, floor-plan hex) — 토스트 사고와 동종 다크 위험
+- B6 라이트 전용 리터럴 색 잔존(dashboard 구분선 rgba, floor-plan hex) — 토스트 사고와 동종 다크 위험 ✅ 2026-07-10 1차 스윕(2f4bd1a): 구코랄 12곳·테라코타 틴트 6곳 color-mix 치환, Sidebar 라벨·ConfirmDialog 아이콘·TrendChart 그리드·정산 박스 토큰화. 잔여: floor-plan 캔버스(의도적 고정 검토), 인쇄 문서 제외 확정
 - (그 외: 배지 수제 64곳, 아이콘 strokeWidth 9종, danger 버튼 3종, secondary 배경 토큰 불일치 등)
 
 ## C. 인터랙션 문법 (12) — 핵심 6
