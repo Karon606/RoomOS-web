@@ -232,7 +232,7 @@ function getSortValue(room: RoomStatus, key: SortKey, targetMonth: string): stri
 // ── 컴포넌트 ─────────────────────────────────────────────────────
 
 export default function RoomsClient({
-  roomStatus, targetMonth, incomes, incomeCategories, initialTab,
+  roomStatus, targetMonth, myRole, incomes, incomeCategories, initialTab,
 }: {
   roomStatus: RoomStatus[]
   targetMonth: string
@@ -644,10 +644,12 @@ export default function RoomsClient({
             잘리던 문제 해결, 사용자 피드백 2026-06-01) */}
         <div className="ml-auto flex gap-2 items-center">
 
-        {/* 선택 모드 토글 — 일괄 수납 (§22 선택모드) */}
+        {/* 선택 모드 토글 — 일괄 수납 (§22 선택모드). 뷰어(STAFF)에겐 숨김(감사 D3, 서버 requireEdit 최종 방어) */}
+        {(myRole === 'OWNER' || myRole === 'MANAGER') && (
         <Btn variant="secondary" size="md" onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
           {selectMode ? '선택 취소' : '선택'}
         </Btn>
+        )}
 
         {/* 표시 항목 — 점유·공실 카드 항목을 버튼 하나로(운영자 지적 2026-07-06, '공실 카드 항목' 별도 버튼 제거) */}
         <DisplayFieldsMenu

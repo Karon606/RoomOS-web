@@ -8,6 +8,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { useCanEdit } from '@/components/RoleContext'
 import { useEntityModal } from '@/components/entity-modal/EntityModal'
 import { Modal as SharedModal } from '@/components/ui/Modal'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -155,6 +156,7 @@ export default function RoomManageClient({
   windowTypes: string[]
   directions: string[]
 }) {
+  const canEditUi = useCanEdit()   // 뷰어(STAFF) 편집 버튼 숨김(감사 D3)
   // #12: initialRooms를 useState로 캡처하면 router.refresh() 후에도 갱신 안 됨(즉시 적용·편집 미반영).
   //      prop을 직접 사용 → revalidatePath+router.refresh 페어로 즉시 반영. (feedback_auto_refresh)
   const rooms = initialRooms
@@ -545,6 +547,8 @@ export default function RoomManageClient({
             )
           })()}
         </div>
+        {/* 뷰어(STAFF)에겐 편집 진입 숨김(감사 D3) */}
+        {canEditUi && (
         <div className="flex items-center gap-2">
           <Btn variant="secondary" size="md" onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
             {selectMode ? '선택 취소' : '선택'}
@@ -553,6 +557,7 @@ export default function RoomManageClient({
             + 호실 등록
           </Btn>
         </div>
+        )}
       </div>
 
       {/* 검색바 + 필터 토글 — §22 공용 SearchBar */}

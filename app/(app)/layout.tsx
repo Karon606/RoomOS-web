@@ -7,6 +7,7 @@ import AppShell from '@/components/layout/AppShell'
 import { EntityModalProvider } from '@/components/entity-modal/EntityModal'
 import ClearAppBadge from '@/components/ClearAppBadge'
 import PeekFrameGuard from '@/components/PeekFrameGuard'
+import { RoleProvider } from '@/components/RoleContext'
 import NewVersionNotice from '@/components/NewVersionNotice'
 import BreadcrumbTracker from '@/components/BreadcrumbTracker'
 import ErrorReportButton from '@/components/ErrorReportButton'
@@ -79,6 +80,8 @@ export default async function AppLayout({
   if (!isSuperAdmin && currentPropertyId && !myPropertyIds.has(currentPropertyId)) {
     if (!(await getPropertyAccess())) redirect('/property-select')
   }
+  // 역할 컨텍스트용 — 현재 영업장에서의 내 역할(멤버 아니면 null → OWNER 폴백, 슈퍼관리자 뷰 포함)
+  const access = await getPropertyAccess()
 
   // 슈퍼관리자가 본인 소속 아닌 영업장을 보고 있으면 = 관리자 뷰
   const isAdminView = isSuperAdmin && currentPropertyId != null && !myPropertyIds.has(currentPropertyId)
@@ -96,7 +99,10 @@ export default async function AppLayout({
       <NewVersionNotice />
       <BreadcrumbTracker />
       <EntityModalProvider>
-        {children}
+        {/* 역할 컨텍스트 — 뷰어(STAFF) 편집 버튼 숨김 가드(감사 D3). access 없으면 OWNER 폴백(서버가 최종 방어) */}
+        <RoleProvider role={access?.role ?? 'OWNER'}>
+          {children}
+        </RoleProvider>
       </EntityModalProvider>
       <ErrorReportButton />
     </AppShell>

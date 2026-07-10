@@ -927,6 +927,8 @@ export default function TenantClient({
       {/* 헤더 */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl font-bold text-[var(--warm-dark)]">입주자 관리</h1>
+        {/* 뷰어(STAFF)에게는 편집 진입 숨김 — 서버 requireEdit가 최종 방어(감사 D3) */}
+        {canEdit && (
         <div className="flex items-center gap-2">
           <Btn type="button" variant="secondary" size="md"
             onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
@@ -937,6 +939,7 @@ export default function TenantClient({
             + 입주자 등록
           </Btn>
         </div>
+        )}
       </div>
 
       {/* 검색 — §22 공용 SearchBar (모바일 포함 항상 노출) */}
