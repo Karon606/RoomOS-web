@@ -23,9 +23,31 @@ export type NoticeSmsTarget = {
   leaseTermId: string
   name: string
   roomNo: string
+  phone: string | null   // null = 연락처 미등록(발송 불가, 목록에 회색 표시)
+  // 조건 축 원값 — 방 정보
   floor: string          // '' = 유추 불가
   windowType: string | null
-  phone: string | null   // null = 연락처 미등록(발송 불가, 목록에 회색 표시)
+  direction: string | null
+  tier: string | null
+  roomType: string | null
+  // 조건 축 원값 — 고객 정보
+  gender: string         // MALE/FEMALE/OTHER/UNKNOWN
+  nationality: string | null
+  smoking: boolean
+  job: string | null
+  isBasicRecipient: boolean
+  stayBucket: string | null   // 거주기간 구간(입주일 기준)
+  // 조건 축 원값 — 수납 정보
+  payMethod: string | null    // 최근 결제수단(보증금 제외)
+}
+
+// 거주기간 구간 — 초심자도 읽히는 3구간(입주일 없으면 null)
+function stayBucketOf(moveInDate: Date | null): string | null {
+  if (!moveInDate) return null
+  const months = (Date.now() - moveInDate.getTime()) / (1000 * 3600 * 24 * 30.44)
+  if (months < 6) return '6개월 미만'
+  if (months < 12) return '6개월~1년'
+  return '1년 이상'
 }
 
 // 입주 중(ACTIVE·퇴실 예정 포함) 전체 — 필터 칩(층·창)은 클라이언트가 이 데이터에서 도출한다.
@@ -37,15 +59,25 @@ export async function getNoticeSmsTargets(): Promise<{ ok: true; targets: Notice
       select: {
         id: true,
         tenantId: true,
-        room: { select: { roomNo: true, floor: true, windowType: true } },
+        moveInDate: true,
+        room: { select: { roomNo: true, floor: true, windowType: true, direction: true, tier: true, type: true } },
         tenant: {
           select: {
-            name: true,
+            name: true, gender: true, nationality: true, smoking: true, job: true, isBasicRecipient: true,
             contacts: { where: { contactType: 'PHONE' }, orderBy: { createdAt: 'asc' }, select: { contactValue: true }, take: 1 },
           },
         },
       },
     })
+    // 최근 결제수단(보증금 제외) — 고객별 1건. 수납 폼 프리필과 같은 정의.
+    const payRows = await prisma.paymentRecord.findMany({
+      where: { tenantId: { in: leases.map(l => l.tenantId) }, payMethod: { not: null }, isDeposit: false, propertyId },
+      orderBy: [{ payDate: 'desc' }, { createdAt: 'desc' }],
+      select: { tenantId: true, payMethod: true },
+    })
+    const payByTenant = new Map<string, string>()
+    for (const r of payRows) if (!payByTenant.has(r.tenantId)) payByTenant.set(r.tenantId, r.payMethod!)
+
     const targets: NoticeSmsTarget[] = leases
       .filter(l => l.room && l.tenant)
       .map(l => ({
@@ -53,9 +85,19 @@ export async function getNoticeSmsTargets(): Promise<{ ok: true; targets: Notice
         leaseTermId: l.id,
         name: l.tenant.name,
         roomNo: l.room!.roomNo,
+        phone: l.tenant.contacts[0]?.contactValue?.trim() || null,
         floor: (l.room!.floor ?? '').trim() || deriveFloor(l.room!.roomNo),
         windowType: l.room!.windowType,
-        phone: l.tenant.contacts[0]?.contactValue?.trim() || null,
+        direction: l.room!.direction?.trim() || null,
+        tier: l.room!.tier?.trim() || null,
+        roomType: l.room!.type?.trim() || null,
+        gender: l.tenant.gender,
+        nationality: l.tenant.nationality?.trim() || null,
+        smoking: l.tenant.smoking,
+        job: l.tenant.job?.trim() || null,
+        isBasicRecipient: l.tenant.isBasicRecipient,
+        stayBucket: stayBucketOf(l.moveInDate),
+        payMethod: payByTenant.get(l.tenantId) ?? null,
       }))
       .sort((a, b) => a.roomNo.localeCompare(b.roomNo, 'ko', { numeric: true }))
     return { ok: true, targets }

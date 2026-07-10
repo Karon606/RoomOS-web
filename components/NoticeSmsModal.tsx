@@ -1,7 +1,9 @@
 'use client'
 
-// 단체 공지 문자 — 조건(전체·층·창) 그룹핑으로 수신자 선별 → 문구 작성(템플릿·AI 다듬기) → 그룹 sms: 발송 준비.
-// (R4, 신고 4fad73fa) 실제 발송은 운영자 폰 문자앱에서 완료되므로 이력은 '발송 시도' 기록이다.
+// 단체 공지 문자 — 방·고객·수납 정보의 조건 조합으로 수신자 선별 → 문구 작성(템플릿·AI 다듬기) → 그룹 sms: 발송 준비.
+// (R4, 신고 4fad73fa · 조건 조합 확장 운영자 요청 2026-07-10)
+// 조합 규칙: 같은 줄(조건 축) 안에서 여러 개 = 그중 하나만 맞아도 포함(OR), 줄이 다르면 모두 만족(AND).
+// 예: '4층·5층 + 외창' = 4층이거나 5층이면서 외창인 사람. 실제 발송은 폰 문자앱에서 완료(이력은 '발송 시도').
 
 import { useEffect, useMemo, useState } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -12,23 +14,45 @@ import { getNoticeSmsTargets, logNoticeSmsAttempt, polishNoticeText, type Notice
 import { getSmsTemplates, saveSmsTemplate, type SmsTemplateRow } from '@/app/(app)/settings/actions'
 
 const WINDOW_LABEL: Record<string, string> = { OUTER: '외창', INNER: '내창', WINDOW: '창문', NO_WINDOW: '무창' }
+const GENDER_LABEL: Record<string, string> = { MALE: '남성', FEMALE: '여성' }
+const STAY_ORDER = ['6개월 미만', '6개월~1년', '1년 이상']
 const BATCH_SIZE = 20   // sms: URL 길이 제한 대비 수신자 분할 단위
 
-type Filter = { type: 'all' } | { type: 'floor'; value: string } | { type: 'window'; value: string }
-
-const filterLabelOf = (f: Filter) =>
-  f.type === 'all' ? '전체' : f.type === 'floor' ? `${f.value}층` : (WINDOW_LABEL[f.value] ?? f.value)
+// 조건 축 — 값은 영업장 데이터에서 도출(하드코딩 금지). 값이 2종 미만인 축은 걸러도 의미가 없어 숨긴다.
+type Dim = {
+  key: string
+  label: string
+  core?: boolean   // true = 항상 노출(층·창문), 나머지는 '조건 더보기'
+  get: (t: NoticeSmsTarget) => string | null
+  fmt?: (v: string) => string
+  order?: (a: string, b: string) => number
+}
+const DIMS: Dim[] = [
+  { key: 'floor', label: '층', core: true, get: t => t.floor || null, fmt: v => `${v}층`, order: (a, b) => Number(a) - Number(b) },
+  { key: 'window', label: '창문', core: true, get: t => t.windowType, fmt: v => WINDOW_LABEL[v] ?? v },
+  { key: 'direction', label: '방향', get: t => t.direction },
+  { key: 'tier', label: '방 등급', get: t => t.tier },
+  { key: 'roomType', label: '방 타입', get: t => t.roomType },
+  { key: 'gender', label: '성별', get: t => (t.gender === 'MALE' || t.gender === 'FEMALE' ? t.gender : null), fmt: v => GENDER_LABEL[v] ?? v },
+  { key: 'smoking', label: '흡연', get: t => (t.smoking ? '흡연' : '비흡연') },
+  { key: 'nationality', label: '국적', get: t => t.nationality },
+  { key: 'welfare', label: '기초수급', get: t => (t.isBasicRecipient ? '수급자' : '해당 없음') },
+  { key: 'stay', label: '거주기간', get: t => t.stayBucket, order: (a, b) => STAY_ORDER.indexOf(a) - STAY_ORDER.indexOf(b) },
+  { key: 'job', label: '직업', get: t => t.job },
+  { key: 'pay', label: '결제수단', get: t => t.payMethod },
+]
 
 export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<'pick' | 'compose'>('pick')
   const [targets, setTargets] = useState<NoticeSmsTarget[] | null>(null)
   const [loadError, setLoadError] = useState('')
-  const [filter, setFilter] = useState<Filter>({ type: 'all' })
-  const [checked, setChecked] = useState<Set<string>>(new Set())   // leaseTermId 기준
+  const [sel, setSel] = useState<Record<string, Set<string>>>({})   // 축별 선택 값
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [checked, setChecked] = useState<Set<string>>(new Set())    // leaseTermId 기준(개별 보정)
 
   const [templates, setTemplates] = useState<SmsTemplateRow[]>([])
   const [body, setBody] = useState('')
-  const [prevDraft, setPrevDraft] = useState<string | null>(null)  // AI 다듬기 전 원문(원래대로 복귀용)
+  const [prevDraft, setPrevDraft] = useState<string | null>(null)   // AI 다듬기 전 원문(원래대로 복귀용)
   const [aiPending, setAiPending] = useState(false)
   const [loggedBatches, setLoggedBatches] = useState<Set<number>>(new Set())
 
@@ -43,23 +67,54 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
     getSmsTemplates('notice').then(setTemplates).catch(() => { /* 템플릿은 없어도 진행 가능 */ })
   }, [])
 
-  // 필터 칩 목록 — 현재 영업장 데이터에서 도출(하드코딩 금지)
-  const floors = useMemo(() => {
-    const set = new Set((targets ?? []).map(t => t.floor).filter(Boolean))
-    return [...set].sort((a, b) => Number(a) - Number(b))
+  // 축별 선택지 — 실데이터에서 도출. 2종 미만이면 그 축은 숨김(걸러지는 게 없음).
+  const dimOptions = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const d of DIMS) {
+      const vals = new Set<string>()
+      for (const t of targets ?? []) { const v = d.get(t); if (v != null) vals.add(v) }
+      const arr = [...vals].sort(d.order ?? ((a, b) => a.localeCompare(b, 'ko')))
+      if (arr.length >= 2) map.set(d.key, arr)
+    }
+    return map
   }, [targets])
-  const windows = useMemo(() => {
-    const set = new Set((targets ?? []).map(t => t.windowType).filter((w): w is string => !!w))
-    return [...set].sort()
-  }, [targets])
+  const visibleDims = DIMS.filter(d => dimOptions.has(d.key))
+  const coreDims = visibleDims.filter(d => d.core)
+  const moreDims = visibleDims.filter(d => !d.core)
 
-  const matchesFilter = (t: NoticeSmsTarget, f: Filter) =>
-    f.type === 'all' ? true : f.type === 'floor' ? t.floor === f.value : t.windowType === f.value
+  const matches = (t: NoticeSmsTarget, s: Record<string, Set<string>>) =>
+    DIMS.every(d => {
+      const set = s[d.key]
+      if (!set || set.size === 0) return true
+      const v = d.get(t)
+      return v != null && set.has(v)
+    })
 
-  const applyFilter = (f: Filter) => {
-    setFilter(f)
-    setChecked(new Set((targets ?? []).filter(t => t.phone && matchesFilter(t, f)).map(t => t.leaseTermId)))
+  // 조건 토글 — 바꿀 때마다 수신자 체크를 조건 일치자(번호 있는)로 재설정
+  const toggleCond = (dimKey: string, v: string) => {
+    setSel(prev => {
+      const next: Record<string, Set<string>> = { ...prev }
+      const set = new Set(next[dimKey] ?? [])
+      if (set.has(v)) set.delete(v); else set.add(v)
+      next[dimKey] = set
+      setChecked(new Set((targets ?? []).filter(t => t.phone && matches(t, next)).map(t => t.leaseTermId)))
+      return next
+    })
   }
+  const clearConds = () => {
+    setSel({})
+    setChecked(new Set((targets ?? []).filter(t => t.phone).map(t => t.leaseTermId)))
+  }
+
+  const hasCond = DIMS.some(d => sel[d.key]?.size)
+  // 조건 요약 — '4층·5층 + 외창 + 흡연' (이력 메모·작성 화면 부제로 사용)
+  const condLabel = hasCond
+    ? DIMS.filter(d => sel[d.key]?.size)
+        .map(d => [...sel[d.key]].sort(d.order ?? ((a, b) => a.localeCompare(b, 'ko'))).map(v => (d.fmt ? d.fmt(v) : v)).join('·'))
+        .join(' + ')
+    : '전체'
+
+  const shownTargets = (targets ?? []).filter(t => matches(t, sel))
 
   const toggle = (t: NoticeSmsTarget) => {
     if (!t.phone) return
@@ -90,7 +145,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
   const logBatch = (idx: number, list: NoticeSmsTarget[]) => {
     if (loggedBatches.has(idx)) return
     setLoggedBatches(prev => new Set(prev).add(idx))
-    logNoticeSmsAttempt({ tenantIds: list.map(t => t.tenantId), body, filterLabel: filterLabelOf(filter) })
+    logNoticeSmsAttempt({ tenantIds: list.map(t => t.tenantId), body, filterLabel: condLabel })
       .then(r => { if (!r.ok) pushToast('error', r.error) })
       .catch(() => pushToast('error', '이력 기록에 실패했습니다'))
   }
@@ -121,10 +176,30 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
       .catch(() => pushToast('error', '템플릿 저장에 실패했습니다'))
   }
 
+  const chipCls = (active: boolean) => [
+    'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+    active
+      ? 'border-[var(--coral)] bg-[var(--coral)]/10 text-[var(--warm-dark)]'
+      : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)]',
+  ].join(' ')
+
+  const DimRow = ({ d }: { d: Dim }) => (
+    <div className="flex items-start gap-2">
+      <span className="shrink-0 w-14 pt-1.5 text-xs font-medium text-[var(--warm-mid)]">{d.label}</span>
+      <div className="flex flex-wrap gap-1.5 min-w-0">
+        {(dimOptions.get(d.key) ?? []).map(v => (
+          <button key={v} type="button" onClick={() => toggleCond(d.key, v)} className={chipCls(!!sel[d.key]?.has(v))}>
+            {d.fmt ? d.fmt(v) : v}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
   if (step === 'pick') {
     return (
       <Modal open onClose={onClose} title="단체 공지 문자" width="sm"
-        subtitle="조건으로 수신자를 고르고, 목록에서 개별 조정할 수 있습니다"
+        subtitle="조건을 골라 수신자를 좁히고, 목록에서 개별 조정할 수 있습니다"
         footer={
           <div className="flex items-center gap-2 justify-between w-full">
             <span className="text-xs text-[var(--warm-muted)]">수신 {recipients.length}명</span>
@@ -143,27 +218,36 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
             <SkeletonRows rows={4} />
           ) : (
             <>
-              <div className="flex flex-wrap gap-1.5">
-                {([{ type: 'all' } as Filter])
-                  .concat(floors.map(f => ({ type: 'floor', value: f }) as Filter))
-                  .concat(windows.map(w => ({ type: 'window', value: w }) as Filter))
-                  .map(f => {
-                    const active = filterLabelOf(filter) === filterLabelOf(f)
-                    return (
-                      <button key={filterLabelOf(f)} type="button" onClick={() => applyFilter(f)}
-                        className={[
-                          'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                          active
-                            ? 'border-[var(--coral)] bg-[var(--coral)]/10 text-[var(--warm-dark)]'
-                            : 'border-[var(--warm-border)] bg-[var(--cream)] text-[var(--warm-mid)]',
-                        ].join(' ')}>
-                        {filterLabelOf(f)}
-                      </button>
-                    )
-                  })}
+              <div className="space-y-2">
+                {coreDims.map(d => <DimRow key={d.key} d={d} />)}
+                {moreOpen && moreDims.map(d => <DimRow key={d.key} d={d} />)}
+                <div className="flex items-center gap-3 pl-16">
+                  {moreDims.length > 0 && (
+                    <button type="button" onClick={() => setMoreOpen(o => !o)}
+                      className="text-xs text-[var(--coral)] font-medium">
+                      {moreOpen ? '조건 접기' : `조건 더보기 (${moreDims.map(d => d.label).slice(0, 3).join('·')} 등)`}
+                    </button>
+                  )}
+                  {hasCond && (
+                    <button type="button" onClick={clearConds}
+                      className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] underline underline-offset-2">
+                      조건 지우기
+                    </button>
+                  )}
+                </div>
               </div>
-              <ul className="max-h-72 overflow-y-auto divide-y divide-[var(--warm-border)] rounded-xl border border-[var(--warm-border)]">
-                {targets.filter(t => matchesFilter(t, filter)).map(t => (
+              <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
+                같은 줄에서 여러 개를 고르면 그중 하나만 맞아도 포함됩니다. 줄이 다른 조건은 모두 만족해야 합니다.
+              </p>
+              {hasCond && (
+                <p className="text-xs rounded-lg px-3 py-2 bg-[var(--cream)] border border-[var(--warm-border)]">
+                  <span className="text-[var(--warm-muted)]">선택 조건 · </span>
+                  <span className="font-semibold text-[var(--warm-dark)]">{condLabel}</span>
+                  <span className="text-[var(--warm-muted)]"> · {shownTargets.length}명 일치</span>
+                </p>
+              )}
+              <ul className="max-h-60 overflow-y-auto divide-y divide-[var(--warm-border)] rounded-xl border border-[var(--warm-border)]">
+                {shownTargets.map(t => (
                   <li key={t.leaseTermId}>
                     <label className={`flex items-center gap-2.5 px-3 py-2 text-sm ${t.phone ? 'cursor-pointer' : 'opacity-45'}`}>
                       <input type="checkbox" className="accent-[var(--coral)]"
@@ -176,7 +260,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
                     </label>
                   </li>
                 ))}
-                {targets.filter(t => matchesFilter(t, filter)).length === 0 && (
+                {shownTargets.length === 0 && (
                   <li className="px-3 py-4 text-xs text-[var(--warm-muted)]">조건에 맞는 입주자가 없습니다.</li>
                 )}
               </ul>
@@ -189,7 +273,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal open onClose={onClose} title="단체 공지 문자" width="sm"
-      subtitle={`${filterLabelOf(filter)} · ${recipients.length}명에게 보냅니다 · 여기 기록은 '발송 시도'입니다`}
+      subtitle={`${condLabel} · ${recipients.length}명에게 보냅니다 · 여기 기록은 '발송 시도'입니다`}
       footer={
         <div className="flex items-center gap-2 justify-between w-full">
           <Btn variant="secondary" size="md" onClick={() => setStep('pick')}>수신자 다시 선택</Btn>
