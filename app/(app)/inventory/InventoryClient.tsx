@@ -291,7 +291,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         <div className="flex items-start justify-between gap-2">
           <div>
             <h1 className="text-xl font-bold text-[var(--warm-dark)]">재고 관리 · 소모품·부식
-              <InfoHint title="소모품·부식 재고란?">부식·소모품·폐기물 사용량을 점검(실사) 기록 기반으로 추적합니다. 구매는 수령 확인 시 더해지고, 소모량은 두 점검 사이의 차이로 계산되므로 주기적으로 점검을 기록해 주세요.</InfoHint>
+              <InfoHint title="소모품·부식 재고란?">쓰면 줄어드는 물건(쌀·세제·봉투 등)의 잔량과 사용량을 위치(창고·주방)별로 추적합니다 — 오래 쓰는 물건은 비품·자재 탭에서 방별로 배정합니다. 용어는 두 가지만 기억하세요 — 점검: 실제 수량을 세서 기록(두 점검 사이 차이가 소모량이 됨) · 보정: 장부가 실제와 어긋났을 때 차이를 소모로 잡지 않고 기준만 실측값으로 리셋. 구매는 수령 확인 시 자동으로 더해집니다.</InfoHint>
             </h1>
           </div>
           {/* 점검 진입 방식 토글 — §22.2 트랙형(보기 방식). 지출 '아이템별/주문별'과 동일 컴포넌트 */}
@@ -886,7 +886,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
           <Btn variant="secondary" size="sm" onClick={() => setMode('settings')}>설정</Btn>
           <div className="flex-1" />
           <Btn variant="secondary" size="sm" onClick={() => setTransferOpen(true)}>재고 옮기기</Btn>
-          <Btn variant="secondary" size="sm" onClick={() => setMode('reconcile')}>보정 끼워넣기</Btn>
+          <Btn variant="secondary" size="sm" onClick={() => setMode('reconcile')}>보정 (차이 소모 제외)</Btn>
           <Btn variant="secondary" size="sm" onClick={() => setMode('addition')}>+ 무상 입수</Btn>
           <Btn variant="primary" size="sm" onClick={() => setMode('check')}>재고 점검</Btn>
         </div>

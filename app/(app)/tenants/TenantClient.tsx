@@ -1081,10 +1081,22 @@ export default function TenantClient({
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--warm-mid)]">
-                    환불 금액 (최대 {fmtWon(maxRefund)})
-                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-medium text-[var(--warm-mid)]">
+                      환불 금액 (최대 {fmtWon(maxRefund)})
+                    </label>
+                    {/* 퇴실 전이 미니폼과 동일한 빠른 버튼 — 두 경로의 문법 통일(신규유저 감사) */}
+                    <button type="button" onClick={() => setDepositReturnAmt(0)}
+                      className={`shrink-0 text-[0.625rem] px-2 py-1 rounded-md border transition-colors ${
+                        depositReturnAmt === 0
+                          ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/10'
+                          : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40'
+                      }`}>
+                      환불 안 함
+                    </button>
+                  </div>
                   <MoneyInput value={depositReturnAmt} onChange={setDepositReturnAmt} placeholder="0원" />
+                  <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">환불하지 않은 금액은 보증금 수익으로 자동 기록됩니다.</p>
                   {exceedsMax && (
                     <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
                   )}
