@@ -139,6 +139,13 @@ export function JobSelect({ name, defaultValue, placeholder = '직업 선택' }:
 
           {/* 직업 목록 */}
           <div className="overflow-y-auto flex-1">
+            {/* 선택 안 함 — 맨 위 정식 항목(하단 초기화 링크는 발견 안 되던 문제, 신고 5ce9d3f8) */}
+            {selected && !query && (
+              <button type="button" onClick={() => { setSelected(''); setOpen(false) }}
+                className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-left text-[var(--warm-muted)] hover:bg-[var(--canvas)] transition-colors border-b border-[var(--warm-border)]">
+                선택 안 함 (비우기)
+              </button>
+            )}
             {filtered.length === 0 ? (
               <p className="px-4 py-4 text-sm text-[var(--warm-muted)] text-center">검색 결과 없음</p>
             ) : (
