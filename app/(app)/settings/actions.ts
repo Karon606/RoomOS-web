@@ -904,6 +904,7 @@ export type RecurringExpenseRow = {
   activeSince: string | null
   priorYearAmount: number | null
   memo: string | null
+  isGroup: boolean   // 묶기로 만든 부모 — '묶기 해제' 노출용
   // #1 관리비 묶음: 세부항목(있으면 부모). amount/isVariable은 이 항목들로부터 파생.
   items: { id: string; name: string; amount: number; isVariable: boolean; sortOrder: number }[]
 }
@@ -921,12 +922,14 @@ export async function getRecurringExpenses(): Promise<RecurringExpenseRow[]> {
       payMethod: true, vendor: true, financialAccountId: true,
       financialAccount: { select: { brand: true, alias: true } },
       isAutoDebit: true, isVariable: true, alertDaysBefore: true,
-      isActive: true, activeSince: true, priorYearAmount: true, memo: true,
+      isActive: true, activeSince: true, priorYearAmount: true, memo: true, groupSourceIds: true,
       items: { orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, amount: true, isVariable: true, sortOrder: true } },
     },
   })
   return list.map(r => ({
     ...r,
+    isGroup: Array.isArray(r.groupSourceIds) && (r.groupSourceIds as unknown[]).length > 0,
+    groupSourceIds: undefined,
     financialAccountName: r.financialAccount
       ? (r.financialAccount.alias || r.financialAccount.brand)
       : null,
@@ -1046,6 +1049,7 @@ export async function groupRecurringExpenses(data: {
           alertDaysBefore: data.alertDaysBefore ?? 7,
           memo: data.memo ?? null,
           isActive: true,
+          groupSourceIds: sources.map(s => s.id),   // 묶기 해제 시 원본 복구용
           items: { create: items.map((it, i) => ({ name: it.name, amount: it.amount, isVariable: it.isVariable, sortOrder: i })) },
         },
       })
@@ -1235,5 +1239,27 @@ export async function deleteSmsTemplate(id: string): Promise<{ ok: true } | { ok
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '삭제에 실패했습니다.' }
+  }
+}
+
+
+// 정기지출 묶기 해제 — 원본들을 다시 활성화하고 부모(묶음)를 삭제. 부모로 기록된 지출(Expense)은 보존.
+export async function ungroupRecurringExpense(parentId: string): Promise<{ ok: true; restored: number } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    const propertyId = await getPropertyId()
+    const parent = await prisma.recurringExpense.findFirst({ where: { id: parentId, propertyId }, select: { groupSourceIds: true } })
+    if (!parent) return { ok: false, error: '항목을 찾을 수 없습니다.' }
+    const ids = Array.isArray(parent.groupSourceIds) ? (parent.groupSourceIds as string[]) : []
+    if (ids.length === 0) return { ok: false, error: '묶기로 만든 항목이 아니거나 원본 정보가 없습니다.' }
+    const restored = await prisma.$transaction(async (tx) => {
+      const r = await tx.recurringExpense.updateMany({ where: { id: { in: ids }, propertyId }, data: { isActive: true } })
+      await tx.recurringExpense.delete({ where: { id: parentId } })
+      return r.count
+    })
+    revalidatePath('/settings'); revalidatePath('/finance')
+    return { ok: true, restored }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
   }
 }

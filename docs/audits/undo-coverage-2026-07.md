@@ -21,8 +21,8 @@
 | ~~중~~ | ~~입주자/호실 일괄 수정 undo~~ | **완료(2026-07-10)** — undoBatchUpdateTenants/undoBatchUpdateRooms 스냅샷+토스트 적용취소(동기화 계약 임대료 포함) | |
 | 중 | 요청 완료 해제 | tenants/actions.ts resolveTenantRequest | resolvedAt null 복원 액션 + UI '완료 해제' |
 | 중 | 입고 확인·일괄 확인·재고 이동 전용 undo | inventory/actions.ts confirmReceipt·confirmAllPending·transferLocationStock | 생성 stockCheck 삭제로 부분 원복만 가능 — 분할 지출 원복 포함 전용 역함수 필요 |
-| 낮음 | 배치도 저장 버전 이력 | floor-plan/actions.ts saveFloorPlan | 직전 1개 스냅샷이라도 |
-| 낮음 | 정기지출 묶기 해제 | settings/actions.ts groupRecurringExpenses | 부모→원본(sourceIds) 링크가 저장되지 않아 스키마 보강(부모에 sourceIds Json) 후 ungroup 구현 필요 |
+| ~~낮음~~ | ~~배치도 저장 버전 이력~~ | **완료(2026-07-10)** — floorPlanPrevData 스왑 + 저장 토스트 적용취소 | |
+| ~~낮음~~ | ~~정기지출 묶기 해제~~ | **완료(2026-07-10)** — groupSourceIds 저장 + ungroupRecurringExpense + 설정 행 버튼 | |
 | 낮음 | 무상 자산 추가 삭제 | assets/actions.ts addFreeAsset | 0원 지출 행 전용 삭제 |
 | 낮음 | 가입요청 승인/거절 원복 | settings/memberActions.ts | 멤버 제거/재승인으로 대체 가능해 후순위 |
 | 참고 | 예약 인상 자동 적용(applyScheduledRents) | room-manage/actions.ts | 페이지 진입 시 자동 실행 — 예약의 '이행'이라 undo 대상 아님. 잘못 예약했으면 적용 전 예약 수정, 적용 후엔 월세 수정으로 원복. checkoutWithDepositRefund 내부 반환 기록도 동일 패턴 필요(후속) |

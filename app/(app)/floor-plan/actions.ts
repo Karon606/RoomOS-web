@@ -95,12 +95,31 @@ export async function setFloorPlanDashboardVisibility(show: boolean): Promise<{ 
 export async function saveFloorPlan(data: FloorPlanData): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const propertyId = await getPropertyId()
+    // 직전 저장본을 함께 보관 — 덮어쓰기 후 적용취소 가능(감사 백로그 2026-07-10)
+    const cur = await prisma.property.findUnique({ where: { id: propertyId }, select: { floorPlanData: true } })
     await prisma.property.update({
       where: { id: propertyId },
-      data: { floorPlanData: data as object },
+      data: { floorPlanData: data as object, floorPlanPrevData: cur?.floorPlanData ?? undefined },
     })
     revalidatePath('/dashboard')
     revalidatePath('/floor-plan')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: String(e) }
+  }
+}
+
+// 도면 저장 적용취소 — 현재본과 직전본을 맞바꿈(다시 누르면 재실행)
+export async function swapFloorPlanWithPrev(): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const propertyId = await getPropertyId()
+    const cur = await prisma.property.findUnique({ where: { id: propertyId }, select: { floorPlanData: true, floorPlanPrevData: true } })
+    if (!cur?.floorPlanPrevData) return { ok: false, error: '이전 저장본이 없습니다.' }
+    await prisma.property.update({
+      where: { id: propertyId },
+      data: { floorPlanData: cur.floorPlanPrevData, floorPlanPrevData: cur.floorPlanData ?? undefined },
+    })
+    revalidatePath('/dashboard'); revalidatePath('/floor-plan')
     return { ok: true }
   } catch (e) {
     return { ok: false, error: String(e) }

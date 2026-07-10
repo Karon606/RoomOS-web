@@ -168,6 +168,7 @@ model Property {
   logoDriveFileId  String?   // 영업장 로고 (Drive 파일 ID, 계약서 헤더 좌측 — 투명 배경 서류용)
   appLogoDriveFileId String? // 앱 로고 (Drive 파일 ID, 헤더 영업장명 앞 원형 표시 — 배경 있는 일반 로고)
   floorPlanData    Json?     // 도면 데이터. shape: { elements: FloorPlanElement[], canvasWidth, canvasHeight }
+  floorPlanPrevData Json?    // 직전 저장본 — 저장 직후 토스트 적용취소용(감사 백로그 2026-07-10, 스왑 방식이라 재실행도 가능)
   createdAt        DateTime  @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -918,6 +919,7 @@ model RecurringExpense {
   id              String    @id @default(uuid()) @db.Uuid
   propertyId      String    @db.Uuid
   property        Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  groupSourceIds  Json?     // 묶기로 만든 부모일 때 원본 정기지출 id 목록 — 묶기 해제용(감사 백로그 2026-07-10)
   title           String
   amount          Int
   category        String

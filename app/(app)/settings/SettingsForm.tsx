@@ -15,7 +15,7 @@ import {
   getPaymentMethods, addPaymentMethod, deletePaymentMethod,
   reorderOptions, renameOption, resetOptionsToDefault,
   inviteMember, updateMemberRole, removeMember,
-  getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
+  getRecurringExpenses, addRecurringExpense, updateRecurringExpense, deleteRecurringExpense, ungroupRecurringExpense,
   exportAllData,
   saveContractTemplate, saveBusinessInfo,
   createStampUploadSession, finalizeStamp, deleteStamp,
@@ -1234,6 +1234,17 @@ export default function SettingsForm({
                     </button>
                     <button onClick={() => openEditRec(r)}
                       className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
+                    {r.isGroup && (
+                      <button onClick={async () => {
+                        if (!(await confirmDialog({ title: `'${r.title}' 묶기를 해제할까요?`, message: '묶기 전의 원본 고정지출들이 다시 활성화되고 이 묶음은 삭제됩니다. 묶음으로 이미 기장된 지출은 남습니다.', level: 'caution', confirmLabel: '묶기 해제' }))) return
+                        const res = await ungroupRecurringExpense(r.id)
+                        if (!res.ok) { showToast(`해제 실패: ${res.error}`); return }
+                        pushToast('success', `묶기를 해제했습니다 — 원본 ${res.restored}건 복구`)
+                        setRecurringList(prev => prev.filter(x => x.id !== r.id))
+                        router.refresh()
+                      }}
+                        className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">묶기 해제</button>
+                    )}
                     <button onClick={() => handleDeleteRec(r.id, r.title)}
                       className="text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors">삭제</button>
                   </div>

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { Stage, Layer, Rect, Text, Group, Transformer, Line, Circle, Image as KonvaImage } from 'react-konva'
 import {
   type FloorPlanData, type FloorPlanElement, type FloorData,
-  type ElementType, saveFloorPlan, parseFloorPlanImage, setFloorPlanDashboardVisibility,
+  type ElementType, saveFloorPlan, swapFloorPlanWithPrev, parseFloorPlanImage, setFloorPlanDashboardVisibility,
 } from './actions'
 import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -933,7 +933,9 @@ export default function FloorPlanEditor({
     }))
     const res = await saveFloorPlan({ floors: allFloors })
     setSaving(false)
-    if (res.ok) pushToast('success', '도면 저장됨')
+    if (res.ok) pushToast('success', '도면 저장됨', {
+      action: { label: '적용취소', run: () => { void swapFloorPlanWithPrev().then(r => { if (r.ok) { pushToast('info', '직전 저장본으로 되돌렸습니다 — 화면에 반영하려면 새로고침하세요 (다시 누르면 재적용)') } else pushToast('error', r.error) }) } },
+    })
     else pushToast('error', res.error)
   }
 
