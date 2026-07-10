@@ -370,6 +370,8 @@ html.dark {
   /* Surface — 기존 alias 를 §19 토큰으로 재매핑 (구 near-black #0e0d0b 는 순흑 금지 위반) */
   --cream:        var(--d-card);
   --cream-soft:   var(--d-card-2);
+  --sand:         #332619;   /* hover 표면 — 라이트 sand 는 다크에서 밝은 글자와 충돌(취소 버튼 신고) */
+  --sand-2:       #3D2E1F;
   --cream-2:      var(--d-page);
   --cream-3:      var(--d-border-s);
   --canvas:       var(--d-page);
