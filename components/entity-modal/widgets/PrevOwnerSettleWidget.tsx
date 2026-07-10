@@ -1,6 +1,7 @@
 'use client'
 
 // 양도인 메뉴(auto/show/hide) + 양도인 정산 버튼. 양도인 정산은 한 번만 호출 가능 (중복 체크).
+// 신규유저 감사 #9: 위젯 상단에 '양도인' 정의 캡션 렌더(인수 이력 없는 운영자용).
 // 매출/미납 집계에서 그 달 임대료를 제외하는 영향이 있어 고위험. confirm 다이얼로그 필수.
 
 import { useEffect, useState, useTransition } from 'react'
@@ -61,6 +62,7 @@ export function PrevOwnerSettleWidget({ leaseTermId, targetMonth, canEdit, onCha
 
   return (
     <div className="border-t border-[var(--warm-border)] pt-3 mt-1 space-y-2">
+      <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">양도인 = 영업장을 넘겨준 이전 사장. 인수 전에 시작된 계약의 그 달 임대료를 이전 사장 몫으로 표시할 때만 씁니다 (인수 이력이 없으면 쓸 일 없음).</p>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <span className="text-xs font-medium text-[var(--warm-mid)]">양도인 메뉴</span>

@@ -176,6 +176,7 @@ export function CheckoutProrationWidget({
             {/* 정산 방식 — 법정(공정위: 위약금 10% + 잔여 환불) / 선의(일할만) */}
             <div className="space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">정산 방식</label>
+              <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">법정(공정위) = 위약금을 공제하는 공식 기준 · 선의(일할) = 지낸 날짜만큼만 받고 위약금 없음</p>
               <div className="flex gap-1">
                 {([['legal', '법정(공정위)'], ['goodwill', '선의(일할)']] as [RefundMode, string][]).map(([m, lbl]) => (
                   <button key={m} type="button" onClick={() => handleMode(m)}

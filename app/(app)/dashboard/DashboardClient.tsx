@@ -1917,6 +1917,11 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           </section>
         )
       })()}
+      {/* 온보딩 미완료 — 0원 지표 대신 안내 한 줄(신규유저 감사 #4). 3단계 완료 시 자동으로 전체 지표 표시 */}
+      {data.onboarding && (
+        <p className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream)] px-4 py-3 text-xs text-[var(--warm-muted)]">위 3단계를 마치면 이 자리에 매출·미납·지출 지표와 알림이 채워집니다.</p>
+      )}
+      {!data.onboarding && (<>
 
       {/* ── 기간(월) 셀렉터 + 요금 계산 — 우측 정렬 ────────────────────── */}
       {/* 요금 계산: 문의 전화 시 홈에서 바로 견적(고객 관리에서 이관, 운영자 지시 2026-07-06) */}
@@ -2531,6 +2536,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           onClose={() => setTenantInfoId(null)}
         />
       )}
+      </>)}
     </div>
   )
 }

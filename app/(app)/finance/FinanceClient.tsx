@@ -375,6 +375,16 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
   }
 
   async function confirmAdd(label: string) {
+    // 다른 카테고리의 재고 품목과 이름이 같으면 저장 전 확인 — 배너만으론 지나쳐 중복 품목이 생김(신규유저 감사 #12·종량제 사건)
+    if (prevUnits && prevUnits.trackedCategories.length > 0 && !prevUnits.trackedCategories.includes(category)) {
+      const ok = await confirmDialog({
+        title: '카테고리가 다른 것 같아요',
+        message: `'${label}'은(는) '${prevUnits.trackedCategories.join(', ')}' 카테고리의 재고 품목이에요. 지금 카테고리('${category}')로 저장하면 같은 이름의 품목이 하나 더 생깁니다. 그래도 진행할까요?`,
+        confirmLabel: '이대로 저장', cancelLabel: '취소',
+        level: 'caution',
+      })
+      if (!ok) return
+    }
     // 유사한 기존 품명이 있으면 같은 품목인지 확인 (다른 제품일 수 있어 승인받기) (#B)
     let finalLabel = label
     const similar = findSimilarItemName(label, detailSuggestions)
@@ -572,7 +582,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
               <button type="button" onClick={() => { setBasisTouched(true); setUnitBasis(b => b === 'spec' ? 'qty' : 'spec') }}
                 title="단가 기준 전환 (규격당 ↔ 완제품 1개당)"
                 className="block text-[0.625rem] text-[var(--warm-muted)] underline decoration-dotted underline-offset-2">
-                단가 (1{unitBasis === 'spec' && specValue ? (specUnit || '개') : (qtyUnit || '개')}당)<svg className="inline-block align-[-1px] ml-0.5" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h13M13 3l4 4-4 4M20 17H7M11 21l-4-4 4-4" /></svg>
+                단가 (1{unitBasis === 'spec' && specValue ? (specUnit || '개') : (qtyUnit || '개')}당) · 탭하면 기준 전환<svg className="inline-block align-[-1px] ml-0.5" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h13M13 3l4 4-4 4M20 17H7M11 21l-4-4 4-4" /></svg>
               </button>
               <div className="flex gap-1 items-center">
                 <input type="text" inputMode="numeric"

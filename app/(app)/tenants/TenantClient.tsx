@@ -2558,6 +2558,13 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               <option value="RESERVED">예약</option>
               <option value="CANCELLED">입실 취소</option>
             </select>
+            {/* 처음 보는 상태 정의 — 선택했을 때만 한 줄(신규유저 감사 #5) */}
+            {statusVal === 'NON_RESIDENT' && (
+              <p className="mt-1 text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">비거주자 = 방에 살지는 않지만 계약·요금이 있는 경우 (창고·사무실 임대 등)</p>
+            )}
+            {statusVal === 'RESERVED' && (
+              <p className="mt-1 text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">예약 = 입주 의사만 받은 상태 · 아래 &lsquo;예약 확정&rsquo;을 체크하면 방을 실제로 잡아둡니다</p>
+            )}
           </div>
           <SelectField label="선납/후납" name="paymentTiming" defaultValue={lease?.paymentTiming ?? 'PREPAID'}>
             <option value="PREPAID">선납</option>

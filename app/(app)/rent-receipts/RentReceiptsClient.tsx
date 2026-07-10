@@ -59,6 +59,7 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-[var(--warm-dark)]">새 확인서 발급</h2>
+        <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">발급된 PDF는 연결된 Google Drive에 저장됩니다</p>
         <SearchBar value={tenantQuery} onChange={setTenantQuery} placeholder="이름·호실로 입실자 찾기" />
         {tenants.length === 0 ? (
           <p className="text-xs text-[var(--warm-muted)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-4 text-center">거주중인 입실자가 없습니다.</p>
