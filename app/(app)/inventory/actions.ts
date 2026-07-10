@@ -9,7 +9,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireEdit } from '@/lib/role'
 import { type InventoryRow, type TimelineEntry, type PricePoint, type MonthlyInflowRow, type PendingPurchase, type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow, type InventoryCategory, suggestInventoryAlias } from './constants'
-import { getInventoryCategoryConfig, getTrackedCategories } from './categoryConfig'
+import { getInventoryCategoryConfig, getTrackedCategories, defaultTrackUnitForCategory } from './categoryConfig'
 import { computeInventoryOverview } from './overview'
 import { applyLocationCheck, type LocCheckPatch } from '@/lib/stockCheckMerge'
 import { convertSpecValue, unitFactor, canonicalUnit, isConvertibleUnit } from '@/lib/units'
@@ -250,7 +250,7 @@ export async function createTrackedItem(data: {
     }
 
     // 폐기물 처리비는 기본 trackUnit='qty' (50L 봉투 30매를 1500L 아닌 30매로 트래킹)
-    const defaultTrackUnit = data.category === '폐기물 처리비' ? 'qty' : 'spec'
+    const defaultTrackUnit = defaultTrackUnitForCategory(data.category)
     const r = await prisma.trackedItem.create({
       data: {
         propertyId,
@@ -1406,7 +1406,7 @@ export async function seedTrackedItemsFromExpenses(onlyLabels?: string[]): Promi
             label,
             specUnit: g.specUnit,
             qtyUnit: g.qtyUnit,
-            trackUnit: g.category === '폐기물 처리비' ? 'qty' : 'spec',
+            trackUnit: defaultTrackUnitForCategory(g.category),
           },
         })
         created++
@@ -2262,4 +2262,10 @@ export async function undoConfirmReceipt(expenseId: string): Promise<{ ok: true 
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '되돌리기에 실패했습니다.' }
   }
+}
+
+// 추적 카테고리 목록(설정 기반) — 클라이언트 하드코딩 대체용(상용화 감사 A2, 2026-07-10)
+export async function getTrackedCategoriesForClient(): Promise<string[]> {
+  const propertyId = await getPropertyId()
+  return getTrackedCategories(propertyId)
 }

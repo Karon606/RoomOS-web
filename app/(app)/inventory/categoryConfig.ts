@@ -34,3 +34,10 @@ export function parseInventoryCategories(raw: string | null): InventoryCategory[
 export async function getTrackedCategories(propertyId: string): Promise<string[]> {
   return (await getInventoryCategoryConfig(propertyId)).map(c => c.cat)
 }
+
+
+// 품목 추적 단위 기본값 — '폐기물 처리비' 완전일치 하드코딩을 대체(상용화 감사 A3, 2026-07-10).
+// 카테고리를 개명해도 폐기물·봉투류는 개수(qty) 추적이 기본이 되도록 키워드 휴리스틱.
+export function defaultTrackUnitForCategory(cat: string): 'spec' | 'qty' {
+  return /폐기물|봉투|쓰레기/.test(cat) ? 'qty' : 'spec'
+}

@@ -810,7 +810,7 @@ export default function SettingsForm({
               <p className="text-xs text-[var(--warm-muted)]">입실료 납부 확인서의 ‘납부방법’에 자동으로 들어갑니다. 은행·계좌번호·예금주까지 적어두면 좋습니다.</p>
               <input type="text" name="bankAccount"
                 defaultValue={property?.bankAccount ?? ''}
-                placeholder="예: 카카오뱅크 3333-01-2345678 (김건우)"
+                placeholder="예: 카카오뱅크 3333-01-2345678 (홍길동)"
                 autoComplete="off"
                 className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] focus:border-[var(--coral)] transition-colors" />
             </div>
@@ -833,7 +833,7 @@ export default function SettingsForm({
                 type="text"
                 name="publicSlug"
                 defaultValue={property?.publicSlug ?? ''}
-                placeholder="예: thestayjegi"
+                placeholder="예: mygosiwon"
                 autoComplete="off"
                 className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num"
               />
@@ -2055,7 +2055,7 @@ function SmsTemplateCard() {
         <div className="space-y-2.5">
           {list.length === 0 && !edit && (
             <p className="text-xs text-[var(--warm-muted)] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2.5">
-              아직 템플릿이 없습니다. 예: &ldquo;[더스테이 제기역점] {'{이름}'}님, {'{호수}'}호 월 이용료 {'{미납금액}'}원의 납기일({'{납기일}'})이 지났습니다. 아래 계좌로 입금 부탁드립니다. {'{계좌번호}'}&rdquo;
+              아직 템플릿이 없습니다. 예: &ldquo;[우리 원룸텔] {'{이름}'}님, {'{호수}'}호 월 이용료 {'{미납금액}'}원의 납기일({'{납기일}'})이 지났습니다. 아래 계좌로 입금 부탁드립니다. {'{계좌번호}'}&rdquo;
             </p>
           )}
           <ul className="space-y-1.5">

@@ -19,14 +19,15 @@ import { Btn } from '@/components/ui/Btn'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { pushToast } from '@/lib/saveStatus'
+import { getExpenseCategories } from '@/app/(app)/settings/actions'
+import { getTrackedCategoriesForClient } from '@/app/(app)/inventory/actions'
 
-// 영수증 카테고리 — 영수증/재고 공통
-const EXPENSE_CATEGORIES = [
+// 카테고리는 설정 기반으로 로드 — 하드코딩 금지(상용화 감사 A2·A4, 2026-07-10). 아래는 로드 전 폴백.
+const FALLBACK_EXPENSE_CATEGORIES = [
   '부식비', '소모품비', '폐기물 처리비', '수선유지비', '공과금', '마케팅/광고비',
   '인건비', '청소용역비', '관리비', '임대료', '통신/렌탈/보험료', '세금/수수료',
 ]
-// 재고 추적 대상 카테고리 (이 안에 있으면 재고 모듈이 자동 인식)
-const INVENTORY_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비']
+const FALLBACK_INVENTORY_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비']
 
 const KIND_LABEL: Record<string, { label: string; color: string }> = {
   expense:   { label: '지출(영수증)', color: 'var(--coral)' },
@@ -48,6 +49,13 @@ type EditMode = 'expense' | 'inventory'
 
 export function PendingReceiptSection() {
   const fileRef = useRef<HTMLInputElement>(null)
+  // 카테고리 목록 — 영업장 설정 기반(하드코딩 폴백은 로드 전 잠깐만)
+  const [EXPENSE_CATEGORIES, setExpCats] = useState<string[]>(FALLBACK_EXPENSE_CATEGORIES)
+  const [INVENTORY_CATEGORIES, setInvCats] = useState<string[]>(FALLBACK_INVENTORY_CATEGORIES)
+  useEffect(() => {
+    getExpenseCategories().then(c => { if (c.length) setExpCats(c) }).catch(() => {})
+    getTrackedCategoriesForClient().then(c => { if (c.length) setInvCats(c) }).catch(() => {})
+  }, [])
   const [rows, setRows] = useState<PendingReceiptRow[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -115,6 +123,7 @@ export function PendingReceiptSection() {
       <div className="space-y-2">
         {rows.map(r => (
           <PendingCard key={r.id} row={r}
+            EXPENSE_CATEGORIES={EXPENSE_CATEGORIES} INVENTORY_CATEGORIES={INVENTORY_CATEGORIES}
             editingMode={editing?.id === r.id ? editing.mode : null}
             onStartEdit={(mode) => setEditing({ id: r.id, mode })}
             onCancelEdit={() => setEditing(null)}
@@ -148,7 +157,9 @@ export function PendingReceiptSection() {
   )
 }
 
-function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, onRejected }: {
+function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, onRejected, EXPENSE_CATEGORIES = FALLBACK_EXPENSE_CATEGORIES, INVENTORY_CATEGORIES = FALLBACK_INVENTORY_CATEGORIES }: {
+  EXPENSE_CATEGORIES?: string[]
+  INVENTORY_CATEGORIES?: string[]
   row: PendingReceiptRow
   editingMode: EditMode | null
   onStartEdit: (mode: EditMode) => void
@@ -211,7 +222,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
     if (!category) { pushToast('error', '카테고리를 선택하세요'); return }
     if (isInventory) {
       if (!itemLabel.trim()) { pushToast('error', '품목명을 입력하세요'); return }
-      if (!INVENTORY_CATEGORIES.includes(category)) { pushToast('error', '재고는 부식비/소모품비/폐기물 처리비 중에서 선택해야 추적됩니다.'); return }
+      if (!INVENTORY_CATEGORIES.includes(category)) { pushToast('error', `재고는 재고 추적 카테고리(${INVENTORY_CATEGORIES.join('/')}) 중에서 선택해야 추적됩니다.`); return }
     } else {
       if (!(amount > 0)) { pushToast('error', '금액을 입력하세요'); return }
     }

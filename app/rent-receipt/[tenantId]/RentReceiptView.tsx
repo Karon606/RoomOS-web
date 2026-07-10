@@ -129,7 +129,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
             <Field label="납부방법" k="payMethod" placeholder="계좌이체 · 계좌번호 / 현금" />
           </div>
           <Field label="비고" k="note" placeholder="다음 납부 예정일 …" />
-          <Field label="임대인 대표 (수령인)" k="recipientName" placeholder="김건우" />
+          <Field label="임대인 대표 (수령인)" k="recipientName" placeholder="예: 홍길동" />
           <p className="text-[0.6875rem] text-[var(--warm-muted)]">영업장명·로고·사업자정보·발행번호·도장은 자동으로 들어갑니다. 모든 칸은 직접 수정 가능합니다. (납부방법의 계좌번호는 환경설정에서 설정)</p>
         </div>
 

@@ -90,7 +90,7 @@ type FinancialAccount = {
 
 // ── Constants ────────────────────────────────────────────────────
 
-const EXPENSE_CATEGORIES = ['부식비', '소모품비', '폐기물 처리비', '수선유지비', '공과금', '마케팅/광고비', '인건비', '청소용역비', '관리비', '임대료', '통신/렌탈/보험료', '세금/수수료', '보증금 반환']
+// 지출 카테고리는 설정(Property.expenseCategories) 기반 prop 사용 — 하드코딩 금지(상용화 감사 A4, 2026-07-10)
 
 // #1·#3 세부항목 필수 면제 카테고리 — 임대료·세금 등 무형은 품목/세부가 부자연(강제 시 등록 막힘).
 // 그 외 서비스·무형은 세부항목 필수(방별 투자금을 무엇에 썼는지 추적용). 물품 구매는 품목이 곧 세부항목.
@@ -1337,7 +1337,7 @@ export default function FinanceClient({
   const [addReceiptUrl, setAddReceiptUrl]   = useState('')
   const [editReceiptUrl, setEditReceiptUrl] = useState('')
   const [receiptUploading, setReceiptUploading] = useState(false)
-  const [addExpCategory, setAddExpCategory]   = useState(EXPENSE_CATEGORIES[0])
+  const [addExpCategory, setAddExpCategory]   = useState(expenseCategories[0] ?? '소모품비')
   // 신고 6f264a8f: 사용자가 카테고리를 직접 고른 뒤에는 어떤 자동 채움(OCR 등)도 덮지 않는다
   const userPickedCategoryRef = useRef(false)
   // 영수증 스캔 (공통)
@@ -1410,7 +1410,7 @@ export default function FinanceClient({
         if (d.date) setAddExpDate(d.date)
         if (d.vendor) setAddExpVendor(d.vendor)
         if (d.orderNo) setAddExtOrderNo(d.orderNo)
-        if (!userPickedCategoryRef.current && d.category && EXPENSE_CATEGORIES.includes(d.category)) setAddExpCategory(d.category)
+        if (!userPickedCategoryRef.current && d.category && expenseCategories.includes(d.category)) setAddExpCategory(d.category)
         if (d.items.length > 0) {
           // 부가세 별도 영수증 보정(오류신고 ba364142) — 품목 합이 최종금액(totalAmount)보다
           // 딱 부가세만큼(약 10%) 작으면 과세금액으로 인식된 것 → 부가세를 품목별 비례 배분해 최종가로.
@@ -2171,7 +2171,7 @@ export default function FinanceClient({
             <Btn variant="secondary" size="md" onClick={() => { setShowExpSearch(true); setExpSearchQ(''); setExpSearchResults([]) }}>
               과거 내역 검색
             </Btn>
-            <Btn variant="primary" size="md" onClick={() => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(EXPENSE_CATEGORIES[0]); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
+            <Btn variant="primary" size="md" onClick={() => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
               + 지출 등록
             </Btn>
           </div>
