@@ -38,6 +38,8 @@ export type ResidenceCertData = {
   stampImageUrl: string | null
   // 제출처 (지역별 — v1 서울 고정)
   submitTo: string
+  regionSupported: boolean   // 현재 서식(서울형)이 유효한 지역인지 — false면 발급 차단 안내
+  regionLabel: string        // 영업장 주소의 시·도(안내 문구용)
 }
 
 type BusinessInfo = { name?: string; registrationNo?: string; ceoName?: string; address?: string }
@@ -106,22 +108,8 @@ export async function getResidenceCertData(tenantId: string): Promise<ResidenceC
     landlordIdNo: biz.registrationNo ?? '',
     landlordPhone: property?.phone ?? '',
     stampImageUrl: property?.stampDriveFileId ? buildDriveThumbnailUrl(property.stampDriveFileId, 800) : null,
-    // 제출처 — 영업장 주소의 시·도에서 유추(상용화 감사 A1: 서울 고정이던 것). 편집 화면에서 수정 가능.
-    submitTo: inferSubmitTo(property?.address ?? biz.address ?? ''),
+    submitTo: '서울특별시장 귀하',   // 현재 서식은 서울형 — 지자체별 양식이 달라 비서울은 발급 차단(운영자 정정 2026-07-10, 유추 금지)
+    regionSupported: ((property?.address ?? '').trim() || (biz.address ?? '').trim()).startsWith('서울'),
+    regionLabel: (((property?.address ?? '').trim() || (biz.address ?? '').trim()).split(' ')[0]) || '미상',
   }
-}
-
-
-// 주소 → 제출처 유추: '서울…' → 서울특별시장, '부산/대구/인천/광주/대전/울산' → ○○광역시장,
-// '세종' → 세종특별자치시장, '제주' → 제주특별자치도지사, '경기/강원/충북…' 등 도 → ○○도지사. 못 찾으면 시장·군수·구청장 일반형.
-function inferSubmitTo(address: string): string {
-  const a = address.trim()
-  if (a.startsWith('서울')) return '서울특별시장 귀하'
-  const metro = ['부산', '대구', '인천', '광주', '대전', '울산'].find(c => a.startsWith(c))
-  if (metro) return `${metro}광역시장 귀하`
-  if (a.startsWith('세종')) return '세종특별자치시장 귀하'
-  if (a.startsWith('제주')) return '제주특별자치도지사 귀하'
-  const doMap: Record<string, string> = { '경기': '경기도지사', '강원': '강원특별자치도지사', '충청북': '충청북도지사', '충북': '충청북도지사', '충청남': '충청남도지사', '충남': '충청남도지사', '전라북': '전북특별자치도지사', '전북': '전북특별자치도지사', '전라남': '전라남도지사', '전남': '전라남도지사', '경상북': '경상북도지사', '경북': '경상북도지사', '경상남': '경상남도지사', '경남': '경상남도지사' }
-  for (const [k, v] of Object.entries(doMap)) if (a.startsWith(k)) return `${v} 귀하`
-  return '시장·군수·구청장 귀하'
 }
