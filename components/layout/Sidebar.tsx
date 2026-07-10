@@ -424,6 +424,11 @@ function MobileMenu({
           </button>
         </form>
       </div>
+      {/* 하단 전폭 닫기 — 모바일 엄지 동선. '전체' 탭을 눌렀던 자리를 다시 눌러도 안전하게 닫힘(로그아웃 오탭 방지) */}
+      <button type="button" onClick={onClose}
+        className="mt-1 w-full safe-b rounded-t-xl border-t border-[var(--warm-border)] py-3 text-sm font-semibold text-[var(--warm-mid)] transition-colors hover:bg-[var(--canvas)] active:bg-[var(--canvas)]">
+        메뉴 닫기
+      </button>
     </div>
   )
 }
