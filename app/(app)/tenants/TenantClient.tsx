@@ -841,7 +841,7 @@ export default function TenantClient({
         setDetailTenant(null); refresh()
         return
       }
-      if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+      if (!res.ok) { pushToast('error', res.error); return }
       setDetailTenant(null); refresh()
     })
   }

@@ -387,7 +387,7 @@ export default function RoomManageClient({
       const release = trackSave()
       try {
         const res = await addRoom(formData)
-        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        if (!res.ok) { pushToast('error', res.error); return }
         for (const { file } of addPhotoPreviews) {
           try {
             const session = await createPhotoUploadSession({
@@ -419,7 +419,7 @@ export default function RoomManageClient({
       const release = trackSave()
       try {
         const res = await updateRoom(formData)
-        if (res && !res.ok) { setError(res.error); pushToast('error', res.error); return }
+        if (res && !res.ok) { pushToast('error', res.error); return }
         closeEdit()
         // 전체 새로고침(window.reload) 대신 soft refresh — 토스트가 살아남고,
         // URL ?roomId&edit=1 이 남아 있어도 handledOpenRef 가 유지돼 폼이 재오픈되지 않음

@@ -1802,7 +1802,7 @@ export default function FinanceClient({
           }
         }
         const res = await addExpense(fd)
-        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        if (!res.ok) { pushToast('error', res.error); return }
         setShowAddExp(false); setAddExpDirty(false); setAddExpDate(kstYmdStr()); setAddReceiptUrl(''); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); router.refresh()
         pushToast('success', '지출 등록됨')
       } finally { release() }
@@ -1820,7 +1820,7 @@ export default function FinanceClient({
       const release = trackSave()
       try {
         const res = await updateExpense(fd)
-        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        if (!res.ok) { pushToast('error', res.error); return }
         // 카테고리 변경 + 품목 있음 → 재고 품목도 같이 옮길지 확인(종량제봉투 꼬임 재발 방지, 운영자 요청 2026-07-10)
         {
           const newCat = String(fd.get('category') ?? '')
@@ -4328,7 +4328,7 @@ function ReserveTab({
         } else {
           res = await settleReserveFromExpense({ expenseId: selectedExpenseId, amount: amount, memo: memo || undefined })
         }
-        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        if (!res.ok) { pushToast('error', res.error); return }
         reset()
         onAfterMutate()
         pushToast('success', mode === 'deposit' ? '예비비 적립됨' : mode === 'withdraw' ? '예비비 인출됨' : '정산 완료')

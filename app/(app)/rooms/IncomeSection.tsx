@@ -84,7 +84,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
       const release = trackSave()
       try {
         const res = await addExtraIncome(fd)
-        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        if (!res.ok) { pushToast('error', res.error); return }
         setShowAddInc(false); setAddIncDate(kstYmdStr()); router.refresh()
         pushToast('success', '수익 등록됨')
       } finally { release() }
@@ -97,7 +97,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
       const release = trackSave()
       try {
         const res = await updateExtraIncome(fd)
-        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        if (!res.ok) { pushToast('error', res.error); return }
         setDetailInc(null); setDetailIncEdit(false); router.refresh()
         pushToast('success', '수익 수정됨')
       } finally { release() }

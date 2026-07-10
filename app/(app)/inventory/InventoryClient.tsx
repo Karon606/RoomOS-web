@@ -270,7 +270,11 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
     try { localStorage.setItem('stayeum-inventory-cat', v) } catch { /* 무시 */ }
   }
   const searching = search.trim().length > 0
-  const grouped = groupedAll.filter(g => searching || catTab === '__all__' || g.cat === catTab)
+  // §26.6 — 검색은 현재 탭 스코프 안에서. 스코프 밖 일치는 아래 힌트 한 줄로 안내(자동 해제 금지).
+  const grouped = groupedAll.filter(g => catTab === '__all__' || g.cat === catTab)
+  const outOfScopeCount = searching && catTab !== '__all__'
+    ? visibleRows.filter(r => r.category !== catTab).length
+    : 0
   // 수령 대기 합치기 — OCR 풀네임 품목을 기존 품목으로(별칭 학습 → 다음 영수증부터 자동 치환)
   const [pendMerge, setPendMerge] = useState<{ label: string; category: string } | null>(null)
   const runPendMerge = (destId: string) => {
@@ -361,9 +365,15 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
       {/* §22.1 메인 검색 — 헤더 아래 풀폭. 모달 안이 아니라 목록 상단에서 바로 좁힌다. */}
       <SearchBar value={search} onChange={setSearch} placeholder="품목명, 카테고리, 메모 검색" />
 
-      {/* 검색 무결과 — §22.2 분기 */}
-      {q && visibleRows.length === 0 && rows.length > 0 && (
+      {/* 검색 무결과 — §22.2 분기 (현재 탭 스코프 기준) */}
+      {q && rows.length > 0 && grouped.every(g => g.rows.length === 0) && outOfScopeCount === 0 && (
         <EmptyState title="검색 결과가 없습니다" description="다른 검색어로 시도해 보세요." />
+      )}
+      {outOfScopeCount > 0 && (
+        <button type="button" onClick={() => pickCatTab('__all__')}
+          className="text-xs text-[var(--warm-muted)] hover:text-[var(--coral)] transition-colors">
+          다른 카테고리에 <span className="font-semibold text-[var(--warm-dark)]">{outOfScopeCount}건</span> 더 있음 · 전체에서 보기 ›
+        </button>
       )}
 
       {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
@@ -740,7 +750,7 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
           qtyUnit:  qtyUnit  || null,
           memo:     memo     || null,
         })
-        if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+        if (!res.ok) { pushToast('error', res.error); return }
         onDone()
         pushToast('success', '품목 추가됨')
       } finally { release() }
@@ -820,7 +830,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       try {
         const res = await setItemHub(trackedItemId, locId)
         if (res.ok) { reload(); onChange(); pushToast('success', '창고(허브) 변경됨') }
-        else { setError(res.error); pushToast('error', res.error) }
+        else { pushToast('error', res.error) }
       } finally { release() }
     })
   }
@@ -841,7 +851,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       try {
         const res = await deleteTrackedItemIfEmpty(trackedItemId)
         if (res.ok) { onChange(); onClose(); pushToast('success', '품목을 삭제했습니다') }
-        else { setError(res.error); pushToast('error', res.error) }
+        else { pushToast('error', res.error) }
       } finally { release() }
     })
   }
@@ -853,7 +863,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
       try {
         const res = await archiveTrackedItem(trackedItemId)
         if (res.ok) { onChange(); onClose(); pushToast('success', '품목 숨김 처리됨') }
-        else { setError(res.error); pushToast('error', res.error) }
+        else { pushToast('error', res.error) }
       } finally { release() }
     })
   }
@@ -864,7 +874,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     const release = trackSave()
     deleteStockCheck(id).then(res => {
       if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '점검 기록 삭제됨') }).finally(release) }
-      else { setLoadingId(null); setError(res.error); pushToast('error', res.error); release() }
+      else { setLoadingId(null); pushToast('error', res.error); release() }
     }).catch(() => { setLoadingId(null); pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'); release() })
   }
 
@@ -874,7 +884,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     const release = trackSave()
     deleteStockAddition(id).then(res => {
       if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '입수 기록 삭제됨') }).finally(release) }
-      else { setLoadingId(null); setError(res.error); pushToast('error', res.error); release() }
+      else { setLoadingId(null); pushToast('error', res.error); release() }
     }).catch(() => { setLoadingId(null); pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'); release() })
   }
 
@@ -883,7 +893,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
     const release = trackSave()
     confirmReceipt(expenseId, locationId, qty).then(res => {
       if (res.ok) { reload().then(() => { setLoadingId(null); onChange(); pushToast('success', '수령 확인 완료') }).finally(release) }
-      else { setLoadingId(null); setError(res.error); pushToast('error', res.error); release() }
+      else { setLoadingId(null); pushToast('error', res.error); release() }
     }).catch(() => { setLoadingId(null); pushToast('error', '통신 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.'); release() })
   }
 
@@ -2483,7 +2493,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
       data: { date, qty, memo, locationQtys, beforeQtys, afterQtys, hubTouched, savedAt },
     }).then(res => {
       setDraftPending(false)
-      if (!res.ok) { setError(res.error); pushToast('error', res.error); return }
+      if (!res.ok) { pushToast('error', res.error); return }
       setDraftSavedAt(savedAt)
       pushToast('success', '임시저장됨')
       onDraftChange?.()
@@ -3326,7 +3336,7 @@ function MergeDecisionModal({ decisions, onClose, onDone }: {
               category: d.category, newLabel: d.newLabel, expenseIds: d.expenseIds,
               choice: { kind: 'merge', targetItemId: choice },
             })
-        if (!res.ok) { setError(res.error); pushToast('error', res.error); setPending(false); release(); return }
+        if (!res.ok) { pushToast('error', res.error); setPending(false); release(); return }
       }
       pushToast('success', '병합 처리 완료')
       onDone()
