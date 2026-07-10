@@ -65,7 +65,7 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
         <h2 className="text-sm font-semibold text-[var(--warm-dark)]">새 확인서 발급</h2>
         <SearchBar value={tenantQuery} onChange={setTenantQuery} placeholder="이름·호실로 입실자 찾기" />
         {tenants.length === 0 ? (
-          <p className="text-xs text-[var(--warm-muted)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-4 text-center">거주중인 입실자가 없습니다.</p>
+          <EmptyState title="거주중인 입실자가 없습니다" />
         ) : tenantRows.length === 0 ? (
           <p className="text-xs text-[var(--warm-muted)] px-1 py-2">조건에 맞는 입실자가 없습니다.</p>
         ) : (

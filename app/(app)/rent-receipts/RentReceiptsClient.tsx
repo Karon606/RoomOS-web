@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
+import { InfoHint } from '@/components/ui/InfoHint'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -50,8 +51,9 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-[var(--warm-dark)]">입실료 납부 확인서</h1>
-        <p className="text-xs text-[var(--warm-muted)] mt-0.5">거주중 입실자를 선택해 발급하면 이름·호실·거주기간·월 이용료·수령인·도장이 자동으로 채워집니다.</p>
+        <h1 className="text-xl font-bold text-[var(--warm-dark)]">입실료 납부 확인서
+          <InfoHint title="납부 확인서란?">거주중 입실자를 선택해 발급하면 이름·호실·거주기간·월 이용료·수령인·도장이 자동으로 채워집니다. 발급한 PDF는 아래 이력과 연결된 Google Drive에 보관됩니다.</InfoHint>
+        </h1>
       </div>
 
       <section className="space-y-2">
@@ -59,7 +61,7 @@ export default function RentReceiptsClient({ files, tenants }: { files: RentRece
         <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">발급된 PDF는 연결된 Google Drive에 저장됩니다</p>
         <SearchBar value={tenantQuery} onChange={setTenantQuery} placeholder="이름·호실로 입실자 찾기" />
         {tenants.length === 0 ? (
-          <p className="text-xs text-[var(--warm-muted)] bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-4 text-center">거주중인 입실자가 없습니다.</p>
+          <EmptyState title="거주중인 입실자가 없습니다" />
         ) : tenantRows.length === 0 ? (
           <p className="text-xs text-[var(--warm-muted)] px-1 py-2">조건에 맞는 입실자가 없습니다.</p>
         ) : (
