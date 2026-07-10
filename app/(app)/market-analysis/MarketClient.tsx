@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useCallback } from 'react'
+import { Btn } from '@/components/ui/Btn'
 import { fmtDateDot as fmtDate } from '@/lib/fmtDate'
 import {
   createSurvey,
@@ -126,35 +127,6 @@ function extractAnalysisText(text: string): string {
 }
 
 // ── Sub-components ────────────────────────────────────────────
-
-function Btn({
-  onClick,
-  disabled,
-  variant = 'primary',
-  children,
-  type = 'button',
-  small,
-}: {
-  onClick?: () => void
-  disabled?: boolean
-  variant?: 'primary' | 'secondary' | 'danger'
-  children: React.ReactNode
-  type?: 'button' | 'submit'
-  small?: boolean
-}) {
-  // 버튼 반경은 가이드 r-md(8)/r-lg(10), 색은 브랜드 토큰만 (비토큰 빨강·#fff 제거)
-  const base = `inline-flex items-center justify-center font-medium transition-colors disabled:opacity-50 ${small ? 'px-3 py-1.5 text-xs rounded-md' : 'px-4 py-2 text-sm rounded-lg'}`
-  const styles: Record<string, React.CSSProperties> = {
-    primary: { background: 'var(--coral)', color: 'white' },
-    secondary: { background: 'var(--canvas)', color: 'var(--warm-dark)', border: '1px solid var(--warm-border)' },
-    danger: { background: 'var(--coral-pale)', color: 'var(--coral-dark)', border: '1px solid color-mix(in srgb, var(--coral) 25%, transparent)' },
-  }
-  return (
-    <button type={type} className={base} style={styles[variant]} onClick={onClick} disabled={disabled}>
-      {children}
-    </button>
-  )
-}
 
 // ── Competitor Form Modal ─────────────────────────────────────
 
@@ -917,7 +889,7 @@ export default function MarketClient({
                   조사일: <strong style={{ color: 'var(--warm-dark)' }}>{fmtDate(activeSurvey.surveyedAt)}</strong>
                 </span>
                 <Btn
-                  small
+                  size="sm"
                   variant="danger"
                   onClick={() => handleDeleteSurvey(activeSurvey.id)}
                   disabled={isPending}
@@ -965,14 +937,14 @@ export default function MarketClient({
                   <p style={{ ...sectionTitle, marginBottom: 0 }}>경쟁업체</p>
                   <div className="flex gap-2 flex-wrap">
                     <Btn
-                      small
+                  size="sm"
                       variant="secondary"
                       onClick={() => setShowNaverSearch(v => !v)}
                     >
                       네이버에서 찾기
                     </Btn>
                     <Btn
-                      small
+                  size="sm"
                       variant="primary"
                       onClick={() => {
                         setEditingCompetitor(null)
@@ -1030,7 +1002,7 @@ export default function MarketClient({
                             </div>
                             <div className="flex gap-1 shrink-0">
                               <Btn
-                                small
+                  size="sm"
                                 variant="secondary"
                                 onClick={() => {
                                   setEditingCompetitor(c)
@@ -1047,7 +1019,7 @@ export default function MarketClient({
                                 수정
                               </Btn>
                               <Btn
-                                small
+                  size="sm"
                                 variant="danger"
                                 onClick={() => handleDeleteCompetitor(c.id)}
                                 disabled={isPending}
@@ -1281,7 +1253,7 @@ export default function MarketClient({
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   <Btn
-                    small
+                  size="sm"
                     variant="secondary"
                     onClick={() =>
                       setHistorySelected(prev =>
@@ -1292,7 +1264,7 @@ export default function MarketClient({
                     {historySelected?.id === survey.id ? '접기' : '상세 보기'}
                   </Btn>
                   <Btn
-                    small
+                  size="sm"
                     variant="primary"
                     onClick={() => handleEditSurvey(survey.id)}
                     disabled={isPending}
@@ -1300,7 +1272,7 @@ export default function MarketClient({
                     수정
                   </Btn>
                   <Btn
-                    small
+                  size="sm"
                     variant="danger"
                     onClick={() => handleDeleteSurvey(survey.id)}
                     disabled={isPending}
@@ -1421,7 +1393,7 @@ export default function MarketClient({
                         )
                       })}
                       <Btn
-                        small
+                  size="sm"
                         variant="primary"
                         onClick={() => handleHistoryAnalyze(survey)}
                         disabled={historyAnalyzingId === survey.id || isPending}

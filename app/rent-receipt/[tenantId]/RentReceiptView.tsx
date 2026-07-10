@@ -97,8 +97,9 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
     </div>
   )
 
+  // 100dvh + 하단 safe-area — 모바일에서 브라우저 하단 바·홈 인디케이터에 발급 버튼이 잘리던 문제(운영자 신고 2026-07-10)
   return (
-    <div className="min-h-screen bg-[var(--canvas)] flex flex-col items-center px-4 py-6">
+    <div className="min-h-dvh bg-[var(--canvas)] flex flex-col items-center px-4 pt-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
       <div className="w-full max-w-md space-y-4">
         <div className="flex items-center justify-between gap-2">
           <Link href="/rent-receipts" className="text-sm text-[var(--coral)]">← 입실료 납부 확인서</Link>

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { useState, useTransition } from 'react'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { getMarketingStats, type MarketingStats, type MarketingRange } from './actions'
@@ -135,25 +136,13 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
 
       {/* 범위 선택 + 특정 날짜 */}
       <div className="flex items-center gap-1.5 flex-wrap">
-        {RANGES.map(r => {
-          const active = r.key === range && !customDate
-          return (
-            <button
-              key={r.key}
-              type="button"
-              onClick={() => handleRange(r.key)}
-              disabled={pending}
-              className="px-3 py-1.5 text-xs rounded-lg transition-colors disabled:opacity-50"
-              style={{
-                background: active ? 'var(--persimmon)' : 'var(--cream)',
-                color: active ? '#fff' : 'var(--warm-mid)',
-                border: '1px solid ' + (active ? 'var(--persimmon)' : 'var(--warm-border)'),
-                fontWeight: active ? 600 : 500,
-              }}>
-              {r.label}
-            </button>
-          )
-        })}
+        <SegmentedControl
+          size="sm"
+          ariaLabel="조회 기간"
+          value={customDate ? '' : range}
+          onChange={k => { if (k) handleRange(k) }}
+          options={RANGES.map(r => ({ value: r.key, label: r.label }))}
+        />
         {/* 특정 날짜 — 선택하면 그 날 0~24시(시간별) */}
         <div className="flex items-center gap-1" style={{
           padding: '1px', borderRadius: 9,
