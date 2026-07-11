@@ -248,7 +248,7 @@ function CompetitorModal({
               disabled={isPending || !form.name.trim() || !form.address.trim()}
               onClick={() => onSave(form)}
             >
-              {isPending ? '저장 중...' : '저장'}
+              {isPending ? '저장 중…' : '저장'}
             </Btn>
           </div>
         </div>
@@ -488,7 +488,7 @@ function NaverSearchPanel({
           onKeyDown={e => { if (e.key === 'Enter') search() }}
         />
         <Btn onClick={search} disabled={loading} variant="primary">
-          {loading ? '검색 중...' : '검색'}
+          {loading ? '검색 중…' : '검색'}
         </Btn>
       </div>
       {searched && results.length === 0 && (
@@ -1079,7 +1079,7 @@ export default function MarketClient({
                   onClick={handleAnalyze}
                   disabled={aiLoading || isPending}
                 >
-                  {aiLoading ? 'AI 분석 중...' : 'AI 분석 실행'}
+                  {aiLoading ? 'AI 분석 중…' : 'AI 분석 실행'}
                 </Btn>
 
                 {aiError && (
@@ -1374,7 +1374,7 @@ export default function MarketClient({
                         onClick={() => handleHistoryAnalyze(survey)}
                         disabled={historyAnalyzingId === survey.id || isPending}
                       >
-                        {historyAnalyzingId === survey.id ? 'AI 분석 중...' : (survey.aiResult ? 'AI 재분석' : 'AI 분석 실행')}
+                        {historyAnalyzingId === survey.id ? 'AI 분석 중…' : (survey.aiResult ? 'AI 재분석' : 'AI 분석 실행')}
                       </Btn>
                     </div>
 

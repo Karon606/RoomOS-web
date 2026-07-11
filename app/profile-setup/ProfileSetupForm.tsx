@@ -99,7 +99,7 @@ export default function ProfileSetupForm({
       </div>
 
       <Btn variant="primary" size="md" onClick={handleSave} disabled={savePending || skipPending} fullWidth>
-        {savePending ? '저장 중...' : '저장하고 계속'}
+        {savePending ? '저장 중…' : '저장하고 계속'}
       </Btn>
 
       <button type="button" onClick={handleSkip} disabled={savePending || skipPending}

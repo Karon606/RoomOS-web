@@ -682,7 +682,7 @@ export default function SettingsForm({
               </div>
               <div className="flex flex-col gap-2">
                 <label className={`px-3 py-1.5 text-xs rounded-lg cursor-pointer text-center font-medium transition-colors ${appLogoUploading ? 'opacity-60' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'}`}>
-                  {appLogoUploading ? '저장 중...' : (appLogoUrl ? '교체' : '업로드')}
+                  {appLogoUploading ? '저장 중…' : (appLogoUrl ? '교체' : '업로드')}
                   <input type="file" accept="image/*" className="hidden" onChange={handleAppLogoSelect} disabled={appLogoUploading} />
                 </label>
                 {appLogoUrl && (
@@ -709,7 +709,7 @@ export default function SettingsForm({
               </div>
               <div className="flex flex-col gap-2">
                 <label className={`px-3 py-1.5 text-xs rounded-lg cursor-pointer text-center font-medium transition-colors ${logoUploading ? 'opacity-60' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'}`}>
-                  {logoUploading ? '업로드 중...' : (logoUrl ? '교체' : '업로드')}
+                  {logoUploading ? '업로드 중…' : (logoUrl ? '교체' : '업로드')}
                   <input type="file" accept="image/*" className="hidden" onChange={handleLogoSelect} disabled={logoUploading} />
                 </label>
                 {logoUrl && (
@@ -843,7 +843,7 @@ export default function SettingsForm({
               />
             </div>
             <Btn type="submit" variant="primary" size="md" fullWidth className="mt-2" disabled={isPending}>
-              {isPending ? '저장 중...' : '저장'}
+              {isPending ? '저장 중…' : '저장'}
             </Btn>
           </form>
         </div>
@@ -1539,7 +1539,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
       <div className="rounded-xl p-4 sm:p-5 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-[var(--warm-dark)]">사업자 정보</h3>
-          <Btn variant="primary" size="sm" onClick={handleSaveBusinessInfo} disabled={savingBiz}>{savingBiz ? '저장 중...' : '저장'}</Btn>
+          <Btn variant="primary" size="sm" onClick={handleSaveBusinessInfo} disabled={savingBiz}>{savingBiz ? '저장 중…' : '저장'}</Btn>
         </div>
         <p className="text-xs text-[var(--warm-muted)] -mt-1">계약서 하단 사업자 표기 영역에 자동 삽입됩니다.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1564,7 +1564,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
           </div>
           <div className="flex flex-col gap-2">
             <label className={`px-3 py-2 text-sm rounded-lg cursor-pointer text-center font-medium transition-colors ${stampUploading ? 'opacity-60' : 'bg-[var(--coral)] text-white hover:opacity-90'}`}>
-              {stampUploading ? '업로드 중...' : (stampUrl ? '교체' : '업로드')}
+              {stampUploading ? '업로드 중…' : (stampUrl ? '교체' : '업로드')}
               <input type="file" accept="image/*" className="hidden" onChange={handleStampSelect} disabled={stampUploading} />
             </label>
             {stampUrl && <Btn variant="danger" size="sm" onClick={handleStampDelete} disabled={stampUploading}>삭제</Btn>}
@@ -1576,7 +1576,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
       <div className="rounded-xl p-4 sm:p-5 space-y-4" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h3 className="text-sm font-semibold text-[var(--warm-dark)]">계약서 본문</h3>
-          <Btn variant="primary" size="sm" onClick={handleSaveTemplate} disabled={savingTpl}>{savingTpl ? '저장 중...' : '저장'}</Btn>
+          <Btn variant="primary" size="sm" onClick={handleSaveTemplate} disabled={savingTpl}>{savingTpl ? '저장 중…' : '저장'}</Btn>
         </div>
         <div className="space-y-1">
           <label className="text-xs font-medium text-[var(--warm-mid)]">계약서 제목</label>
@@ -1948,7 +1948,7 @@ function BackupButton() {
   return (
     <div>
       <Btn type="button" variant="primary" size="sm" onClick={handleBackup} disabled={busy}>
-        {busy ? '백업 생성 중...' : 'JSON 백업 다운로드'}
+        {busy ? '백업 생성 중…' : 'JSON 백업 다운로드'}
       </Btn>
       {error && <p className="text-[var(--danger-fg)] text-xs mt-2">{error}</p>}
     </div>
@@ -1971,7 +1971,7 @@ function ItemSpecOptionsPanel() {
     else pushToast('error', res.error)
   }
   const remove = async (id: string, label: string) => {
-    const ok = await confirmDialog({ title: '세부스펙 삭제', message: `'${label}' 옵션을 목록에서 삭제할까요? 기존 지출 기록은 바뀌지 않습니다.`, confirmLabel: '삭제' })
+    const ok = await confirmDialog({ title: '세부스펙 삭제', level: 'caution', message: `'${label}' 옵션을 목록에서 삭제할까요? 기존 지출 기록은 바뀌지 않습니다.`, confirmLabel: '삭제' })
     if (!ok) return
     const res = await deleteItemSpecOption(id)
     if (res.ok) { pushToast('success', '삭제됨'); reload() }

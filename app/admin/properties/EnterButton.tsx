@@ -18,7 +18,7 @@ export default function EnterButton() {
           <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
         </svg>
       )}
-      {pending ? '진입 중...' : '관리자 권한으로 진입 ›'}
+      {pending ? '진입 중…' : '관리자 권한으로 진입 ›'}
     </button>
   )
 }

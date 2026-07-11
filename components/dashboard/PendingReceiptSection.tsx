@@ -111,7 +111,7 @@ export function PendingReceiptSection() {
           <AiQuotaHint />
         </div>
         <Btn variant="primary" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
-          {uploading ? '업로드 중...' : '사진 올리기'}
+          {uploading ? '업로드 중…' : '사진 올리기'}
         </Btn>
         {/* capture 미지정 — 모바일에서 '사진 찍기/앨범/파일'을 모두 선택할 수 있게(촬영 강제 X) */}
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
@@ -407,7 +407,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
               <button onClick={handleApprove} disabled={pending}
                 className="flex-1 text-[0.6875rem] py-1.5 rounded-lg font-medium"
                 style={{ background: isInventory ? 'var(--success-solid)' : 'var(--coral)', color: 'var(--cream)' }}>
-                {pending ? '저장 중...' : (isInventory ? '재고 보충 등록' : '지출 등록')}
+                {pending ? '저장 중…' : (isInventory ? '재고 보충 등록' : '지출 등록')}
               </button>
               <button onClick={onCancelEdit} disabled={pending}
                 className="text-[0.6875rem] px-2 py-1.5 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)]">

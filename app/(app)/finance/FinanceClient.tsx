@@ -2796,7 +2796,7 @@ export default function FinanceClient({
                   </Btn>
                 )}
                 <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={isPending}>
-                  {isPending ? '저장 중...' : (editingAcc ? '수정 저장' : '등록')}
+                  {isPending ? '저장 중…' : (editingAcc ? '수정 저장' : '등록')}
                 </Btn>
               </div>
             </form>
@@ -3290,7 +3290,7 @@ export default function FinanceClient({
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => { setDetailExpEdit(false); setError('') }}>취소</Btn>
                   <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={isPending}>
-                    {isPending ? '저장 중...' : '저장'}
+                    {isPending ? '저장 중…' : '저장'}
                   </Btn>
                 </div>
               </form>
@@ -3579,7 +3579,7 @@ export default function FinanceClient({
               <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                 <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => setShowAddExp(false)}>취소</Btn>
                 <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={isPending}>
-                  {isPending ? '저장 중...' : '저장'}
+                  {isPending ? '저장 중…' : '저장'}
                 </Btn>
               </div>
             </form>
@@ -4041,7 +4041,7 @@ export default function FinanceClient({
                       router.refresh()
                     })
                   }}>
-                  {isPending ? '기록 중...' : '지출로 기록 (납부 완료)'}
+                  {isPending ? '기록 중…' : '지출로 기록 (납부 완료)'}
                 </Btn>
               </div>
               {/* 금액만 저장 — 결제일 전에 금액만 미리 입력해 두는 모드. 지출은 생성하지 않음(정산 안 함). */}
@@ -4496,7 +4496,7 @@ function ReserveTab({
           <div className="flex gap-2 pt-1">
             <Btn variant="secondary" onClick={reset} fullWidth>취소</Btn>
             <Btn variant="primary" onClick={submit} disabled={pending} fullWidth>
-              {pending ? '저장 중...' : '저장'}
+              {pending ? '저장 중…' : '저장'}
             </Btn>
           </div>
         </div>

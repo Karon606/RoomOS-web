@@ -136,7 +136,7 @@ function PaymentSummaryWithAI({ tenantId, lease }: {
       <div className="mt-3 space-y-2">
         <button type="button" onClick={handleAnalyze} disabled={pending}
           className="w-full py-2 text-xs font-semibold rounded-lg bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-60">
-          {pending ? 'AI 분석 중...' : aiText ? '다시 분석' : 'AI로 수납 패턴 분석'}
+          {pending ? 'AI 분석 중…' : aiText ? '다시 분석' : 'AI로 수납 패턴 분석'}
         </button>
         {pending && (
           <div className="flex items-center gap-2 text-xs text-[var(--coral)] animate-pulse">

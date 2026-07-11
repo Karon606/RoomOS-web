@@ -219,7 +219,7 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
           </div>
           <button disabled={!dateInput || pending} onClick={handleSave}
             className="w-full py-2 bg-[var(--warning-solid)] hover:opacity-90 disabled:opacity-50 text-[var(--cream)] text-sm font-semibold rounded-lg transition-colors">
-            {pending ? '저장 중...' : (() => {
+            {pending ? '저장 중…' : (() => {
               if (!dateInput) return '날짜를 선택하세요'
               const d = new Date(dateInput + 'T00:00:00')
               const dateStr = `${d.getMonth() + 1}월 ${d.getDate()}일`

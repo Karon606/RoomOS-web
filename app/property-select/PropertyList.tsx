@@ -122,7 +122,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
           disabled={isJoining || !joinCode.trim()}
           className="flex-1 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50"
           style={{ background: 'var(--coral)', color: 'var(--warm-dark)' }}>
-          {isJoining ? '요청 중...' : '참여 요청 보내기'}
+          {isJoining ? '요청 중…' : '참여 요청 보내기'}
         </button>
       </div>
     </div>
@@ -155,7 +155,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
           disabled={isCreating || !newName.trim()}
           className="flex-1 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50"
           style={{ background: 'var(--coral)', color: 'var(--warm-dark)' }}>
-          {isCreating ? '개설 중...' : '개설하기'}
+          {isCreating ? '개설 중…' : '개설하기'}
         </button>
       </div>
     </div>
@@ -241,7 +241,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                       </svg>
-                      이동 중...
+                      이동 중…
                     </span>
                   ) : (
                     <span className="text-sm" style={{ color: 'var(--warm-muted)' }}>
@@ -257,7 +257,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
                   disabled={isPending}
                   className="mt-1.5 w-full py-2 rounded-xl text-xs font-medium disabled:opacity-40"
                   style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--coral)' }}>
-                  {reactivatingId === p.propertyId ? '재개 중...' : '운영 재개'}
+                  {reactivatingId === p.propertyId ? '재개 중…' : '운영 재개'}
                 </button>
               )}
             </li>

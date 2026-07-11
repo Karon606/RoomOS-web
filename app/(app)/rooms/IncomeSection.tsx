@@ -304,7 +304,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <Btn type="button" variant="secondary" size="md" className="flex-1" onClick={() => { setDetailIncEdit(false); setError('') }}>취소</Btn>
                   <Btn type="submit" variant="primary" size="md" className="flex-1" disabled={isPending}>
-                    {isPending ? '저장 중...' : '저장'}
+                    {isPending ? '저장 중…' : '저장'}
                   </Btn>
                 </div>
               </form>
@@ -365,7 +365,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                   className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">취소</button>
                 <button type="submit" disabled={isPending}
                   className="flex-1 py-2.5 bg-[var(--success-solid)] hover:opacity-90 text-[var(--cream)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
-                  {isPending ? '저장 중...' : '저장'}
+                  {isPending ? '저장 중…' : '저장'}
                 </button>
               </div>
             </form>

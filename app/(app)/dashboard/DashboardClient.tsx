@@ -174,7 +174,7 @@ function CheckoutRefundModal({
             disabled={pending || exceedsMax}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
             style={{ background: 'var(--viz-4)', color: 'white' }}>
-            {pending ? '처리 중...' : '퇴실 처리'}
+            {pending ? '처리 중…' : '퇴실 처리'}
           </button>
         </div>
       }>
@@ -357,7 +357,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               disabled={confirmPending}
               className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-60"
               style={{ background: 'var(--success)', color: 'white' }}>
-              {confirmPending ? '처리 중...' : '거주중으로 변경'}
+              {confirmPending ? '처리 중…' : '거주중으로 변경'}
             </button>
           )}
           {moveOutLeaseId && (
@@ -366,7 +366,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
               disabled={confirmPending}
               className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-60"
               style={{ background: 'var(--viz-4)', color: 'white' }}>
-              {confirmPending ? '처리 중...' : '퇴실 처리'}
+              {confirmPending ? '처리 중…' : '퇴실 처리'}
             </button>
           )}
           {isRecurring && (
@@ -1104,7 +1104,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
             className="flex items-center gap-2 px-4 py-2 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60"
             style={{ background: 'var(--coral)' }}>
             {isLoading
-              ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />분석 중...</>
+              ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />분석 중…</>
               : 'AI 분석하기'}
           </button>
         </div>

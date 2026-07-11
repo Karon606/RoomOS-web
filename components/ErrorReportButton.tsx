@@ -192,7 +192,7 @@ export default function ErrorReportButton() {
           <div className="flex gap-2 pt-1">
             <Btn type="button" variant="secondary" onClick={() => setOpen(false)} fullWidth>취소</Btn>
             <Btn type="button" variant="primary" onClick={submit} disabled={pending} fullWidth>
-              {pending ? '신고 중...' : '신고 보내기'}
+              {pending ? '신고 중…' : '신고 보내기'}
             </Btn>
           </div>
         </div>

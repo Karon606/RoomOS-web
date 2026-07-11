@@ -465,7 +465,7 @@ export default function ContractView({ data }: { data: ContractData }) {
             {/* 서명은 본문 하단 서명란을 직접 눌러서 — 계약서를 끝까지 본 뒤 서명하도록 유도(상단 즉시서명 버튼 제거) */}
             {signatureDataUrl && (
               <button onClick={handleContractSave} disabled={contractSaving} className="toolbar-print">
-                {contractSaving ? '저장 중... (5~15초)' : '계약서 저장'}
+                {contractSaving ? '저장 중… (5~15초)' : '계약서 저장'}
               </button>
             )}
           </>
@@ -477,7 +477,7 @@ export default function ContractView({ data }: { data: ContractData }) {
               취소
             </button>
             <button onClick={handleSaveOverride} disabled={pending} className="toolbar-print">
-              {pending ? '저장 중...' : '저장'}
+              {pending ? '저장 중…' : '저장'}
             </button>
           </>
         )}

@@ -102,11 +102,11 @@ export function OcrToolbar({ onContract, onIdCard }: {
         <div className="px-3 pb-3 flex items-center gap-2 flex-wrap">
           <Btn variant="secondary" size="sm" disabled={busy !== null}
             onClick={() => contractRef.current?.click()}>
-            {busy === 'contract' ? '분석 중...' : '계약서'}
+            {busy === 'contract' ? '분석 중…' : '계약서'}
           </Btn>
           <Btn variant="secondary" size="sm" disabled={busy !== null}
             onClick={() => idRef.current?.click()}>
-            {busy === 'id' ? '분석 중...' : '신분증'}
+            {busy === 'id' ? '분석 중…' : '신분증'}
           </Btn>
           <AiQuotaHint />
           {/* capture 미지정 — 촬영뿐 아니라 앨범/파일의 기존 스캔본도 올릴 수 있게(촬영 강제 X) */}

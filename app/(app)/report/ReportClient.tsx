@@ -505,7 +505,7 @@ function AISection() {
       {pending && (
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 text-center space-y-3">
           <div className="w-6 h-6 mx-auto border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
-          <p className="text-xs text-[var(--coral)] animate-pulse">데이터 수집 + AI 분석 중...</p>
+          <p className="text-xs text-[var(--coral)] animate-pulse">데이터 수집 + AI 분석 중…</p>
           <p className="text-[0.625rem] text-[var(--warm-muted)]">10~20초 소요됩니다</p>
         </div>
       )}

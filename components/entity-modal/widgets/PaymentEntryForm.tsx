@@ -295,7 +295,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
       <div className="flex gap-2">
         {onCancel && <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>}
         <Btn type="submit" variant="primary" disabled={pending || !(payAmount > 0)} fullWidth>
-          {pending ? '저장 중...' : '저장'}
+          {pending ? '저장 중…' : '저장'}
         </Btn>
       </div>
     </form>

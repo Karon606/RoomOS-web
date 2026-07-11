@@ -68,7 +68,7 @@ export function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string;
           출력 / 서명 받기
         </a>
         <label className={`px-2.5 py-1 text-[0.6875rem] font-medium rounded-lg cursor-pointer transition-colors ${uploading ? 'opacity-60' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'}`}>
-          {uploading ? '업로드 중...' : '스캔 본 첨부'}
+          {uploading ? '업로드 중…' : '스캔 본 첨부'}
           <input type="file" accept="application/pdf,image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
         </label>
       </div>

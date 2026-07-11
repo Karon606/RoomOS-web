@@ -104,7 +104,7 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
         <div className="flex gap-2">
           <Btn type="button" variant="secondary" size="sm" onClick={() => { setShowForm(false); setInput('') }} className="flex-1">취소</Btn>
           <Btn type="button" variant="primary" size="sm" disabled={pending || !canApply} onClick={handleApply} className="flex-1 font-semibold">
-            {pending ? '처리 중...' : '변경 적용'}
+            {pending ? '처리 중…' : '변경 적용'}
           </Btn>
         </div>
       </div>

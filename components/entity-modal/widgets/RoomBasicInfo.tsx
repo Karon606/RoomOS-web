@@ -59,7 +59,7 @@ export function RoomBasicInfo({ room, onApplyScheduledNow }: {
             <div className="flex justify-end">
               <button type="button" onClick={onApplyScheduledNow} disabled={isPending}
                 className="text-xs px-3 py-1.5 rounded-lg bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)] hover:bg-[var(--warning-bg)] transition-colors disabled:opacity-60">
-                {isPending ? '적용 중...' : '예정 가격 즉시 적용'}
+                {isPending ? '적용 중…' : '예정 가격 즉시 적용'}
               </button>
             </div>
           )}

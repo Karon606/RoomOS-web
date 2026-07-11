@@ -74,7 +74,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
             </div>
           </div>
           <Btn onClick={handleCreate} disabled={pending || !newContent.trim()} variant="primary" size="md" fullWidth>
-            {pending ? '등록 중...' : '등록'}
+            {pending ? '등록 중…' : '등록'}
           </Btn>
         </div>
 

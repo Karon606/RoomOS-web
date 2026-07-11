@@ -318,7 +318,7 @@ function FormModal({
             disabled={isPending || !title.trim() || intervalDays < 1}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50"
             style={{ background: 'var(--coral)' }}>
-            {isPending ? '저장 중...' : '저장'}
+            {isPending ? '저장 중…' : '저장'}
           </button>
         </div>
       }>
@@ -427,7 +427,7 @@ function CheckModal({
           <button type="button" onClick={() => onConfirm(memo)} disabled={isPending}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50"
             style={{ background: 'var(--coral)' }}>
-            {isPending ? '처리 중...' : '오늘 점검 완료'}
+            {isPending ? '처리 중…' : '오늘 점검 완료'}
           </button>
         </div>
       }>

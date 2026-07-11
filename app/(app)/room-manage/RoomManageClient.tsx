@@ -968,7 +968,7 @@ export default function RoomManageClient({
             <div className="flex gap-2 pt-2">
               <Btn type="button" variant="secondary" onClick={closeAddModal} fullWidth>취소</Btn>
               <Btn type="submit" variant="primary" disabled={isPending} fullWidth>
-                {isPending ? '저장 중...' : `저장${addPhotoPreviews.length > 0 ? ` (사진 ${addPhotoPreviews.length}장)` : ''}`}
+                {isPending ? '저장 중…' : `저장${addPhotoPreviews.length > 0 ? ` (사진 ${addPhotoPreviews.length}장)` : ''}`}
               </Btn>
             </div>
           </form>
@@ -1085,7 +1085,7 @@ export default function RoomManageClient({
                 <button type="button" onClick={() => photoInputRef.current?.click()}
                   disabled={photoUploading}
                   className="text-xs text-[var(--coral)] hover:text-[var(--coral)] transition-colors disabled:opacity-50">
-                  {photoUploading ? '업로드 중...' : '+ 사진 추가'}
+                  {photoUploading ? '업로드 중…' : '+ 사진 추가'}
                 </button>
                 <input ref={photoInputRef} type="file" accept="image/*" multiple className="hidden"
                   onChange={handlePhotoUpload} />
@@ -1139,7 +1139,7 @@ export default function RoomManageClient({
             <div className="flex gap-2 pt-2">
               <Btn type="button" variant="secondary" onClick={closeEdit} fullWidth>취소</Btn>
               <Btn type="submit" variant="primary" disabled={isPending} fullWidth>
-                {isPending ? '저장 중...' : '저장'}
+                {isPending ? '저장 중…' : '저장'}
               </Btn>
             </div>
           </form>
@@ -1478,7 +1478,7 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
             취소
           </Btn>
           <Btn type="button" variant="primary" size="md" className="flex-1 font-semibold" onClick={handleApply} disabled={pending}>
-            {pending ? '적용 중...' : '적용'}
+            {pending ? '적용 중…' : '적용'}
           </Btn>
         </div>
       </div>

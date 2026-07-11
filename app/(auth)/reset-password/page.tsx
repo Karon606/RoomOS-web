@@ -110,14 +110,14 @@ export default function ResetPasswordPage() {
                 disabled={loading}
                 className="font-semibold"
               >
-                {loading ? '변경 중...' : '비밀번호 변경'}
+                {loading ? '변경 중…' : '비밀번호 변경'}
               </Btn>
             </form>
           )}
 
           {!ready && !error && (
             <p className="text-sm text-center py-4" style={{ color: 'var(--warm-muted)' }}>
-              링크 확인 중...
+              링크 확인 중…
             </p>
           )}
         </div>

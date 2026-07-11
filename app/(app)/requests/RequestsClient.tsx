@@ -285,7 +285,7 @@ export default function RequestsClient({
               onClick={handleAdd}
               disabled={pending || !addContent.trim()}
             >
-              {pending ? '저장 중...' : '저장'}
+              {pending ? '저장 중…' : '저장'}
             </Btn>
           </div>
         </form>
@@ -454,7 +454,7 @@ export default function RequestsClient({
                           disabled={pending}
                           className="flex-1 py-1.5 text-xs font-semibold rounded-md bg-[var(--success-solid)] text-[var(--cream)] disabled:opacity-50"
                         >
-                          {pending ? '저장 중...' : '완료로 저장'}
+                          {pending ? '저장 중…' : '완료로 저장'}
                         </button>
                       </div>
                     </div>

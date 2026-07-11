@@ -800,7 +800,7 @@ function AddItemModal({ categories, onClose, onDone }: { categories: InventoryCa
       <div className="border-t border-[var(--warm-border)] px-5 sm:px-6 py-3">
         <ModalFooterActions onCancel={onClose}>
           <Btn type="submit" form="add-tracked-item-form" variant="primary" disabled={pending}>
-            {pending ? '저장 중...' : '저장'}
+            {pending ? '저장 중…' : '저장'}
           </Btn>
         </ModalFooterActions>
       </div>
@@ -1351,7 +1351,7 @@ function SettingsForm({ row, onCancel, onDone }: {
       <div className="pt-2 flex gap-2">
         <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>
         <Btn type="submit" variant="primary" disabled={pending} fullWidth>
-          {pending ? '저장 중...' : '저장'}
+          {pending ? '저장 중…' : '저장'}
         </Btn>
       </div>
     </form>
@@ -1787,7 +1787,7 @@ function TimelineReconcileForm({ item, existingCheckDays = [], onCancel, onDone 
       <div className="pt-1 flex gap-2">
         <Btn type="button" variant="secondary" onClick={onCancel}>취소</Btn>
         <Btn type="button" variant="primary" onClick={handleSave} disabled={pending || loading} fullWidth>
-          {pending ? '저장 중...' : '이 시점에 보정 저장'}
+          {pending ? '저장 중…' : '이 시점에 보정 저장'}
         </Btn>
       </div>
     </div>
@@ -1832,9 +1832,9 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
       subtitle="재고관리에 표시할 카테고리와 이름을 정합니다. (지출 카테고리는 그대로 유지)"
       width="lg" dirty={dirty}
       footer={<div className="flex items-center justify-end gap-2">
-          <button onClick={onClose} className="text-sm text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-3 py-2">취소</button>
+          <Btn variant="ghost" size="sm" onClick={onClose}>취소</Btn>
           <Btn variant="primary" size="sm" onClick={handleSave} disabled={pending || !entries.length}>
-            {pending ? '저장 중...' : '저장'}
+            {pending ? '저장 중…' : '저장'}
           </Btn>
       </div>}
       bodyClassName="px-4 py-3">
@@ -1961,7 +1961,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="text-sm text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-3 py-2">취소</button>
             <Btn variant="primary" size="sm" onClick={handleSave} disabled={pending || !restockDone || !changed.length}>
-              {pending ? '저장 중...' : `보정 저장 (${changed.length})`}
+              {pending ? '저장 중…' : `보정 저장 (${changed.length})`}
             </Btn>
           </div>
       </div>}
@@ -2818,7 +2818,7 @@ function CheckForm({ item, lastCheckBreakdown, onCancel, onDone, onDraftChange }
           {draftPending ? '저장 중…' : '임시저장'}
         </Btn>
         <Btn type="submit" variant="primary" disabled={pending} fullWidth>
-          {pending ? '저장 중...' : '저장'}
+          {pending ? '저장 중…' : '저장'}
         </Btn>
       </div>
     </form>
@@ -3315,7 +3315,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
             {draftPending ? '저장 중…' : '임시저장'}
           </Btn>
           <Btn variant="primary" fullWidth onClick={handleSave} disabled={pending || !locId || locItems.length === 0}>
-            {pending ? '저장 중...' : `${locItems.filter(isItemDirty).length}품목 저장`}
+            {pending ? '저장 중…' : `${locItems.filter(isItemDirty).length}품목 저장`}
           </Btn>
         </div>
       </div>
@@ -3705,7 +3705,7 @@ function BatchLocationModal({ selectedIds, onClose, onDone }: {
       <div className="border-t border-[var(--warm-border)] px-5 sm:px-6 py-3">
         <ModalFooterActions onCancel={onClose}>
           <Btn variant="primary" onClick={handleApply} disabled={pending || allLocs.length === 0}>
-            {pending ? '적용 중...' : '적용'}
+            {pending ? '적용 중…' : '적용'}
           </Btn>
         </ModalFooterActions>
       </div>
@@ -3777,7 +3777,7 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
         onClick={handleSave}
         disabled={pending}
       >
-        {pending ? '저장 중...' : '위치 저장'}
+        {pending ? '저장 중…' : '위치 저장'}
       </Btn>
       {dirty && !saved && (
         <p className="text-[0.625rem] text-[var(--coral)]">
@@ -3907,7 +3907,7 @@ function AdditionForm({ item, onCancel, onDone }: {
       <div className="pt-2 flex gap-2">
         <Btn type="button" variant="secondary" onClick={onCancel} fullWidth>취소</Btn>
         <Btn type="submit" variant="primary" disabled={pending} fullWidth>
-          {pending ? '저장 중...' : '저장'}
+          {pending ? '저장 중…' : '저장'}
         </Btn>
       </div>
     </form>

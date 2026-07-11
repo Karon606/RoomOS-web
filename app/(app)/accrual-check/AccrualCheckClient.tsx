@@ -153,7 +153,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
             className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold bg-[var(--warning-solid)] text-[var(--cream)] hover:opacity-90 disabled:opacity-60 transition-opacity"
             title="지연 입금 record 전체를 직전 월로 한 번에 이동"
           >
-            {isPending ? '적용 중...' : `지연 입금 ${counts['late-payment']}건 일괄 적용`}
+            {isPending ? '적용 중…' : `지연 입금 ${counts['late-payment']}건 일괄 적용`}
           </button>
         )}
       </div>

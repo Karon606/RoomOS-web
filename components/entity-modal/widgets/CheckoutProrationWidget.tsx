@@ -232,7 +232,7 @@ export function CheckoutProrationWidget({
         <div className="flex gap-2">
           <Btn type="button" variant="secondary" size="sm" onClick={() => { setShowForm(false); setCalc(null); setCalcErr(null); setRefund(null) }} className="flex-1">취소</Btn>
           <Btn type="button" variant="primary" size="sm" disabled={pending || !calc} onClick={handleApply} className="flex-1 font-semibold">
-            {pending ? '처리 중...' : '정산 적용'}
+            {pending ? '처리 중…' : '정산 적용'}
           </Btn>
         </div>
       </div>

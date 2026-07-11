@@ -1052,7 +1052,7 @@ export default function TenantClient({
                 onClick={confirmDelete}
                 disabled={isPending}
                 className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--danger-bg)] hover:bg-[var(--danger-ring)] text-[var(--danger-fg)] font-medium transition-colors disabled:opacity-50">
-                {isPending ? '삭제 중...' : '영구 삭제'}
+                {isPending ? '삭제 중…' : '영구 삭제'}
               </button>
             </div>
           </div>
@@ -1140,7 +1140,7 @@ export default function TenantClient({
                 <button type="button" onClick={handleDepositRefundConfirm} disabled={isPending || exceedsMax}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
                   style={{ background: 'var(--warning-solid)', color: 'var(--cream)' }}>
-                  {isPending ? '처리 중...' : '퇴실 처리'}
+                  {isPending ? '처리 중…' : '퇴실 처리'}
                 </button>
               </div>
           </Modal>
@@ -1307,7 +1307,7 @@ export default function TenantClient({
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                 </svg>
-                업데이트 중...
+                업데이트 중…
               </div>
             </div>
           )}
@@ -1470,7 +1470,7 @@ export default function TenantClient({
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <Btn type="button" variant="secondary" size="md" onClick={closeEdit} className="flex-1">취소</Btn>
                   <Btn type="submit" variant="primary" size="md" disabled={isPending} className="flex-1">
-                    {isPending ? '저장 중...' : '저장'}
+                    {isPending ? '저장 중…' : '저장'}
                   </Btn>
                 </div>
               </form>
@@ -1510,7 +1510,7 @@ export default function TenantClient({
                 </Btn>
                 <Btn type="submit" variant="primary" size="md" disabled={isPending}
                   className="flex-1">
-                  {isPending ? '저장 중...' : '저장'}
+                  {isPending ? '저장 중…' : '저장'}
                 </Btn>
               </div>
             </form>
@@ -1534,7 +1534,7 @@ export default function TenantClient({
                 </Btn>
                 <Btn type="submit" variant="primary" size="md" disabled={isPending}
                   className="flex-1">
-                  {isPending ? '저장 중...' : '저장'}
+                  {isPending ? '저장 중…' : '저장'}
                 </Btn>
               </div>
             </form>
@@ -1951,7 +1951,7 @@ export default function TenantClient({
                                 })
                               }}
                               className="w-full py-2 bg-[var(--warning-solid)] active:bg-[var(--warning-solid)] text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40">
-                              {isPending ? '저장 중...' : (() => {
+                              {isPending ? '저장 중…' : (() => {
                                 if (!overrideDateInput) return '날짜를 선택하세요'
                                 const selectedYM = overrideDateInput.slice(0, 7)
                                 if (selectedYM !== targetMonth) {
@@ -2055,7 +2055,7 @@ export default function TenantClient({
                     </Btn>
                     <Btn type="submit" variant="primary" size="md" disabled={isPending}
                       className="flex-1">
-                      {isPending ? '저장 중...' : '저장'}
+                      {isPending ? '저장 중…' : '저장'}
                     </Btn>
                   </div>
                 </form>
@@ -3064,7 +3064,7 @@ function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string; tenant
           출력 / 서명 받기
         </a>
         <label className={`px-2.5 py-1 text-[0.6875rem] font-medium rounded-lg cursor-pointer transition-colors ${uploading ? 'opacity-60' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'}`}>
-          {uploading ? '업로드 중...' : '스캔 본 첨부'}
+          {uploading ? '업로드 중…' : '스캔 본 첨부'}
           <input type="file" accept="application/pdf,image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
         </label>
       </div>
@@ -3197,7 +3197,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
           </Btn>
           <Btn type="button" variant="primary" size="md" onClick={handleApply} disabled={pending}
             className="flex-1 font-semibold">
-            {pending ? '적용 중...' : '적용'}
+            {pending ? '적용 중…' : '적용'}
           </Btn>
         </div>
     </Modal>
