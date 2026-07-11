@@ -648,9 +648,27 @@ export default function TenantClient({
     })
   }
 
+  // 단기 연장 정리 — 퇴실 예정 상태 그대로 퇴실일만 미래로 바꾸면 거주중 복귀를 확인(자동 전환 연장 흐름, 2026-07-11)
+  const maybeConfirmExtension = async (fd: FormData): Promise<void> => {
+    const prevStatus = fd.get('prevStatus') as string | null
+    const newStatus = fd.get('status') as string | null
+    const prevOut = (fd.get('prevExpectedMoveOut') as string | null) ?? ''
+    const newOut = (fd.get('expectedMoveOut') as string | null) ?? ''
+    if (prevStatus !== 'CHECKOUT_PENDING' || newStatus !== 'CHECKOUT_PENDING') return
+    if (!newOut || newOut === prevOut) return
+    if (newOut <= kstYmdStr()) return
+    const revert = await confirmDialog({
+      title: '퇴실일이 미래로 변경됐습니다',
+      message: '연장이라면 상태를 거주중으로 되돌리는 것을 권합니다. 되돌리면 새 퇴실일 하루 전에 다시 퇴실 예정으로 자동 전환됩니다(단기).',
+      confirmLabel: '거주중으로 변경', cancelLabel: '퇴실 예정 유지',
+    })
+    if (revert) fd.set('status', 'ACTIVE')
+  }
+
   const handleUpdate = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
+    await maybeConfirmExtension(fd)
     if (tryOpenRentChangeModal(fd, false)) return
     proceedAfterRentDecision(fd, false)
   }
@@ -659,6 +677,7 @@ export default function TenantClient({
   const handleUpdateFromDetail = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault(); setError('')
     const fd = new FormData(e.currentTarget)
+    await maybeConfirmExtension(fd)
     if (tryOpenRentChangeModal(fd, true)) return
     proceedAfterRentDecision(fd, true)
   }
@@ -2595,6 +2614,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
           </SelectField>
         </div>
 
+        {/* 연장 확인용 이전 값 — 제출 핸들러가 '퇴실 예정인데 퇴실일만 미래로 변경'을 감지 */}
+        {lease && <input type="hidden" name="prevStatus" value={lease.status} />}
+        {lease && <input type="hidden" name="prevExpectedMoveOut" value={toDateInput(lease.expectedMoveOut)} />}
         {/* 상태별 단계 정보 — 상태에 따라 관련 입력이 상태 바로 아래에 표시됨 */}
         {/* 입실 문의 일시 (예약/투어/취소 — 예약자 순번 기준. 취소자도 이력 보존·열람) */}
         {(statusVal === 'RESERVED' || statusVal === 'WAITING_TOUR' || statusVal === 'TOUR_DONE' || statusVal === 'CANCELLED') && (

@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server'
 import webpush from 'web-push'
 import prisma from '@/lib/prisma'
 import { computeAlerts, summarizeAlerts, type AlertItem } from '@/app/(app)/dashboard/alerts'
+import { kstYmd } from '@/lib/kstDate'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -32,6 +33,20 @@ export async function GET(req: Request) {
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY,
   )
+
+  // 단기 자동 퇴실 예정 전환(운영자 승인 2026-07-11) — KST 기준 내일(놓친 경우 당일 포함)이
+  // 퇴실일인 단기 거주중 계약을 '퇴실 예정'으로. autoCheckoutAt 기록으로 재전환 방지
+  // (수동 복귀 존중), 퇴실일 변경 시 updateTenant 가 null 리셋해 재무장.
+  const k = kstYmd()
+  const kstToday = new Date(k.year, k.month - 1, k.day)
+  const kstDayAfterTomorrow = new Date(kstToday.getTime() + 2 * 86400000)
+  const autoFlipped = await prisma.leaseTerm.updateMany({
+    where: {
+      status: 'ACTIVE', isShortTerm: true, autoCheckoutAt: null,
+      expectedMoveOut: { gte: kstToday, lt: kstDayAfterTomorrow },
+    },
+    data: { status: 'CHECKOUT_PENDING', autoCheckoutAt: new Date() },
+  })
 
   const subs = await prisma.pushSubscription.findMany()
   const byUser = new Map<string, typeof subs>()
@@ -96,5 +111,5 @@ export async function GET(req: Request) {
     } catch { /* 히스토리 실패해도 푸시 자체 영향 X */ }
   }
 
-  return NextResponse.json({ ok: true, usersNotified, sent })
+  return NextResponse.json({ ok: true, autoCheckout: autoFlipped.count, usersNotified, sent })
 }

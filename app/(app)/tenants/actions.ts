@@ -455,6 +455,8 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
       dueDay: dueDay || null,
       moveInDate: moveInDate ? new Date(moveInDate) : null,
       expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
+      // 퇴실일이 바뀌면 단기 자동 전환 기록을 리셋 — 연장 후 새 퇴실일 하루 전 재전환(재무장)
+      ...(((expectedMoveOut ? new Date(expectedMoveOut).getTime() : null) !== (currentLease.expectedMoveOut?.getTime() ?? null)) ? { autoCheckoutAt: null } : {}),
       contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
       // 폼에 필드가 렌더되지 않은 상태(get()===null)면 기존 값 보존 — 상태 전환이 이력을 지우지 않게.
       // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리.
