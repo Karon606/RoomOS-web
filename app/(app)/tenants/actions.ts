@@ -286,8 +286,8 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
   const wishConditions     = formData.get('wishConditions') as string
   const keepAlertAfterInquiry = formData.get('keepAlertAfterInquiry') === 'true'
   const visitRoute         = formData.get('visitRoute') as string
-  const tourDate           = formData.get('tourDate') as string
-  const inquiryAt          = formData.get('inquiryAt') as string
+  const tourDate           = formData.get('tourDate') as string | null   // null = 폼에 필드 없음(보존)
+  const inquiryAt          = formData.get('inquiryAt') as string | null  // null = 폼에 필드 없음(보존)
   const reservationConfirmed = formData.get('reservationConfirmed') === 'true'
   const isShortTerm          = formData.get('isShortTerm') === 'true'
   const depositReceived      = formData.get('depositReceived') === '1'
@@ -456,8 +456,10 @@ export async function updateTenant(formData: FormData): Promise<{ ok: true; noti
       moveInDate: moveInDate ? new Date(moveInDate) : null,
       expectedMoveOut: expectedMoveOut ? new Date(expectedMoveOut) : null,
       contactAlertDate: contactAlertDate ? new Date(contactAlertDate) : null,
-      tourDate: tourDate ? new Date(tourDate) : null,
-      inquiryAt: inquiryAt ? new Date(inquiryAt) : null,
+      // 폼에 필드가 렌더되지 않은 상태(get()===null)면 기존 값 보존 — 상태 전환이 이력을 지우지 않게.
+      // 렌더됐지만 비운 경우('')만 의도적 삭제로 처리.
+      ...(tourDate === null ? {} : { tourDate: tourDate ? new Date(tourDate) : null }),
+      ...(inquiryAt === null ? {} : { inquiryAt: inquiryAt ? new Date(inquiryAt) : null }),
       reservationConfirmedAt: isReservedConfirmed
         ? (currentLease.reservationConfirmedAt ?? new Date())
         : null,

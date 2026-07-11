@@ -2590,8 +2590,8 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         </div>
 
         {/* 상태별 단계 정보 — 상태에 따라 관련 입력이 상태 바로 아래에 표시됨 */}
-        {/* 입실 문의 일시 (예약/투어 단계 전용 — 예약자 순번 기준) */}
-        {(statusVal === 'RESERVED' || statusVal === 'WAITING_TOUR' || statusVal === 'TOUR_DONE') && (
+        {/* 입실 문의 일시 (예약/투어/취소 — 예약자 순번 기준. 취소자도 이력 보존·열람) */}
+        {(statusVal === 'RESERVED' || statusVal === 'WAITING_TOUR' || statusVal === 'TOUR_DONE' || statusVal === 'CANCELLED') && (
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">
               입실 문의 일시 <span className="font-normal opacity-60">(예약자 순번 기준)</span>
@@ -2625,15 +2625,18 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <KeepAlertCheckbox defaultValue={lease?.keepAlertAfterInquiry ?? true} />
           </div>
         )}
-        {/* 투어 예정일 (WAITING_TOUR 전용) */}
-        {statusVal === 'WAITING_TOUR' && (
+        {/* 투어 날짜 — 예약자도 투어 일정을 가질 수 있고, 취소자도 이력을 보존한다(운영자 요청 2026-07-11) */}
+        {['WAITING_TOUR', 'TOUR_DONE', 'RESERVED', 'CANCELLED'].includes(statusVal) && (
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--warm-mid)]">투어 예정일</label>
+            <label className="text-xs font-medium text-[var(--warm-mid)]">
+              {statusVal === 'WAITING_TOUR' ? '투어 예정일' : '투어 날짜'}
+              {statusVal !== 'WAITING_TOUR' && <span className="font-normal opacity-60"> (예정 또는 다녀간 날, 선택)</span>}
+            </label>
             <DatePicker
               name="tourDate"
               value={tourDateVal}
               onChange={setTourDateVal}
-              placeholder="투어 예정일 선택"
+              placeholder={statusVal === 'WAITING_TOUR' ? '투어 예정일 선택' : '투어 날짜 선택 (선택)'}
               className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none transition-colors"
             />
           </div>
