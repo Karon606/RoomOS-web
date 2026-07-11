@@ -58,7 +58,7 @@ export function InventoryCard({
       onPointerLeave={lpClear}
       onContextMenu={e => { if (onLongPress) e.preventDefault() }}
       className={[
-        'rounded-[13px] border bg-[var(--cream)] px-3.5 py-3 transition-colors select-none',
+        'rounded-xl border bg-[var(--cream)] px-3.5 py-3 transition-colors select-none',   // 14px(r-xl) — 13px 예외를 토큰 체계로 정규화(v2.0 §00 결정)
         selected
           ? 'border-[var(--coral)] ring-2 ring-[var(--coral)]/[0.16]'
           : 'border-[var(--warm-border)]',
