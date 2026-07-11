@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { useRouter } from 'next/navigation'
 import {
   type ChecklistRow,
@@ -98,7 +99,7 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
       {/* 점검 필요 섹션 */}
       <Section title={`점검 필요 ${due.length}건`} hint="예정일 N일 이내 또는 지남">
         {due.length === 0 ? (
-          <EmptyHint label="현재 점검이 필요한 항목이 없습니다." />
+          <EmptyState title="현재 점검이 필요한 항목이 없습니다" />
         ) : (
           <div className="space-y-2">
             {due.map(r => <Card key={r.id} row={r} onCheck={() => setMode({ mode: 'check', row: r })} onEdit={() => setMode({ mode: 'edit', row: r })} />)}
@@ -215,13 +216,6 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   )
 }
 
-function EmptyHint({ label }: { label: string }) {
-  return (
-    <div className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-4 py-6 text-center text-xs" style={{ color: 'var(--warm-muted)' }}>
-      {label}
-    </div>
-  )
-}
 
 // ── 카드
 function Card({ row, onCheck, onEdit, muted }: { row: ChecklistRow; onCheck: () => void; onEdit: () => void; muted?: boolean }) {
