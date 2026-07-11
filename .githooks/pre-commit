@@ -1,0 +1,21 @@
+#!/bin/sh
+# 커밋 시 지침 문서를 옵시디언 볼트(knowledge/refs/)로 자동 미러링 — 원본이 정본, 사본은 읽기용.
+# (운영자 요청 2026-07-11: CLAUDE.md·AGENTS.md를 옵시디언에서도 보이게)
+ROOT="$(git rev-parse --show-toplevel)"
+REFS="$ROOT/knowledge/refs"
+mkdir -p "$REFS"
+
+mirror() {
+  src="$1"; dst="$2"; title="$3"
+  [ -f "$src" ] || return 0
+  {
+    printf '> [!note] 자동 사본 — 원본: `%s` (수정은 원본에서, 커밋 시 자동 갱신)\n\n' "$title"
+    cat "$src"
+  } > "$dst.tmp" && mv "$dst.tmp" "$dst"
+  git add "$dst" 2>/dev/null
+}
+
+mirror "$ROOT/AGENTS.md" "$REFS/AGENTS(프로젝트 규칙).md" "저장소 루트 AGENTS.md"
+mirror "$HOME/.claude/CLAUDE.md" "$REFS/CLAUDE(전역 행동지침).md" "~/.claude/CLAUDE.md"
+mirror "$ROOT/loop.md" "$REFS/loop(검증 규칙).md" "저장소 루트 loop.md"
+exit 0

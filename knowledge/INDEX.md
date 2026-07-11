@@ -28,3 +28,7 @@
 - 재고: `app/(app)/inventory/{overview.ts, actions.ts, InventoryClient.tsx}`
 - 계약서: `app/contract/[tenantId]/`, `lib/contract.ts`, `lib/contractPrintHtml.ts`
 - 대시보드: `app/(app)/dashboard/{page.tsx, unpaid.ts}`
+
+## 지침 문서 사본 (refs/ — 자동 미러)
+- [[refs/AGENTS(프로젝트 규칙)]] · [[refs/CLAUDE(전역 행동지침)]] · [[refs/loop(검증 규칙)]]
+- 원본은 저장소 루트(AGENTS.md·loop.md)와 ~/.claude/CLAUDE.md — 수정은 원본에서, 커밋 시 .githooks/pre-commit이 자동 갱신.
