@@ -252,7 +252,9 @@ export async function computeInventoryOverview(propertyId: string): Promise<Inve
         ])
         const consumed = totalPurchases + totalAdditions - last.remainingQty
         const days = Math.max(1, Math.round((last.date.getTime() - firstPurchase.receivedAt.getTime()) / 86400000))
-        if (consumed > 0) {
+        // 최소 관측 7일 — 구매 직후 점검 1회로는 소모율 신뢰 불가(구매 당일 500ml 사용이
+        // '하루 0.5L 소모'로 일반화돼 D-3 소진임박 오탐 나던 리클린 사례). 7일 전엔 추정 보류.
+        if (consumed > 0 && days >= 7) {
           lastPeriodConsumption = consumed
           lastPeriodDays = days
         }
