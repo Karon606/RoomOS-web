@@ -44,6 +44,30 @@ const DIMS: Dim[] = [
   { key: 'pay', label: '결제수단', get: t => t.payMethod },
 ]
 
+// 작성 드래프트 — 문자앱으로 전환하면 모바일에선 페이지가 리로드돼 상태가 날아간다.
+// 조건·수신자 보정·본문·발송한 묶음을 localStorage에 보관해 돌아오면 이어서 재발송. 48시간 지나면 무시.
+const DRAFT_KEY = 'stayeum-notice-sms-draft'
+type NoticeDraft = {
+  savedAt: number
+  step: 'pick' | 'compose'
+  sel: Record<string, string[]>
+  checked: string[]
+  body: string
+  logged: number[]
+}
+function loadDraft(): NoticeDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY)
+    if (!raw) return null
+    const d = JSON.parse(raw) as NoticeDraft
+    if (!d.savedAt || Date.now() - d.savedAt > 48 * 3600_000) return null
+    return d
+  } catch { return null }
+}
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY) } catch { /* 무시 */ }
+}
+
 export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<'pick' | 'compose'>('pick')
   const [targets, setTargets] = useState<NoticeSmsTarget[] | null>(null)
@@ -59,13 +83,26 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
   const [prevDraft, setPrevDraft] = useState<string | null>(null)   // AI 다듬기 전 원문(원래대로 복귀용)
   const [aiPending, setAiPending] = useState(false)
   const [loggedBatches, setLoggedBatches] = useState<Set<number>>(new Set())
+  const [draftRestored, setDraftRestored] = useState(false)   // 복원 후에만 드래프트 저장 활성(기본 상태 오염 방지용 아님 — 저장은 항상, 안내만)
 
   useEffect(() => {
     getNoticeSmsTargets()
       .then(r => {
         if (!r.ok) { setLoadError(r.error); return }
         setTargets(r.targets)
-        setChecked(new Set(r.targets.filter(t => t.phone).map(t => t.leaseTermId)))
+        // 작성하던 드래프트(본문 또는 조건이 있는 것)가 있으면 복원 — 문자앱 갔다 온 재발송 흐름
+        const d = loadDraft()
+        if (d && (d.body.trim() || Object.values(d.sel).some(v => v.length > 0))) {
+          const validIds = new Set(r.targets.map(t => t.leaseTermId))
+          setSel(Object.fromEntries(Object.entries(d.sel).map(([k, v]) => [k, new Set(v)])))
+          setChecked(new Set(d.checked.filter(id => validIds.has(id))))
+          setBody(d.body)
+          setLoggedBatches(new Set(d.logged))
+          setStep(d.step)
+          setDraftRestored(true)
+        } else {
+          setChecked(new Set(r.targets.filter(t => t.phone).map(t => t.leaseTermId)))
+        }
       })
       .catch(() => setLoadError('대상을 불러오지 못했습니다. 다시 열어 주세요.'))
     getSmsTemplates('notice').then(setTemplates).catch(() => { /* 템플릿은 없어도 진행 가능 */ })
@@ -152,6 +189,33 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
     () => (targets ?? []).filter(t => checked.has(t.leaseTermId) && t.phone),
     [targets, checked],
   )
+  // 상태가 바뀔 때마다 드래프트 저장 — 문자앱 전환으로 리로드돼도 이어서 작성
+  useEffect(() => {
+    if (!targets) return
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        savedAt: Date.now(),
+        step,
+        sel: Object.fromEntries(Object.entries(sel).map(([k, v]) => [k, [...v]])),
+        checked: [...checked],
+        body,
+        logged: [...loggedBatches],
+      } satisfies NoticeDraft))
+    } catch { /* 저장 실패는 무시 */ }
+  }, [targets, step, sel, checked, body, loggedBatches])
+
+  // 새로 작성 — 드래프트 폐기 후 초기 상태로
+  const resetDraft = () => {
+    clearDraft()
+    setSel({})
+    setBody('')
+    setPrevDraft(null)
+    setLoggedBatches(new Set())
+    setChecked(new Set((targets ?? []).filter(t => t.phone).map(t => t.leaseTermId)))
+    setStep('pick')
+    setDraftRestored(false)
+  }
+
   const batches = useMemo(() => {
     const out: NoticeSmsTarget[][] = []
     for (let i = 0; i < recipients.length; i += BATCH_SIZE) out.push(recipients.slice(i, i + BATCH_SIZE))
@@ -252,6 +316,12 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
             <SkeletonRows rows={4} />
           ) : (
             <>
+              {draftRestored && (
+                <p className="flex items-center justify-between text-xs rounded-lg px-3 py-2 bg-[var(--info-bg)] text-[var(--info-fg)]">
+                  <span>작성하던 내용을 복원했습니다. 이어서 보내거나 수정하세요.</span>
+                  <button type="button" onClick={resetDraft} className="font-semibold underline underline-offset-2 shrink-0 ml-2">새로 작성</button>
+                </p>
+              )}
               {/* 보낼 대상 문장 — 조건이 없으면 '전체'임을 명시(모호함 제거) */}
               <p className="text-sm">
                 <span className="text-[var(--warm-muted)]">보낼 대상 · </span>
@@ -360,6 +430,12 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
         </div>
       }>
       <div className="px-5 sm:px-6 py-4 space-y-3">
+        {draftRestored && (
+          <p className="flex items-center justify-between text-xs rounded-lg px-3 py-2 bg-[var(--info-bg)] text-[var(--info-fg)]">
+            <span>작성하던 내용을 복원했습니다. 이미 보낸 묶음은 '기록됨'으로 표시됩니다.</span>
+            <button type="button" onClick={resetDraft} className="font-semibold underline underline-offset-2 shrink-0 ml-2">새로 작성</button>
+          </p>
+        )}
         {templates.length > 0 && (
           <label className="block">
             <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">공지 템플릿</span>
