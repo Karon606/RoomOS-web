@@ -15,6 +15,7 @@ import { addTenant, updateTenant, deleteTenant, recordDepositReturn, undoDeposit
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { savePayment, saveDepositPayment, deletePayment, updatePayment, getPaymentsByLease, setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { Btn } from '@/components/ui/Btn'
+import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { PrismNavBar } from '@/components/entity-modal/PrismNavBar'
 import { OcrToolbar, setInputByName } from './OcrToolbar'
@@ -2802,9 +2803,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                   {hasNRRate ? '비거주 이용료' : '월 이용료'}
                 </label>
                 {hasNRRate && (
-                  <span className="text-[0.625rem] px-1.5 py-0.5 rounded-full bg-[var(--info-bg)] text-[var(--info-fg)] ring-1 ring-[var(--info-ring)] font-medium">
-                    비거주 전용
-                  </span>
+                  <Badge tone="pale-blue">비거주 전용</Badge>
                 )}
               </div>
               <MoneyInput name="rentAmount" value={rentAmount} onChange={setRentAmount} placeholder="0원" />

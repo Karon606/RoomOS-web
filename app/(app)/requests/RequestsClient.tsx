@@ -17,6 +17,7 @@ import { DatePicker } from '@/components/ui/DatePicker'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn } from '@/components/ui/Btn'
+import { Badge } from '@/components/ui/Badge'
 import { Modal } from '@/components/ui/Modal'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -374,9 +375,7 @@ export default function RequestsClient({
                 {/* 메타 행 */}
                 <div className="flex items-center gap-2 flex-wrap mb-2">
                   {r.isUrgent && !resolved && (
-                    <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-semibold bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]">
-                      긴급
-                    </span>
+                    <Badge tone="pale-red">긴급</Badge>
                   )}
                   {c && (
                     <span className={`text-[0.625rem] px-2 py-0.5 rounded-full font-medium ring-1 ${c.bg} ${c.fg} ${c.ring}`}>
@@ -384,9 +383,7 @@ export default function RequestsClient({
                     </span>
                   )}
                   {resolved && (
-                    <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]">
-                      완료
-                    </span>
+                    <Badge tone="pale-green">완료</Badge>
                   )}
                   {isCommon ? (
                     <span className="text-xs font-semibold text-[var(--warm-dark)]">

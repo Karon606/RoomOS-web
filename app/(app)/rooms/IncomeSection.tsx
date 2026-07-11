@@ -11,6 +11,7 @@ import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
+import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
@@ -160,7 +161,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                 <span className="text-sm font-bold text-[var(--success-fg)]"><MoneyDisplay amount={i.amount} prefix="+" alwaysFull /></span>
               </div>
               <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]">{i.category}</span>
+                <Badge tone="pale-green">{i.category}</Badge>
                 {tenantLabel(i) && (
                   <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] font-medium">{tenantLabel(i)}</span>
                 )}
@@ -208,7 +209,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)] whitespace-nowrap">{i.category}</span>
+                    <Badge tone="pale-green" className="whitespace-nowrap">{i.category}</Badge>
                   </td>
                   <td className="px-4 py-3 text-sm text-[var(--warm-dark)]">
                     <span className="truncate block">{i.detail ?? '—'}</span>

@@ -28,6 +28,7 @@ import { recordDepositReceived } from '@/app/(app)/rooms/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Btn } from '@/components/ui/Btn'
+import { Badge } from '@/components/ui/Badge'
 import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { useCanEdit } from '@/components/RoleContext'
 import { Loading } from '@/components/ui/Loading'
@@ -2025,9 +2026,7 @@ export default function FinanceClient({
                     <div className="flex items-center gap-1">
                       <span className="text-[var(--warm-muted)]">고정 지출 (예정)</span>
                       {recPendingTotal > 0 && (
-                        <span className="text-[0.5625rem] bg-[var(--warning-bg)] text-[var(--warning-fg)] px-1.5 py-0.5 rounded-full font-medium">
-                          {recUnrecordedCount}건 미기록
-                        </span>
+                        <Badge tone="pale-amber">{recUnrecordedCount}건 미기록</Badge>
                       )}
                     </div>
                     <span className="text-[var(--warning-fg)] font-medium num">
@@ -2628,10 +2627,10 @@ export default function FinanceClient({
                         <div key={rec.id} className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 opacity-50">
                           <div className="flex items-center justify-between mb-1.5">
                             <span className="text-xs text-[var(--warm-muted)]">매월 {rec.dueDay}일</span>
-                            <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--info-bg)] text-[var(--info-fg)] ring-1 ring-[var(--info-ring)] font-medium">{rec.activeSince?.slice(0, 7)} 활성화</span>
+                            <Badge tone="pale-blue">{rec.activeSince?.slice(0, 7)} 활성화</Badge>
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                            <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--coral-pale)] text-[var(--coral)] ring-1 ring-[var(--coral)]/20">{rec.category}</span>
+                            <Badge tone="pale-coral">{rec.category}</Badge>
                           </div>
                           <div className="flex justify-between">
                             <p className="text-xs text-[var(--warm-dark)] font-medium">{rec.title}</p>
@@ -3859,9 +3858,9 @@ export default function FinanceClient({
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{r.title}</p>
                         {isParent && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--coral)]/15 text-[var(--coral)]">묶음 {r.items.length}</span>}
-                        {r.isAutoDebit && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--info-bg)] text-[var(--info-fg)]">자동이체</span>}
+                        {r.isAutoDebit && <Badge tone="pale-blue">자동이체</Badge>}
                         {!r.isActive && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--neutral-bg)] text-[var(--neutral-fg)]">비활성</span>}
-                        {r.activeSince && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--warning-bg)] text-[var(--warning-fg)]">{r.activeSince.slice(0, 7)}부터</span>}
+                        {r.activeSince && <Badge tone="pale-amber">{r.activeSince.slice(0, 7)}부터</Badge>}
                       </div>
                       <p className="text-xs text-[var(--warm-muted)] mt-0.5">
                         매월 {r.dueDay}일 · {fmtWon(r.amount)} · {r.category}
@@ -3917,7 +3916,7 @@ export default function FinanceClient({
                       <span className="text-xs text-[var(--warm-dark)] flex-1 truncate">
                         {it.name}
                         {it.isVariable
-                          ? <span className="ml-1 text-[0.5625rem] text-[var(--warning-fg)] bg-[var(--warning-bg)] px-1 py-0.5 rounded-full">변동</span>
+                          ? <Badge tone="pale-amber" className="ml-1">변동</Badge>
                           : <span className="ml-1 text-[0.5625rem] text-[var(--warm-muted)]">고정</span>}
                       </span>
                       {it.isVariable ? (
@@ -4179,9 +4178,7 @@ function DepositTab({ summary, ledger, totalBalance }: {
                         {DEPOSIT_STATUS_LABEL[d.status] ?? d.status}
                       </span>
                       {d.hasNoInRecord && (
-                        <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]">
-                          입금 거래 기록 없음
-                        </span>
+                        <Badge tone="pale-amber">입금 거래 기록 없음</Badge>
                       )}
                     </div>
                     <p className="text-xs text-[var(--warm-muted)]">

@@ -9,6 +9,7 @@ import { fmtWon } from '@/lib/fmtMoney'
 import { useRouter } from 'next/navigation'
 import { settleCardExpenses, unsettleExpenses } from '../finance/actions'
 import { Btn } from '@/components/ui/Btn'
+import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import MonthSelector from '@/components/layout/MonthSelector'
@@ -114,9 +115,9 @@ export default function CardSettlementClient({
       <div className="flex items-center justify-between gap-2">
         <span className="font-bold text-[var(--warm-dark)] text-base">{g.accountName}</span>
         {g.payDayStr !== '미지정' && (
-          <span className="text-xs px-2.5 py-1 rounded-full bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)] font-medium shrink-0">
+          <Badge tone="pale-amber" className="shrink-0">
             결제일: {g.payDayStr}
-          </span>
+          </Badge>
         )}
       </div>
       <div className="text-xs text-[var(--warm-mid)] space-y-0.5">
@@ -184,7 +185,7 @@ export default function CardSettlementClient({
             {finalizedG.length > 0 && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[var(--danger-bg)] text-[var(--danger-fg)] ring-1 ring-[var(--danger-ring)]">확정</span>
+                  <Badge tone="pale-red">확정</Badge>
                   <span className="text-sm font-semibold text-[var(--warm-dark)]">청구 마감 · 출금 대상</span>
                   <span className="text-xs text-[var(--warm-muted)]">{finalizedG.length}건</span>
                 </div>
@@ -197,7 +198,7 @@ export default function CardSettlementClient({
             {pendingG.length > 0 && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]">예정</span>
+                  <Badge tone="pale-amber">예정</Badge>
                   <span className="text-sm font-semibold text-[var(--warm-dark)]">진행 중 · 마감 전</span>
                   <span className="text-xs text-[var(--warm-muted)]">{pendingG.length}건</span>
                 </div>
@@ -224,7 +225,7 @@ export default function CardSettlementClient({
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-semibold text-[var(--warm-dark)]">{g.accountName}</span>
-                    <span className="text-xs text-[var(--success-fg)] bg-[var(--success-bg)] px-2 py-0.5 rounded-full">정산완료</span>
+                    <Badge tone="pale-green">정산완료</Badge>
                   </div>
                   <p className="text-xs text-[var(--warm-muted)] mt-0.5">{g.billingPeriodStr}</p>
                 </div>

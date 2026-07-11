@@ -34,6 +34,7 @@ import { regenerateJoinCode, approveJoinRequest, rejectJoinRequest } from './mem
 import type { ContractTemplate, ContractSection, BusinessInfo } from '@/lib/contract'
 import { uploadFileToDriveSession } from '@/lib/driveUpload'
 import { Btn } from '@/components/ui/Btn'
+import { Badge } from '@/components/ui/Badge'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { ImageCropModal } from '@/components/ui/ImageCropModal'
 import { PushToggle } from './PushToggle'
@@ -1220,7 +1221,7 @@ export default function SettingsForm({
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{r.title}</p>
                       {r.items.length > 0 && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--coral)]/10 text-[var(--coral)]">묶음 {r.items.length}</span>}
-                      {r.isAutoDebit && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--info-bg)] text-[var(--info-fg)]">자동이체</span>}
+                      {r.isAutoDebit && <Badge tone="pale-blue">자동이체</Badge>}
                       {!r.isActive && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--neutral-bg)] text-[var(--neutral-fg)]">비활성</span>}
                     </div>
                     <p className="text-xs text-[var(--warm-muted)] mt-0.5">

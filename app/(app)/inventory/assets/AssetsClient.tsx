@@ -390,7 +390,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         title={it.itemLabel}
         badges={<>
           {it.isService && <span className="inline-flex items-center rounded-full bg-[var(--canvas)] text-[var(--warm-mid)] text-[0.625rem] font-semibold px-1.5 py-0.5 border border-[var(--warm-border)]">서비스</span>}
-          {it.amount === 0 && <span className="inline-flex items-center rounded-full bg-[var(--info-bg)] text-[var(--info-fg)] text-[0.625rem] font-semibold px-1.5 py-0.5">무상</span>}
+          {it.amount === 0 && <Badge tone="pale-blue">무상</Badge>}
         </>}
         meta={[boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, it.vendor, it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category, won(it.amount)].filter(Boolean).join(' · ')}
         value={it.qtyValue != null ? `${fmtQty(it.qtyValue)}${it.qtyUnit ?? '개'}` : `${it.count}건`}
