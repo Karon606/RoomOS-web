@@ -2351,6 +2351,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
   const homeCountry = tenant?.contacts.find(c => c.isHomeCountry)
 
   const [statusVal, setStatusVal]   = useState(lease?.status ?? 'ACTIVE')
+  const [natVal, setNatVal]         = useState(tenant?.nationality ?? '')   // 국적 연동(본국 연락처 숨김)
   const [selectedRoomId, setSelectedRoomId] = useState(lease?.room?.id ?? '')
   const [rentAmount, setRentAmount] = useState<number | undefined>(lease?.rentAmount)
   const [tourDateVal, setTourDateVal] = useState(toDateInput(lease?.tourDate))
@@ -2513,7 +2514,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         <div className="grid grid-cols-3 gap-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">국적</label>
-            <CountrySelect name="nationality" defaultValue={tenant?.nationality} />
+            <CountrySelect name="nationality" defaultValue={tenant?.nationality} onChange={v => setNatVal(v ?? '')} />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">직업</label>
@@ -2548,6 +2549,9 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <PhoneInput name="emergencyContact" defaultValue={emergency?.contactValue ?? ''} />
           </div>
         </div>
+        {/* 본국 연락처 — 외국인 전용. 국적이 대한민국이면 숨김(운영자 요청 2026-07-11).
+            숨겨져도 저장 시 기존 값은 보존(필드 부재 = 서버가 건드리지 않음). */}
+        {natVal !== '대한민국' && (
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">본국 연락처 <span className="text-[0.625rem] text-[var(--warm-muted)] font-normal">(외국인 고객 · 국가 선택 시 자동 포맷)</span></label>
           <IntlPhoneInput
@@ -2558,6 +2562,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             placeholder="국가 선택 후 번호 입력"
           />
         </div>
+        )}
       </FormSection>
 
       <FormSection title="계약 정보">

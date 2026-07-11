@@ -241,9 +241,11 @@ interface CountrySelectProps {
   name: string
   defaultValue?: string | null
   placeholder?: string
+  /** 선택·해제 시 국가 이름(해제는 null) — 국적 연동 UI(예: 대한민국이면 본국 연락처 숨김)용 */
+  onChange?: (name: string | null) => void
 }
 
-export function CountrySelect({ name, defaultValue, placeholder = '국적 선택' }: CountrySelectProps) {
+export function CountrySelect({ name, defaultValue, placeholder = '국적 선택', onChange }: CountrySelectProps) {
   // defaultValue는 국가 이름(string)으로 저장됨 — 코드로 역조회
   const findByName = (nm: string | null | undefined) =>
     nm ? COUNTRIES.find(c => c.name === nm) ?? null : null
@@ -277,6 +279,7 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
 
   const pick = (c: { code: string; name: string }) => {
     setSelected(c)
+    onChange?.(c.name)
     setOpen(false)
   }
 
@@ -348,7 +351,7 @@ export function CountrySelect({ name, defaultValue, placeholder = '국적 선택
             <div className="border-t border-[var(--warm-border)] px-3 py-2 shrink-0">
               <button
                 type="button"
-                onClick={() => { setSelected(null); setOpen(false) }}
+                onClick={() => { setSelected(null); onChange?.(null); setOpen(false) }}
                 className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors"
               >
                 선택 초기화
