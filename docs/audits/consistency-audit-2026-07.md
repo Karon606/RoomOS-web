@@ -46,7 +46,9 @@
 - **B5 1단계**: lib/fmtDate.ts 정본 신설(fmtDateDot/fmtDateKor/fmtMD) — 로컬 fmtDate 치환 스윕은 다음 단계.
 - **B5-2 완료(2026-07-10)**: 로컬 fmtDate 16곳 lib/fmtDate 치환. **C 완료**: 가이드 §26 성문화 + C2(토스트 단일화 14곳)·C3(finance 선택 버튼)·C4(점검·입수 삭제 undo)·C5(choiceDialog 3지선다)·C6(재고 검색 탭 스코프) 코드 반영.
 - **D 대부분 완료(2026-07-10)**: D2 이중 패딩 5페이지, D4 인라인 로딩 5곳 SkeletonRows, D5 발급 쌍둥이 h1+InfoHint·EmptyState, D6 loading.tsx 4라우트(rooms·finance·report·market).
-- 남은 것: B1~B3(Btn·ModalFooterActions·배지 채택 스윕), D1(마케팅·시세 인라인 style 전면 재정렬 — 대규모, 별도 배치), D5 잔여(타 페이지 빈 상태), C 경미 항목(confirm level·impact·라벨 표기).
+- **마무리 배치 완료(2026-07-11)**: D1 잔여(시세 모달 입력·라벨 정본 클래스 14곳, report raw 버튼 Btn화, 시세 로컬 Btn·마케팅 수제 알약은 전일 완료), B2(유일한 raw 푸터 취소 버튼 Btn화), C 경미('…' 말줄임 79곳 통일, 세부스펙 삭제 level 부여, '편집' 라벨은 기존에 정리 확인), D5 잔여(체크리스트 로컬 EmptyHint → EmptyState).
+- **의도적 보류**: B3 정적 배지 스윕(54곳) — 카테고리 틴트 등 동적 색 변형이 많아 기계 전환 부적합, 화면별 검토가 필요한 별도 작업. impact[] 확충은 삭제 API들이 연쇄 건수를 반환하도록 하는 서버 작업과 묶어서.
+- 이로써 2차 감사 48건 중 B3·impact 확충 외 전건 종결.
 
 ## 우선순위 제안
 1. **A1~A5 (상용화 차단)** — 다른 영업장에서 오작동·법적 문서 오류
