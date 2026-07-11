@@ -97,20 +97,12 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
         <div className="flex items-center gap-2 flex-wrap">
           {tab === 'past' && (
             <>
-              <button
-                type="button"
-                onClick={handleExportCSV}
-                className="px-3 py-2 text-sm font-medium rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors no-print"
-              >
+              <Btn type="button" variant="secondary" size="sm" className="no-print" onClick={handleExportCSV}>
                 CSV 다운로드
-              </button>
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="px-3 py-2 text-sm font-medium rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors no-print"
-              >
+              </Btn>
+              <Btn type="button" variant="secondary" size="sm" className="no-print" onClick={handlePrint}>
                 인쇄·PDF
-              </button>
+              </Btn>
               <select
                 value={summary.year}
                 onChange={e => handleYear(e.target.value)}

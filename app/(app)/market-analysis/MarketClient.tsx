@@ -226,34 +226,10 @@ function CompetitorModal({
   const removePriceRow = (i: number) =>
     setForm(f => ({ ...f, roomPrices: f.roomPrices.filter((_, idx) => idx !== i) }))
 
-  const inputStyle: React.CSSProperties = {
-    border: '1px solid var(--warm-border)',
-    borderRadius: 12,
-    padding: '8px 12px',
-    fontSize: '0.875rem',
-    background: 'var(--canvas)',
-    color: 'var(--warm-dark)',
-    width: '100%',
-    outline: 'none',
-  }
-
-  const selectStyle: React.CSSProperties = {
-    ...inputStyle,
-    appearance: 'none',
-    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
-    backgroundRepeat: 'no-repeat',
-    backgroundPosition: 'right 10px center',
-    paddingRight: 28,
-    cursor: 'pointer',
-  }
-
-  const labelStyle: React.CSSProperties = {
-    fontSize: '0.75rem',
-    fontWeight: 600,
-    color: 'var(--warm-muted)',
-    marginBottom: 4,
-    display: 'block',
-  }
+  // 정본 입력 문법(§22) — 수제 style 객체 대신 공용 클래스(포커스 링 포함, 감사 D1)
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors'
+  const selectCls = 'h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
+  const labelCls = 'block text-xs font-medium text-[var(--warm-mid)] mb-1'
 
   return (
     <Modal open onClose={onClose} width="lg" dirty={dirty}
@@ -279,27 +255,27 @@ function CompetitorModal({
       }>
         <div className="flex flex-col gap-4" style={{ padding: 20 }}>
           <div>
-            <label style={labelStyle}>업체명 *</label>
+            <label className={labelCls}>업체명 *</label>
             <input
-              style={inputStyle}
+              className={inputCls}
               value={form.name}
               onChange={e => setField('name', e.target.value)}
               placeholder="예: ○○고시원"
             />
           </div>
           <div>
-            <label style={labelStyle}>주소 *</label>
+            <label className={labelCls}>주소 *</label>
             <input
-              style={inputStyle}
+              className={inputCls}
               value={form.address}
               onChange={e => setField('address', e.target.value)}
               placeholder="예: 서울시 관악구 ..."
             />
           </div>
           <div>
-            <label style={labelStyle}>네이버 플레이스 URL</label>
+            <label className={labelCls}>네이버 플레이스 URL</label>
             <input
-              style={inputStyle}
+              className={inputCls}
               value={form.naverPlaceUrl}
               onChange={e => setField('naverPlaceUrl', e.target.value)}
               placeholder="https://naver.me/..."
@@ -309,7 +285,7 @@ function CompetitorModal({
           {/* Room Prices */}
           <div>
             <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-              <label style={{ ...labelStyle, marginBottom: 0 }}>방타입별 가격</label>
+              <label className={labelCls} style={{ marginBottom: 0 }}>방타입별 가격</label>
               <button
                 type="button"
                 onClick={addPriceRow}
@@ -335,7 +311,7 @@ function CompetitorModal({
                   {/* 타입 선택 행 */}
                   <div className="flex gap-2 items-center">
                     <select
-                      style={{ ...selectStyle, flex: 2 }}
+                      className={selectCls} style={{ flex: 2 }}
                       value={row.type}
                       onChange={e => setPriceRow(i, 'type', e.target.value)}
                     >
@@ -343,7 +319,7 @@ function CompetitorModal({
                       {roomTypes.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                     <select
-                      style={{ ...selectStyle, flex: 1 }}
+                      className={selectCls} style={{ flex: 1 }}
                       value={row.windowType ?? ''}
                       onChange={e => setPriceRow(i, 'windowType', e.target.value)}
                     >
@@ -351,7 +327,7 @@ function CompetitorModal({
                       {windowTypes.map(w => <option key={w} value={w}>{getWindowLabel(w)}</option>)}
                     </select>
                     <select
-                      style={{ ...selectStyle, flex: 1 }}
+                      className={selectCls} style={{ flex: 1 }}
                       value={row.direction ?? ''}
                       onChange={e => setPriceRow(i, 'direction', e.target.value)}
                     >
@@ -369,7 +345,7 @@ function CompetitorModal({
                   {/* 크기 + 면적 행 */}
                   <div className="flex gap-2">
                     <select
-                      style={{ ...selectStyle, flex: '0 0 auto', width: '30%' }}
+                      className={selectCls} style={{ flex: '0 0 auto', width: '30%' }}
                       value={row.sizeCategory ?? ''}
                       onChange={e => setPriceRow(i, 'sizeCategory', e.target.value)}
                     >
@@ -380,7 +356,7 @@ function CompetitorModal({
                       <option value="특대">특대 (~3평+)</option>
                     </select>
                     <input
-                      style={{ ...inputStyle, flex: 1 }}
+                      className={inputCls} style={{ flex: 1 }}
                       type="number"
                       step="0.01"
                       min="0"
@@ -389,7 +365,7 @@ function CompetitorModal({
                       onChange={e => setAreaPyeong(i, e.target.value)}
                     />
                     <input
-                      style={{ ...inputStyle, flex: 1 }}
+                      className={inputCls} style={{ flex: 1 }}
                       type="number"
                       step="0.1"
                       min="0"
@@ -401,14 +377,14 @@ function CompetitorModal({
                   {/* 단가 + 메모 행 */}
                   <div className="flex gap-2">
                     <input
-                      style={{ ...inputStyle, flex: 1 }}
+                      className={inputCls} style={{ flex: 1 }}
                       type="number"
                       placeholder="단가 (원)"
                       value={row.price || ''}
                       onChange={e => setPriceRow(i, 'price', e.target.value)}
                     />
                     <input
-                      style={{ ...inputStyle, flex: 1 }}
+                      className={inputCls} style={{ flex: 1 }}
                       placeholder="메모"
                       value={row.memo ?? ''}
                       onChange={e => setPriceRow(i, 'memo', e.target.value)}
@@ -427,7 +403,7 @@ function CompetitorModal({
                     </label>
                     {row.hasDeposit && (
                       <input
-                        style={{ ...inputStyle, flex: 1 }}
+                        className={inputCls} style={{ flex: 1 }}
                         type="number"
                         placeholder="보증금 (원)"
                         value={row.deposit ?? ''}
@@ -441,9 +417,9 @@ function CompetitorModal({
           </div>
 
           <div>
-            <label style={labelStyle}>메모</label>
+            <label className={labelCls}>메모</label>
             <textarea
-              style={{ ...inputStyle, resize: 'vertical', minHeight: 64 }}
+              className={inputCls} style={{ resize: 'vertical', minHeight: 64 }}
               value={form.notes}
               onChange={e => setField('notes', e.target.value)}
               placeholder="특이사항 등"
