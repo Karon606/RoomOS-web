@@ -19,9 +19,9 @@
 9. 장문 토스트 예문의 em dash: §25.1(현 §29)이 이후 성문화한 전면 규칙 → 예문을 가운뎃점 표기로 수정
 10. 투명 틴트: 토큰표 rgba 리터럴 vs addendum → 코드는 **color-mix(in srgb, var(--coral) N%, transparent)**, 표의 rgba는 의도값 (§28)
 
-미해소 (재검토 요청):
-1. **InventoryCard radius 13px**: radius 토큰 스케일(4·6·8·10·14·18·999)에 13이 없다. 원문 유지로 실었다. 14px(r-xl) 정규화 여부 결정 필요 (§22)
-2. **테이블 내부 z 리터럴**: §23.7의 thead z-30·고정열 z-20 vs §08 "토큰 외 z값 금지". 테이블 내부 스태킹 한정의 지역 예외로 볼 수 있으나 명문화가 없다. 예외 조항 추가 여부 결정 필요 (§23)
+미해소 → 전건 해소 (운영자 결정 2026-07-11):
+1. **InventoryCard radius**: 14px(r-xl)로 정규화 확정 — 토큰 체계 예외 제거, 코드 반영 완료 (§22)
+2. **테이블 내부 z 리터럴**: §08에 지역 예외 조항 명문화로 해소 — 코드 불변 (§08·§23)
 
 ---
 
@@ -131,6 +131,7 @@
 ```
 - 토큰 외 z값 금지. 형제 정렬은 DOM 순서로. 모달 중첩 최대 3중, 각자 backdrop(추가 어둡기 보정 금지). Esc는 최상단 레이어만. 토스트는 모달 위에서도 보임. 모달 내 드롭다운은 부모 모달 z+1.
 - --z-pill 근거: sticky 위, dropdown·drawer 아래 (열리면 알약을 덮는다).
+- **지역 예외(운영자 결정 2026-07-11)**: 컴포넌트 내부의 격리된 스태킹 컨텍스트(표의 sticky 헤더 z-30·고정 열 z-20 등)는 소규모 리터럴 허용 — 전역 레이어 토큰과 충돌할 수 없는 범위에 한한다.
 
 ## §09 모션
 
@@ -243,7 +244,7 @@
 
 ## §22 재고·리스트 컴포넌트
 
-- InventoryCard: bg --cream · border 1px --border · radius 13px(§00 미해소 1 참조) · 패딩 13/14px. .sel = border --tc + ring 2px rgba(160,60,46,.16). .attn = 좌 3px --tc. 제목 14.5/600 −.015em + 인라인 뱃지 gap 6px. 메타 11.5px --ink-m. 핵심 수치 19px/700 tnum 우측(위험 시 --tc, 단위 11px --ink-m) · 슬롯은 항상 1개. 액션 행 34px r8, 주 버튼 1개만 solid --tc. 체크박스 22px r7 on=--tc(선택 모드만). 펼치기 11.5px 행.
+- InventoryCard: bg --cream · border 1px --border · radius 14px r-xl(§00 결정 — 13px에서 정규화) · 패딩 13/14px. .sel = border --tc + ring 2px rgba(160,60,46,.16). .attn = 좌 3px --tc. 제목 14.5/600 −.015em + 인라인 뱃지 gap 6px. 메타 11.5px --ink-m. 핵심 수치 19px/700 tnum 우측(위험 시 --tc, 단위 11px --ink-m) · 슬롯은 항상 1개. 액션 행 34px r8, 주 버튼 1개만 solid --tc. 체크박스 22px r7 on=--tc(선택 모드만). 펼치기 11.5px 행.
 - SectionHeader: 마커 슬롯(카테고리=색 점 11px / 위치=아이콘 14px --ink-m) + 이름 13/700 + 카운트 11px tnum --ink-m + chevron 접기. 패딩 상14 하6(첫 상2).
 - SelectionPillBar: bg --ink · r 15 · left/right 14 · bottom 16 · shadow lg · z --z-pill 120. 카운트 13/600 흰색, 숫자 --sand tnum. 액션 36px r9 (ghost rgba(255,255,255,.13) / 주액션 solid --tc-s). 닫기 34px. 탭별 가능한 액션만 노출(숨김, 비활성 아님). 합치기는 양 탭 공통.
 - MergeSheet: 합치기 단일 바텀시트. bg --cream · 상단 r 20 · 패딩 8/18/20 · scrim rgba(31,26,23,.45) · z --z-modal 300. 그립 38x4. 제목 16/700. 대상 select 44px r10 bg --cream-2. 방향 확인 박스("이 카드 → 남는 카드", 화살표 --tc) 필수. 액션 취소(secondary)+합치기(solid --tc, flex 1.6) 46px. 모든 진입점 수렴. 실행 후 §16 undo 토스트 (환경설정에 숨기지 않음).
@@ -256,7 +257,7 @@
 - 식별자: 호실번호·입주자명 = --ink bold tnum. 테라코타는 OVERDUE·.attn에만.
 - 1차 필터 = SegmentedControl(라디오·단일, '전체'=해제). 토글 칩 금지. 고급필터는 별도 패널.
 - 선택 모드: '선택' 토글 → 체크박스(모바일 카드 좌 / 데스크탑 sticky 호실셀, 선택 시 coral 체크) → SelectionPillBar(unit 개/명/실) → 배치 액션. 수납 일괄: 미수 호실 자동필터 → 확인 Modal(합계 tnum + DatePicker + 방법 세그먼트) → 성공 토스트 [적용취소]. 금액은 서버 권위 재계산.
-- sticky 테이블: thead sticky top-0 z-30 cream · 식별자 열 sticky-left z-20 cream(§00 미해소 2 참조) · 호실셀 좌 3px 상태색 · 열 리사이즈 · 768px 전환 시 상태 공유.
+- sticky 테이블: thead sticky top-0 z-30 cream · 식별자 열 sticky-left z-20 cream(§08 지역 예외) · 호실셀 좌 3px 상태색 · 열 리사이즈 · 768px 전환 시 상태 공유.
 - 모달 아키텍처: 복잡 상세=EntityModal / 단순 폼=Modal.
 
 ## §24 대시보드·위젯

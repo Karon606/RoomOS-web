@@ -277,13 +277,13 @@ a{color:var(--tc-text)} a:hover{color:var(--tc-d)}
       </table>
     </div>
 
-    <div class="sub-h">미해소 · 재검토 요청 2건</div>
+    <div class="sub-h">미해소 → 전건 해소 (운영자 결정 2026-07-11)</div>
     <div class="card" style="margin-bottom:6px">
       <table class="tok-table">
         <thead><tr><th style="width:30%">항목</th><th>내용</th></tr></thead>
         <tbody>
           <tr><td class="td-s">InventoryCard radius 13px</td><td class="td-m">v1.3 §21.1이 카드 radius를 13px로 명기했으나 radius 토큰 스케일(4·6·8·10·14·18·999)에 13이 없다. 원문 수치를 유지해 13px로 실었다. 14px(r-xl)로 정규화할지 결정 필요 (§22)</td></tr>
-          <tr><td class="td-s">테이블 내부 z 리터럴</td><td class="td-m">v1.3 §22.7이 thead z-30·고정열 z-20 리터럴을 명기했으나 §12는 "토큰 외 z값 금지". 테이블 내부 스태킹 컨텍스트 한정이라 §12의 "모달 내부 드롭다운 = 부모 z+1" 같은 지역 예외로 볼 수 있으나, 예외 명문화가 없다. 원문대로 실었다 · 예외 조항 추가 여부 결정 필요 (§23)</td></tr>
+          <tr><td class="td-s">테이블 내부 z 리터럴</td><td class="td-m">v1.3 §22.7이 thead z-30·고정열 z-20 리터럴을 명기했으나 §12는 "토큰 외 z값 금지". 테이블 내부 스태킹 컨텍스트 한정이라 §12의 "모달 내부 드롭다운 = 부모 z+1" 같은 지역 예외로 볼 수 있으나, 예외 명문화가 없다. §08 지역 예외 조항 명문화로 해소 — 코드 불변 (§23)</td></tr>
         </tbody>
       </table>
     </div>
