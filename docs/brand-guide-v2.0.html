@@ -517,7 +517,7 @@ a{color:var(--tc-text)} a:hover{color:var(--tc-d)}
 
     <div class="sub-h">다크 리매핑 함정 · solid vs text 분리</div>
     <div class="card" style="border-left:3px solid var(--tc);margin-bottom:14px">
-      <p style="font-size:12.5px;color:var(--ink-s);line-height:1.7">-fg 토큰은 다크에서 밝은 값으로 뒤집힌다(#4E6834→#A3BF7B). 이 밝은 값을 흰/cream 글자 솔리드 배지 배경에 쓰면 대비가 붕괴한다. 그래서 -solid는 다크에서도 깊은 값으로 고정된다. 솔리드 배지/버튼 배경 = --{semantic}-solid + cream 글자. 틴트 칩·인라인 텍스트·아이콘 = --{semantic}-fg + 투명 틴트 bg.</p>
+      <p style="font-size:12.5px;color:var(--ink-s);line-height:1.7">-fg 토큰은 다크에서 밝은 값으로 뒤집힌다(#4E6834→#A3BF7B). 이 밝은 값을 흰/cream 글자 솔리드 배지 배경에 쓰면 대비가 붕괴한다. 그래서 -solid는 다크에서도 깊은 값으로 고정된다. 솔리드 배지/버튼 배경 = --{semantic}-solid + --on-solid 글자(#FBF6EF 양 모드 고정 · --cream 금지: 다크에서 표면색으로 뒤집힘, 2026-07-11 확정). 틴트 칩·인라인 텍스트·아이콘 = --{semantic}-fg + 투명 틴트 bg.</p>
     </div>
 
     <div class="sub-h">리터럴 정합 2건 (2026-07-02 확정)</div>
@@ -1587,7 +1587,7 @@ a{color:var(--tc-text)} a:hover{color:var(--tc-d)}
         <tbody>
           <tr><td class="td-s">컨테이너</td><td class="td-m">inline-flex · radius 10px (r-md) · border 1px · overflow hidden · bg --cream · 세그 사이 1px 구분선</td></tr>
           <tr><td class="td-s">세그</td><td class="td-m">높이 40px 이상 (모바일 44pt: 세로 패딩 12px) · padding 10px 16px · 14px/600 · radius 0 (컨테이너가 라운드 소유)</td></tr>
-          <tr><td class="td-s">상태</td><td class="td-m">활성 bg --coral + text --cream (white 금지, 양 모드 동일 계열) · 비활성 --cream + --warm-mid · hover --cream-2 + --warm-dark 150ms · focus-visible outline 2px --coral offset 2 · disabled --warm-muted</td></tr>
+          <tr><td class="td-s">상태</td><td class="td-m">활성 bg --coral + text --on-solid(#FBF6EF 고정, white 금지 · --cream 금지: 다크에서 표면색으로 뒤집힘) · 비활성 --cream + --warm-mid · hover --cream-2 + --warm-dark 150ms · focus-visible outline 2px --coral offset 2 · disabled --warm-muted</td></tr>
           <tr><td class="td-s">라벨 접미</td><td class="td-m">{라벨} ({값}) · 만 축약·부호(+/−)·tnum · 정산·법적 금액엔 미부착 · 빈 괄호 금지 · 값 0이면 생략</td></tr>
           <tr><td class="td-s">개수·오버플로</td><td class="td-m">2~4 권장 · max 5 · 모바일 넘침은 가로 스크롤(스크롤바 숨김 + nowrap + 페이드 마스크) · 축약·2줄 wrap 금지</td></tr>
           <tr><td class="td-s">링크 탭</td><td class="td-m">라우트 이동도 동일 외형 · a role=tab + aria-selected/aria-current · SPA Link (전체 새로고침 금지)</td></tr>

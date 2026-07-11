@@ -127,7 +127,7 @@ function ResBtn({ active, onClick, label, color = 'default' }: {
   const baseStyle = 'text-xs px-2.5 py-1.5 rounded-lg font-medium transition-colors border'
   const activeStyle =
     color === 'coral' ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--warm-dark)]' :
-    color === 'amber' ? 'bg-[var(--warning-solid)] border-[var(--warning-ring)] text-[var(--cream)]' :
+    color === 'amber' ? 'bg-[var(--warning-solid)] border-[var(--warning-ring)] text-[var(--on-solid)]' :
     'bg-[var(--warm-dark)] border-[var(--warm-dark)] text-[var(--canvas)]'
   const inactiveStyle = 'bg-transparent border-[var(--warm-border)] text-[var(--warm-muted)] hover:text-[var(--warm-dark)]'
   return (

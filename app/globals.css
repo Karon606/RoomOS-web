@@ -103,6 +103,7 @@
   /* ── §14.4 의미색 정본 (Semantic Color Canon) — 무지개 디톡스 단일 출처 ──
      fg = 텍스트·아이콘 (다크에서 밝아짐) · solid = 솔리드 배지 배경 (양 모드 깊은값 + cream 글자)
      bg/ring = 투명 틴트 (칩·박스). 라이트=여기, 다크=html.dark 블록. */
+  --on-solid:     #FBF6EF;  /* 솔리드 채움(coral·solid 계열) 위 글자 — 양 모드 고정. --cream은 다크에서 표면색으로 뒤집히므로 채움 위 글자에 금지 */
   --danger-fg:    #A03C2E;  --danger-bg:  rgba(160,60,46,.08);  --danger-ring:  rgba(160,60,46,.22);  --danger-solid:  #A03C2E;
   --success-fg:   #4E6834;  --success-bg: rgba(85,108,58,.10);   --success-ring: rgba(85,108,58,.22); --success-solid: #4E6834;
   --warning-fg:   #8B5E0A;  --warning-bg: rgba(180,120,10,.10);  --warning-ring: rgba(180,120,10,.24); --warning-solid: #8B5E0A;

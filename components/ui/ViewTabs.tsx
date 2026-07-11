@@ -78,7 +78,7 @@ export function ViewTabs({
     focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--coral)]
     border-r border-[var(--warm-border)] last:border-r-0 motion-safe:transition-colors motion-safe:duration-150`
   // 채움 실측 전(첫 프레임·JS 비활성)엔 활성 탭이 자체 배경으로 폴백
-  const segActive   = thumb ? 'text-[var(--cream)]' : 'bg-[var(--coral)] text-[var(--cream)]'
+  const segActive   = thumb ? 'text-[var(--on-solid)]' : 'bg-[var(--coral)] text-[var(--on-solid)]'
   const segInactive = 'text-[var(--warm-mid)] hover:bg-[var(--cream-2)] hover:text-[var(--warm-dark)]'
   const segDisabled = 'text-[var(--warm-muted)] cursor-not-allowed'
 

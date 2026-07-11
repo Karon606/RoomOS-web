@@ -365,7 +365,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                 <button type="button" onClick={() => setShowAddInc(false)}
                   className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">취소</button>
                 <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-[var(--success-solid)] hover:opacity-90 text-[var(--cream)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  className="flex-1 py-2.5 bg-[var(--success-solid)] hover:opacity-90 text-[var(--on-solid)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
                   {isPending ? '저장 중…' : '저장'}
                 </button>
               </div>

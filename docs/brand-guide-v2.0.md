@@ -91,7 +91,7 @@
 
 - 별칭: --status-paid-* = --success-* · --status-await-* = --info-* · --status-unpaid-* = --warning-* · --badge-overdue-* = --overdue-solid · --status-vacant-* = --neutral-*.
 - 6개 확정 결정: 1 danger 빨강은 테라코타로 흡수(삭제 버튼 soft, 파괴적 확인 solid, 에러 박스 bg+ring+fg) · 2 success 초록은 올리브 단일(비결제 긍정 포함) · 3 amber는 단일 --warning-* · 4 deposit 보라→카멜, reserve teal→토프 (라이트값도 교체) · 5 blue 정보·양도인은 --info-*로 await와 통합(동일 hex) · 6 페일 틴트는 bg/fg/ring 트라이어드 1:1.
-- 다크 리매핑 함정: -fg는 다크에서 밝아진다. 솔리드 배지/버튼 배경 = -solid(양 모드 동일 깊은 값) + cream 글자. 틴트 칩·인라인 텍스트 = -fg + 투명 틴트 bg. -fg를 솔리드 배지 bg에 쓰지 말 것.
+- 다크 리매핑 함정: -fg는 다크에서 밝아진다. 솔리드 배지/버튼 배경 = -solid(양 모드 동일 깊은 값) + --on-solid 글자(#FBF6EF, 양 모드 고정). --cream은 다크에서 표면색(니어블랙)으로 뒤집히므로 솔리드 채움 위 글자에 금지(2026-07-11 뷰 전환 탭 다크 글자 회귀로 확정). 틴트 칩·인라인 텍스트 = -fg + 투명 틴트 bg. -fg를 솔리드 배지 bg에 쓰지 말 것.
 - 리터럴 정합 2건: Badge pale-green(#eef2e5+#4e6834)은 --success-bg + --success-fg 쌍으로 (text만 토큰화 금지) · StatusBadge ROW_TINT 6종은 "공용" 의도 폐기, 각 --{semantic}-bg로 (연체 행은 --danger-bg + 좌측 3px --overdue-fg 보더, 별도 --overdue-bg 없음).
 - Tailwind 치트시트: text-red-500 → --danger-fg · bg-red-50 → --danger-bg · ring-red-200 → --danger-ring · bg-red-500(solid) → --danger-solid. emerald/green → success · amber/yellow → warning · blue/sky/indigo → info · purple/violet → deposit · teal/cyan → reserve · gray/slate → neutral. 연체 강조는 --overdue-fg, 미수 음수는 §06(--danger-fg).
 - viz 팔레트: --viz-1 #A03C2E · 2 #C8A07D · 3 #7A9A52 · 4 #B47A0A · 5 #7C2D26 · 6 #C77F6F · 7 #93A77E · 8 #8C7A66. 시리즈는 1부터 순서대로, 건너뛰기 허용·역전 금지. KPI 수치 색에 viz 금지 (기본 --ink, 강조 --tc, 긍정 --success).
@@ -273,7 +273,7 @@
 
 - 판별: 필터(좁힘, '전체' 있음, SegmentedControl 트랙형) vs 뷰 전환(교체, 항상 1개 활성, ViewTabs 코랄 채움) vs 링크 탭(라우트 이동, ViewTabs 외형 + a href).
 - 정본 = A 코랄 채움 조인트 + role=tablist. B(트랙형)의 뷰 전환 용도·C(rounded-2xl) 폐기. SegmentedControl 자체는 필터 전용 존속.
-- 스펙: 컨테이너 inline-flex · r 10(r-md) · border 1px · overflow hidden · bg --cream · 세그 사이 1px 구분선. 세그 40px 이상(모바일 44pt: 세로 패딩 12px) · 10px 16px · 14/600 · radius 0. 활성 --coral + --cream 텍스트(white 금지, 양 모드 동일) · 비활성 --cream + --warm-mid · hover --cream-2 + --warm-dark 150ms · focus outline 2px --coral offset 2 · disabled --warm-muted.
+- 스펙: 컨테이너 inline-flex · r 10(r-md) · border 1px · overflow hidden · bg --cream · 세그 사이 1px 구분선. 세그 40px 이상(모바일 44pt: 세로 패딩 12px) · 10px 16px · 14/600 · radius 0. 활성 --coral + --on-solid 텍스트(#FBF6EF 고정 · white 금지 · --cream 금지: 다크에서 표면색으로 뒤집힘) · 비활성 --cream + --warm-mid · hover --cream-2 + --warm-dark 150ms · focus outline 2px --coral offset 2 · disabled --warm-muted.
 - 라벨 접미: {라벨} ({값}) · 만 축약·부호·tnum · 정산·법적 금액 미부착 · 빈 괄호 금지.
 - 개수: 2~4 권장, max 5. 모바일 넘침은 가로 스크롤(nowrap+페이드 마스크), 축약·2줄 금지. scrollIntoView 금지(scrollLeft만).
 - 링크 탭: a role=tab + aria-selected/aria-current · SPA Link.

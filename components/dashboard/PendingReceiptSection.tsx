@@ -358,7 +358,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                         : `표기상 ${setHint.count}개입 세트로 보여요. 실물 ${setHint.count}개 맞나요?`}
                     </span>
                     <button type="button" onClick={applySetHint}
-                      className="px-2 py-1 text-[0.625rem] font-medium rounded-md bg-[var(--coral)] text-[var(--cream)]">
+                      className="px-2 py-1 text-[0.625rem] font-medium rounded-md bg-[var(--coral)] text-[var(--on-solid)]">
                       네, {setHint.count}개입{setHint.perPiece > 0 ? ` (개당 ${setHint.perPiece.toLocaleString()}원)` : ''}
                     </button>
                     <button type="button" onClick={() => setSetHint(null)}
@@ -406,7 +406,7 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
             <div className="flex gap-1.5 pt-1">
               <button onClick={handleApprove} disabled={pending}
                 className="flex-1 text-[0.6875rem] py-1.5 rounded-lg font-medium"
-                style={{ background: isInventory ? 'var(--success-solid)' : 'var(--coral)', color: 'var(--cream)' }}>
+                style={{ background: isInventory ? 'var(--success-solid)' : 'var(--coral)', color: 'var(--on-solid)' }}>
                 {pending ? '저장 중…' : (isInventory ? '재고 보충 등록' : '지출 등록')}
               </button>
               <button onClick={onCancelEdit} disabled={pending}

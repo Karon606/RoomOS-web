@@ -449,7 +449,7 @@ export default function RequestsClient({
                         <button
                           onClick={() => handleResolve(r.id, resolvingMemo)}
                           disabled={pending}
-                          className="flex-1 py-1.5 text-xs font-semibold rounded-md bg-[var(--success-solid)] text-[var(--cream)] disabled:opacity-50"
+                          className="flex-1 py-1.5 text-xs font-semibold rounded-md bg-[var(--success-solid)] text-[var(--on-solid)] disabled:opacity-50"
                         >
                           {pending ? '저장 중…' : '완료로 저장'}
                         </button>

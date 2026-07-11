@@ -8,7 +8,7 @@ export default function Loading() {
       {/* v2.0 §25 탭 모형 — ViewTabs와 동일 치수 + 아랫줄 우측 월셀렉터 자리(v2.0 §25 고정 2줄) */}
       <div className="flex flex-col items-start gap-2 md:flex-row md:justify-between">
         <div className="inline-flex rounded-[10px] border border-[var(--warm-border)] overflow-hidden bg-[var(--cream)] text-sm font-semibold">
-          <span className="px-4 py-2.5 min-h-[44px] md:min-h-[40px] md:py-2 inline-flex items-center bg-[var(--coral)] text-[var(--cream)]">소모품·부식</span>
+          <span className="px-4 py-2.5 min-h-[44px] md:min-h-[40px] md:py-2 inline-flex items-center bg-[var(--coral)] text-[var(--on-solid)]">소모품·부식</span>
           <span className="px-4 py-2.5 min-h-[44px] md:min-h-[40px] md:py-2 inline-flex items-center border-l border-[var(--warm-border)] text-[var(--warm-mid)]">비품·자재</span>
         </div>
         <div className="self-end md:self-auto h-9 w-32 rounded-md bg-[var(--cream)] animate-pulse" />

@@ -547,7 +547,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                 <button key={o} type="button" onClick={() => setSpecText(specText === o ? '' : o)}
                   className={`px-2 py-1 text-[0.625rem] rounded-md border transition-colors ${
                     specText === o
-                      ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--cream)]'
+                      ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--on-solid)]'
                       : 'bg-[var(--cream)] border-[var(--warm-border)] text-[var(--warm-mid)] hover:border-[var(--coral)]'}`}>
                   {o}
                 </button>
@@ -641,7 +641,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                         : `표기상 ${it.setHint.count}개입 세트로 보여요. 실물 ${it.setHint.count}개 맞나요?`}
                     </span>
                     <button type="button" onClick={() => applySetHint(idx)}
-                      className="px-2 py-1 text-[0.625rem] font-medium rounded-md bg-[var(--coral)] text-[var(--cream)]">
+                      className="px-2 py-1 text-[0.625rem] font-medium rounded-md bg-[var(--coral)] text-[var(--on-solid)]">
                       네, {it.setHint.count}개입{it.setHint.perPiece > 0 ? ` (개당 ${it.setHint.perPiece.toLocaleString()}원)` : ''}
                     </button>
                     <button type="button" onClick={() => patchItem(idx, { setHint: undefined })}

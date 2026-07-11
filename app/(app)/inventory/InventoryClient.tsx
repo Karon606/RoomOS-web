@@ -2862,7 +2862,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
 
   const chip = (on: boolean, disabled = false) =>
     `min-h-[40px] px-3 rounded-lg border text-sm font-medium transition-colors ${disabled ? 'opacity-40' : ''} ${
-      on ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--cream)]'
+      on ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--on-solid)]'
          : 'bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)]'}`
 
   const submit = async () => {

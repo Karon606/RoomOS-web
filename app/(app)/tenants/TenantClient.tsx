@@ -1159,7 +1159,7 @@ export default function TenantClient({
                 </button>
                 <button type="button" onClick={handleDepositRefundConfirm} disabled={isPending || exceedsMax}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
-                  style={{ background: 'var(--warning-solid)', color: 'var(--cream)' }}>
+                  style={{ background: 'var(--warning-solid)', color: 'var(--on-solid)' }}>
                   {isPending ? '처리 중…' : '퇴실 처리'}
                 </button>
               </div>
