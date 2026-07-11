@@ -33,7 +33,7 @@ export type AlertItem = {
 }
 
 const CATEGORY_LABEL: Record<AlertCategory, string> = {
-  unpaid: '미납', checkout: '오늘 퇴실', tour: '오늘 투어',
+  unpaid: '미납', checkout: '퇴실', tour: '오늘 투어',
   movein: '오늘 입주', lowstock: '재고 소진 임박', receipt: '수령 대기',
   contact: '연락할 때',
 }
@@ -52,9 +52,10 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
   const [unpaidStatus, inventory, checkoutLeases, tourLeases, moveInLeases, pendingReceipts, contactLeases] = await Promise.all([
     computeUnpaidStatus(propertyId),
     computeInventoryOverview(propertyId),
+    // 퇴실 — 당일 + 경과(미처리) 모두: 예정일이 지나도 퇴실 처리(상태 전환) 전까지 매일 지속(운영자 확정 2026-07-11)
     prisma.leaseTerm.findMany({
-      where: { propertyId, status: 'CHECKOUT_PENDING', expectedMoveOut: { gte: today, lt: tomorrow } },
-      select: { id: true, room: { select: { id: true, roomNo: true } }, tenant: { select: { id: true, name: true } } },
+      where: { propertyId, status: 'CHECKOUT_PENDING', expectedMoveOut: { lt: tomorrow } },
+      select: { id: true, expectedMoveOut: true, room: { select: { id: true, roomNo: true } }, tenant: { select: { id: true, name: true } } },
     }),
     prisma.leaseTerm.findMany({
       where: { propertyId, status: 'WAITING_TOUR', tourDate: { gte: today, lt: tomorrow } },
@@ -122,14 +123,18 @@ export async function computeAlerts(propertyId: string): Promise<AlertItem[]> {
     })
   }
 
-  // 오늘 퇴실
+  // 퇴실 — 당일은 '오늘 퇴실 예정', 지났으면 '퇴실 예정일 경과 N일'로 처리 전까지 지속
   for (const l of checkoutLeases) {
+    const overdueDays = l.expectedMoveOut
+      ? Math.floor((today.getTime() - l.expectedMoveOut.getTime()) / 86400000)
+      : 0
     items.push({
       id: `checkout-${l.id}`, category: 'checkout',
-      title: roomName(l.room?.roomNo, l.tenant.name), subtitle: '오늘 퇴실 예정',
+      title: roomName(l.room?.roomNo, l.tenant.name),
+      subtitle: overdueDays > 0 ? `퇴실 예정일 경과 ${overdueDays}일 — 퇴실 처리 필요` : '오늘 퇴실 예정',
       tenantId: l.tenant.id, leaseTermId: l.id,
       roomId: l.room?.id ?? null, roomNo: l.room?.roomNo, tenantName: l.tenant.name,
-      urgency: 800,
+      urgency: 800 + Math.min(overdueDays * 5, 90),   // 경과할수록 위로(미납 950대는 넘지 않게)
     })
   }
   // 오늘 입주
