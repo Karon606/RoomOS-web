@@ -1,3 +1,5 @@
+> [!warning] 구버전(v1.1) — 정본은 docs/brand-guide-v2.0.md (2026-07-11 통합). 이 파일은 이력 보존용이며 § 대응은 v2.0 부록 A 매핑표 참조.
+
 # stayeum — Brand & Design Guide v1.1 (요약)
 
 2026-05-18 수령. 원본 HTML(Claude Design 제작)에서 토큰을 추출한 작업용 레퍼런스.

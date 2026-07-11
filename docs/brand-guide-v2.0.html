@@ -1,0 +1,1928 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stayeum Design Guide v2.0 (통합본)</title>
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/pretendardvariable.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* 기본 팔레트 (§03) */
+  --tc:#A03C2E; --tc-d:#7C2D26; --tc-s:#B85042;
+  --camel:#C8A07D; --sand:#F2D9B8; --sand-s:#F5E5CC;
+  --cream:#FBF6EF; --cream-2:#F5EDE0;
+  --ink:#3D2418; --ink-s:#7A6553; --ink-m:#A89380;
+  --success:#4E6834; --page:#E8DDD0;
+  --border:rgba(61,36,24,.10); --border-s:rgba(61,36,24,.18);
+  /* 의미색 정본 (§04) 라이트 */
+  --danger-fg:#A03C2E; --danger-bg:rgba(160,60,46,.08); --danger-ring:rgba(160,60,46,.22); --danger-solid:#A03C2E;
+  --success-fg:#4E6834; --success-bg:rgba(85,108,58,.10); --success-ring:rgba(85,108,58,.22); --success-solid:#4E6834;
+  --warning-fg:#8B5E0A; --warning-bg:rgba(180,120,10,.10); --warning-ring:rgba(180,120,10,.24); --warning-solid:#8B5E0A;
+  --info-fg:#1E40AF; --info-bg:rgba(30,64,175,.08); --info-ring:rgba(30,64,175,.20); --info-solid:#1E40AF;
+  --deposit-fg:#8A6843; --deposit-bg:rgba(200,160,125,.16); --deposit-ring:rgba(200,160,125,.40);
+  --reserve-fg:#6E5C49; --reserve-bg:rgba(140,122,102,.14); --reserve-ring:rgba(140,122,102,.32);
+  --neutral-fg:#7A6553; --neutral-bg:rgba(61,36,24,.05); --neutral-ring:rgba(61,36,24,.14);
+  --inspect-fg:#7A5A32; --inspect-bg:rgba(200,160,125,.18); --inspect-ring:rgba(200,160,125,.50);
+  --overdue-fg:#A03C2E;
+  /* viz (§04) */
+  --viz-1:#A03C2E; --viz-2:#C8A07D; --viz-3:#7A9A52; --viz-4:#B47A0A;
+  --viz-5:#7C2D26; --viz-6:#C77F6F; --viz-7:#93A77E; --viz-8:#8C7A66;
+  /* 문서 표면 (테마 전환용) */
+  --surface:var(--cream); --surface-2:var(--cream-2);
+  --tc-text:#A03C2E;
+}
+[data-theme="dark"]{
+  /* §28 다크 팔레트 (v1.3 §19 + addendum) */
+  --page:#000000;
+  --surface:#1A130E; --surface-2:#261C14;
+  --ink:#F2E8DC; --ink-s:#C7B5A2; --ink-m:#93816F;
+  --border:rgba(242,232,220,.08); --border-s:rgba(242,232,220,.16);
+  --sand:#332619; --sand-s:#3D2E1F;
+  --cream:#1A130E; --cream-2:#261C14;
+  --tc-text:#C9614C;
+  --success:#A3BF7B;
+  --danger-fg:#E08A75; --danger-bg:rgba(224,138,117,.12); --danger-ring:rgba(224,138,117,.28);
+  --success-fg:#A3BF7B; --success-bg:rgba(163,191,123,.14); --success-ring:rgba(163,191,123,.30);
+  --warning-fg:#D9A648; --warning-bg:rgba(217,166,72,.14); --warning-ring:rgba(217,166,72,.30);
+  --info-fg:#93A9D1; --info-bg:rgba(147,169,209,.14); --info-ring:rgba(147,169,209,.30);
+  --deposit-fg:#D4B494; --deposit-bg:rgba(212,180,148,.14); --deposit-ring:rgba(212,180,148,.28);
+  --reserve-fg:#BBA892; --reserve-bg:rgba(187,168,146,.12); --reserve-ring:rgba(187,168,146,.26);
+  --neutral-fg:#C7B5A2; --neutral-bg:rgba(242,232,220,.06); --neutral-ring:rgba(242,232,220,.14);
+  --inspect-fg:#C8A07D; --inspect-bg:rgba(200,160,125,.16); --inspect-ring:rgba(200,160,125,.40);
+  --overdue-fg:#E08A75;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--page);color:var(--ink);font-family:'Pretendard Variable','Pretendard',sans-serif;-webkit-font-smoothing:antialiased;transition:background .2s ease,color .2s ease}
+a{color:var(--tc-text)} a:hover{color:var(--tc-d)}
+[data-theme="dark"] a:hover{color:#E08A75}
+
+/* ── 레이아웃 ── */
+.doc{display:flex;max-width:1200px;margin:0 auto}
+.doc-nav{width:198px;flex-shrink:0;position:sticky;top:0;height:100vh;overflow-y:auto;padding:26px 0 26px 18px;font-size:11.5px}
+.doc-main{flex:1;min-width:0;background:var(--surface);border-left:1px solid var(--border-s);border-right:1px solid var(--border-s)}
+.nav-group{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-m);margin:14px 0 4px}
+.nav-link{display:flex;gap:7px;align-items:baseline;padding:3px 8px;color:var(--ink-s);text-decoration:none;border-radius:6px;line-height:1.4}
+.nav-link:hover{background:var(--surface);color:var(--ink)}
+.nav-link.active{color:var(--tc-text);font-weight:600}
+.nav-num{font-family:'DM Mono',monospace;font-size:9px;color:var(--ink-m)}
+@media(max-width:860px){.doc-nav{display:none}}
+
+/* ── 테마 토글 ── */
+.theme-toggle{position:fixed;top:14px;right:14px;z-index:50;display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border-s);border-radius:999px;padding:7px 14px;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer;font-family:inherit}
+.theme-toggle:hover{background:var(--surface-2)}
+.theme-toggle:focus-visible{outline:2px solid var(--tc);outline-offset:2px}
+.theme-dot{width:10px;height:10px;border-radius:50%;background:var(--tc)}
+
+/* ── 섹션 ── */
+.sec{padding:48px 44px;border-bottom:1px solid var(--border-s);scroll-margin-top:20px}
+.sec-eye{font-family:'DM Mono',monospace;font-size:10px;color:var(--tc-text);letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px}
+.sec-h{font-size:24px;font-weight:700;letter-spacing:-.03em;line-height:1.15;margin-bottom:8px}
+.sec-p{font-size:13.5px;color:var(--ink-s);line-height:1.72;max-width:640px;margin-bottom:26px;text-wrap:pretty}
+.sub-h{font-size:13px;font-weight:700;letter-spacing:-.01em;margin:26px 0 10px;padding-left:9px;border-left:3px solid var(--tc)}
+.sub-h:first-of-type{margin-top:0}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px}
+.card.tinted{background:var(--surface-2)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:720px){.g2,.g3,.g4{grid-template-columns:1fr}}
+.tok{font-family:'DM Mono',monospace;font-size:11px;color:var(--tc-text);background:var(--surface-2);padding:1px 6px;border-radius:4px}
+.card.tinted .tok{background:var(--surface)}
+.tok-table{width:100%;border-collapse:collapse;font-size:12px}
+.tok-table th{text-align:left;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-m);padding:6px 10px 6px 0;border-bottom:1px solid var(--border-s)}
+.tok-table td{padding:7px 10px 7px 0;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.55}
+.tok-table tr:last-child td{border-bottom:none}
+.td-s{font-size:12px;color:var(--ink)}
+.td-m{font-size:11.5px;color:var(--ink-s)}
+.do-dont{display:flex;gap:10px;align-items:flex-start;padding:9px 0;font-size:12.5px;color:var(--ink-s);line-height:1.6;border-top:1px solid var(--border)}
+.dd-tag{flex-shrink:0;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;margin-top:1px}
+.dd-do{background:var(--success-bg);color:var(--success-fg)}
+.dd-dont{background:var(--danger-bg);color:var(--danger-fg)}
+.num{font-feature-settings:'tnum'}
+.wm{font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;letter-spacing:-.03em}
+
+/* ── 데모 공용 ── */
+.stage{display:flex;align-items:center;justify-content:center;border-radius:10px;padding:24px;background:var(--page)}
+.stage.tc{background:var(--tc)}
+.demo-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid var(--border)}
+.demo-row:last-child{border-bottom:none}
+.demo-label{font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-m);min-width:84px;flex-shrink:0}
+
+/* 버튼 (§10) */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:inherit;font-size:13px;font-weight:600;border:none;cursor:pointer;transition:background-color .15s ease,color .15s ease;letter-spacing:-.01em}
+.btn:focus-visible{outline:2px solid var(--tc);outline-offset:2px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-sm{height:36px;padding:0 14px;border-radius:8px;font-size:12.5px}
+.btn-md{height:40px;padding:0 16px;border-radius:10px}
+.btn-lg{height:44px;padding:0 20px;border-radius:10px;font-size:14px}
+.btn-primary{background:var(--tc);color:#FBF6EF}
+.btn-primary:hover:not(:disabled){background:var(--tc-d)}
+.btn-secondary{background:var(--surface-2);color:var(--ink);border:1px solid var(--border-s)}
+.btn-secondary:hover:not(:disabled){background:var(--sand)}
+.btn-danger{background:var(--danger-bg);color:var(--danger-fg)}
+.btn-danger:hover:not(:disabled){background:var(--danger-ring)}
+.btn-ghost{background:transparent;color:var(--ink-s)}
+.btn-ghost:hover:not(:disabled){background:var(--surface-2)}
+.btn-subtle{background:var(--surface-2);color:var(--ink-s)}
+.btn-subtle:hover:not(:disabled){color:var(--ink)}
+
+/* 배지 (§11) */
+.badge{display:inline-flex;align-items:center;gap:4px;font-weight:600;border-radius:999px;letter-spacing:-.01em}
+.badge-sm{font-size:11px;padding:3px 9px}
+.badge-md{font-size:12px;padding:4px 11px}
+.b-success{background:var(--success-bg);color:var(--success-fg);box-shadow:inset 0 0 0 1px var(--success-ring)}
+.b-warn{background:var(--warning-bg);color:var(--warning-fg);box-shadow:inset 0 0 0 1px var(--warning-ring)}
+.b-info{background:var(--info-bg);color:var(--info-fg);box-shadow:inset 0 0 0 1px var(--info-ring)}
+.b-danger{background:var(--danger-bg);color:var(--danger-fg);box-shadow:inset 0 0 0 1px var(--danger-ring)}
+.b-deposit{background:var(--deposit-bg);color:var(--deposit-fg);box-shadow:inset 0 0 0 1px var(--deposit-ring)}
+.b-reserve{background:var(--reserve-bg);color:var(--reserve-fg);box-shadow:inset 0 0 0 1px var(--reserve-ring)}
+.b-neutral{background:var(--neutral-bg);color:var(--neutral-fg);box-shadow:inset 0 0 0 1px var(--neutral-ring)}
+.b-inspect{background:var(--inspect-bg);color:var(--inspect-fg);box-shadow:inset 0 0 0 1px var(--inspect-ring)}
+.b-coral{background:var(--danger-bg);color:var(--danger-fg);box-shadow:inset 0 0 0 1px var(--danger-ring)}
+.b-overdue{background:#A03C2E;color:#FBF6EF}
+
+/* 입력 (§12) */
+.form-label{display:block;font-size:12px;font-weight:500;color:var(--ink-s);margin-bottom:5px}
+.form-input{width:100%;height:40px;padding:9px 13px;border-radius:6px;border:1.5px solid var(--border-s);background:var(--surface-2);color:var(--ink);font-family:inherit;font-size:13.5px;transition:border-color .15s ease,box-shadow .15s ease}
+.form-input::placeholder{color:var(--ink-m)}
+.form-input:focus{outline:none;border-color:var(--tc);box-shadow:0 0 0 3px rgba(160,60,46,.12)}
+.form-input:disabled{opacity:.5;cursor:not-allowed}
+.form-input.error{border-color:var(--tc)}
+.form-error{display:block;font-size:11px;color:var(--danger-fg);margin-top:4px}
+.form-hint{display:block;font-size:11px;color:var(--ink-m);margin-top:4px}
+
+/* 토스트 (§15) 모드 불변 고정색 */
+.toast{display:flex;align-items:center;gap:9px;background:#3D2418;color:#FBF6EF;border-radius:10px;padding:10px 16px;font-size:13px;max-width:420px}
+.toast.success{background:#1E2E14;border:1px solid rgba(78,104,52,.45)}
+.toast.error{background:#5A1A10;border:1px solid rgba(160,60,46,.5);color:#FFCBBF}
+.toast.urgent{background:#7C2D26;border:1px solid rgba(160,60,46,.5)}
+.toast-action{margin-left:auto;font-size:13px;font-weight:700;color:#F2D9B8;cursor:pointer;flex-shrink:0}
+.toast-action:hover{text-decoration:underline}
+
+/* 스와치 */
+.swatch{height:64px;border-radius:10px;border:1px solid rgba(0,0,0,.07);margin-bottom:8px}
+.swatch-name{font-size:12px;font-weight:700;margin-bottom:2px}
+.swatch-hex{font-family:'DM Mono',monospace;font-size:10.5px;color:var(--ink-s)}
+.swatch-use{font-size:11px;color:var(--ink-m);margin-top:2px;line-height:1.45}
+
+/* 뷰 탭 (§25) */
+.vtabs{display:inline-flex;border-radius:10px;border:1px solid var(--border-s);overflow:hidden;background:var(--surface);font-size:14px;font-weight:600}
+.vt{padding:10px 16px;color:var(--ink-s);border-right:1px solid var(--border-s);font-feature-settings:'tnum'}
+.vt:last-child{border-right:none}
+.vt.on{background:var(--tc);color:#FBF6EF}
+.seg{display:inline-flex;gap:2px;padding:3px;border-radius:10px;border:1px solid var(--border-s);background:var(--surface-2);font-size:13px;font-weight:600}
+.sg{padding:6px 13px;border-radius:7px;color:var(--ink-s)}
+.sg.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(61,36,24,.1)}
+
+/* 브랜드 로더 (§21) */
+@keyframes bl-draw{0%{stroke-dashoffset:1;opacity:1}31%{stroke-dashoffset:0}84%{stroke-dashoffset:0;opacity:1}95%,100%{stroke-dashoffset:0;opacity:0}}
+@keyframes bl-word{0%,31%{opacity:0;transform:translateX(-4px)}44%,84%{opacity:1;transform:none}95%,100%{opacity:0}}
+.bl-stroke{stroke:var(--tc);stroke-width:20;stroke-linecap:round;fill:none;stroke-dasharray:1;stroke-dashoffset:1;animation:bl-draw 3.2s cubic-bezier(.65,0,.35,1) infinite}
+.bl-lockup{display:flex;align-items:center;gap:12px}
+.bl-word{animation:bl-word 3.2s ease infinite}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.skel{height:12px;border-radius:4px;background:linear-gradient(90deg,var(--surface-2) 25%,var(--sand-s) 50%,var(--surface-2) 75%);background-size:200% 100%;animation:shimmer 1.5s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms;transition-duration:.01ms}}
+
+/* z 스택 다이어그램 (§08) */
+.zlayer{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;font-size:11.5px;border-radius:7px;margin-bottom:4px}
+</style>
+</head>
+<body>
+<button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false"><span class="theme-dot"></span><span id="themeLabel">다크모드 보기</span></button>
+<div class="doc">
+<nav class="doc-nav" aria-label="목차">
+  <div class="nav-group">개요</div>
+  <a class="nav-link" href="#conflicts"><span class="nav-num">00</span>충돌 목록</a>
+  <div class="nav-group">브랜드</div>
+  <a class="nav-link" href="#s01"><span class="nav-num">01</span>브랜드</a>
+  <a class="nav-link" href="#s02"><span class="nav-num">02</span>로고</a>
+  <div class="nav-group">토큰</div>
+  <a class="nav-link" href="#s03"><span class="nav-num">03</span>컬러·상태 5단계</a>
+  <a class="nav-link" href="#s04"><span class="nav-num">04</span>의미색·시각화</a>
+  <a class="nav-link" href="#s05"><span class="nav-num">05</span>타이포그래피</a>
+  <a class="nav-link" href="#s06"><span class="nav-num">06</span>금액·숫자</a>
+  <a class="nav-link" href="#s07"><span class="nav-num">07</span>스페이싱·radius</a>
+  <a class="nav-link" href="#s08"><span class="nav-num">08</span>레이어 위계</a>
+  <a class="nav-link" href="#s09"><span class="nav-num">09</span>모션</a>
+  <div class="nav-group">컴포넌트</div>
+  <a class="nav-link" href="#s10"><span class="nav-num">10</span>버튼</a>
+  <a class="nav-link" href="#s11"><span class="nav-num">11</span>배지</a>
+  <a class="nav-link" href="#s12"><span class="nav-num">12</span>폼 입력</a>
+  <a class="nav-link" href="#s13"><span class="nav-num">13</span>모달</a>
+  <a class="nav-link" href="#s14"><span class="nav-num">14</span>확인 다이얼로그</a>
+  <a class="nav-link" href="#s15"><span class="nav-num">15</span>토스트</a>
+  <a class="nav-link" href="#s16"><span class="nav-num">16</span>적용취소</a>
+  <a class="nav-link" href="#s17"><span class="nav-num">17</span>빈·로딩 상태</a>
+  <div class="nav-group">패턴</div>
+  <a class="nav-link" href="#s18"><span class="nav-num">18</span>상태 알림 행</a>
+  <a class="nav-link" href="#s19"><span class="nav-num">19</span>내비·테이블·보조</a>
+  <a class="nav-link" href="#s20"><span class="nav-num">20</span>반응형 전환</a>
+  <a class="nav-link" href="#s21"><span class="nav-num">21</span>콜드 스타트 로딩</a>
+  <div class="nav-group">페이지</div>
+  <a class="nav-link" href="#s22"><span class="nav-num">22</span>재고·리스트</a>
+  <a class="nav-link" href="#s23"><span class="nav-num">23</span>리스트·테이블 화면</a>
+  <a class="nav-link" href="#s24"><span class="nav-num">24</span>대시보드·위젯</a>
+  <a class="nav-link" href="#s25"><span class="nav-num">25</span>뷰 전환 탭</a>
+  <a class="nav-link" href="#s26"><span class="nav-num">26</span>인쇄 서류</a>
+  <div class="nav-group">문법·모드</div>
+  <a class="nav-link" href="#s27"><span class="nav-num">27</span>인터랙션 문법</a>
+  <a class="nav-link" href="#s28"><span class="nav-num">28</span>다크모드</a>
+  <a class="nav-link" href="#s29"><span class="nav-num">29</span>마이크로카피</a>
+  <div class="nav-group">부록</div>
+  <a class="nav-link" href="#appendix"><span class="nav-num">A</span>구버전 § 매핑표</a>
+</nav>
+<div class="doc-main">
+
+  <!-- 표지 -->
+  <div style="padding:56px 44px 40px;border-bottom:1px solid var(--border-s)">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:22px">
+      <svg width="46" height="35" viewBox="0 0 130 100"><path d="M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82 A 8.5 8.5 0 0 1 104 82 C 104 44 80 26 55 26 C 30 26 28 44 28 82 A 10 10 0 0 1 8 82 Z" fill="#A03C2E"/></svg>
+      <div style="width:1px;height:28px;background:var(--border-s)"></div>
+      <span class="wm" style="font-size:30px"><span style="color:var(--ink)">stay</span><span style="color:var(--tc-text)">eum</span></span>
+    </div>
+    <h1 style="font-size:32px;font-weight:700;letter-spacing:-.035em;margin-bottom:8px">Design Guide v2.0 · 통합본</h1>
+    <p style="font-size:13.5px;color:var(--ink-s);line-height:1.7;max-width:640px">v1.1(브랜드 기초) · v1.2(컴포넌트) · v1.3(인터랙션 §09~§26) · 2026-07 addendum을 하나의 완결 문서로 재구성했다. 증분 서술은 전부 절대 서술로 흡수했다: 어떤 항목이든 이 문서 하나로 최종 수치를 확인할 수 있다. 코드와 이 문서가 다르면 코드가 틀린 것이다.</p>
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+      <span class="badge badge-sm b-neutral">2026-07-11</span>
+      <span class="badge badge-sm b-neutral">입력 4종 전 섹션 반영</span>
+      <span class="badge badge-sm b-coral">우상단 토글로 다크모드 검수</span>
+    </div>
+  </div>
+
+  <!-- §00 충돌 목록 -->
+  <section class="sec" id="conflicts">
+    <div class="sec-eye">§ 00 · 개요</div>
+    <h2 class="sec-h">충돌 목록</h2>
+    <p class="sec-p">문서 간 같은 항목의 다른 값. 우선순위(addendum &gt; v1.3 &gt; v1.1·v1.2 결정 메모 &gt; HTML 원본)와 명시 정정으로 해소된 것과, 별도 결정이 필요한 것을 구분해 보고한다.</p>
+
+    <div class="sub-h">해소됨 · 본문에 반영된 판정</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th style="width:30%">항목</th><th>충돌</th><th>판정</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">입력 radius</td><td class="td-m">v1.2 데모 8px vs v1.3 §13 6px</td><td class="td-m">v1.3이 명시 정정을 선언 · <b>6px</b> (§12)</td></tr>
+          <tr><td class="td-s">숫자 서체</td><td class="td-m">v1.1·v1.2: 금액·KPI에 DM Mono vs v1.3.2: 제품 UI에서 DM Mono 퇴출</td><td class="td-m">v1.3.2 명시 정정 · <b>Pretendard + tnum</b>. v1.3 §21 원문의 "DM Mono 19px" 등도 서체만 Pretendard tnum으로 읽고 크기·웨이트는 유지 (§05·§06·§22)</td></tr>
+          <tr><td class="td-s">토스트 종류</td><td class="td-m">v1.2 4종(success·warn·error·urgent) vs v1.3 warn 폐기</td><td class="td-m">v1.3 우선 · <b>success·error·info·urgent</b> (§15)</td></tr>
+          <tr><td class="td-s">브랜드 로더</td><td class="td-m">v1.1 breathe 1.6s vs v1.2 line-draw 3.2s, 용도 문구 상이</td><td class="td-m">v1.2가 모션을 교체, v1.3 §18이 용도를 재정의 · <b>3.2s line-draw, 셸 없는 구간 전용</b> (§21)</td></tr>
+          <tr><td class="td-s">VACANT 배경</td><td class="td-m">v1.2 rgba(160,120,80,.10) vs v1.3 별칭 --neutral-bg rgba(61,36,24,.05)</td><td class="td-m">v1.3 별칭 선언 우선 · <b>--neutral-bg</b> (§04)</td></tr>
+          <tr><td class="td-s">--success-bg 알파</td><td class="td-m">v1.1 .09 vs v1.3 §14.4 .10</td><td class="td-m">v1.3 우선 · <b>rgba(85,108,58,.10)</b> (§04)</td></tr>
+          <tr><td class="td-s">모달 z</td><td class="td-m">v1.2 "200+" vs v1.3 --z-modal 300</td><td class="td-m">v1.3 토큰 우선 · <b>300</b> (§08)</td></tr>
+          <tr><td class="td-s">보증금 배지 색</td><td class="td-m">v1.2 데모 b-blue(파랑) vs v1.3 §14.4 deposit=카멜</td><td class="td-m">v1.3 의미색 정본 우선 · <b>--deposit-* 카멜</b> (§04·§11)</td></tr>
+          <tr><td class="td-s">장문 토스트 예문</td><td class="td-m">v1.3 §11.3 예문에 em dash 포함 vs §25.1 em dash 금지</td><td class="td-m">§25가 이후 성문화한 전면 규칙 · 예문을 가운뎃점 표기로 수정 (§15·§29)</td></tr>
+          <tr><td class="td-s">투명 틴트 구현</td><td class="td-m">v1.3 토큰표 rgba 리터럴 vs addendum color-mix 규칙</td><td class="td-m">addendum 우선 · 코드는 <b>color-mix(in srgb, var(--coral) N%, transparent)</b>, 표의 rgba는 의도값 (§28)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">미해소 · 재검토 요청 2건</div>
+    <div class="card" style="margin-bottom:6px">
+      <table class="tok-table">
+        <thead><tr><th style="width:30%">항목</th><th>내용</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">InventoryCard radius 13px</td><td class="td-m">v1.3 §21.1이 카드 radius를 13px로 명기했으나 radius 토큰 스케일(4·6·8·10·14·18·999)에 13이 없다. 원문 수치를 유지해 13px로 실었다. 14px(r-xl)로 정규화할지 결정 필요 (§22)</td></tr>
+          <tr><td class="td-s">테이블 내부 z 리터럴</td><td class="td-m">v1.3 §22.7이 thead z-30·고정열 z-20 리터럴을 명기했으나 §12는 "토큰 외 z값 금지". 테이블 내부 스태킹 컨텍스트 한정이라 §12의 "모달 내부 드롭다운 = 부모 z+1" 같은 지역 예외로 볼 수 있으나, 예외 명문화가 없다. 원문대로 실었다 · 예외 조항 추가 여부 결정 필요 (§23)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- §01 브랜드 -->
+  <section class="sec" id="s01">
+    <div class="sec-eye">§ 01 · 브랜드</div>
+    <h2 class="sec-h">브랜드</h2>
+    <p class="sec-p">stayeum은 기능적 도구가 아니다. 매일 고시원을 운영하는 사장님 옆에서 데이터를 정리하고 입실자와의 관계를 기록하는 동반자다.</p>
+
+    <div class="sub-h">미션</div>
+    <div class="card" style="font-size:19px;font-weight:600;letter-spacing:-.025em;line-height:1.45;padding:26px;margin-bottom:14px">"머무름과 이음이 만나는 곳에서, 운영자가 더 여유롭게 사람을 만날 수 있도록."</div>
+
+    <div class="sub-h">3가지 이음의 철학</div>
+    <div class="g3" style="margin-bottom:14px">
+      <div class="card" style="border-left:3px solid var(--tc)"><div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--tc-text);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">이음 1</div><div style="font-size:14px;font-weight:700;margin-bottom:6px">운영자와 입실자를 잇다</div><div style="font-size:12.5px;color:var(--ink-s);line-height:1.6">사람과 사람의 연결. 데이터 뒤에 있는 관계를 기억한다.</div></div>
+      <div class="card" style="border-left:3px solid var(--tc)"><div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--tc-text);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">이음 2</div><div style="font-size:14px;font-weight:700;margin-bottom:6px">데이터와 의사결정을 잇다</div><div style="font-size:12.5px;color:var(--ink-s);line-height:1.6">정보와 사람의 연결. 숫자가 직관으로 바뀌는 순간을 만든다.</div></div>
+      <div class="card" style="border-left:3px solid var(--tc)"><div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--tc-text);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">이음 3</div><div style="font-size:14px;font-weight:700;margin-bottom:6px">과거의 기록과 미래를 잇다</div><div style="font-size:12.5px;color:var(--ink-s);line-height:1.6">과거와 미래의 연결. 지난 입실자의 기록이 다음 결정을 돕는다.</div></div>
+    </div>
+
+    <div class="sub-h">브랜드 성격</div>
+    <div class="g2" style="margin-bottom:14px">
+      <div class="card tinted">
+        <div style="font-size:11px;font-weight:700;color:var(--success-fg);margin-bottom:10px">✓ stayeum은 이렇다</div>
+        <div style="display:flex;flex-direction:column;gap:7px;font-size:13px;color:var(--ink-s);line-height:1.6">
+          <div>따뜻하고 인간적인 · 사장님의 수고를 안다</div>
+          <div>묵직하고 신뢰감 있는 · 사업 데이터를 다룬다</div>
+          <div>차분하고 안정적인 · 매일 봐도 피로하지 않다</div>
+          <div>현대적이고 깔끔한 · 올드하지 않다</div>
+        </div>
+      </div>
+      <div class="card tinted">
+        <div style="font-size:11px;font-weight:700;color:var(--danger-fg);margin-bottom:10px">✕ stayeum은 이렇지 않다</div>
+        <div style="display:flex;flex-direction:column;gap:7px;font-size:13px;color:var(--ink-s);line-height:1.6">
+          <div>통통 튀거나 과도하게 밝은</div>
+          <div>차갑고 기술적인 · 인간미가 없는</div>
+          <div>부동산 앱 느낌 · 직방·다방과 달라야 한다</div>
+          <div>호텔·여행 앱 느낌 · Airbnb와 달라야 한다</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sub-h">브랜드 보이스</div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>"이번 달 수납 현황을 확인했습니다" · 명확하고 사실적으로</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕</span><span>"앗, 아직 미납 입실자가 있어요" 류의 과도한 캐주얼·이모지 남용</span></div>
+      <div class="do-dont"><span class="dd-tag dd-do">✓ DO</span><span>"401호 입실자 수납 완료" · 짧고 구체적으로</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕</span><span>"환영합니다, 멋진 하루 되세요" 류의 불필요한 격려 문구</span></div>
+      <div class="do-dont"><span class="dd-tag dd-do">✓ DO</span><span>"저장되었습니다" · 조용하고 확실한 피드백</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕</span><span>과도한 긍정 반응 · 느낌표·이모지로 끝나는 완료 문구</span></div>
+    </div>
+    <p style="font-size:12px;color:var(--ink-m);line-height:1.6;margin-bottom:14px">사용자 노출 문자열의 문장부호·톤 상세 규칙은 §29가 정본이다.</p>
+
+    <div class="sub-h">표기 규칙</div>
+    <div class="card tinted">
+      <table class="tok-table">
+        <thead><tr><th>맥락</th><th>영문</th><th>한글</th><th>금지</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">브랜드명 (본문)</td><td class="tok">stayeum</td><td class="td-s">스테이음</td><td class="td-m" style="color:var(--danger-fg)">StayEum, STAYEUM</td></tr>
+          <tr><td class="td-s">로고 워드마크</td><td class="tok">stay<b>eum</b></td><td class="td-s">스테이<b>음</b></td><td class="td-m" style="color:var(--danger-fg)">stay-eum, stay·eum</td></tr>
+          <tr><td class="td-s">도메인</td><td class="tok">stayeum.com</td><td class="td-m">해당 없음</td><td class="td-m" style="color:var(--danger-fg)">www.stayeum.com 불필요</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- §02 로고 -->
+  <section class="sec" id="s02">
+    <div class="sec-eye">§ 02 · 로고</div>
+    <h2 class="sec-h">로고 시스템</h2>
+    <p class="sec-p">단일 아치 브러시 획이 심볼마크다. 두 다리가 공간을 잇고, 정점은 왼쪽으로 살짝 기울어져 손으로 그린 자연스러움을 만든다. 워드마크는 Plus Jakarta Sans 전용: stay(잉크) + eum(테라코타).</p>
+
+    <div class="sub-h">심볼 마크 · 아치</div>
+    <div class="g2" style="margin-bottom:14px">
+      <div class="card">
+        <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--tc-text);letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px">Primary · Terracotta on Cream</div>
+        <div class="stage" style="min-height:150px;background:#FBF6EF">
+          <svg width="180" height="138" viewBox="0 0 130 100"><path d="M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82 A 8.5 8.5 0 0 1 104 82 C 104 44 80 26 55 26 C 30 26 28 44 28 82 A 10 10 0 0 1 8 82 Z" fill="#A03C2E"/></svg>
+        </div>
+        <div style="font-size:11px;color:var(--ink-m);margin-top:10px">단일 path · viewBox 0 0 130 100</div>
+      </div>
+      <div class="card">
+        <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--tc-text);letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px">App Icon · Cream on Terracotta</div>
+        <div class="stage" style="min-height:150px;gap:16px">
+          <svg width="76" height="76" viewBox="0 0 96 96"><rect width="96" height="96" rx="22" fill="#A03C2E"/><g transform="translate(11,20) scale(0.569)"><path d="M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82 A 8.5 8.5 0 0 1 104 82 C 104 44 80 26 55 26 C 30 26 28 44 28 82 A 10 10 0 0 1 8 82 Z" fill="#FBF6EF"/></g></svg>
+          <svg width="44" height="44" viewBox="0 0 96 96"><rect width="96" height="96" rx="22" fill="#A03C2E"/><g transform="translate(10,18) scale(0.58)"><path d="M 8 82 C 8 30 22 7 55 7 C 88 7 121 30 121 82 A 9 9 0 0 1 103 82 C 103 42 80 25 55 25 C 30 25 27 42 27 82 A 10 10 0 0 1 8 82 Z" fill="#FBF6EF"/></g></svg>
+          <svg width="24" height="24" viewBox="0 0 96 96"><rect width="96" height="96" rx="20" fill="#A03C2E"/><g transform="translate(8,14) scale(0.625)"><path d="M 8 82 C 8 26 22 5 55 5 C 88 5 121 26 121 82 A 9.5 9.5 0 0 1 102 82 C 102 36 80 22 55 22 C 30 22 26 36 26 82 A 11 11 0 0 1 8 82 Z" fill="#FBF6EF"/></g></svg>
+        </div>
+        <div style="font-size:11px;color:var(--ink-m);margin-top:10px">80 · 44 · 24px에서 사이즈별 보정 path 사용 · 앱 아이콘 radius는 r-2xl 비례</div>
+      </div>
+    </div>
+
+    <div class="sub-h">워드마크 + 락업</div>
+    <div class="g2" style="margin-bottom:14px">
+      <div class="card">
+        <div class="stage" style="flex-direction:column;gap:18px;min-height:126px;background:#FBF6EF">
+          <div style="display:flex;align-items:center;gap:14px">
+            <svg width="38" height="29" viewBox="0 0 130 100"><path d="M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82 A 8.5 8.5 0 0 1 104 82 C 104 44 80 26 55 26 C 30 26 28 44 28 82 A 10 10 0 0 1 8 82 Z" fill="#A03C2E"/></svg>
+            <div style="width:1px;height:24px;background:rgba(61,36,24,.18)"></div>
+            <div class="wm" style="font-size:27px"><span style="color:#3D2418">stay</span><span style="color:#A03C2E">eum</span></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px">
+            <svg width="38" height="29" viewBox="0 0 130 100"><path d="M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82 A 8.5 8.5 0 0 1 104 82 C 104 44 80 26 55 26 C 30 26 28 44 28 82 A 10 10 0 0 1 8 82 Z" fill="#A03C2E"/></svg>
+            <div style="width:1px;height:24px;background:rgba(61,36,24,.18)"></div>
+            <div class="wm" style="font-size:27px"><span style="color:#3D2418">스테이</span><span style="color:#A03C2E">음</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div class="stage tc" style="min-height:158px;border-radius:12px">
+          <div style="display:flex;align-items:center;gap:14px">
+            <svg width="38" height="29" viewBox="0 0 130 100"><path d="M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82 A 8.5 8.5 0 0 1 104 82 C 104 44 80 26 55 26 C 30 26 28 44 28 82 A 10 10 0 0 1 8 82 Z" fill="#FBF6EF"/></svg>
+            <div style="width:1px;height:24px;background:rgba(255,255,255,.2)"></div>
+            <div class="wm" style="font-size:27px;color:#FBF6EF">stayeum</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sub-h">사용 규칙</div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓</span><span>클리어스페이스: 마크 주변에 최소 "e" 문자 높이 이상 여백 확보</span></div>
+      <div class="do-dont"><span class="dd-tag dd-do">✓</span><span>워드마크는 영문/한글 중 하나만 단독 사용 (동시 배치 금지)</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕</span><span>그라데이션·드롭섀도우·글로우·아웃라인 추가 금지</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕</span><span>기울이기·회전·왜곡·임의 색상 변경 금지</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕</span><span>최소 사이즈 이하 사용 금지: 워드마크 12px / 심볼 16px</span></div>
+    </div>
+  </section>
+
+  <!-- §03 컬러·상태 5단계 -->
+  <section class="sec" id="s03">
+    <div class="sec-eye">§ 03 · 토큰</div>
+    <h2 class="sec-h">컬러와 상태 5단계</h2>
+    <p class="sec-p">웜 단색계(테라코타·카멜·올리브·앰버·잉크) + 쿨 액센트 1종(블루)만 쓴다. Terracotta는 CTA와 연체(OVERDUE) 강조. Success는 Warm Olive: 에메랄드 없이 흙빛 올리브로 완납을 표현한다. 파란색은 AWAIT(예정)·info에만 허용. 라이트모드에서 순백(#fff)·순흑(#000) 금지.</p>
+
+    <div class="sub-h">Primary Palette</div>
+    <div class="g4" style="margin-bottom:10px">
+      <div><div class="swatch" style="background:#A03C2E"></div><div class="swatch-name">Terracotta</div><div class="swatch-hex">#A03C2E</div><div class="swatch-use">Primary · CTA · 로고 · OVERDUE</div></div>
+      <div><div class="swatch" style="background:#C8A07D"></div><div class="swatch-name">Camel</div><div class="swatch-hex">#C8A07D</div><div class="swatch-use">Secondary · 아웃라인 · 보조 아이콘</div></div>
+      <div><div class="swatch" style="background:#F2D9B8"></div><div class="swatch-name">Sand</div><div class="swatch-hex">#F2D9B8</div><div class="swatch-use">Accent BG · 하이라이트</div></div>
+      <div><div class="swatch" style="background:#FBF6EF"></div><div class="swatch-name">Cream</div><div class="swatch-hex">#FBF6EF</div><div class="swatch-use">카드 · 모달 · 사이드바 배경</div></div>
+    </div>
+    <div class="g4" style="margin-bottom:14px">
+      <div><div class="swatch" style="background:#3D2418;height:44px"></div><div class="swatch-name">Ink</div><div class="swatch-hex">#3D2418</div><div class="swatch-use">텍스트 · 아이콘</div></div>
+      <div><div class="swatch" style="background:#7A9A52;height:44px"></div><div class="swatch-name">Warm Olive</div><div class="swatch-hex">#7A9A52</div><div class="swatch-use">완납 · Success (텍스트 #4E6834)</div></div>
+      <div><div class="swatch" style="background:#E8DDD0;height:44px"></div><div class="swatch-name">Page</div><div class="swatch-hex">#E8DDD0</div><div class="swatch-use">페이지 배경 · PWA manifest와 동일값 강제</div></div>
+      <div><div class="swatch" style="background:#F5EDE0;height:44px"></div><div class="swatch-name">Cream 2</div><div class="swatch-hex">#F5EDE0</div><div class="swatch-use">페이지 배경 보조 · 입력 bg</div></div>
+    </div>
+
+    <div class="sub-h">토큰 선언 (:root, 라이트)</div>
+    <div class="card tinted" style="font-family:'DM Mono',monospace;font-size:11.5px;line-height:2;margin-bottom:14px;overflow-x:auto">
+      --tc:#A03C2E · --tc-d:#7C2D26 · --tc-s:#B85042<br>
+      --camel:#C8A07D · --sand:#F2D9B8 · --sand-s:#F5E5CC<br>
+      --cream:#FBF6EF · --cream-2:#F5EDE0 · --page:#E8DDD0<br>
+      --ink:#3D2418 · --ink-s:#7A6553 · --ink-m:#A89380<br>
+      --success:#4E6834 · --success-bg:rgba(85,108,58,.10)<br>
+      --overdue:var(--tc) · --overdue-bg:rgba(160,60,46,.18)<br>
+      --border:rgba(61,36,24,.10) · --border-s:rgba(61,36,24,.18)
+    </div>
+    <p style="font-size:12px;color:var(--ink-m);line-height:1.6;margin-bottom:14px">별칭(코드 호환): --coral = --tc · --persimmon-* = --tc-* · --ink-3 = --ink-s. 다크모드 값은 §28이 정본이다.</p>
+
+    <div class="sub-h">상태 5단계 · Status Strip</div>
+    <div class="card tinted" style="margin-bottom:12px">
+      <table class="tok-table">
+        <thead><tr><th>상태</th><th>fg</th><th>bg</th><th>좌측 팁</th><th>용도</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s"><span class="badge badge-sm b-success">완납</span> PAID</td><td class="tok">#4E6834</td><td class="td-m">rgba(85,108,58,.10)</td><td class="td-m">#4E6834</td><td class="td-m">수납 완료</td></tr>
+          <tr><td class="td-s"><span class="badge badge-sm b-info">예정</span> AWAIT</td><td class="tok">#1E40AF</td><td class="td-m">rgba(30,64,175,.08)</td><td class="td-m">#1E40AF</td><td class="td-m">납부 예정 · 파랑 허용 유일 계열</td></tr>
+          <tr><td class="td-s"><span class="badge badge-sm b-warn">미납</span> UNPAID</td><td class="tok">#8B5E0A</td><td class="td-m">rgba(180,120,10,.10)</td><td class="td-m">#8B5E0A</td><td class="td-m">기한 경과 1~6일</td></tr>
+          <tr><td class="td-s"><span class="badge badge-sm b-overdue">연체</span> OVERDUE</td><td class="tok">var(--tc) Bold</td><td class="td-m">rgba(160,60,46,.13) + 보더 .22</td><td class="td-m">var(--tc) 3px</td><td class="td-m"><b>7일 초과에만</b> · 배지는 filled</td></tr>
+          <tr><td class="td-s"><span class="badge badge-sm b-neutral">공실</span> VACANT</td><td class="tok">var(--ink-m)</td><td class="td-m">--neutral-bg rgba(61,36,24,.05)</td><td class="td-m">var(--ink-m)</td><td class="td-m">입주자 없음</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:12px;color:var(--ink-s);line-height:1.65;margin-bottom:14px">적용 범위는 전면 통일이다: 수납 표 · 호실 카드 · 대시보드 방현황 · 알림 행 · 필터 칩 전부 같은 토큰. 대시보드에도 OVERDUE 단계가 반드시 존재해야 한다. 상태색을 차트에 쓸 땐 상태 토큰 그대로 쓴다 (viz 팔레트로 대체 금지 · 의미가 색에 있다).</p>
+
+    <div class="sub-h">사용 규칙</div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>--tc는 버튼·링크·로고·강조에만. 남용 금지. --cream이 카드·모달·사이드바 배경.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-do">✓ DO</span><span>--success는 완납 배지·긍정 수치. Warm Olive 단일 · 에메랄드 금지.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>raw Tailwind 무지개색(red·emerald·blue·purple·indigo)·임의 hex. 라이트 UI에 순백·순흑.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>구코랄 rgba(244,98,58,…) 사용. 리브랜딩 잔재로 전면 금지 (2026-07-10 전수 제거).</span></div>
+    </div>
+  </section>
+
+  <!-- §04 의미색 정본·시각화 팔레트 -->
+  <section class="sec" id="s04">
+    <div class="sec-eye">§ 04 · 토큰</div>
+    <h2 class="sec-h">의미색 정본과 시각화 팔레트</h2>
+    <p class="sec-p">의미(semantic)를 띤 모든 색은 아래 토큰이 유일한 정본이다. 새 색상(hue) 추가 없이 의미를 토큰에 가둔다. 각 의미는 fg(텍스트) · bg(틴트) · ring(보더) · solid(솔리드 배지) 변형을 갖는다.</p>
+
+    <div class="sub-h">정본 토큰표 · semantic → 라이트 / 다크</div>
+    <div class="card tinted" style="margin-bottom:12px;overflow-x:auto">
+      <table class="tok-table">
+        <thead><tr><th>의미</th><th>토큰</th><th>라이트</th><th>다크</th><th>다크분기</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s" rowspan="2"><span class="badge badge-sm b-danger">미수</span><br><span class="td-m">danger · 삭제·에러·미수</span></td><td class="tok">--danger-fg / -bg / -ring</td><td class="td-m">#A03C2E / rgba(160,60,46,.08) / .22</td><td class="td-m">#E08A75 / rgba(224,138,117,.12) / .28</td><td class="td-s">분기</td></tr>
+          <tr><td class="tok">--danger-solid / fg</td><td class="td-m">#A03C2E / #FBF6EF</td><td class="td-m">동일</td><td class="td-s">고정</td></tr>
+          <tr><td class="td-s" rowspan="2"><span class="badge badge-sm b-success">완납</span><br><span class="td-m">success · 완납·긍정·연결됨</span></td><td class="tok">--success-fg / -bg / -ring</td><td class="td-m">#4E6834 / rgba(85,108,58,.10) / .22</td><td class="td-m">#A3BF7B / rgba(163,191,123,.14) / .30</td><td class="td-s">분기</td></tr>
+          <tr><td class="tok">--success-solid / fg</td><td class="td-m">#4E6834 / #FBF6EF</td><td class="td-m">동일</td><td class="td-s">고정</td></tr>
+          <tr><td class="td-s" rowspan="2"><span class="badge badge-sm b-warn">미납</span><br><span class="td-m">warning · 미납·경고·변동</span></td><td class="tok">--warning-fg / -bg / -ring</td><td class="td-m">#8B5E0A / rgba(180,120,10,.10) / .24</td><td class="td-m">#D9A648 / rgba(217,166,72,.14) / .30</td><td class="td-s">분기</td></tr>
+          <tr><td class="tok">--warning-solid / fg</td><td class="td-m">#8B5E0A / #FBF6EF</td><td class="td-m">동일</td><td class="td-s">고정</td></tr>
+          <tr><td class="td-s" rowspan="2"><span class="badge badge-sm b-info">예정</span><br><span class="td-m">info · 예정·정보·양도인</span></td><td class="tok">--info-fg / -bg / -ring</td><td class="td-m">#1E40AF / rgba(30,64,175,.08) / .20</td><td class="td-m">#93A9D1 / rgba(147,169,209,.14) / .30</td><td class="td-s">분기</td></tr>
+          <tr><td class="tok">--info-solid / fg</td><td class="td-m">#1E40AF / #FBF6EF</td><td class="td-m">동일</td><td class="td-s">고정</td></tr>
+          <tr><td class="td-s"><span class="badge badge-sm b-deposit">보증금</span> deposit</td><td class="tok">--deposit-fg / -bg / -ring</td><td class="td-m">#8A6843 / rgba(200,160,125,.16) / .40</td><td class="td-m">#D4B494 / rgba(212,180,148,.14) / .28</td><td class="td-s">분기</td></tr>
+          <tr><td class="td-s"><span class="badge badge-sm b-reserve">예약</span> reserve</td><td class="tok">--reserve-fg / -bg / -ring</td><td class="td-m">#6E5C49 / rgba(140,122,102,.14) / .32</td><td class="td-m">#BBA892 / rgba(187,168,146,.12) / .26</td><td class="td-s">분기</td></tr>
+          <tr><td class="td-s" rowspan="2"><span class="badge badge-sm b-overdue">연체</span> overdue</td><td class="tok">--overdue-fg (텍스트)</td><td class="td-m">#A03C2E</td><td class="td-m">#E08A75</td><td class="td-s">분기</td></tr>
+          <tr><td class="tok">--overdue-solid / fg (배지)</td><td class="td-m">#A03C2E / #FBF6EF</td><td class="td-m">동일</td><td class="td-s">고정</td></tr>
+          <tr><td class="td-s"><span class="badge badge-sm b-neutral">공실</span> neutral</td><td class="tok">--neutral-fg / -bg / -ring</td><td class="td-m">#7A6553 / rgba(61,36,24,.05) / .14</td><td class="td-m">#C7B5A2 / rgba(242,232,220,.06) / .14</td><td class="td-s">분기</td></tr>
+          <tr><td class="td-s"><span class="badge badge-sm b-inspect">점검 중</span> in-progress</td><td class="tok">--inspect-fg / -bg / -ring</td><td class="td-m">#7A5A32 / rgba(200,160,125,.18) / .50</td><td class="td-m">#C8A07D / rgba(200,160,125,.16) / .40</td><td class="td-s">분기</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:12px;color:var(--ink-s);line-height:1.65;margin-bottom:14px">별칭: --status-paid-* = --success-* · --status-await-* = --info-* · --status-unpaid-* = --warning-* · --badge-overdue-* = --overdue-solid · --status-vacant-* = --neutral-*. in-progress(b-inspect)는 §22 재고 카드의 "점검 중" 등 과정 상태 전용 카멜 계열이다.</p>
+
+    <div class="sub-h">6개 확정 결정 (근거 포함)</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th style="width:34%">결정</th><th>근거</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">1 · danger 빨강은 테라코타로 흡수 (별도 적색 신설 없음)</td><td class="td-m">이 브랜드에서 경고·위험은 이미 테라코타가 담당(OVERDUE·미수·파괴적 확인). 새 red는 무지개 복원이다. 삭제 버튼=soft(--danger-bg+fg), 파괴적 확인 버튼=solid, 에러 박스=bg+ring+fg</td></tr>
+          <tr><td class="td-s">2 · success 초록은 올리브 단일</td><td class="td-m">완납과 비결제 긍정("연결됨"·"저장됨") 모두 --success-*. 긍정 hue는 하나만</td></tr>
+          <tr><td class="td-s">3 · amber는 단일 --warning-*</td><td class="td-m">미납·경고·변동 플래그가 한 토큰 공유. 셋 다 "주의 필요·아직 비위기"로 동일 위계</td></tr>
+          <tr><td class="td-s">4 · deposit 보라는 카멜, reserve teal은 토프로 교체</td><td class="td-m">라이트값도 교체 확정. 둘 다 액센트일 뿐 무지개일 이유 없음. viz 팔레트와 동계열</td></tr>
+          <tr><td class="td-s">5 · blue 정보·양도인은 --info-*로 await와 통합 (동일 hex)</td><td class="td-m">쿨 액센트는 블루 1종만. 구분은 라벨·맥락이 담당</td></tr>
+          <tr><td class="td-s">6 · 페일 틴트는 bg/fg/ring 트라이어드로 1:1</td><td class="td-m">bg-{50}→-bg · text-{700}→-fg · ring/border-{200}→-ring</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">다크 리매핑 함정 · solid vs text 분리</div>
+    <div class="card" style="border-left:3px solid var(--tc);margin-bottom:14px">
+      <p style="font-size:12.5px;color:var(--ink-s);line-height:1.7">-fg 토큰은 다크에서 밝은 값으로 뒤집힌다(#4E6834→#A3BF7B). 이 밝은 값을 흰/cream 글자 솔리드 배지 배경에 쓰면 대비가 붕괴한다. 그래서 -solid는 다크에서도 깊은 값으로 고정된다. 솔리드 배지/버튼 배경 = --{semantic}-solid + cream 글자. 틴트 칩·인라인 텍스트·아이콘 = --{semantic}-fg + 투명 틴트 bg.</p>
+    </div>
+
+    <div class="sub-h">리터럴 정합 2건 (2026-07-02 확정)</div>
+    <div class="g2" style="margin-bottom:14px">
+      <div class="card">
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px">Badge 'pale-green' 쌍</div>
+        <div class="td-m" style="line-height:1.7">bg #eef2e5 + text #4e6834 리터럴은 --success-bg + --success-fg로, 반드시 쌍으로 이동한다. 틴트 칩이므로 다크에서 -fg가 밝아지는 게 정상. text만 토큰화하고 bg를 불투명 고정하면 다크에서 대비가 붕괴한다.</div>
+      </div>
+      <div class="card">
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px">StatusBadge ROW_TINT 6종</div>
+        <div class="td-m" style="line-height:1.7">"라이트·다크 공용" rgba 리터럴 의도는 폐기. 각 의미의 --{semantic}-bg로 전환(다크 자동 변형). 연체 행은 --danger-bg + 좌측 3px --overdue-fg 보더가 강조 담당 · 별도 --overdue-bg는 두지 않는다.</div>
+      </div>
+    </div>
+
+    <div class="sub-h">Tailwind → 토큰 치트시트</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>raw</th><th>→ 토큰</th><th>raw</th><th>→ 토큰</th></tr></thead>
+        <tbody>
+          <tr><td class="td-m">text-red-500/600</td><td class="tok">--danger-fg</td><td class="td-m">bg-red-50</td><td class="tok">--danger-bg</td></tr>
+          <tr><td class="td-m">ring/border-red-200</td><td class="tok">--danger-ring</td><td class="td-m">bg-red-500 (solid)</td><td class="tok">--danger-solid</td></tr>
+          <tr><td class="td-m">text-emerald-500/green-600</td><td class="tok">--success-fg</td><td class="td-m">bg-emerald-50</td><td class="tok">--success-bg</td></tr>
+          <tr><td class="td-m">text-amber-500/yellow-600</td><td class="tok">--warning-fg</td><td class="td-m">bg-amber-50</td><td class="tok">--warning-bg</td></tr>
+          <tr><td class="td-m">text-blue/sky/indigo-500</td><td class="tok">--info-fg</td><td class="td-m">bg-blue-50</td><td class="tok">--info-bg</td></tr>
+          <tr><td class="td-m">text-purple/violet-500</td><td class="tok">--deposit-fg</td><td class="td-m">bg-purple-50</td><td class="tok">--deposit-bg</td></tr>
+          <tr><td class="td-m">text-teal/cyan-500</td><td class="tok">--reserve-fg</td><td class="td-m">bg-teal-50</td><td class="tok">--reserve-bg</td></tr>
+          <tr><td class="td-m">text-gray/slate-500</td><td class="tok">--neutral-fg</td><td class="td-m">bg-gray-50</td><td class="tok">--neutral-bg</td></tr>
+        </tbody>
+      </table>
+      <div style="font-size:11px;color:var(--ink-m);margin-top:8px;line-height:1.6">연체 강조는 --overdue-fg, 미수(음수 금액)는 §06 규칙(--danger-fg). 둘 다 hue는 같다.</div>
+    </div>
+
+    <div class="sub-h">데이터 시각화 팔레트 · --viz-1~8</div>
+    <div class="g4" style="margin-bottom:10px">
+      <div><div class="swatch" style="background:#A03C2E;height:40px"></div><div class="swatch-hex">--viz-1 #A03C2E</div><div class="swatch-use">terracotta · 주 시리즈</div></div>
+      <div><div class="swatch" style="background:#C8A07D;height:40px"></div><div class="swatch-hex">--viz-2 #C8A07D</div><div class="swatch-use">camel</div></div>
+      <div><div class="swatch" style="background:#7A9A52;height:40px"></div><div class="swatch-hex">--viz-3 #7A9A52</div><div class="swatch-use">warm olive</div></div>
+      <div><div class="swatch" style="background:#B47A0A;height:40px"></div><div class="swatch-hex">--viz-4 #B47A0A</div><div class="swatch-use">amber</div></div>
+      <div><div class="swatch" style="background:#7C2D26;height:40px"></div><div class="swatch-hex">--viz-5 #7C2D26</div><div class="swatch-use">deep wine</div></div>
+      <div><div class="swatch" style="background:#C77F6F;height:40px"></div><div class="swatch-hex">--viz-6 #C77F6F</div><div class="swatch-use">dusty rose</div></div>
+      <div><div class="swatch" style="background:#93A77E;height:40px"></div><div class="swatch-hex">--viz-7 #93A77E</div><div class="swatch-use">sage</div></div>
+      <div><div class="swatch" style="background:#8C7A66;height:40px"></div><div class="swatch-hex">--viz-8 #8C7A66</div><div class="swatch-use">taupe</div></div>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>차트 시리즈는 viz-1부터 순서대로. 인접 구분이 어려우면 색 건너뛰기(1,3,5)는 허용, 순서 역전은 금지.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>KPI 카드 수치 색에 viz 사용. 수치는 기본 --ink, 강조 --tc, 긍정 --success만.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>새 hue 추가 / -fg(밝은 다크값)를 솔리드 배지 배경에 / 라이트에서 의도된 픽셀 변경.</span></div>
+    </div>
+  </section>
+
+  <!-- §05 타이포그래피 -->
+  <section class="sec" id="s05">
+    <div class="sec-eye">§ 05 · 토큰</div>
+    <h2 class="sec-h">타이포그래피</h2>
+    <p class="sec-p">3폰트 시스템, 역할이 엄격히 구분된다. Pretendard Variable(300~800)은 한글·UI 전반과 모든 숫자(tnum). DM Mono는 가이드 문서·코드 표기 전용이며 제품 UI 숫자에는 금지다: 사선 든 0이 깔끔하지 않고 본문 숫자와 제각각이 된다. Plus Jakarta Sans는 로고 워드마크 전용.</p>
+
+    <div class="sub-h">Type Scale</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>역할</th><th>크기 / 웨이트 / 행간 / 자간</th><th>샘플</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">Display</td><td class="td-m">36px / 700 / 1.1 / −0.04em</td><td style="font-size:30px;font-weight:700;letter-spacing:-.04em">이번달 수납 현황</td></tr>
+          <tr><td class="td-s">H1</td><td class="td-m">28px / 700 / 1.15 / −0.03em</td><td style="font-size:24px;font-weight:700;letter-spacing:-.03em">호실 관리</td></tr>
+          <tr><td class="td-s">H2</td><td class="td-m">22px / 700 / 1.2 / −0.025em</td><td style="font-size:20px;font-weight:700;letter-spacing:-.025em">수납 완료 현황</td></tr>
+          <tr><td class="td-s">H3</td><td class="td-m">18px / 600 / 1.3 / −0.02em</td><td style="font-size:17px;font-weight:600;letter-spacing:-.02em">입실자 정보</td></tr>
+          <tr><td class="td-s">Body</td><td class="td-m">14px / 400 / 1.6 / −0.01em</td><td style="font-size:14px;letter-spacing:-.01em">수납 예정일이 3일 남았습니다.</td></tr>
+          <tr><td class="td-s">Small</td><td class="td-m">12px / 500 / 1.5</td><td style="font-size:12px;font-weight:500;color:var(--ink-s)" class="num">입주일: 2026.01.15 · 선납</td></tr>
+          <tr><td class="td-s">Caption</td><td class="td-m">10.5px / 500 / 1.4 · 최소 크기</td><td style="font-size:10.5px;font-weight:500;color:var(--ink-m)">최소 캡션 · 힌트 · 메타</td></tr>
+          <tr><td class="td-s">KPI 숫자</td><td class="td-m">Pretendard 700 + tnum</td><td class="num" style="font-size:22px;font-weight:700;color:var(--tc-text)">₩12,450,000</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">규칙</div>
+    <div class="card tinted">
+      <table class="tok-table">
+        <thead><tr><th>규칙</th><th>값</th><th>적용</th></tr></thead>
+        <tbody>
+          <tr><td class="tok">letter-spacing (body)</td><td class="td-s">−0.01em</td><td class="td-m">모든 한글·UI 텍스트</td></tr>
+          <tr><td class="tok">letter-spacing (heading)</td><td class="td-s">−0.025 ~ −0.04em</td><td class="td-m">22px 이상 헤딩, 클수록 더 조임</td></tr>
+          <tr><td class="tok">font-feature-settings</td><td class="td-s">'tnum'</td><td class="td-m">모든 데이터 숫자(금액·KPI·일수·D-day) · Pretendard</td></tr>
+          <tr><td class="tok">숫자 서체</td><td class="td-s">Pretendard + tnum</td><td class="td-m">제품 UI에서 DM Mono 숫자 금지 · 사선 없는 0으로 통일</td></tr>
+          <tr><td class="tok">minimum size</td><td class="td-s">10.5px</td><td class="td-m">이하 사용 금지 (인쇄는 §26 별도)</td></tr>
+          <tr><td class="tok">h1 정본</td><td class="td-s">text-xl font-bold</td><td class="td-m">페이지 제목. 필요 시 InfoHint 병기. 수제 크기(22px/800 등) 금지</td></tr>
+          <tr><td class="tok">Plus Jakarta Sans</td><td class="td-s">로고만</td><td class="td-m">UI 텍스트 사용 금지</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- §06 금액·숫자 표기 -->
+  <section class="sec" id="s06">
+    <div class="sec-eye">§ 06 · 토큰</div>
+    <h2 class="sec-h">금액·숫자 표기</h2>
+    <p class="sec-p">인라인 toLocaleString()+'원' 직접 호출은 금지한다. 포맷 유틸 단일 경유. 모든 숫자는 Pretendard + tnum(사선 없는 0)이다.</p>
+
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>맥락</th><th>형식</th><th>예</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">표 · KPI · 카드</td><td class="td-m">₩ prefix + tnum 600 필수</td><td class="num td-s">₩450,000</td></tr>
+          <tr><td class="td-s">문장 · 토스트 · 라벨</td><td class="td-m">숫자 + '원' 접미, 본문 폰트</td><td class="num td-s">253,333원</td></tr>
+          <tr><td class="td-s">음수 (환불·감액·미수)</td><td class="td-m">마이너스 부호 −(U+2212) + 색 --tc</td><td class="num td-s" style="color:var(--danger-fg)">−80,000원</td></tr>
+          <tr><td class="td-s">증감 · 긍정</td><td class="td-m">+ 접두 + --success</td><td class="num td-s" style="color:var(--success-fg)">+20,000</td></tr>
+          <tr><td class="td-s">증감 · 부정</td><td class="td-m">− 접두 + --tc</td><td class="num td-s" style="color:var(--danger-fg)">−50,000</td></tr>
+          <tr><td class="td-s">0원</td><td class="td-m">0원 그대로. 대상 없음(공실 등)은 대시 기호</td><td class="num td-s">0원</td></tr>
+          <tr><td class="td-s">축약 (만 단위)</td><td class="td-m">차트 축·스파크라인·요약 칩에서만</td><td class="num td-s">1,234만 · 43만</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>금액 입력엔 ₩ prefix 고정 표시. 증감색은 올리브/테라코타 · 상태색과 동일 의미축.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>축약 금지 구역에서 만 단위 축약: 표·정산서·계약서·확인 다이얼로그는 전체 자릿수.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>에메랄드·레드로 증감 표시 / hyphen-minus(-)로 음수 표기.</span></div>
+    </div>
+  </section>
+
+  <!-- §07 스페이싱·radius·그림자 -->
+  <section class="sec" id="s07">
+    <div class="sec-eye">§ 07 · 토큰</div>
+    <h2 class="sec-h">스페이싱 · Radius · 그림자</h2>
+    <p class="sec-p">4px 베이스 그리드, Tailwind 기본 스케일. 그림자는 부유(floating) 요소에만 쓰고 카드·입력·버튼은 1px 보더로 구분한다.</p>
+
+    <div class="sub-h">Spacing Scale</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>토큰</th><th>값</th><th>용도</th></tr></thead>
+        <tbody>
+          <tr><td class="tok">space-1</td><td class="td-s num">4px</td><td class="td-m">아이콘 내부 간격, 인라인 요소</td></tr>
+          <tr><td class="tok">space-2</td><td class="td-s num">8px</td><td class="td-m">뱃지 패딩, 버튼 아이콘 간격</td></tr>
+          <tr><td class="tok">space-3</td><td class="td-s num">12px</td><td class="td-m">카드 내부 소항목 간격</td></tr>
+          <tr><td class="tok">space-4</td><td class="td-s num">16px</td><td class="td-m">카드 패딩(모바일), 섹션 내 간격</td></tr>
+          <tr><td class="tok">space-5</td><td class="td-s num">20px</td><td class="td-m">카드 패딩(기본), 모달 패딩</td></tr>
+          <tr><td class="tok">space-6</td><td class="td-s num">24px</td><td class="td-m">섹션 패딩(모바일), 그리드 gap</td></tr>
+          <tr><td class="tok">space-8</td><td class="td-s num">32px</td><td class="td-m">섹션 간 간격</td></tr>
+          <tr><td class="tok">space-12</td><td class="td-s num">48px</td><td class="td-m">섹션 패딩(데스크탑), 헤더 높이</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">Radius 토큰</div>
+    <div class="card" style="margin-bottom:14px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
+      <div style="text-align:center"><div style="width:52px;height:52px;background:var(--tc);border-radius:4px;display:flex;align-items:center;justify-content:center;color:#FBF6EF;font-family:'DM Mono',monospace;font-size:9px">4</div><div style="font-size:9.5px;font-family:'DM Mono',monospace;color:var(--ink-m);margin-top:6px">r-xs<br>칩·태그 내</div></div>
+      <div style="text-align:center"><div style="width:52px;height:52px;background:var(--tc);border-radius:6px;display:flex;align-items:center;justify-content:center;color:#FBF6EF;font-family:'DM Mono',monospace;font-size:9px">6</div><div style="font-size:9.5px;font-family:'DM Mono',monospace;color:var(--ink-m);margin-top:6px">r-sm<br>뱃지·입력</div></div>
+      <div style="text-align:center"><div style="width:52px;height:52px;background:var(--tc);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#FBF6EF;font-family:'DM Mono',monospace;font-size:9px">8</div><div style="font-size:9.5px;font-family:'DM Mono',monospace;color:var(--ink-m);margin-top:6px">r-md<br>버튼 sm·status row</div></div>
+      <div style="text-align:center"><div style="width:52px;height:52px;background:var(--tc);border-radius:10px;display:flex;align-items:center;justify-content:center;color:#FBF6EF;font-family:'DM Mono',monospace;font-size:9px">10</div><div style="font-size:9.5px;font-family:'DM Mono',monospace;color:var(--ink-m);margin-top:6px">r-lg<br>버튼 md·카드 sm</div></div>
+      <div style="text-align:center"><div style="width:52px;height:52px;background:var(--tc);border-radius:14px;display:flex;align-items:center;justify-content:center;color:#FBF6EF;font-family:'DM Mono',monospace;font-size:9px">14</div><div style="font-size:9.5px;font-family:'DM Mono',monospace;color:var(--ink-m);margin-top:6px">r-xl<br>카드·KPI</div></div>
+      <div style="text-align:center"><div style="width:52px;height:52px;background:var(--tc);border-radius:18px;display:flex;align-items:center;justify-content:center;color:#FBF6EF;font-family:'DM Mono',monospace;font-size:9px">18</div><div style="font-size:9.5px;font-family:'DM Mono',monospace;color:var(--ink-m);margin-top:6px">r-2xl<br>모달·앱아이콘</div></div>
+      <div style="text-align:center"><div style="width:66px;height:52px;background:var(--tc);border-radius:999px;display:flex;align-items:center;justify-content:center;color:#FBF6EF;font-family:'DM Mono',monospace;font-size:9px">pill</div><div style="font-size:9.5px;font-family:'DM Mono',monospace;color:var(--ink-m);margin-top:6px">r-pill<br>페일 뱃지·필터</div></div>
+    </div>
+
+    <div class="sub-h">그림자 원칙</div>
+    <div class="g2">
+      <div class="card tinted">
+        <div style="font-size:11px;font-weight:700;color:var(--success-fg);margin-bottom:8px">✓ 그림자 사용 · 부유 요소</div>
+        <div style="font-size:12.5px;color:var(--ink-s);line-height:1.7">모달, 드롭다운, 팝오버, 툴팁, 토스트, 하단 알약<br><span class="tok" style="font-size:10px">0 16px 48px -16px rgba(61,36,24,.22)</span></div>
+      </div>
+      <div class="card tinted">
+        <div style="font-size:11px;font-weight:700;color:var(--danger-fg);margin-bottom:8px">✕ 그림자 미사용 · 인라인 요소</div>
+        <div style="font-size:12.5px;color:var(--ink-s);line-height:1.7">카드, 입력 필드, 버튼, 사이드바<br>대신 <span class="tok" style="font-size:10px">border: 1px solid var(--border)</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- §08 레이어 위계 -->
+  <section class="sec" id="s08">
+    <div class="sec-eye">§ 08 · 토큰</div>
+    <h2 class="sec-h">레이어(z-index) 위계</h2>
+    <p class="sec-p">임의 z값을 12개 토큰으로 대체한다. 토큰 외 z값은 금지하며, 형제 간 정렬은 z 없이 DOM 순서로 해결한다.</p>
+
+    <div class="g2" style="margin-bottom:14px">
+      <div class="card">
+        <div style="display:flex;flex-direction:column-reverse">
+          <div class="zlayer" style="background:var(--surface-2);color:var(--ink-s)"><span>기본 콘텐츠</span><span class="tok">--z-base 0</span></div>
+          <div class="zlayer" style="background:var(--surface-2);color:var(--ink-s)"><span>헤더 · 고정 컬럼</span><span class="tok">--z-sticky 100</span></div>
+          <div class="zlayer" style="background:var(--sand-s);color:var(--ink-s)"><span>선택 알약 (SelectionPillBar)</span><span class="tok">--z-pill 120</span></div>
+          <div class="zlayer" style="background:var(--sand-s);color:var(--ink-s)"><span>드롭다운 · 알림 패널</span><span class="tok">--z-dropdown 150</span></div>
+          <div class="zlayer" style="background:var(--sand);color:var(--ink)"><span>모바일 드로어</span><span class="tok">--z-drawer 200</span></div>
+          <div class="zlayer" style="background:var(--sand);color:var(--ink)"><span>모달 1·2·3중 (+10씩)</span><span class="tok">--z-modal 300 · 310 · 320</span></div>
+          <div class="zlayer" style="background:var(--camel);color:#FBF6EF"><span>확인 다이얼로그 · 액션시트</span><span class="tok" style="color:#FBF6EF;background:transparent">--z-confirm 340</span></div>
+          <div class="zlayer" style="background:var(--camel);color:#FBF6EF"><span>라이트박스 · 360뷰어</span><span class="tok" style="color:#FBF6EF;background:transparent">--z-lightbox 360</span></div>
+          <div class="zlayer" style="background:var(--tc);color:#FBF6EF"><span>토스트</span><span class="tok" style="color:#FBF6EF;background:transparent">--z-toast 400</span></div>
+          <div class="zlayer" style="background:var(--tc-d);color:#FBF6EF"><span>브랜드 로더</span><span class="tok" style="color:#FBF6EF;background:transparent">--z-loader 500</span></div>
+        </div>
+      </div>
+      <div class="card tinted">
+        <table class="tok-table">
+          <thead><tr><th>규칙</th><th>내용</th></tr></thead>
+          <tbody>
+            <tr><td class="td-s">토큰 외 z 금지</td><td class="td-m">임의 숫자(10/20/60/210 등) 전부 토큰으로 교체</td></tr>
+            <tr><td class="td-s">모달 중첩</td><td class="td-m">최대 3중. 각 모달은 자기 backdrop 보유 · 추가 어둡기 보정 금지</td></tr>
+            <tr><td class="td-s">Esc</td><td class="td-m">최상단 레이어만 닫는다: confirm &gt; modal-3 &gt; modal-2 &gt; modal</td></tr>
+            <tr><td class="td-s">토스트</td><td class="td-m">모달·라이트박스 위에서도 보인다 (400)</td></tr>
+            <tr><td class="td-s">브랜드 로더</td><td class="td-m">셸 없는 구간에서 전 레이어 차단 (500)</td></tr>
+            <tr><td class="td-s">모달 내 드롭다운</td><td class="td-m">--z-dropdown이 아니라 부모 모달 z + 1 (portal 주의)</td></tr>
+            <tr><td class="td-s">--z-pill 배치 근거</td><td class="td-m">sticky(100) 위, dropdown(150)·drawer(200) 아래 · 드롭다운·드로어가 열리면 알약을 덮는다</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- §09 모션 -->
+  <section class="sec" id="s09">
+    <div class="sec-eye">§ 09 · 토큰</div>
+    <h2 class="sec-h">모션</h2>
+    <p class="sec-p">미니멀하고 기능적이다. 인터랙션 피드백은 150ms 이내. 모션 없이도 기능이 완전해야 하며, prefers-reduced-motion에서 모든 애니메이션은 즉시 완료된다.</p>
+
+    <div class="sub-h">Duration · Easing 토큰</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>토큰</th><th>값</th><th>용도</th></tr></thead>
+        <tbody>
+          <tr><td class="tok">--dur-fast</td><td class="td-s num">100ms</td><td class="td-m">버튼 색상, 호버 배경</td></tr>
+          <tr><td class="tok">--dur-base</td><td class="td-s num">150ms</td><td class="td-m">대부분의 UI 전환 (기본값)</td></tr>
+          <tr><td class="tok">--dur-slow</td><td class="td-s num">200ms</td><td class="td-m">카드 transform, 드로어 열림</td></tr>
+          <tr><td class="tok">--dur-load</td><td class="td-s num">3200ms</td><td class="td-m">브랜드 로더 1 사이클 (line-draw + 락업)</td></tr>
+          <tr><td class="tok">--ease-default</td><td class="td-s">ease</td><td class="td-m">컬러·배경 전환</td></tr>
+          <tr><td class="tok">--ease-in-out</td><td class="td-s">ease-in-out</td><td class="td-m">로딩 바 슬라이드</td></tr>
+          <tr><td class="tok">--ease-sharp</td><td class="td-s">cubic-bezier(.4,0,.2,1)</td><td class="td-m">모달, 드로어</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">컴포넌트별 트랜지션</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>컴포넌트</th><th>속성</th><th>Duration</th><th>비고</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">Button</td><td class="tok">background-color</td><td class="td-m num">150ms</td><td class="td-m">ease</td></tr>
+          <tr><td class="td-s">Input focus</td><td class="tok">border-color, box-shadow</td><td class="td-m num">150ms</td><td class="td-m">ease</td></tr>
+          <tr><td class="td-s">Nav link hover</td><td class="tok">color, background</td><td class="td-m num">150ms</td><td class="td-m">ease</td></tr>
+          <tr><td class="td-s">Room card hover</td><td class="tok">transform</td><td class="td-m num">180ms</td><td class="td-m">translateY(−2px)</td></tr>
+          <tr><td class="td-s">Modal open</td><td class="tok">opacity, scale</td><td class="td-m num">200ms</td><td class="td-m">ease-in-out</td></tr>
+          <tr><td class="td-s">Sidebar drawer</td><td class="tok">transform</td><td class="td-m num">250ms</td><td class="td-m">cubic-bezier(.4,0,.2,1)</td></tr>
+          <tr><td class="td-s">Brand loader</td><td class="tok">stroke-dashoffset → opacity</td><td class="td-m num">3200ms</td><td class="td-m">line-draw + 락업 페이드</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">정본 전환 모션 (2026-07-06 시공 · 전부 motion-safe)</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>패턴</th><th>스펙</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">슬라이딩 인디케이터</td><td class="td-m">SegmentedControl(cream 칩)·ViewTabs(코랄 채움)의 활성 표시가 탭 사이를 200ms ease-out으로 미끄러진다 (offsetLeft/offsetWidth 실측, left·width 트랜지션). 하단 내비는 상단 2px 코랄 바가 탭 폭 1/2 길이로 이동 · 누르는 즉시(pending) 먼저 움직여 라우팅 지연을 가린다</td></tr>
+          <tr><td class="td-s">오버레이 등장</td><td class="td-m">.anim-overlay-in(배경 160ms 페이드) + .anim-panel-in(패널 200ms 떠오름, translateY 10px + scale .97) · Modal·ConfirmDialog 적용. MergeSheet는 기존 슬라이드업 유지</td></tr>
+          <tr><td class="td-s">콘텐츠 전환</td><td class="td-m">.anim-view-in(180ms, 4px 상승 페이드) · 뷰 교체 패널에 선택 적용. key 리마운트는 내부 상태를 초기화하므로 상태 없는 표시 전용 컨테이너에만</td></tr>
+        </tbody>
+      </table>
+      <div style="font-size:11.5px;color:var(--ink-s);margin-top:10px;line-height:1.6">새 모션 추가 시 이 목록의 지속시간(160~200ms)·이징을 재사용한다. 화면마다 다른 속도 금지.</div>
+    </div>
+
+    <div class="sub-h">금지 목록</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-dont">✕</span><span>transition-all · 필요한 속성만 (transition-colors, transition-[width] 등)</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕</span><span>데스크톱 hover 확대(hover:scale). 터치 피드백 active:scale-95~0.98은 허용</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕</span><span>그라데이션 배경 · 글로우. 그림자는 §07 토큰만</span></div>
+    </div>
+
+    <div class="sub-h">접근성 · prefers-reduced-motion</div>
+    <div class="card tinted" style="font-family:'DM Mono',monospace;font-size:11.5px;line-height:1.9">
+      @media (prefers-reduced-motion: reduce) {<br>
+      &nbsp;&nbsp;*, *::before, *::after { animation-duration: 0.01ms; transition-duration: 0.01ms; }<br>
+      }
+      <div style="font-family:'Pretendard Variable',sans-serif;font-size:12px;color:var(--ink-s);margin-top:8px;line-height:1.6">모션 감소 사용자에게는 모든 애니메이션을 즉시 완료한다. 기능은 동일하게 작동해야 한다. 터치 타겟 44px · focus-visible 링은 전 컴포넌트 공통이다.</div>
+    </div>
+  </section>
+
+  <!-- §10 버튼 -->
+  <section class="sec" id="s10">
+    <div class="sec-eye">§ 10 · 컴포넌트</div>
+    <h2 class="sec-h">버튼 · Btn</h2>
+    <p class="sec-p">공용 Btn 하나로 통일한다(raw button 439곳 점진 교체 대상). 모든 버튼은 터치 타겟 44px 확보, focus-visible 링 필수. 라벨은 동사·명사 위주 2~6자 우선.</p>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="demo-row"><span class="demo-label">Variants</span>
+        <button class="btn btn-md btn-primary" type="button">Primary</button>
+        <button class="btn btn-md btn-secondary" type="button">Secondary</button>
+        <button class="btn btn-md btn-danger" type="button">Danger</button>
+        <button class="btn btn-md btn-ghost" type="button">Ghost</button>
+        <button class="btn btn-md btn-subtle" type="button">Subtle</button>
+      </div>
+      <div class="demo-row"><span class="demo-label">Sizes</span>
+        <button class="btn btn-sm btn-primary" type="button">Small 36px</button>
+        <button class="btn btn-md btn-primary" type="button">Medium 40px</button>
+        <button class="btn btn-lg btn-primary" type="button">Large 44px</button>
+      </div>
+      <div class="demo-row"><span class="demo-label">Disabled</span>
+        <button class="btn btn-md btn-primary" disabled type="button">Primary</button>
+        <button class="btn btn-md btn-secondary" disabled type="button">Secondary</button>
+      </div>
+      <div class="demo-row"><span class="demo-label">제출 중</span>
+        <button class="btn btn-md btn-primary" disabled type="button" style="width:128px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="animation:spin .8s linear infinite"><path d="M21 12a9 9 0 1 1-6.2-8.56"/></svg> 저장 중…</button>
+        <span style="font-size:11px;color:var(--ink-m)">스피너 14px stroke 2.5 회전 0.8s · 버튼 너비 고정(레이아웃 점프 금지) · 폼 전체 입력 잠금</span>
+      </div>
+    </div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>variant</th><th>배경 → hover</th><th>텍스트</th><th>용도</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">primary</td><td class="td-m">--tc → --tc-d</td><td class="td-m">cream #FBF6EF</td><td class="td-m">주 CTA · 화면당 1개 위계</td></tr>
+          <tr><td class="td-s">secondary</td><td class="td-m">--cream-2 → --sand</td><td class="td-m">--ink</td><td class="td-m">보조 동작 · 취소(주의 단계)</td></tr>
+          <tr><td class="td-s">danger</td><td class="td-m">--danger-bg → --danger-ring</td><td class="td-m">--danger-fg</td><td class="td-m">삭제 등 위험 동작 (soft) · 파괴적 확인 버튼은 §14의 solid</td></tr>
+          <tr><td class="td-s">ghost</td><td class="td-m">투명 → --cream-2</td><td class="td-m">--ink-s</td><td class="td-m">3차 동작 · 일반 확인의 취소</td></tr>
+          <tr><td class="td-s">subtle</td><td class="td-m">--cream-2 (텍스트만 진해짐)</td><td class="td-m">--ink-s → --ink</td><td class="td-m">인라인 보조 · 원위치 적용취소</td></tr>
+        </tbody>
+      </table>
+      <div style="font-size:11.5px;color:var(--ink-s);margin-top:8px;line-height:1.6">size: sm 36px r8 · md 40px r10 · lg 44px r10. 다크모드의 secondary hover 표면은 --sand 다크 오버라이드 #332619 (§28).</div>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>확인 버튼 라벨은 항상 동사: "저장", "전환", "영구 삭제". "확인"·"예" 금지.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>raw button 직접 작성 · 포커스 링·44px 타겟 누락의 온상이다.</span></div>
+    </div>
+  </section>
+
+  <!-- §11 배지 -->
+  <section class="sec" id="s11">
+    <div class="sec-eye">§ 11 · 컴포넌트</div>
+    <h2 class="sec-h">배지 · Badge</h2>
+    <p class="sec-p">Badge의 정본 범위는 의미색 토큰 쌍(success·warning·info·danger·coral pale)의 표준 상태 배지뿐이다. 카테고리 동적 틴트, canvas 메타 칩(위치·결제수단 라벨), 오버레이(absolute), 숫자 카운터, 버튼형은 Badge 범위 밖의 별도 패턴이다.</p>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="demo-row"><span class="demo-label">상태 (틴트)</span>
+        <span class="badge badge-sm b-success">완납</span>
+        <span class="badge badge-sm b-info">예정</span>
+        <span class="badge badge-sm b-warn">미납</span>
+        <span class="badge badge-sm b-neutral">공실</span>
+        <span class="badge badge-sm b-inspect">점검 중</span>
+      </div>
+      <div class="demo-row"><span class="demo-label">액센트</span>
+        <span class="badge badge-sm b-coral">거주중</span>
+        <span class="badge badge-sm b-deposit">보증금</span>
+        <span class="badge badge-sm b-reserve">예약</span>
+        <span class="badge badge-sm b-info">전입신고</span>
+      </div>
+      <div class="demo-row"><span class="demo-label">Overdue (solid)</span>
+        <span class="badge badge-sm b-overdue">연체</span>
+        <span class="badge badge-sm b-overdue num">연체 D+7</span>
+        <span class="badge badge-md b-overdue num">연체 D+14</span>
+        <span style="font-size:10.5px;color:var(--ink-m)">filled terracotta · 양 모드 동일 (--overdue-solid)</span>
+      </div>
+      <div class="demo-row"><span class="demo-label">Sizes</span>
+        <span class="badge badge-sm b-coral">Small 11px</span>
+        <span class="badge badge-md b-coral">Medium 12px</span>
+      </div>
+    </div>
+
+    <div class="sub-h">병렬 패턴 · 뱃지 2개</div>
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:4px;margin-bottom:6px">
+        <span class="badge badge-sm b-warn">미납</span>
+        <span class="badge badge-sm b-neutral">퇴실 예정</span>
+      </div>
+      <div class="num" style="font-size:10.5px;color:var(--ink-m)">12일 초과 · 6/13 퇴실 D-3</div>
+      <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;font-size:12px;color:var(--ink-s);line-height:1.7">순서는 수납 상태 먼저, 일정 상태 뒤. 간격 4px, 최대 2개. 3개 이상 필요하면 2개 + "+1" 뉴트럴 뱃지. 보조줄은 뱃지 아래 10.5px --ink-m, 구분자 ' · ', D-day·일수는 tnum.</div>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>틴트 배지 = -bg + -fg + inset 1px -ring. 솔리드 배지 = -solid + cream 글자.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>보증금에 파랑 · deposit은 카멜 계열이 정본. 텍스트만 토큰화하고 배경은 리터럴 고정.</span></div>
+    </div>
+  </section>
+
+  <!-- §12 폼 입력 -->
+  <section class="sec" id="s12">
+    <div class="sec-eye">§ 12 · 컴포넌트</div>
+    <h2 class="sec-h">폼 입력</h2>
+    <p class="sec-p">radius 혼용 4종을 6px 하나로 통일한다. 6px 선택 근거: radius 토큰표가 "r-sm 6 · 입력·배지"로 규정했고 코드 다수파(176곳)와 일치해 마이그레이션이 최소다.</p>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="g2">
+        <div><label class="form-label">기본</label><input class="form-input" type="text" placeholder="호실 번호 입력"></div>
+        <div><label class="form-label">포커스</label><input class="form-input" type="text" value="401호" style="border-color:var(--tc);box-shadow:0 0 0 3px rgba(160,60,46,.12)"></div>
+        <div><label class="form-label">에러</label><input class="form-input error" type="text" value="잘못된 형식"><span class="form-error">올바른 호실 번호를 입력하세요.</span></div>
+        <div><label class="form-label">금액</label><div style="position:relative"><span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--ink-s)">₩</span><input class="form-input num" type="text" value="450,000" style="padding-left:28px"></div></div>
+        <div><label class="form-label">읽기전용 (자동 합산)</label><input class="form-input num" type="text" value="1,350,000" readonly style="background:var(--sand-s);border:none"><span class="form-hint">자동 계산 · 포커스 불가</span></div>
+        <div><label class="form-label">비활성</label><input class="form-input" type="text" placeholder="수정 불가" disabled></div>
+      </div>
+    </div>
+
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>항목</th><th>값</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">radius</td><td class="td-m"><b>6px (--input-radius)</b> · 텍스트·셀렉트·날짜·금액·textarea 전부</td></tr>
+          <tr><td class="td-s">높이</td><td class="td-m">40px / 모바일(&lt;768px) 44px · textarea min 80px</td></tr>
+          <tr><td class="td-s">패딩 · 폰트</td><td class="td-m">9px 13px · 13.5px Pretendard · 금액·숫자는 tnum</td></tr>
+          <tr><td class="td-s">기본 보더</td><td class="td-m">1.5px --border-s, bg --cream-2</td></tr>
+          <tr><td class="td-s">포커스</td><td class="td-m">보더 --tc + ring 0 0 0 3px rgba(160,60,46,.12)</td></tr>
+          <tr><td class="td-s">placeholder · 라벨</td><td class="td-m">--ink-m · 라벨 12px/500 --ink-s, 입력과 5px 간격</td></tr>
+          <tr><td class="td-s">에러</td><td class="td-m">보더 --tc + 하단 11px --tc-d 메시지 (ring은 포커스 시만)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">특수 입력 · 정책</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>패턴</th><th>스펙</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">모달 내 폼 · 입력 유실 방지</td><td class="td-m">dirty(입력 시작) 후 배경클릭 무시. Esc·X버튼은 일반 확인 다이얼로그 경유: "작성 중인 내용이 있습니다. 닫을까요?" · [계속 작성](primary) / [닫기](ghost). pristine 상태는 즉시 닫힘</td></tr>
+          <tr><td class="td-s">자동 합산 (읽기전용)</td><td class="td-m">bg --sand-s, 보더 없음, tnum, 우측 캡션 "자동 계산" 10.5px --ink-m. 포커스 불가</td></tr>
+          <tr><td class="td-s">상호배타 그룹</td><td class="td-m">체크박스 금지 · 세그먼트 컨트롤(radio): 높이 36px, 선택 bg --cream + 보더 --tc, 비선택 bg --cream-2</td></tr>
+          <tr><td class="td-s">임시저장 표시</td><td class="td-m">폼 헤더 우측 칩: 점 6px --success + "임시저장됨 14:32" 10.5px --ink-m. 저장 중엔 점 --camel + "저장 중…"</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>금액 입력엔 ₩ prefix 고정 표시.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>한 폼 안에서 입력 높이 혼용 (인라인 검색창 예외는 36px sm 단일 허용).</span></div>
+    </div>
+  </section>
+
+  <!-- §13 모달 -->
+  <section class="sec" id="s13">
+    <div class="sec-eye">§ 13 · 컴포넌트</div>
+    <h2 class="sec-h">모달 · Modal</h2>
+    <p class="sec-p">수제 모달 17개 파일은 공용 Modal로 흡수한다. width는 xs·sm·md·lg 4단.</p>
+
+    <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px;align-items:flex-start">
+      <div style="max-width:320px;flex:1;min-width:260px;background:var(--surface);border:1px solid var(--border-s);border-radius:18px;box-shadow:0 16px 48px -16px rgba(61,36,24,.24);overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:18px 20px 0">
+          <div>
+            <div style="font-size:15px;font-weight:700">수납 정보 입력 <span class="badge badge-sm b-coral" style="vertical-align:middle;font-size:10px">거주중</span></div>
+            <div style="font-size:10px;color:var(--ink-m);margin-top:2px">401호 · 김성훈</div>
+          </div>
+          <button class="btn btn-ghost" type="button" style="width:30px;height:30px;padding:0;border-radius:8px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">
+          <div><label class="form-label">수납일</label><input class="form-input num" type="text" value="2026-07-11"></div>
+          <div><label class="form-label">금액</label><div style="position:relative"><span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--ink-s)">₩</span><input class="form-input num" type="text" value="450,000" style="padding-left:28px"></div></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;padding:0 20px 18px">
+          <button class="btn btn-sm btn-secondary" type="button">취소</button>
+          <button class="btn btn-sm btn-primary" type="button">저장</button>
+        </div>
+      </div>
+      <div class="card tinted" style="flex:1;min-width:220px">
+        <table class="tok-table">
+          <tbody>
+            <tr><td class="td-s">backdrop</td><td class="td-m">rgba 검정 70% · 모드 불변</td></tr>
+            <tr><td class="td-s">radius</td><td class="td-m">r-2xl 18px</td></tr>
+            <tr><td class="td-s">max-height</td><td class="td-m">90vh · 내부 스크롤</td></tr>
+            <tr><td class="td-s">닫기</td><td class="td-m">ESC·backdrop 클릭 (폼 dirty 시 §12 정책)</td></tr>
+            <tr><td class="td-s">z</td><td class="td-m">--z-modal 300 · 중첩 +10</td></tr>
+            <tr><td class="td-s">등장</td><td class="td-m">.anim-overlay-in + .anim-panel-in (§09)</td></tr>
+            <tr><td class="td-s">그림자</td><td class="td-m">0 16px 48px −16px rgba(61,36,24,.24)</td></tr>
+            <tr><td class="td-s">푸터</td><td class="td-m">취소 좌 · 확인 우 (ModalFooterActions)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>복잡한 다중탭 엔터티 상세(수납·입주자 통합)는 전역 Prism 셸(EntityModal), 단순 추가/수정 폼은 페이지 Modal(width sm·md·lg). 복잡도로 결정한다 (§23.8).</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>수제 모달 직접 구현 · Esc·세이프에어리어·최대 높이·radius가 파일마다 달라지는 원인.</span></div>
+    </div>
+  </section>
+
+  <!-- §14 확인 다이얼로그 -->
+  <section class="sec" id="s14">
+    <div class="sec-eye">§ 14 · 컴포넌트</div>
+    <h2 class="sec-h">확인 다이얼로그 · ConfirmDialog</h2>
+    <p class="sec-p">네이티브 confirm()·alert()은 전면 금지한다(71곳 전수 교체 대상). 공용 ConfirmDialog 하나로 대체한다.</p>
+
+    <div class="sub-h">공통 스펙</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <tbody>
+          <tr><td class="td-s">너비</td><td class="td-m">--confirm-w 360px · 영향 고지형 420px · max calc(100vw − 32px)</td></tr>
+          <tr><td class="td-s">radius · 배경</td><td class="td-m">r-2xl 18px · --cream, backdrop rgba(0,0,0,.7)</td></tr>
+          <tr><td class="td-s">z · 패딩</td><td class="td-m">--z-confirm 340 · 24px 일체형 (내부 구분선 없음)</td></tr>
+          <tr><td class="td-s">제목 · 본문</td><td class="td-m">16px/700 --ink · 13.5px/400 --ink-s lh 1.65</td></tr>
+          <tr><td class="td-s">버튼</td><td class="td-m">btn-md 40px · 취소 좌, 확인 우</td></tr>
+          <tr><td class="td-s">등장 · 포커스</td><td class="td-m">opacity+scale(.96→1) 200ms cubic-bezier(.4,0,.2,1) · 열릴 때 취소 버튼에 초기 포커스 (오조작 방지)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">3단계 위험도</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th></th><th>일반 확인</th><th>주의</th><th>파괴적 (영구 삭제)</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">용도</td><td class="td-m">기록 저장·상태 전환</td><td class="td-m">되돌리기 가능한 변경</td><td class="td-m">복구 불가 삭제</td></tr>
+          <tr><td class="td-s">아이콘</td><td class="td-m">없음</td><td class="td-m">경고 삼각형 20px #8B5E0A</td><td class="td-m">경고 원형 20px --tc</td></tr>
+          <tr><td class="td-s">확인 버튼</td><td class="td-m">btn-primary</td><td class="td-m">btn-primary</td><td class="td-m">solid --tc + 동사 라벨 ("영구 삭제")</td></tr>
+          <tr><td class="td-s">취소 버튼</td><td class="td-m">btn-ghost</td><td class="td-m">btn-secondary</td><td class="td-m">btn-secondary</td></tr>
+          <tr><td class="td-s">Esc / 배경클릭</td><td class="td-m">허용 / 허용</td><td class="td-m">허용 / 무시</td><td class="td-m">허용 / 무시</td></tr>
+          <tr><td class="td-s">추가 요소</td><td class="td-m">없음</td><td class="td-m">없음</td><td class="td-m">영향 목록 박스</td></tr>
+        </tbody>
+      </table>
+      <div style="font-size:11.5px;color:var(--ink-s);margin-top:8px;line-height:1.6">파괴적 solid --tc 근거: 다이얼로그 안에서 CTA는 하나뿐이라 OVERDUE 강조색과 충돌하지 않는다. btn-danger(soft)는 파괴적 단계에 쓰기엔 무게가 부족하다.</div>
+    </div>
+
+    <div class="sub-h">파괴적 단계 · 영향 고지형 (confirm 2연타 대체)</div>
+    <div style="max-width:420px;background:var(--surface);border:1px solid var(--border-s);border-radius:18px;box-shadow:0 16px 48px -16px rgba(61,36,24,.24);padding:24px;margin-bottom:12px">
+      <div style="display:flex;gap:8px;align-items:center;font-size:16px;font-weight:700;margin-bottom:14px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--tc-text)" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        입주자 기록을 영구 삭제할까요?
+      </div>
+      <div style="background:var(--danger-bg);border:1px solid var(--danger-ring);border-radius:8px;padding:12px 14px;margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--danger-fg);margin-bottom:6px">함께 삭제되는 항목</div>
+        <div class="num" style="font-size:12.5px;color:var(--ink-s);line-height:1.8">· 과거 계약 <b>3건</b><br>· 수납 기록 <b>24건</b><br>· 첨부 서류 <b>2건</b></div>
+      </div>
+      <div style="font-size:12px;font-weight:600;color:var(--tc-d);margin-bottom:16px">이 동작은 되돌릴 수 없습니다.</div>
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-md btn-secondary" type="button">취소</button>
+        <button class="btn btn-md" type="button" style="background:var(--tc);color:#FBF6EF">영구 삭제</button>
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--ink-s);line-height:1.65;margin-bottom:14px">영향 건수는 반드시 실데이터(서버 카운트)다. 건수를 모르면 이 다이얼로그를 띄울 수 없다. 2차 동의가 더 필요한 초고위험(건물 전체 삭제 등)만 입력 확인("삭제를 입력하세요")을 추가한다. 그 외 confirm 2연타·체크박스 동의는 금지.</p>
+
+    <div class="sub-h">액션 시트형 · 선택지 3개 이상 (choiceDialog)</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <div style="font-size:12.5px;color:var(--ink-s);line-height:1.75">세로 버튼 리스트: 행 높이 48px, 14px/500 --ink, 좌측 정렬 + 아이콘 16px. 행 사이 구분선 --border, hover bg --cream-2, 파괴적 선택지는 텍스트 --tc. 취소는 리스트와 분리된 하단 단독 버튼(btn-ghost, full width, 상단 여백 8px). 모바일(&lt;768px)은 바텀시트 전환: 하단 고정, 상단 radius 18px, safe-area 패딩. choiceDialog(altLabel)로 3지선다를 추가하되, 취소·Esc·배경 클릭은 항상 무변경(§27.5)이고 제3 동작은 별도 버튼이다.</div>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>삭제 확인 제목에 대상 이름 명시 ("401호 김성훈 기록을…").</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>다이얼로그 안에 또 다이얼로그 (액션시트→확인 1회는 허용, 그 이상 금지).</span></div>
+    </div>
+  </section>
+
+  <!-- §15 토스트 -->
+  <section class="sec" id="s15">
+    <div class="sec-eye">§ 15 · 컴포넌트</div>
+    <h2 class="sec-h">토스트</h2>
+    <p class="sec-p">4종으로 확정한다: success · error · info · urgent. 구 warn은 폐기했다(미납 안내는 info, 연체는 urgent로 흡수). 위치는 하단 중앙 고정이다: 정중앙은 콘텐츠와 마우스 동선을 가려 폐지했다. 토스트 칩 색은 모드 불변 고정색이다.</p>
+
+    <div class="card" style="margin-bottom:14px;display:flex;flex-direction:column;gap:8px">
+      <div class="toast success"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>수납 내역이 저장되었습니다</div>
+      <div class="toast error"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>저장에 실패했습니다. 다시 시도해주세요.<span class="toast-action">닫기</span></div>
+      <div class="toast"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><span>퇴실일 변경으로 일할 정산을 재계산했습니다<br><span class="num" style="font-size:12.5px;color:rgba(251,246,239,.75)">19일치 253,333원</span></span></div>
+      <div class="toast urgent"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span class="num">403호 연체 9일 초과. 즉시 연락이 필요합니다</span></div>
+      <div class="toast success"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>3개 카드를 병합했습니다<span class="toast-action">적용취소</span></div>
+    </div>
+
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>kind</th><th>배경 (고정)</th><th>보더</th><th>용도</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">success</td><td class="tok">#1E2E14</td><td class="td-m">rgba(78,104,52,.45)</td><td class="td-m">완료 통지 · 1줄 2400ms</td></tr>
+          <tr><td class="td-s">error</td><td class="tok">#5A1A10</td><td class="td-m">rgba(160,60,46,.5)</td><td class="td-m">실패 · 수동 닫기 버튼 항상 포함</td></tr>
+          <tr><td class="td-s">info</td><td class="tok">#3D2418 (--ink 라이트값)</td><td class="td-m">없음</td><td class="td-m">안내·부가 설명</td></tr>
+          <tr><td class="td-s">urgent</td><td class="tok">#7C2D26</td><td class="td-m">rgba(160,60,46,.5)</td><td class="td-m">연체 등 즉시 조치</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>항목</th><th>값</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">위치</td><td class="td-m">하단 중앙 고정 · bottom: calc(24px + env(safe-area-inset-bottom))</td></tr>
+          <tr><td class="td-s">크기</td><td class="td-m">최대 폭 420px / 모바일 calc(100vw − 32px) · radius r-lg 10px · 패딩 10px 16px · 텍스트 13px #FBF6EF · 아이콘 14px stroke 2.5</td></tr>
+          <tr><td class="td-s">모션</td><td class="td-m">등장 translateY(12px→0)+opacity 200ms · 퇴장 opacity 150ms</td></tr>
+          <tr><td class="td-s">지속</td><td class="td-m">1줄 2400ms · 장문 5200ms · 액션 포함 6000ms (hover 중 타이머 일시정지)</td></tr>
+          <tr><td class="td-s">장문형</td><td class="td-m">1행 결과 13px/600 + 2행 부가 설명 12.5px/400 rgba(251,246,239,.75), lh 1.55, 최대 3줄 · 금액·일수는 tnum</td></tr>
+          <tr><td class="td-s">액션 버튼</td><td class="td-m">우측 끝 텍스트 버튼 13px/700 · 색 --sand #F2D9B8 (고정) · hover 밑줄 · 히트 영역 44x44px</td></tr>
+          <tr><td class="td-s">스택</td><td class="td-m">동시 최대 3개, 신규가 아래 · 간격 8px · 4번째 도착 시 최고(最古) 즉시 퇴장 · 동일 메시지 연속은 카운트 배지 (x2)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>저장·전환 등 조용한 성공은 1줄 success 2400ms로 짧게.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>토스트로 에러 상세를 길게 설명 · 3줄 초과면 토스트가 아니라 다이얼로그/인라인 에러다.</span></div>
+    </div>
+  </section>
+
+  <!-- §16 적용취소 -->
+  <section class="sec" id="s16">
+    <div class="sec-eye">§ 16 · 컴포넌트</div>
+    <h2 class="sec-h">적용취소 · Undo</h2>
+    <p class="sec-p">제품 원칙: 적용하는 모든 기능엔 적용취소가 항상 있어야 한다.</p>
+
+    <div class="sub-h">용어·아이콘</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <tbody>
+          <tr><td class="td-s">표준 라벨</td><td class="td-m"><b>"적용취소"</b> 단일. '해제'·'병합 해제'·'다시 포함'·'되돌리기' 전부 교체. 근거: 제품 원칙 문구와 동일 단어를 써서 라벨만 봐도 원칙이 상기된다</td></tr>
+          <tr><td class="td-s">명사 보강</td><td class="td-m">대상이 모호할 땐 "병합 적용취소", "면제 적용취소"</td></tr>
+          <tr><td class="td-s">아이콘</td><td class="td-m">rotate-ccw(반시계 화살표) 14px, 라벨과 6px 간격. 아이콘 단독 사용 금지</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">진입점 표준 (우선순위)</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>순위</th><th>진입점</th><th>스펙</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">1</td><td class="td-s">토스트 액션</td><td class="td-m">적용 직후 6초간 [적용취소] 버튼 포함 토스트 (§15)</td></tr>
+          <tr><td class="td-s">2</td><td class="td-s">원위치 버튼</td><td class="td-m">적용 결과가 보이는 바로 그 위치(위젯·행·카드)에 btn-subtle sm</td></tr>
+          <tr><td class="td-s">3</td><td class="td-s">상세 화면 액션 메뉴</td><td class="td-m">1·2를 놓친 뒤에도 접근 가능해야 한다</td></tr>
+        </tbody>
+      </table>
+      <div style="font-size:11.5px;color:var(--ink-s);margin-top:8px;line-height:1.6">토스트는 보조 수단이다. 토스트가 사라져도 2·3으로 항상 취소 가능해야 원칙이 충족된다.</div>
+    </div>
+
+    <div class="sub-h">되돌릴 수 없는 동작</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <div style="font-size:12.5px;color:var(--ink-s);line-height:1.75">버튼·메뉴 라벨 옆 캡션 <span class="tok" style="font-size:10px">(되돌릴 수 없음)</span> 10.5px --tc-d. 실행 전 반드시 §14 파괴적 다이얼로그 경유. 적용취소 버튼·토스트 액션 제공 금지: 있는 척 금지.</div>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>적용취소 실행 후에도 토스트로 결과 통지 ("병합을 취소했습니다").</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>적용취소를 빨간색/danger로 칠하기 · 안전장치이지 위험 동작이 아니다.</span></div>
+    </div>
+  </section>
+
+  <!-- §17 빈·로딩 상태 -->
+  <section class="sec" id="s17">
+    <div class="sec-eye">§ 17 · 컴포넌트</div>
+    <h2 class="sec-h">빈 · 로딩 · 스켈레톤</h2>
+    <p class="sec-p">EmptyState와 SkeletonRows가 빈 상태·로딩의 유일 정본이다. 인라인 "불러오는 중…" 텍스트는 원칙 금지. 잦은 전환 라우트는 화면 골격 loading.tsx가 필수다.</p>
+
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>상황</th><th>패턴</th><th>스펙</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">첫 로딩</td><td class="td-s">스켈레톤</td><td class="td-m">실제 레이아웃 모양 그대로, shimmer 1.5s, 자리표시 최대 8개. 스피너 단독 금지</td></tr>
+          <tr><td class="td-s">갱신 중 (데이터 있음)</td><td class="td-s">상단 진행 바</td><td class="td-m">높이 2px, --tc, indeterminate 1.2s loop. 콘텐츠는 그대로 표시</td></tr>
+          <tr><td class="td-s">라우트 전환</td><td class="td-s">§21 결정표</td><td class="td-m">셸 유지 시 스켈레톤만, 셸 없을 때만 브랜드 로더</td></tr>
+          <tr><td class="td-s">빈 상태</td><td class="td-s">EmptyState</td><td class="td-m">아이콘 + 제목 + 설명 + CTA 최대 1개. 점선 보더</td></tr>
+          <tr><td class="td-s">인라인 "불러오는 중…"</td><td class="td-s">원칙 금지</td><td class="td-m">예외: 셀렉트 옵션 로딩 내부 캡션 1곳 (10.5px --ink-m)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="g2" style="margin-bottom:14px">
+      <div class="card" style="border-style:dashed;text-align:center;padding:30px 20px">
+        <svg width="40" height="31" viewBox="0 0 130 100" style="opacity:.3;margin-bottom:10px"><path d="M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82 A 8.5 8.5 0 0 1 104 82 C 104 44 80 26 55 26 C 30 26 28 44 28 82 A 10 10 0 0 1 8 82 Z" fill="#A03C2E"/></svg>
+        <div style="font-size:14px;font-weight:700;margin-bottom:4px">이번달 수납 내역이 없습니다</div>
+        <div style="font-size:12px;color:var(--ink-s);margin-bottom:14px">수납 내역을 추가하면 이곳에 표시됩니다.</div>
+        <button class="btn btn-sm btn-primary" type="button">수납 추가</button>
+      </div>
+      <div class="card">
+        <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-m);margin-bottom:12px">SkeletonRows · shimmer 1.5s</div>
+        <div class="skel" style="height:16px;margin-bottom:8px"></div>
+        <div class="skel" style="width:70%;margin-bottom:8px;animation-delay:.2s"></div>
+        <div class="skel" style="width:50%;animation-delay:.4s"></div>
+        <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:12px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-m);margin-bottom:8px">갱신 중 · 상단 진행 바 2px</div>
+          <div style="height:2px;background:var(--surface-2);border-radius:2px;overflow:hidden"><div style="height:100%;width:40%;background:var(--tc);border-radius:2px"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>검색 무결과는 "다른 검색어로 시도" 설명 분기 (§23.5).</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>스켈레톤과 진행 바 동시 사용 · 첫 로딩이냐 갱신이냐는 하나로 판정된다.</span></div>
+    </div>
+  </section>
+
+  <!-- §18 상태 알림 행·긴급 강조 -->
+  <section class="sec" id="s18">
+    <div class="sec-eye">§ 18 · 패턴</div>
+    <h2 class="sec-h">상태 알림 행 · 긴급 강조</h2>
+    <p class="sec-p">알림 센터·대시보드 등 여러 상태가 한 화면에 나란히 보이는 곳의 패턴이다. 좌측 3px 컬러 팁(border-left)으로 위계를 즉시 인식시키고, 같은 행 안에 상태 배지 + 본문을 배치한다. 팁 색은 §03 상태 토큰과 1:1 매핑이다. 일시적 피드백(저장 완료 등)은 토스트로, 영속·리스트형 알림은 상태 알림 행으로 분리한다.</p>
+
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--success-bg);border-radius:8px;border-left:3px solid var(--success-fg)"><span class="badge badge-md b-success" style="min-width:54px;justify-content:center">완납</span><span style="font-size:13px;color:var(--ink-s)">수납 완료 · 조치 불필요</span></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--info-bg);border-radius:8px;border-left:3px solid var(--info-fg)"><span class="badge badge-md b-info" style="min-width:54px;justify-content:center">예정</span><span style="font-size:13px;color:var(--ink-s)">납부 예정 · 대기 중</span></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--warning-bg);border-radius:8px;border-left:3px solid var(--warning-fg)"><span class="badge badge-md b-warn" style="min-width:54px;justify-content:center">미납</span><span style="font-size:13px;color:var(--ink-s)">납부 기한 경과 · 확인 필요</span></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:11px 14px;background:var(--danger-bg);border-radius:8px;border-left:3px solid var(--overdue-fg)"><span class="badge badge-md b-overdue" style="min-width:54px;justify-content:center">연체</span><span style="font-size:13px;color:var(--ink-s)">7일 이상 초과 · <b style="color:var(--overdue-fg)">즉시 조치</b></span></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--neutral-bg);border-radius:8px;border-left:3px solid var(--ink-m);opacity:.65"><span class="badge badge-md b-neutral" style="min-width:54px;justify-content:center">공실</span><span style="font-size:13px;color:var(--ink-s)">입주자 없음</span></div>
+      </div>
+      <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:12px;font-family:'DM Mono',monospace;font-size:11px;line-height:1.9;color:var(--ink-s)">
+        border-left: 3px solid {status-color} · background: --{semantic}-bg · radius: 8px (r-md) · padding: 10~11px 14px · badge min-width 54px · gap 12px
+      </div>
+    </div>
+
+    <div class="sub-h">연체 카드 강조 · 좌측 팁 패턴</div>
+    <div class="g3" style="margin-bottom:14px">
+      <div class="card" style="padding:14px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div><div class="num" style="font-size:16px;font-weight:700">401호</div><div style="font-size:10.5px;color:var(--ink-m)">원룸 · 남향</div></div>
+          <span class="badge badge-sm b-success">완납</span>
+        </div>
+        <div style="font-size:13px;font-weight:600">김성훈</div>
+        <div class="num" style="font-size:15px;font-weight:700;margin-top:2px">₩450,000</div>
+        <div class="num" style="font-size:10px;color:var(--ink-m);margin-top:6px">07-10 수납완료</div>
+      </div>
+      <div class="card" style="padding:14px 16px;opacity:.6;border-left:3px solid var(--ink-m)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div><div class="num" style="font-size:16px;font-weight:700">415호</div><div style="font-size:10.5px;color:var(--ink-m)">원룸 · 동향</div></div>
+          <span class="badge badge-sm b-neutral">공실</span>
+        </div>
+        <div style="font-size:13px;color:var(--ink-m)">입주자 없음</div>
+      </div>
+      <div class="card" style="padding:14px 16px;border-left:3px solid var(--overdue-fg);background:var(--danger-bg)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div><div class="num" style="font-size:16px;font-weight:700;color:var(--overdue-fg)">421호</div><div style="font-size:10.5px;color:var(--ink-m)">원룸 · 서향</div></div>
+          <span class="badge badge-sm b-overdue num">연체 D+9</span>
+        </div>
+        <div style="font-size:13px;font-weight:600">황도윤</div>
+        <div class="num" style="font-size:15px;font-weight:700;color:var(--overdue-fg);margin-top:2px">₩390,000</div>
+        <div class="num" style="font-size:10px;color:var(--overdue-fg);margin-top:6px;font-weight:600">9일 초과 · 즉시 조치</div>
+      </div>
+    </div>
+
+    <div class="sub-h">진행형 알림 vs 일정 알림</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <div style="font-size:12.5px;color:var(--ink-s);line-height:1.75">진행형 알림(해소까지 매일 표시): 미납 · 재고 · 수령 대기 · <b>퇴실 경과</b>("경과 N일 · 처리 필요"). 일정 알림(당일만 표시)과 구분한다. 연체 단계 표기는 §24.7 정본을 따른다: 미납(1~6일, --warning) → 연체(7일 초과, --overdue-solid "연체 D+N").</div>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>연체는 테라코타를 가장 강하게: 좌측 3px 보더 + filled 배지 + 금액 텍스트까지.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>공실을 위험색으로 · 공실은 위험이 아니다(--ink-m 뮤트).</span></div>
+    </div>
+  </section>
+
+  <!-- §19 내비·테이블·보조 정본 -->
+  <section class="sec" id="s19">
+    <div class="sec-eye">§ 19 · 패턴</div>
+    <h2 class="sec-h">내비게이션 · 테이블 · 보조 정본</h2>
+    <p class="sec-p">사이드바, 데이터 테이블, 페이지 골격의 공통 정본과 보조 컴포넌트 규정.</p>
+
+    <div class="sub-h">사이드바</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <tbody>
+          <tr><td class="td-s">반응형</td><td class="td-m">모바일(&lt;768px) 슬라이드 드로어 w-240px · 태블릿(768px~) 아이콘만 w-64px · 데스크탑(1024px~) 전체 w-220px</td></tr>
+          <tr><td class="td-s">Active 스타일</td><td class="td-m">color --tc · border-left 2.5px solid --tc · background rgba(160,60,46,.06)</td></tr>
+          <tr><td class="td-s">로고 영역</td><td class="td-m">아치 심볼 + 워드마크 락업 (§02)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">데이터 테이블 (기본형)</div>
+    <div style="border:1px solid var(--border-s);border-radius:12px;overflow:hidden;margin-bottom:14px">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--surface-2)">
+          <th style="text-align:left;padding:9px 14px;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-m)">호실</th>
+          <th style="text-align:left;padding:9px 14px;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-m)">입주자</th>
+          <th style="text-align:right;padding:9px 14px;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-m)">수납 예정금</th>
+          <th style="text-align:left;padding:9px 14px;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-m)">상태</th>
+        </tr></thead>
+        <tbody>
+          <tr style="border-top:1px solid var(--border)"><td class="num" style="padding:9px 14px;font-weight:700">401</td><td style="padding:9px 14px;font-weight:700">김성훈</td><td class="num" style="padding:9px 14px;text-align:right">₩450,000</td><td style="padding:9px 14px"><span class="badge badge-sm b-success">완납</span></td></tr>
+          <tr style="border-top:1px solid var(--border)"><td class="num" style="padding:9px 14px;font-weight:700">402</td><td style="padding:9px 14px;font-weight:700">문가영</td><td class="num" style="padding:9px 14px;text-align:right">₩380,000</td><td style="padding:9px 14px"><span class="badge badge-sm b-warn">미납</span></td></tr>
+          <tr style="border-top:1px solid var(--border);border-left:3px solid var(--overdue-fg);background:var(--danger-bg)"><td class="num" style="padding:9px 14px;font-weight:700;color:var(--overdue-fg)">403</td><td style="padding:9px 14px;font-weight:700">임채원</td><td class="num" style="padding:9px 14px;text-align:right;color:var(--overdue-fg)">₩420,000</td><td style="padding:9px 14px"><span class="badge badge-sm b-overdue num">연체 D+9</span></td></tr>
+          <tr style="border-top:1px solid var(--border)"><td class="num" style="padding:9px 14px;font-weight:700">415</td><td style="padding:9px 14px;color:var(--ink-m)">입주자 없음</td><td class="num" style="padding:9px 14px;text-align:right;color:var(--ink-m)">0원</td><td style="padding:9px 14px"><span class="badge badge-sm b-neutral">공실</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:12px;color:var(--ink-s);line-height:1.65;margin-bottom:14px">식별자(호실번호·입주자명)는 --ink bold + tnum. 테라코타는 OVERDUE·.attn에만 쓴다. 금액 열은 우측 정렬. sticky 확장 스펙은 §23.7이 정본이다.</p>
+
+    <div class="sub-h">페이지 골격 · 보조 컴포넌트</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>정본</th><th>규정</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">페이지 인셋</td><td class="td-m">AppShell(main p-4 md:p-6) 단일. 페이지 자체 패딩 금지 (이중 패딩 5페이지 제거 완료)</td></tr>
+          <tr><td class="td-s">h1</td><td class="td-m">text-xl font-bold + 필요 시 InfoHint. 수제 크기(22px/800 등) 금지</td></tr>
+          <tr><td class="td-s">AiQuotaHint</td><td class="td-m">AI 트리거 버튼 옆 정본: "무료 AI n회 남음" + (i) 발급 안내(AiKeyGuide 단일 출처). 본인 키 영업장에는 자동 숨김</td></tr>
+          <tr><td class="td-s">InfoHint</td><td class="td-m">팝오버 헤더가 잘리므로 제목은 짧은 명사구 위주 (예: 'API 키 무료 발급')</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>사이드바 active는 테라코타 텍스트 + 좌측 2.5px 팁 + 6% 틴트 조합 하나로.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>페이지마다 자체 패딩·자체 h1 크기 · AppShell과 h1 정본을 벗어나는 수제 골격.</span></div>
+    </div>
+  </section>
+
+  <!-- §20 반응형 전환 -->
+  <section class="sec" id="s20">
+    <div class="sec-eye">§ 20 · 패턴</div>
+    <h2 class="sec-h">반응형 전환</h2>
+    <p class="sec-p">브레이크포인트는 768px 하나다: 미만은 카드 리스트, 이상은 데이터 표. 사이드바 768/1024 규칙과 정렬된다.</p>
+
+    <div class="sub-h">표 → 카드 정보 매핑</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>카드 슬롯</th><th>내용</th><th>우선순위</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">1행 좌</td><td class="td-m">식별자 (호실 번호) · room-num 스타일</td><td class="td-m">1순위</td></tr>
+          <tr><td class="td-s">1행 우</td><td class="td-m">상태 뱃지 (§11 병렬 규칙)</td><td class="td-m">1순위</td></tr>
+          <tr><td class="td-s">2행</td><td class="td-m">사람 이름 · 기간</td><td class="td-m">2순위</td></tr>
+          <tr><td class="td-s">3행 좌</td><td class="td-m">금액 (tnum)</td><td class="td-m">1순위</td></tr>
+          <tr><td class="td-s">하단 캡션</td><td class="td-m">일자·보조 메타 10.5px --ink-m</td><td class="td-m">3순위</td></tr>
+          <tr><td class="td-s">생략</td><td class="td-m">4순위 이하 컬럼은 카드 탭 후 상세에서</td><td class="td-m"></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>카드 터치 영역은 카드 전체 (행 버튼 분리 금지). 같은 데이터의 카드/표 쌍은 동일 정렬·필터 상태 공유.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>화면마다 다른 브레이크포인트 · 카드와 표의 상태 불일치.</span></div>
+    </div>
+  </section>
+
+  <!-- §21 콜드 스타트 로딩 -->
+  <section class="sec" id="s21">
+    <div class="sec-eye">§ 21 · 패턴</div>
+    <h2 class="sec-h">콜드 스타트 로딩 체계</h2>
+    <p class="sec-p">판정 기준은 하나다: 앱 셸(사이드바·헤더)이 화면에 살아있는가. 셸이 있으면 스켈레톤, 없으면 브랜드 로더. 둘을 동시에 띄우는 것은 어떤 상황에서도 금지다.</p>
+
+    <div class="sub-h">타이밍 토큰</div>
+    <div class="card tinted" style="font-family:'DM Mono',monospace;font-size:11.5px;line-height:2;margin-bottom:14px">
+      --loader-delay: 300ms · 이보다 빨리 끝나면 로더 미표시<br>
+      --loader-min: 1000ms · 표시되면 최소 유지 (깜박임 방지)<br>
+      --splash-intro: 3200ms · 콜드 부트 인트로 총 길이 (완주 전 중단 금지)<br>
+      --splash-fade: 400ms · 스플래시 → 콘텐츠 크로스페이드<br>
+      --splash-slow: 5000ms · 초과 시 느린 연결 메시지<br>
+      --cold-bg: #E8DDD0 (= --page, manifest background와 동일값 강제)<br>
+      --cold-bg-dark: #000000 · 다크 첫 페인트 배경 (OLED 트루 블랙)
+    </div>
+
+    <div class="sub-h">로딩 상황 결정표 · 상황당 패턴 정확히 1개</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th></th><th>상황</th><th>셸</th><th>패턴</th><th>아닌 것</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">1</td><td class="td-s">도메인 콜드 부트 (인증 확인 중)</td><td class="td-m">없음</td><td class="td-m"><b>풀스크린 스플래시 + 인트로 시퀀스</b></td><td class="td-m">스켈레톤 · 그릴 레이아웃이 없다</td></tr>
+          <tr><td class="td-s">2</td><td class="td-s">로그인 → 앱 첫 진입 (셸 생성)</td><td class="td-m">생성 중</td><td class="td-m">스플래시 유지 → 셸 첫 페인트와 크로스페이드 → 콘텐츠는 스켈레톤으로 바톤터치</td><td class="td-m">셸 위에 로더 재등장</td></tr>
+          <tr><td class="td-s">3</td><td class="td-s">앱 내 라우트 전환 (셸 유지)</td><td class="td-m">있음</td><td class="td-m"><b>본문 스켈레톤만</b></td><td class="td-m">브랜드 로더 오버레이 (이중 발동 제거)</td></tr>
+          <tr><td class="td-s">4</td><td class="td-s">같은 페이지 데이터 갱신</td><td class="td-m">있음</td><td class="td-m">상단 진행 바 2px</td><td class="td-m">스켈레톤 재표시</td></tr>
+          <tr><td class="td-s">5</td><td class="td-s">모달·위젯 내부 로딩</td><td class="td-m">있음</td><td class="td-m">컨테이너 내 인라인 스켈레톤 / 제출은 버튼 스피너</td><td class="td-m">전역 로더·전역 진행 바</td></tr>
+          <tr><td class="td-s">6</td><td class="td-s">PWA 실행</td><td class="td-m">없음→생성</td><td class="td-m">OS 스플래시 → 1 스플래시 → 2 순서</td><td class="td-m">배경색 교체 · 3단계 내내 동일 배경</td></tr>
+        </tbody>
+      </table>
+      <div style="font-size:11.5px;color:var(--ink-s);margin-top:8px;line-height:1.6">브랜드 로더의 용도는 둘뿐이다: 셸이 없는 구간(1·2·6) + 로그아웃·계정 전환처럼 셸을 파괴하는 전환.</div>
+    </div>
+
+    <div class="sub-h">브랜드 로더 · 라이브 데모 (3.2s 사이클)</div>
+    <div class="g2" style="margin-bottom:14px">
+      <div class="card" style="padding:0;overflow:hidden">
+        <div class="stage" style="min-height:150px;background:var(--page)">
+          <div class="bl-lockup">
+            <svg width="52" height="40" viewBox="0 0 130 100" style="overflow:visible" aria-hidden="true"><path class="bl-stroke" d="M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82" pathLength="1"/></svg>
+            <div class="bl-word" style="width:1px;height:26px;background:var(--border-s)"></div>
+            <span class="bl-word wm" style="font-size:24px"><span style="color:var(--ink)">stay</span><span style="color:var(--tc-text)">eum</span></span>
+          </div>
+        </div>
+      </div>
+      <div class="card tinted" style="font-family:'DM Mono',monospace;font-size:11.5px;line-height:2">
+        <span style="color:var(--tc-text)">0~1.0s</span> 아치 한 획 line-draw (왼→오른쪽)<br>
+        <span style="color:var(--tc-text)">1.0~1.4s</span> 디바이더 + 영문 워드마크 페이드인<br>
+        <span style="color:var(--tc-text)">1.4~2.0s</span> 영문 락업 hold<br>
+        <span style="color:var(--tc-text)">2.0~2.35s</span> 영문 → 국문(스테이음) 크로스페이드<br>
+        <span style="color:var(--tc-text)">2.35~3.2s</span> 국문 락업 hold · 시각적 안착<br>
+        <span style="color:var(--tc-text)">exit</span> max(3.2s, 앱 준비) 후 400ms 크로스페이드
+      </div>
+    </div>
+
+    <div class="sub-h">콜드 스타트 스플래시 · 인트로 규칙</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <tbody>
+          <tr><td class="td-s">배경</td><td class="td-m">--cold-bg #E8DDD0 (= --page) · 다크 #000000. 브랜드 풀블리드는 압박감 + 로더 stroke 동색 충돌로 기각</td></tr>
+          <tr><td class="td-s">로더 크기</td><td class="td-m">마크 너비 104px(높이 80px) + 워드마크 44px 락업. 모바일(&lt;640px)은 세로 스택: 아치 아래 워드마크 32px, 디바이더 생략</td></tr>
+          <tr><td class="td-s">위치</td><td class="td-m">수직 중앙에서 −8% 위 (시각 중심), 수평 중앙</td></tr>
+          <tr><td class="td-s">완주 보장</td><td class="td-m">앱이 먼저 준비돼도 인트로 3200ms는 끊지 않는다. 세션당 1회(sessionStorage sy-intro-seen), 재진입은 인트로 생략 + 300/1000ms 임계 적용</td></tr>
+          <tr><td class="td-s">인트로 후에도 로딩 중</td><td class="td-m">락업 유지 + 3.2s마다 KO↔EN 크로스페이드 · 5s 초과 시 캡션 "연결이 느립니다. 계속 시도 중입니다" 12.5px --ink-s · 재시도 버튼은 10s 초과 시</td></tr>
+          <tr><td class="td-s">클리핑 주의</td><td class="td-m">아치 stroke(두께 20)는 viewBox를 벗어난다 · svg에 overflow: visible 필수</td></tr>
+          <tr><td class="td-s">reduced-motion</td><td class="td-m">인트로 생략 · 정적 락업(EN) 즉시 표시, 준비되면 크로스페이드만</td></tr>
+          <tr><td class="td-s">타이밍 임계</td><td class="td-m">300ms 안에 끝나면 로더·스켈레톤 모두 미표시. 보였으면 1000ms 유지. 1.0s 이후 언제든 200ms 페이드아웃 중단 허용 (사이클 정수배 대기 금지). 예외: 콜드 부트 인트로는 완주</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">FOUC 방어 · 로그인 · PWA</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <tbody>
+          <tr><td class="td-s">FOUC</td><td class="td-m">index.html 인라인 critical CSS: html 배경 #E8DDD0, 다크 미디어쿼리 #000000 + theme-color meta 2종. 흰 화면 노출 0ms. 다크 감지는 CSS 미디어 쿼리로만</td></tr>
+          <tr><td class="td-s">로그인 제출 중</td><td class="td-m">버튼 내 스피너 + "로그인 중…", disabled + 폼 입력 잠금, 버튼 너비 고정</td></tr>
+          <tr><td class="td-s">소셜 인증 리디렉트</td><td class="td-m">풀스크린 스플래시 재사용 (돌아오면 셸 없음 = 상황 1)</td></tr>
+          <tr><td class="td-s">인증 실패</td><td class="td-m">스플래시 즉시 퇴장 → 로그인 폼 + 인라인 에러. 스플래시 위 에러 표시 금지</td></tr>
+          <tr><td class="td-s">PWA 3단계</td><td class="td-m">OS 스플래시(manifest bg #E8DDD0 = --page 일치 강제 · theme #A03C2E) → 웹 스플래시 → 셸. --page 변경 시 manifest도 동일 커밋 · 불일치는 릴리즈 블로커. 다크 PWA는 manifest 라이트 값 유지, 웹 스플래시부터 다크</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>인트로 중에도 앱 데이터 prefetch는 백그라운드 병행. 상황 3의 스켈레톤은 본문 영역만.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>스켈레톤 + 브랜드 로더 동시 발동 · 인트로에 스킵 버튼 · 웹 스플래시 배경을 --cream이나 브랜드 컬러로.</span></div>
+    </div>
+  </section>
+
+  <!-- §22 재고·리스트 컴포넌트 -->
+  <section class="sec" id="s22">
+    <div class="sec-eye">§ 22 · 페이지</div>
+    <h2 class="sec-h">재고·리스트 컴포넌트</h2>
+    <p class="sec-p">재고관리(소모품·부식 / 비품·자재) 통일에서 추출한 공용 컴포넌트 5종. 데이터 성격이 다른 두 탭이 동일 화면 문법을 쓴다. 리스트형 화면 전반에 재사용 가능하다.</p>
+
+    <div class="sub-h">InventoryCard · 카드 해부구조</div>
+    <div class="g2" style="margin-bottom:12px">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:13px 14px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div style="font-size:14.5px;font-weight:600;letter-spacing:-.015em;display:flex;align-items:center;gap:6px">쌀 20kg <span class="badge badge-sm b-inspect">점검 중</span></div>
+            <div style="font-size:11.5px;color:var(--ink-m);margin-top:2px">소모품 · 소진 예측 12일</div>
+          </div>
+          <div style="text-align:right"><span class="num" style="font-size:19px;font-weight:700">3</span> <span style="font-size:11px;color:var(--ink-m)">개</span></div>
+        </div>
+        <div style="display:flex;gap:8px;border-top:1px solid var(--border);margin-top:11px;padding-top:10px">
+          <button class="btn btn-sm btn-primary" type="button" style="height:34px;border-radius:8px">점검</button>
+          <button class="btn btn-sm btn-secondary" type="button" style="height:34px;border-radius:8px">유지</button>
+        </div>
+      </div>
+      <div class="card tinted">
+        <table class="tok-table">
+          <tbody>
+            <tr><td class="td-s">컨테이너</td><td class="td-m">bg --cream · border 1px --border · radius 13px · padding 13/14px</td></tr>
+            <tr><td class="td-s">선택 .sel</td><td class="td-m">border --tc + ring 2px rgba(160,60,46,.16)</td></tr>
+            <tr><td class="td-s">주의 .attn</td><td class="td-m">border-left 3px --tc</td></tr>
+            <tr><td class="td-s">핵심 수치</td><td class="td-m">19px/700 tnum, 우측 · 위험 시 --tc · 단위 11px --ink-m · <b>슬롯은 항상 1개</b></td></tr>
+            <tr><td class="td-s">액션 행</td><td class="td-m">버튼 h 34px r 8px · 주 버튼 1개만 solid --tc</td></tr>
+            <tr><td class="td-s">체크박스</td><td class="td-m">22px r 7px, on = --tc + 흰 체크 (선택 모드에서만)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="sub-h">SectionHeader · SelectionPillBar · MergeSheet</div>
+    <div style="background:#3D2418;border-radius:15px;padding:10px 14px;display:flex;align-items:center;gap:12px;max-width:420px;margin-bottom:12px;box-shadow:0 16px 48px -16px rgba(61,36,24,.4)">
+      <span style="font-size:13px;font-weight:600;color:#FBF6EF"><span class="num" style="color:#F2D9B8">3</span>개 선택</span>
+      <div style="display:flex;gap:6px;margin-left:auto">
+        <button class="btn" type="button" style="height:36px;border-radius:9px;background:rgba(255,255,255,.13);color:#FBF6EF;font-size:12.5px;padding:0 12px">위치 할당</button>
+        <button class="btn" type="button" style="height:36px;border-radius:9px;background:#B85042;color:#FBF6EF;font-size:12.5px;padding:0 12px">합치기</button>
+        <button class="btn" type="button" style="width:34px;height:36px;border-radius:9px;background:rgba(255,255,255,.1);color:#FBF6EF;padding:0">✕</button>
+      </div>
+    </div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>컴포넌트</th><th>정본</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">SectionHeader</td><td class="td-m">마커 슬롯형 그룹 헤더: 카테고리=색 점 11px / 위치=아이콘 14px --ink-m (슬롯만 교체) · 이름 13px/700 · 카운트 11px tnum --ink-m · 우측 chevron 접기 · 패딩 상 14px 하 6px (첫 헤더 상 2px)</td></tr>
+          <tr><td class="td-s">SelectionPillBar</td><td class="td-m">bg --ink · radius 15px · left/right 14px · bottom 16px · shadow lg · z --z-pill 120 · 카운트 13px/600 흰색, 숫자 --sand tnum · 액션 h 36px r 9px: ghost=rgba(255,255,255,.13) / 주액션 solid --tc-s · 닫기 34px. 탭별 가능한 액션만 노출(불가능한 액션은 숨김, 비활성 아님) · 합치기는 양 탭 공통</td></tr>
+          <tr><td class="td-s">MergeSheet</td><td class="td-m">합치기 단일 바텀시트: bg --cream · 상단 radius 20px · scrim rgba(31,26,23,.45) · z --z-modal 300 · 그립 38x4px · 대상 select h 44px r 10px · 방향 확인 박스("이 카드 → 남는 카드", 화살표 --tc) 필수 · 액션 취소(secondary) + 합치기(solid --tc, flex 1.6) h 46px. 모든 합치기 진입점이 이 시트로 수렴 · 실행 후 §16 undo 토스트</td></tr>
+          <tr><td class="td-s">상세 진입</td><td class="td-m">카드 본문 탭 → 상세 풀화면 (이력·라벨 편집·합치기 한 곳) · 가벼운 합산(구매 N건)은 카드 내 펼치기 토글</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>탭이 달라도 같은 카드 골격 · 마커·수치·액션 라벨만 교체.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>탭마다 카드 레이아웃·알약·병합 UI를 새로 짜기 · 수치 슬롯 2개 이상.</span></div>
+    </div>
+  </section>
+
+  <!-- §23 리스트·테이블 화면 -->
+  <section class="sec" id="s23">
+    <div class="sec-eye">§ 23 · 페이지</div>
+    <h2 class="sec-h">리스트·테이블 화면</h2>
+    <p class="sec-p">호실 관리 · 수납 관리 · 고객 관리 3종을 하나의 화면 IA로 통일한다 (구현·배포 완료된 확정 정본, 2026-06-24).</p>
+
+    <div class="sub-h">ListPageShell · 골격 순서</div>
+    <div class="card tinted" style="margin-bottom:14px;font-size:12.5px;color:var(--ink-s);line-height:1.8">
+      헤더(제목 + 우측 1~2 CTA/월선택) → 풀폭 SearchBar → 1차 필터(SegmentedControl) → (정렬·표시항목) → 본문(모바일 카드 / 768px 이상 sticky 테이블) → 빈상태(EmptyState). 모바일·데스크탑 공통, 섹션 간격 12px 고정.
+    </div>
+
+    <div class="sub-h">핵심 정본</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>항목</th><th>정본</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">SearchBar</td><td class="td-m">좌 돋보기 SVG + cream 배경 + 우 지우기(x) + 풀폭 약 40px · 모바일 포함 항상 노출 · 이모지 돋보기 금지</td></tr>
+          <tr><td class="td-s">식별자 스타일</td><td class="td-m">호실번호·입주자명 = --ink bold + tnum · 테라코타는 OVERDUE·.attn에만 (연체 행 좌측 3px 보더)</td></tr>
+          <tr><td class="td-s">1차 필터</td><td class="td-m">SegmentedControl (라디오·단일) · '전체'가 해제 · 토글 칩 금지 · 다중조건 고급필터는 별도 '필터' 패널</td></tr>
+          <tr><td class="td-s">빈상태</td><td class="td-m">공용 EmptyState (아이콘+제목+설명, CTA 최대 1) · 검색 무결과는 "다른 검색어로 시도" 분기</td></tr>
+          <tr><td class="td-s">sticky 테이블</td><td class="td-m">thead sticky top-0 z-30 cream · 식별자 열 sticky-left z-20 cream · 호실셀 좌 3px 상태색 보더 · 열 리사이즈 · 768px 카드↔표 전환 (정렬·필터 상태 공유, §20)</td></tr>
+          <tr><td class="td-s">모달 아키텍처</td><td class="td-m">복잡한 다중탭 엔터티 상세 = 전역 Prism 셸(EntityModal) · 단순 추가/수정 폼 = 페이지 Modal(width sm·md·lg) · 복잡도로 결정</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">선택 모드 + 배치 액션</div>
+    <div class="card tinted" style="margin-bottom:14px;font-size:12.5px;color:var(--ink-s);line-height:1.8">
+      '선택' 토글 → 체크박스(모바일 카드 좌측 prepend / 데스크탑 sticky 호실셀 prepend, 선택 시 coral 체크) → 하단 공용 SelectionPillBar(unit 개/명/실) + PillButton → 배치 액션. 수납 일괄 처리: 이번 달 미수 호실만 자동필터 → 확인 Modal(미수 합계 tnum + 납부일 DatePicker + 방법 SegmentedControl[계좌이체/현금/신용카드]) → 성공 토스트에 [적용취소](§16, 생성분 일괄 삭제). 금액은 서버 권위(getRoomPaymentStatus)로 재계산: 클라이언트 balance 불신뢰. 기존 savePayment 재사용(스키마 변경 0).
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>세 페이지 섹션 순서·검색·필터를 1px도 다르지 않게.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>같은 의미 필터를 페이지마다 다른 컴포넌트로.</span></div>
+    </div>
+  </section>
+
+  <!-- §24 대시보드·위젯 -->
+  <section class="sec" id="s24">
+    <div class="sec-eye">§ 24 · 페이지</div>
+    <h2 class="sec-h">대시보드 · 위젯</h2>
+    <p class="sec-p">홈(/dashboard)의 KPI·차트·위젯·진입·반응형·빈로딩을 §22·§23과 같은 언어로 묶는다. 새 hue 없음: raw hex는 §04 토큰으로 1:1 치환.</p>
+
+    <div class="sub-h">KpiCard · 수치 1개 + 보조 1줄</div>
+    <div class="g3" style="margin-bottom:12px">
+      <div style="background:var(--tc);border-radius:14px;padding:16px 18px">
+        <div style="font-size:11px;color:rgba(251,246,239,.75);margin-bottom:4px">당월 매출</div>
+        <div class="num" style="font-size:24px;font-weight:700;color:#FBF6EF">₩12,450,000</div>
+        <div class="num" style="font-size:11px;color:#F2D9B8;margin-top:4px">전월 대비 +3.2%</div>
+      </div>
+      <div class="card" style="border-radius:14px">
+        <div style="font-size:11px;color:var(--ink-m);margin-bottom:4px">완납</div>
+        <div class="num" style="font-size:24px;font-weight:700;color:var(--success-fg)">38</div>
+        <div class="num" style="font-size:11px;color:var(--ink-s);margin-top:4px">총 44세대 중</div>
+      </div>
+      <div class="card" style="border-radius:14px;border-left:3px solid var(--overdue-fg)">
+        <div style="font-size:11px;color:var(--ink-m);margin-bottom:4px">연체</div>
+        <div class="num" style="font-size:24px;font-weight:700;color:var(--overdue-fg)">2</div>
+        <div class="num" style="font-size:11px;color:var(--ink-s);margin-top:4px">최장 D+9</div>
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--ink-s);line-height:1.65;margin-bottom:14px">카드 1개 = 핵심 수치 1개 + 보조 1줄. 타입 3종: 강조(bg --tc, 한 화면 1~2장만) · 일반(cream + border) · 경고(.attn 좌측 3px + --danger). 강조 카드 내부 텍스트는 cream 계열만, 음수 캡션은 --sand(#F2D9B8)를 쓴다 (§28).</p>
+
+    <div class="sub-h">차트·개념 색 매핑 (lib/chartColors.ts 단일 출처)</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>개념</th><th>토큰</th><th>개념</th><th>토큰</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">수입</td><td class="tok">--tc</td><td class="td-s">완납</td><td class="tok">--success-fg</td></tr>
+          <tr><td class="td-s">지출</td><td class="tok">--ink-s</td><td class="td-s">예정</td><td class="tok">--info-fg</td></tr>
+          <tr><td class="td-s">기타수익</td><td class="tok">--camel</td><td class="td-s">미납</td><td class="tok">--warning-fg</td></tr>
+          <tr><td class="td-s">보증금</td><td class="tok">--deposit-fg</td><td class="td-s">연체</td><td class="tok">--overdue-solid</td></tr>
+          <tr><td class="td-s">예비비</td><td class="tok">--reserve-fg</td><td class="td-s"></td><td></td></tr>
+        </tbody>
+      </table>
+      <div style="font-size:11.5px;color:var(--ink-s);margin-top:8px;line-height:1.6">recharts와 자체 DonutChart가 같은 개념에 같은 색. raw hex 8종(#22c55e·#eab308·#6366f1·#dc2626·#a855f7·#f59e0b·#64748b·#d4a847)은 전부 치환 대상.</div>
+    </div>
+
+    <div class="sub-h">셸·진입·반응형·빈로딩</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <tbody>
+          <tr><td class="td-s">위젯 카드 셸</td><td class="td-m">공통 컨테이너: bg --cream · border 1px --border · radius r-xl · 공통 헤더·진입 표시 · 그림자 없음 (§07)</td></tr>
+          <tr><td class="td-s">진입(네비) 규칙</td><td class="td-m">페이지 이동 = Link · 엔터티 상세 = entityModal.open() · 폼 = Modal(width sm·md·lg) · window.location.href·router.push 혼용 제거</td></tr>
+          <tr><td class="td-s">반응형 그리드</td><td class="td-m">모바일 1열 기준 → KPI·차트·방현황에 sm/md/lg 분기 (KPI 항상 2열·방현황 5열 고정 금지)</td></tr>
+          <tr><td class="td-s">빈·로딩</td><td class="td-m">위젯별 Skeleton (실제 레이아웃 모양, §17·§21) · dashboard/loading.tsx 필수 · 인라인 "불러오는 중…" 금지</td></tr>
+          <tr><td class="td-s">상태·연체 배지</td><td class="td-m">5단계 (§03) + 경과일: 미납(dueDay 경과 1~6일, --warning) → 연체(7일 초과, --overdue-solid "연체 D+N") · 1일부터 단계 노출</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>모든 위젯이 같은 카드 셸·색 매핑·진입 규칙. 강조 KpiCard는 1~2장만.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>위젯마다 raw hex·다른 radius·다른 진입 수단 / KPI 복합 수치 / 7일 전 무표기.</span></div>
+    </div>
+  </section>
+
+  <!-- §25 뷰 전환 탭 -->
+  <section class="sec" id="s25">
+    <div class="sec-eye">§ 25 · 페이지</div>
+    <h2 class="sec-h">뷰 전환 탭 · ViewTabs</h2>
+    <p class="sec-p">"한 페이지 안에서 뷰를 갈아끼우는 탭"의 단일 정본이다. 필터가 아니다: §23의 필터 SegmentedControl은 그대로 유지된다. 정본 계열은 코랄 채움 조인트 탭(A)이며 role=tablist 접근성을 흡수한다. 트랙형(B)의 뷰 전환 용도와 rounded-2xl 변종(C)은 폐기됐다.</p>
+
+    <div class="sub-h">판별 기준 · 필터 vs 뷰 전환 vs 링크 탭</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th></th><th>필터 (§23)</th><th>뷰 전환 탭 (§25)</th><th>링크 탭</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">의미</td><td class="td-m">같은 목록을 좁힌다</td><td class="td-m">같은 페이지에서 다른 뷰/데이터셋으로 교체</td><td class="td-m">다른 라우트로 이동</td></tr>
+          <tr><td class="td-s">'전체' 개념</td><td class="td-m">있음 (해제=전체)</td><td class="td-m"><b>없음</b> · 항상 정확히 1개 활성</td><td class="td-m">없음</td></tr>
+          <tr><td class="td-s">컴포넌트</td><td class="td-m">SegmentedControl (트랙형)</td><td class="td-m"><b>ViewTabs (코랄 채움)</b></td><td class="td-m">ViewTabs 외형 + a href</td></tr>
+          <tr><td class="td-s">예</td><td class="td-m">전체/미납/완납</td><td class="td-m">소모품↔비품, 지출↔자산↔보증금</td><td class="td-m">재고 탭 (각 탭이 라우트)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="g2" style="margin-bottom:12px">
+      <div class="card">
+        <div style="font-size:11px;color:var(--ink-m);margin-bottom:10px">필터 = 트랙형 (좁히기 · '전체' 해제)</div>
+        <div class="seg"><span class="sg on">전체</span><span class="sg">미납</span><span class="sg">완납</span></div>
+      </div>
+      <div class="card">
+        <div style="font-size:11px;color:var(--ink-m);margin-bottom:10px">뷰 전환 = 코랄 채움 (갈아끼우기 · 항상 1개)</div>
+        <div class="vtabs" role="tablist" aria-label="예시"><span class="vt on" role="tab" aria-selected="true">수납</span><span class="vt" role="tab" aria-selected="false">부가수익 (+16만)</span></div>
+      </div>
+    </div>
+
+    <div class="sub-h">스펙 · 라벨 · 개수 · 배치</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <tbody>
+          <tr><td class="td-s">컨테이너</td><td class="td-m">inline-flex · radius 10px (r-md) · border 1px · overflow hidden · bg --cream · 세그 사이 1px 구분선</td></tr>
+          <tr><td class="td-s">세그</td><td class="td-m">높이 40px 이상 (모바일 44pt: 세로 패딩 12px) · padding 10px 16px · 14px/600 · radius 0 (컨테이너가 라운드 소유)</td></tr>
+          <tr><td class="td-s">상태</td><td class="td-m">활성 bg --coral + text --cream (white 금지, 양 모드 동일 계열) · 비활성 --cream + --warm-mid · hover --cream-2 + --warm-dark 150ms · focus-visible outline 2px --coral offset 2 · disabled --warm-muted</td></tr>
+          <tr><td class="td-s">라벨 접미</td><td class="td-m">{라벨} ({값}) · 만 축약·부호(+/−)·tnum · 정산·법적 금액엔 미부착 · 빈 괄호 금지 · 값 0이면 생략</td></tr>
+          <tr><td class="td-s">개수·오버플로</td><td class="td-m">2~4 권장 · max 5 · 모바일 넘침은 가로 스크롤(스크롤바 숨김 + nowrap + 페이드 마스크) · 축약·2줄 wrap 금지</td></tr>
+          <tr><td class="td-s">링크 탭</td><td class="td-m">라우트 이동도 동일 외형 · a role=tab + aria-selected/aria-current · SPA Link (전체 새로고침 금지)</td></tr>
+          <tr><td class="td-s">배치</td><td class="td-m">페이지 제목 아래 한 줄 · MonthSelector 동시엔 탭 좌 / 셀렉터 우 (모바일 세로 분리) · 본문 상단 여백 16px</td></tr>
+          <tr><td class="td-s">접근성</td><td class="td-m">role=tablist/tab/tabpanel · aria-selected · 좌우 화살표·Home/End roving tabindex · reduced-motion 시 트랜지션 제거</td></tr>
+          <tr><td class="td-s">API 구분</td><td class="td-m">SegmentedControl은 value: string 또는 null (해제). ViewTabs는 activeId: string (null 불가) · suffix·href는 ViewTabs 전용</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">마이그레이션</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>현행</th><th>계열</th><th>변경점</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">재고 탭</td><td class="td-m">A</td><td class="td-m">시맨틱만 추가 · radius 12→10 통일 · 링크 탭 규칙</td></tr>
+          <tr><td class="td-s">수납 탭</td><td class="td-m">A</td><td class="td-m">동일 · 라벨 접미 형식 확인</td></tr>
+          <tr><td class="td-s">재무 TABS</td><td class="td-m">B→A</td><td class="td-m">트랙형 폐기 → 코랄 채움 · flex-1 균등 또는 스크롤</td></tr>
+          <tr><td class="td-s">리포트 탭</td><td class="td-m">C→A</td><td class="td-m">rounded-2xl 폐기 → r-md · flex-1 3등분 유지 · white→cream</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>뷰 전환은 어디서나 ViewTabs 하나로. 활성은 정확히 1개.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>필터와 같은 트랙 외형 / '전체' 세그 추가 / B·C 부활 / 그림자·2줄 wrap.</span></div>
+    </div>
+  </section>
+
+  <!-- §26 인쇄 서류 -->
+  <section class="sec" id="s26">
+    <div class="sec-eye">§ 26 · 페이지</div>
+    <h2 class="sec-h">인쇄 서류 · Print Documents</h2>
+    <p class="sec-p">앱이 발급하는 PDF 서류 전체의 단일 출처다. 화면 토큰을 그대로 쓰지 않고 인쇄 전용 토큰(--p-*)을 별도로 둔다. 인쇄 서류는 모드 불변이다: 다크모드에서도 항상 라이트 종이. 공문서(정부 원본 양식)는 건드리지 않는다.</p>
+
+    <div class="sub-h">설계 원칙 · 폰트</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <tbody>
+          <tr><td class="td-s">본문은 먹1색</td><td class="td-m">본문·표·라벨은 --p-ink 단색. 컬러는 헤더 룰·금액 강조·워드마크에만</td></tr>
+          <tr><td class="td-s">진중함</td><td class="td-m">라운드 코너·그림자·이모지·일러스트 금지. 직각·hairline·정렬로 신뢰를 만든다</td></tr>
+          <tr><td class="td-s">위·변조 저항감</td><td class="td-m">발행번호·발행일시·사업자정보·도장 영역 항상 노출</td></tr>
+          <tr><td class="td-s">흑백 안전</td><td class="td-m">색은 보조, 위계는 굵기·크기·선으로</td></tr>
+          <tr><td class="td-s">표준 폰트</td><td class="td-m">Pretendard static TTF 4웨이트(400/500/600/700)만 임베드 · 폴백 NanumGothic · pdf-lib는 tnum 미적용이라 표·금액은 우측 정렬로 자릿수 보장 · 서류 1건 = 1가족 고정</td></tr>
+          <tr><td class="td-s">한글 줄바꿈</td><td class="td-m">본문 word-break: keep-all (어절 단위)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">인쇄 전용 토큰 (--p-*, lib/printTokens 단일 출처)</div>
+    <div class="card tinted" style="font-family:'DM Mono',monospace;font-size:11px;line-height:1.95;margin-bottom:14px;overflow-x:auto">
+      --p-ink:#1F1A17 · --p-ink-muted:#6B5D4F · --p-tc:#A03C2E<br>
+      --p-label-bg:#F2ECE3 · --p-rule:#D8CFC4 · --p-rule-strong:#9A8A78 · --p-paper:#FFFFFF (인쇄는 순백 허용)<br>
+      A4: margin-x 20mm · top 18mm · bottom 20mm · content-w 170mm<br>
+      선: hairline 0.4pt · rule 0.6pt · header-rule 1.6pt (테라코타)
+    </div>
+
+    <div class="sub-h">타입 스케일 (pt) · 그리드</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>역할</th><th>크기/웨이트</th><th>비고</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">문서 제목</td><td class="td-m num">20pt / 700 (A5는 17pt)</td><td class="td-m">자간 −2%</td></tr>
+          <tr><td class="td-s">발행 메타</td><td class="td-m num">9pt / 400 --p-ink-muted</td><td class="td-m">발행번호·발행일, 제목 우측 정렬</td></tr>
+          <tr><td class="td-s">섹션 소제목</td><td class="td-m num">12pt / 600</td><td class="td-m">좌측 3pt 테라코타 탭 선택</td></tr>
+          <tr><td class="td-s">표 라벨 / 값</td><td class="td-m num">10pt/500 · 10.5pt/400</td><td class="td-m">라벨열 40mm(--p-label-bg 음영) · 행 9mm · 데이터행 8mm · 셀 패딩 좌우 4mm</td></tr>
+          <tr><td class="td-s">금액 강조</td><td class="td-m num">15pt / 700 --p-tc</td><td class="td-m">₩ 포함, 우측 정렬</td></tr>
+          <tr><td class="td-s">본문 / 주석</td><td class="td-m num">10.5pt 행간 1.6 · 8.5pt</td><td class="td-m">인쇄 본문 최소 8.5pt · 8pt는 푸터·법적 주석만</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">헤더 · 푸터 · 서명 · 포맷</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <tbody>
+          <tr><td class="td-s">헤더</td><td class="td-m">밴드 22mm: 로고 PNG 14mm 정사각 + 영업장명 14pt/700 + 사업자정보 9pt + 발행번호·발행일 우측 · 하단 테라코타 룰 1.6pt (서류의 시그니처)</td></tr>
+          <tr><td class="td-s">푸터</td><td class="td-m">"made with " 8pt --p-ink-muted + "stayeum"(stay --p-ink / eum --p-tc, 8pt/600), baseline 용지 하단 12mm · 페이지 번호는 2페이지 이상 서류에만</td></tr>
+          <tr><td class="td-s">서명·도장</td><td class="td-m">우측 정렬, 서명란 폭 60mm · 도장 PNG 18x18mm를 "(인)" 위에 중앙 오버레이 · 서명줄과 위 문구 사이 최소 11mm 수직 여백 · 도장을 헤더 로고로 재사용 금지</td></tr>
+          <tr><td class="td-s">발행번호 · 날짜</td><td class="td-m num">No. YYYYMMDD-NNN · YYYY년 M월 D일 · 기간 YYYY.MM.DD ~ YYYY.MM.DD</td></tr>
+          <tr><td class="td-s">금액</td><td class="td-m num">₩ + 천단위 쉼표, 축약 금지 · 큰 금액은 한글 병기 (금 사십오만원정) · 음수는 − U+2212 + --p-tc</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">브랜딩 ON/OFF · 문서별 레이아웃</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>서류</th><th>규격</th><th>브랜딩</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">입실료 납부 확인서</td><td class="td-m">A5 세로(148x210mm) · pdf-lib · 여백 좌우 14 상 12 하 14mm · 콘텐츠 폭 120mm · 라벨열 34mm · 헤더밴드 18mm · 로고 12mm</td><td class="td-m">ON (풀 브랜딩)</td></tr>
+          <tr><td class="td-s">입실 계약서</td><td class="td-m">A4 · puppeteer 유지 가능 · 조항 10.5pt 행간 1.7 · 2p 이상은 1p만 풀 헤더 · 조항은 CONTRACT_CONFIG(영업장 DB)에서 주입, 레이아웃 고정 · 강조는 본문 마커 → --p-tc 변환(핵심 조건만)</td><td class="td-m">혼합 (금액·당사자명만 절제 강조)</td></tr>
+          <tr><td class="td-s">실거주 확인서</td><td class="td-m">정부 원본 양식 위 좌표 오버레이 · 기입 나눔고딕 먹1색 10pt 내외, 칸 중앙</td><td class="td-m">OFF (중립 · 워드마크·테라코타·로고 금지)</td></tr>
+        </tbody>
+      </table>
+      <div style="font-size:11.5px;color:var(--ink-s);margin-top:8px;line-height:1.6">경계 기준: "이 양식의 레이아웃을 우리가 정하는가?" 예면 ON, 정부/제3자 고정 양식이면 OFF.</div>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>라벨은 라벨열(음영)에, 값은 값열에. 가로 hairline 위주, 세로선은 라벨/값 경계 1개만.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>공문서에 워드마크·테라코타 삽입 (관공서 반려 위험) / 단일 페이지 서류에 페이지 번호 / 서류마다 폰트 바꾸기.</span></div>
+    </div>
+  </section>
+
+  <!-- §27 인터랙션 문법 -->
+  <section class="sec" id="s27">
+    <div class="sec-eye">§ 27 · 문법</div>
+    <h2 class="sec-h">인터랙션 문법</h2>
+    <p class="sec-p">색·컴포넌트가 통일돼도 "누르면 어떻게 되는가"가 화면마다 다르면 상용 제품이 아니다. 저장·실패·선택·되돌리기·취소·검색의 단일 정본이다. 신규 기능은 이 §를 통과해야 UI/UX 정합 게이트를 넘는다.</p>
+
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th style="width:26%">문법</th><th>정본</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">27.1 저장 · 값의 무게로 결정</td><td class="td-m">단일 값 즉시 반영형(토글·스텝퍼·셀렉트 하나): 조작 즉시 저장 + 성공 토스트, 저장 버튼 없음. 폼형(입력 2필드 이상 또는 텍스트): 명시적 저장 버튼 <b>상시 노출</b>(조건부 등장 금지). 파괴적·대량 변경: 저장 전 ConfirmDialog + undo 병행. 같은 카드 안에서 두 문법 혼용 금지</td></tr>
+          <tr><td class="td-s">27.2 실패 통지 · 채널은 원인이 정한다</td><td class="td-m">서버·통신 실패 = 토스트(전역 error). 화면 무반응 금지: 실패를 숨기면 사용자는 재클릭한다. 입력 검증 실패 = 인라인(필드 아래 붉은 캡션), 토스트 병행 금지. 같은 실패를 두 채널로 동시 통지 금지. fire-and-forget promise는 catch 필수</td></tr>
+          <tr><td class="td-s">27.3 선택 모드 · 진입은 눈에 보이게</td><td class="td-m">다중 선택은 명시 '선택' 버튼(툴바)이 정본, 롱프레스는 보조 단축. 롱프레스 전용 진입 금지(발견 불가). 신규 페이지는 버튼부터 만든다</td></tr>
+          <tr><td class="td-s">27.4 되돌리기 vs 확인창 · 위험도 비례</td><td class="td-m">비파괴 변경: 성공 토스트에 '적용취소' 액션(스냅샷 복원), 확인창 불필요. 파괴적 변경: ConfirmDialog(danger, impact 명시) 그리고 가능하면 undo도 제공. 확인창은 실수 방지, undo는 후회 구제: 역할이 달라 택일이 아니다. undo 불가능한 파괴 동작(외부 발송 등)은 확인창에서 고지</td></tr>
+          <tr><td class="td-s">27.5 취소는 무해하다</td><td class="td-m">ConfirmDialog의 '취소'·Esc·배경 클릭은 항상 아무것도 바꾸지 않는다. 취소 버튼에 실 동작('영수증만 첨부' 등)을 싣지 않는다. 제3의 선택지가 필요하면 버튼을 3개로 (choiceDialog)</td></tr>
+          <tr><td class="td-s">27.6 검색·필터 스코프</td><td class="td-m">검색은 현재 필터(탭·월) 스코프 안에서 동작. 스코프 밖 일치는 결과 하단에 "다른 보기에 N건 ›" 한 줄 안내 (자동 스코프 해제 금지). 월 셀렉터 범위 고지는 단일 문형: "OO은 선택한 달 기준입니다" 캡션 하나</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>카드 단위로 저장 문법 하나를 고르고, 실패는 원인별 단일 채널로.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>조건부 저장 버튼 · 롱프레스 전용 선택 진입 · 취소에 실 동작 · 자동 스코프 해제.</span></div>
+    </div>
+  </section>
+
+  <!-- §28 다크모드 -->
+  <section class="sec" id="s28">
+    <div class="sec-eye">§ 28 · 모드</div>
+    <h2 class="sec-h">다크모드</h2>
+    <p class="sec-p">페이지 배경은 트루 블랙 #000000이다(OLED 절전·번인, 일반 다크모드 관례와 정합 · 다크 배경에 한해 순흑 허용). 브랜드 온도는 카드(#1A130E 웜 니어블랙)·텍스트(#F2E8DC)·액센트가 담당한다. 순백 텍스트(#fff)는 다크에서도 금지. 이 페이지 우상단 토글로 본 문서의 모든 데모를 다크로 검수할 수 있다.</p>
+
+    <div class="sub-h">다크 토큰 (--d-*, [data-theme=dark])</div>
+    <div class="card tinted" style="font-family:'DM Mono',monospace;font-size:11px;line-height:1.95;margin-bottom:14px;overflow-x:auto">
+      --d-page:#000000 · --d-card:#1A130E · --d-card-2:#261C14<br>
+      --d-ink:#F2E8DC · --d-ink-s:#C7B5A2 · --d-ink-m:#93816F (캡션 한정)<br>
+      --d-border:rgba(242,232,220,.08) · --d-border-s:rgba(242,232,220,.16)<br>
+      --d-tc-text:#C9614C · --d-success:#A3BF7B · --d-amber:#D9A648 · --d-blue:#93A9D1 · --d-overdue:#E08A75<br>
+      --sand 다크 오버라이드: #332619 · --sand-2: #3D2E1F (보조 버튼 hover 표면)
+    </div>
+
+    <div class="sub-h">원칙</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <tbody>
+          <tr><td class="td-s">토큰 쌍 강제</td><td class="td-m">표면과 텍스트는 같은 테마의 토큰 쌍만 조합. 라이트 표면 + 다크 텍스트 토큰(또는 역)이 사고의 직접 원인</td></tr>
+          <tr><td class="td-s">라이트 카드 반입 금지</td><td class="td-m">다크 화면에 크림(#FBF6EF) 카드 금지. 강조는 배경 반전이 아니라 숫자 색·좌측 팁으로</td></tr>
+          <tr><td class="td-s">대비 기준</td><td class="td-m">본문·라벨 4.5:1 이상, 24px 이상 숫자 3:1 이상 (WCAG AA) · --d-ink-m은 캡션 전용</td></tr>
+          <tr><td class="td-s">solid terracotta 카드</td><td class="td-m">다크에서도 허용 (1화면 1개) · 내부 텍스트는 cream 계열만 · 음수 캡션은 앰버 금지 → --sand #F2D9B8 (굵기 700 보강 가능)</td></tr>
+          <tr><td class="td-s">투명 틴트</td><td class="td-m">rgba 리터럴 대신 color-mix(in srgb, var(--coral) N%, transparent) · 다크에서 토큰과 함께 전환</td></tr>
+          <tr><td class="td-s">전환 방식</td><td class="td-m">모든 화면을 토큰 치환만으로 · 컴포넌트별 색 하드코딩 금지</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">모드 불변 (고정색) 확정 목록</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>대상</th><th>고정 내용</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">토스트 칩</td><td class="td-m">bg 고정 다크 + 글자 #FBF6EF + 액션 #F2D9B8 (§15)</td></tr>
+          <tr><td class="td-s">인쇄 문서</td><td class="td-m">계약서·확인서는 항상 라이트 종이 (§26)</td></tr>
+          <tr><td class="td-s">스크림 · 기타</td><td class="td-m">rgba 검정 스크림 · 구글 로고 · 배치도 캔버스 · 코랄 솔리드 위 #fff</td></tr>
+          <tr><td class="td-s">-solid 토큰 전부</td><td class="td-m">§04 정본표의 solid는 양 모드 동일 깊은 값 + cream 글자</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">상태 5단계 · 다크 변형</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>상태</th><th>텍스트/팁</th><th>배지 배경</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">PAID</td><td class="tok">--d-success #A3BF7B</td><td class="td-m">rgba(163,191,123,.14)</td></tr>
+          <tr><td class="td-s">AWAIT</td><td class="tok">--d-blue #93A9D1</td><td class="td-m">rgba(147,169,209,.14)</td></tr>
+          <tr><td class="td-s">UNPAID</td><td class="tok">--d-amber #D9A648</td><td class="td-m">rgba(217,166,72,.14)</td></tr>
+          <tr><td class="td-s">OVERDUE</td><td class="tok">--d-overdue #E08A75 (텍스트) · solid 배지는 --tc + cream 유지</td><td class="td-m">rgba(160,60,46,.30)</td></tr>
+          <tr><td class="td-s">VACANT</td><td class="tok">--d-ink-m</td><td class="td-m">rgba(242,232,220,.06)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">감사 적발 6건 → 교체값 (2026-06-12)</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>적발</th><th>문제</th><th>교체</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">현재 순이익: 크림 카드 + 연청 라벨</td><td class="td-m">라벨 식별 불가 · 글레어</td><td class="td-m">--d-card + 라벨 --d-ink-s + 수치 --d-success + 좌측 3px 팁</td></tr>
+          <tr><td class="td-s">당월 매출: −45% 앰버 on 테라코타</td><td class="td-m">대비 약 2:1</td><td class="td-m">--sand 텍스트 (강조 필요 시 굵기 700)</td></tr>
+          <tr><td class="td-s">보유 보증금: 보라 #a855f7</td><td class="td-m">raw 팔레트</td><td class="td-m">--viz-2 다크 변형 #D4B494</td></tr>
+          <tr><td class="td-s">보유 예비비: 틸 #5eead4</td><td class="td-m">raw 팔레트</td><td class="td-m">--viz-3 다크 변형 = --d-success #A3BF7B</td></tr>
+          <tr><td class="td-s">납부 예정: 블루 #3b82f6</td><td class="td-m">채도 과다 · AWAIT 토큰 아님</td><td class="td-m">--d-blue #93A9D1</td></tr>
+          <tr><td class="td-s">공실 카운트: 라이트용 레드</td><td class="td-m">OVERDUE와 혼동 + 저대비</td><td class="td-m">공실은 위험이 아니다 · --d-ink-m</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card tinted">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>다크 전환은 토큰 치환만으로. -fg는 밝게, -solid는 깊게.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕ DON'T</span><span>다크 화면에 라이트 카드로 "강조" · 눈부심이고 토큰 불일치 사고의 온상이다. 구코랄 rgba(244,98,58,…) 사용.</span></div>
+    </div>
+  </section>
+
+  <!-- §29 마이크로카피·AI 지문 방지 -->
+  <section class="sec" id="s29">
+    <div class="sec-eye">§ 29 · 마이크로카피</div>
+    <h2 class="sec-h">마이크로카피 · AI 지문 방지</h2>
+    <p class="sec-p">문장부호·문구 톤·모션에서 "AI가 만들었다"는 티가 나는 패턴을 금지한다. 목표: 어떤 도구로 만들었는지 화면만 봐서는 알 수 없는 상용 제품. 이 규칙은 본 가이드 자신에게도 적용된다.</p>
+
+    <div class="sub-h">문장부호 (사용자 노출 문자열 전체)</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>금지</th><th>대체 규칙</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">em dash</td><td class="td-m">뒤가 완결 문장이면 마침표로 두 문장 ("저장됐습니다. 목록으로 이동합니다") · 짧은 부연이면 가운뎃점 ("관리자 · 등록·수정·삭제 가능") · 리스트 라벨 설명이면 콜론 ("아이폰: '캘린더에 추가'를 누르세요")</td></tr>
+          <tr><td class="td-s">화살표(→) 남용</td><td class="td-m">이동 링크는 셰브론 › ("전체 보기 ›") · 설정 경로는 &gt; ("설정 &gt; 캘린더") · 화살표는 값의 전환 표시에만 ("6월 → 7월로 변경", "퇴실→신규")</td></tr>
+          <tr><td class="td-s">이모지 전면 금지</td><td class="td-m">경고 삼각형·체크 이모지 포함. 경고는 색·아이콘 토큰으로</td></tr>
+          <tr><td class="td-s">느낌표 금지</td><td class="td-m">토스트·안내는 마침표로 끝낸다</td></tr>
+          <tr><td class="td-s">말줄임</td><td class="td-m">진행형 라벨은 '…' 단일 표기 (마침표 3개 '...' 금지 · 79곳 통일 완료)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">문구 톤</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <div class="do-dont" style="border-top:none"><span class="dd-tag dd-do">✓ DO</span><span>성공 토스트는 명사형 또는 간결한 완결문: "등록됨", "저장됐습니다".</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕</span><span>"성공적으로 ~되었습니다" · "~할 수 있습니다/해보세요" 반복 · 동작 결과를 직접 서술한다.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-do">✓ DO</span><span>버튼 라벨은 동사·명사 위주 2~6자 ("추가", "영역 확정"). 문장형 버튼은 확인 칩 등 응답 선택지에만.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕</span><span>"야간에" 같은 운영자 개인 상황 특정 문구 · 멀티테넌트 중립 표현을 쓴다.</span></div>
+      <div class="do-dont"><span class="dd-tag dd-dont">✕</span><span>개인화 불가 맥락(단체 발송)에서 변수 표기({이름}) 노출.</span></div>
+    </div>
+
+    <div class="sub-h">적용 시점 · 점검</div>
+    <div class="card tinted">
+      <div style="font-size:12.5px;color:var(--ink-s);line-height:1.75">새 UI 문자열·컴포넌트 작성 시 항상 적용한다. UI/UX 정합 게이트의 "가이드 § 확인"에 이 §가 포함된다. 점검 명령: 사용자 노출 문자열에서 em dash·전환 표기 외 화살표·이모지·"요!" 검색 결과가 0이어야 한다. 모션 측 금지 목록(transition-all·hover:scale·그라데이션)은 §09가 정본이다.</div>
+    </div>
+  </section>
+
+  <!-- 부록 A 매핑표 -->
+  <section class="sec" id="appendix">
+    <div class="sec-eye">부록 A</div>
+    <h2 class="sec-h">구버전 § 매핑표</h2>
+    <p class="sec-p">코드 주석이 참조하는 기존 § 번호와 본 문서(v2.0)의 대응이다. 커버리지: 전 섹션 반영.</p>
+
+    <div class="sub-h">v1.2 (§01~§08) → v2.0</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>구§ (v1.2)</th><th>신§ (v2.0)</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">§01 브랜드 철학</td><td class="td-m">§01</td></tr>
+          <tr><td class="td-s">§02 로고 시스템</td><td class="td-m">§02</td></tr>
+          <tr><td class="td-s">§03 컬러 시스템</td><td class="td-m">§03 (+의미색은 §04)</td></tr>
+          <tr><td class="td-s">§04 타이포그래피</td><td class="td-m">§05</td></tr>
+          <tr><td class="td-s">§05 스페이싱·레이아웃</td><td class="td-m">§07</td></tr>
+          <tr><td class="td-s">§06 컴포넌트 (버튼·배지·입력·카드·모달)</td><td class="td-m">§10 · §11 · §12 · §18(카드) · §13</td></tr>
+          <tr><td class="td-s">§07 패턴 (사이드바·테이블·빈상태·토스트·상태행·긴급·로더·스켈레톤)</td><td class="td-m">§19 · §19 · §17 · §15 · §18 · §18 · §21 · §17</td></tr>
+          <tr><td class="td-s">§08 모션</td><td class="td-m">§09</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">v1.3 (§09~§26) → v2.0</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>구§ (v1.3)</th><th>신§ (v2.0)</th><th>구§ (v1.3)</th><th>신§ (v2.0)</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">§09 확인 다이얼로그</td><td class="td-m">§14</td><td class="td-s">§18 콜드 스타트 로딩</td><td class="td-m">§21</td></tr>
+          <tr><td class="td-s">§10 적용취소</td><td class="td-m">§16</td><td class="td-s">§19 다크모드 가독성</td><td class="td-m">§28</td></tr>
+          <tr><td class="td-s">§11 토스트 v2</td><td class="td-m">§15</td><td class="td-s">§20 인쇄 서류</td><td class="td-m">§26</td></tr>
+          <tr><td class="td-s">§12 레이어 위계</td><td class="td-m">§08</td><td class="td-s">§21 재고·리스트 컴포넌트</td><td class="td-m">§22</td></tr>
+          <tr><td class="td-s">§13 폼 입력 표준</td><td class="td-m">§12</td><td class="td-s">§22 리스트·테이블 화면</td><td class="td-m">§23</td></tr>
+          <tr><td class="td-s">§14 상태·색상 확장 (14.1~14.4b)</td><td class="td-m">§04 (14.3 뱃지 병렬은 §11)</td><td class="td-s">§23 대시보드·위젯</td><td class="td-m">§24</td></tr>
+          <tr><td class="td-s">§15 금액·숫자 표기</td><td class="td-m">§06</td><td class="td-s">§24 뷰 전환 탭</td><td class="td-m">§25</td></tr>
+          <tr><td class="td-s">§16 빈·로딩·스켈레톤</td><td class="td-m">§17</td><td class="td-s">§25 AI 지문 방지 (25.3 모션은 §09)</td><td class="td-m">§29</td></tr>
+          <tr><td class="td-s">§17 반응형 전환</td><td class="td-m">§20</td><td class="td-s">§26 인터랙션 문법</td><td class="td-m">§27</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub-h">v1.1 md · addendum 2026-07 → v2.0</div>
+    <div class="card tinted" style="margin-bottom:14px">
+      <table class="tok-table">
+        <thead><tr><th>출처 항목</th><th>신§ (v2.0)</th></tr></thead>
+        <tbody>
+          <tr><td class="td-s">v1.1: 컬러 토큰 · 상태 5단계 · radius · 타이포 · 버튼 · 그림자 · 모션 · 로고</td><td class="td-m">§03 · §03 · §07 · §05 · §10 · §07 · §09 · §02</td></tr>
+          <tr><td class="td-s">addendum: 다크모드 보강 (sand 오버라이드 · 모드 불변 목록 · color-mix · 구코랄 금지)</td><td class="td-m">§28 (구코랄 금지는 §03에도)</td></tr>
+          <tr><td class="td-s">addendum: 컴포넌트 정본 범위 (Badge · choiceDialog · EmptyState/SkeletonRows · AiQuotaHint · InfoHint)</td><td class="td-m">§11 · §14 · §17 · §19 · §19</td></tr>
+          <tr><td class="td-s">addendum: 문법 확정 (§26 성문화 · 말줄임 '…' · 진행형 알림 · 페이지 인셋 · h1 정본)</td><td class="td-m">§27 · §29 · §18 · §19 · §05·§19</td></tr>
+          <tr><td class="td-s">addendum: 마이크로카피 (개인 상황 특정 금지 · 변수 표기 노출 금지)</td><td class="td-m">§29</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:12px;color:var(--ink-m);line-height:1.6">v1.1 → v1.2 별칭(--coral=--tc 등)은 §03에 유지. 문서 버전 표기가 필요한 코드 주석은 "v2.0 §NN"으로 갱신을 권장하되, 구§ 참조도 이 표로 추적 가능하다.</p>
+  </section>
+
+  <div style="padding:28px 44px;font-size:11px;color:var(--ink-m);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <span>stayeum Design Guide v2.0 · 2026-07-11 · 입력: v1.1 · v1.2 · v1.3(§26까지) · addendum 2026-07</span>
+    <span class="wm">stay<span style="color:var(--tc-text)">eum</span></span>
+  </div>
+
+</div><!-- /doc-main -->
+</div><!-- /doc -->
+
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+<script>
+(function(){
+  var root=document.documentElement;
+  var btn=document.getElementById('themeToggle');
+  var label=document.getElementById('themeLabel');
+  function apply(dark){
+    if(dark){root.setAttribute('data-theme','dark');label.textContent='라이트모드 보기';btn.setAttribute('aria-pressed','true');}
+    else{root.removeAttribute('data-theme');label.textContent='다크모드 보기';btn.setAttribute('aria-pressed','false');}
+  }
+  var saved=null;
+  try{saved=localStorage.getItem('sy-guide-v2-theme');}catch(e){}
+  apply(saved==='dark');
+  btn.addEventListener('click',function(){
+    var dark=root.getAttribute('data-theme')!=='dark';
+    apply(dark);
+    try{localStorage.setItem('sy-guide-v2-theme',dark?'dark':'light');}catch(e){}
+  });
+
+  var links=document.querySelectorAll('.nav-link[href^="#"]');
+  var sections=Array.prototype.map.call(links,function(l){return document.querySelector(l.getAttribute('href'));}).filter(Boolean);
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){l.classList.remove('active');});
+        var active=document.querySelector('.nav-link[href="#'+e.target.id+'"]');
+        if(active)active.classList.add('active');
+      }
+    });
+  },{threshold:.1,rootMargin:'-40px 0px -60% 0px'});
+  sections.forEach(function(s){obs.observe(s);});
+})();
+</script>
+</body>
+</html>
