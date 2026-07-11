@@ -43,7 +43,7 @@ export function Modal({
   children: React.ReactNode
   bodyClassName?: string
   z?: 200 | 260 | 280 | 380          // 다른 모달 위에 겹쳐 띄울 때 (통합 상세 모달 등). 380=시스템 오버레이(오류신고) — 모든 모달·컨펌 위
-  /** §13.2 입력 유실 방지 — true 면 배경클릭 무시, Esc·X 는 닫기 확인 1회 */
+  /** v2.0 §12 입력 유실 방지 — true 면 배경클릭 무시, Esc·X 는 닫기 확인 1회 */
   dirty?: boolean
 }) {
   // dirty 닫기 정책 — Esc/X 는 "작성 중인 내용이 있습니다" 확인을 거친다.
@@ -92,8 +92,8 @@ export function Modal({
   }, [open, requestClose])
 
   if (!open) return null
-  // §13.2 — dirty 면 배경클릭(아래 onClick)은 조용히 무시(대부분 오조작), 닫기는 Esc·X 확인 경로로만
-  // v1.3 §12 레이어 토큰 매핑 — 호출부 API(200/260/280)는 유지, 실제 z는 토큰
+  // v2.0 §12 — dirty 면 배경클릭(아래 onClick)은 조용히 무시(대부분 오조작), 닫기는 Esc·X 확인 경로로만
+  // v2.0 §08 레이어 토큰 매핑 — 호출부 API(200/260/280)는 유지, 실제 z는 토큰
   const zClass = z === 380 ? 'z-[var(--z-report)]' : z === 280 ? 'z-[var(--z-modal-3)]' : z === 260 ? 'z-[var(--z-modal-2)]' : 'z-[var(--z-modal)]'
   return (
     <div

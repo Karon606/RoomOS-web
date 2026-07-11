@@ -15,8 +15,8 @@ export type BadgeTone = 'paid' | 'await' | 'unpaid' | 'overdue' | 'exit' | 'move
 export function statusTipColor(tone: BadgeTone): string {
   return tone === 'overdue' ? 'var(--coral)' : `var(--badge-${tone}-fg)`
 }
-// 행 배경 틴트 — §14.4b: 각 의미의 -bg 토큰(반투명, 다크 자동 변형).
-// 구 '라이트·다크 공용' rgba 의도는 가이드 정정으로 폐기(§19.1 다크 틴트표와 충돌).
+// 행 배경 틴트 — v2.0 §04: 각 의미의 -bg 토큰(반투명, 다크 자동 변형).
+// 구 '라이트·다크 공용' rgba 의도는 가이드 정정으로 폐기(v2.0 §28 다크 틴트표와 충돌).
 // 연체는 --danger-bg + 좌측 3px 보더(statusTipColor)가 강조 담당 — 별도 overdue-bg 없음.
 const ROW_TINT: Record<BadgeTone, string> = {
   paid:    'var(--success-bg)',

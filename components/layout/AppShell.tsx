@@ -29,7 +29,7 @@ export default function AppShell({
   children: React.ReactNode
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  // isPending 미사용 — 전환 표시는 라우트 loading.tsx 스켈레톤이 담당(§18.1 ③)
+  // isPending 미사용 — 전환 표시는 라우트 loading.tsx 스켈레톤이 담당(v2.0 §21 ③)
   const [, startNavigation]  = useTransition()
 
   return (
@@ -68,7 +68,7 @@ export default function AppShell({
         </Suspense>
 
         {/* NavigationProvider: 페이지 안 MonthSelector 등이 전환 transition을 공유.
-            전환 중 표시는 라우트 세그먼트 loading.tsx(본문 스켈레톤)가 담당 — §18.1 ③ */}
+            전환 중 표시는 라우트 세그먼트 loading.tsx(본문 스켈레톤)가 담당 — v2.0 §21 ③ */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 app-main relative">
           {/* 과거월 표시는 페이지 상단 MonthSelector 가 겸함(amber+'지난달'+오늘) — 별도 배너 제거(중복). */}
           <NavigationProvider startNavigation={startNavigation}>
@@ -80,7 +80,7 @@ export default function AppShell({
       {/* HIG: iPhone에서 1차 내비게이션은 하단 탭바. '전체' 탭이 Sidebar 드로어(전체 메뉴)를 연다. */}
       <BottomNav onMenuOpen={() => setSidebarOpen(true)} />
 
-      {/* 글로벌 저장 진행 표시 + 토스트 + 확인 다이얼로그(v1.3 §9) */}
+      {/* 글로벌 저장 진행 표시 + 토스트 + 확인 다이얼로그(v2.0 §14) */}
       <SaveFeedback />
       <ConfirmHost />
     </div>

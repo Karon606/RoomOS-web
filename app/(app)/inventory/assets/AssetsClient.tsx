@@ -14,7 +14,7 @@ import { pushToast } from '@/lib/saveStatus'
 import { kstYmdStr } from '@/lib/kstDate'
 import { useCanEdit } from '@/components/RoleContext'
 import { assignAggregateToTarget, revertAssignmentLog, deleteAssignmentLog, setCommonAsset, setAssetReceived, setAssetAssignedAt, setAssetRowSpec, combineAssets, getAssetAssignmentLog, batchAssignAssets, undoBatchAssignAssets, addFreeAsset, type AssetsData, type AssetItem, type AssetAssignmentLogRow, type AssetAssignUndo } from './actions'
-import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // §10 합치기 적용취소(토스트 액션)
+import { undoItemNameMerge } from '@/app/(app)/finance/actions'   // v2.0 §16 합치기 적용취소(토스트 액션)
 import { SectionHeader } from '@/components/ui/inventory/SectionHeader'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
@@ -27,7 +27,7 @@ import { Badge } from '@/components/ui/Badge'
 import { SpecWizard, type SpecWizardResult } from '@/components/ui/SpecWizard'
 import { InfoHint } from '@/components/ui/InfoHint'
 
-// 비품 위치 섹션 마커 — §21.2 위치 아이콘(핀) 14px
+// 비품 위치 섹션 마커 — v2.0 §22 위치 아이콘(핀) 14px
 const PinMarker = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M12 21s-7-6.5-7-11a7 7 0 0 1 14 0c0 4.5-7 11-7 11z" /><circle cx="12" cy="10" r="2.5" />
@@ -37,7 +37,7 @@ const CoralTag = ({ children }: { children: ReactNode }) => (
   <span className="text-[0.625rem] font-normal text-[var(--coral)]">{children}</span>
 )
 
-import { fmtWon as won } from '@/lib/fmtMoney'   // §15 단일 경로
+import { fmtWon as won } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
 const fmtRoomNo = (no: string) => (/^\d+$/.test(no) ? `${no}호` : no)
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000))
 
@@ -84,15 +84,15 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     try { localStorage.setItem('stayeum-assets-open-sections', JSON.stringify([...n])) } catch { /* 저장 실패 무시 */ }
     return n
   })
-  const [search, setSearch] = useState('')   // §22.1 상시 검색 — 품목·구매처·카테고리 클라 필터
+  const [search, setSearch] = useState('')   // v2.0 §23 상시 검색 — 품목·구매처·카테고리 클라 필터
   const [mergeSel, setMergeSel]   = useState<Set<string>>(new Set())   // 선택된 AssetItem id
   const [pillMode, setPillMode] = useState<'menu' | 'assign'>('menu')   // 하단 바 단계
   // 일괄 배정 수량 시트 — 대상 고른 뒤 품목별 수량(기본 전량) 입력
   const [batchAssign, setBatchAssign] = useState<{ target: Target; label: string; assignedAt: string; rows: { it: AssetItem; qty: string }[] } | null>(null)
   const exitMerge = () => { setMergeMode(false); setMergeSel(new Set()); setPillMode('menu') }
-  // 합치기 바텀시트 — §21.4 MergeSheet 단일 통일(카드별·선택 공용)
+  // 합치기 바텀시트 — v2.0 §22 MergeSheet 단일 통일(카드별·선택 공용)
   const [sheet, setSheet] = useState<{ sourceLabel: string; targets: MergeTarget[]; onConfirm: (destId: string) => void } | null>(null)
-  // 비품 상세 풀화면 — §21.5 본문 탭 진입(구매 내역·배정 변경 이력·현재 상태·합치기)
+  // 비품 상세 풀화면 — v2.0 §22 본문 탭 진입(구매 내역·배정 변경 이력·현재 상태·합치기)
   const [detailItem, setDetailItem] = useState<AssetItem | null>(null)
   // 행별 규격 편집(상세 모달) — 규격이 달라지면 카드가 자동 분리됨(오류신고 3707bf65)
   const [rowSpec, setRowSpec] = useState<Record<string, { v: string; u: string; t: string }>>({})
@@ -151,7 +151,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     })
   }
 
-  // §10 적용취소 — 토스트 액션·환경설정 '품명 병합' 둘 다(사용자 결정)
+  // v2.0 §16 적용취소 — 토스트 액션·환경설정 '품명 병합' 둘 다(사용자 결정)
   const undoCombine = (runId: string) => startTransition(async () => {
     const res = await undoItemNameMerge(runId)
     if (!res.ok) { pushToast('error', res.error); return }
@@ -198,7 +198,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
     })
   }
 
-  // 일괄 배정 적용취소(§10·rollback) — 분할 생성행 삭제 + 원상태 복원
+  // 일괄 배정 적용취소(v2.0 §16·rollback) — 분할 생성행 삭제 + 원상태 복원
   const undoBatch = (undo: AssetAssignUndo) => startTransition(async () => {
     const res = await undoBatchAssignAssets(undo)
     if (!res.ok) { pushToast('error', res.error); return }
@@ -495,7 +495,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
 
   return (
     <div className="space-y-4">
-      {/* 동일 레벨 탭 — 소모품·부식 / 비품·자재(현재) + 월 전환(§24.6 소모품과 동일 2줄 골격) */}
+      {/* 동일 레벨 탭 — 소모품·부식 / 비품·자재(현재) + 월 전환(v2.0 §25 소모품과 동일 2줄 골격) */}
       <div className="flex flex-col items-start gap-2 md:flex-row md:justify-between">
         <ViewTabs ariaLabel="재고 탭" activeId="assets" tabs={[
           { id: 'consumables', label: '소모품·부식', href: '/inventory' },
@@ -506,7 +506,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           <p className="mt-0.5 text-[0.625rem] text-[var(--warm-muted)]">월은 &lsquo;이달 구매&rsquo; 요약에만 적용 — 아래 배치 현황은 누적</p>
         </div>
       </div>
-      {/* 헤더 — 소모품 탭과 동일 골격: 제목 블록 → 버튼 줄 → 검색(§22.1) */}
+      {/* 헤더 — 소모품 탭과 동일 골격: 제목 블록 → 버튼 줄 → 검색(v2.0 §23) */}
       <div className="space-y-2">
         <div>
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">재고 관리 · 비품·자재
@@ -620,7 +620,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         </>
       )}
 
-      {/* 선택 모드 하단 알약 — §21.3 SelectionPillBar(탭 공용). ① 방·공용부 일괄 배정 ② 합치기(대표로 통일). */}
+      {/* 선택 모드 하단 알약 — v2.0 §22 SelectionPillBar(탭 공용). ① 방·공용부 일괄 배정 ② 합치기(대표로 통일). */}
       {mergeMode && mergeSel.size > 0 && (
         <SelectionPillBar count={mergeSel.size} onClose={exitMerge}>
           {pillMode === 'menu' && (
@@ -649,7 +649,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         </SelectionPillBar>
       )}
 
-      {/* 합치기 — §21.4 MergeSheet 단일(카드별·선택 공용). 방향 고지 + 적용취소는 환경설정 '품명 병합' */}
+      {/* 합치기 — v2.0 §22 MergeSheet 단일(카드별·선택 공용). 방향 고지 + 적용취소는 환경설정 '품명 병합' */}
       {sheet && (
         <MergeSheet open onClose={() => setSheet(null)}
           sourceLabel={sheet.sourceLabel} targets={sheet.targets}
@@ -657,7 +657,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           onConfirm={sheet.onConfirm} pending={pending} />
       )}
 
-      {/* 일괄 배정 수량 시트 — 품목별 배정 수량(기본 전량) + 적용취소(§10) */}
+      {/* 일괄 배정 수량 시트 — 품목별 배정 수량(기본 전량) + 적용취소(v2.0 §16) */}
       {batchAssign && (
         <Modal
           open
@@ -765,7 +765,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           itemLabel={freeForm.label || undefined} z={260} />
       )}
 
-      {/* 비품 상세 풀화면 — §21.5 본문 탭 진입. 구매 내역(영수증별)·현재 상태·합치기 */}
+      {/* 비품 상세 풀화면 — v2.0 §22 본문 탭 진입. 구매 내역(영수증별)·현재 상태·합치기 */}
       {detailItem && (() => {
         // 라이브 파생 — 옮긴 뒤에도 상세를 유지(연속 배정). 그 위치가 비면 같은 품목의 다른 위치 카드로 따라감.
         const candidates = allItems.filter(x => itemIdentity(x) === itemIdentity(detailItem))

@@ -2,7 +2,7 @@
 // 첫 구간(draw 0–1.0s → EN 락업)과 동일. 드로잉 = 중심선 한 획 + stroke-width 20
 // (두꺼운 획 자체가 아치 — 그리는 중에도 채워진 아치가 자라나는 모습, 외곽선 컨투어 아님).
 // pathLength=1 정규화라 측정 불필요 → 서버 CSS 만으로 동작.
-// 용도: 루트 loading.tsx 스트리밍 폴백. 300ms 표시 지연(.delayed-fallback, §18.3).
+// 용도: 루트 loading.tsx 스트리밍 폴백. 300ms 표시 지연(.delayed-fallback, v2.0 §21).
 
 const STROKE_PATH = 'M 8 82 C 8 32 22 8 55 8 C 88 8 121 32 121 82'
 

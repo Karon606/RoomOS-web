@@ -2,13 +2,13 @@
 // ContractView.tsx 화면 출력과 시각이 동일하도록 같은 토큰·동일 layout을 그대로 옮겨 둠.
 // 변수: 입실자/계약/영업장 데이터 + 서명 PNG dataURL.
 //
-// 디자인 — 브랜드 가이드 §20.10(b) 입실 계약서(A4). 인쇄전용 토큰(--p-*).
+// 디자인 — 브랜드 가이드 v2.0 §26(b) 입실 계약서(A4). 인쇄전용 토큰(--p-*).
 // 폰트 — Pretendard variable woff2를 base64로 HTML에 직접 임베드.
 // Vercel @sparticuz/chromium 바이너리에는 한글 폰트가 없어 CDN <link>로는 한글이 깨짐.
 // 임베드 방식이라 네트워크 의존성 zero, document.fonts.ready로 로딩 보장.
 
 import { type ContractTemplate, type BusinessInfo, type DisposalConsentTemplate, renderContractText, buildRefundClause, splitClauseColumns } from '@/lib/contract'
-import { PRINT_HEX } from '@/lib/printTokens'   // §20.2 인쇄 토큰 단일 출처
+import { PRINT_HEX } from '@/lib/printTokens'   // v2.0 §26 인쇄 토큰 단일 출처
 
 // 모듈 레벨 캐시 — cold start 후 첫 PDF 생성 때만 jsdelivr CDN에서 폰트 다운로드 (~570KB).
 // 이후 요청은 메모리 캐시 사용.
@@ -28,7 +28,7 @@ export type PrintContractData = {
   template: ContractTemplate
   businessInfo: BusinessInfo
   phone: string | null            // 영업장 전화 — 헤더/푸터 메타
-  contractNo: string              // 계약번호 (YYYYMMDD-NNN, §20.8)
+  contractNo: string              // 계약번호 (YYYYMMDD-NNN, v2.0 §26)
   // 이미지들은 Drive thumbnail URL — puppeteer에서 외부 fetch 가능
   logoImageUrl: string | null
   stampImageUrl: string | null

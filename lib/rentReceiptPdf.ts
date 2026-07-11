@@ -1,14 +1,14 @@
-// 입실료 납부 확인서 — 브랜드 가이드 §20 + Claude Design A5 시안 반영.
+// 입실료 납부 확인서 — 브랜드 가이드 v2.0 §26 + Claude Design A5 시안 반영.
 // A5 세로, 인쇄전용 토큰(--p-*). pdf-lib 직접 그림.
-// 폰트(§20.1): Pretendard(public/fonts) Regular+Bold 임베드.
+// 폰트(v2.0 §26): Pretendard(public/fonts) Regular+Bold 임베드.
 //   ※ 표준 .otf(CFF)는 pdf-lib 임베드 불가 → otf2ttf로 TTF 변환 후
 //     post를 format3(글리프명 제거)+GSUB/GPOS 제거로 정리해야 함.
 //     (cidXXXX 글리프명이 남으면 pdf-lib이 CID 폰트로 오인해 하이픈/물결 폭이 깨짐)
-//   읽기 실패 시 나눔고딕(§20.1 폴백) + faux-bold.
+//   읽기 실패 시 나눔고딕(v2.0 §26 폴백) + faux-bold.
 
 import { PDFDocument, type PDFFont } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
-import { PRINT_RGB, SEAL_MM } from './printTokens'   // §20.2 인쇄 토큰 단일 출처 · §20.9 도장 18mm
+import { PRINT_RGB, SEAL_MM } from './printTokens'   // v2.0 §26 인쇄 토큰 단일 출처 · v2.0 §26 도장 18mm
 import path from 'path'
 import { readFile } from 'fs/promises'
 import { getNanumGothic } from './residenceCertOverlay'
@@ -37,7 +37,7 @@ const MM = 2.83465
 const PAGE_W = 148 * MM, PAGE_H = 210 * MM
 const L = 14 * MM, R = PAGE_W - 14 * MM
 
-// §20.2 인쇄 토큰 — lib/printTokens.ts 단일 출처 참조(값 동일, 시각 변화 0)
+// v2.0 §26 인쇄 토큰 — lib/printTokens.ts 단일 출처 참조(값 동일, 시각 변화 0)
 const P_INK = PRINT_RGB.ink
 const P_MUTED = PRINT_RGB.inkMuted
 const P_TC = PRINT_RGB.tc
@@ -79,7 +79,7 @@ export async function buildRentReceiptPdf(
     fontR = await doc.embedFont(new Uint8Array(rb))
     fontB = await doc.embedFont(new Uint8Array(bb))
   } catch {
-    fontR = fontB = await doc.embedFont(await getNanumGothic())  // §20.1 폴백
+    fontR = fontB = await doc.embedFont(await getNanumGothic())  // v2.0 §26 폴백
     faux = true
   }
   const page = doc.addPage([PAGE_W, PAGE_H])
@@ -176,7 +176,7 @@ export async function buildRentReceiptPdf(
   if (stampBytes && stampBytes.length > 0) {
     const SEAL = SEAL_MM * MM, sealLeft = R - SEAL, sealCx = R - SEAL / 2
     TR(sigText, sealLeft - 2 * MM, signLineY, 9.5, P_INK)            // 이름 — 도장 왼쪽(가려지지 않게)
-    T('(인)', sealCx - W('(인)', 9.5) / 2, signLineY, 9.5, P_INK)     // (인) — 도장이 덮음 (§20.9)
+    T('(인)', sealCx - W('(인)', 9.5) / 2, signLineY, 9.5, P_INK)     // (인) — 도장이 덮음 (v2.0 §26)
     try {
       const isPng = stampBytes[0] === 0x89 && stampBytes[1] === 0x50
       const img = isPng ? await doc.embedPng(stampBytes) : await doc.embedJpg(stampBytes)

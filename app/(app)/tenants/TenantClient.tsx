@@ -158,7 +158,7 @@ const GENDER_LABEL: Record<string, string> = {
 }
 const PT_LABEL: Record<string, string> = { PREPAID: '선납', POSTPAID: '후납' }
 
-// §22 — 탭+하위 2단계를 한 줄로 평탄화한 단일 상태 필터(생애주기 전 상태)
+// v2.0 §23 — 탭+하위 2단계를 한 줄로 평탄화한 단일 상태 필터(생애주기 전 상태)
 // '거주중(living)' = ACTIVE+CHECKOUT_PENDING — 퇴실 예정도 아직 사는 사람이라 거주중에 포함(기본값).
 type StatusFilter = 'living' | 'CHECKOUT_PENDING' | 'NON_RESIDENT' | 'RESERVED' | 'TOUR' | 'CANCELLED' | 'past' | 'all'
 
@@ -329,7 +329,7 @@ export default function TenantClient({
 
   const [showAdd, setShowAdd]             = useState(false)
   const [showNoticeSms, setShowNoticeSms] = useState(false)   // 단체 공지 문자 (R4)
-  // §13.2 — 폼 모달 입력 보호(dirty). 입력 시작 후 배경클릭 무시, Esc/X 확인(Modal 내장).
+  // v2.0 §12 — 폼 모달 입력 보호(dirty). 입력 시작 후 배경클릭 무시, Esc/X 확인(Modal 내장).
   const [addTenantDirty, setAddTenantDirty] = useState(false)
   const [editTenantDirty, setEditTenantDirty] = useState(false)
   const [detailEditDirty, setDetailEditDirty] = useState(false)
@@ -340,7 +340,7 @@ export default function TenantClient({
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
   })
   const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
-  const press = useLongPress()      // 데스크톱 행 꾹 눌러 선택 진입 (§22 공통 제스처, 카드는 RoomCard 내장)
+  const press = useLongPress()      // 데스크톱 행 꾹 눌러 선택 진입 (v2.0 §23 공통 제스처, 카드는 RoomCard 내장)
   const [editTenant, setEditTenant]       = useState<Tenant | null>(null)
   const [detailTenant, setDetailTenant]   = useState<Tenant | null>(null)
   const [detailEditMode, setDetailEditMode] = useState(false)
@@ -844,7 +844,7 @@ export default function TenantClient({
     setDeleteTarget(null)
     startTransition(async () => {
       const res = await withSave(() => deleteTenant(id), { success: `${name}님 삭제됨`, silentError: true })
-      // 계약·수납 이력 — 건수를 보여주는 영향 고지형 다이얼로그(v1.3 §9.3) 동의 후에만 영구 삭제
+      // 계약·수납 이력 — 건수를 보여주는 영향 고지형 다이얼로그(v2.0 §14) 동의 후에만 영구 삭제
       if (!res.ok && res.needsForce) {
         const force = await confirmDialog({
           title: `${name}님 기록을 영구 삭제할까요?`,
@@ -964,10 +964,10 @@ export default function TenantClient({
         )}
       </div>
 
-      {/* 검색 — §22 공용 SearchBar (모바일 포함 항상 노출) */}
+      {/* 검색 — v2.0 §23 공용 SearchBar (모바일 포함 항상 노출) */}
       <SearchBar value={search} onChange={setSearch} placeholder="이름, 호실, 국적, 직업 검색" />
 
-      {/* 상태 필터 — §22 단일 SegmentedControl(탭+하위 2단계를 생애주기 한 줄로 평탄화) */}
+      {/* 상태 필터 — v2.0 §23 단일 SegmentedControl(탭+하위 2단계를 생애주기 한 줄로 평탄화) */}
       <div className="flex gap-2 flex-wrap items-center">
         <SegmentedControl
           size="md"
@@ -1004,7 +1004,7 @@ export default function TenantClient({
         {/* 구분선 */}
         <div className="flex-1" />
 
-        {/* 표시 항목 — 데스크탑 표 열. §22 공용 DisplayFieldsMenu(다른 페이지와 동일) */}
+        {/* 표시 항목 — 데스크탑 표 열. v2.0 §23 공용 DisplayFieldsMenu(다른 페이지와 동일) */}
         <DisplayFieldsMenu
           className="hidden sm:block"
           fields={COL_DEFS.filter(c => (c.tabs as readonly string[]).includes(cat))}
@@ -1202,7 +1202,7 @@ export default function TenantClient({
       })()}
 
 
-      {/* 모바일 카드 뷰 — 빈 상태는 §16 공용 EmptyState */}
+      {/* 모바일 카드 뷰 — 빈 상태는 v2.0 §17 공용 EmptyState */}
       {sorted.length === 0 ? (
         <EmptyState
           className="sm:hidden"
@@ -1309,7 +1309,7 @@ export default function TenantClient({
         </div>
       )}
 
-      {/* 데스크탑 테이블 — 빈 상태는 §16 공용 EmptyState */}
+      {/* 데스크탑 테이블 — 빈 상태는 v2.0 §17 공용 EmptyState */}
       {sorted.length === 0 ? (
         <EmptyState
           className="hidden sm:block"
@@ -1508,7 +1508,7 @@ export default function TenantClient({
         />
       )}
 
-      {/* 배치 액션 바 — §21.3 공용 SelectionPillBar */}
+      {/* 배치 액션 바 — v2.0 §22 공용 SelectionPillBar */}
 
       {selectMode && selectedIds.size > 0 && (
         <SelectionPillBar count={selectedIds.size} unit="명" onClose={exitSelectMode}>
@@ -3165,7 +3165,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
     onDone()
   }
 
-  const [dirty, setDirty] = useState(false)   // §13.2
+  const [dirty, setDirty] = useState(false)   // v2.0 §12
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
 
   return (

@@ -104,7 +104,7 @@ export default function ContractView({ data }: { data: ContractData }) {
     return /^\d+$/.test(v.trim()) ? `${v.trim()}호` : v
   })()
 
-  // 보증금/청소비 동적 표기 (§20 — 라벨 + 영문 + 값(청소비는 .sub))
+  // 보증금/청소비 동적 표기 (v2.0 §26 — 라벨 + 영문 + 값(청소비는 .sub))
   const { depositLabel, depositEn, depositNode } = (() => {
     const dep = data.lease?.depositAmount ?? 0
     const cln = data.lease?.cleaningFee ?? 0
@@ -114,7 +114,7 @@ export default function ContractView({ data }: { data: ContractData }) {
     return { depositLabel: '입실 보증금', depositEn: 'Deposit', depositNode: '' as React.ReactNode }
   })()
 
-  // 헤더/푸터 영업장 메타 (§20)
+  // 헤더/푸터 영업장 메타 (v2.0 §26)
   const biz = data.businessInfo
   const bizMeta1 = [biz.registrationNo ? `사업자등록번호 ${biz.registrationNo}` : '', biz.ceoName ? `대표 ${biz.ceoName}` : ''].filter(Boolean).join(' · ')
   const bizMeta2 = [biz.address || '', data.phone ? data.phone : ''].filter(Boolean).join(' · ')
@@ -756,7 +756,7 @@ export default function ContractView({ data }: { data: ContractData }) {
         </div>
       )}
 
-      {/* 인쇄/화면 공통 스타일 — 브랜드 가이드 §20 입실 계약서 (contractPrintHtml 과 동일 시각) */}
+      {/* 인쇄/화면 공통 스타일 — 브랜드 가이드 v2.0 §26 입실 계약서 (contractPrintHtml 과 동일 시각) */}
       <style jsx global>{`
         html, body {
           overflow-x: hidden !important;
@@ -802,7 +802,7 @@ export default function ContractView({ data }: { data: ContractData }) {
           margin: 0 auto; position: relative;
         }
 
-        /* ── §20 종이 ─────────────────────────────────────────────── */
+        /* ── v2.0 §26 종이 ─────────────────────────────────────────────── */
         .contract-paper {
           position: absolute; top: 0; left: 0;
           transform: scale(var(--paper-scale, 1)); transform-origin: top left;

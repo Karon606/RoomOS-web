@@ -573,7 +573,7 @@ export async function batchUpdateRooms(
   }
 }
 
-// 호실 일괄 수정 적용취소 — 방 필드·동기화된 계약 임대료를 스냅샷으로 복원(§10)
+// 호실 일괄 수정 적용취소 — 방 필드·동기화된 계약 임대료를 스냅샷으로 복원(v2.0 §16)
 export type BatchRoomsUndo = {
   rooms: { id: string; fields: Record<string, unknown> }[]
   leases: { id: string; rentAmount: number }[]

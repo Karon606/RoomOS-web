@@ -1,8 +1,8 @@
 'use client'
 
-// §24 뷰 전환 탭 (View Tabs) — 코랄 채움 조인트 탭 정본.
-// SegmentedControl(§22.2)은 필터(라디오, 해제 가능) 전용 — 이 컴포넌트는 "항상 정확히 1개 활성"인
-// 뷰 전환에만 쓴다(판별은 §24.0). 링크 탭(href)은 <Link>, 아니면 <button>. 접미(suffix)는 24.3 형식.
+// v2.0 §25 뷰 전환 탭 (View Tabs) — 코랄 채움 조인트 탭 정본.
+// SegmentedControl(v2.0 §23)은 필터(라디오, 해제 가능) 전용 — 이 컴포넌트는 "항상 정확히 1개 활성"인
+// 뷰 전환에만 쓴다(판별은 v2.0 §25). 링크 탭(href)은 <Link>, 아니면 <button>. 접미(suffix)는 24.3 형식.
 import { useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 
@@ -31,12 +31,12 @@ export function ViewTabs({
   activeId: string         // 항상 정확히 1개 — 필수(해제 없음)
   onChange?: (id: string) => void   // button 모드에서만
   fill?: boolean           // true = flex-1 균등 탭(컨테이너 풀폭)
-  equal?: boolean          // true = 탭 폭 동일(가장 긴 라벨 기준), 컨테이너는 내용폭 유지 — §24 부록 등재 제안 중
+  equal?: boolean          // true = 탭 폭 동일(가장 긴 라벨 기준), 컨테이너는 내용폭 유지 — v2.0 §25 부록 등재 제안 중
   ariaLabel: string
 }) {
   const refs = useRef<(HTMLElement | null)[]>([])
 
-  // 슬라이딩 코랄 채움(§25.3) — 활성 탭 위치를 실측해 채움 블록이 탭 사이를 미끄러진다.
+  // 슬라이딩 코랄 채움(v2.0 §29) — 활성 탭 위치를 실측해 채움 블록이 탭 사이를 미끄러진다.
   // 세그먼트 배경은 투명(트랙이 cream), 채움은 z-0, 탭 콘텐츠는 z-1. reduced-motion이면 즉시 점프.
   const memKey = tabs.map(t => t.id).join('|')
   const [thumb, setThumb] = useState<{ left: number; width: number } | null>(() => thumbMemory.get(memKey) ?? null)
@@ -60,7 +60,7 @@ export function ViewTabs({
     return () => ro.disconnect()
   }, [activeIdx, tabs.length, fill, equal, memKey])
 
-  // 키보드 roving(§24.6) — ←/→ 이동, Home/End 처음/끝. 활성만 tabindex=0.
+  // 키보드 roving(v2.0 §25) — ←/→ 이동, Home/End 처음/끝. 활성만 tabindex=0.
   const onKeyDown = (e: React.KeyboardEvent, idx: number) => {
     const enabled = tabs.map((t, i) => (t.disabled ? -1 : i)).filter(i => i >= 0)
     if (enabled.length === 0) return

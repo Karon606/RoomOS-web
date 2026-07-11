@@ -182,7 +182,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
         })}
       </div>
 
-      {/* 미니폼 모달 — 엔티티 모달 위에 겹침 (§12: z 토큰 260=modal-2, 구 z-confirm 오용 교정) */}
+      {/* 미니폼 모달 — 엔티티 모달 위에 겹침 (v2.0 §08: z 토큰 260=modal-2, 구 z-confirm 오용 교정) */}
       {active && (
         <Modal open z={260} width="sm" dirty={transRent != null || transRefund != null}
           onClose={() => { if (!pending) setActive(null) }}
@@ -233,7 +233,7 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
       </Modal>
       )}
 
-      {/* 퇴실 정산 여부 팝업 — 퇴실일이 납입일과 가까울 때만. 날짜는 이미 저장됨. (§12: 구 z-[310] raw 교정) */}
+      {/* 퇴실 정산 여부 팝업 — 퇴실일이 납입일과 가까울 때만. 날짜는 이미 저장됨. (v2.0 §08: 구 z-[310] raw 교정) */}
       {prorateAsk && (
         <Modal open z={260} width="sm"
           onClose={() => setProrateAsk(null)}

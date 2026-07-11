@@ -9,7 +9,7 @@ import { SplashHost } from '@/components/brand/SplashController'
 import { Analytics } from '@vercel/analytics/next'
 
 // 가이드 명시: Numbers·Mono·Meta는 DM Mono
-// v1.3.2 §15 — DM Mono 웹폰트 제거(제품 UI 사선 0 금지, 번들 절감). 숫자는 Pretendard + tnum(.num).
+// v2.0 §06 — DM Mono 웹폰트 제거(제품 UI 사선 0 금지, 번들 절감). 숫자는 Pretendard + tnum(.num).
 
 // 가이드 명시: 로고 워드마크는 Plus Jakarta Sans 300/700
 const plusJakarta = Plus_Jakarta_Sans({
@@ -24,7 +24,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  // §18.4 — 첫 페인트 배경과 동일한 theme-color (라이트/다크 분기)
+  // v2.0 §21 — 첫 페인트 배경과 동일한 theme-color (라이트/다크 분기)
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#E8DDD0' },
     { media: '(prefers-color-scheme: dark)', color: '#000000' },
@@ -55,7 +55,7 @@ export default function RootLayout({
   return (
     <html lang="ko" className={plusJakarta.variable} suppressHydrationWarning>
       <head>
-        {/* §18.4 FOUC 방어 — 외부 CSS 로드 전 html 배경을 브랜드 톤으로 (흰 화면 0ms).
+        {/* v2.0 §21 FOUC 방어 — 외부 CSS 로드 전 html 배경을 브랜드 톤으로 (흰 화면 0ms).
             다크는 CSS 미디어쿼리로 — JS 테마 감지 전 깜박임 원천 차단. */}
         <style dangerouslySetInnerHTML={{ __html:
           'html{background:#E8DDD0}@media(prefers-color-scheme:dark){html{background:#000000}}html.dark{background:#000000}',

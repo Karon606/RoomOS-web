@@ -5,7 +5,7 @@ import React from 'react'
 // M7 가이드 정식 4톤 (솔리드, 강조용 — 미납·완료·경고·중립)
 type SemanticTone = 'success' | 'warn' | 'danger' | 'neutral'
 // 페일 톤 (부드러운 라벨용 — 거주중·예약·요청 등 상태 표시)
-// inspect = §14.4 in-progress(점검·처리 중) b-inspect — §21 재고 카드 전용 과정 상태
+// inspect = v2.0 §04 in-progress(점검·처리 중) b-inspect — v2.0 §22 재고 카드 전용 과정 상태
 type PaleTone = 'pale-coral' | 'pale-green' | 'pale-amber' | 'pale-blue' | 'pale-red' | 'pale-teal' | 'pale-purple' | 'inspect'
 // 호환 alias (기존 코드)
 type LegacyTone = 'coral' | 'green' | 'amber' | 'blue' | 'red' | 'teal' | 'purple'

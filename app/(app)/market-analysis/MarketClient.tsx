@@ -162,7 +162,7 @@ function CompetitorModal({
   directions: string[]
 }) {
   const [form, setForm] = useState<CompetitorFormData>(initial ?? emptyForm())
-  // §13.2 dirty — 초기 스냅샷 대비 변경 여부 (배경클릭 무시 + 닫기 확인)
+  // v2.0 §12 dirty — 초기 스냅샷 대비 변경 여부 (배경클릭 무시 + 닫기 확인)
   const [initialSnapshot] = useState(() => JSON.stringify(initial ?? emptyForm()))
   const dirty = JSON.stringify(form) !== initialSnapshot
 
@@ -226,7 +226,7 @@ function CompetitorModal({
   const removePriceRow = (i: number) =>
     setForm(f => ({ ...f, roomPrices: f.roomPrices.filter((_, idx) => idx !== i) }))
 
-  // 정본 입력 문법(§22) — 수제 style 객체 대신 공용 클래스(포커스 링 포함, 감사 D1)
+  // 정본 입력 문법(v2.0 §23) — 수제 style 객체 대신 공용 클래스(포커스 링 포함, 감사 D1)
   const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors'
   const selectCls = 'h-10 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]'
   const labelCls = 'block text-xs font-medium text-[var(--warm-mid)] mb-1'

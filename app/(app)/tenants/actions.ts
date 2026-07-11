@@ -2083,7 +2083,7 @@ export async function getRoomsForQuote(): Promise<{
 }
 
 
-// 입주자 일괄 수정 적용취소 — 항목별 원값 복원(§10)
+// 입주자 일괄 수정 적용취소 — 항목별 원값 복원(v2.0 §16)
 export type BatchTenantsUndo = {
   tenants: { id: string; fields: Record<string, unknown> }[]
   leases: { id: string; fields: Record<string, unknown> }[]

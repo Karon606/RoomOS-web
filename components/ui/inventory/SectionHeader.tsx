@@ -1,6 +1,6 @@
 'use client'
 
-// §21.2 SectionHeader — 마커 슬롯형 그룹 헤더.
+// v2.0 §22 SectionHeader — 마커 슬롯형 그룹 헤더.
 // 그룹 축(소모품=카테고리 색 점, 비품=배정 위치 아이콘)은 다르되 마커만 교체, 나머지는 동일.
 import React from 'react'
 

@@ -7,7 +7,7 @@ import { markAuthRedirect } from '@/components/brand/SplashController'
 
 export default function LoginButton({ returnTo }: { returnTo?: string }) {
   const [isLoading, setIsLoading] = useState(false)
-  // §18.5 — 인증 리디렉트로 떠나는 동안 풀스크린 스플래시 (콜드 부트 ①과 동일 상황)
+  // v2.0 §21 — 인증 리디렉트로 떠나는 동안 풀스크린 스플래시 (콜드 부트 ①과 동일 상황)
   const [redirecting, setRedirecting] = useState(false)
   const [error, setError] = useState('')
   const supabase = createClient()
@@ -25,7 +25,7 @@ export default function LoginButton({ returnTo }: { returnTo?: string }) {
       },
     })
     if (err || !data?.url) {
-      // §18.5 인증 실패 — 스플래시 없이 폼으로 즉시 복귀 + 인라인 에러
+      // v2.0 §21 인증 실패 — 스플래시 없이 폼으로 즉시 복귀 + 인라인 에러
       setError('Google 연결에 실패했습니다. 잠시 후 다시 시도해주세요.')
       setIsLoading(false)
       return
@@ -63,7 +63,7 @@ export default function LoginButton({ returnTo }: { returnTo?: string }) {
         </>
       )}
     </button>
-    {/* §18.5 인증 실패 — 인라인 에러 (스플래시 위 표시 금지) */}
+    {/* v2.0 §21 인증 실패 — 인라인 에러 (스플래시 위 표시 금지) */}
     {error && <p className="mt-2 text-xs text-center" style={{ color: 'var(--tc-d, #7C2D26)' }}>{error}</p>}
     </div>
   )

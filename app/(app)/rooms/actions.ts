@@ -1178,11 +1178,11 @@ export async function deletePayment(paymentId: string): Promise<{ ok: true } | {
 }
 
 // ============================================================
-// 일괄 수납 — 선택한 호실의 '이번 달' 미수액을 한 번에 전액 수납 처리 (§22 선택모드)
+// 일괄 수납 — 선택한 호실의 '이번 달' 미수액을 한 번에 전액 수납 처리 (v2.0 §23 선택모드)
 // 결제 로직: 각 호실은 기존 savePayment 재사용(FIFO·할인·재계산 동일). 이번 달 한정(forcedTargetMonth).
 //   금액은 클라이언트 balance 를 신뢰하지 않고 서버 권위(getRoomPaymentStatus)로 재계산.
 //   대상 자동 필터: 비공실 + 미래월 아님 + leaseTermId·tenantId 有 + 이번 달 미수(balance<0).
-//   생성된 paymentRecord id 를 모아 반환 → 토스트 '적용취소'에서 batchDeletePayments 로 일괄 취소(§10).
+//   생성된 paymentRecord id 를 모아 반환 → 토스트 '적용취소'에서 batchDeletePayments 로 일괄 취소(v2.0 §16).
 // ============================================================
 export async function batchRecordRentPayment(input: {
   targetMonth: string
@@ -1248,7 +1248,7 @@ export async function batchRecordRentPayment(input: {
   }
 }
 
-// 일괄 수납 적용취소 — batchRecordRentPayment 가 만든 record 들을 한 번에 삭제(§10 적용취소)
+// 일괄 수납 적용취소 — batchRecordRentPayment 가 만든 record 들을 한 번에 삭제(v2.0 §16 적용취소)
 export async function batchDeletePayments(
   ids: string[],
 ): Promise<{ ok: true; deleted: number } | { ok: false; error: string }> {

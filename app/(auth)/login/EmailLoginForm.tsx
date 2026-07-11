@@ -300,7 +300,7 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
         className="font-semibold"
       >
         {loading ? (
-          /* §18.5 제출 중 — 버튼 내 스피너 14px(0.8s 회전) + 모드별 라벨. fullWidth 라 레이아웃 점프 없음 */
+          /* v2.0 §21 제출 중 — 버튼 내 스피너 14px(0.8s 회전) + 모드별 라벨. fullWidth 라 레이아웃 점프 없음 */
           <>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"
               style={{ animation: 'spin 0.8s linear infinite' }}>

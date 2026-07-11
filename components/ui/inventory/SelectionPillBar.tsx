@@ -1,6 +1,6 @@
 'use client'
 
-// §21.3 SelectionPillBar — 선택 모드 하단 floating 다크 알약.
+// v2.0 §22 SelectionPillBar — 선택 모드 하단 floating 다크 알약.
 // 탭별 가능한 액션만 children 으로 노출하되 셸(컨테이너·카운트·닫기)은 동일.
 // 합치기는 양 탭 공통 승격. 불가능한 액션은 숨김(비활성 아님).
 import React from 'react'

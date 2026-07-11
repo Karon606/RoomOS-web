@@ -284,7 +284,7 @@ function FormModal({
   const [alertDaysBefore, setAlertDaysBefore] = useState(row?.alertDaysBefore ?? DEFAULT_CHECKLIST_ALERT_DAYS_BEFORE)
   const [customMode, setCustomMode] = useState(row ? !PRESETS.some(p => p.days === row.intervalDays) : false)
 
-  // §13.2 dirty — 초기값 대비 변경이 있으면 배경클릭 무시 + 닫기 확인
+  // v2.0 §12 dirty — 초기값 대비 변경이 있으면 배경클릭 무시 + 닫기 확인
   const dirty =
     title !== (row?.title ?? '') ||
     memo !== (row?.memo ?? '') ||

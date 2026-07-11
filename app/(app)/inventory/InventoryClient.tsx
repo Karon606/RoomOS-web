@@ -17,7 +17,7 @@ import { SectionHeader, DotMarker } from '@/components/ui/inventory/SectionHeade
 import { SelectionPillBar, PillButton } from '@/components/ui/inventory/SelectionPillBar'
 import { InventoryCard as InvCard } from '@/components/ui/inventory/InventoryCard'
 import { MergeSheet, type MergeTarget } from '@/components/ui/inventory/MergeSheet'
-import { mergeItemNames } from '@/app/(app)/finance/actions'   // 수령 대기 품명 합치기(OCR 풀네임 → 기존 품목, §10 별칭 학습 포함)
+import { mergeItemNames } from '@/app/(app)/finance/actions'   // 수령 대기 품명 합치기(OCR 풀네임 → 기존 품목, v2.0 §16 별칭 학습 포함)
 import MonthSelector from '@/components/layout/MonthSelector'
 import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { convertSpecValue, listCompatibleUnits, unitFactor } from '@/lib/units'
@@ -81,13 +81,13 @@ import {
 } from './actions'
 import { type StorageLocationItem, type LocationQtyEntry, type MergeDecision, type MergeRuleRow, type MergeUndoRow } from './constants'
 
-// §14.1 — 카테고리 마커 색은 viz 팔레트 토큰만(새 hue 금지·§14.4). 틴트 bg는 color-mix 10%.
+// v2.0 §04 — 카테고리 마커 색은 viz 팔레트 토큰만(새 hue 금지·v2.0 §04). 틴트 bg는 color-mix 10%.
 const vizTint = (v: string): { bg: string; fg: string } =>
   ({ bg: `color-mix(in srgb, var(${v}) 10%, transparent)`, fg: `var(${v})` })
 const CATEGORY_TINT: Record<string, { bg: string; fg: string }> = {
   '소모품비':     vizTint('--viz-1'),   // terracotta (기존 persimmon 유지)
   '부식비':       vizTint('--viz-4'),   // amber
-  '폐기물 처리비': vizTint('--viz-7'),  // sage (구 쿨블루 — §14.4 신규 hue 폐기)
+  '폐기물 처리비': vizTint('--viz-7'),  // sage (구 쿨블루 — v2.0 §04 신규 hue 폐기)
 }
 // 사용자가 추가한 카테고리(수선유지비 등)용 폴백 팔레트 — cat 문자열 해시로 안정 배정.
 const FALLBACK_TINTS: { bg: string; fg: string }[] = [
@@ -157,7 +157,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   const [viewMode, setViewMode] = useState<'item' | 'location'>(() =>
     typeof window !== 'undefined' && localStorage.getItem('stayeum-inventory-view') === 'location' ? 'location' : 'item'
   )
-  // §22.1 메인 검색 — 품목명·카테고리·메모 대상. 품목별·위치별 두 보기와 수령 대기 목록에 동일 적용.
+  // v2.0 §23 메인 검색 — 품목명·카테고리·메모 대상. 품목별·위치별 두 보기와 수령 대기 목록에 동일 적용.
   const [search, setSearch] = useState('')
   const q = search.trim().toLowerCase()
   const visibleRows = q
@@ -232,7 +232,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   })
   const exitSelectMode = () => { setSelectMode(false); setSelected(new Set()) }
 
-  // 합치기 — §21.4 MergeSheet 단일. 선택한 품목들을 대표(남는 카드)로 합침(mergeTrackedItems).
+  // 합치기 — v2.0 §22 MergeSheet 단일. 선택한 품목들을 대표(남는 카드)로 합침(mergeTrackedItems).
   const [sheet, setSheet] = useState<{ sourceLabel: string; targets: MergeTarget[]; onConfirm: (destId: string) => void } | null>(null)
   const runMergeTracked = (destId: string, srcIds: string[], destLabel: string) => {
     if (srcIds.length === 0) { pushToast('error', '대표 외 합칠 품목을 더 선택하세요.'); return }
@@ -270,7 +270,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
     try { localStorage.setItem('stayeum-inventory-cat', v) } catch { /* 무시 */ }
   }
   const searching = search.trim().length > 0
-  // §26.6 — 검색은 현재 탭 스코프 안에서. 스코프 밖 일치는 아래 힌트 한 줄로 안내(자동 해제 금지).
+  // v2.0 §27 — 검색은 현재 탭 스코프 안에서. 스코프 밖 일치는 아래 힌트 한 줄로 안내(자동 해제 금지).
   const grouped = groupedAll.filter(g => catTab === '__all__' || g.cat === catTab)
   const outOfScopeCount = searching && catTab !== '__all__'
     ? visibleRows.filter(r => r.category !== catTab).length
@@ -296,7 +296,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
   return (
     <div className="space-y-4">
       {/* 동일 레벨 탭 — 소모품·부식(기본) / 비품·자재 + 월 전환(재고는 월별 이월·소비 데이터)
-          §24.6: 모바일=탭 윗줄·MonthSelector 아랫줄 고정(2줄), md=한 줄 justify-between.
+          v2.0 §25: 모바일=탭 윗줄·MonthSelector 아랫줄 고정(2줄), md=한 줄 justify-between.
           flex-wrap 임계에 맡기면 과거월 배지 유무로 줄바꿈이 출렁여 탭바 높이가 페이지·상태마다 달라짐. */}
       {/* items-start: flex-col 자식 stretch로 탭바가 풀폭으로 늘어나는 것 방지(자재 탭과 내용폭 동일하게) */}
       <div className="flex flex-col items-start gap-2 md:flex-row md:justify-between">
@@ -314,7 +314,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
               <InfoHint title="소모품·부식 재고란?">쓰면 줄어드는 물건(쌀·세제·봉투 등)의 잔량과 사용량을 위치(창고·주방)별로 추적합니다 — 오래 쓰는 물건은 비품·자재 탭에서 방별로 배정합니다. 용어는 두 가지만 기억하세요 — 점검: 실제 수량을 세서 기록(두 점검 사이 차이가 소모량이 됨) · 보정: 장부가 실제와 어긋났을 때 차이를 소모로 잡지 않고 기준만 실측값으로 리셋. 구매는 수령 확인 시 자동으로 더해집니다.</InfoHint>
             </h1>
           </div>
-          {/* 점검 진입 방식 토글 — §22.2 트랙형(보기 방식). 지출 '아이템별/주문별'과 동일 컴포넌트 */}
+          {/* 점검 진입 방식 토글 — v2.0 §23 트랙형(보기 방식). 지출 '아이템별/주문별'과 동일 컴포넌트 */}
           <SegmentedControl size="sm" ariaLabel="점검 보기" className="shrink-0"
             value={viewMode} onChange={changeView}
             options={[{ value: 'item', label: '아이템별' }, { value: 'location', label: '위치별' }]} />
@@ -362,10 +362,10 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         )}
       </div>
 
-      {/* §22.1 메인 검색 — 헤더 아래 풀폭. 모달 안이 아니라 목록 상단에서 바로 좁힌다. */}
+      {/* v2.0 §23 메인 검색 — 헤더 아래 풀폭. 모달 안이 아니라 목록 상단에서 바로 좁힌다. */}
       <SearchBar value={search} onChange={setSearch} placeholder="품목명, 카테고리, 메모 검색" />
 
-      {/* 검색 무결과 — §22.2 분기 (현재 탭 스코프 기준) */}
+      {/* 검색 무결과 — v2.0 §23 분기 (현재 탭 스코프 기준) */}
       {q && rows.length > 0 && grouped.every(g => g.rows.length === 0) && outOfScopeCount === 0 && (
         <EmptyState title="검색 결과가 없습니다" description="다른 검색어로 시도해 보세요." />
       )}
@@ -526,7 +526,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         />
       )}
 
-      {/* 선택 모드 하단 알약 — §21.3 SelectionPillBar (탭 공용) */}
+      {/* 선택 모드 하단 알약 — v2.0 §22 SelectionPillBar (탭 공용) */}
       {selectMode && selected.size > 0 && (
         <SelectionPillBar count={selected.size} onClose={exitSelectMode}>
           <PillButton primary onClick={() => setShowBatchLoc(true)}>위치 일괄 할당</PillButton>
@@ -544,7 +544,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
           description="고른 품목의 이름으로 이 구매(및 같은 이름의 지출)가 통일되고, 그 품목 재고로 잡힙니다. 다음 영수증부터는 자동 치환됩니다. 적용취소는 환경설정 '품명 병합'."
           onConfirm={runPendMerge} pending={isPending} />
       )}
-      {/* 합치기 — §21.4 MergeSheet 단일(선택 알약·상세 공용). 방향 고지 + §10 적용취소 */}
+      {/* 합치기 — v2.0 §22 MergeSheet 단일(선택 알약·상세 공용). 방향 고지 + v2.0 §16 적용취소 */}
       {sheet && (
         <MergeSheet open onClose={() => setSheet(null)}
           sourceLabel={sheet.sourceLabel} targets={sheet.targets}
@@ -1367,7 +1367,7 @@ function MergeSection({ currentId, currentLabel, onDone }: {
   useEffect(() => { getSameCategoryItems(currentId).then(setSiblings) }, [currentId])
   if (siblings.length === 0) return null
 
-  // 이 카드를 대상(남을 카드)으로 합침 — 기록 이전 후 이 카드 삭제. (§21.4 MergeSheet 단일)
+  // 이 카드를 대상(남을 카드)으로 합침 — 기록 이전 후 이 카드 삭제. (v2.0 §22 MergeSheet 단일)
   const handleMerge = async (destId: string) => {
     setPending(true)
     const res = await mergeTrackedItems(currentId, destId, true)
@@ -1514,7 +1514,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
           const res = await excludeExpenseFromInventory(entry.id)
           setSavePending(false)
           if (!res.ok) { setEditError(res.error); return }
-          // §10-1 — 적용 직후 토스트 액션으로 즉시 회수 가능
+          // v2.0 §16-1 — 적용 직후 토스트 액션으로 즉시 회수 가능
           pushToast('success', '구매를 재고에서 제외했습니다', {
             action: { label: '적용취소', run: () => { void includeExpenseInInventory(entry.id).then(r => {
               if (r.ok) { pushToast('success', '제외를 적용취소했습니다'); onChanged() }
@@ -1801,7 +1801,7 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
   onClose: () => void
   onDone: () => void
 }) {
-  const [dirty, setDirty] = useState(false)   // §13.2 — 입력 시작 후 닫기 보호
+  const [dirty, setDirty] = useState(false)   // v2.0 §12 — 입력 시작 후 닫기 보호
   const [entries, setEntries] = useState<InventoryCategory[]>(categories.map(c => ({ ...c })))
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
@@ -1838,7 +1838,7 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
           </Btn>
       </div>}
       bodyClassName="px-4 py-3">
-      {/* §13.2 dirty — 입력 시작 후 배경클릭 무시(Modal 내장) */}
+      {/* v2.0 §12 dirty — 입력 시작 후 배경클릭 무시(Modal 내장) */}
       <div className="space-y-3" onInput={() => setDirty(true)} onChange={() => setDirty(true)}>
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
           <div className="space-y-2">
@@ -1890,7 +1890,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
   onClose: () => void
   onDone: () => void
 }) {
-  const [dirty, setDirty] = useState(false)   // §13.2 — 입력 시작 후 닫기 보호
+  const [dirty, setDirty] = useState(false)   // v2.0 §12 — 입력 시작 후 닫기 보호
   const NO_LOC = '__total__'
   const r2 = (x: number) => Math.round(x * 100) / 100
   const todayKst = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)
@@ -1966,7 +1966,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
           </div>
       </div>}
       bodyClassName="px-4 py-3">
-      {/* §13.2 dirty — 입력 시작 후 배경클릭 무시(Modal 내장) */}
+      {/* v2.0 §12 dirty — 입력 시작 후 배경클릭 무시(Modal 내장) */}
       <div className="space-y-3" onInput={() => setDirty(true)} onChange={() => setDirty(true)}>
           {error && <p className="text-xs text-[var(--danger-fg)] bg-[var(--danger-bg)] px-3 py-2 rounded-lg">{error}</p>}
           {categories.map(({ cat, alias }) => {
@@ -2880,7 +2880,7 @@ function TransferStockModal({ rows, onClose, onDone, initialItemId }: {
         pushToast('success', swapMode
           ? `${fromLoc!.name} ↔ ${toLoc!.name} 맞바꿈 완료`
           : `${fromLoc!.name} → ${toLoc!.name} ${moveQty}${unit} 이동 완료`, {
-          // 이동은 '총량 불변 점검'으로 기록되므로, 그 점검을 지우면 직전 배치로 복원(§10)
+          // 이동은 '총량 불변 점검'으로 기록되므로, 그 점검을 지우면 직전 배치로 복원(v2.0 §16)
           action: { label: '적용취소', run: () => { void deleteStockCheck(checkId).then(r => { if (r.ok) pushToast('info', '이동을 적용취소했습니다 (이전 배치로 복원)'); else pushToast('error', r.error) }) } },
         })
       }

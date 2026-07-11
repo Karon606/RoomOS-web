@@ -147,7 +147,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
     if (!ok) return
     startTransition(async () => {
       const res = await withSave(() => deleteRoom(links.roomId!), { success: '삭제됨', silentError: true })
-      // 과거 계약·수납 이력 — 건수를 보여주는 영향 고지형 다이얼로그(v1.3 §9.3) 동의 후에만 영구 삭제
+      // 과거 계약·수납 이력 — 건수를 보여주는 영향 고지형 다이얼로그(v2.0 §14) 동의 후에만 영구 삭제
       if (!res.ok && res.needsForce) {
         const force = await confirmDialog({
           title: `${fmtRoomNo(links.roomNo)} 기록을 영구 삭제할까요?`,
@@ -184,7 +184,7 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
     if (!ok) return
     startTransition(async () => {
       const res = await withSave(() => deleteTenant(links.tenantId!), { success: '삭제됨', silentError: true })
-      // 계약·수납 이력 — 건수를 보여주는 영향 고지형 다이얼로그(v1.3 §9.3) 동의 후에만 영구 삭제
+      // 계약·수납 이력 — 건수를 보여주는 영향 고지형 다이얼로그(v2.0 §14) 동의 후에만 영구 삭제
       if (!res.ok && res.needsForce) {
         const force = await confirmDialog({
           title: `${links.tenantName ?? '이 고객'}님 기록을 영구 삭제할까요?`,

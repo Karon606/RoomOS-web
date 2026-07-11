@@ -5,7 +5,7 @@
 export default function Loading() {
   return (
     <div className="space-y-4">
-      {/* §24 탭 모형 — ViewTabs와 동일 치수 + 아랫줄 우측 월셀렉터 자리(§24.6, 소모품과 동일) */}
+      {/* v2.0 §25 탭 모형 — ViewTabs와 동일 치수 + 아랫줄 우측 월셀렉터 자리(v2.0 §25, 소모품과 동일) */}
       <div className="flex flex-col items-start gap-2 md:flex-row md:justify-between">
         <div className="inline-flex rounded-[10px] border border-[var(--warm-border)] overflow-hidden bg-[var(--cream)] text-sm font-semibold">
           <span className="px-4 py-2.5 min-h-[44px] md:min-h-[40px] md:py-2 inline-flex items-center text-[var(--warm-mid)]">소모품·부식</span>

@@ -1,5 +1,5 @@
 /**
- * Stayeum Chart Color System — Brand Guide v1.3 §14.1 데이터 시각화 팔레트.
+ * Stayeum Chart Color System — v2.0 §04 데이터 시각화 팔레트.
  * 시리즈는 viz-1부터 순서대로 배정(화면마다 재배치 금지). raw 팔레트·자체 hex 금지.
  * 값은 globals.css 의 --viz-* 토큰 (수치 원본은 docs/brand-guide-v1.3.md).
  */
@@ -20,9 +20,9 @@ export function chartColor(index: number): string {
 }
 
 /**
- * §23.2 차트·개념 색 매핑 — 개념별 고정 토큰 1:1 (단일 출처).
+ * v2.0 §24 차트·개념 색 매핑 — 개념별 고정 토큰 1:1 (단일 출처).
  * 같은 개념(수입·지출·완납…)은 recharts·자체 DonutChart·KPI 어디서나 같은 색.
- * 의미가 있는 개념은 §14.4 의미색 토큰, 의미 없는 분류는 viz 토큰.
+ * 의미가 있는 개념은 v2.0 §04 의미색 토큰, 의미 없는 분류는 viz 토큰.
  */
 export const CONCEPT_COLORS = {
   income:   'var(--tc)',             // 수입
@@ -55,7 +55,7 @@ export const GENDER_COLORS: Record<string, string> = {
   UNKNOWN: 'var(--viz-8)', // taupe
 }
 
-/** 입주 상태 색상 매핑 — 상태 의미가 있는 색은 상태 토큰 우선(§14.2) */
+/** 입주 상태 색상 매핑 — 상태 의미가 있는 색은 상태 토큰 우선(v2.0 §04) */
 export const STATUS_COLORS = {
   active:      'var(--success)', // 거주중 — Warm Olive (상태 토큰)
   reserved:    'var(--viz-2)',   // 예약 — camel (StatusBadge movein 톤과 동일 계열)

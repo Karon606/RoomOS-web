@@ -256,7 +256,7 @@ export default function DataButtons() {
 
     return (
       <Modal open onClose={close} width="lg"
-        // 처리 방법을 하나라도 직접 고른 뒤에는 §13.2 dirty — 배경클릭 오조작으로 분석 결과 유실 방지
+        // 처리 방법을 하나라도 직접 고른 뒤에는 v2.0 §12 dirty — 배경클릭 오조작으로 분석 결과 유실 방지
         dirty={Object.keys(resolutions).length > 0}
         title={hasConflicts ? '중복 데이터 발견' : '가져오기 확인'}
         subtitle={[

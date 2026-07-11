@@ -1,6 +1,6 @@
 'use client'
 
-// 확인 다이얼로그 — Brand Guide v1.3 §9. 네이티브 confirm()/alert() 전면 대체.
+// 확인 다이얼로그 — v2.0 §14. 네이티브 confirm()/alert() 전면 대체.
 // 사용: const ok = await confirmDialog({ title: '...', level: 'danger', confirmLabel: '영구 삭제', impact: [...] })
 // lib/saveStatus 와 같은 모듈-스코프 pub/sub — Provider context 없이 어디서든 호출 가능.
 // <ConfirmHost /> 를 셸(AppShell·admin layout)에 1회 마운트.
@@ -18,7 +18,7 @@ export type ConfirmOptions = {
   // danger 전용 — 영향 목록 (건수는 반드시 실데이터)
   impact?: { label: string; count?: number | string }[]
   irreversibleNote?: string     // danger 기본: '이 동작은 되돌릴 수 없습니다.'
-  // §26.5 — 제3의 동작 버튼(choiceDialog 전용). 취소는 항상 무변경이어야 하므로
+  // v2.0 §27 — 제3의 동작 버튼(choiceDialog 전용). 취소는 항상 무변경이어야 하므로
   // '취소에 실 동작을 싣던' 자리를 이 버튼이 대체한다.
   altLabel?: string
 }
@@ -41,7 +41,7 @@ export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
   return present(opts).then(r => r === 'confirm')
 }
 
-// §26.5 3지선다 — 확인/제3 동작/취소. 취소·Esc·배경 클릭은 null(무변경).
+// v2.0 §27 3지선다 — 확인/제3 동작/취소. 취소·Esc·배경 클릭은 null(무변경).
 export function choiceDialog(opts: ConfirmOptions & { altLabel: string }): Promise<'confirm' | 'alt' | null> {
   return present(opts).then(r => (r === 'cancel' ? null : r))
 }
@@ -61,12 +61,12 @@ export function ConfirmHost() {
     return () => { listener = null }
   }, [])
 
-  // 초기 포커스 = 취소 버튼 (오조작 방지, §9.1)
+  // 초기 포커스 = 취소 버튼 (오조작 방지, v2.0 §14)
   useEffect(() => {
     if (pending) cancelRef.current?.focus()
   }, [pending])
 
-  // Esc = 취소 (전 단계 허용, §9.2)
+  // Esc = 취소 (전 단계 허용, v2.0 §14)
   useEffect(() => {
     if (!pending) return
     const onKey = (e: KeyboardEvent) => {
@@ -90,7 +90,7 @@ export function ConfirmHost() {
     <div
       className="fixed inset-0 z-[var(--z-confirm)] flex items-center justify-center p-4 anim-overlay-in"
       style={{ background: 'var(--confirm-backdrop)' }}
-      // 배경클릭: 일반만 닫힘(=취소), 주의·파괴적은 무시 (§9.2)
+      // 배경클릭: 일반만 닫힘(=취소), 주의·파괴적은 무시 (v2.0 §14)
       onClick={() => { if (level === 'normal') done('cancel') }}
     >
       <div

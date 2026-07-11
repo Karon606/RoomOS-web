@@ -257,7 +257,7 @@ export default function RoomsClient({
   const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_WIDTHS)
   const colWidthsRef              = useRef<Record<string, number>>(DEFAULT_WIDTHS)
 
-  // ── 선택 모드 + 일괄 수납 (§22 선택모드 · §10 적용취소) ──────────────
+  // ── 선택 모드 + 일괄 수납 (v2.0 §23 선택모드 · v2.0 §16 적용취소) ──────────────
   const router = useRouter()
   const [selectMode, setSelectMode]   = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -268,7 +268,7 @@ export default function RoomsClient({
   const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
   const toggleSelect = (id: string) =>
     setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
-  const press = useLongPress()      // 데스크톱 행 꾹 눌러 선택 진입 (§22 공통 제스처, 카드는 RoomCard 내장)
+  const press = useLongPress()      // 데스크톱 행 꾹 눌러 선택 진입 (v2.0 §23 공통 제스처, 카드는 RoomCard 내장)
   // 일괄 수납 대상 — 비공실 + 미래월 아님 + 이번 달 미수(balance<0)
   const isBatchEligible = (r: RoomStatus) =>
     !r.isVacant && !r.isFutureMonth && !!r.leaseTermId && r.balance < 0
@@ -291,7 +291,7 @@ export default function RoomsClient({
     }
   }
 
-  // 열 설정 드롭다운 외부 클릭 닫기는 DisplayFieldsMenu가 자체 처리(§22 통일)
+  // 열 설정 드롭다운 외부 클릭 닫기는 DisplayFieldsMenu가 자체 처리(v2.0 §23 통일)
 
   useEffect(() => {
     const savedW = loadColWidths()
@@ -604,7 +604,7 @@ export default function RoomsClient({
         </div>
       </div>
 
-      {/* 검색창 — §22 공용 SearchBar */}
+      {/* 검색창 — v2.0 §23 공용 SearchBar */}
       <SearchBar value={search} onChange={setSearch} placeholder="호실 번호 또는 입주자 이름 검색" />
 
       {/* 빠른 필터 + 열 설정 */}
@@ -644,7 +644,7 @@ export default function RoomsClient({
             잘리던 문제 해결, 사용자 피드백 2026-06-01) */}
         <div className="ml-auto flex gap-2 items-center">
 
-        {/* 선택 모드 토글 — 일괄 수납 (§22 선택모드). 뷰어(STAFF)에겐 숨김(감사 D3, 서버 requireEdit 최종 방어) */}
+        {/* 선택 모드 토글 — 일괄 수납 (v2.0 §23 선택모드). 뷰어(STAFF)에겐 숨김(감사 D3, 서버 requireEdit 최종 방어) */}
         {(myRole === 'OWNER' || myRole === 'MANAGER') && (
         <Btn variant="secondary" size="md" onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}>
           {selectMode ? '선택 취소' : '선택'}
@@ -884,7 +884,7 @@ export default function RoomsClient({
                     ${(room.isFutureMonth || (selectMode && !isBatchEligible(room))) ? 'opacity-50' : 'cursor-pointer hover:bg-[var(--canvas)]/40 active:bg-[var(--canvas)] active:scale-[0.995] active:opacity-80'}
                     ${selectMode && selectedIds.has(room.roomId) ? 'bg-[var(--coral)]/5' : ''}`}>
 
-                  {/* sticky — 호실 (식별자 §22.2: 기본 ink, 연체만 coral · 선택모드 시 체크박스) */}
+                  {/* sticky — 호실 (식별자 v2.0 §23: 기본 ink, 연체만 coral · 선택모드 시 체크박스) */}
                   <td className={`py-4 text-sm font-bold tnum overflow-hidden sticky left-0 z-20 bg-[var(--cream)] ${selectMode ? 'px-2' : 'px-4'} ${tone === 'overdue' ? 'text-[var(--coral)]' : 'text-[var(--warm-dark)]'}`}
                     style={{ width: colWidths.roomNo, minWidth: colWidths.roomNo, maxWidth: colWidths.roomNo, borderLeft: `3px solid ${statusTipColor(tone)}` }}>
                     <span className="flex items-center gap-2 min-w-0">
@@ -1118,7 +1118,7 @@ export default function RoomsClient({
 
       {/* 수납 모달은 전역 Prism 셸 (EntityModal/PaymentBody) 가 담당 */}
 
-      {/* 선택 모드 하단 바 — §21.3 공용 SelectionPillBar */}
+      {/* 선택 모드 하단 바 — v2.0 §22 공용 SelectionPillBar */}
       {selectMode && selectedIds.size > 0 && (
         <SelectionPillBar count={selectedIds.size} unit="실" onClose={exitSelectMode}>
           <PillButton primary disabled={batchTargets.length === 0} onClick={openBatchPay}>
@@ -1127,7 +1127,7 @@ export default function RoomsClient({
         </SelectionPillBar>
       )}
 
-      {/* 일괄 수납 확인 모달 — §06 Modal · §13 세그먼트 · §15 금액 · §09② 되돌리기 가능 */}
+      {/* 일괄 수납 확인 모달 — v2.0 §13 Modal · v2.0 §12 세그먼트 · v2.0 §06 금액 · v2.0 §14② 되돌리기 가능 */}
       <Modal
         open={batchOpen}
         onClose={() => { if (!batchBusy) setBatchOpen(false) }}
@@ -1144,19 +1144,19 @@ export default function RoomsClient({
         }
       >
         <div className="space-y-4">
-          {/* 미수 합계 — §13 자동합산 강조 + §15 금액 */}
+          {/* 미수 합계 — v2.0 §12 자동합산 강조 + v2.0 §06 금액 */}
           <div className="rounded-md bg-[var(--sand)]/40 border border-[var(--warm-border)] px-4 py-3 flex items-center justify-between">
             <span className="text-xs font-medium text-[var(--warm-mid)]">이번 달 미수 합계</span>
             <span className="text-lg font-bold tnum text-[var(--warm-dark)]"><MoneyDisplay amount={batchTotal} /></span>
           </div>
 
-          {/* 납부일 — §13 */}
+          {/* 납부일 — v2.0 §12 */}
           <div>
             <label className="block text-xs font-medium text-[var(--warm-mid)] mb-1.5">납부일</label>
             <DatePicker value={batchDate} onChange={setBatchDate} />
           </div>
 
-          {/* 수납 방법 — §13 상호배타는 세그먼트 */}
+          {/* 수납 방법 — v2.0 §12 상호배타는 세그먼트 */}
           <div>
             <label className="block text-xs font-medium text-[var(--warm-mid)] mb-1.5">수납 방법</label>
             <SegmentedControl

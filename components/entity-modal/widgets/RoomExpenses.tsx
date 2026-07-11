@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react'
 import { getRoomExpenses } from '@/app/(app)/rooms/actions'
 
-import { fmtWon as won } from '@/lib/fmtMoney'   // §15 단일 경로
+import { fmtWon as won } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
 
 export function RoomExpenses({ roomId }: { roomId: string }) {
   const [data, setData] = useState<Awaited<ReturnType<typeof getRoomExpenses>> | null>(null)

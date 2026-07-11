@@ -1,6 +1,6 @@
 'use client'
 
-// 글로벌 저장 진행 바 + 토스트 스택 — Brand Guide v1.3 §11·§16.
+// 글로벌 저장 진행 바 + 토스트 스택 — v2.0 §15·v2.0 §17.
 // 토스트: 하단 중앙 고정, 4종(success/error/info/urgent), 최대 3개 스택(최고最古 즉시 퇴장),
 // 연속 동일 메시지는 ×N 카운트, hover 중 타이머 일시정지, error 는 수동 닫기 항상 포함.
 
@@ -31,7 +31,7 @@ function KindIcon({ kind }: { kind: ToastKind }) {
 export default function SaveFeedback() {
   const [pending, setPending] = useState(0)
   const [toasts, setToasts] = useState<Live[]>([])
-  // 타이머 관리 — hover 일시정지(§11.4)를 위해 잔여 시간 추적
+  // 타이머 관리 — hover 일시정지(v2.0 §15)를 위해 잔여 시간 추적
   const timers = useRef<Map<number, { handle: ReturnType<typeof setTimeout>; expiresAt: number; remaining: number }>>(new Map())
 
   const remove = (id: number) => {
@@ -60,7 +60,7 @@ export default function SaveFeedback() {
   useEffect(() => subscribePending(setPending), [])
   useEffect(() => subscribeToast(t => {
     setToasts(prev => {
-      // 동일 메시지 연속 발생 → 기존 토스트에 ×N 카운트 + 타이머 리셋 (§11.5)
+      // 동일 메시지 연속 발생 → 기존 토스트에 ×N 카운트 + 타이머 리셋 (v2.0 §15)
       const dup = prev.find(x => x.kind === t.kind && x.message === t.message && x.detail === t.detail)
       if (dup) {
         const old = timers.current.get(dup.id)
@@ -83,7 +83,7 @@ export default function SaveFeedback() {
 
   return (
     <>
-      {/* 상단 진행 바 — 갱신 중 표시(§16). 콘텐츠는 그대로 둔다 */}
+      {/* 상단 진행 바 — 갱신 중 표시(v2.0 §17). 콘텐츠는 그대로 둔다 */}
       {pending > 0 && (
         <div aria-label="저장 중" className="fixed top-0 left-0 right-0 z-[var(--z-toast)] pointer-events-none"
           style={{ height: 'var(--progress-h)' }}>
@@ -100,7 +100,7 @@ export default function SaveFeedback() {
         </div>
       )}
 
-      {/* 토스트 스택 — 하단 중앙, 신규가 아래 (§11.2·11.5. 정중앙 폐지 — 콘텐츠·마우스 동선 가림) */}
+      {/* 토스트 스택 — 하단 중앙, 신규가 아래 (v2.0 §15·11.5. 정중앙 폐지 — 콘텐츠·마우스 동선 가림) */}
       <div className="fixed left-1/2 z-[var(--z-toast)] flex flex-col items-center pointer-events-none"
         style={{
           transform: 'translateX(-50%)',

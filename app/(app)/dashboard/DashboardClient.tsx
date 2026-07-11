@@ -440,7 +440,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
     })
   }
 
-  // §13.2 dirty — 제안값에서 바뀌었거나 추가 입력이 있으면 닫기 확인
+  // v2.0 §12 dirty — 제안값에서 바뀌었거나 추가 입력이 있으면 닫기 확인
   const dirty = !done && (amount !== suggestedAmount || detail !== '' || memo !== '')
 
   return (
@@ -821,7 +821,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
     value: c.amount,
     color: chartColor(i),
   }))
-  // §23.2 — 결제상태 차트는 개념색(완납=success·예정=info·미납=warning)
+  // v2.0 §24 — 결제상태 차트는 개념색(완납=success·예정=info·미납=warning)
   const paymentSegments = [
     { value: data.paidCount,     color: CONCEPT_COLORS.paid },
     { value: data.upcomingCount, color: CONCEPT_COLORS.await },
@@ -1328,7 +1328,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
     })
   }
 
-  // §13.2 dirty — 수납/수정 입력이 진행 중이면 닫기 확인 (금융 입력 유실 방지)
+  // v2.0 §12 dirty — 수납/수정 입력이 진행 중이면 닫기 확인 (금융 입력 유실 방지)
   const formDirty = !loading && (editingId !== null || editingAutoPay)
 
   return (
@@ -1943,7 +1943,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
         <p className="p-5 text-sm leading-relaxed text-[var(--warm-dark)]">{kpiHelp?.body}</p>
       </Modal>
 
-      {/* ── KPI 카드 (§23.5 반응형: 모바일 2 → sm 3 → lg 4) ──────────── */}
+      {/* ── KPI 카드 (v2.0 §24 반응형: 모바일 2 → sm 3 → lg 4) ──────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
 
         {/* Row 2 Left: 예상 매출 + 달성도 — 고시원 특성상 유지되면 매출이 거의 안 늘어 '현재까지'보다
@@ -1965,7 +1965,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                 <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.22)', overflow: 'hidden', margin: '2px 0 6px' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: '#fff', borderRadius: 3 }} />
                 </div>
-                {/* §23.1 — 보조 1줄(달성도). 완료/예정/미납 건 상세는 수납 관리로 이동 */}
+                {/* v2.0 §24 — 보조 1줄(달성도). 완료/예정/미납 건 상세는 수납 관리로 이동 */}
                 <p style={{ fontSize: '0.65625rem', color: 'rgba(255,252,247,0.55)', lineHeight: 1.5 }}>
                   수납+기타 {fmtWon(data.totalRevenue)} · 달성 <em style={{ fontStyle: 'normal', color: 'var(--rev-change)', fontWeight: 700 }}>{pct}%</em>
                 </p>
@@ -2001,7 +2001,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
               <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,252,247,0.18)', overflow: 'hidden', margin: '2px 0 6px' }}>
                 <div style={{ height: '100%', width: `${expenseBooked}%`, background: 'var(--np-pos)', borderRadius: 3 }} />
               </div>
-              {/* §23.1 — 보조 1줄(현재 장부·지출 반영도). 남은 지출·예비비 이체 상세는 지출/기타수익으로 이동 */}
+              {/* v2.0 §24 — 보조 1줄(현재 장부·지출 반영도). 남은 지출·예비비 이체 상세는 지출/기타수익으로 이동 */}
               <p style={{ fontSize: '0.65625rem', color: 'var(--np-cap)', lineHeight: 1.5 }}>
                 지금까지 기록 기준 <em style={{ fontStyle: 'normal', color: currentNet >= 0 ? 'var(--np-pos)' : 'var(--np-neg)', fontWeight: 700 }}>{currentNet >= 0 ? '+' : ''}{fmtKorMoney(currentNet)}</em> · 이달 지출의 <em style={{ fontStyle: 'normal', color: 'var(--np-pos)', fontWeight: 700 }}>{expenseBooked}%</em>가 기록됨
               </p>
@@ -2009,7 +2009,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           )
         })()}
 
-        {/* Row 3 Left: 누적 미납 — §23.1 경고 타입(연체 시 좌 3px danger). 납부 예정 상세는 수납 관리로 */}
+        {/* Row 3 Left: 누적 미납 — v2.0 §24 경고 타입(연체 시 좌 3px danger). 납부 예정 상세는 수납 관리로 */}
         <Link href="/rooms" className="rounded-xl block hover:opacity-90 active:opacity-75 transition-opacity"
           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', padding: '18px 20px',
             boxShadow: data.overdueAmount > 0 ? 'inset 3px 0 0 var(--danger-fg)' : undefined }}>
@@ -2047,7 +2047,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                   {t.variable  > 0 && <div style={{ width: `${(t.variable  / tot) * 100}%`, background: 'var(--warm-mid)' }} />}
                   {t.savable   > 0 && <div style={{ width: `${(t.savable   / tot) * 100}%`, background: 'var(--coral)' }} />}
                 </div>
-                {/* §23.1 — 보조 1줄(통제가능성 막대 범례). 현재까지·전월/전년 추세는 지출/기타수익으로 이동 */}
+                {/* v2.0 §24 — 보조 1줄(통제가능성 막대 범례). 현재까지·전월/전년 추세는 지출/기타수익으로 이동 */}
                 <p style={{ fontSize: '0.625rem', color: 'var(--warm-muted)', lineHeight: 1.5 }}>
                   <span style={{ color: 'var(--ink-2)' }}>●</span> 고정(정액) {fmtKorMoney(t.immovable)} · <span style={{ color: 'var(--warm-mid)' }}>●</span> 고정(변동) {fmtKorMoney(t.variable)} · <span style={{ color: 'var(--coral)' }}>●</span> 수시 {fmtKorMoney(t.savable)}
                   <span style={{ display: 'block' }}>정액=매달 같은 금액 · 변동=매달 다른 고정비 · 수시=그때그때 쓰는 돈</span>
@@ -2107,7 +2107,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
       {/* ── 탭 섹션 ─────────────────────────────────────────────── */}
       <div>
         {/* 탭 바 (필 스타일) */}
-        {/* §24 뷰 전환 탭 — 개별 필 나열(제4 변종) 폐기, 코랄 채움 정본. sticky 래퍼는 유지 */}
+        {/* v2.0 §25 뷰 전환 탭 — 개별 필 나열(제4 변종) 폐기, 코랄 채움 정본. sticky 래퍼는 유지 */}
         <div className="sticky -top-4 md:-top-6 z-10 pb-2 pt-0.5" style={{ background: 'var(--canvas)' }}>
           <ViewTabs ariaLabel="대시보드 탭" activeId={tab}
             onChange={id => setTab(id as (typeof TABS)[number]['key'])}
@@ -2366,7 +2366,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 <div className="flex-1 min-w-0">
                                   <p className="text-xs font-semibold truncate flex items-center gap-1" style={{ color: 'var(--ink-2)' }}>
                                     {fmtRoomNo(l.roomNo)} {l.tenantName}
-                                    {/* §23.7 — 1~6일 경과=미납(warning), 7일↑=연체 D+N(overdue). §03 OVERDUE=7일 초과 */}
+                                    {/* v2.0 §24 — 1~6일 경과=미납(warning), 7일↑=연체 D+N(overdue). §03 OVERDUE=7일 초과 */}
                                     {l.daysOverdue != null && l.daysOverdue >= 7 ? (
                                       <span className="rounded-full text-[0.5625rem] font-bold px-1.5 py-0.5" style={{ background: 'var(--badge-overdue-bg)', color: 'var(--badge-overdue-fg)' }}>
                                         연체 D+{l.daysOverdue}

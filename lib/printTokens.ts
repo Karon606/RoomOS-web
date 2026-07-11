@@ -1,6 +1,6 @@
-// §20.2 인쇄 전용 색 토큰 정본(--p-*) — 단일 출처.
+// v2.0 §26 인쇄 전용 색 토큰 정본(--p-*) — 단일 출처.
 // pdf-lib(입실료·실거주)은 rgb() 객체, puppeteer HTML(계약서)은 hex 문자열을 쓰므로 둘 다 제공.
-// 값은 brand-guide §20.2 와 동일(기존 하드코딩값 보존 — 시각 변화 0).
+// 값은 brand-guide v2.0 §26 와 동일(기존 하드코딩값 보존 — 시각 변화 0).
 import { rgb } from 'pdf-lib'
 
 // pdf-lib 용 (0~1 RGB)
@@ -27,5 +27,5 @@ export const PRINT_HEX = {
   paper:      '#FFFFFF',
 } as const
 
-// 도장 크기 — §20.9: 18×18mm (자체 브랜딩 서류 공통)
+// 도장 크기 — v2.0 §26: 18×18mm (자체 브랜딩 서류 공통)
 export const SEAL_MM = 18

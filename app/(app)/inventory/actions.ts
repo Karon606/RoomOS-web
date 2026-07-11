@@ -917,7 +917,7 @@ export async function updateStockCheck(id: string, data: {
   }
 }
 
-// §26.4 — 삭제 스냅샷(적용취소용). 같은 id로 복원해 타 참조가 살아난다.
+// v2.0 §27 — 삭제 스냅샷(적용취소용). 같은 id로 복원해 타 참조가 살아난다.
 export type StockCheckUndo = {
   id: string; trackedItemId: string; date: string; remainingQty: number
   memo: string | null; isReconcile: boolean; sourceExpenseId: string | null
@@ -2279,7 +2279,7 @@ export async function transferLocationStock(data: {
 }
 
 // ── 기록 없는 품목 진짜 삭제 — 카테고리 착오 등으로 자동 생성된 품목의 되돌리기(신고 f3454e4c).
-//    지출·점검·입수 기록이 하나라도 있으면 거부(그 경우 '숨기기'). §10 되돌리기 원칙.
+//    지출·점검·입수 기록이 하나라도 있으면 거부(그 경우 '숨기기'). v2.0 §16 되돌리기 원칙.
 export async function deleteTrackedItemIfEmpty(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await requireEdit()

@@ -186,7 +186,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
           <p className="text-[11px] opacity-80">선택 범위 페이지뷰</p>
           <p className="text-xl font-bold mt-1 tabular-nums">{fmt(stats.rangeViews)}</p>
         </div>
-        {/* §19: --ink-2 배경은 다크에서 크림으로 뒤집혀 밝은 글자 대비 붕괴 →
+        {/* v2.0 §28: --ink-2 배경은 다크에서 크림으로 뒤집혀 밝은 글자 대비 붕괴 →
             페어 토큰 --np-card-bg(라이트 ink·다크 d-card, 양 모드 어두움)로 sand 글자 가독성 유지 */}
         <div className="rounded-xl p-4"
           style={{ background: 'var(--np-card-bg)', color: 'var(--sand)' }}>

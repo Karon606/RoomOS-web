@@ -557,7 +557,7 @@ export default function RoomManageClient({
         )}
       </div>
 
-      {/* 검색바 + 필터 토글 — §22 공용 SearchBar */}
+      {/* 검색바 + 필터 토글 — v2.0 §23 공용 SearchBar */}
       <div className="flex gap-2">
         <SearchBar value={search} onChange={setSearch} placeholder="호실 번호, 입주자 이름, 방 타입 검색" className="flex-1" />
         <button
@@ -573,7 +573,7 @@ export default function RoomManageClient({
         </button>
       </div>
 
-      {/* 상태 빠른 필터 — §22 공용 SegmentedControl(수납·고객과 동일). '전체'가 곧 해제. */}
+      {/* 상태 빠른 필터 — v2.0 §23 공용 SegmentedControl(수납·고객과 동일). '전체'가 곧 해제. */}
       {(() => {
         const counts = rooms.reduce((acc, r) => { const k = roomStatusKey(r); acc[k] = (acc[k] ?? 0) + 1; return acc }, {} as Record<RoomStatusKey, number>)
         return (
@@ -740,7 +740,7 @@ export default function RoomManageClient({
         </div>
       )}
 
-      {/* 호실 그리드 — 빈 상태는 §16 공용 EmptyState */}
+      {/* 호실 그리드 — 빈 상태는 v2.0 §17 공용 EmptyState */}
       {filteredRooms.length === 0 ? (
         <EmptyState
           icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--warm-muted)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12 L12 4 L21 12 M5 10 V20 H19 V10" /></svg>}
@@ -846,7 +846,7 @@ export default function RoomManageClient({
         />
       )}
 
-      {/* 배치 액션 바 — §21.3 공용 SelectionPillBar */}
+      {/* 배치 액션 바 — v2.0 §22 공용 SelectionPillBar */}
       {selectMode && selectedIds.size > 0 && (
         <SelectionPillBar count={selectedIds.size} unit="실" onClose={exitSelectMode}>
           <PillButton primary onClick={() => setShowBatchEdit(true)}>일괄 편집</PillButton>

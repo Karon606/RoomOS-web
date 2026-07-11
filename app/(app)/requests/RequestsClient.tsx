@@ -67,7 +67,7 @@ export default function RequestsClient({
 
   // 등록 폼 상태
   const [showAddForm,   setShowAddForm]   = useState(false)
-  const [addDirty,      setAddDirty]      = useState(false)   // §13.2 — 등록 폼 입력 보호
+  const [addDirty,      setAddDirty]      = useState(false)   // v2.0 §12 — 등록 폼 입력 보호
   const [addSubject,    setAddSubject]    = useState<'common' | string>('common') // 'common' or tenantId
   const [addCommonPlace, setAddCommonPlace] = useState('')
   const [addContent,    setAddContent]    = useState('')
@@ -178,7 +178,7 @@ export default function RequestsClient({
         </Btn>
       </div>
 
-      {/* 등록 폼 — §22.8 페이지 Modal (지출·고객 등록과 동일 흐름) */}
+      {/* 등록 폼 — v2.0 §23 페이지 Modal (지출·고객 등록과 동일 흐름) */}
       <Modal open={showAddForm} onClose={() => { setShowAddForm(false); setAddDirty(false) }}
         title="새 요청 등록" width="md" dirty={addDirty}>
         <form className="space-y-3" onSubmit={e => e.preventDefault()}

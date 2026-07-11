@@ -43,7 +43,7 @@ export function RoomCard({
   /** 상태별 옅은 배경 틴트 — tipColor 와 함께 쓰면 Status Row 행 틴트 (rgba 권장). */
   tipBg?: string
   onClick?: () => void
-  /** 꾹 눌러 선택 모드 진입 — §22 공통 제스처(500ms, 10px 이동 시 취소). 발화 후 click 억제. */
+  /** 꾹 눌러 선택 모드 진입 — v2.0 §23 공통 제스처(500ms, 10px 이동 시 취소). 발화 후 click 억제. */
   onLongPress?: () => void
   className?: string
   children: ReactNode

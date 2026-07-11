@@ -626,7 +626,7 @@ export async function deleteAssignmentLog(logId: string): Promise<{ ok: true } |
 }
 
 // ============================================================
-// 일괄 배정 — 선택한 비품들을 한 대상(방/공용부)에 각자 지정 수량만큼 배정 + 적용취소(§10·rollback)
+// 일괄 배정 — 선택한 비품들을 한 대상(방/공용부)에 각자 지정 수량만큼 배정 + 적용취소(v2.0 §16·rollback)
 //   품목별 qty(null=전량)를 받아 assignAggregateToTarget 재사용. 영향 행 원상태 스냅샷 +
 //   분할로 새로 생긴 행 id를 모아 undo 토큰으로 반환 → undoBatchAssignAssets 가 정확히 원복.
 // ============================================================

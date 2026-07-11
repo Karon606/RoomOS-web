@@ -67,7 +67,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
   const [detailIncEdit, setDetailIncEdit] = useState(false)
   const [editIncMethod, setEditIncMethod] = useState('계좌이체')
   const [editIncDate, setEditIncDate]     = useState('')
-  // §13.2 dirty — 수정/등록 폼 입력 시작 후 배경클릭 무시, Esc/X는 닫기 확인(Modal 내장 정책)
+  // v2.0 §12 dirty — 수정/등록 폼 입력 시작 후 배경클릭 무시, Esc/X는 닫기 확인(Modal 내장 정책)
   const [editDirty, setEditDirty] = useState(false)
   const [addDirty, setAddDirty]   = useState(false)
 
@@ -224,7 +224,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
         )}
       </div>
 
-      {/* 상세/수정 모달 — §22.8 공용 Modal. dirty 시 §13.2 정책은 Modal 내장. */}
+      {/* 상세/수정 모달 — v2.0 §23 공용 Modal. dirty 시 v2.0 §12 정책은 Modal 내장. */}
       {detailInc && (
         <Modal open onClose={() => { setDetailInc(null); setDetailIncEdit(false); setEditDirty(false) }}
           title={detailIncEdit ? '수익 수정' : '수익 상세'} width="sm" dirty={detailIncEdit && editDirty}>
@@ -313,7 +313,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
         </Modal>
       )}
 
-      {/* 등록 모달 — §22.8 공용 Modal */}
+      {/* 등록 모달 — v2.0 §23 공용 Modal */}
       {showAddInc && (
         <Modal open onClose={() => { setShowAddInc(false); setAddDirty(false) }} title="부가 수익 등록" width="sm" dirty={addDirty}>
             <form onSubmit={handleAddInc} className="flex flex-col flex-1 overflow-hidden"

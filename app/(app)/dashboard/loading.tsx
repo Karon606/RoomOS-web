@@ -1,6 +1,6 @@
-// 홈(대시보드) 전환 즉시 표시되는 스켈레톤 (§23.6 · §16 · §18③).
+// 홈(대시보드) 전환 즉시 표시되는 스켈레톤 (v2.0 §24 · v2.0 §17 · v2.0 §21③).
 // 실제 레이아웃 모양 그대로 — 기간 셀렉터 → KPI 그리드 → 탭 → 차트 블록. 스피너 단독 금지.
-// delayed-fallback: 300ms 안에 끝나는 전환에선 아예 안 보임(§18.3).
+// delayed-fallback: 300ms 안에 끝나는 전환에선 아예 안 보임(v2.0 §21).
 import { Skeleton } from '@/components/ui/Skeleton'
 
 export default function DashboardLoading() {
@@ -13,7 +13,7 @@ export default function DashboardLoading() {
         <Skeleton className="h-8 w-28" />
       </div>
 
-      {/* KPI 그리드 — 실제와 동일 형태(§23.5 반응형) */}
+      {/* KPI 그리드 — 실제와 동일 형태(v2.0 §24 반응형) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="rounded-2xl bg-[var(--cream)] border border-[var(--warm-border)] p-4 space-y-2.5">

@@ -90,7 +90,7 @@ export async function POST(req: Request) {
     // Pretendard variable woff2 base64 — 한글 폰트 보장 (모듈 캐시)
     const pretendardBase64 = await getPretendardBase64()
 
-    // 계약번호 No. YYYYMMDD-NNN (영업장별 일련, §20.8) — 입실료 납부확인서와 동일 패턴.
+    // 계약번호 No. YYYYMMDD-NNN (영업장별 일련, v2.0 §26) — 입실료 납부확인서와 동일 패턴.
     // 작성일(signDate) 기준 날짜 + 이번 영업장의 누적 계약서 건수+1.
     const contractSeq = (await prisma.contractFile.count({ where: { propertyId } })) + 1
     const contractNo = `${body.signDate.replace(/-/g, '')}-${String(contractSeq).padStart(3, '0')}`
@@ -175,8 +175,8 @@ export async function POST(req: Request) {
       }
 
       if (pageCount > 1) {
-        // 다중 페이지 — §20.10b·§20.9: 꼬리말에 페이지번호(좌) + 영업장명(우).
-        // 단일 페이지는 페이지번호 생략(§20.9). @sparticuz chromium 한글폰트 없음 → 꼬리말에도 Pretendard 임베드.
+        // 다중 페이지 — v2.0 §26·v2.0 §26: 꼬리말에 페이지번호(좌) + 영업장명(우).
+        // 단일 페이지는 페이지번호 생략(v2.0 §26). @sparticuz chromium 한글폰트 없음 → 꼬리말에도 Pretendard 임베드.
         const bizNameEsc = (printData.businessInfo.name || '')
           .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         const footerTemplate =

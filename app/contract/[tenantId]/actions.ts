@@ -19,7 +19,7 @@ export type ContractData = {
   template: ContractTemplate           // 입실자 오버라이드 우선, 없으면 영업장 공통
   hasOverride: boolean                 // 오버라이드 사용 여부 — '원본으로' 버튼 활성화 판단용
   businessInfo: BusinessInfo
-  phone: string | null                 // 영업장 전화 — §20 헤더/푸터 메타
+  phone: string | null                 // 영업장 전화 — v2.0 §26 헤더/푸터 메타
   stampImageUrl: string | null         // 인쇄에 쓰일 큰 사이즈
   logoImageUrl: string | null          // 영업장 로고 (헤더 좌측)
   refundClauseInContract: boolean      // 계약서에 환불 조항(공정위 고정 문구) 자동 표시 여부

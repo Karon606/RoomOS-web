@@ -3,7 +3,7 @@
 // 일반 모드 스플래시 — 셸 없는 구간(인트로 이후 재발동·소셜 리디렉트·로그아웃) 전용.
 // 레퍼런스 'stayeum Splash Intro.html'의 첫 구간(draw 0–1.0s → EN 락업)과 동일 비주얼.
 // 드로잉 = 중심선 한 획 + stroke-width 20 (외곽선 컨투어 아님 — 채워진 아치가 자라남).
-// 5s 초과 시 느린 연결 캡션, 10s 초과 시 재시도 (§18.2). 표시 타이밍은 SplashHost 가 관리.
+// 5s 초과 시 느린 연결 캡션, 10s 초과 시 재시도 (v2.0 §21). 표시 타이밍은 SplashHost 가 관리.
 
 import { useEffect, useState } from 'react'
 

@@ -24,7 +24,7 @@ import { PrevOwnerSettleWidget } from '../widgets/PrevOwnerSettleWidget'
 type Settlement = NonNullable<Awaited<ReturnType<typeof getLeaseSettlementInfo>>>
 type Records = Awaited<ReturnType<typeof getPaymentsByLease>>['records']
 
-import { fmtWon } from '@/lib/fmtMoney'   // §15 단일 경로
+import { fmtWon } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
 
 export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutProration }: {
   leaseTermId: string

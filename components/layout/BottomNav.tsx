@@ -76,7 +76,7 @@ export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
     router.push(linkHref)
   }
 
-  // 슬라이딩 인디케이터(§25.3) — 탭 7개 균등 폭이라 활성 인덱스 × (100/7)% 로 이동.
+  // 슬라이딩 인디케이터(v2.0 §29) — 탭 7개 균등 폭이라 활성 인덱스 × (100/7)% 로 이동.
   // 누르는 즉시(pending) 인디케이터가 먼저 움직여 라우팅 지연 동안에도 반응이 보인다.
   const TAB_COUNT = NAV_ITEMS.length + 1
   const pendingIdx = pendingHref ? NAV_ITEMS.findIndex(i => i.href === pendingHref) : -1

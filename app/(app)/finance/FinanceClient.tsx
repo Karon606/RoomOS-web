@@ -808,11 +808,11 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
 
 // 구매처 정리 — 이력 기반 자동완성(B)에 쌓인 구매처의 오타·중복을 이름변경/합치기/비우기로 정돈.
 function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
-  const [dirty, setDirty] = useState(false)   // §13.2 — 이름 수정 시작 후 닫기 보호
+  const [dirty, setDirty] = useState(false)   // v2.0 §12 — 이름 수정 시작 후 닫기 보호
   const [rows, setRows] = useState<{ vendor: string; count: number }[] | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<string | null>(null)
-  // 합치기 — 전 앱 정본 문법(§21.4·§22.6): 행 꾹(또는 '선택') → 다중 선택 → 하단 알약 '합치기'
+  // 합치기 — 전 앱 정본 문법(v2.0 §22·v2.0 §23): 행 꾹(또는 '선택') → 다중 선택 → 하단 알약 '합치기'
   // → MergeSheet에서 대표 선택. 행별 '합치기' 버튼도 병행(자재 카드별 합치기와 동일). 서버는 renameVendor 재사용.
   const [selMode, setSelMode] = useState(false)
   const [sel, setSel] = useState<Set<string>>(new Set())
@@ -902,7 +902,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
             )
           })}
       </div>
-      {/* 선택 토글 — §22.6 정본(버튼 + 행 꾹 누르기 병행) */}
+      {/* 선택 토글 — v2.0 §23 정본(버튼 + 행 꾹 누르기 병행) */}
       <div className="px-5 pb-3 -mt-1 flex justify-end">
         <Btn type="button" variant="secondary" size="sm" onClick={() => selMode ? exitSel() : setSelMode(true)}>
           {selMode ? '선택 취소' : '선택'}
@@ -1269,7 +1269,7 @@ export default function FinanceClient({
 
   // ── 지출 탭 상태 ─────────────────────────────────────────────
   const [expFilter, setExpFilter] = useState({ method: 'all', category: 'all', finance: 'all' })
-  const [expListSearch, setExpListSearch] = useState('')   // 이번 달 목록 인라인 검색(§22.1) — '과거 내역 검색'(전 기간 서버)과 별개
+  const [expListSearch, setExpListSearch] = useState('')   // 이번 달 목록 인라인 검색(v2.0 §23) — '과거 내역 검색'(전 기간 서버)과 별개
   // 미확인 고정 지출 가시성: 'all' = 전체, 'soon' = 결제일 D-3 이내(과거 도래 포함)만
   const [recVisibility, setRecVisibility] = useState<'all' | 'soon'>(() => {
     if (typeof window === 'undefined') return 'soon'
@@ -1279,11 +1279,11 @@ export default function FinanceClient({
     if (typeof window !== 'undefined') localStorage.setItem('stayeum-rec-visibility', recVisibility)
   }, [recVisibility])
   const [showAddExp, setShowAddExp]       = useState(false)
-  const [addExpDirty, setAddExpDirty] = useState(false)   // §13.2 — 지출 등록 폼 입력 보호
+  const [addExpDirty, setAddExpDirty] = useState(false)   // v2.0 §12 — 지출 등록 폼 입력 보호
   const [addExpDate, setAddExpDate]       = useState(() => kstYmdStr())
   const [detailExp, setDetailExp]         = useState<Expense | null>(null)
   const [detailExpEdit, setDetailExpEdit] = useState(false)
-  const [expEditDirty, setExpEditDirty] = useState(false)   // §13.2 — 지출 수정 폼 입력 보호
+  const [expEditDirty, setExpEditDirty] = useState(false)   // v2.0 §12 — 지출 수정 폼 입력 보호
   // 방별 분배 묶음 펼침 — 멤버 행 목록(각 방별 금액). null 이면 닫힘.
   const [groupDetail, setGroupDetail]     = useState<Expense[] | null>(null)
   // 지출내역 보기 — '아이템별'(기본) / '주문별'(같은 주문 묶음 + 배송비 포함, 쇼핑몰 주문내역처럼). 선택 기억.
@@ -1465,7 +1465,7 @@ export default function FinanceClient({
     setScanBitmap(prev => { prev?.close?.(); return null })
     setScanCropped(result)
     if (scanTargetRef.current === 'add') {
-      // §26.5 — 취소·Esc·배경 클릭은 아무것도 하지 않는다(첨부는 별도 버튼).
+      // v2.0 §27 — 취소·Esc·배경 클릭은 아무것도 하지 않는다(첨부는 별도 버튼).
       const choice = await choiceDialog({ title: '영수증을 분석해서 자동 입력할까요?', message: '날짜·금액·품목을 자동으로 채웁니다. 첨부만 할 수도 있습니다.', confirmLabel: '자동 분석', altLabel: '영수증만 첨부', cancelLabel: '취소' })
       if (choice === 'confirm') void ocrCropped(result)
       else if (choice === 'alt') void uploadCropped(result)
@@ -1484,7 +1484,7 @@ export default function FinanceClient({
 
   // ── 고정 지출 탭 상태 ────────────────────────────────────────
   const [recordingRec, setRecordingRec] = useState<RecurringExpenseWithStatus | null>(null)
-  const [recRecDirty, setRecRecDirty] = useState(false)   // §13.2 — 지출 기록 폼 입력 보호
+  const [recRecDirty, setRecRecDirty] = useState(false)   // v2.0 §12 — 지출 기록 폼 입력 보호
   const [recRecAmount, setRecRecAmount] = useState(0)
   // #1 관리비 묶음: 기록 시 세부항목별 금액(변동은 편집). 비어있으면 단일 금액 모드.
   const [recRecItems, setRecRecItems]   = useState<{ name: string; amount: number; isVariable: boolean }[]>([])
@@ -1502,7 +1502,7 @@ export default function FinanceClient({
   const [expSearching, setExpSearching] = useState(false)
   // ── 고정 지출 관리 모달 상태 ─────────────────────────────────
   const [showRecMgmt, setShowRecMgmt]   = useState(false)
-  const [recMgmtDirty, setRecMgmtDirty] = useState(false)   // §13.2 — 고정지출 폼 입력 보호
+  const [recMgmtDirty, setRecMgmtDirty] = useState(false)   // v2.0 §12 — 고정지출 폼 입력 보호
   const [recMgmtList, setRecMgmtList]   = useState<RecurringExpenseRow[]>([])
   const [recMgmtLoading, setRecMgmtLoading] = useState(false)
   const [editingRecMgmt, setEditingRecMgmt] = useState<RecurringExpenseRow | null>(null)
@@ -1978,7 +1978,7 @@ export default function FinanceClient({
   const totalDepositBalance = depositSummary
     .filter(d => d.status === 'ACTIVE' || d.status === 'CHECKOUT_PENDING')
     .reduce((s, d) => s + d.balance, 0)
-  // §24.3 — 합계 접미는 suffix로 분리(괄호·tnum은 ViewTabs가 처리)
+  // v2.0 §25 — 합계 접미는 suffix로 분리(괄호·tnum은 ViewTabs가 처리)
   const TABS: { key: Tab; label: string; suffix?: string }[] = [
     { key: 'expense', label: '지출 내역', suffix: recUnrecordedCount > 0 ? `고정 ${recUnrecordedCount}건 미확인` : undefined },
     { key: 'assets',  label: '자산 관리', suffix: financialAccounts.length > 0 ? String(financialAccounts.length) : undefined },
@@ -2117,7 +2117,7 @@ export default function FinanceClient({
 
       {/* 서브탭 */}
       <div id="finance-tabs" className="scroll-mt-20">
-        {/* §24 뷰 전환 탭 — 트랙형(B)은 필터 전용, 뷰 전환은 코랄 채움 정본 */}
+        {/* v2.0 §25 뷰 전환 탭 — 트랙형(B)은 필터 전용, 뷰 전환은 코랄 채움 정본 */}
         <ViewTabs
           ariaLabel="재무 탭"
           activeId={tab}
@@ -2131,7 +2131,7 @@ export default function FinanceClient({
       ══════════════════════════════════════════════════════════ */}
       {tab === 'expense' && (
         <div className="space-y-4">
-          {/* 검색 — §22 공용 SearchBar (모바일 포함 항상 노출). 이번 달 목록 필터, 전 기간은 '과거 내역 검색' */}
+          {/* 검색 — v2.0 §23 공용 SearchBar (모바일 포함 항상 노출). 이번 달 목록 필터, 전 기간은 '과거 내역 검색' */}
           <SearchBar value={expListSearch} onChange={setExpListSearch} placeholder="품목·구매처·내역·호실 검색" />
           {/* 필터 + 합계 + 버튼 */}
           <div className="flex flex-wrap items-center gap-2">
@@ -2341,7 +2341,7 @@ export default function FinanceClient({
               <>
                 {/* 보기 토글 — 아이템별 / 주문별(같은 주문 묶음 + 배송비) */}
                 <div className="flex items-center justify-end gap-2">
-                  {/* §26.3 — 선택 모드 진입은 명시 버튼, 롱프레스는 보조 (감사 C3) */}
+                  {/* v2.0 §27 — 선택 모드 진입은 명시 버튼, 롱프레스는 보조 (감사 C3) */}
                   {canEditUi && !isEmpty && (
                     <Btn type="button" variant="secondary" size="sm"
                       onClick={() => { mergeMode ? exitMergeMode() : setMergeMode(true) }}>

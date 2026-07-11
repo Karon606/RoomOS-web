@@ -28,7 +28,7 @@ export function SkeletonCard() {
   )
 }
 
-// 목록형 자리표시 — 인라인 "불러오는 중…" 텍스트 금지(§16)의 표준 대체. 시각 텍스트 없이 aria만.
+// 목록형 자리표시 — 인라인 "불러오는 중…" 텍스트 금지(v2.0 §17)의 표준 대체. 시각 텍스트 없이 aria만.
 export function SkeletonRows({ rows = 3, className = '' }: { rows?: number; className?: string }) {
   return (
     <div className={`space-y-2 ${className}`} aria-busy="true" aria-label="불러오는 중">

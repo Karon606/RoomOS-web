@@ -179,7 +179,7 @@ async function requirePropertyOwner(propertyId: string): Promise<{ userId: strin
   return { userId: ctx.userId }
 }
 
-// 영업장 삭제 전 영향 집계 — 사용자에게 "무엇이 지워지는지" 고지용(§9.3 임팩트 고지).
+// 영업장 삭제 전 영향 집계 — 사용자에게 "무엇이 지워지는지" 고지용(v2.0 §14 임팩트 고지).
 export async function getPropertyDeletionImpact(propertyId: string): Promise<
   { ok: true; name: string; counts: { rooms: number; tenants: number; payments: number; expenses: number } } | { ok: false; error: string }
 > {
@@ -233,7 +233,7 @@ export async function deletePropertyPermanently(
     await requirePropertyOwner(propertyId)
     const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } })
     if (!property) return { ok: false, error: '영업장을 찾을 수 없습니다.' }
-    // 오입력 방지 — 이름을 정확히 입력해야만 삭제(§9.3 파괴적 확인)
+    // 오입력 방지 — 이름을 정확히 입력해야만 삭제(v2.0 §14 파괴적 확인)
     if (confirmName.trim() !== property.name.trim()) return { ok: false, error: '영업장 이름이 일치하지 않습니다.' }
     // 모든 propertyId 관계는 onDelete: Cascade → 하위 데이터 연쇄 삭제.
     await prisma.property.delete({ where: { id: propertyId } })
