@@ -1284,7 +1284,7 @@ export async function deleteTenant(tenantId: string, opts?: { force?: boolean })
 export async function getTenantRequests(tenantId: string) {
   await getPropertyId()
   return prisma.tenantRequest.findMany({
-    where: { tenantId },
+    where: { tenantId, deletedAt: null },
     orderBy: { createdAt: 'desc' },
     select: {
       id: true, content: true, requestDate: true,
@@ -1297,7 +1297,7 @@ export async function getTenantRequests(tenantId: string) {
 export async function getAllRequestsForProperty() {
   const { propertyId } = await getPropertyId()
   return prisma.tenantRequest.findMany({
-    where: { propertyId },
+    where: { propertyId, deletedAt: null },
     orderBy: [{ resolvedAt: 'asc' }, { isUrgent: 'desc' }, { createdAt: 'desc' }],
     select: {
       id: true, content: true, requestDate: true,
@@ -1821,7 +1821,23 @@ export async function deleteTenantRequest(id: string): Promise<{ ok: true } | { 
   try {
     await requireEdit()
     await getPropertyId()
-    await prisma.tenantRequest.delete({ where: { id } })
+    // 소프트삭제 — 적용취소(restoreTenantRequest) 가능. 모든 조회는 deletedAt:null 필터로 제외.
+    await prisma.tenantRequest.update({ where: { id }, data: { deletedAt: new Date() } })
+    revalidatePath('/tenants')
+    revalidatePath('/requests')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (err) {
+    if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
+    return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }
+  }
+}
+
+export async function restoreTenantRequest(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await requireEdit()
+    await getPropertyId()
+    await prisma.tenantRequest.update({ where: { id }, data: { deletedAt: null } })
     revalidatePath('/tenants')
     revalidatePath('/requests')
     revalidatePath('/dashboard')

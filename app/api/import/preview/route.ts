@@ -302,7 +302,7 @@ async function previewRequests(rows: Record<string, unknown>[], propertyId: stri
     if (!tenant) { noTenant++; continue }
 
     const exactMatch = await prisma.tenantRequest.findFirst({
-      where: { propertyId, tenantId: tenant.id, requestDate: date, content },
+      where: { propertyId, tenantId: tenant.id, requestDate: date, content, deletedAt: null },
     })
     if (exactMatch) { autoSkipped++; continue }
 

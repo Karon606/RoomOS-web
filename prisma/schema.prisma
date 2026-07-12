@@ -879,6 +879,7 @@ model TenantRequest {
   category       String?
   isUrgent       Boolean   @default(false)
   commonPlace    String?   // 공용부 요청 시 위치 설명 (예: "공용 주방", "1층 화장실")
+  deletedAt      DateTime? // 소프트삭제 — null=활성, 값=삭제됨(적용취소 가능). 모든 조회는 deletedAt:null 필터.
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

@@ -8,6 +8,7 @@ import {
   resolveTenantRequest,
   unresolveTenantRequest,
   deleteTenantRequest,
+  restoreTenantRequest,
   createTenantRequest,
   getActiveTenantsForRequests,
   type getAllRequestsForProperty,
@@ -135,7 +136,9 @@ export default function RequestsClient({
       try {
         const res = await deleteTenantRequest(id)
         if (!res.ok) { pushToast('error', res.error); return }
-        pushToast('success', '삭제됨')
+        pushToast('success', '삭제됨', {
+          action: { label: '적용취소', run: () => { void restoreTenantRequest(id).then(r => { if (r.ok) router.refresh(); else pushToast('error', r.error) }) } },
+        })
         router.refresh()
       } finally { release(); setBusyId(null) }
     })

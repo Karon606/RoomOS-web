@@ -1101,7 +1101,7 @@ export async function exportAllData(): Promise<string> {
     prisma.recurringExpense.findMany({ where: { propertyId } }),
     prisma.tenantContact.findMany({ where: { tenant: { propertyId } } }),
     prisma.tenantStatusLog.findMany({ where: { propertyId } }),
-    prisma.tenantRequest.findMany({ where: { propertyId } }),
+    prisma.tenantRequest.findMany({ where: { propertyId, deletedAt: null } }),
   ])
 
   return JSON.stringify({

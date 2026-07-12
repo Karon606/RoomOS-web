@@ -295,6 +295,7 @@ export async function GET(request: NextRequest) {
   const requests = await prisma.tenantRequest.findMany({
     where: {
       propertyId,
+      deletedAt: null,
       ...(dateRange ? { requestDate: dateRange } : {}),
     },
     include: {
