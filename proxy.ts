@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { isInternalPath } from '@/lib/auth/returnTo'
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -43,8 +44,8 @@ export async function proxy(request: NextRequest) {
   if (pathname === '/' || pathname === '/login') {
     if (user) {
       const raw = searchParams.get('returnTo')
-      // 내부 경로만 허용 — 절대 URL·'//host' 는 오픈 리디렉트라 무시
-      const returnTo = raw && raw.startsWith('/') && !raw.startsWith('//') ? raw : null
+      // 내부 경로만 허용 — 절대 URL·'//host'·'/\\'·제어문자는 오픈 리디렉트라 무시(lib/auth/returnTo)
+      const returnTo = isInternalPath(raw) ? raw : null
       const hasProperty = !!request.cookies.get('selected_property_id')?.value
       return redirectTo(returnTo || (hasProperty ? '/dashboard' : '/property-select'))
     }

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useState } from 'react'
 import { SplashScreen } from '@/components/brand/SplashScreen'
 import { markAuthRedirect } from '@/components/brand/SplashController'
+import { safeReturnTo } from '@/lib/auth/returnTo'
 
 export default function LoginButton({ returnTo }: { returnTo?: string }) {
   const [isLoading, setIsLoading] = useState(false)
@@ -19,7 +20,7 @@ export default function LoginButton({ returnTo }: { returnTo?: string }) {
     const { data, error: err } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/callback?returnTo=${returnTo ?? '/property-select'}`,
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/callback?returnTo=${encodeURIComponent(safeReturnTo(returnTo))}`,
         queryParams: { prompt: 'select_account' },
         skipBrowserRedirect: true,
       },

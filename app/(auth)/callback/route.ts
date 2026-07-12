@@ -1,11 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { safeReturnTo } from '@/lib/auth/returnTo'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const returnTo = searchParams.get('returnTo') ?? '/property-select'
+  // 오픈 리다이렉트 방어 — returnTo 는 내부 상대경로만 허용
+  const returnTo = safeReturnTo(searchParams.get('returnTo'))
 
   const supabase = await createClient()
 
