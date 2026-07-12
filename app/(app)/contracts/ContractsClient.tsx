@@ -81,9 +81,9 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
             value={residency}
             onChange={setResidency}
             options={[
-              { value: 'current', label: '거주중' },
-              { value: 'departed', label: '퇴실' },
-              { value: 'all', label: '전체' },
+              { value: 'current', label: `거주중 ${contracts.length - departedCount}` },
+              { value: 'departed', label: `퇴실 ${departedCount}` },
+              { value: 'all', label: `전체 ${contracts.length}` },
             ]}
           />
           <SegmentedControl

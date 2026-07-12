@@ -95,6 +95,8 @@ export default function RequestsClient({
 
   const unresolvedCount = initialRequests.filter(r => !r.resolvedAt).length
   const urgentCount     = initialRequests.filter(r => !r.resolvedAt && r.isUrgent).length
+  // 처리됨은 그 달에 해결된 것만(월 스코프) — 세그먼트 건수도 동일 기준
+  const resolvedCount   = initialRequests.filter(r => r.resolvedAt && kstMonthOf(r.resolvedAt) === targetMonth).length
 
   const handleResolve = (id: string, memo: string) => {
     setBusyId(id)
@@ -323,9 +325,9 @@ export default function RequestsClient({
           value={filterStatus}
           onChange={setFilterStatus}
           options={[
-            { value: 'unresolved', label: '미처리' },
-            { value: 'all',        label: '전체' },
-            { value: 'resolved',   label: '처리됨' },
+            { value: 'unresolved', label: `미처리 ${unresolvedCount}` },
+            { value: 'all',        label: `전체 ${unresolvedCount + resolvedCount}` },
+            { value: 'resolved',   label: `처리됨 ${resolvedCount}` },
           ]}
         />
 
