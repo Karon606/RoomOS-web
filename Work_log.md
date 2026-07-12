@@ -3,6 +3,12 @@
 마지막 업데이트: 2026-07-12
 브랜치: main
 
+## 2026-07-12 (6) — 2차 Phase 4-B 일부 + 웹사이트 개편 배포
+- 웹사이트(public/members/thestayjegi/index.html, stayeum.com 라이브): 객실 영문 표기 프리미엄 개편 — Mini Room→Single Room, Inner→En-suite (Hallway Window), Window→En-suite (Sunlit Window), 헤드라인 From Single Room to Premium, 설명·갤러리 영문 일관화. 한국어·구조·class/id 보존(data-en만). nav 투명(초록/히어로) 상태에 다크 스크림 바 추가 — 초록 배경 겹침 해소. 커밋 c6410a5. (개편 사본 03-원본-사이트-사본은 저장소 밖, 별도 반영됨.)
+- Phase 4-B 1묶음(확인창 신설): CF-1 영수증 거절·CF-2 거주중 전환·MF-4 할인 삭제에 confirmDialog 게이트. 서버 로직 불변.
+- Phase 4-B 2묶음 무스키마 적용취소(da6e420): ID-15 체크리스트(logId 반환→deleteChecklistLog), ID-29 도면(swap 후 floors 반환·location.reload 반영), ID-25 시세 경쟁업체(스냅샷 반환→addCompetitor 복원). DB 변경 없음.
+- 남은 Phase 4-B(고위험, 미착수): 소프트삭제 스키마(ID-10b 요청·ID-18 문서·MF-3b 결제 — 운영 DB에 deletedAt 컬럼 raw SQL 추가 + 전 조회 필터 + undo + 결제 잔액 재계산), ID-01·02 재고 undo, 인증 미들웨어 SH-3, 검증·정책 MF-5·8, 대규모 CF-13(400줄)·MF-7·ID-16. 이 프로젝트는 prisma migrate 미사용·raw SQL 수동 마이그레이션이라, 재무·보안 걸린 이 구간은 2단계 원칙(컬럼 추가→배포 Ready→로직 전환)과 결제 회귀 테스트를 갖춘 별도 집중 작업 권장.
+
 ## 2026-07-12 (5) — 2차 Phase 4-A: 비-§4 UX 개선 48건 (aa6fe9f 외)
 - UX 검수 64건을 트리아지: A 45(비-§4, 지금)/B 17(§4, 건별 승인)/C 4(Phase 0 완료). 운영자: A 전부·B 네 묶음 전면 승인.
 - A 5배치 병렬 구현(복구된 ux-*.md 수정가이드대로): 요청·체크리스트 1탭 완료+행별 pending+적용취소+빈상태, 시세·마케팅 빈상태·오류구분·진행표시, 재고 연속점검·발견성·업로드 실패안내·window.confirm 정본화, 알림센터·포커스·로고 홈·푸시 안내·다크 빠른전환, AI 벤더명 제거·고정지출 지연 제거·터치타깃 44px·MoneyInput 통일, 할인 %표기·필터 지속·inputMode·이름 필수·자동분배 지속·수납 진입, 계약서 저장버튼·문서 loading/error·평면도 dirty 가드·삭제 확인창 맥락. 결제·재고·인증·삭제 서버 로직 불변.
