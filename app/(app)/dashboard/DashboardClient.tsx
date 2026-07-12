@@ -971,11 +971,16 @@ function TenantsTab({ data }: { data: DashboardData }) {
           <div className="flex items-center gap-4">
             <DonutChart segments={occupancySegments} centerLabel={`${occupancyRate}%`} centerSub="입주율" />
             <div className="space-y-2.5 flex-1">
-              {[{ label: '거주중', val: `${data.occupiedRooms}실`, dot: 'var(--persimmon)' }, { label: '공실', val: `${data.vacantRooms}실`, dot: 'var(--cream-3)' }, { label: '전체', val: `${data.totalRooms}실`, dot: '' }].map(r => (
+              {[
+                { label: '거주중', val: `${data.occupiedRooms}실`, pct: occupancyRate, dot: 'var(--persimmon)' },
+                { label: '공실', val: `${data.vacantRooms}실`, pct: data.totalRooms > 0 ? Math.round((data.vacantRooms / data.totalRooms) * 100) : 0, dot: 'var(--cream-3)' },
+                { label: '전체', val: `${data.totalRooms}실`, pct: null, dot: '' },
+              ].map(r => (
                 <div key={r.label} className="flex items-center gap-2">
                   {r.dot ? <span className="w-2 h-2 rounded-full shrink-0" style={{ background: r.dot }} /> : <span className="w-2 h-2 shrink-0" />}
                   <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{r.label}</span>
                   <span className="text-xs font-semibold" style={{ color: 'var(--warm-dark)' }}>{r.val}</span>
+                  <span className="text-[0.65625rem] w-9 text-right shrink-0" style={{ color: 'var(--warm-mid)' }}>{r.pct !== null ? `${r.pct}%` : ''}</span>
                 </div>
               ))}
             </div>
@@ -987,13 +992,17 @@ function TenantsTab({ data }: { data: DashboardData }) {
           <div className="flex items-center gap-4">
             <DonutChart segments={statusSegments} centerLabel={`${statusTotal}명`} centerSub="입주자" />
             <div className="space-y-2.5 flex-1">
-              {[{ label: '거주중', count: data.statusCounts.active, color: STATUS_COLORS.active }, { label: '예약', count: data.statusCounts.reserved, color: STATUS_COLORS.reserved }, { label: '퇴실 예정', count: data.statusCounts.checkout, color: STATUS_COLORS.checkout }].map(s => (
+              {[{ label: '거주중', count: data.statusCounts.active, color: STATUS_COLORS.active }, { label: '예약', count: data.statusCounts.reserved, color: STATUS_COLORS.reserved }, { label: '퇴실 예정', count: data.statusCounts.checkout, color: STATUS_COLORS.checkout }].map(s => {
+                const pct = statusTotal > 0 ? Math.round((s.count / statusTotal) * 100) : 0
+                return (
                 <div key={s.label} className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} />
                   <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{s.label}</span>
                   <span className="text-xs font-semibold" style={{ color: 'var(--warm-dark)' }}>{s.count}명</span>
+                  <span className="text-[0.65625rem] w-9 text-right shrink-0" style={{ color: 'var(--warm-mid)' }}>{pct}%</span>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         </div>
@@ -1003,13 +1012,17 @@ function TenantsTab({ data }: { data: DashboardData }) {
           <div className="flex items-center gap-4">
             <DonutChart segments={genderSegments} centerLabel={`${data.totalTenants}명`} centerSub="전체" />
             <div className="space-y-2.5 flex-1">
-              {data.genderDist.map((d, i) => (
+              {data.genderDist.map((d, i) => {
+                const pct = data.totalTenants > 0 ? Math.round((d.count / data.totalTenants) * 100) : 0
+                return (
                 <div key={i} className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: GENDER_COLORS[d.label] ?? 'var(--ink-m)' }} />
                   <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{GENDER_LABEL[d.label] ?? d.label}</span>
                   <span className="text-xs font-semibold" style={{ color: 'var(--warm-dark)' }}>{d.count}명</span>
+                  <span className="text-[0.65625rem] w-9 text-right shrink-0" style={{ color: 'var(--warm-mid)' }}>{pct}%</span>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         </div>
