@@ -201,7 +201,7 @@ function UnitCombobox({ value, onChange, options, placeholder }: {
           autoFocus
         />
         <button type="button" onClick={() => { setCustomMode(false); onChange('') }}
-          className="px-1.5 text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">✕</button>
+          className="px-1.5 text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)]"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       </div>
     )
   }
@@ -540,7 +540,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
       <div className={`grid ${noSpec ? 'grid-cols-1' : 'grid-cols-2'} gap-2`}>
         {specTextMode && (
         <div className="space-y-1">
-          <label className="text-[0.625rem] text-[var(--warm-muted)]">세부스펙 <span className="font-normal">(단가와 무관한 구분 정보 — 색상·사이즈·치수)</span></label>
+          <label className="text-[0.625rem] text-[var(--warm-muted)]">세부스펙 <span className="font-normal">(단가와 무관한 구분 정보 · 색상·사이즈·치수)</span></label>
           {(prevUnits?.specOptions?.length ?? 0) > 0 && (
             <div className="flex flex-wrap gap-1">
               {prevUnits!.specOptions.map(o => (
@@ -631,18 +631,18 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
               <div key={idx} className="px-2.5 py-2 bg-[var(--coral-pale)] rounded-xl ring-1 ring-[var(--coral)]/20 space-y-1.5">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium text-[var(--coral)] flex-1 min-w-0 truncate">{fmtItemDetail(it)}</span>
-                  <button type="button" onClick={() => removeItem(idx)} className="text-[var(--coral)] hover:text-[var(--danger-fg)] leading-none text-sm shrink-0">×</button>
+                  <button type="button" onClick={() => removeItem(idx)} className="text-[var(--coral)] hover:text-[var(--danger-fg)] leading-none text-sm shrink-0"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                 </div>
                 {it.setHint && !(Number(it.specValue) > 1) && (
                   <div className="flex items-center gap-1.5 flex-wrap rounded-lg bg-[var(--cream)] ring-1 ring-[var(--coral)]/30 px-2 py-1.5">
                     <span className="text-[0.625rem] text-[var(--warm-dark)] flex-1 min-w-[8rem]">
                       {it.setHint.basis === 'price'
-                        ? `단가가 평소(${(it.setHint.histUnit ?? 0).toLocaleString()}원/개)의 ${it.setHint.count}배예요. 1세트에 ${it.setHint.count}개입인가요?`
+                        ? `단가가 평소(${fmtWon(it.setHint.histUnit ?? 0)}/개)의 ${it.setHint.count}배예요. 1세트에 ${it.setHint.count}개입인가요?`
                         : `표기상 ${it.setHint.count}개입 세트로 보여요. 실물 ${it.setHint.count}개 맞나요?`}
                     </span>
                     <button type="button" onClick={() => applySetHint(idx)}
                       className="px-2 py-1 text-[0.625rem] font-medium rounded-md bg-[var(--coral)] text-[var(--on-solid)]">
-                      네, {it.setHint.count}개입{it.setHint.perPiece > 0 ? ` (개당 ${it.setHint.perPiece.toLocaleString()}원)` : ''}
+                      네, {it.setHint.count}개입{it.setHint.perPiece > 0 ? ` (개당 ${fmtWon(it.setHint.perPiece)})` : ''}
                     </button>
                     <button type="button" onClick={() => patchItem(idx, { setHint: undefined })}
                       className="px-2 py-1 text-[0.625rem] rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)]">
@@ -717,7 +717,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
                               onChange={e => setAllocs(idx, it.allocations!.map((x, i) => i === ai ? { ...x, qty: e.target.value.replace(/[^0-9.]/g, '') } : x))}
                               className={`w-14 ${smallNum}`} />
                             <button type="button" onClick={() => setAllocs(idx, it.allocations!.filter((_, i) => i !== ai))}
-                              className="text-[var(--warm-muted)] hover:text-[var(--danger-fg)] text-sm shrink-0">×</button>
+                              className="text-[var(--warm-muted)] hover:text-[var(--danger-fg)] text-sm shrink-0"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                           </div>
                         ))}
                         <div className="flex items-center justify-between">
@@ -748,12 +748,12 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
         <div className="flex flex-wrap gap-1.5">
           {presets.map(label => (
             <button key={label} type="button" onClick={() => openPreset(label)}
-              className="px-3 py-1.5 text-xs rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors">
+              className="px-3 py-1.5 text-xs rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors">
               + {label}
             </button>
           ))}
           <button type="button" onClick={() => { setActiveLabel('__custom__'); setSpecUnit(''); setQtyUnit('') }}
-            className="px-3 py-1.5 text-xs rounded-xl bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors">
+            className="px-3 py-1.5 text-xs rounded-lg bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-[var(--coral)] hover:text-[var(--coral)] transition-colors">
             + 직접 입력
           </button>
         </div>
@@ -766,7 +766,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
               {activeLabel}{fetching && <span className="ml-1 text-[0.625rem] text-[var(--warm-muted)]">단위 불러오는 중…</span>}
             </span>
             <button type="button" onClick={() => setActiveLabel(null)}
-              className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none">✕</button>
+              className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
           </div>
           {prevUnits && prevUnits.trackedCategories.length > 0 && !prevUnits.trackedCategories.includes(category) && (
             <p className="text-[0.6875rem] text-[var(--warning-fg)] bg-[var(--warning-bg)] rounded-lg px-2.5 py-1.5">
@@ -783,7 +783,7 @@ function ItemSelector({ category, value, onChange, allowMulti = true, rooms = []
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[var(--warm-dark)]">직접 입력</span>
             <button type="button" onClick={() => setActiveLabel(null)}
-              className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none">✕</button>
+              className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-sm leading-none"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
           </div>
           <div className="space-y-1">
             <label className="text-[0.625rem] text-[var(--warm-muted)]">품목명</label>
@@ -876,7 +876,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
                 {...press(!selMode ? () => { setSelMode(true); setSel(new Set([r.vendor])) } : undefined)}
               >
                 {selMode && (
-                  <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-[5px] border transition-colors ${checked ? 'bg-[var(--coral)] border-[var(--coral)] text-white' : 'border-[var(--warm-border)] bg-[var(--cream)]'}`}>
+                  <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-sm border transition-colors ${checked ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--on-solid)]' : 'border-[var(--warm-border)] bg-[var(--cream)]'}`}>
                     {checked && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>}
                   </span>
                 )}
@@ -890,7 +890,7 @@ function VendorManageModal({ onClose, onChanged }: { onClose: () => void; onChan
                 {!selMode && (
                   <>
                     <button type="button" disabled={busy === r.vendor || !changed} onClick={() => apply(r.vendor, val)}
-                      className="text-xs px-2 py-1 rounded-lg bg-[var(--coral)] text-white disabled:opacity-30 shrink-0">저장</button>
+                      className="text-xs px-2 py-1 rounded-lg bg-[var(--coral)] text-[var(--on-solid)] disabled:opacity-30 shrink-0">저장</button>
                     <button type="button" disabled={busy === r.vendor}
                       onClick={() => { setSelMode(true); setSel(new Set([r.vendor])); pushToast('info', '합칠 구매처를 더 선택한 뒤 아래 합치기를 누르세요. 대표(남을 이름)는 다음 화면에서 고릅니다.') }}
                       className="text-xs px-1.5 py-1 shrink-0 text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">합치기</button>
@@ -2419,7 +2419,7 @@ export default function FinanceClient({
                             className={`bg-[var(--cream)] border rounded-xl px-4 py-3 cursor-pointer active:opacity-70 transition-opacity select-none ${sel ? 'border-[var(--coral)] ring-2 ring-[var(--coral)]/40 bg-[var(--coral-pale)]' : isUnsettled ? 'border-[var(--danger-ring)]' : 'border-[var(--warm-border)]'}`}>
                             <div className="flex items-start justify-between gap-2">
                               {mergeMode && (
-                                <span className={`mt-0.5 shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[0.5rem] ${sel ? 'bg-[var(--coral)] border-[var(--coral)] text-white' : 'border-[var(--warm-border)]'}`}>{sel ? '✓' : ''}</span>
+                                <span className={`mt-0.5 shrink-0 w-4 h-4 rounded-full border flex items-center justify-center text-[0.5rem] ${sel ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--on-solid)]' : 'border-[var(--warm-border)]'}`}>{sel ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> : ''}</span>
                               )}
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5 mb-0.5">
@@ -2721,7 +2721,7 @@ export default function FinanceClient({
                   <input type="text" name="alias"
                     defaultValue={editingAcc?.alias ?? ''}
                     placeholder="예: 생활비 카드"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">
@@ -2730,7 +2730,7 @@ export default function FinanceClient({
                   <input type="text" name="identifier"
                     defaultValue={editingAcc?.identifier ?? ''}
                     placeholder={assetType === 'BANK_ACCOUNT' ? '예: 110-123-456789' : '예: 1234'}
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                 </div>
               </div>
 
@@ -2739,7 +2739,7 @@ export default function FinanceClient({
                 <input type="text" name="owner"
                   defaultValue={editingAcc?.owner ?? ''}
                   placeholder="예: 홍길동"
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
               </div>
 
               {/* 카드 전용 필드 */}
@@ -2754,7 +2754,7 @@ export default function FinanceClient({
                       if (/^\d+$/.test(raw)) setPayDayInput(raw + '일')
                     }}
                     placeholder="예: 15, 말일"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                 </div>
               )}
               {assetType === 'CREDIT_CARD' && (
@@ -2769,7 +2769,7 @@ export default function FinanceClient({
                         if (/^\d+$/.test(raw)) setCutOffDayInput(raw + '일')
                       }}
                       placeholder="예: 25, 말일"
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">결제 연결 계좌</label>
@@ -2983,12 +2983,12 @@ export default function FinanceClient({
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <button onClick={() => handleDeleteExp(detailExp)} disabled={isPending}
-                    className="px-4 py-2.5 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-sm rounded-xl transition-colors disabled:opacity-40">
+                    className="px-4 py-2.5 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-sm rounded-lg transition-colors disabled:opacity-40">
                     {detailExp.recurringExpenseId ? '이번 달 기록 취소' : '삭제'}
                   </button>
                   {detailExp.settleStatus === 'SETTLED' && (detailExp.payMethod === '신용카드' || detailExp.payMethod === '체크카드') && (
                     <button onClick={() => handleUnsettle(detailExp.id)} disabled={isPending}
-                      className="px-4 py-2.5 bg-[var(--warning-bg)] hover:bg-[var(--warning-bg)] text-[var(--warning-fg)] text-sm rounded-xl transition-colors disabled:opacity-40">
+                      className="px-4 py-2.5 bg-[var(--warning-bg)] hover:bg-[var(--warning-bg)] text-[var(--warning-fg)] text-sm rounded-lg transition-colors disabled:opacity-40">
                       정산 취소
                     </button>
                   )}
@@ -3090,7 +3090,7 @@ export default function FinanceClient({
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>
                     <input type="text" name="vendor" defaultValue={detailExp.vendor ?? ''} placeholder="예: 쿠팡, 다이소" list="edit-exp-vendors"
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                     <datalist id="edit-exp-vendors">{vendorSuggestions.map(v => <option key={v} value={v} />)}</datalist>
                   </div>
                   {(
@@ -3138,14 +3138,14 @@ export default function FinanceClient({
                         <div className="flex items-center gap-1.5">
                           {(['선불', '착불', '신용'] as const).map(t => (
                             <button key={t} type="button" onClick={() => setAttachShipType(t)}
-                              className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${attachShipType === t ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-white text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
+                              className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${attachShipType === t ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--cream-2)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
                               {t}
                             </button>
                           ))}
                         </div>
                         <input type="text" value={attachShipMemo} onChange={e => setAttachShipMemo(e.target.value)}
                           placeholder="배송 메모 (선택)"
-                          className="w-full bg-white border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-500 outline-none focus:border-[var(--coral)]" />
+                          className="w-full bg-[var(--cream-2)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                         {(() => {
                           const sibs = expenses.filter(e =>
                             e.id !== detailExp.id && !e.isShipping &&
@@ -3181,7 +3181,7 @@ export default function FinanceClient({
                       ? <input type="text" value={fmtItemListDetail(editItems)} readOnly
                           className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
                       : <input type="text" value={editExpDetail} onChange={e => setEditExpDetail(e.target.value)} placeholder="세부 내용"
-                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                          className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                     }
                     {/* 제출 detail = 표시 내용 + 배송비 표기(있으면) */}
                     <input type="hidden" name="detail" value={`${editItems.length > 0 ? fmtItemListDetail(editItems) : editExpDetail}${editHasShipping && (editShipping ?? 0) > 0 ? `${(editItems.length > 0 || editExpDetail) ? ' · ' : ''}배송비 ${fmtWon((editShipping ?? 0))}` : ''}`} />
@@ -3258,7 +3258,7 @@ export default function FinanceClient({
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
                     <input type="text" name="memo" defaultValue={detailExp.memo ?? ''} placeholder="메모 (선택)"
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">영수증</label>
@@ -3274,7 +3274,7 @@ export default function FinanceClient({
                       <div className="relative">
                         <img src={editReceiptUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
                         <button type="button" onClick={() => setEditReceiptUrl('')}
-                          className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none">✕</button>
+                          className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                       </div>
                     ) : (
                       <label className="flex items-center justify-center w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-sm px-3 py-2.5 cursor-pointer hover:border-[var(--coral)] transition-colors">
@@ -3372,9 +3372,9 @@ export default function FinanceClient({
                   <label className="text-xs font-medium text-[var(--warm-mid)]">유형 *</label>
                   <div className="inline-flex w-full rounded-lg border border-[var(--warm-border)] overflow-hidden text-sm font-medium">
                     <button type="button" onClick={() => setAddIsService(false)}
-                      className={`flex-1 px-3 py-2 transition-colors ${!addIsService ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>물품 구매</button>
+                      className={`flex-1 px-3 py-2 transition-colors ${!addIsService ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>물품 구매</button>
                     <button type="button" onClick={() => { setAddIsService(true); setAddItems([]); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined) }}
-                      className={`flex-1 px-3 py-2 transition-colors ${addIsService ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>서비스·무형</button>
+                      className={`flex-1 px-3 py-2 transition-colors ${addIsService ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'}`}>서비스·무형</button>
                   </div>
                   <p className="text-[0.625rem] text-[var(--warm-muted)]">
                     {addIsService ? '시공비·인건비 등. 세부 항목으로 내역을 쪼개되, 재고/비품엔 안 잡힙니다.' : '실물 구매. 품목을 입력해야 재고/비품에 잡힙니다.'}
@@ -3391,7 +3391,7 @@ export default function FinanceClient({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">구매처</label>
                   <input type="text" name="vendor" value={addExpVendor} onChange={e => setAddExpVendor(e.target.value)} placeholder="예: 쿠팡, 다이소" list="add-exp-vendors"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                   <datalist id="add-exp-vendors">{vendorSuggestions.map(v => <option key={v} value={v} />)}</datalist>
                 </div>
                 {/* #1 쇼핑몰 주문번호 — 영수증 OCR로 자동입력되며 수동 수정 가능. 진위확인·재주문 참조용(보조). */}
@@ -3399,7 +3399,7 @@ export default function FinanceClient({
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">쇼핑몰 주문번호 <span className="text-[var(--warm-muted)] font-normal">(선택 · 쿠팡 등)</span></label>
                     <input type="text" name="externalOrderNo" value={addExtOrderNo} onChange={e => setAddExtOrderNo(e.target.value)} placeholder="영수증 분석 시 자동 입력"
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)] tabular-nums" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] tabular-nums" />
                   </div>
                 )}
                 <div className="space-y-1.5">
@@ -3437,14 +3437,14 @@ export default function FinanceClient({
                       <div className="flex items-center gap-1.5">
                         {(['선불', '착불', '신용'] as const).map(t => (
                           <button key={t} type="button" onClick={() => setAddOrderShipType(t)}
-                            className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${addOrderShipType === t ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-white text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
+                            className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${addOrderShipType === t ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--cream-2)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
                             {t}
                           </button>
                         ))}
                       </div>
                       <input type="text" value={addOrderShipMemo} onChange={e => setAddOrderShipMemo(e.target.value)}
                         placeholder="배송 메모 (선택)"
-                        className="w-full bg-white border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-500 outline-none focus:border-[var(--coral)]" />
+                        className="w-full bg-[var(--cream-2)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                       <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">배송비가 별도 지출로 기록되고 품목들과 같은 주문번호로 묶입니다. 신용(후불)은 미정산.</p>
                       {(addOrderShipping ?? 0) > 0 && (
                         <>
@@ -3463,7 +3463,7 @@ export default function FinanceClient({
                     ? <input type="text" value={fmtItemListDetail(addItems)} readOnly
                         className="w-full bg-[var(--canvas)] border border-[var(--coral)]/40 rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none" />
                     : <input type="text" value={addExpDetail} onChange={e => setAddExpDetail(e.target.value)} placeholder="세부 내용"
-                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                   }
                   {/* 제출 detail = 표시 내용 + 배송비 표기(있으면) */}
                   <input type="hidden" name="detail" value={`${addItems.length > 0 ? fmtItemListDetail(addItems) : addExpDetail}${addHasShipping && (addShipping ?? 0) > 0 ? `${(addItems.length > 0 || addExpDetail) ? ' · ' : ''}배송비 ${fmtWon((addShipping ?? 0))}` : ''}`} />
@@ -3541,7 +3541,7 @@ export default function FinanceClient({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
                   <input type="text" name="memo" placeholder="메모 (선택)"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">영수증 <AiQuotaHint className="ml-1" /></label>
@@ -3563,7 +3563,7 @@ export default function FinanceClient({
                     <div className="relative">
                       <img src={addReceiptUrl} className="w-full rounded-xl object-contain max-h-52 border border-[var(--warm-border)]" alt="영수증" />
                       <button type="button" onClick={() => setAddReceiptUrl('')}
-                        className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none">✕</button>
+                        className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs leading-none"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                     </div>
                   ) : (
                     <label className="flex items-center justify-center w-full bg-[var(--canvas)] border border-dashed border-[var(--warm-border)] rounded-sm px-3 py-2.5 cursor-pointer hover:border-[var(--coral)] transition-colors">
@@ -3720,7 +3720,7 @@ export default function FinanceClient({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">활성화 시작일 (선택)</label>
                   <DatePicker value={recMgmtForm.activeSince} onChange={v => setRecMgmtForm(p => ({ ...p, activeSince: v }))}
-                    className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                    className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
                   <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
                     이 항목이 실제로 내 부담이 되는 첫 날짜입니다. 입력하지 않으면 즉시 활성화됩니다.<br />
                     예) 인터넷 요금 결제일 25일이 양도인 부담이면, 다음 달부터 내 부담 → 다음달 25일 입력.
@@ -3792,9 +3792,9 @@ export default function FinanceClient({
                 {recMgmtError && <p className="text-[var(--danger-fg)] text-xs">{recMgmtError}</p>}
                 <div className="flex gap-2 pt-1">
                   <button onClick={() => { setShowRecMgmtForm(false); setEditingRecMgmt(null); setRecMgmtError('') }}
-                    className="flex-1 py-2 text-sm rounded-xl border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>
+                    className="flex-1 py-2 text-sm rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>
                   <button onClick={handleSaveRecMgmt} disabled={recMgmtPending || !recMgmtForm.title.trim() || !recMgmtForm.amount}
-                    className="flex-1 py-2 text-sm font-medium rounded-xl text-white disabled:opacity-50"
+                    className="flex-1 py-2 text-sm font-medium rounded-lg text-[var(--on-solid)] disabled:opacity-50"
                     style={{ background: 'var(--coral)' }}>
                     {recMgmtPending ? '저장 중…' : '저장'}
                   </button>
@@ -3815,9 +3815,9 @@ export default function FinanceClient({
                 </p>
                 <div className="flex gap-2">
                   <button onClick={() => { setRecGroupMode(false); setRecGroupSel(new Set()); setRecMgmtError('') }}
-                    className="flex-1 py-2 text-sm rounded-xl border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>
+                    className="flex-1 py-2 text-sm rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>
                   <button onClick={handleGroupRec} disabled={recMgmtPending || recGroupSel.size < 2}
-                    className="flex-1 py-2 text-sm font-medium rounded-xl text-white disabled:opacity-50" style={{ background: 'var(--coral)' }}>
+                    className="flex-1 py-2 text-sm font-medium rounded-lg text-[var(--on-solid)] disabled:opacity-50" style={{ background: 'var(--coral)' }}>
                     {recMgmtPending ? '묶는 중…' : `${recGroupSel.size}개 묶기`}
                   </button>
                 </div>
@@ -3825,11 +3825,11 @@ export default function FinanceClient({
             ) : (
               <div className="flex gap-2">
                 <button onClick={openNewRecMgmt}
-                  className="flex-1 py-2.5 text-sm font-medium rounded-xl border border-dashed border-[var(--coral)] text-[var(--coral)] hover:bg-[var(--coral)]/5 transition-colors">
+                  className="flex-1 py-2.5 text-sm font-medium rounded-lg border border-dashed border-[var(--coral)] text-[var(--coral)] hover:bg-[var(--coral)]/5 transition-colors">
                   + 새 항목 추가
                 </button>
                 <button onClick={() => { setRecGroupMode(true); setRecMgmtError('') }}
-                  className="px-4 py-2.5 text-sm font-medium rounded-xl border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
+                  className="px-4 py-2.5 text-sm font-medium rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
                   묶기
                 </button>
               </div>
@@ -3906,7 +3906,7 @@ export default function FinanceClient({
                 <div className="space-y-1">
                   <label className="text-xs text-[var(--warm-muted)]">날짜</label>
                   <DatePicker value={recRecDate} onChange={setRecRecDate}
-                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                    className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
                 </div>
                 {/* #1 관리비 세부항목 — 변동 항목만 편집, 고정은 표시. 합계 자동. */}
                 <div className="space-y-1.5 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] p-3">
@@ -3945,7 +3945,7 @@ export default function FinanceClient({
               <div className="space-y-1">
                 <label className="text-xs text-[var(--warm-muted)]">날짜</label>
                 <DatePicker value={recRecDate} onChange={setRecRecDate}
-                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
               </div>
               <div className="space-y-1">
                 <label className="text-xs text-[var(--warm-muted)]">
@@ -4058,7 +4058,7 @@ export default function FinanceClient({
                     router.refresh()
                   })
                 }}
-                className="w-full px-4 py-2.5 bg-[var(--canvas)] border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-xs font-medium rounded-xl hover:bg-[var(--coral)]/5 disabled:opacity-60 transition-colors">
+                className="w-full px-4 py-2.5 bg-[var(--canvas)] border border-dashed border-[var(--coral)]/50 text-[var(--coral)] text-xs font-medium rounded-lg hover:bg-[var(--coral)]/5 disabled:opacity-60 transition-colors">
                 금액만 저장 (아직 납부 전)
               </button>
               <p className="text-[0.625rem] text-[var(--warm-muted)] text-center leading-relaxed">
@@ -4153,8 +4153,8 @@ function DepositTab({ summary, ledger, totalBalance }: {
       <div className="flex gap-1.5">
         {(['tenant', 'ledger'] as SubTab[]).map(k => (
           <button key={k} onClick={() => setSub(k)}
-            className={`px-4 py-2 text-sm font-medium rounded-xl transition-colors ${
-              sub === k ? 'bg-[var(--coral)] text-white'
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              sub === k ? 'bg-[var(--coral)] text-[var(--on-solid)]'
                 : 'bg-[var(--cream)] text-[var(--warm-mid)] border border-[var(--warm-border)] hover:text-[var(--warm-dark)]'
             }`}>
             {k === 'tenant' ? `입주자별 (${summary.length})` : `거래 이력 (${ledger.length})`}
@@ -4387,15 +4387,15 @@ function ReserveTab({
       {!mode && (
         <div className="grid grid-cols-3 gap-2">
           <button onClick={() => setMode('deposit')}
-            className="px-3 py-3 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl text-sm text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
+            className="px-3 py-3 bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg text-sm text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
             적립
           </button>
           <button onClick={() => setMode('withdraw')}
-            className="px-3 py-3 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl text-sm text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
+            className="px-3 py-3 bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg text-sm text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
             예비비에서 지출
           </button>
           <button onClick={() => setMode('settle')}
-            className="px-3 py-3 bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl text-sm text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
+            className="px-3 py-3 bg-[var(--cream)] border border-[var(--warm-border)] rounded-lg text-sm text-[var(--warm-dark)] hover:border-[var(--coral)] transition-colors">
             지출을 예비비에서 차감
           </button>
         </div>

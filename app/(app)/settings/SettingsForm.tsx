@@ -654,7 +654,7 @@ export default function SettingsForm({
             onClick={() => setTab(t.key)}
             className={`flex-1 py-2 text-sm font-medium rounded-xl transition-colors ${
               tab === t.key
-                ? 'bg-[var(--coral)] text-white'
+                ? 'bg-[var(--coral)] text-[var(--on-solid)]'
                 : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)]'
             }`}
           >
@@ -840,7 +840,7 @@ export default function SettingsForm({
                 defaultValue={property?.publicSlug ?? ''}
                 placeholder="예: mygosiwon"
                 autoComplete="off"
-                className="w-full px-3 py-2.5 rounded-sm text-sm outline-none bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num"
+                className="w-full px-3 py-2.5 rounded-sm text-sm outline-none focus:border-[var(--coral)] bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] num"
               />
             </div>
             <Btn type="submit" variant="primary" size="md" fullWidth className="mt-2" disabled={isPending}>
@@ -872,7 +872,7 @@ export default function SettingsForm({
           </p>
           <a href="/accrual-check"
             className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-            발생주의 데이터 진단 →
+            발생주의 데이터 진단 ›
           </a>
         </div>
 
@@ -949,7 +949,7 @@ export default function SettingsForm({
             onReorder={handleReorderRoomTypes}
             onRename={handleRenameRoomType}
             onReset={handleResetRoomTypes}
-            placeholder="예: 원룸, 투룸, 복층..."
+            placeholder="예: 원룸, 투룸, 복층…"
           />
           <OptionSection
             title="등급 관리"
@@ -963,7 +963,7 @@ export default function SettingsForm({
             onReorder={handleReorderRoomTiers}
             onRename={handleRenameRoomTier}
             onReset={handleResetRoomTiers}
-            placeholder="예: 스탠다드, 실속형, 프리미엄..."
+            placeholder="예: 스탠다드, 실속형, 프리미엄…"
           />
           <OptionSection
             title="창문 유형 관리"
@@ -977,7 +977,7 @@ export default function SettingsForm({
             onReorder={handleReorderWindowTypes}
             onRename={handleRenameWindowType}
             onReset={handleResetWindowTypes}
-            placeholder="예: 복층창, 루프탑창..."
+            placeholder="예: 복층창, 루프탑창…"
           />
           <OptionSection
             title="방향 관리"
@@ -991,7 +991,7 @@ export default function SettingsForm({
             onReorder={handleReorderDirections}
             onRename={handleRenameDirection}
             onReset={handleResetDirections}
-            placeholder="예: 남동향, 남남동향..."
+            placeholder="예: 남동향, 남남동향…"
           />
         </div>
       )}
@@ -1011,7 +1011,7 @@ export default function SettingsForm({
             onReorder={handleReorderIncomeCategs}
             onRename={handleRenameIncomeCateg}
             onReset={handleResetIncomeCategs}
-            placeholder="예: 건조기, 세탁기, 자판기..."
+            placeholder="예: 건조기, 세탁기, 자판기…"
           />
           <OptionSection
             title="지출 카테고리 관리"
@@ -1025,7 +1025,7 @@ export default function SettingsForm({
             onReorder={handleReorderExpenseCategs}
             onRename={handleRenameExpenseCateg}
             onReset={handleResetExpenseCategs}
-            placeholder="예: 임대료, 보험료, 통신비..."
+            placeholder="예: 임대료, 보험료, 통신비…"
           />
           <OptionSection
             title="결제 수단 관리"
@@ -1039,7 +1039,7 @@ export default function SettingsForm({
             onReorder={handleReorderPayMethods}
             onRename={handleRenamePayMethod}
             onReset={handleResetPayMethods}
-            placeholder="예: 자동이체, 법인카드..."
+            placeholder="예: 자동이체, 법인카드…"
           />
 
           {/* 고정 지출 관리 */}
@@ -1118,7 +1118,7 @@ export default function SettingsForm({
                               placeholder="세부항목명 (예: 청소관리비)"
                               className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                             <button type="button" onClick={() => removeRecItem(i)}
-                              className="shrink-0 w-7 h-7 flex items-center justify-center text-[var(--danger-fg)] hover:text-[var(--danger-fg)] rounded-lg transition-colors" aria-label="세부항목 삭제">✕</button>
+                              className="shrink-0 w-7 h-7 flex items-center justify-center text-[var(--danger-fg)] hover:text-[var(--danger-fg)] rounded-lg transition-colors" aria-label="세부항목 삭제"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="flex-1 min-w-0">
@@ -1201,9 +1201,9 @@ export default function SettingsForm({
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => setShowRecForm(false)}
-                    className="flex-1 py-2 text-sm rounded-xl border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">취소</button>
+                    className="flex-1 py-2 text-sm rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">취소</button>
                   <button onClick={handleSaveRec} disabled={recPending || !recForm.title.trim() || !(recItemsActive ? recItemsTotal : Number(recForm.amount.replace(/[^0-9]/g, '')))}
-                    className="flex-1 py-2 text-sm font-medium rounded-xl text-white transition-colors disabled:opacity-50"
+                    className="flex-1 py-2 text-sm font-medium rounded-lg text-[var(--on-solid)] transition-colors disabled:opacity-50"
                     style={{ background: 'var(--coral)' }}>{recPending ? '저장 중…' : '저장'}</button>
                 </div>
               </div>
@@ -1325,7 +1325,7 @@ export default function SettingsForm({
                         <select
                           defaultValue="STAFF"
                           onChange={e => { req.role = e.target.value as Role }}
-                          className="text-xs bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 outline-none"
+                          className="text-xs bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 outline-none focus:border-[var(--coral)]"
                           style={{ color: 'var(--warm-dark)' }}>
                           <option value="MANAGER">관리자</option>
                           <option value="STAFF">스태프</option>
@@ -1346,7 +1346,7 @@ export default function SettingsForm({
             <div className="space-y-2">
               {members.map(m => (
                 <div key={m.userId} className="flex items-center gap-3 bg-[var(--canvas)] rounded-xl px-4 py-3">
-                  <div className="w-8 h-8 rounded-full bg-[var(--coral)] flex items-center justify-center text-sm font-medium text-white shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-[var(--coral)] flex items-center justify-center text-sm font-medium text-[var(--on-solid)] shrink-0">
                     {m.avatarUrl
                       ? <img src={m.avatarUrl} alt="" className="w-8 h-8 rounded-full" />
                       : (m.name ?? m.email)[0].toUpperCase()}
@@ -1359,7 +1359,7 @@ export default function SettingsForm({
                     <select
                       value={m.role}
                       onChange={e => handleRoleChange(m.userId, e.target.value as Role)}
-                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none"
+                      className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
                     >
                       <option value="OWNER">소유자</option>
                       <option value="MANAGER">관리자</option>
@@ -1395,8 +1395,8 @@ export default function SettingsForm({
                   type="email"
                   value={inviteEmail}
                   onChange={e => setInviteEmail(e.target.value)}
-                  placeholder="이메일 입력..."
-                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]"
+                  placeholder="이메일 입력…"
+                  className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]"
                 />
                 <div className="flex gap-2">
                   <select
@@ -1564,7 +1564,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
             )}
           </div>
           <div className="flex flex-col gap-2">
-            <label className={`px-3 py-2 text-sm rounded-lg cursor-pointer text-center font-medium transition-colors ${stampUploading ? 'opacity-60' : 'bg-[var(--coral)] text-white hover:opacity-90'}`}>
+            <label className={`px-3 py-2 text-sm rounded-lg cursor-pointer text-center font-medium transition-colors ${stampUploading ? 'opacity-60' : 'bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90'}`}>
               {stampUploading ? '업로드 중…' : (stampUrl ? '교체' : '업로드')}
               <input type="file" accept="image/*" className="hidden" onChange={handleStampSelect} disabled={stampUploading} />
             </label>
@@ -1585,7 +1585,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
             type="text"
             value={template.title}
             onChange={e => setTemplate(t => ({ ...t, title: e.target.value }))}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none"
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
           />
         </div>
         <div className="space-y-1">
@@ -1595,7 +1595,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
             value={template.emergencyContactNote ?? ''}
             onChange={e => setTemplate(t => ({ ...t, emergencyContactNote: e.target.value }))}
             placeholder="예) * 비상연락망(이름/전화번호/관계-위급상황시 통보):"
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none"
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
           />
         </div>
         <div className="space-y-1">
@@ -1604,7 +1604,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
             type="text"
             value={template.oathText}
             onChange={e => setTemplate(t => ({ ...t, oathText: e.target.value }))}
-            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none"
+            className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
           />
         </div>
 
@@ -1619,10 +1619,10 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
                   onChange={e => updateSection(idx, { title: e.target.value })}
                   className="flex-1 bg-transparent border-b border-[var(--warm-border)] px-1 py-1 text-sm font-semibold text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
                 />
-                <button type="button" onClick={() => moveSection(idx, -1)} disabled={idx === 0}
-                  className="text-xs px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] disabled:opacity-30">↑</button>
-                <button type="button" onClick={() => moveSection(idx, 1)} disabled={idx === template.sections.length - 1}
-                  className="text-xs px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] disabled:opacity-30">↓</button>
+                <button type="button" onClick={() => moveSection(idx, -1)} disabled={idx === 0} aria-label="위로"
+                  className="text-xs px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] disabled:opacity-30 inline-flex items-center justify-center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg></button>
+                <button type="button" onClick={() => moveSection(idx, 1)} disabled={idx === template.sections.length - 1} aria-label="아래로"
+                  className="text-xs px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] disabled:opacity-30 inline-flex items-center justify-center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7" /></svg></button>
                 <button type="button" onClick={() => removeSection(idx)}
                   className="text-xs px-2 py-1 rounded-md border border-[var(--danger-ring)] text-[var(--danger-fg)] hover:bg-[var(--danger-bg)]">삭제</button>
               </div>
@@ -1849,14 +1849,16 @@ function OptionSection({
                 <button
                   onClick={() => move(idx, -1)}
                   disabled={idx === 0}
-                  className="w-6 h-5 flex items-center justify-center rounded text-[var(--warm-mid)] hover:text-[var(--warm-dark)] disabled:opacity-20 transition-colors text-[0.625rem] leading-none">
-                  ▲
+                  aria-label="위로 이동"
+                  className="w-6 h-5 flex items-center justify-center rounded text-[var(--warm-mid)] hover:text-[var(--warm-dark)] disabled:opacity-20 transition-colors leading-none">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6" /></svg>
                 </button>
                 <button
                   onClick={() => move(idx, 1)}
                   disabled={idx === items.length - 1}
-                  className="w-6 h-5 flex items-center justify-center rounded text-[var(--warm-mid)] hover:text-[var(--warm-dark)] disabled:opacity-20 transition-colors text-[0.625rem] leading-none">
-                  ▼
+                  aria-label="아래로 이동"
+                  className="w-6 h-5 flex items-center justify-center rounded text-[var(--warm-mid)] hover:text-[var(--warm-dark)] disabled:opacity-20 transition-colors leading-none">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
                 </button>
               </div>
             )}
@@ -1870,7 +1872,7 @@ function OptionSection({
                   className="flex-1 bg-[var(--canvas)] border border-[var(--coral)] rounded-sm px-2 py-1 text-sm text-[var(--warm-dark)] outline-none"
                 />
                 <button onClick={saveEdit}
-                  className="shrink-0 text-[0.625rem] px-2 py-1 rounded-lg text-white transition-colors"
+                  className="shrink-0 text-[0.625rem] px-2 py-1 rounded-lg text-[var(--on-solid)] transition-colors"
                   style={{ background: 'var(--coral)' }}>저장</button>
                 <button onClick={() => setEditingItem(null)}
                   className="shrink-0 text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">취소</button>
@@ -1894,8 +1896,8 @@ function OptionSection({
           <input type="text" value={newValue}
             onChange={e => onNewValueChange(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleAdd()}
-            placeholder={placeholder ?? '입력...'}
-            className={`flex-1 bg-[var(--canvas)] border rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none transition-colors ${
+            placeholder={placeholder ?? '입력…'}
+            className={`flex-1 bg-[var(--canvas)] border rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none transition-colors ${
               isDuplicate ? 'border-[var(--danger-ring)] focus:border-[var(--danger-ring)]' : 'border-[var(--warm-border)] focus:border-[var(--coral)]'
             }`} />
           <Btn variant="primary" size="md" className="min-w-[56px]" onClick={handleAdd} disabled={isAdding || !trimmed || isDuplicate}>

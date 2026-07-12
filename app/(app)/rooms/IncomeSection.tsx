@@ -243,7 +243,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                   <button onClick={() => handleDeleteInc(detailInc.id)} disabled={isPending}
-                    className="px-4 py-2.5 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-sm rounded-xl transition-colors disabled:opacity-40">삭제</button>
+                    className="px-4 py-2.5 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-sm rounded-lg transition-colors disabled:opacity-40">삭제</button>
                   <div className="flex-1" />
                   <Btn variant="primary" size="md" onClick={() => {
                     setDetailIncEdit(true)
@@ -285,7 +285,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                     <input type="text" name="detail" defaultValue={detailInc.detail ?? ''}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">입금수단</label>
@@ -298,7 +298,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
                     <input type="text" name="memo" defaultValue={detailInc.memo ?? ''}
-                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                      className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                   </div>
                   {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
                 </div>
@@ -344,7 +344,7 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">세부 항목</label>
                   <input type="text" name="detail" placeholder="세부 내용"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">입금수단</label>
@@ -357,15 +357,15 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">메모</label>
                   <input type="text" name="memo" placeholder="메모 (선택)"
-                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)]" />
+                    className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]" />
                 </div>
                 {error && <p className="text-[var(--danger-fg)] text-sm">{error}</p>}
               </div>
               <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
                 <button type="button" onClick={() => setShowAddInc(false)}
-                  className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-xl border border-[var(--warm-border)] transition-colors">취소</button>
+                  className="flex-1 inline-flex items-center justify-center py-2.5 min-h-[40px] bg-[var(--canvas)] hover:bg-[var(--warm-border)] text-[var(--warm-dark)] text-sm font-medium rounded-lg border border-[var(--warm-border)] transition-colors">취소</button>
                 <button type="submit" disabled={isPending}
-                  className="flex-1 py-2.5 bg-[var(--success-solid)] hover:opacity-90 text-[var(--on-solid)] text-sm font-medium rounded-xl transition-colors disabled:opacity-60">
+                  className="flex-1 py-2.5 bg-[var(--success-solid)] hover:opacity-90 text-[var(--on-solid)] text-sm font-medium rounded-lg transition-colors disabled:opacity-60">
                   {isPending ? '저장 중…' : '저장'}
                 </button>
               </div>

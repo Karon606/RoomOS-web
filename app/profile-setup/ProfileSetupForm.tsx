@@ -49,7 +49,7 @@ export default function ProfileSetupForm({
     })
   }
 
-  const inputCls = 'w-full px-3 py-2.5 rounded-sm text-sm outline-none transition-colors'
+  const inputCls = 'w-full px-3 py-2.5 rounded-sm text-sm outline-none transition-colors focus:shadow-[var(--input-ring-focus)]'
   const inputStyle: React.CSSProperties = {
     background: 'var(--canvas)',
     border: '1px solid var(--warm-border)',
@@ -105,7 +105,7 @@ export default function ProfileSetupForm({
       <button type="button" onClick={handleSkip} disabled={savePending || skipPending}
         className="w-full text-sm py-2 disabled:opacity-50"
         style={{ color: 'var(--warm-muted)' }}>
-        {skipPending ? '...' : '나중에 입력하기'}
+        {skipPending ? '…' : '나중에 입력하기'}
       </button>
     </div>
   )

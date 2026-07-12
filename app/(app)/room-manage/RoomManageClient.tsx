@@ -565,7 +565,7 @@ export default function RoomManageClient({
           onClick={() => setShowFilters(v => !v)}
           className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${
             showFilters || activeFilterCount > 0
-              ? 'bg-[var(--coral)] text-white'
+              ? 'bg-[var(--coral)] text-[var(--on-solid)]'
               : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]'
           }`}
         >
@@ -949,9 +949,9 @@ export default function RoomManageClient({
                   {addPhotoPreviews.map((p, i) => (
                     <div key={p.previewUrl} className="relative group aspect-square rounded-lg overflow-hidden bg-[var(--canvas)]">
                       <img src={p.previewUrl} alt="" className="w-full h-full object-cover" />
-                      <button type="button" onClick={() => removeAddPhoto(i)}
-                        className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full text-[var(--warm-dark)] text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        ✕
+                      <button type="button" onClick={() => removeAddPhoto(i)} aria-label="사진 삭제"
+                        className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
                       </button>
                     </div>
                   ))}
@@ -1100,9 +1100,9 @@ export default function RoomManageClient({
                       {looksLike360(photo.fileName) && (
                         <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-full bg-black/65 text-white text-[0.5625rem] font-bold pointer-events-none">360°</span>
                       )}
-                      <button type="button" onClick={() => handlePhotoDelete(photo.id)}
-                        className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-[var(--danger-solid)]/80 rounded-full text-[var(--warm-dark)] text-xs transition-colors flex items-center justify-center">
-                        ✕
+                      <button type="button" onClick={() => handlePhotoDelete(photo.id)} aria-label="사진 삭제"
+                        className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-[var(--danger-solid)]/80 rounded-full text-white transition-colors flex items-center justify-center">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
                       </button>
                     </div>
                   ))}
@@ -1189,8 +1189,8 @@ function PhotoLightbox({ photo, onClose }: { photo: Photo; onClose: () => void }
               {is360 ? '일반 사진으로 보기' : '360°로 보기'}
             </button>
           )}
-          <button type="button" onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/15 text-white hover:bg-white/25 transition-colors flex items-center justify-center">✕</button>
+          <button type="button" onClick={onClose} aria-label="닫기"
+            className="w-8 h-8 rounded-full bg-white/15 text-white hover:bg-white/25 transition-colors flex items-center justify-center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
         </div>
       </div>
       <div className="flex-1 min-h-0 px-3 pb-2" onClick={e => e.stopPropagation()}>
@@ -1409,7 +1409,7 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
             {['미변경', ...roomTypes].map(t => (
               <button key={t} type="button"
                 onClick={() => setType(t === '미변경' ? '' : t)}
-                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${(t === '미변경' && !type) || type === t ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}>
+                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${(t === '미변경' && !type) || type === t ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}>
                 {t}
               </button>
             ))}
@@ -1422,7 +1422,7 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
             {['미변경', ...roomTiers].map(t => (
               <button key={t} type="button"
                 onClick={() => setTier(t === '미변경' ? '' : t)}
-                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${(t === '미변경' && !tier) || tier === t ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}>
+                className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${(t === '미변경' && !tier) || tier === t ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}>
                 {t}
               </button>
             ))}
@@ -1505,7 +1505,7 @@ function Field({ label, name, placeholder, defaultValue }: {
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
       <input type="text" name={name} defaultValue={defaultValue} placeholder={placeholder}
-        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder-gray-600 outline-none focus:border-[var(--coral)] transition-colors" />
+        className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] transition-colors" />
     </div>
   )
 }

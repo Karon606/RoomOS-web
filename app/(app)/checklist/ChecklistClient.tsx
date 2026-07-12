@@ -252,7 +252,7 @@ function Card({ row, onCheck, onEdit, muted }: { row: ChecklistRow; onCheck: () 
       </div>
       <div className="flex gap-2 mt-3">
         <button onClick={onCheck}
-          className="flex-1 py-2 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-80"
+          className="flex-1 py-2 rounded-lg text-xs font-semibold text-[var(--on-solid)] transition-opacity hover:opacity-80"
           style={{ background: 'var(--coral)' }}>
           점검 완료 기록
         </button>
@@ -298,19 +298,19 @@ function FormModal({
         <div className="flex gap-2">
           {row && onDelete && (
             <button type="button" onClick={onDelete} disabled={isPending}
-              className="px-3 py-2.5 rounded-xl text-xs font-medium border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-opacity hover:opacity-70 disabled:opacity-50">
+              className="px-3 py-2.5 rounded-lg text-xs font-medium border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-opacity hover:opacity-70 disabled:opacity-50">
               삭제
             </button>
           )}
           <button type="button" onClick={onClose} disabled={isPending}
-            className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
+            className="flex-1 py-2.5 rounded-lg text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
             style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
             취소
           </button>
           <button type="button"
             onClick={() => onSubmit({ title, memo, intervalDays, alertDaysBefore })}
             disabled={isPending || !title.trim() || intervalDays < 1}
-            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50"
+            className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-[var(--on-solid)] transition-opacity hover:opacity-80 disabled:opacity-50"
             style={{ background: 'var(--coral)' }}>
             {isPending ? '저장 중…' : '저장'}
           </button>
@@ -339,13 +339,13 @@ function FormModal({
               {PRESETS.map(p => (
                 <button key={p.days} type="button"
                   onClick={() => { setIntervalDays(p.days); setCustomMode(false) }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${intervalDays === p.days && !customMode ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'}`}>
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${intervalDays === p.days && !customMode ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'}`}>
                   {p.label}
                 </button>
               ))}
               <button type="button"
                 onClick={() => setCustomMode(true)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${customMode ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'}`}>
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${customMode ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'}`}>
                 직접 입력
               </button>
             </div>
@@ -414,12 +414,12 @@ function CheckModal({
       footer={
         <div className="flex gap-2">
           <button type="button" onClick={onClose} disabled={isPending}
-            className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
+            className="flex-1 py-2.5 rounded-lg text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
             style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
             닫기
           </button>
           <button type="button" onClick={() => onConfirm(memo)} disabled={isPending}
-            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50"
+            className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-[var(--on-solid)] transition-opacity hover:opacity-80 disabled:opacity-50"
             style={{ background: 'var(--coral)' }}>
             {isPending ? '처리 중…' : '오늘 점검 완료'}
           </button>

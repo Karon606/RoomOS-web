@@ -935,9 +935,9 @@ export default function TenantClient({
     <div className="space-y-4">
       {/* 토스트 */}
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[var(--z-modal)] max-w-md w-[calc(100%-2rem)] bg-[var(--warm-dark)] text-white text-xs rounded-lg px-4 py-3 shadow-lift flex items-start gap-2">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[var(--z-modal)] max-w-md w-[calc(100%-2rem)] bg-[var(--pill-bg)] text-[var(--on-solid)] text-xs rounded-lg px-4 py-3 shadow-lift flex items-start gap-2">
           <span className="flex-1 leading-relaxed">{toast}</span>
-          <button onClick={() => setToast(null)} className="shrink-0 text-white/60 hover:text-white">✕</button>
+          <button onClick={() => setToast(null)} aria-label="닫기" className="shrink-0 text-[var(--on-solid)]/60 hover:text-[var(--on-solid)]"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" width="14" height="14" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
         </div>
       )}
 
@@ -993,7 +993,7 @@ export default function TenantClient({
             onChange={e => setFloorFilter(e.target.value)}
             className={`px-3 py-1.5 text-xs font-medium rounded-sm border transition-colors outline-none
               ${floorFilter
-                ? 'bg-[var(--coral)] text-white border-[var(--coral)]'
+                ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]'
                 : 'bg-[var(--cream)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}
           >
             <option value="">전체 층</option>
@@ -1065,13 +1065,13 @@ export default function TenantClient({
             <div className="flex gap-2 pt-1">
               <button
                 onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
+                className="flex-1 py-2.5 rounded-lg text-sm bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
                 취소
               </button>
               <button
                 onClick={confirmDelete}
                 disabled={isPending}
-                className="flex-1 py-2.5 rounded-xl text-sm bg-[var(--danger-bg)] hover:bg-[var(--danger-ring)] text-[var(--danger-fg)] font-medium transition-colors disabled:opacity-50">
+                className="flex-1 py-2.5 rounded-lg text-sm bg-[var(--danger-bg)] hover:bg-[var(--danger-ring)] text-[var(--danger-fg)] font-medium transition-colors disabled:opacity-50">
                 {isPending ? '삭제 중…' : '영구 삭제'}
               </button>
             </div>
@@ -1154,11 +1154,11 @@ export default function TenantClient({
 
               <div className="px-5 pb-5 pt-1 flex gap-2">
                 <button type="button" onClick={() => setDepositRefundModal(null)} disabled={isPending}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-[var(--warm-border)] text-[var(--warm-mid)] hover:opacity-70 transition-opacity disabled:opacity-50">
+                  className="flex-1 py-2.5 rounded-lg text-sm font-medium border border-[var(--warm-border)] text-[var(--warm-mid)] hover:opacity-70 transition-opacity disabled:opacity-50">
                   취소
                 </button>
                 <button type="button" onClick={handleDepositRefundConfirm} disabled={isPending || exceedsMax}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
+                  className="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
                   style={{ background: 'var(--warning-solid)', color: 'var(--on-solid)' }}>
                   {isPending ? '처리 중…' : '퇴실 처리'}
                 </button>
@@ -1181,7 +1181,7 @@ export default function TenantClient({
               <div className="bg-[var(--canvas)] rounded-sm px-3 py-2.5 text-sm flex items-center justify-center gap-2 flex-wrap">
                 <span className="text-[var(--warm-muted)]">기존</span>
                 <span className="font-semibold text-[var(--warm-dark)]">{fmtWon(rentChangeModal.baseRent)}</span>
-                <span className="text-[var(--warm-muted)]">→</span>
+                <span className="text-[var(--warm-muted)]" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" width="14" height="14"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
                 <span className={`font-semibold ${dirColor}`}>{dirLabel} {fmtWon(rentChangeModal.scheduledRent)}</span>
               </div>
               <p className="text-xs text-[var(--warm-muted)] leading-relaxed">
@@ -1970,7 +1970,7 @@ export default function TenantClient({
                                   } finally { release() }
                                 })
                               }}
-                              className="w-full py-2 bg-[var(--warning-solid)] active:bg-[var(--warning-solid)] text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40">
+                              className="w-full py-2 bg-[var(--warning-solid)] active:bg-[var(--warning-solid)] text-[var(--on-solid)] text-sm font-semibold rounded-lg transition-colors disabled:opacity-40">
                               {isPending ? '저장 중…' : (() => {
                                 if (!overrideDateInput) return '날짜를 선택하세요'
                                 const selectedYM = overrideDateInput.slice(0, 7)
@@ -2014,7 +2014,7 @@ export default function TenantClient({
                       <div className="space-y-1">
                         <label className="text-xs text-[var(--warm-muted)]">날짜</label>
                         <DatePicker name="payDate" value={payDateVal} onChange={setPayDateVal}
-                          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                          className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs text-[var(--warm-muted)]">금액</label>
@@ -2098,7 +2098,7 @@ export default function TenantClient({
               ) : (
                 <p className="text-[var(--warm-muted)] text-sm">호실 정보를 찾을 수 없습니다.</p>
               )}
-              <a href="/room-manage" className="block w-full text-center py-2 mt-2 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-xl transition-colors">
+              <a href="/room-manage" className="block w-full text-center py-2 mt-2 bg-[var(--canvas)] hover:bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-lg transition-colors">
                 호실 관리 페이지로 →
               </a>
           </Modal>
@@ -2246,14 +2246,14 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
       {allowConditions && (
         <div className="flex gap-1.5">
           <button type="button" onClick={() => setMode('rooms')}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-medium transition-colors ${
-              mode === 'rooms' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'
+            className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              mode === 'rooms' ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'
             }`}>
             구체적 호실 선택
           </button>
           <button type="button" onClick={() => setMode('conditions')}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-medium transition-colors ${
-              mode === 'conditions' ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'
+            className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              mode === 'conditions' ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'
             }`}>
             조건만 선택
           </button>
@@ -2289,7 +2289,7 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
             disabled={selected.length >= 5}
             className={selCls}
           >
-            <option value="">호실 선택... {allowConditions ? '(선택사항, 최대 5개)' : '(최대 5개)'}</option>
+            <option value="">호실 선택… {allowConditions ? '(선택사항, 최대 5개)' : '(최대 5개)'}</option>
             {filtered.filter(r => !selected.includes(r.roomNo)).map(r => (
               <option key={r.id} value={r.roomNo}>
                 {fmtRoomNo(r.roomNo)}{r.isVacant ? ' (공실)' : ''}
@@ -2777,7 +2777,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                     </p>
                     <button type="button"
                       onClick={() => { setRentAmount(short.baseAmount); setCleaningFeeVal(short.cleaningFee); if (short.deposit > 0) setDepositAmountVal(short.deposit) }}
-                      className="min-h-[32px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity">
+                      className="min-h-[32px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity">
                       이 금액 채우기
                     </button>
                     <span className="ml-2 text-[0.625rem] text-[var(--warm-muted)]">채운 뒤 아래에서 자유롭게 수정할 수 있어요</span>
@@ -2956,7 +2956,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             <ContractFilesPanel tenantId={tenant.id} tenantName={tenant.name} />
           </div>
         )}
-        <Field label="외부 계약서 링크 (Google Drive·Dropbox 등, 선택)" name="contractUrl" type="url" defaultValue={lease?.contractUrl ?? ''} placeholder="https://..." />
+        <Field label="외부 계약서 링크 (Google Drive·Dropbox 등, 선택)" name="contractUrl" type="url" defaultValue={lease?.contractUrl ?? ''} placeholder="https://…" />
       </FormSection>
 
       <FormSection title="메모">
@@ -3186,7 +3186,7 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
             <div className="flex gap-2">
               {[{ value: '', label: '미변경' }, { value: 'MALE', label: '남성' }, { value: 'FEMALE', label: '여성' }, { value: 'OTHER', label: '기타' }].map(opt => (
                 <button key={opt.value} type="button" onClick={() => setGender(opt.value)}
-                  className={`flex-1 text-xs py-2 rounded-xl border transition-colors ${gender === opt.value ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}>
+                  className={`flex-1 text-xs py-2 rounded-lg border transition-colors ${gender === opt.value ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}>
                   {opt.label}
                 </button>
               ))}

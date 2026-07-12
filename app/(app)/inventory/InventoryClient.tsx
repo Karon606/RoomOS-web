@@ -311,7 +311,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
         <div className="flex items-start justify-between gap-2">
           <div>
             <h1 className="text-xl font-bold text-[var(--warm-dark)]">재고 관리 · 소모품·부식
-              <InfoHint title="소모품·부식 재고란?">쓰면 줄어드는 물건(쌀·세제·봉투 등)의 잔량과 사용량을 위치(창고·주방)별로 추적합니다 — 오래 쓰는 물건은 비품·자재 탭에서 방별로 배정합니다. 용어는 두 가지만 기억하세요 — 점검: 실제 수량을 세서 기록(두 점검 사이 차이가 소모량이 됨) · 보정: 장부가 실제와 어긋났을 때 차이를 소모로 잡지 않고 기준만 실측값으로 리셋. 구매는 수령 확인 시 자동으로 더해집니다.</InfoHint>
+              <InfoHint title="소모품·부식 재고란?">쓰면 줄어드는 물건(쌀·세제·봉투 등)의 잔량과 사용량을 위치(창고·주방)별로 추적합니다. 오래 쓰는 물건은 비품·자재 탭에서 방별로 배정합니다. 용어는 두 가지만 기억하세요. 점검: 실제 수량을 세서 기록(두 점검 사이 차이가 소모량이 됨) · 보정: 장부가 실제와 어긋났을 때 차이를 소모로 잡지 않고 기준만 실측값으로 리셋. 구매는 수령 확인 시 자동으로 더해집니다.</InfoHint>
             </h1>
           </div>
           {/* 점검 진입 방식 토글 — v2.0 §23 트랙형(보기 방식). 지출 '아이템별/주문별'과 동일 컴포넌트 */}
@@ -431,7 +431,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                           <p className="text-[0.625rem] text-[var(--warm-muted)] truncate">{ld.getMonth() + 1}/{ld.getDate()} · {g.category}</p>
                           {g.items.length > 1 && (
                             <button type="button" onClick={() => togglePendExpand(g.key)} className="mt-0.5 min-h-[34px] inline-flex items-center -my-1.5 text-[0.625rem] text-[var(--coral)] hover:underline">
-                              구매 {g.items.length}건 합산 {expanded ? '▾ 접기' : '▸ 펼치기'}
+                              구매 {g.items.length}건 합산 {expanded ? <><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg> 접기</> : <><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg> 펼치기</>}
                             </button>
                           )}
                         </div>
@@ -441,7 +441,7 @@ export default function InventoryClient({ initialRows, targetMonth, categories, 
                             합치기
                           </button>
                           <button type="button" onClick={() => handleQuickReceive(g.key, ids)} disabled={receivingKey === g.key}
-                            className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
+                            className="text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40">
                             {receivingKey === g.key ? '처리 중' : '수령 확인'}
                           </button>
                         </div>
@@ -966,7 +966,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                     className="inline-flex items-center gap-1 text-[0.6875rem] rounded-lg border border-[var(--honey)]/40 bg-[var(--honey)]/10 px-2 py-1 text-[var(--warm-mid)] hover:border-[var(--honey)] transition-colors disabled:opacity-50">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
                     이 품목 창고(허브): <strong className="text-[var(--warm-dark)]">{itemHub?.name ?? '미지정'}</strong>
-                    <span className="text-[var(--warm-muted)]">▾</span>
+                    <span className="text-[var(--warm-muted)]"><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
                   </button>
                   {hubOpen && (
                     <>
@@ -976,7 +976,7 @@ function DetailModal({ row, onClose, onChange, onDraftChange, targetMonth, onCha
                         {row.locations.map(l => (
                           <button key={l.id} type="button" disabled={pending} onClick={() => changeItemHub(l.id)}
                             className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--cream-soft)] flex items-center justify-between gap-2 ${l.isHub ? 'text-[var(--warm-dark)] font-medium' : 'text-[var(--warm-mid)]'}`}>
-                            {l.name}{l.isHub && <span className="text-[var(--honey)]">✓ 현재</span>}
+                            {l.name}{l.isHub && <span className="text-[var(--honey)]"><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> 현재</span>}
                           </button>
                         ))}
                         <button type="button" disabled={pending} onClick={() => changeItemHub(null)}
@@ -1280,11 +1280,11 @@ function SettingsForm({ row, onCancel, onDone }: {
         <label className="text-xs font-medium text-[var(--warm-mid)]">재고 추적 단위</label>
         <div className="grid grid-cols-2 gap-2">
           <button type="button" onClick={() => setTrackUnit('spec')}
-            className={`px-3 py-2 text-xs font-medium rounded-xl border transition-colors ${trackUnit === 'spec' ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
+            className={`px-3 py-2 text-xs font-medium rounded-xl border transition-colors ${trackUnit === 'spec' ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
             규격 단위{row.specUnit ? ` (${row.specUnit})` : ''}
           </button>
           <button type="button" onClick={() => setTrackUnit('qty')}
-            className={`px-3 py-2 text-xs font-medium rounded-xl border transition-colors ${trackUnit === 'qty' ? 'bg-[var(--coral)] text-white border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
+            className={`px-3 py-2 text-xs font-medium rounded-xl border transition-colors ${trackUnit === 'qty' ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-dark)] border-[var(--warm-border)]'}`}>
             수량 단위{row.qtyUnit ? ` (${row.qtyUnit})` : ''}
           </button>
         </div>
@@ -1300,12 +1300,12 @@ function SettingsForm({ row, onCancel, onDone }: {
             <span className="text-sm text-[var(--warm-dark)] font-medium shrink-0">{row.specUnit}</span>
             <span className="text-[var(--warm-muted)]">→</span>
             <select value={newUnit} onChange={e => { setNewUnit(e.target.value); setUnitMsg('') }}
-              className="bg-white border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
+              className="bg-[var(--cream-2)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
               <option value="">단위 선택…</option>
               {compatUnits.map(u => <option key={u} value={u}>{u}</option>)}
             </select>
             <button type="button" onClick={handleChangeUnit} disabled={!newUnit || unitPending}
-              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--warm-dark)] text-white disabled:opacity-40 active:scale-95 transition">
+              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--pill-bg)] text-[var(--on-solid)] disabled:opacity-40 active:scale-95 transition">
               {unitPending ? '변환 중…' : '변환'}
             </button>
           </div>
@@ -1336,7 +1336,7 @@ function SettingsForm({ row, onCancel, onDone }: {
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--warm-mid)]">구매 링크</label>
         <input type="url" value={purchaseUrl} onChange={e => setPurchaseUrl(e.target.value)}
-          placeholder="https://www.coupang.com/..."
+          placeholder="https://www.coupang.com/…"
           autoComplete="off"
           className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
         <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
@@ -1566,7 +1566,7 @@ function TimelineRow({ entry, stockUnit, trackUnit, itemLocations, onDeleteCheck
             <p className="text-[0.625rem] text-[var(--warm-muted)] mb-1.5">어느 위치로 입고됩니까?</p>
             {entry.qtyValue != null && entry.qtyValue > 1 && (
               <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="text-[0.625rem] text-[var(--warm-muted)]">도착 수량 (전체 {entry.qtyValue}{entry.qtyUnit ?? '개'} — 일부만 오면 잔여는 수령 대기 유지)</span>
+                <span className="text-[0.625rem] text-[var(--warm-muted)]">도착 수량 (전체 {entry.qtyValue}{entry.qtyUnit ?? '개'} · 일부만 오면 잔여는 수령 대기 유지)</span>
                 <input type="number" min={1} max={entry.qtyValue} step="any" value={rcvQtyStr} disabled={pending}
                   onChange={e => setRcvQtyStr(e.target.value)}
                   className="w-16 text-xs bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums focus:border-[var(--coral)]" />
@@ -1858,7 +1858,7 @@ function InventoryCategorySettingsModal({ categories, allExpenseCategories, onCl
                   <button type="button" onClick={() => move(i, 1)} disabled={i === entries.length - 1}
                     className="p-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] disabled:opacity-30" aria-label="아래로">▼</button>
                   <button type="button" onClick={() => remove(e.cat)}
-                    className="p-1 text-[var(--danger-fg)] hover:text-[var(--danger-fg)] text-xs" aria-label="제거">✕</button>
+                    className="p-1 text-[var(--danger-fg)] hover:text-[var(--danger-fg)] text-xs" aria-label="제거"><svg className="inline-block align-middle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                 </div>
               </div>
             ))}
@@ -3173,7 +3173,7 @@ function LocationBatchCheckModal({ rows, onClose, onDone, inline = false, onDraf
             </p>
           </div>
           {!inline && (
-            <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl w-11 h-11 flex items-center justify-center">✕</button>
+            <button onClick={onClose} className="text-[var(--warm-muted)] hover:text-[var(--warm-dark)] text-xl w-11 h-11 flex items-center justify-center"><svg className="inline-block align-middle" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
           )}
         </div>
 
@@ -3625,7 +3625,7 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
                       setPending(false)
                     }}
                     className={`text-[0.625rem] px-2 py-1 rounded-lg border transition-colors ${loc.isHub ? 'bg-[var(--warning-bg)] border-[var(--warning-ring)] text-[var(--warning-fg)]' : 'border-[var(--warm-border)] text-[var(--warm-muted)] hover:border-[var(--warning-ring)] hover:text-[var(--warning-fg)]'}`}>
-                    {loc.isHub ? '기본 창고 ✓' : '기본 창고'}
+                    {loc.isHub ? <>기본 창고 <svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></> : '기본 창고'}
                   </button>
                   <button type="button" onClick={() => { setEditId(loc.id); setEditName(loc.name) }}
                     className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2 py-1.5 min-h-[32px] rounded-lg hover:bg-[var(--cream)]">수정</button>
@@ -3693,7 +3693,7 @@ function BatchLocationModal({ selectedIds, onClose, onDone }: {
               {allLocs.map(loc => (
                 <button key={loc.id} type="button" onClick={() => toggle(loc.id)}
                   className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${chosen.has(loc.id)
-                    ? 'bg-[var(--coral)] text-white border-[var(--coral)]'
+                    ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]'
                     : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
                   {loc.name}
                 </button>
@@ -3763,7 +3763,7 @@ function LocationAssignSection({ trackedItemId, initialLocations }: {
             type="button"
             onClick={() => toggle(loc.id)}
             className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${selected.has(loc.id)
-              ? 'bg-[var(--coral)] text-white border-[var(--coral)]'
+              ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]'
               : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)] hover:border-[var(--coral)]'}`}>
             {loc.name}
           </button>

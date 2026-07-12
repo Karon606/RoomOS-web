@@ -16,7 +16,7 @@ export default function DashboardLoading() {
       {/* KPI 그리드 — 실제와 동일 형태(v2.0 §24 반응형) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="rounded-2xl bg-[var(--cream)] border border-[var(--warm-border)] p-4 space-y-2.5">
+          <div key={i} className="rounded-xl bg-[var(--cream)] border border-[var(--warm-border)] p-4 space-y-2.5">
             <Skeleton className="h-3 w-16" />
             <Skeleton className="h-6 w-28" />
             <Skeleton className="h-3 w-20" />
@@ -32,7 +32,7 @@ export default function DashboardLoading() {
       {/* 본문 — 차트/리스트 2블록 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {['c1', 'c2'].map(c => (
-          <div key={c} className="rounded-2xl bg-[var(--cream)] border border-[var(--warm-border)] p-5 h-48 flex items-center justify-center">
+          <div key={c} className="rounded-xl bg-[var(--cream)] border border-[var(--warm-border)] p-5 h-48 flex items-center justify-center">
             <Skeleton className="h-28 w-28 rounded-full" />
           </div>
         ))}

@@ -410,7 +410,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
             {it.count > 1 && (
               <button type="button" onClick={() => toggleExpand(it.id)}
                 className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 rounded-md border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">
-                구매 {it.count}건 합산 {expanded.has(it.id) ? '▾ 접기' : '▸ 펼치기'}
+                구매 {it.count}건 합산 {expanded.has(it.id) ? <><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg> 접기</> : <><svg className="inline-block align-middle" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg> 펼치기</>}
               </button>
             )}
             {awaitingReceipt && rcvAsk === it.id ? (
@@ -423,7 +423,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   className="w-16 text-xs bg-[var(--canvas)] border border-[var(--coral)] rounded-sm px-2 py-1 text-[var(--warm-dark)] outline-none tabular-nums" />
                 <button type="button" disabled={pending}
                   onClick={() => markReceived(it, true, Math.min(Number(rcvQty) || 1, it.qtyValue ?? 1))}
-                  className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">수령</button>
+                  className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40">수령</button>
                 <button type="button" onClick={() => setRcvAsk(null)} disabled={pending} className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)]">취소</button>
               </>
             ) : awaitingReceipt ? (
@@ -433,7 +433,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   if (it.qtyValue != null && it.qtyValue > 1) { setRcvAsk(it.id); setRcvQty(fmtQty(it.qtyValue)) }
                   else markReceived(it, true)
                 }}
-                className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-40">
+                className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-40">
                 수령 완료
               </button>
             ) : (
@@ -503,7 +503,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         ]} />
         <div className="self-end md:self-auto text-right">
           <MonthSelector />
-          <p className="mt-0.5 text-[0.625rem] text-[var(--warm-muted)]">월은 &lsquo;이달 구매&rsquo; 요약에만 적용 — 아래 배치 현황은 누적</p>
+          <p className="mt-0.5 text-[0.625rem] text-[var(--warm-muted)]">월은 &lsquo;이달 구매&rsquo; 요약에만 적용 · 아래 배치 현황은 누적</p>
         </div>
       </div>
       {/* 헤더 — 소모품 탭과 동일 골격: 제목 블록 → 버튼 줄 → 검색(v2.0 §23) */}
@@ -632,7 +632,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
           {pillMode === 'assign' && (
             <>
               <select autoFocus defaultValue="" disabled={pending} onChange={e => onBatchPick(e.target.value)}
-                className="h-9 max-w-[44vw] rounded-[9px] bg-white/[0.13] px-2 text-sm text-white outline-none">
+                className="h-9 max-w-[44vw] rounded-md bg-white/[0.13] px-2 text-sm text-white outline-none">
                 <option value="" disabled>방·공용부 선택…</option>
                 <optgroup label="방">
                   {rooms.map(r => <option key={r.id} value={'room:' + r.id}>{fmtRoomNo(r.roomNo)}</option>)}
@@ -806,7 +806,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                   <button type="button"
                     disabled={pending || !(adjQty?.id === it.id && adjQty.v.trim() !== '' && Number(adjQty.v) !== (it.qtyValue ?? 0))}
                     onClick={() => adjQty && runAdjustQty(it, adjQty.v)}
-                    className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-white hover:opacity-90 transition-opacity disabled:opacity-35">저장</button>
+                    className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-35">저장</button>
                   <span className="text-[0.625rem] text-[var(--warm-muted)]">줄이면 여분으로, 늘리면 여분에서 가져와요</span>
                 </div>
               )}

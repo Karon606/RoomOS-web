@@ -89,7 +89,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
     } finally { release(); setIssuing(false) }
   }
 
-  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors'
+  const inputCls = 'w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors'
   const Field = ({ label, k, placeholder }: { label: string; k: keyof Fields; placeholder?: string }) => (
     <div className="space-y-1">
       <label className="text-xs font-medium text-[var(--warm-mid)]">{label}</label>
@@ -102,7 +102,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
     <div className="min-h-dvh bg-[var(--canvas)] flex flex-col items-center px-4 pt-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
       <div className="w-full max-w-md space-y-4">
         <div className="flex items-center justify-between gap-2">
-          <Link href="/rent-receipts" className="text-sm text-[var(--coral)]">← 입실료 납부 확인서</Link>
+          <Link href="/rent-receipts" className="text-sm text-[var(--coral)]">‹ 입실료 납부 확인서</Link>
           <button onClick={reset} className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--cream)]">자동값으로</button>
         </div>
 
@@ -111,7 +111,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
           <p className="text-xs text-[var(--warm-muted)] mt-0.5">자동으로 채워진 값을 확인·수정한 뒤 발급하세요. 영업장명·로고·사업자정보는 자동으로 들어갑니다.</p>
         </div>
 
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl p-4 space-y-3">
+        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 space-y-3">
           <div className="space-y-1">
             <label className="text-xs font-medium text-[var(--warm-mid)]">발행일</label>
             <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className={inputCls} />
@@ -140,7 +140,7 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
             {previewing ? '여는 중…' : '미리보기·인쇄'}
           </button>
           <button onClick={handleIssue} disabled={issuing}
-            className="flex-1 px-3 py-2.5 rounded-xl bg-[var(--coral)] text-white text-sm font-semibold disabled:opacity-60">
+            className="flex-1 px-3 py-2.5 rounded-xl bg-[var(--coral)] text-[var(--on-solid)] text-sm font-semibold disabled:opacity-60">
             {issuing ? '발급 중…' : '발급 (PDF 저장)'}
           </button>
         </div>

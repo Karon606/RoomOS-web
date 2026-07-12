@@ -131,7 +131,7 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap" />
 
       <div className="no-print rc-toolbar">
-        <Link href="/residence-certs" className="rc-link">← 실거주 확인서</Link>
+        <Link href="/residence-certs" className="rc-link">‹ 실거주 확인서</Link>
         <div className="rc-spacer" />
         <label className="rc-field"><span>작성일</span>
           <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
@@ -210,18 +210,18 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
         .rc-toolbar {
           position: sticky; top: 8px; z-index: 5; width: min(595px, 100% - 24px);
           display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-          background: #fff; border: 1px solid #e7dfd1; border-radius: 12px; margin-bottom: 10px;
+          background: var(--cream); border: 1px solid var(--cream-3); border-radius: 10px; margin-bottom: 10px;
           flex-wrap: wrap; box-shadow: 0 4px 12px rgba(0,0,0,0.06);
         }
-        .rc-link { color: #a03c2e; font-size: 13px; text-decoration: none; }
+        .rc-link { color: var(--coral); font-size: 13px; text-decoration: none; }
         .rc-spacer { flex: 1; }
-        .rc-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b6258; }
-        .rc-field input { padding: 4px 8px; border: 1px solid #e7dfd1; border-radius: 6px; font-size: 12px; }
-        .rc-issue { padding: 6px 14px; background: #a03c2e; color: #fff; border: 0; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
+        .rc-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-s); }
+        .rc-field input { padding: 4px 8px; border: 1px solid var(--cream-3); border-radius: 6px; font-size: 12px; }
+        .rc-issue { padding: 6px 14px; background: var(--coral); color: var(--on-solid); border: 0; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
         .rc-issue:disabled { opacity: 0.6; }
-        .rc-btn-secondary { padding: 6px 12px; background: #fff; color: #1a1a1a; border: 1px solid #d6cdbb; border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }
+        .rc-btn-secondary { padding: 6px 12px; background: var(--cream); color: var(--ink); border: 1px solid var(--cream-3); border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }
         .rc-btn-secondary:disabled { opacity: 0.6; }
-        .rc-hint { width: min(595px, 100% - 24px); font-size: 12px; color: #8a7f70; margin: 0 0 12px; }
+        .rc-hint { width: min(595px, 100% - 24px); font-size: 12px; color: var(--ink-m); margin: 0 0 12px; }
 
         .rc-cage { margin: 0 auto; position: relative; }
         .rc-page {

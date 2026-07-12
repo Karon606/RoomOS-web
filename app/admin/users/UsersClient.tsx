@@ -21,7 +21,7 @@ type Row = {
 }
 
 const STATUS_META: Record<Row['status'], { label: string; bg: string; fg: string }> = {
-  PENDING: { label: '승인 대기', bg: 'var(--honey)', fg: '#3d2418' },
+  PENDING: { label: '승인 대기', bg: 'var(--info-bg)', fg: 'var(--info-fg)' },
   APPROVED: { label: '승인됨', bg: 'var(--sand)', fg: 'var(--ink)' },
   REJECTED: { label: '거절', bg: 'var(--cream-3)', fg: 'var(--ink-3)' },
 }
@@ -60,7 +60,7 @@ export default function UsersClient({ rows, pendingCount }: { rows: Row[]; pendi
         {pendingCount > 0 && (
           <span
             className="text-xs font-semibold px-2 py-1 rounded-md"
-            style={{ background: 'var(--honey)', color: '#3d2418' }}
+            style={{ background: 'var(--info-bg)', color: 'var(--info-fg)' }}
           >
             승인 대기 {pendingCount}건
           </span>
@@ -77,7 +77,7 @@ export default function UsersClient({ rows, pendingCount }: { rows: Row[]; pendi
               className="px-3 py-1.5 text-sm rounded-lg transition-colors"
               style={{
                 background: active ? 'var(--persimmon)' : 'var(--cream)',
-                color: active ? '#fff' : 'var(--ink-3)',
+                color: active ? 'var(--on-solid)' : 'var(--ink-3)',
                 border: '1px solid var(--cream-3)',
               }}
             >
@@ -143,7 +143,7 @@ export default function UsersClient({ rows, pendingCount }: { rows: Row[]; pendi
                     <button
                       disabled={rowBusy}
                       onClick={() => run(u.id, () => setUserStatus(u.id, 'APPROVED'))}
-                      className="px-3 py-1.5 text-sm font-medium rounded-lg text-white disabled:opacity-50"
+                      className="px-3 py-1.5 text-sm font-medium rounded-lg text-[var(--on-solid)] disabled:opacity-50"
                       style={{ background: 'var(--persimmon)' }}
                     >
                       승인

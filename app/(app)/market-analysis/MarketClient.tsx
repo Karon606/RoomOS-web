@@ -269,7 +269,7 @@ function CompetitorModal({
               className={inputCls}
               value={form.address}
               onChange={e => setField('address', e.target.value)}
-              placeholder="예: 서울시 관악구 ..."
+              placeholder="예: 서울시 관악구 …"
             />
           </div>
           <div>
@@ -278,7 +278,7 @@ function CompetitorModal({
               className={inputCls}
               value={form.naverPlaceUrl}
               onChange={e => setField('naverPlaceUrl', e.target.value)}
-              placeholder="https://naver.me/..."
+              placeholder="https://naver.me/…"
             />
           </div>
 
@@ -300,7 +300,7 @@ function CompetitorModal({
                   key={i}
                   style={{
                     border: '1px solid var(--warm-border)',
-                    borderRadius: 12,
+                    borderRadius: 14,
                     padding: '10px 12px',
                     background: 'var(--canvas)',
                     display: 'flex',
@@ -780,7 +780,7 @@ export default function MarketClient({
   const card: React.CSSProperties = {
     background: 'var(--cream)',
     border: '1px solid var(--warm-border)',
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 20,
   }
 
@@ -976,7 +976,7 @@ export default function MarketClient({
                                   rel="noopener noreferrer"
                                   style={{ fontSize: '0.75rem', color: 'var(--coral)', marginTop: 2, display: 'block' }}
                                 >
-                                  네이버 플레이스 →
+                                  네이버 플레이스 ›
                                 </a>
                               )}
                             </div>
@@ -1068,7 +1068,7 @@ export default function MarketClient({
                         fontSize: '0.8125rem',
                         fontWeight: strategy === s ? 700 : 400,
                         background: strategy === s ? 'var(--coral)' : 'var(--canvas)',
-                        color: strategy === s ? '#fff' : 'var(--warm-muted)',
+                        color: strategy === s ? 'var(--on-solid)' : 'var(--warm-muted)',
                         border: strategy === s ? '1.5px solid var(--coral)' : '1.5px solid var(--warm-border)',
                         cursor: 'pointer',
                       }}
@@ -1363,7 +1363,7 @@ export default function MarketClient({
                               fontSize: '0.75rem',
                               fontWeight: selected ? 700 : 400,
                               background: selected ? 'var(--coral)' : 'var(--canvas)',
-                              color: selected ? '#fff' : 'var(--warm-muted)',
+                              color: selected ? 'var(--on-solid)' : 'var(--warm-muted)',
                               border: selected ? '1.5px solid var(--coral)' : '1.5px solid var(--warm-border)',
                               cursor: 'pointer',
                             }}

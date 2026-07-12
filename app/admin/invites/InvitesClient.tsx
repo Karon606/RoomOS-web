@@ -21,7 +21,7 @@ type Row = {
   createdAtLabel: string
 }
 
-const inputCls = 'w-full px-3 py-2 rounded-lg text-sm outline-none'
+const inputCls = 'w-full px-3 py-2 rounded-sm text-sm outline-none transition-shadow focus:shadow-[var(--input-ring-focus)]'
 const inputStyle: React.CSSProperties = {
   background: 'var(--canvas)',
   border: '1px solid var(--cream-3)',
@@ -153,7 +153,7 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
         <button
           onClick={submit}
           disabled={pending}
-          className="px-4 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50"
+          className="px-4 py-2 text-sm font-medium rounded-lg text-[var(--on-solid)] disabled:opacity-50"
           style={{ background: 'var(--persimmon)' }}
         >
           코드 발급

@@ -87,12 +87,12 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
           style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}>
           <p className="font-semibold">공개 페이지 슬러그가 설정되지 않았어요.</p>
           <p style={{ color: 'var(--warm-muted)' }}>
-            환경설정 → 기본정보에서 <strong>공개 페이지 슬러그</strong>를 입력하시면 영업장의 공개 랜딩 페이지
+            환경설정 &gt; 기본정보에서 <strong>공개 페이지 슬러그</strong>를 입력하시면 영업장의 공개 랜딩 페이지
             트래픽(페이지뷰·유입·UTM)을 여기서 보실 수 있어요.
           </p>
           <Link href="/settings"
             className="inline-block px-4 py-2 rounded-lg text-sm font-medium"
-            style={{ background: 'var(--persimmon)', color: '#fff' }}>
+            style={{ background: 'var(--persimmon)', color: 'var(--on-solid)' }}>
             환경설정으로 이동
           </Link>
         </div>
@@ -145,7 +145,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
         />
         {/* 특정 날짜 — 선택하면 그 날 0~24시(시간별) */}
         <div className="flex items-center gap-1" style={{
-          padding: '1px', borderRadius: 9,
+          padding: '1px', borderRadius: 10,
           border: '1px solid ' + (customDate ? 'var(--persimmon)' : 'var(--warm-border)'),
           background: customDate ? 'color-mix(in srgb, var(--persimmon) 7%, transparent)' : 'transparent',
         }}>
@@ -155,7 +155,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
           {customDate && (
             <button type="button" onClick={() => handleRange(range)} disabled={pending}
               title="특정 날짜 해제" aria-label="특정 날짜 해제"
-              className="px-1.5 text-xs disabled:opacity-50" style={{ color: 'var(--persimmon)' }}>✕</button>
+              className="px-1.5 text-xs disabled:opacity-50 inline-flex items-center" style={{ color: 'var(--persimmon)' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
           )}
         </div>
         <span className="text-[11px] ml-1" style={{ color: 'var(--warm-muted)' }}>
@@ -182,7 +182,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
       {/* 범위 내 강조 카드 (총뷰 + 유니크 방문자) */}
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-xl p-4"
-          style={{ background: 'var(--persimmon)', color: '#fff' }}>
+          style={{ background: 'var(--persimmon)', color: 'var(--on-solid)' }}>
           <p className="text-[11px] opacity-80">선택 범위 페이지뷰</p>
           <p className="text-xl font-bold mt-1 tabular-nums">{fmt(stats.rangeViews)}</p>
         </div>

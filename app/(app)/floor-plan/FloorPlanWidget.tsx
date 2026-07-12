@@ -29,7 +29,7 @@ export default function FloorPlanWidget({
         <Link href="/floor-plan"
           className="text-xs font-medium hover:underline"
           style={{ color: 'var(--coral)' }}>
-          편집 →
+          편집 ›
         </Link>
       </div>
       <div style={{ height: 340, display: 'flex', flexDirection: 'column' }}>

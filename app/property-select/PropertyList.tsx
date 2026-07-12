@@ -6,7 +6,7 @@ import { selectProperty, signOut, createProperty, requestJoinByCode, reactivateP
 
 const ROLE_STYLE: Record<string, { bg: string; color: string }> = {
   OWNER:   { bg: 'color-mix(in srgb, var(--coral) 12%, transparent)', color: 'var(--persimmon-d)' },
-  MANAGER: { bg: 'rgba(122,106,90,0.12)', color: 'var(--ink-3)' },
+  MANAGER: { bg: 'var(--reserve-bg)', color: 'var(--ink-3)' },
   STAFF:   { bg: 'var(--neutral-bg)', color: 'var(--neutral-fg)' },
 }
 const ROLE_LABEL: Record<string, string> = {
@@ -97,7 +97,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
         onChange={e => setJoinCode(e.target.value.toUpperCase())}
         placeholder="영업장 운영자에게 받은 6자 코드"
         autoComplete="off"
-        className="w-full rounded-sm px-3 py-2.5 text-sm outline-none num"
+        className="w-full rounded-sm px-3 py-2.5 text-sm outline-none num transition-shadow focus:shadow-[var(--input-ring-focus)]"
         style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
       />
       <textarea
@@ -105,7 +105,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
         onChange={e => setJoinMsg(e.target.value)}
         rows={2}
         placeholder="간단한 메시지 (선택) · 본인 소개 등"
-        className="w-full rounded-sm px-3 py-2.5 text-sm outline-none resize-none"
+        className="w-full rounded-sm px-3 py-2.5 text-sm outline-none resize-none transition-shadow focus:shadow-[var(--input-ring-focus)]"
         style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
       />
       {joinError && <p className="text-xs" style={{ color: 'var(--danger-fg)' }}>{joinError}</p>}
@@ -113,15 +113,15 @@ export default function PropertyList({ properties }: { properties: Property[] })
       <div className="flex gap-2">
         <button
           onClick={() => { setShowJoin(false); setJoinCode(''); setJoinMsg(''); setJoinError(''); setJoinSuccess('') }}
-          className="flex-1 py-2.5 rounded-xl text-sm"
+          className="flex-1 py-2.5 rounded-lg text-sm"
           style={{ background: 'var(--canvas)', color: 'var(--warm-muted)', border: '1px solid var(--warm-border)' }}>
           닫기
         </button>
         <button
           onClick={handleJoin}
           disabled={isJoining || !joinCode.trim()}
-          className="flex-1 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50"
-          style={{ background: 'var(--coral)', color: 'var(--warm-dark)' }}>
+          className="flex-1 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50"
+          style={{ background: 'var(--coral)', color: 'var(--on-solid)' }}>
           {isJoining ? '요청 중…' : '참여 요청 보내기'}
         </button>
       </div>
@@ -139,22 +139,22 @@ export default function PropertyList({ properties }: { properties: Property[] })
         onChange={e => setNewName(e.target.value)}
         onKeyDown={e => e.key === 'Enter' && handleCreate()}
         placeholder="영업장 이름 (예: 강남 고시원)"
-        className="w-full rounded-sm px-3 py-2.5 text-sm outline-none"
+        className="w-full rounded-sm px-3 py-2.5 text-sm outline-none transition-shadow focus:shadow-[var(--input-ring-focus)]"
         style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)' }}
       />
       {createError && <p className="text-xs text-[var(--danger-fg)]">{createError}</p>}
       <div className="flex gap-2">
         <button
           onClick={() => { setShowCreate(false); setNewName(''); setCreateError('') }}
-          className="flex-1 py-2.5 rounded-xl text-sm"
+          className="flex-1 py-2.5 rounded-lg text-sm"
           style={{ background: 'var(--canvas)', color: 'var(--warm-muted)', border: '1px solid var(--warm-border)' }}>
           취소
         </button>
         <button
           onClick={handleCreate}
           disabled={isCreating || !newName.trim()}
-          className="flex-1 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50"
-          style={{ background: 'var(--coral)', color: 'var(--warm-dark)' }}>
+          className="flex-1 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50"
+          style={{ background: 'var(--coral)', color: 'var(--on-solid)' }}>
           {isCreating ? '개설 중…' : '개설하기'}
         </button>
       </div>
@@ -177,15 +177,15 @@ export default function PropertyList({ properties }: { properties: Property[] })
             <div className="flex flex-col gap-2 items-center mt-2">
               <button
                 onClick={() => setShowCreate(true)}
-                className="px-6 py-2.5 rounded-xl text-sm font-medium"
-                style={{ background: 'var(--coral)', color: 'var(--warm-dark)' }}>
+                className="px-6 py-2.5 rounded-lg text-sm font-medium"
+                style={{ background: 'var(--coral)', color: 'var(--on-solid)' }}>
                 + 새 영업장 개설
               </button>
               <button
                 onClick={() => setShowJoin(true)}
                 className="text-sm"
                 style={{ color: 'var(--persimmon-d)' }}>
-                참여 코드로 영업장 참여 →
+                참여 코드로 영업장 참여 ›
               </button>
             </div>
           )}
@@ -245,7 +245,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
                     </span>
                   ) : (
                     <span className="text-sm" style={{ color: 'var(--warm-muted)' }}>
-                      선택 →
+                      선택 ›
                     </span>
                   )}
                 </div>
@@ -255,7 +255,7 @@ export default function PropertyList({ properties }: { properties: Property[] })
                 <button
                   onClick={() => handleReactivate(p.propertyId)}
                   disabled={isPending}
-                  className="mt-1.5 w-full py-2 rounded-xl text-xs font-medium disabled:opacity-40"
+                  className="mt-1.5 w-full py-2 rounded-lg text-xs font-medium disabled:opacity-40"
                   style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--coral)' }}>
                   {reactivatingId === p.propertyId ? '재개 중…' : '운영 재개'}
                 </button>
@@ -274,14 +274,14 @@ export default function PropertyList({ properties }: { properties: Property[] })
           <button
             onClick={() => setShowCreate(true)}
             disabled={isPending}
-            className="w-full py-3 rounded-xl text-sm font-medium disabled:opacity-40"
+            className="w-full py-3 rounded-lg text-sm font-medium disabled:opacity-40"
             style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-mid)' }}>
             + 새 영업장 개설
           </button>
           <button
             onClick={() => setShowJoin(true)}
             disabled={isPending}
-            className="w-full py-2.5 rounded-xl text-sm disabled:opacity-40"
+            className="w-full py-2.5 rounded-lg text-sm disabled:opacity-40"
             style={{ background: 'transparent', border: '1px dashed var(--warm-border)', color: 'var(--persimmon-d)' }}>
             참여 코드로 영업장 참여
           </button>

@@ -1266,7 +1266,7 @@ async function getDashboardData(propertyId: string, targetMonth: string) {
       if (!l.moveInDate) continue
       alertItems.push({
         category:  'contact',
-        text:      `${l.tenant.name}님 연락할 때 — 입주 희망 ${fmtShortDate(l.moveInDate)}${l.isShortTerm ? ' (단기)' : ''}`,
+        text:      `${l.tenant.name}님 연락할 때 · 입주 희망 ${fmtShortDate(l.moveInDate)}${l.isShortTerm ? ' (단기)' : ''}`,
         link:      `/tenants?tenantId=${l.tenant.id}`,
         dotColor:  'var(--coral)',
         timeLabel: dayLabel(daysUntil(l.moveInDate)),

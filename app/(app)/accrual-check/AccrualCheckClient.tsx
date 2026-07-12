@@ -140,7 +140,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
             key={k}
             onClick={() => setFilter(k)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              filter === k ? 'bg-[var(--coral)] text-white' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'
+              filter === k ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'
             }`}
           >
             {label}

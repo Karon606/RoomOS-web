@@ -44,7 +44,8 @@ export function PushHistoryList() {
       <button type="button" onClick={() => setOpen(v => !v)}
         className="text-xs font-medium flex items-center gap-1.5 hover:underline"
         style={{ color: 'var(--warm-mid)' }}>
-        최근 푸시 내역 {open ? '▲' : '▼'}
+        최근 푸시 내역
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={open ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} /></svg>
       </button>
       {open && (
         <div className="space-y-1.5">

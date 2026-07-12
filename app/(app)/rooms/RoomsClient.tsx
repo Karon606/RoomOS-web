@@ -631,7 +631,7 @@ export default function RoomsClient({
             onChange={e => setFloorFilter(e.target.value)}
             className={`px-3 py-1.5 text-xs font-medium rounded-sm border transition-colors outline-none
               ${floorFilter
-                ? 'bg-[var(--coral)] text-white border-[var(--coral)]'
+                ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]'
                 : 'bg-[var(--cream)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}
           >
             <option value="">전체 층</option>
@@ -725,7 +725,7 @@ export default function RoomsClient({
                 <div className="flex items-center gap-2 min-w-0">
                   {selectMode && isBatchEligible(room) && (
                     <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-[5px] border transition-colors
-                      ${selectedIds.has(room.roomId) ? 'bg-[var(--coral)] border-[var(--coral)] text-white' : 'border-[var(--warm-border)] bg-[var(--cream)]'}`}>
+                      ${selectedIds.has(room.roomId) ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--on-solid)]' : 'border-[var(--warm-border)] bg-[var(--cream)]'}`}>
                       {selectedIds.has(room.roomId) && (
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>
                       )}
@@ -889,7 +889,7 @@ export default function RoomsClient({
                     style={{ width: colWidths.roomNo, minWidth: colWidths.roomNo, maxWidth: colWidths.roomNo, borderLeft: `3px solid ${statusTipColor(tone)}` }}>
                     <span className="flex items-center gap-2 min-w-0">
                       {selectMode && isBatchEligible(room) && (
-                        <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border ${selectedIds.has(room.roomId) ? 'bg-[var(--coral)] border-[var(--coral)] text-white' : 'border-[var(--warm-border)] bg-[var(--cream)]'}`}>
+                        <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border ${selectedIds.has(room.roomId) ? 'bg-[var(--coral)] border-[var(--coral)] text-[var(--on-solid)]' : 'border-[var(--warm-border)] bg-[var(--cream)]'}`}>
                           {selectedIds.has(room.roomId) && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>}
                         </span>
                       )}

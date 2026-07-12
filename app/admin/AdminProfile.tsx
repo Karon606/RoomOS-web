@@ -33,7 +33,7 @@ export default function AdminProfile({
         className="flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors hover:bg-[var(--cream-soft)] min-h-[40px]"
       >
         <div
-          className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
+          className="w-7 h-7 rounded-full flex items-center justify-center text-[var(--on-solid)] text-xs font-semibold shrink-0"
           style={{ background: 'var(--persimmon)' }}
           aria-hidden
         >
@@ -67,7 +67,7 @@ export default function AdminProfile({
               className="block px-4 py-2.5 text-sm hover:bg-[var(--cream-soft)] transition-colors"
               style={{ color: 'var(--ink-3)' }}
             >
-              앱으로 →
+              앱으로 ›
             </Link>
           )}
           <form action={signOut}>

@@ -35,7 +35,7 @@ const CATEGORY_COLORS: Record<string, { bg: string; fg: string; ring: string }> 
   소음: { bg: 'bg-[var(--danger-bg)]',   fg: 'text-[var(--danger-fg)]',   ring: 'ring-[var(--danger-ring)]'   },
   청결: { bg: 'bg-[var(--reserve-bg)]',   fg: 'text-[var(--reserve-fg)]',   ring: 'ring-[var(--reserve-ring)]'   },
   편의: { bg: 'bg-[var(--deposit-bg)]', fg: 'text-[var(--deposit-fg)]', ring: 'ring-[var(--deposit-ring)]' },
-  기타: { bg: 'bg-stone-50',  fg: 'text-stone-700',  ring: 'ring-stone-200'  },
+  기타: { bg: 'bg-[var(--neutral-bg)]',  fg: 'text-[var(--neutral-fg)]',  ring: 'ring-[var(--neutral-ring)]'  },
 }
 
 
@@ -213,7 +213,7 @@ export default function RequestsClient({
                 value={addCommonPlace}
                 onChange={e => setAddCommonPlace(e.target.value)}
                 placeholder="예: 공용 주방, 1층 화장실, 엘리베이터 등"
-                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-400 outline-none focus:border-[var(--coral)]"
+                className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)]"
               />
             </div>
           )}
@@ -266,7 +266,7 @@ export default function RequestsClient({
               onChange={e => setAddContent(e.target.value)}
               rows={3}
               placeholder="요청 내용을 입력하세요"
-              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder-gray-400 outline-none focus:border-[var(--coral)] resize-none"
+              className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] placeholder:text-[var(--ink-m)] outline-none focus:border-[var(--coral)] resize-none"
             />
           </div>
 
@@ -313,7 +313,7 @@ export default function RequestsClient({
           onClick={() => setFilterCategory('all')}
           className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors ${
             filterCategory === 'all'
-              ? 'bg-[var(--ink-2)] text-white'
+              ? 'bg-[var(--pill-bg)] text-[var(--on-solid)]'
               : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)]'
           }`}
         >
@@ -343,7 +343,7 @@ export default function RequestsClient({
           onClick={() => setFilterUrgent(v => !v)}
           className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors ${
             filterUrgent
-              ? 'bg-[var(--coral)] text-white'
+              ? 'bg-[var(--coral)] text-[var(--on-solid)]'
               : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)]'
           }`}
         >
@@ -421,8 +421,9 @@ export default function RequestsClient({
 
                 {/* 처리 메모 */}
                 {r.resolutionMemo && (
-                  <p className="text-xs text-[var(--success-fg)] mt-2 pt-2 border-t border-[var(--success-ring)]">
-                    ↳ {r.resolutionMemo}
+                  <p className="text-xs text-[var(--success-fg)] mt-2 pt-2 border-t border-[var(--success-ring)] flex gap-1.5">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0 mt-0.5"><path d="M7 4v9a3 3 0 0 0 3 3h10M15 11l5 5-5 5" /></svg>
+                    <span>{r.resolutionMemo}</span>
                   </p>
                 )}
 
@@ -436,7 +437,7 @@ export default function RequestsClient({
                         rows={2}
                         autoFocus
                         placeholder="어떻게 처리했는지 짧게 (선택)"
-                        className="w-full text-xs rounded-sm px-2 py-1.5 resize-none bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] outline-none"
+                        className="w-full text-xs rounded-sm px-2 py-1.5 resize-none bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]"
                       />
                       <div className="flex gap-2">
                         <button
@@ -460,9 +461,9 @@ export default function RequestsClient({
                       <button
                         onClick={() => { setResolvingId(r.id); setResolvingMemo('') }}
                         disabled={pending}
-                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)] hover:bg-[var(--success-bg)] disabled:opacity-50"
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)] hover:bg-[var(--success-bg)] disabled:opacity-50 inline-flex items-center gap-1"
                       >
-                        ✓ 완료로 처리
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>완료로 처리
                       </button>
                       <button
                         onClick={() => handleDelete(r.id)}

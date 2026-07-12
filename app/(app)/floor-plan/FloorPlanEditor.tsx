@@ -223,7 +223,7 @@ function PropertiesPanel({
           <>
             <button
               onClick={onToggleVertexEdit}
-              className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${isVertexEditing ? 'text-white border-transparent' : 'border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)]'}`}
+              className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${isVertexEditing ? 'text-[var(--on-solid)] border-transparent' : 'border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)]'}`}
               style={isVertexEditing ? { background: 'var(--coral)' } : {}}>
               {isVertexEditing ? '정점 편집 중' : '정점 편집'}
             </button>
@@ -457,7 +457,7 @@ function AiImportModal({
                 다시 선택
               </button>
               <button onClick={() => onConfirm(preview!, imgDataUrl)}
-                className="flex-1 py-2 text-xs rounded-lg text-white font-medium"
+                className="flex-1 py-2 text-xs rounded-lg text-[var(--on-solid)] font-medium"
                 style={{ background: 'var(--coral)' }}>
                 도면에 추가
               </button>
@@ -1081,7 +1081,7 @@ export default function FloorPlanEditor({
 
   // ── 버튼 스타일 ───────────────────────────────────────────
   const btn    = 'px-3 py-2 text-xs rounded-lg border transition-colors shrink-0 min-h-[44px] flex items-center gap-1'
-  const btnOn  = (color = 'var(--coral)') => `${btn} text-white border-transparent`
+  const btnOn  = (color = 'var(--coral)') => `${btn} text-[var(--on-solid)] border-transparent`
   const btnOff = `${btn} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:border-[var(--coral)]`
   const btnGray = `${btn} bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-mid)]`
   const divider = <div className="w-px h-5 bg-[var(--warm-border)] mx-0.5 shrink-0" />
@@ -1179,7 +1179,7 @@ export default function FloorPlanEditor({
                   </span>
                   {drawingPolygon.points.length >= 6 && (
                     <button onClick={() => finalizePolygon(drawingPolygon.points)}
-                      className={`${btn} bg-[var(--coral)] border-transparent text-white`}>완료</button>
+                      className={`${btn} bg-[var(--coral)] border-transparent text-[var(--on-solid)]`}>완료</button>
                   )}
                   <button onClick={() => { setDrawingPolygon(null); setDrawCursor(null) }}
                     className={btnGray}>취소</button>
@@ -1271,7 +1271,7 @@ export default function FloorPlanEditor({
       {/* ── 다각형 그리기 안내 ── */}
       {drawingPolygon && (
         <div className="flex items-center justify-center py-1.5 text-[0.6875rem] font-medium border-b border-[var(--warm-border)]"
-          style={{ background: '#fff7ed', color: 'var(--coral)' }}>
+          style={{ background: 'var(--coral-pale)', color: 'var(--coral)' }}>
           {drawingPolygon.points.length === 0
             ? '캔버스를 클릭하여 첫 번째 꼭짓점을 추가하세요'
             : drawingPolygon.points.length < 6
@@ -1285,7 +1285,7 @@ export default function FloorPlanEditor({
         {/* 캔버스 */}
         <div ref={containerRef} className="flex-1 overflow-auto"
           style={{
-            background: 'var(--cream-2, #f0ebe0)',
+            background: 'var(--cream-2)',
             touchAction: (editMode && !drawingPolygon) ? 'none' : 'auto',
             cursor: drawingPolygon ? 'crosshair' : 'default',
           }}>
@@ -1455,7 +1455,7 @@ export default function FloorPlanEditor({
       {editMode && multiSelectMode && selectedIds.length === 0 && !drawingPolygon && (
         <div className="md:hidden fixed bottom-4 inset-x-4 z-30 pointer-events-none">
           <div className="rounded-xl px-4 py-2.5 text-xs text-center text-[var(--warm-dark)]"
-            style={{ background: 'rgba(250,246,239,0.95)', border: '1px solid var(--warm-border)' }}>
+            style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
             요소를 탭하여 선택하세요. 여러 개 선택 가능합니다.
           </div>
         </div>

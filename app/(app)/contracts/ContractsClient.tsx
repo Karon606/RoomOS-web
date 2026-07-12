@@ -70,7 +70,7 @@ export default function ContractsClient({ contracts }: { contracts: ContractList
       <div className="space-y-2">
         <div>
           <h1 className="text-xl font-bold text-[var(--warm-dark)]">계약서</h1>
-          <p className="text-xs text-[var(--warm-muted)] mt-0.5">여기는 모아보기 화면입니다 — 새 계약서 작성·서명·스캔 업로드는 입주자 관리에서 입주자를 눌러 진행하세요. 거주중 {contracts.length - departedCount}건 · 퇴실 {departedCount}건.</p>
+          <p className="text-xs text-[var(--warm-muted)] mt-0.5">여기는 모아보기 화면입니다. 새 계약서 작성·서명·스캔 업로드는 입주자 관리에서 입주자를 눌러 진행하세요. 거주중 {contracts.length - departedCount}건 · 퇴실 {departedCount}건.</p>
         </div>
         <SearchBar value={query} onChange={setQuery} placeholder="이름·호실·파일명 검색" />
         <div className="flex flex-wrap gap-2">

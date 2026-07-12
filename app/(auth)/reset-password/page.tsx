@@ -88,7 +88,7 @@ export default function ResetPasswordPage() {
                 required
                 minLength={6}
                 autoComplete="new-password"
-                className="w-full px-3 py-2.5 rounded-sm text-sm outline-none"
+                className="w-full px-3 py-2.5 rounded-sm text-sm outline-none transition-shadow focus:shadow-[var(--input-ring-focus)]"
                 style={inputStyle}
               />
               <input
@@ -99,7 +99,7 @@ export default function ResetPasswordPage() {
                 required
                 minLength={6}
                 autoComplete="new-password"
-                className="w-full px-3 py-2.5 rounded-sm text-sm outline-none"
+                className="w-full px-3 py-2.5 rounded-sm text-sm outline-none transition-shadow focus:shadow-[var(--input-ring-focus)]"
                 style={inputStyle}
               />
               <Btn

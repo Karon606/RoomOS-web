@@ -156,7 +156,7 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
     border: '1px solid var(--warm-border)',
     color: 'var(--warm-dark)',
   }
-  const inputCls = 'w-full px-3 py-2.5 rounded-sm text-sm outline-none transition-colors'
+  const inputCls = 'w-full px-3 py-2.5 rounded-sm text-sm outline-none transition-colors focus:shadow-[var(--input-ring-focus)]'
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
@@ -172,7 +172,7 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
       )}
       {success && (
         <p className="text-sm rounded-sm px-3 py-2.5"
-           style={{ background: 'var(--success-bg)', border: '1px solid var(--success-bg)', color: '#059669' }}>
+           style={{ background: 'var(--success-bg)', border: '1px solid var(--success-bg)', color: 'var(--success-fg)' }}>
           {success}
         </p>
       )}
@@ -280,9 +280,13 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
                   <span
                     key={r.label}
                     className="text-[11px] flex items-center gap-0.5"
-                    style={{ color: ok ? '#059669' : 'var(--warm-muted)' }}
+                    style={{ color: ok ? 'var(--success-fg)' : 'var(--warm-muted)' }}
                   >
-                    {ok ? '✓' : '·'} {r.label}
+                    {ok ? (
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                    ) : '·'} {r.label}
                   </span>
                 )
               })}
@@ -326,7 +330,7 @@ export default function EmailLoginForm({ returnTo }: { returnTo?: string }) {
           </>
         ) : (
           <button type="button" className="hover:underline" onClick={() => reset('login')}>
-            ← 로그인으로 돌아가기
+            ‹ 로그인으로 돌아가기
           </button>
         )}
       </div>

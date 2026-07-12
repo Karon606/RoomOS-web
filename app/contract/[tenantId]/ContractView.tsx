@@ -435,7 +435,7 @@ export default function ContractView({ data }: { data: ContractData }) {
     <div className="contract-shell">
       {/* 화면 전용 툴바 — 인쇄 시 숨김 */}
       <div className="no-print toolbar">
-        <Link href={`/tenants?tenantId=${data.tenant.id}`} className="toolbar-link">← 입실자 정보</Link>
+        <Link href={`/tenants?tenantId=${data.tenant.id}`} className="toolbar-link">‹ 입실자 정보</Link>
         <div className="toolbar-spacer" />
         {!editing && (
           <>
@@ -595,8 +595,12 @@ export default function ContractView({ data }: { data: ContractData }) {
               <div key={sec.id} className="section-edit">
                 <div className="section-edit-toolbar">
                   <input type="text" value={sec.title} onChange={e => updateSection(idx, { title: e.target.value })} className="section-edit-title" />
-                  <button type="button" onClick={() => moveSection(idx, -1)} disabled={idx === 0} className="section-edit-btn">↑</button>
-                  <button type="button" onClick={() => moveSection(idx, 1)} disabled={idx === draft.sections.length - 1} className="section-edit-btn">↓</button>
+                  <button type="button" onClick={() => moveSection(idx, -1)} disabled={idx === 0} className="section-edit-btn" aria-label="위로">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 15l-6-6-6 6" /></svg>
+                  </button>
+                  <button type="button" onClick={() => moveSection(idx, 1)} disabled={idx === draft.sections.length - 1} className="section-edit-btn" aria-label="아래로">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+                  </button>
                   <button type="button" onClick={() => removeSection(idx)} className="section-edit-btn section-edit-btn-danger">삭제</button>
                 </div>
                 <textarea
@@ -634,7 +638,9 @@ export default function ContractView({ data }: { data: ContractData }) {
                   {signatureDataUrl ? (
                     <>
                       <img className="sign-img" src={signatureDataUrl} alt="서명" onClick={() => openSign('contract')} style={{ cursor: 'pointer' }} title="다시 서명하려면 클릭" />
-                      <button type="button" onClick={() => setSignatureDataUrl(null)} className="signature-clear no-print" title="서명 지우기">✕</button>
+                      <button type="button" onClick={() => setSignatureDataUrl(null)} className="signature-clear no-print" title="서명 지우기" aria-label="서명 지우기">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                      </button>
                     </>
                   ) : (
                     <>
@@ -707,7 +713,9 @@ export default function ContractView({ data }: { data: ContractData }) {
               {disposalSignatureDataUrl ? (
                 <>
                   <img className="sign-img" src={disposalSignatureDataUrl} alt="동의서 서명" onClick={() => openSign('disposal')} style={{ cursor: 'pointer', height: '11mm', maxWidth: '38mm' }} title="다시 서명하려면 클릭" />
-                  <button type="button" onClick={() => setDisposalSignatureDataUrl(null)} className="signature-clear no-print" title="서명 지우기">✕</button>
+                  <button type="button" onClick={() => setDisposalSignatureDataUrl(null)} className="signature-clear no-print" title="서명 지우기" aria-label="서명 지우기">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                  </button>
                 </>
               ) : (
                 <>
@@ -734,7 +742,9 @@ export default function ContractView({ data }: { data: ContractData }) {
                 <div className="sig-title">{signTarget === 'disposal' ? '동의서 서명' : '입실자 서명'}</div>
                 <div className="sig-sub">아래 영역에 서명해주세요. 확인을 누르면 {signTarget === 'disposal' ? '동의서' : '계약서'}에 서명이 표시됩니다 (PDF 저장은 다음 단계).</div>
               </div>
-              <button onClick={() => setSignOpen(false)} className="sig-close" aria-label="닫기">✕</button>
+              <button onClick={() => setSignOpen(false)} className="sig-close" aria-label="닫기">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              </button>
             </div>
             <div className="sig-canvas-wrap">
               <canvas ref={sigCanvasRef} className="sig-canvas" />
@@ -779,21 +789,21 @@ export default function ContractView({ data }: { data: ContractData }) {
           position: sticky; top: 8px; z-index: 5;
           width: min(210mm, 100% - 24px);
           display: flex; align-items: center; gap: 10px;
-          padding: 10px 14px; background: #fff;
-          border: 1px solid #e7dfd1; border-radius: 12px;
+          padding: 10px 14px; background: var(--cream);
+          border: 1px solid var(--cream-3); border-radius: 10px;
           margin-bottom: 14px; flex-wrap: wrap;
           box-shadow: 0 4px 12px rgba(0,0,0,0.06);
         }
-        .toolbar-link { color: #a03c2e; font-size: 13px; text-decoration: none; }
+        .toolbar-link { color: var(--coral); font-size: 13px; text-decoration: none; }
         .toolbar-spacer { flex: 1; }
-        .toolbar-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b6258; }
-        .toolbar-field input, .toolbar-field select { padding: 4px 8px; border: 1px solid #e7dfd1; border-radius: 6px; font-size: 12px; }
-        .toolbar-print { padding: 6px 14px; background: #a03c2e; color: #fff; border: 0; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
+        .toolbar-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-s); }
+        .toolbar-field input, .toolbar-field select { padding: 4px 8px; border: 1px solid var(--cream-3); border-radius: 6px; font-size: 12px; }
+        .toolbar-print { padding: 6px 14px; background: var(--coral); color: var(--on-solid); border: 0; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
         .toolbar-print:disabled { opacity: 0.6; }
-        .toolbar-btn-secondary { padding: 6px 12px; background: #fff; color: #1a1a1a; border: 1px solid #d6cdbb; border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }
-        .toolbar-btn-warn { color: #b85a30; border-color: #f3c8b5; }
-        .toolbar-status { font-size: 12px; color: #b85a30; font-weight: 600; }
-        .toolbar-badge { padding: 3px 8px; background: #fff5ed; color: #b85a30; border: 1px solid #f3c8b5; border-radius: 999px; font-size: 11px; font-weight: 600; }
+        .toolbar-btn-secondary { padding: 6px 12px; background: var(--cream); color: var(--ink); border: 1px solid var(--cream-3); border-radius: 8px; font-weight: 500; font-size: 12px; cursor: pointer; }
+        .toolbar-btn-warn { color: var(--warning-fg); border-color: var(--warning-ring); }
+        .toolbar-status { font-size: 12px; color: var(--warning-fg); font-weight: 600; }
+        .toolbar-badge { padding: 3px 8px; background: var(--warning-bg); color: var(--warning-fg); border: 1px solid var(--warning-ring); border-radius: 999px; font-size: 11px; font-weight: 600; }
 
         /* paper-cage: 화면용 viewport-fit wrapper */
         .paper-cage {
@@ -908,19 +918,19 @@ export default function ContractView({ data }: { data: ContractData }) {
         .contract-paper .section-edit { border: 1px dashed #d6cdbb; border-radius: 8px; padding: 8px; margin-bottom: 10px; background: #fffaf2; }
         .contract-paper .section-edit-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
         .contract-paper .section-edit-title { flex: 1; padding: 4px 8px; border: 1px solid #d6cdbb; border-radius: 6px; font-size: 9.5pt; font-weight: 700; background: #fff; font-family: inherit; }
-        .contract-paper .section-edit-btn { padding: 3px 8px; font-size: 11px; border: 1px solid #d6cdbb; border-radius: 6px; background: #fff; cursor: pointer; color: #6b6258; }
+        .contract-paper .section-edit-btn { padding: 3px 8px; font-size: 11px; border: 1px solid #d6cdbb; border-radius: 6px; background: #fff; cursor: pointer; color: #6b6258; display: inline-flex; align-items: center; justify-content: center; }
         .contract-paper .section-edit-btn:disabled { opacity: 0.3; }
         .contract-paper .section-edit-btn-danger { color: #c4452b; border-color: #f3c8b5; }
         .contract-paper .section-edit-textarea { width: 100%; min-height: 80px; padding: 6px 8px; border: 1px solid #d6cdbb; border-radius: 6px; font-size: 9.5pt; font-family: inherit; line-height: 1.5; background: #fff; resize: vertical; }
         .contract-paper .section-add-btn { width: 100%; padding: 8px; border: 1px dashed #a03c2e; color: #a03c2e; background: transparent; border-radius: 8px; font-size: 12px; cursor: pointer; }
 
         /* ── 서명 모달 ──────────────────────────────────────────── */
-        .sig-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 16px; }
-        .sig-modal { width: 100%; max-width: 640px; background: #fff; border-radius: 16px; padding: 18px 18px 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 14px; }
+        .sig-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; padding: 16px; }
+        .sig-modal { width: 100%; max-width: 640px; background: var(--cream); border-radius: 18px; padding: 18px 18px 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 14px; }
         .sig-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-        .sig-title { font-size: 15px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
-        .sig-sub { font-size: 12px; color: #6b6258; line-height: 1.5; }
-        .sig-close { width: 32px; height: 32px; border: 0; background: transparent; color: #6b6258; font-size: 18px; cursor: pointer; border-radius: 8px; }
+        .sig-title { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+        .sig-sub { font-size: 12px; color: var(--ink-s); line-height: 1.5; }
+        .sig-close { width: 32px; height: 32px; border: 0; background: transparent; color: var(--ink-s); font-size: 18px; cursor: pointer; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
         .sig-close:hover { background: #f3eee5; }
         .sig-canvas-wrap { position: relative; width: 100%; aspect-ratio: 16 / 7; background: #fbf6ee; border: 1px dashed #d6cdbb; border-radius: 12px; touch-action: none; }
         .sig-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }

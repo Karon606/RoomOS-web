@@ -165,15 +165,15 @@ function CheckoutRefundModal({
       footer={
         <div className="flex gap-2">
           <button onClick={onClose} disabled={pending}
-            className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
+            className="flex-1 py-2.5 rounded-lg text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
             style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
             취소
           </button>
           <button
             onClick={() => onConfirm(refund)}
             disabled={pending || exceedsMax}
-            className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
-            style={{ background: 'var(--viz-4)', color: 'white' }}>
+            className="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50"
+            style={{ background: 'var(--viz-4)', color: 'var(--on-solid)' }}>
             {pending ? '처리 중…' : '퇴실 처리'}
           </button>
         </div>
@@ -320,7 +320,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
                   key={c.tenantId}
                   href={`/tenants?tenantId=${c.tenantId}`}
                   onClick={onClose}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors hover:bg-[var(--canvas)]"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors hover:bg-[var(--canvas)]"
                   style={{ borderColor: 'var(--warm-border)' }}
                 >
                   <span className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[0.6875rem] font-bold"
@@ -355,8 +355,8 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
             <button
               onClick={handleConfirmActive}
               disabled={confirmPending}
-              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-60"
-              style={{ background: 'var(--success)', color: 'white' }}>
+              className="w-full py-2.5 rounded-lg text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-60"
+              style={{ background: 'var(--success)', color: 'var(--on-solid)' }}>
               {confirmPending ? '처리 중…' : '거주중으로 변경'}
             </button>
           )}
@@ -364,8 +364,8 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
             <button
               onClick={handleCheckout}
               disabled={confirmPending}
-              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-60"
-              style={{ background: 'var(--viz-4)', color: 'white' }}>
+              className="w-full py-2.5 rounded-lg text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-60"
+              style={{ background: 'var(--viz-4)', color: 'var(--on-solid)' }}>
               {confirmPending ? '처리 중…' : '퇴실 처리'}
             </button>
           )}
@@ -384,7 +384,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
             </Btn>
           )}
           <Link href={alert.link} onClick={onClose}
-            className="block w-full text-center text-xs font-medium py-2 rounded-xl border transition-opacity hover:opacity-70"
+            className="block w-full text-center text-xs font-medium py-2 rounded-lg border transition-opacity hover:opacity-70"
             style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
             {isRecurring ? '지출 관리에서 보기 ›'
               : alert.category === 'inventory' ? '재고 관리에서 보기 ›'
@@ -456,13 +456,13 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
               <div className="space-y-1.5">
                 <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>날짜 *</label>
                 <DatePicker value={date} onChange={setDate}
-                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                  className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
               </div>
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
                   <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>금액 *</label>
                   {alert.recurringIsVariable && alert.recurringHistoricalAvg && (
-                    <span className="text-[0.625rem] rounded-full px-1.5 py-0.5" style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--viz-2)' }}
+                    <span className="text-[0.625rem] rounded-full px-1.5 py-0.5" style={{ background: 'var(--info-bg)', color: 'var(--viz-2)' }}
                       title="과거 동일 항목 결제 기록의 평균">
                       과거 평균 {fmtKorMoney(alert.recurringHistoricalAvg)}
                     </span>
@@ -479,7 +479,7 @@ function RecurringExpenseFormModal({ alert, paymentMethods, onClose, onDone }: {
             {/* 카테고리 (읽기 전용) */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium" style={{ color: 'var(--warm-mid)' }}>카테고리</label>
-              <div className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm"
+              <div className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm"
                 style={{ color: 'var(--warm-muted)' }}>
                 {alert.recurringCategory ?? '—'}
               </div>
@@ -880,7 +880,7 @@ function FinanceTab({ data, targetMonth }: { data: DashboardData; targetMonth: s
             <button key={r.key} onClick={() => setTrendRange(r.key)} disabled={trendPending}
               className="px-2.5 py-1 text-xs rounded-lg transition-colors font-medium disabled:opacity-50"
               style={trendRange === r.key
-                ? { background: 'var(--coral)', color: '#fff' }
+                ? { background: 'var(--coral)', color: 'var(--on-solid)' }
                 : { background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
               {r.label}
             </button>
@@ -1101,7 +1101,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
             <p className="text-xs mt-0.5" style={{ color: 'var(--warm-muted)' }}>{targetMonth} 운영 데이터 기반 AI 분석</p>
           </div>
           <button onClick={handleAnalyze} disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-60"
+            className="flex items-center gap-2 px-4 py-2 text-[var(--on-solid)] text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
             style={{ background: 'var(--coral)' }}>
             {isLoading
               ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />분석 중…</>
@@ -1114,7 +1114,7 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
         {isLoading && !aiText && (
           <div className="flex items-center gap-3 py-8 justify-center text-sm" style={{ color: 'var(--coral)' }}>
             <span className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
-            Gemini가 재무 데이터를 분석하고 있습니다...
+            Gemini가 재무 데이터를 분석하고 있습니다…
           </div>
         )}
         {error && <p className="text-[var(--danger-fg)] text-sm py-4 text-center">{error}</p>}
@@ -1336,22 +1336,22 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
       title={loading
         ? <div className="h-5 w-32 bg-[var(--cream-3)] rounded animate-pulse" />
         : <h2 className="text-base font-bold text-[var(--warm-dark)] truncate">
-            {lease?.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} — ` : ''}{lease?.tenant.name}
+            {lease?.room?.roomNo ? `${fmtRoomNo(lease.room.roomNo)} · ` : ''}{lease?.tenant.name}
           </h2>}
       subtitle={loading ? undefined : `${targetMonth} · 예정 ${fmtWon(lease?.rentAmount ?? 0)}`}
       footer={!loading && lease ? (
         <div className="flex gap-2">
           <Link href={`/rooms?month=${targetMonth}`}
             onClick={onClose}
-            className="flex-1 text-center text-xs font-medium py-2 rounded-xl border transition-colors"
+            className="flex-1 text-center text-xs font-medium py-2 rounded-lg border transition-colors"
             style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-            수납 관리 →
+            수납 관리 ›
           </Link>
           <Link href={`/tenants?tenantId=${lease.tenant.id}&tab=info`}
             onClick={onClose}
-            className="flex-1 text-center text-xs font-medium py-2 rounded-xl border transition-colors"
+            className="flex-1 text-center text-xs font-medium py-2 rounded-lg border transition-colors"
             style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
-            입주자 관리 →
+            입주자 관리 ›
           </Link>
         </div>
       ) : undefined}>
@@ -1464,7 +1464,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                               className="bg-[var(--canvas)] border border-[var(--info-ring)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
                           </div>
                           <button onClick={handleSaveAutoPay} disabled={isPending || !autoPayDate}
-                            className="px-3 py-1.5 text-xs font-semibold text-white bg-[var(--info-solid)] hover:bg-[var(--info-solid)] rounded-lg transition-colors disabled:opacity-50">저장</button>
+                            className="px-3 py-1.5 text-xs font-semibold text-[var(--on-solid)] bg-[var(--info-solid)] hover:bg-[var(--info-solid)] rounded-lg transition-colors disabled:opacity-50">저장</button>
                           <button onClick={() => setEditingAutoPay(false)}
                             className="px-3 py-1.5 text-xs text-[var(--info-fg)] rounded-lg border border-[var(--info-ring)] hover:bg-[var(--info-bg)] transition-colors">취소</button>
                         </div>
@@ -1543,7 +1543,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                     <div className="space-y-1">
                       <p className="text-[0.625rem] text-[var(--warm-muted)]">납부일</p>
                       <DatePicker value={payDate} onChange={setPayDate}
-                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
+                        className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)]" />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -1564,7 +1564,7 @@ function DashboardTenantModal({ tenantId, targetMonth, paymentMethods, onClose, 
                   </div>
                   {isDepositMode && payAmount > lease!.depositAmount && (
                     <p className="text-[0.625rem] text-[var(--coral)]">
-                      초과금 {fmtWon((payAmount - lease!.depositAmount))} → {targetMonth} 이용료 처리
+                      초과금 {fmtWon((payAmount - lease!.depositAmount))}은 {targetMonth} 이용료로 처리
                     </p>
                   )}
                   <div className="flex gap-2">
@@ -1652,7 +1652,7 @@ function DashEditRow({ editAmount, editDate, editPayMethod, editMemo, setEditAmo
       </div>
       <div className="flex gap-2 justify-end">
         <button onClick={onCancel} className="text-xs px-3 py-1.5 min-h-[36px] rounded-lg border transition-colors" style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>취소</button>
-        <button onClick={onSave} disabled={isPending} className="text-xs text-white px-3 py-1.5 min-h-[36px] rounded-lg transition-colors disabled:opacity-50" style={{ background: 'var(--coral)' }}>저장</button>
+        <button onClick={onSave} disabled={isPending} className="text-xs text-[var(--on-solid)] px-3 py-1.5 min-h-[36px] rounded-lg transition-colors disabled:opacity-50" style={{ background: 'var(--coral)' }}>저장</button>
       </div>
     </div>
   )
@@ -1899,7 +1899,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                 <li key={s.label}>
                   <Link href={s.href}
                     className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 transition-colors ${s.done ? 'border-[var(--warm-border)] opacity-60' : 'border-[var(--coral)]/40 hover:bg-[var(--canvas)]'}`}>
-                    <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold ${s.done ? 'bg-[var(--success-bg)] text-[var(--success-fg)]' : 'bg-[var(--coral)] text-white'}`}>
+                    <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold ${s.done ? 'bg-[var(--success-bg)] text-[var(--success-fg)]' : 'bg-[var(--coral)] text-[var(--on-solid)]'}`}>
                       {s.done
                         ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6" /></svg>
                         : i + 1}
@@ -1954,7 +1954,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             <span style={{ fontSize: '0.5625rem', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6, color: 'rgba(255,252,247,0.5)' }}>(이번 달)</span>
             <button type="button" aria-label="설명 보기" onClick={e => { e.preventDefault(); e.stopPropagation(); setKpiHelp(KPI_HELP.projectedRevenue) }} className="inline-flex items-center justify-center align-[-2px]" style={{ marginLeft: 6, color: 'inherit', opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11.2v5" /><path d="M12 7.6h.01" /></svg></button>
           </p>
-          <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
+          <p className="mono tnum" style={{ fontSize: '1.375rem', fontWeight: 700, color: 'var(--on-solid)', letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 6 }}>
             {data.projectedRevenue.toLocaleString()}
             <small style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'rgba(255,252,247,0.5)', marginLeft: 3 }}>원</small>
           </p>
@@ -2150,7 +2150,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 className="px-2.5 py-1 text-[0.6875rem] rounded-md transition-colors flex items-center gap-1"
                                 style={{
                                   background: on ? 'var(--persimmon)' : 'var(--canvas)',
-                                  color: on ? '#fff' : 'var(--warm-mid)',
+                                  color: on ? 'var(--on-solid)' : 'var(--warm-mid)',
                                   border: '1px solid ' + (on ? 'var(--persimmon)' : 'var(--warm-border)'),
                                   fontWeight: on ? 600 : 500,
                                 }}>

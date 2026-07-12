@@ -25,7 +25,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <StayeumWordmark height={18} />
             <span
               className="text-[11px] font-semibold px-2 py-0.5 rounded-md whitespace-nowrap inline-flex items-center gap-1"
-              style={{ background: 'var(--ink-2)', color: 'var(--sand)', letterSpacing: '0.02em' }}
+              style={{ background: 'var(--pill-bg)', color: 'var(--on-solid)', letterSpacing: '0.02em' }}
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                 <path d="M12 2 4 6v6c0 5 3.4 7.7 8 10 4.6-2.3 8-5 8-10V6l-8-4Z"/>

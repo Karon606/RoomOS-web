@@ -22,7 +22,7 @@ export default function AdminNav() {
             className="px-3 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-colors"
             style={{
               background: active ? 'var(--persimmon)' : 'transparent',
-              color: active ? '#fff' : 'var(--ink-3)',
+              color: active ? 'var(--on-solid)' : 'var(--ink-3)',
             }}
           >
             {t.label}

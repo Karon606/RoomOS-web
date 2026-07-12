@@ -61,7 +61,7 @@ export function CalendarSubscribeCard() {
       {!open ? (
         <button type="button" onClick={issue}
           className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-xl bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-          구독 주소 만들기 →
+          구독 주소 만들기 ›
         </button>
       ) : pending && !token ? (
         <p className="text-xs text-[var(--warm-muted)]">발급 중…</p>
@@ -71,7 +71,7 @@ export function CalendarSubscribeCard() {
             <label className="block text-[0.6875rem] font-medium text-[var(--warm-muted)] mb-1">구독 주소</label>
             <div className="flex items-center gap-1.5">
               <input readOnly value={httpUrl} onFocus={e => e.currentTarget.select()}
-                className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-[0.6875rem] text-[var(--warm-dark)] outline-none" />
+                className="flex-1 min-w-0 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-2 text-[0.6875rem] text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
               <button type="button" onClick={() => copy(httpUrl, '구독 주소')}
                 className="shrink-0 px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
                 복사
