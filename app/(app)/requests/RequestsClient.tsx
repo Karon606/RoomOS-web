@@ -309,33 +309,17 @@ export default function RequestsClient({
         <span className="w-px self-stretch bg-[var(--warm-border)] mx-1" />
 
         <span className="text-xs font-medium text-[var(--warm-muted)]">카테고리</span>
-        <button
-          onClick={() => setFilterCategory('all')}
-          className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors ${
-            filterCategory === 'all'
-              ? 'bg-[var(--pill-bg)] text-[var(--on-solid)]'
-              : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)]'
-          }`}
-        >
-          전체
-        </button>
-        {CATEGORIES.map(cat => {
-          const c      = CATEGORY_COLORS[cat]
-          const active = filterCategory === cat
-          return (
-            <button
-              key={cat}
-              onClick={() => setFilterCategory(active ? 'all' : cat)}
-              className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors ${
-                active
-                  ? `${c.bg} ${c.fg} ring-1 ${c.ring}`
-                  : 'text-[var(--warm-mid)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)]'
-              }`}
-            >
-              {cat}
-            </button>
-          )
-        })}
+        <SegmentedControl
+          size="sm"
+          scroll
+          ariaLabel="카테고리"
+          value={filterCategory}
+          onChange={setFilterCategory}
+          options={[
+            { value: 'all' as const, label: '전체' },
+            ...CATEGORIES.map(cat => ({ value: cat, label: cat })),
+          ]}
+        />
 
         <span className="w-px self-stretch bg-[var(--warm-border)] mx-1" />
 

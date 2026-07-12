@@ -9,6 +9,7 @@
 import { useState, useTransition } from 'react'
 import { setDueDayOverride, clearDueDayOverride } from '@/app/(app)/rooms/actions'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 
@@ -43,7 +44,6 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
 }) {
   const [pending, startTransition] = useTransition()
   const [showForm, setShowForm] = useState(false)
-  const [confirmClear, setConfirmClear] = useState(false)
   const [dateInput, setDateInput] = useState('')
   const [reason, setReason] = useState('')
   // 조정 대상 청구 월 (기본 = 미납월 ?? 보는 달). 별도 옵션에서 변경 가능.
@@ -71,7 +71,6 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
   const handleOpenForm = () => {
     const opening = !showForm
     setShowForm(opening)
-    setConfirmClear(false)
     if (opening) {
       const startMonth = isActive && room.overrideDueDayMonth ? room.overrideDueDayMonth : defaultMonth
       setOverrideMonth(startMonth)
@@ -102,8 +101,15 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
     }
   }
 
-  const handleClear = () => {
-    setConfirmClear(false)
+  const handleClear = async () => {
+    const ok = await confirmDialog({
+      title: room.overrideDueDayMonth
+        ? `${monthLabel(room.overrideDueDayMonth)}분 납부일 임시 조정을 삭제할까요?`
+        : '납부일 임시 조정을 삭제할까요?',
+      level: 'danger',
+      confirmLabel: '삭제',
+    })
+    if (!ok) return
     startTransition(async () => {
       const release = trackSave()
       try {
@@ -160,18 +166,8 @@ export function DueDayTempAdjustWidget({ leaseTermId, targetMonth, firstUnpaidMo
         </div>
         <div className="flex items-center gap-1.5">
           {canEdit && isActive && !showForm && (
-            confirmClear ? (
-              <div className="flex items-center gap-1.5 bg-[var(--danger-bg)] border border-[var(--danger-ring)] rounded-lg px-2 py-1">
-                <span className="text-xs text-[var(--danger-fg)]">정말 삭제할까요?</span>
-                <button type="button" onClick={() => setConfirmClear(false)}
-                  className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-mid)]">취소</button>
-                <button type="button" onClick={handleClear}
-                  className="text-xs bg-[var(--danger-bg)] hover:bg-[var(--danger-ring)] text-[var(--danger-fg)] font-semibold px-1.5 py-0.5 rounded">삭제</button>
-              </div>
-            ) : (
-              <button type="button" onClick={() => setConfirmClear(true)}
-                className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] px-2 py-1 rounded-lg border border-[var(--danger-ring)] hover:border-[var(--danger-ring)] transition-colors">삭제</button>
-            )
+            <button type="button" onClick={handleClear} disabled={pending}
+              className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] px-2 py-1 rounded-lg border border-[var(--danger-ring)] hover:border-[var(--danger-ring)] transition-colors disabled:opacity-40">삭제</button>
           )}
           {canEdit && (
             <button onClick={handleOpenForm}

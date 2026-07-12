@@ -9,6 +9,7 @@
 // Phase 2.3/2.4 에서 페이지 팝업들이 PrismShell 로 이주하면 onSelect 모드만 남는다.
 
 import { useEntityModal } from './EntityModal'
+import { ViewTabs } from '@/components/ui/ViewTabs'
 
 export type PrismCurrent = 'room' | 'tenant' | 'payment'
 export type PrismLinks = {
@@ -39,29 +40,18 @@ export function PrismNavBar({ current, links, onSelect }: {
   ]
 
   return (
-    <div className="flex gap-2">
-      {items.map(it => {
-        const isCurrent = it.kind === current
-        return (
-          <button
-            key={it.kind}
-            type="button"
-            disabled={!it.enabled || isCurrent}
-            onClick={() => handle(it.kind)}
-            aria-current={isCurrent ? 'page' : undefined}
-            className={`flex-1 px-3 py-2 text-xs font-semibold rounded-lg transition-colors disabled:cursor-default border ${
-              isCurrent
-                // 현재 면 — 옅은 톤 + 코랄 텍스트 + 코랄 border (탭 selected 처럼). 액션 버튼 같은 솔리드 X.
-                ? 'bg-[var(--coral-pale)] text-[var(--coral)] border-[var(--coral)]/40'
-                : it.enabled
-                ? 'bg-[var(--canvas)] border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'
-                : 'bg-[var(--canvas)] text-[var(--warm-muted)] opacity-40 border-transparent'
-            }`}
-          >
-            {it.label}
-          </button>
-        )
-      })}
-    </div>
+    <ViewTabs
+      fill
+      ariaLabel="상세 정보 전환"
+      activeId={current}
+      // 현재 면 재선택은 무변경(원래 현재 탭은 비활성이라 클릭 불가였음).
+      onChange={id => { if (id !== current) handle(id as PrismCurrent) }}
+      // 연결 대상이 없는 면은 disabled. 단, 현재 면은 항상 활성(코랄 채움)으로 유지.
+      tabs={items.map(it => ({
+        id: it.kind,
+        label: it.label,
+        disabled: !it.enabled && it.kind !== current,
+      }))}
+    />
   )
 }

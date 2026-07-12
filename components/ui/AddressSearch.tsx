@@ -2,6 +2,7 @@
 
 import Script from 'next/script'
 import { useEffect, useRef, useState } from 'react'
+import { Modal } from './Modal'
 
 // 다음(카카오) 우편번호 서비스 — 무료, API 키 불필요
 const POSTCODE_SRC = 'https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js'
@@ -130,37 +131,11 @@ export function AddressSearch({
         />
       )}
 
-      {open && (
-        <div
-          className="fixed inset-0 z-[var(--z-modal-2)] flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.5)' }}
-          onClick={() => setOpen(false)}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
-            style={{ background: 'var(--cream)', height: 'min(560px, 88vh)' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div
-              className="flex items-center justify-between px-4 py-3 shrink-0"
-              style={{ borderBottom: '1px solid var(--warm-border)' }}
-            >
-              <span className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>
-                주소 검색
-              </span>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="text-sm"
-                style={{ color: 'var(--warm-muted)' }}
-              >
-                닫기
-              </button>
-            </div>
-            <div ref={layerRef} className="flex-1" />
-          </div>
-        </div>
-      )}
+      {/* v2.0 §13 공용 Modal — backdrop·radius·ESC·포커스트랩·애니메이션 정본 상속.
+          z=260(z-modal-2): 등록 폼 등 페이지 모달 안에서 열려도 그 위에 뜬다. */}
+      <Modal open={open} onClose={() => setOpen(false)} title="주소 검색" width="md" z={260}>
+        <div ref={layerRef} className="overflow-hidden rounded-b-2xl" style={{ height: 'min(520px, 72vh)' }} />
+      </Modal>
     </div>
   )
 }

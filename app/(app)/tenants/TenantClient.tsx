@@ -346,12 +346,10 @@ export default function TenantClient({
   const [detailEditMode, setDetailEditMode] = useState(false)
   const [roomDetailId, setRoomDetailId]   = useState<string | null>(null)
   const [error, setError]               = useState('')
-  const [deleteTarget, setDeleteTarget]   = useState<{ id: string; name: string } | null>(null)
   const [depositRefundModal, setDepositRefundModal] = useState<{ fd: FormData; tenantName: string; depositAmount: number; cleaningFee: number; fromDetail: boolean; leaseTermId: string; tenantId: string } | null>(null)
   const [depositReturnAmt, setDepositReturnAmt] = useState(0)
   const [depositReturnDate, setDepositReturnDate] = useState(() => kstYmdStr())
   const [rentChangeModal, setRentChangeModal] = useState<{ fd: FormData; fromDetail: boolean; roomNo: string; baseRent: number; scheduledRent: number } | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
   // 단일 상태 필터(탭+하위 평탄화). 선택값 → 생애주기 범주(cat)로 표 열·정렬 구성
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('living')   // 기본 = 거주중(퇴실예정 포함)
   const cat: 'residents' | 'inquiry' | 'dropped' | 'past' =
@@ -565,13 +563,6 @@ export default function TenantClient({
     })
   }, [initialTenants]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 토스트 자동 사라짐
-  useEffect(() => {
-    if (!toast) return
-    const t = setTimeout(() => setToast(null), 5000)
-    return () => clearTimeout(t)
-  }, [toast])
-
   // ── 액션 핸들러 ─────────────────────────────────────────────────
 
   const refresh = useCallback(() => {
@@ -777,7 +768,7 @@ export default function TenantClient({
               const summary = otherMonths
                 .map(a => `${Number(a.targetMonth.slice(5))}월분 ${fmtWon(a.amount)}`)
                 .join(', ')
-              setToast(`자동 분배: ${summary} (미수가 가장 오래된 월부터 충당)`)
+              pushToast('info', `자동 분배: ${summary} (미수가 가장 오래된 월부터 충당)`)
             }
           }
         }
@@ -834,14 +825,15 @@ export default function TenantClient({
     })
   }
 
-  const handleDelete = (tenantId: string, name: string) => {
-    setDeleteTarget({ id: tenantId, name })
-  }
-
-  const confirmDelete = () => {
-    if (!deleteTarget) return
-    const { id, name } = deleteTarget
-    setDeleteTarget(null)
+  const handleDelete = async (tenantId: string, name: string) => {
+    const id = tenantId
+    const ok = await confirmDialog({
+      title: `${name}님을 완전 삭제할까요?`,
+      message: '수납 기록, 계약 이력, 연락처 등 모든 데이터가 영구적으로 삭제되며 복구할 수 없습니다. 거주중이었다면 해당 호실은 공실로 전환됩니다.',
+      level: 'danger',
+      confirmLabel: '영구 삭제',
+    })
+    if (!ok) return
     startTransition(async () => {
       const res = await withSave(() => deleteTenant(id), { success: `${name}님 삭제됨`, silentError: true })
       // 계약·수납 이력 — 건수를 보여주는 영향 고지형 다이얼로그(v2.0 §14) 동의 후에만 영구 삭제
@@ -933,14 +925,6 @@ export default function TenantClient({
 
   return (
     <div className="space-y-4">
-      {/* 토스트 */}
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[var(--z-modal)] max-w-md w-[calc(100%-2rem)] bg-[var(--pill-bg)] text-[var(--on-solid)] text-xs rounded-lg px-4 py-3 shadow-lift flex items-start gap-2">
-          <span className="flex-1 leading-relaxed">{toast}</span>
-          <button onClick={() => setToast(null)} aria-label="닫기" className="shrink-0 text-[var(--on-solid)]/60 hover:text-[var(--on-solid)]"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" width="14" height="14" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-        </div>
-      )}
-
       {showNoticeSms && <NoticeSmsModal onClose={() => setShowNoticeSms(false)} />}
 
       {/* 헤더 */}
@@ -1045,39 +1029,6 @@ export default function TenantClient({
         </div>
       )}
 
-      {/* 삭제 확인 모달 */}
-      {deleteTarget && (
-        <div className="fixed inset-0 bg-black/70 z-[var(--z-modal-2)] flex items-center justify-center p-4">
-          <div className="bg-[var(--cream)] rounded-2xl shadow-lift w-full max-w-sm p-6 space-y-4">
-            <div className="flex items-start gap-3">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--persimmon)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}>
-                <path d="M12 3 L22 20 H2 L12 3 Z" />
-                <line x1="12" y1="10" x2="12" y2="14" />
-                <circle cx="12" cy="17" r="0.5" fill="currentColor" />
-              </svg>
-              <div>
-                <p className="font-semibold text-[var(--warm-dark)]">{deleteTarget.name}님을 완전 삭제하시겠습니까?</p>
-                <p className="text-sm text-[var(--warm-mid)] mt-1.5 leading-relaxed">
-                  수납 기록, 계약 이력, 연락처 등 모든 데이터가 <span className="text-[var(--danger-fg)] font-medium">영구적으로 삭제</span>되며 복구할 수 없습니다. 거주중이었다면 해당 호실은 공실로 전환됩니다.
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-2.5 rounded-lg text-sm bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)] transition-colors">
-                취소
-              </button>
-              <button
-                onClick={confirmDelete}
-                disabled={isPending}
-                className="flex-1 py-2.5 rounded-lg text-sm bg-[var(--danger-bg)] hover:bg-[var(--danger-ring)] text-[var(--danger-fg)] font-medium transition-colors disabled:opacity-50">
-                {isPending ? '삭제 중…' : '영구 삭제'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 보증금 환불 모달 — 대시보드 알림 퇴실 처리와 동일 UI */}
       {depositRefundModal && (() => {
@@ -2244,20 +2195,16 @@ function WishSelector({ rooms, lease, allowConditions, isMove }: {
       <input type="hidden" name="wishConditions" value={wishConditionsValue} />
 
       {allowConditions && (
-        <div className="flex gap-1.5">
-          <button type="button" onClick={() => setMode('rooms')}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              mode === 'rooms' ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'
-            }`}>
-            구체적 호실 선택
-          </button>
-          <button type="button" onClick={() => setMode('conditions')}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              mode === 'conditions' ? 'bg-[var(--coral)] text-[var(--on-solid)]' : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)]'
-            }`}>
-            조건만 선택
-          </button>
-        </div>
+        <SegmentedControl
+          size="sm"
+          ariaLabel="희망 모드"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: 'rooms',      label: '구체적 호실 선택' },
+            { value: 'conditions', label: '조건만 선택' },
+          ]}
+        />
       )}
 
       {mode === 'rooms' ? (
@@ -3183,13 +3130,19 @@ function BatchEditTenantsModal({ selectedIds, onClose, onDone }: {
 
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-[var(--warm-mid)]">성별</label>
-            <div className="flex gap-2">
-              {[{ value: '', label: '미변경' }, { value: 'MALE', label: '남성' }, { value: 'FEMALE', label: '여성' }, { value: 'OTHER', label: '기타' }].map(opt => (
-                <button key={opt.value} type="button" onClick={() => setGender(opt.value)}
-                  className={`flex-1 text-xs py-2 rounded-lg border transition-colors ${gender === opt.value ? 'bg-[var(--coral)] text-[var(--on-solid)] border-[var(--coral)]' : 'bg-[var(--canvas)] text-[var(--warm-mid)] border-[var(--warm-border)]'}`}>
-                  {opt.label}
-                </button>
-              ))}
+            <div>
+              <SegmentedControl
+                size="sm"
+                ariaLabel="성별"
+                value={gender}
+                onChange={setGender}
+                options={[
+                  { value: '',       label: '미변경' },
+                  { value: 'MALE',   label: '남성' },
+                  { value: 'FEMALE', label: '여성' },
+                  { value: 'OTHER',  label: '기타' },
+                ]}
+              />
             </div>
           </div>
 

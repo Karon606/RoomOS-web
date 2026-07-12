@@ -14,6 +14,7 @@ import {
 import type { CheckoutProrationResult, CheckoutRefundResult, RefundMode } from '@/lib/prorate'
 import { PRORATE_BASE_DAYS, LEGAL_PENALTY_PCT } from '@/lib/prorate'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Btn } from '@/components/ui/Btn'
 import { trackSave, pushToast } from '@/lib/saveStatus'
@@ -177,17 +178,16 @@ export function CheckoutProrationWidget({
             <div className="space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">정산 방식</label>
               <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">법정(공정위) = 위약금을 공제하는 공식 기준 · 선의(일할) = 지낸 날짜만큼만 받고 위약금 없음</p>
-              <div className="flex gap-1">
-                {([['legal', '법정(공정위)'], ['goodwill', '선의(일할)']] as [RefundMode, string][]).map(([m, lbl]) => (
-                  <button key={m} type="button" onClick={() => handleMode(m)}
-                    className="flex-1 text-[0.6875rem] px-2 py-1.5 rounded-lg border transition-colors"
-                    style={refundMode === m
-                      ? { background: 'var(--coral)', color: 'var(--on-solid)', borderColor: 'var(--coral)' }
-                      : { background: 'var(--canvas)', color: 'var(--warm-mid)', borderColor: 'var(--warm-border)' }}>
-                    {lbl}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl<RefundMode>
+                ariaLabel="정산 방식"
+                size="sm"
+                value={refundMode}
+                onChange={handleMode}
+                options={[
+                  { value: 'legal', label: '법정(공정위)' },
+                  { value: 'goodwill', label: '선의(일할)' },
+                ]}
+              />
               <p className="text-[0.5625rem] text-[var(--warm-muted)]">
                 {refundMode === 'legal'
                   ? `원칙(공정위). 위약금 ${LEGAL_PENALTY_PCT}%를 제하고 남은 일수를 환불합니다.`

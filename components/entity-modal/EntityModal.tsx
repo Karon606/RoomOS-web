@@ -16,7 +16,7 @@ import { getEntityLinks } from '@/app/(app)/rooms/actions'
 import { deleteRoom, applyScheduledRentNow, undoApplyScheduledRent } from '@/app/(app)/room-manage/actions'
 import { deleteTenant, getContractFiles } from '@/app/(app)/tenants/actions'
 import { withSave, pushToast } from '@/lib/saveStatus'
-import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { confirmDialog, choiceDialog } from '@/components/ui/ConfirmDialog'
 import { PrismNavBar } from './PrismNavBar'
 import MonthSelector from '@/components/layout/MonthSelector'
 import { RoomBody } from './bodies/RoomBody'
@@ -209,10 +209,9 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
     router.push(`/tenants?tenantId=${links.tenantId}&edit=1`)
     onClose()
   }
-  // 계약서 출력 — 스캔본이 있으면 어떤 걸 출력할지 묻는다 (3-옵션 커스텀 모달).
-  // confirm 다이얼로그를 쓰면 '취소' = 시스템 계약서로 오인되므로 명시적 3-버튼 UI 필요.
+  // 계약서 출력 — 스캔본이 있으면 어떤 걸 출력할지 묻는다 (3-옵션, choiceDialog §27).
+  // 확인=스캔본 출력 · 제3동작(alt)=시스템 계약서 새로 출력 · 취소=무변경.
   // 없으면 바로 시스템 계약서로 (기존 동작 유지).
-  const [printChoice, setPrintChoice] = useState<{ scanUrl: string; fileName: string } | null>(null)
   const handlePrintContract = async () => {
     if (!links?.tenantId) return
     const systemUrl = `/contract/${links.tenantId}`
@@ -224,7 +223,14 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
     }
     // 가장 최근 스캔본 (목록의 첫 번째 — 액션이 signedAt desc 로 정렬)
     const latest = files[0]
-    setPrintChoice({ scanUrl: latest.viewUrl, fileName: latest.fileName ?? '스캔본' })
+    const choice = await choiceDialog({
+      title: '어떤 계약서를 출력할까요?',
+      message: `스캔본: ${latest.fileName ?? '스캔본'}\n시스템 계약서: 표준 양식 · 서명 받기 포함`,
+      confirmLabel: '스캔본 출력',
+      altLabel: '시스템 계약서 새로 출력',
+    })
+    if (choice === 'confirm') window.open(latest.viewUrl, '_blank')
+    else if (choice === 'alt') window.open(systemUrl, '_blank')
   }
   // 실거주 확인서 — 입실자 데이터로 자동 채워진 작성 화면으로 이동.
   const handleResidenceCert = () => {
@@ -243,7 +249,6 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
   // PaymentBody 내부 summary→full 모드 토글이 in-place 전환 (배경 안 바뀜) — 사용자 비전.
 
   return (
-    <>
     <Modal
       open onClose={onClose} width="sm" title={title} z={280}
       footer={
@@ -330,44 +335,6 @@ function PrismShellView({ kind, links, openCheckoutProration, setKind, onClose }
         {kind === 'payment' && (hasPay    ? <PaymentBody leaseTermId={links!.leaseTermId!} month={month} canEdit roomNo={links?.roomNo ?? null} openCheckoutProration={effectiveOpenProration} /> : <Empty label="연결된 수납(계약)이 없습니다." />)}
       </div>
     </Modal>
-    {/* 계약서 출력 선택 모달 — 스캔본 vs 시스템 계약서 3-옵션 (confirm 다이얼로그의
-        [확인]/[취소] 패턴이 사용자 의도와 안 맞아 분리, 2026-06-01 피드백) */}
-    {printChoice && (
-      <div className="fixed inset-0 z-[var(--z-confirm)] flex items-center justify-center bg-black/70 p-4"
-        onClick={() => setPrintChoice(null)}>
-        <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-2xl w-full max-w-xs"
-          onClick={e => e.stopPropagation()}>
-          <div className="px-5 py-4 border-b border-[var(--warm-border)]">
-            <h2 className="text-sm font-bold text-[var(--warm-dark)]">어떤 계약서를 출력할까요?</h2>
-          </div>
-          <div className="space-y-3 px-5 py-4">
-            <div>
-              <Btn fullWidth variant="primary"
-                onClick={() => { window.open(printChoice.scanUrl, '_blank'); setPrintChoice(null) }}>
-                스캔본 출력
-              </Btn>
-              <p className="text-[0.6875rem] text-center text-[var(--warm-muted)] mt-1 truncate" title={printChoice.fileName}>
-                {printChoice.fileName}
-              </p>
-            </div>
-            <div>
-              <Btn fullWidth variant="secondary"
-                onClick={() => { window.open(`/contract/${links?.tenantId}`, '_blank'); setPrintChoice(null) }}>
-                시스템 계약서 새로 출력
-              </Btn>
-              <p className="text-[0.6875rem] text-center text-[var(--warm-muted)] mt-1">
-                표준 양식 · 서명 받기 포함
-              </p>
-            </div>
-            <button type="button" onClick={() => setPrintChoice(null)}
-              className="w-full pt-2 pb-1 text-xs font-medium text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">
-              취소
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
-    </>
   )
 }
 
