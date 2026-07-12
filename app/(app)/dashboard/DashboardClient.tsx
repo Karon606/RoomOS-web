@@ -36,7 +36,6 @@ import { kstYmdStr, kstMonthStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { UnpaidSmsModal, type UnpaidSmsTarget } from '@/components/UnpaidSmsModal'
 import { ALERT_URGENT_WITHIN_DAYS, ALERT_URGENT_CATEGORY_DAYS } from '@/lib/appConfig'
-import { DashboardTenantModal } from './DashboardTenantModal'
 import { fmtRoomNo } from './dashUtils'
 
 // ── 타입 ────────────────────────────────────────────────────────
@@ -1312,7 +1311,6 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
   const [tab, setTab]                             = useState<Tab>('overview')
   // 호실 클릭 → 통합 EntityModal(Pivot) 으로 열기 (공실은 호실 탭만 활성, 고객·수납은 비활성으로 통일)
   const entityModal = useEntityModal()
-  const [dashTenantId, setDashTenantId]           = useState<string | null>(null)
   const [tenantInfoId, setTenantInfoId]           = useState<string | null>(null)
   const [selectedAlert, setSelectedAlert]         = useState<AlertItem | null>(null)
   const [quoteOpen, setQuoteOpen] = useState(false)   // 단기 입실 요금 계산(홈 헤더, 고객 관리에서 이관 2026-07-06)
@@ -1844,7 +1842,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                                 style={{ borderBottom: i < visibleUnpaid.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}
                               >
                               <button
-                                onClick={() => setDashTenantId(l.tenantId)}
+                                onClick={() => entityModal.open({ kind: 'payment', leaseTermId: l.leaseId, tenantId: l.tenantId })}
                                 className="flex-1 min-w-0 flex items-center gap-3 hover:opacity-70 active:opacity-50 transition-opacity text-left"
                               >
                                 <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-bold"
@@ -1926,7 +1924,7 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
                           {(activityExpanded ? data.activity : data.activity.slice(0, ACTIVITY_LIMIT)).map((item, i, arr) => (
                             <button
                               key={i}
-                              onClick={() => setDashTenantId(item.tenantId)}
+                              onClick={() => entityModal.open({ kind: 'payment', tenantId: item.tenantId })}
                               className="w-full flex items-center gap-3 px-5 py-3 hover:opacity-70 transition-opacity active:opacity-50 text-left"
                               style={{ borderBottom: i < arr.length - 1 ? `1px solid ${DIVIDER_COLOR}` : 'none' }}
                             >
@@ -1987,17 +1985,13 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
             setSelectedAlert(null)
             // 알림에서 '수납 관리 보기' → Prism 수납 face 로 통일 (Tenant·Payment 모달과 동일 셸).
             // roomNo·tenantName 은 셸이 내부에서 fetch 해 채운다.
-            if (a.leaseTermId) {
-              entityModal.open({
-                kind: 'payment',
-                leaseTermId: a.leaseTermId,
-                tenantId: a.tenantId ?? null,
-                roomId: a.roomId ?? null,
-              })
-            } else if (a.tenantId) {
-              // 안전망 — leaseTermId 가 없는 알림은 기존 DashboardTenantModal 로 fallback
-              setDashTenantId(a.tenantId)
-            }
+            // leaseTermId 없으면 tenantId 로 정본이 최신 계약을 해석(getEntityLinks)
+            entityModal.open({
+              kind: 'payment',
+              leaseTermId: a.leaseTermId ?? null,
+              tenantId: a.tenantId ?? null,
+              roomId: a.roomId ?? null,
+            })
           }}
           onStartRecord={alert => { setSelectedAlert(null); setRecordingAlert(alert) }}
         />
@@ -2008,15 +2002,6 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
           paymentMethods={paymentMethods}
           onClose={() => setRecordingAlert(null)}
           onDone={() => setRecordingAlert(null)}
-        />
-      )}
-      {dashTenantId && (
-        <DashboardTenantModal
-          tenantId={dashTenantId}
-          targetMonth={targetMonth}
-          paymentMethods={paymentMethods}
-          onClose={() => setDashTenantId(null)}
-          onPaymentDone={() => router.refresh()}
         />
       )}
       {tenantInfoId && (
