@@ -491,6 +491,11 @@ a, button, [role="button"], input[type="button"], input[type="submit"], input[ty
     padding-bottom: 1.5rem;
   }
 }
+/* 모바일(< md)에서는 하단 탭바(BottomNav ≈60px)가 있어 토스트를 그 위로 띄운다.
+   데스크탑은 탭바가 없어 기본 24px 유지. (UX: 저장 토스트가 탭바에 가리는 문제) */
+@media (max-width: 767px) {
+  :root { --toast-offset-bottom: 4.5rem; }
+}
 
 /* ── 스크롤바 (macOS / iPadOS 네이티브 느낌) ─────────────────── */
 ::-webkit-scrollbar          { width: 5px; height: 5px; }

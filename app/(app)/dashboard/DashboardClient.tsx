@@ -1061,11 +1061,13 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
       })
 
       if (!res.ok) {
-        setError(`분석 요청 실패 (${res.status}): ${await res.text().catch(() => '')}`)
+        setError(res.status === 429
+          ? '무료 AI 사용 한도를 초과했습니다. 잠시 후 다시 시도하거나 본인 키를 등록해 주세요.'
+          : '분석에 실패했습니다. 잠시 후 다시 시도해 주세요.')
         return
       }
       if (!res.body) {
-        setError('스트림을 읽을 수 없습니다.')
+        setError('분석 결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')
         return
       }
 

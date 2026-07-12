@@ -38,6 +38,7 @@ export function MoneyInput({
       {name && <input type="hidden" name={name} value={rawValue} />}
       <input
         type="text"
+        inputMode="numeric"
         value={focused ? display : (numValue ? fmtKorMoney(numValue) : '')}
         onChange={handleChange}
         onFocus={() => setFocused(true)}

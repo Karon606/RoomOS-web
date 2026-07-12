@@ -72,22 +72,28 @@ export default function ResidenceCertView({ data }: { data: ResidenceCertData })
   const handlePrint = async () => {
     if (previewing) return
     setPreviewing(true)
+    // 팝업 차단 회피: 비동기(fetch) 이후 window.open은 모바일 Safari에서 차단된다.
+    // 사용자 제스처 시점에 빈 새 탭을 먼저 열고, PDF 준비되면 그 탭에 주입한다.
+    const win = window.open('', '_blank')
     try {
       const res = await fetch('/api/residence-cert/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload(), preview: true }),
       })
       if (!res.ok) {
-        let msg = `서버 오류 (${res.status})`
-        try { const j = await res.json(); msg = j?.error ?? msg } catch { /* not json */ }
+        win?.close()
+        let msg = `미리보기를 불러오지 못했습니다.`
+        try { const j = await res.json(); if (j?.error) msg = j.error } catch { /* not json */ }
         pushToast('error', msg); return
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
-      window.open(url, '_blank')
+      if (win) win.location.href = url
+      else window.open(url, '_blank')
       setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (err) {
-      pushToast('error', (err as Error).message ?? '미리보기 생성 실패')
+      win?.close()
+      pushToast('error', (err as Error).message ?? '미리보기 생성에 실패했습니다.')
     } finally { setPreviewing(false) }
   }
 

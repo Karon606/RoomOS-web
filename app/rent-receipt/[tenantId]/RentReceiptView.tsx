@@ -45,22 +45,27 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
   const handlePreview = async () => {
     if (previewing) return
     setPreviewing(true)
+    // 팝업 차단 회피: 사용자 제스처 시점에 빈 새 탭을 먼저 열고 PDF 준비되면 주입(모바일 Safari 대응).
+    const win = window.open('', '_blank')
     try {
       const res = await fetch('/api/rent-receipt/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload(), preview: true }),
       })
       if (!res.ok) {
-        let msg = `서버 오류 (${res.status})`
-        try { const j = await res.json(); msg = j?.error ?? msg } catch { /* not json */ }
+        win?.close()
+        let msg = `미리보기를 불러오지 못했습니다.`
+        try { const j = await res.json(); if (j?.error) msg = j.error } catch { /* not json */ }
         pushToast('error', msg); return
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
-      window.open(url, '_blank')
+      if (win) win.location.href = url
+      else window.open(url, '_blank')
       setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (err) {
-      pushToast('error', (err as Error).message ?? '미리보기 생성 실패')
+      win?.close()
+      pushToast('error', (err as Error).message ?? '미리보기 생성에 실패했습니다.')
     } finally { setPreviewing(false) }
   }
 
