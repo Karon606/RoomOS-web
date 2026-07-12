@@ -13,6 +13,7 @@ import { STATUS_LABEL } from '@/lib/statusColors'
 import { deleteResidenceCertFile, restoreResidenceCertFile, type ResidenceCertListRow, type IssuableTenant } from './actions'
 import { ShareDocButton } from '@/components/ui/ShareDocButton'
 import { SearchBar } from '@/components/ui/SearchBar'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 
 const fmtRoomNo = (no: string | null) => (no ? (/^\d+$/.test(no) ? `${no}호` : no) : '')
 
@@ -21,6 +22,7 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
   const entityModal = useEntityModal()
   const [tenantQuery, setTenantQuery] = useState('')
   const [fileQuery, setFileQuery] = useState('')
+  const [fileStatus, setFileStatus] = useState('')
   const [pending, startTransition] = useTransition()
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -31,14 +33,23 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
       t.tenantName.toLowerCase().includes(q) || (t.roomNo ?? '').toLowerCase().includes(q))
   }, [tenants, tenantQuery])
 
+  // 발급 이력 상태 필터 옵션 — 실제 존재하는 입주자 상태만
+  const statusCounts = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const c of files) if (c.status) m[c.status] = (m[c.status] ?? 0) + 1
+    return m
+  }, [files])
+
   const fileRows = useMemo(() => {
     const q = fileQuery.trim().toLowerCase()
-    if (!q) return files
     return files.filter(c =>
-      c.tenantName.toLowerCase().includes(q) ||
-      c.fileName.toLowerCase().includes(q) ||
-      (c.roomNo ?? '').toLowerCase().includes(q))
-  }, [files, fileQuery])
+      (!fileStatus || c.status === fileStatus) &&
+      (!q ||
+        c.tenantName.toLowerCase().includes(q) ||
+        c.fileName.toLowerCase().includes(q) ||
+        (c.roomNo ?? '').toLowerCase().includes(q))
+    )
+  }, [files, fileQuery, fileStatus])
 
   const handleDelete = async (id: string, name: string) => {
     if (!(await confirmDialog({ title: `${name}님의 이 실거주 확인서를 삭제할까요?`, message: 'Google Drive 원본은 휴지통으로 이동하며, 삭제 직후 적용취소로 되살릴 수 있습니다.', level: 'danger', confirmLabel: '삭제' }))) return
@@ -91,6 +102,19 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
         <h2 className="text-sm font-semibold text-[var(--warm-dark)]">발급 이력 <span className="text-[var(--warm-muted)] font-normal">{files.length}건</span></h2>
         {files.length > 0 && (
           <SearchBar value={fileQuery} onChange={setFileQuery} placeholder="이름·호실·파일명 검색" />
+        )}
+        {Object.keys(statusCounts).length >= 2 && (
+          <SegmentedControl<string>
+            size="sm"
+            scroll
+            ariaLabel="발급 이력 상태 필터"
+            value={fileStatus}
+            onChange={setFileStatus}
+            options={[
+              { value: '', label: `전체 ${files.length}` },
+              ...Object.keys(statusCounts).map(s => ({ value: s, label: `${STATUS_LABEL[s] ?? s} ${statusCounts[s]}` })),
+            ]}
+          />
         )}
         {fileRows.length === 0 ? (
           <EmptyState
