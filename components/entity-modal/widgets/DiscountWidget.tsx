@@ -8,6 +8,7 @@ import { getRentDiscounts, addRentDiscount, deleteRentDiscount, type RentDiscoun
 import { discountLabel } from '@/lib/rentDiscount'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
+import { Btn } from '@/components/ui/Btn'
 import { withSave } from '@/lib/saveStatus'
 
 export function DiscountWidget({ leaseTermId, onChange }: {
@@ -109,10 +110,8 @@ export function DiscountWidget({ leaseTermId, onChange }: {
             </div>
           )}
           <div className="flex gap-2">
-            <button onClick={() => setShowForm(false)}
-              className="flex-1 py-1.5 text-sm rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>
-            <button onClick={handleAdd} disabled={pending || !(value > 0)}
-              className="flex-1 py-1.5 text-sm font-medium rounded-lg text-[var(--on-solid)] disabled:opacity-50" style={{ background: 'var(--success-solid)' }}>적용</button>
+            <Btn variant="secondary" size="sm" className="flex-1" onClick={() => setShowForm(false)}>취소</Btn>
+            <Btn variant="success" size="sm" className="flex-1" onClick={handleAdd} disabled={pending || !(value > 0)}>적용</Btn>
           </div>
           <p className="text-[0.625rem] text-[var(--warm-muted)]">할인은 해당 월 청구액(이용료)에서 차감돼 미수 계산에 반영됩니다.</p>
         </div>

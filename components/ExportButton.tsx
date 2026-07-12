@@ -1,6 +1,7 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
+import { Btn } from '@/components/ui/Btn'
 
 export default function ExportButton() {
   const searchParams = useSearchParams()
@@ -12,11 +13,8 @@ export default function ExportButton() {
   }
 
   return (
-    <button
-      onClick={handleExport}
-      className="px-4 py-2 bg-[var(--success-solid)] hover:opacity-90 text-[var(--on-solid)] text-sm font-medium rounded-lg transition-colors"
-    >
+    <Btn variant="success" size="md" onClick={handleExport}>
       Excel 내보내기
-    </button>
+    </Btn>
   )
 }

@@ -1102,13 +1102,11 @@ function AiTab({ data, targetMonth }: { data: DashboardData; targetMonth: string
             <h3 className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>Gemini AI 재무 분석</h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--warm-muted)' }}>{targetMonth} 운영 데이터 기반 AI 분석</p>
           </div>
-          <button onClick={handleAnalyze} disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 text-[var(--on-solid)] text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
-            style={{ background: 'var(--coral)' }}>
+          <Btn variant="primary" size="md" onClick={handleAnalyze} disabled={isLoading}>
             {isLoading
               ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />분석 중…</>
               : 'AI 분석하기'}
-          </button>
+          </Btn>
         </div>
         {!aiText && !isLoading && !error && (
           <div className="text-center py-10 text-sm" style={{ color: 'var(--warm-muted)' }}>버튼을 눌러 이달 재무 현황 AI 분석을 시작하세요</div>

@@ -11,6 +11,7 @@ import {
 import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
+import { Btn } from '@/components/ui/Btn'
 
 // ── 상수 ─────────────────────────────────────────────────────
 const GRID = 20
@@ -452,15 +453,12 @@ function AiImportModal({
               ))}
             </ul>
             <div className="flex gap-2">
-              <button onClick={() => setPreview(null)}
-                className="flex-1 py-2 text-xs border border-[var(--warm-border)] rounded-lg text-[var(--warm-muted)] hover:border-[var(--coral)] transition-colors">
+              <Btn variant="secondary" size="sm" className="flex-1" onClick={() => setPreview(null)}>
                 다시 선택
-              </button>
-              <button onClick={() => onConfirm(preview!, imgDataUrl)}
-                className="flex-1 py-2 text-xs rounded-lg text-[var(--on-solid)] font-medium"
-                style={{ background: 'var(--coral)' }}>
+              </Btn>
+              <Btn variant="primary" size="sm" className="flex-1" onClick={() => onConfirm(preview!, imgDataUrl)}>
                 도면에 추가
-              </button>
+              </Btn>
             </div>
           </>
         )}

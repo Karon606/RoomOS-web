@@ -910,10 +910,9 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                 </div>
               )}
               {sibs.length > 0 && (
-                <button type="button" onClick={() => { setDetailItem(null); openCardMerge(it, sibs) }}
-                  className="w-full rounded-xl border border-[var(--warm-border)] py-2.5 text-sm font-semibold text-[var(--warm-dark)] transition-colors hover:bg-[var(--canvas)]">
+                <Btn variant="secondary" size="md" fullWidth onClick={() => { setDetailItem(null); openCardMerge(it, sibs) }}>
                   다른 품목과 합치기
-                </button>
+                </Btn>
               )}
             </div>
           </Modal>

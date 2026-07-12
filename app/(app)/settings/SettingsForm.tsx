@@ -1200,11 +1200,8 @@ export default function SettingsForm({
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setShowRecForm(false)}
-                    className="flex-1 py-2 text-sm rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">취소</button>
-                  <button onClick={handleSaveRec} disabled={recPending || !recForm.title.trim() || !(recItemsActive ? recItemsTotal : Number(recForm.amount.replace(/[^0-9]/g, '')))}
-                    className="flex-1 py-2 text-sm font-medium rounded-lg text-[var(--on-solid)] transition-colors disabled:opacity-50"
-                    style={{ background: 'var(--coral)' }}>{recPending ? '저장 중…' : '저장'}</button>
+                  <Btn variant="secondary" size="md" className="flex-1" onClick={() => setShowRecForm(false)}>취소</Btn>
+                  <Btn variant="primary" size="md" className="flex-1" onClick={handleSaveRec} disabled={recPending || !recForm.title.trim() || !(recItemsActive ? recItemsTotal : Number(recForm.amount.replace(/[^0-9]/g, '')))}>{recPending ? '저장 중…' : '저장'}</Btn>
                 </div>
               </div>
             )}

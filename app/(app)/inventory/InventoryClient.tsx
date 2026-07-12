@@ -1959,7 +1959,7 @@ function FullReconcileModal({ rows, categories, onClose, onDone }: {
       footer={<div className="flex items-center justify-between gap-2">
           <span className="text-[0.6875rem] text-[var(--warm-muted)]">차이 있는 {changed.length}품목 보정</span>
           <div className="flex items-center gap-2">
-            <button onClick={onClose} className="text-sm text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-3 py-2">취소</button>
+            <Btn variant="ghost" size="sm" onClick={onClose}>취소</Btn>
             <Btn variant="primary" size="sm" onClick={handleSave} disabled={pending || !restockDone || !changed.length}>
               {pending ? '저장 중…' : `보정 저장 (${changed.length})`}
             </Btn>
@@ -2230,8 +2230,7 @@ function CheckEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, pend
         <input type="text" value={memo} onChange={e => setMemo(e.target.value)} className={`w-full ${inputCls} text-left`} />
       </div>
       <div className="flex gap-2 pt-1 justify-end">
-        <button type="button" onClick={onCancel} disabled={pending}
-          className="text-xs text-[var(--warm-muted)] px-3 py-1.5 rounded-lg hover:bg-[var(--cream)]">취소</button>
+        <Btn variant="ghost" size="sm" onClick={onCancel} disabled={pending}>취소</Btn>
         <Btn variant="primary" size="sm" disabled={pending || (!hasLocations && (!qty || Number(qty) < 0))}
           onClick={handleSave}>
           {pending ? '저장 중…' : '저장'}
@@ -2297,8 +2296,7 @@ function AdditionEditForm({ entry, stockUnit, itemLocations, onCancel, onSave, o
         <button type="button" onClick={onDelete} disabled={pending}
           className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-2 py-1.5 rounded-lg hover:bg-[var(--danger-bg)]">삭제</button>
         <div className="flex-1" />
-        <button type="button" onClick={onCancel} disabled={pending}
-          className="text-xs text-[var(--warm-muted)] px-3 py-1.5 rounded-lg hover:bg-[var(--cream)]">취소</button>
+        <Btn variant="ghost" size="sm" onClick={onCancel} disabled={pending}>취소</Btn>
         <Btn variant="primary" size="sm" disabled={pending || !qty || Number(qty) <= 0}
           onClick={() => onSave({ date, addedQty: Number(qty), source: source || null, memo: memo || null, storageLocationId: storageLocationId || null })}>
           {pending ? '저장 중…' : '저장'}
@@ -2393,8 +2391,7 @@ function PurchaseEditForm({ entry, stockUnit, onCancel, onSave, onDelete, pendin
         <button type="button" onClick={onDelete} disabled={pending}
           className="text-xs text-[var(--danger-fg)] hover:text-[var(--danger-fg)] disabled:opacity-40 px-2 py-1.5 rounded-lg hover:bg-[var(--danger-bg)]">재고에서 제외</button>
         <div className="flex-1" />
-        <button type="button" onClick={onCancel} disabled={pending}
-          className="text-xs text-[var(--warm-muted)] px-3 py-1.5 rounded-lg hover:bg-[var(--cream)]">취소</button>
+        <Btn variant="ghost" size="sm" onClick={onCancel} disabled={pending}>취소</Btn>
         <Btn variant="primary" size="sm" disabled={pending}
           onClick={() => onSave({ date, amount: amount ? Number(amount) : undefined, vendor: vendor || null, memo: memo || null, receivedAt: buildReceivedAt() })}>
           {pending ? '저장 중…' : '저장'}

@@ -2982,10 +2982,9 @@ export default function FinanceClient({
                   )}
                 </div>
                 <div className="border-t border-[var(--warm-border)] px-6 py-4 flex gap-2 shrink-0">
-                  <button onClick={() => handleDeleteExp(detailExp)} disabled={isPending}
-                    className="px-4 py-2.5 bg-[var(--danger-bg)] hover:bg-[var(--danger-bg)] text-[var(--danger-fg)] text-sm rounded-lg transition-colors disabled:opacity-40">
+                  <Btn variant="danger" size="md" onClick={() => handleDeleteExp(detailExp)} disabled={isPending}>
                     {detailExp.recurringExpenseId ? '이번 달 기록 취소' : '삭제'}
-                  </button>
+                  </Btn>
                   {detailExp.settleStatus === 'SETTLED' && (detailExp.payMethod === '신용카드' || detailExp.payMethod === '체크카드') && (
                     <button onClick={() => handleUnsettle(detailExp.id)} disabled={isPending}
                       className="px-4 py-2.5 bg-[var(--warning-bg)] hover:bg-[var(--warning-bg)] text-[var(--warning-fg)] text-sm rounded-lg transition-colors disabled:opacity-40">
@@ -3791,13 +3790,10 @@ export default function FinanceClient({
                 </div>
                 {recMgmtError && <p className="text-[var(--danger-fg)] text-xs">{recMgmtError}</p>}
                 <div className="flex gap-2 pt-1">
-                  <button onClick={() => { setShowRecMgmtForm(false); setEditingRecMgmt(null); setRecMgmtError('') }}
-                    className="flex-1 py-2 text-sm rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>
-                  <button onClick={handleSaveRecMgmt} disabled={recMgmtPending || !recMgmtForm.title.trim() || !recMgmtForm.amount}
-                    className="flex-1 py-2 text-sm font-medium rounded-lg text-[var(--on-solid)] disabled:opacity-50"
-                    style={{ background: 'var(--coral)' }}>
+                  <Btn variant="secondary" size="md" className="flex-1" onClick={() => { setShowRecMgmtForm(false); setEditingRecMgmt(null); setRecMgmtError('') }}>취소</Btn>
+                  <Btn variant="primary" size="md" className="flex-1" onClick={handleSaveRecMgmt} disabled={recMgmtPending || !recMgmtForm.title.trim() || !recMgmtForm.amount}>
                     {recMgmtPending ? '저장 중…' : '저장'}
-                  </button>
+                  </Btn>
                 </div>
               </div>
             ) : recGroupMode ? (
@@ -3814,12 +3810,10 @@ export default function FinanceClient({
                   선택 항목은 이 묶음의 세부항목으로 전환되고(각 변동/고정 유지), 원본은 비활성됩니다(과거 기록 보존).
                 </p>
                 <div className="flex gap-2">
-                  <button onClick={() => { setRecGroupMode(false); setRecGroupSel(new Set()); setRecMgmtError('') }}
-                    className="flex-1 py-2 text-sm rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)]">취소</button>
-                  <button onClick={handleGroupRec} disabled={recMgmtPending || recGroupSel.size < 2}
-                    className="flex-1 py-2 text-sm font-medium rounded-lg text-[var(--on-solid)] disabled:opacity-50" style={{ background: 'var(--coral)' }}>
+                  <Btn variant="secondary" size="md" className="flex-1" onClick={() => { setRecGroupMode(false); setRecGroupSel(new Set()); setRecMgmtError('') }}>취소</Btn>
+                  <Btn variant="primary" size="md" className="flex-1" onClick={handleGroupRec} disabled={recMgmtPending || recGroupSel.size < 2}>
                     {recMgmtPending ? '묶는 중…' : `${recGroupSel.size}개 묶기`}
-                  </button>
+                  </Btn>
                 </div>
               </div>
             ) : (
