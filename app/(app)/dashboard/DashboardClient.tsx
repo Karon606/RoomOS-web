@@ -979,8 +979,10 @@ function TenantsTab({ data }: { data: DashboardData }) {
                 <div key={r.label} className="flex items-center gap-2">
                   {r.dot ? <span className="w-2 h-2 rounded-full shrink-0" style={{ background: r.dot }} /> : <span className="w-2 h-2 shrink-0" />}
                   <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{r.label}</span>
-                  <span className="text-xs font-semibold" style={{ color: 'var(--warm-dark)' }}>{r.val}</span>
-                  <span className="text-[0.65625rem] w-9 text-right shrink-0" style={{ color: 'var(--warm-mid)' }}>{r.pct !== null ? `${r.pct}%` : ''}</span>
+                  <span className="text-xs" style={{ color: 'var(--warm-dark)' }}>
+                    <span className="font-semibold">{r.val}</span>
+                    {r.pct !== null && <span style={{ color: 'var(--warm-muted)' }}> ({r.pct}%)</span>}
+                  </span>
                 </div>
               ))}
             </div>
@@ -992,14 +994,22 @@ function TenantsTab({ data }: { data: DashboardData }) {
           <div className="flex items-center gap-4">
             <DonutChart segments={statusSegments} centerLabel={`${statusTotal}명`} centerSub="입주자" />
             <div className="space-y-2.5 flex-1">
-              {[{ label: '거주중', count: data.statusCounts.active, color: STATUS_COLORS.active }, { label: '예약', count: data.statusCounts.reserved, color: STATUS_COLORS.reserved }, { label: '퇴실 예정', count: data.statusCounts.checkout, color: STATUS_COLORS.checkout }].map(s => {
+              {[
+                { label: '거주중', count: data.statusCounts.active, color: STATUS_COLORS.active },
+                { label: '예약', count: data.statusCounts.reserved, color: STATUS_COLORS.reserved },
+                { label: '퇴실 예정', count: data.statusCounts.checkout, color: STATUS_COLORS.checkout },
+                // 도넛엔 비거주자 슬라이스가 있는데 범례에 빠져 중앙 합계(statusTotal)와 안 맞아 보이던 문제 — 있을 때만 추가
+                ...(data.statusCounts.nonResident > 0 ? [{ label: '비거주자', count: data.statusCounts.nonResident, color: STATUS_COLORS.nonResident }] : []),
+              ].map(s => {
                 const pct = statusTotal > 0 ? Math.round((s.count / statusTotal) * 100) : 0
                 return (
                 <div key={s.label} className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} />
                   <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{s.label}</span>
-                  <span className="text-xs font-semibold" style={{ color: 'var(--warm-dark)' }}>{s.count}명</span>
-                  <span className="text-[0.65625rem] w-9 text-right shrink-0" style={{ color: 'var(--warm-mid)' }}>{pct}%</span>
+                  <span className="text-xs" style={{ color: 'var(--warm-dark)' }}>
+                    <span className="font-semibold">{s.count}명</span>
+                    <span style={{ color: 'var(--warm-muted)' }}> ({pct}%)</span>
+                  </span>
                 </div>
                 )
               })}
@@ -1018,8 +1028,10 @@ function TenantsTab({ data }: { data: DashboardData }) {
                 <div key={i} className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: GENDER_COLORS[d.label] ?? 'var(--ink-m)' }} />
                   <span className="text-xs flex-1" style={{ color: 'var(--warm-mid)' }}>{GENDER_LABEL[d.label] ?? d.label}</span>
-                  <span className="text-xs font-semibold" style={{ color: 'var(--warm-dark)' }}>{d.count}명</span>
-                  <span className="text-[0.65625rem] w-9 text-right shrink-0" style={{ color: 'var(--warm-mid)' }}>{pct}%</span>
+                  <span className="text-xs" style={{ color: 'var(--warm-dark)' }}>
+                    <span className="font-semibold">{d.count}명</span>
+                    <span style={{ color: 'var(--warm-muted)' }}> ({pct}%)</span>
+                  </span>
                 </div>
                 )
               })}
