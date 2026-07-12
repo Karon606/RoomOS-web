@@ -2987,7 +2987,7 @@ export default function FinanceClient({
                   </Btn>
                   {detailExp.settleStatus === 'SETTLED' && (detailExp.payMethod === '신용카드' || detailExp.payMethod === '체크카드') && (
                     <button onClick={() => handleUnsettle(detailExp.id)} disabled={isPending}
-                      className="px-4 py-2.5 bg-[var(--warning-bg)] hover:bg-[var(--warning-bg)] text-[var(--warning-fg)] text-sm rounded-lg transition-colors disabled:opacity-40">
+                      className="min-h-[44px] px-4 py-2.5 bg-[var(--warning-bg)] hover:bg-[var(--warning-ring)] text-[var(--warning-fg)] text-sm rounded-lg transition-colors disabled:opacity-40">
                       정산 취소
                     </button>
                   )}

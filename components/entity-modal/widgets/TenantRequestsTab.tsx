@@ -99,10 +99,12 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
                   </button>
                 </div>
                 <p className="text-sm leading-snug" style={{ color: 'var(--warm-dark)' }}>{r.content}</p>
-                <Btn onClick={() => handleResolve(r.id)} disabled={pending} variant="success" fullWidth>
+                <button onClick={() => handleResolve(r.id)} disabled={pending}
+                  className="w-full py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                  style={{ background: 'var(--success-bg)', color: 'var(--success-fg)', border: '1.5px solid var(--success-ring)' }}>
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6l3 3 5-5" /></svg>
                   완료로 처리하기
-                </Btn>
+                </button>
               </div>
             ))}
           </div>
