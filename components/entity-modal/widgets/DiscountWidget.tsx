@@ -10,6 +10,7 @@ import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { Btn } from '@/components/ui/Btn'
 import { withSave } from '@/lib/saveStatus'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 export function DiscountWidget({ leaseTermId, onChange }: {
   leaseTermId: string
@@ -47,7 +48,8 @@ export function DiscountWidget({ leaseTermId, onChange }: {
     })
   }
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
+    if (!(await confirmDialog({ level: 'danger', title: '이 할인을 삭제할까요?', message: '삭제하면 그 달 청구액(미수)이 다시 계산됩니다.', confirmLabel: '삭제' }))) return
     startTransition(async () => {
       const res = await withSave(() => deleteRentDiscount(id), { success: '할인 삭제됨' })
       if (!res.ok) return

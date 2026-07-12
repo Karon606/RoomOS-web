@@ -21,6 +21,7 @@ import { Btn } from '@/components/ui/Btn'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { pushToast } from '@/lib/saveStatus'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { getExpenseCategories } from '@/app/(app)/settings/actions'
 import { getTrackedCategoriesForClient } from '@/app/(app)/inventory/actions'
 
@@ -132,11 +133,14 @@ export function PendingReceiptSection() {
             onStartEdit={(mode) => setEditing({ id: r.id, mode })}
             onCancelEdit={() => setEditing(null)}
             onApproved={async () => { setEditing(null); await reload() }}
-            onRejected={() => startTransition(async () => {
-              const res = await rejectPendingReceipt(r.id)
-              if (res.ok) { pushToast('success', '거절됨'); await reload() }
-              else pushToast('error', res.error)
-            })}
+            onRejected={async () => {
+              if (!(await confirmDialog({ level: 'danger', title: '이 영수증을 거절할까요?', message: '첨부 사진과 자동 분류가 사라집니다.', confirmLabel: '거절' }))) return
+              startTransition(async () => {
+                const res = await rejectPendingReceipt(r.id)
+                if (res.ok) { pushToast('success', '거절됨'); await reload() }
+                else pushToast('error', res.error)
+              })
+            }}
           />
         ))}
       </div>

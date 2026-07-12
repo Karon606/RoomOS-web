@@ -246,6 +246,7 @@ function AlertDetailModal({ alert, onClose, onOpenPayment, onStartRecord }: {
 
   const handleConfirmActive = async () => {
     if (!reservationDueLeaseId || confirmPending) return
+    if (!(await confirmDialog({ level: 'caution', title: '거주중으로 변경할까요?', message: '예약 상태를 실거주로 바꾸고 호실을 점유 처리합니다.', confirmLabel: '변경' }))) return
     setConfirmPending(true); setConfirmError('')
     const res = await confirmReservationToActive(reservationDueLeaseId)
     if (!res.ok) { setConfirmError(res.error); setConfirmPending(false); return }
