@@ -9,6 +9,7 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import { SkeletonRows } from '@/components/ui/Skeleton'
+import { Btn } from '@/components/ui/Btn'
 import { useRouter } from 'next/navigation'
 import { getLeaseSettlementInfo, getPaymentsByLease } from '@/app/(app)/rooms/actions'
 import { PaymentSummaryCards } from '../widgets/PaymentSummaryCards'
@@ -122,10 +123,9 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
               />
             ) : (
               <div className="flex gap-2">
-                <button type="button" onClick={() => setShowEntryForm(true)}
-                  className="flex-1 py-2 text-sm font-semibold rounded-lg bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity">
+                <Btn variant="primary" size="md" onClick={() => setShowEntryForm(true)} className="flex-1 font-semibold">
                   + 수납 등록
-                </button>
+                </Btn>
                 <button type="button" onClick={() => setMode('full')}
                   className="px-3 py-2 text-xs font-medium rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)] transition-colors">
                   더 보기 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="inline-block align-middle" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
@@ -160,10 +160,9 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
           {/* 새 수납 등록 (접힘/펼침) */}
           {canEdit && settlement.leaseTermId && settlement.tenantId && (
             !showEntryForm ? (
-              <button type="button" onClick={() => setShowEntryForm(true)}
-                className="w-full py-2 text-sm font-semibold rounded-lg bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity">
+              <Btn variant="primary" size="md" onClick={() => setShowEntryForm(true)} fullWidth className="font-semibold">
                 + 수납 등록
-              </button>
+              </Btn>
             ) : (
               <PaymentEntryForm
                 room={{

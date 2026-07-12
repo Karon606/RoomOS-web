@@ -166,20 +166,12 @@ export function TenantStatusTransitions({ lease, tenantId, tenantName, onChange 
   return (
     <>
       <div className="flex flex-wrap gap-2 py-2">
-        {transitions.map(def => {
-          const cls = def.tone === 'primary'
-            ? 'bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90'
-            : def.tone === 'danger'
-            ? 'bg-[var(--danger-bg)] text-[var(--danger-fg)] hover:bg-[var(--danger-bg)]'
-            : 'bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] hover:bg-[var(--warm-border)]'
-          return (
-            <button key={def.key} type="button" disabled={pending}
-              onClick={() => handleClick(def)}
-              className={`px-3 py-2 text-xs font-semibold rounded-lg transition-colors disabled:opacity-40 ${cls}`}>
-              {def.label}
-            </button>
-          )
-        })}
+        {transitions.map(def => (
+          <Btn key={def.key} type="button" variant={def.tone ?? 'secondary'} size="sm"
+            disabled={pending} onClick={() => handleClick(def)} className="font-semibold">
+            {def.label}
+          </Btn>
+        ))}
       </div>
 
       {/* 미니폼 모달 — 엔티티 모달 위에 겹침 (v2.0 §08: z 토큰 260=modal-2, 구 z-confirm 오용 교정) */}

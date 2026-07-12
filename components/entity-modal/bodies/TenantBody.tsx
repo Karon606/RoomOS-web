@@ -10,6 +10,7 @@ import { getTenantDetail } from '@/app/(app)/rooms/actions'
 import { analyzeTenantWithGemini } from '@/app/(app)/tenants/actions'
 import { MoneyDisplay } from '@/components/ui/MoneyDisplay'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { Btn } from '@/components/ui/Btn'
 import { STATUS_LABEL, statusException } from '@/lib/statusColors'
 import { TenantBasicInfo } from '../widgets/TenantBasicInfo'
 import { ShortStayInfoWidget } from '../widgets/ShortStayInfoWidget'
@@ -134,10 +135,9 @@ function PaymentSummaryWithAI({ tenantId, lease }: {
         </div>
       </div>
       <div className="mt-3 space-y-2">
-        <button type="button" onClick={handleAnalyze} disabled={pending}
-          className="w-full py-2 text-xs font-semibold rounded-lg bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-60">
+        <Btn variant="primary" size="sm" onClick={handleAnalyze} disabled={pending} fullWidth className="font-semibold">
           {pending ? 'AI 분석 중…' : aiText ? '다시 분석' : 'AI로 수납 패턴 분석'}
-        </button>
+        </Btn>
         {pending && (
           <div className="flex items-center gap-2 text-xs text-[var(--coral)] animate-pulse">
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--coral)] animate-bounce" />

@@ -297,23 +297,18 @@ function FormModal({
       footer={
         <div className="flex gap-2">
           {row && onDelete && (
-            <button type="button" onClick={onDelete} disabled={isPending}
-              className="px-3 py-2.5 rounded-lg text-xs font-medium border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-opacity hover:opacity-70 disabled:opacity-50">
+            <Btn variant="danger" size="sm" onClick={onDelete} disabled={isPending}>
               삭제
-            </button>
+            </Btn>
           )}
-          <button type="button" onClick={onClose} disabled={isPending}
-            className="flex-1 py-2.5 rounded-lg text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
-            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+          <Btn variant="secondary" size="md" className="flex-1" onClick={onClose} disabled={isPending}>
             취소
-          </button>
-          <button type="button"
+          </Btn>
+          <Btn variant="primary" size="md" className="flex-1"
             onClick={() => onSubmit({ title, memo, intervalDays, alertDaysBefore })}
-            disabled={isPending || !title.trim() || intervalDays < 1}
-            className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-[var(--on-solid)] transition-opacity hover:opacity-80 disabled:opacity-50"
-            style={{ background: 'var(--coral)' }}>
+            disabled={isPending || !title.trim() || intervalDays < 1}>
             {isPending ? '저장 중…' : '저장'}
-          </button>
+          </Btn>
         </div>
       }>
         <div className="px-5 py-4 space-y-3">
@@ -382,11 +377,9 @@ function FormModal({
           </div>
 
           {row && onToggleActive && (
-            <button type="button" onClick={onToggleActive} disabled={isPending}
-              className="w-full py-2 rounded-lg text-xs font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
-              style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+            <Btn variant="secondary" size="sm" fullWidth onClick={onToggleActive} disabled={isPending}>
               {row.isActive ? '비활성화 (알림 중단)' : '활성화'}
-            </button>
+            </Btn>
           )}
 
           {error && <p className="text-[var(--danger-fg)] text-xs">{error}</p>}
@@ -413,16 +406,12 @@ function CheckModal({
       subtitle={`${intervalLabel(row.intervalDays)} · 마지막 ${fmtRelative(row.lastCheckedAt)}`}
       footer={
         <div className="flex gap-2">
-          <button type="button" onClick={onClose} disabled={isPending}
-            className="flex-1 py-2.5 rounded-lg text-sm font-medium border transition-opacity hover:opacity-70 disabled:opacity-50"
-            style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
+          <Btn variant="secondary" size="md" className="flex-1" onClick={onClose} disabled={isPending}>
             닫기
-          </button>
-          <button type="button" onClick={() => onConfirm(memo)} disabled={isPending}
-            className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-[var(--on-solid)] transition-opacity hover:opacity-80 disabled:opacity-50"
-            style={{ background: 'var(--coral)' }}>
+          </Btn>
+          <Btn variant="primary" size="md" className="flex-1" onClick={() => onConfirm(memo)} disabled={isPending}>
             {isPending ? '처리 중…' : '오늘 점검 완료'}
-          </button>
+          </Btn>
         </div>
       }>
         <div className="px-5 py-4 space-y-3">

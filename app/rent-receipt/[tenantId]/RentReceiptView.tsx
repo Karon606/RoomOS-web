@@ -7,6 +7,7 @@ import type { RentReceiptData } from './actions'
 import { kstYmdStr } from '@/lib/kstDate'
 import { trackSave, pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { Btn } from '@/components/ui/Btn'
 
 type Fields = {
   name: string; room: string; period: string; targetMonth: string
@@ -140,14 +141,12 @@ export default function RentReceiptView({ data }: { data: RentReceiptData }) {
         </div>
 
         <div className="flex gap-2">
-          <button onClick={handlePreview} disabled={previewing}
-            className="flex-1 px-3 py-2.5 rounded-xl border border-[var(--warm-border)] text-sm font-medium text-[var(--warm-dark)] bg-[var(--cream)] disabled:opacity-60">
+          <Btn variant="secondary" className="flex-1" onClick={handlePreview} disabled={previewing}>
             {previewing ? '여는 중…' : '미리보기·인쇄'}
-          </button>
-          <button onClick={handleIssue} disabled={issuing}
-            className="flex-1 px-3 py-2.5 rounded-xl bg-[var(--coral)] text-[var(--on-solid)] text-sm font-semibold disabled:opacity-60">
+          </Btn>
+          <Btn variant="primary" className="flex-1" onClick={handleIssue} disabled={issuing}>
             {issuing ? '발급 중…' : '발급 (PDF 저장)'}
-          </button>
+          </Btn>
         </div>
       </div>
     </div>
