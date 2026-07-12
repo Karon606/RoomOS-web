@@ -104,7 +104,7 @@ export default function RequestsClient({
         if (!res.ok) { pushToast('error', res.error); return }
         // 적용취소(기존 unresolve 재사용) + 과거 월 조회 중이면 증발 안내
         const opts: { action: { label: string; run: () => void }; detail?: string } = {
-          action: { label: '적용취소', run: () => unresolveTenantRequest(id).then(() => router.refresh()) },
+          action: { label: '적용취소', run: () => unresolveTenantRequest(id).then(r => { if (!r.ok) { pushToast('error', r.error); return } router.refresh() }) },
         }
         if (targetMonth !== kstMonthOf(new Date())) opts.detail = '처리됨은 이번 달에서 볼 수 있어요.'
         pushToast('success', '완료로 처리했습니다', opts)
