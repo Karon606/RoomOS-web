@@ -1269,6 +1269,7 @@ export default function FinanceClient({
 
   // ── 지출 탭 상태 ─────────────────────────────────────────────
   const [expFilter, setExpFilter] = useState({ method: 'all', category: 'all', finance: 'all' })
+  const [showExpFilters, setShowExpFilters] = useState(false)   // 검색창 옆 필터 토글(정본 §23 호실관리 패턴)
   const [expListSearch, setExpListSearch] = useState('')   // 이번 달 목록 인라인 검색(v2.0 §23) — '과거 내역 검색'(전 기간 서버)과 별개
   // 미확인 고정 지출 가시성: 'all' = 전체, 'soon' = 결제일 D-3 이내(과거 도래 포함)만
   const [recVisibility, setRecVisibility] = useState<'all' | 'soon'>(() => {
@@ -2133,49 +2134,73 @@ export default function FinanceClient({
       ══════════════════════════════════════════════════════════ */}
       {tab === 'expense' && (
         <div className="space-y-4">
-          {/* 검색 — v2.0 §23 공용 SearchBar (모바일 포함 항상 노출). 이번 달 목록 필터, 전 기간은 '과거 내역 검색' */}
-          <SearchBar value={expListSearch} onChange={setExpListSearch} placeholder="품목·구매처·내역·호실 검색" />
-          {/* 필터 + 합계 + 버튼 */}
+          {/* 검색바 + 필터 토글 — v2.0 §23 정본(호실관리) 패턴. 이번 달 목록 필터, 전 기간은 '과거 내역 검색' */}
+          {(() => {
+            const expFilterCount = [expFilter.method, expFilter.category, expFilter.finance].filter(v => v !== 'all').length
+            return (
+              <>
+                <div className="flex gap-2">
+                  <SearchBar value={expListSearch} onChange={setExpListSearch} placeholder="품목·구매처·내역·호실 검색" className="flex-1" />
+                  <button type="button" onClick={() => setShowExpFilters(v => !v)}
+                    className={`shrink-0 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                      showExpFilters || expFilterCount > 0
+                        ? 'bg-[var(--coral)] text-[var(--on-solid)]'
+                        : 'bg-[var(--cream)] border border-[var(--warm-border)] text-[var(--warm-dark)]'
+                    }`}>
+                    필터{expFilterCount > 0 ? ` ${expFilterCount}` : ''}
+                  </button>
+                </div>
+                {/* 접이식 필터 패널 */}
+                {showExpFilters && (
+                  <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-4 flex flex-wrap items-center gap-2">
+                    <select value={expFilter.method} onChange={e => setExpFilter(f => ({ ...f, method: e.target.value }))}
+                      className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
+                      <option value="all">결제수단 (전체)</option>
+                      {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <select value={expFilter.category} onChange={e => setExpFilter(f => ({ ...f, category: e.target.value }))}
+                      className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
+                      <option value="all">카테고리 (전체)</option>
+                      {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    {financialAccounts.length > 0 && (
+                      <select value={expFilter.finance} onChange={e => setExpFilter(f => ({ ...f, finance: e.target.value }))}
+                        className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
+                        <option value="all">금융사 (전체)</option>
+                        {financialAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
+                      </select>
+                    )}
+                    <button onClick={() => { setExpFilter({ method: 'all', category: 'all', finance: 'all' }); setExpListSearch('') }}
+                      className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2">초기화</button>
+                  </div>
+                )}
+              </>
+            )
+          })()}
+          {/* 합계 + 액션 버튼 — 별도 줄 */}
           <div className="flex flex-wrap items-center gap-2">
-            <select value={expFilter.method} onChange={e => setExpFilter(f => ({ ...f, method: e.target.value }))}
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
-              <option value="all">결제수단 (전체)</option>
-              {effectivePaymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-            <select value={expFilter.category} onChange={e => setExpFilter(f => ({ ...f, category: e.target.value }))}
-              className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
-              <option value="all">카테고리 (전체)</option>
-              {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            {financialAccounts.length > 0 && (
-              <select value={expFilter.finance} onChange={e => setExpFilter(f => ({ ...f, finance: e.target.value }))}
-                className="bg-[var(--canvas)] border border-[var(--warm-border)] text-[var(--warm-dark)] text-xs rounded-sm px-3 py-1.5 outline-none">
-                <option value="all">금융사 (전체)</option>
-                {financialAccounts.map(a => <option key={a.id} value={a.id}>{accName(a)}</option>)}
-              </select>
-            )}
-            <button onClick={() => { setExpFilter({ method: 'all', category: 'all', finance: 'all' }); setExpListSearch('') }}
-              className="text-xs text-[var(--warm-muted)] hover:text-[var(--warm-dark)] px-2">초기화</button>
-            <span className="ml-auto flex flex-col items-end">
+            <span className="flex flex-col items-start">
               <span className="text-[0.6875rem] text-[var(--warm-muted)] leading-none">실제 지출 합계 <span className="text-[0.65625rem]">(예정 제외)</span></span>
               <span className="text-sm font-bold text-[var(--danger-fg)] num mt-0.5">
                 <MoneyDisplay amount={totalExp} />
               </span>
             </span>
-            <Btn variant="secondary" size="md" onClick={openRecMgmt}>
-              고정 지출 관리
-            </Btn>
-            <Btn variant="secondary" size="md" onClick={() => setShowVendorMgmt(true)}>
-              구매처 관리
-            </Btn>
-            <Btn variant="secondary" size="md" onClick={() => { setShowExpSearch(true); setExpSearchQ(''); setExpSearchResults([]) }}>
-              과거 내역 검색
-            </Btn>
-            {canEditUi && (
-            <Btn variant="primary" size="md" onClick={() => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
-              + 지출 등록
-            </Btn>
-            )}
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <Btn variant="secondary" size="md" onClick={openRecMgmt}>
+                고정 지출 관리
+              </Btn>
+              <Btn variant="secondary" size="md" onClick={() => setShowVendorMgmt(true)}>
+                구매처 관리
+              </Btn>
+              <Btn variant="secondary" size="md" onClick={() => { setShowExpSearch(true); setExpSearchQ(''); setExpSearchResults([]) }}>
+                과거 내역 검색
+              </Btn>
+              {canEditUi && (
+              <Btn variant="primary" size="md" onClick={() => { userPickedCategoryRef.current = false; setAddExpDirty(false); setShowAddExp(true); setAddExpMethod(lastPayDefaults?.payMethod || '계좌이체'); setAddExpAccId(lastPayDefaults?.financialAccountId ?? ''); setAddExpAccName(lastPayDefaults?.financeName ?? ''); setAddExpCategory(expenseCategories[0] ?? '소모품비'); setAddItems([]); setAddIsService(false); setAddExpRoomId(''); setAddExtOrderNo(''); setAddExpVendor(''); setAddExpAmount(undefined); setAddExpDetail(''); setAddHasShipping(false); setAddShipping(undefined); setAddOrderMode(false); setAddOrderShipping(undefined); setAddOrderShipMemo(''); setScanCropped(null); setScanOcrError(''); setError('') }}>
+                + 지출 등록
+              </Btn>
+              )}
+            </div>
           </div>
 
           {/* 방별 지출 (이번 달) — '대상 호실' 배정된 지출을 방별로 합산 + 방별 항목 펼치기 */}
