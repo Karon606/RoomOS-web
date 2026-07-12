@@ -8,7 +8,7 @@ import { Modal } from '@/components/ui/Modal'
 export function InfoHint({ title, children, z }: {
   title: string
   children: ReactNode
-  z?: 200 | 260 | 280
+  z?: 200 | 260 | 280 | 380   // 380 = 모달(z 280) 위에 겹쳐 띄울 때 (수납 모달 내부 등)
 }) {
   const [open, setOpen] = useState(false)
   return (

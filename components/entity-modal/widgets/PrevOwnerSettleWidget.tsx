@@ -10,6 +10,7 @@ import {
 } from '@/app/(app)/rooms/actions'
 import { trackSave, pushToast, withSave } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { InfoHint } from '@/components/ui/InfoHint'
 
 export function PrevOwnerSettleWidget({ leaseTermId, targetMonth, canEdit, onChange }: {
   leaseTermId: string
@@ -61,11 +62,18 @@ export function PrevOwnerSettleWidget({ leaseTermId, targetMonth, canEdit, onCha
   if (!loaded || !canEdit) return null
 
   return (
-    <div className="border-t border-[var(--warm-border)] pt-3 mt-1 space-y-2">
-      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">양도인 = 영업장을 넘겨준 이전 사장. 인수 전에 시작된 계약의 그 달 임대료를 이전 사장 몫으로 표시할 때만 씁니다 (인수 이력이 없으면 쓸 일 없음).</p>
+    <div className="border-t border-[var(--warm-border)] pt-3 mt-1">
+      {/* 설명 prose는 (i)로 이관해 카드를 가볍게(운영자 지시 2026-07-13) */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <span className="text-xs font-medium text-[var(--warm-mid)]">양도인 메뉴</span>
+          <InfoHint title="양도인 정산" z={380}>
+            <div className="space-y-2">
+              <p>양도인은 영업장을 넘겨준 이전 사장입니다. 인수 전에 시작된 계약의 그 달 임대료를 이전 사장 몫으로 표시할 때만 씁니다. 인수 이력이 없으면 쓸 일이 없습니다.</p>
+              <p>메뉴 모드는 자동(인수월·다음달만), 항상 표시, 숨김 중에 언제든 바꿀 수 있습니다.</p>
+              <p>양도인 정산 버튼을 누르면 그 달 임대료가 현 소유주의 미납·매출 집계에서 빠집니다. 계약당 한 번만 처리되며, 되돌리려면 해당 기록을 삭제하면 됩니다.</p>
+            </div>
+          </InfoHint>
           <select value={menuMode} onChange={e => handleMenuChange(e.target.value as 'auto' | 'show' | 'hide')}
             disabled={pending}
             className="text-[0.65625rem] bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-1.5 py-1 text-[var(--warm-dark)] outline-none">
@@ -81,10 +89,6 @@ export function PrevOwnerSettleWidget({ leaseTermId, targetMonth, canEdit, onCha
           </button>
         )}
       </div>
-      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
-        <span className="font-medium">메뉴 모드</span>: 자동(인수월·다음달만)·항상 표시·숨김 · 언제든 변경 가능.<br />
-        <span className="font-medium">양도인 정산 버튼</span>을 누르면 이 달 임대료를 현 소유주 미납·매출 집계에서 제외 · 계약당 한 번만 처리 가능 (되돌리려면 해당 기록 삭제).
-      </p>
     </div>
   )
 }
