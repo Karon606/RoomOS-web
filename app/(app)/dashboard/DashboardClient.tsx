@@ -1323,12 +1323,28 @@ const TABS: { key: Tab; label: string }[] = [
 export default function DashboardClient({ data, targetMonth, paymentMethods }: { data: DashboardData; targetMonth: string; paymentMethods: string[] }) {
   const router = useRouter()
   // KPI 용어 설명(사용성 감사 F3) — 라벨 옆 ? 탭
-  const [kpiHelp, setKpiHelp] = useState<{ title: string; body: string } | null>(null)
+  const [kpiHelp, setKpiHelp] = useState<{ title: string; body: string[] } | null>(null)
+  // body는 문단 배열 — 도움말 모달에서 줄바꿈으로 가독성 확보(운영자 지시 2026-07-13)
   const KPI_HELP = {
-    projectedRevenue: { title: '예상 매출', body: '이번 달 입주자 전원이 납부를 마쳤을 때의 매출입니다. 퇴실 예정은 일할 정산으로, 입주 예정(예약 확정)은 전액으로 반영됩니다. 막대는 지금까지 실제 수납된 금액의 달성률입니다.' },
-    projectedNetProfit: { title: '예상 순이익', body: '예상 매출에서 이미 쓴 지출과 아직 안 빠진 고정지출(예상치)을 뺀 월말 전망입니다. 막대는 예상 지출 중 실제로 확정된 비율. 다 채워질수록 전망이 정확해집니다.' },
-    overdue: { title: '누적 미납', body: '납부일이 지났는데 아직 받지 못한 금액의 합계입니다. 지난달 이전에 밀린 금액(이월 미수)도 포함됩니다. 카드를 누르면 수납 관리로 이동합니다.' },
-    expectedExpense: { title: '예상 지출', body: '이미 쓴 지출에 아직 안 빠진 고정지출(임대료·공과금 등 예상치)을 더한 이번 달 전망입니다. 막대 색은 줄일 수 있는 정도 순입니다. 고정(정액)은 매달 같은 금액, 고정(변동)은 매달 다른 고정비, 수시는 그때그때 쓰는 돈입니다.' },
+    projectedRevenue: { title: '예상 매출', body: [
+      '이번 달 입주자 전원이 납부를 마쳤을 때의 매출입니다.',
+      '퇴실 예정은 일할 정산으로, 입주 예정(예약 확정)은 전액으로 반영됩니다.',
+      '막대는 지금까지 실제 수납된 금액의 달성률입니다.',
+    ] },
+    projectedNetProfit: { title: '예상 순이익', body: [
+      '예상 매출에서 이미 쓴 지출과 아직 안 빠진 고정지출(예상치)을 뺀 월말 전망입니다.',
+      '막대는 예상 지출 중 실제로 확정된 비율입니다. 다 채워질수록 전망이 정확해집니다.',
+    ] },
+    overdue: { title: '누적 미납', body: [
+      '납부일이 지났는데 아직 받지 못한 금액의 합계입니다.',
+      '지난달 이전에 밀린 금액(이월 미수)도 포함됩니다.',
+      '카드를 누르면 수납 관리로 이동합니다.',
+    ] },
+    expectedExpense: { title: '예상 지출', body: [
+      '이미 쓴 지출에 아직 안 빠진 고정지출(임대료·공과금 등 예상치)을 더한 이번 달 전망입니다.',
+      '막대 색은 줄일 수 있는 정도 순입니다.',
+      '고정(정액)은 매달 같은 금액, 고정(변동)은 매달 다른 고정비, 수시는 그때그때 쓰는 돈입니다.',
+    ] },
   }
   // viewMonth가 현재이면 "오늘 기준", 그 외(과거/미래)는 "○월 말일 기준"
   const isViewingRealMonth = targetMonth === kstMonthStr()
@@ -1454,7 +1470,9 @@ export default function DashboardClient({ data, targetMonth, paymentMethods }: {
 
       {/* KPI 용어 한 줄 설명 — 라벨 옆 ? 탭(모바일 title 힌트 대체, 사용성 감사 F3) */}
       <Modal open={!!kpiHelp} onClose={() => setKpiHelp(null)} title={kpiHelp?.title} width="xs">
-        <p className="p-5 text-sm leading-relaxed text-[var(--warm-dark)]">{kpiHelp?.body}</p>
+        <div className="p-5 text-sm leading-relaxed text-[var(--warm-dark)] space-y-2">
+          {kpiHelp?.body.map((line, i) => <p key={i}>{line}</p>)}
+        </div>
       </Modal>
 
       {/* ── KPI 카드 (v2.0 §24 반응형: 모바일 1 → sm 3 → lg 4 — 모바일 1열 정본, 반폭 과밀 해소) ──────────── */}
