@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DatePicker } from '@/components/ui/DatePicker'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Btn } from '@/components/ui/Btn'
 import { pushToast } from '@/lib/saveStatus'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { createInviteCode, toggleInviteCode, deleteInviteCode } from '../actions'
@@ -150,14 +151,9 @@ export default function InvitesClient({ rows }: { rows: Row[] }) {
             {err}
           </p>
         )}
-        <button
-          onClick={submit}
-          disabled={pending}
-          className="px-4 py-2 text-sm font-medium rounded-lg text-[var(--on-solid)] disabled:opacity-50"
-          style={{ background: 'var(--persimmon)' }}
-        >
+        <Btn variant="primary" size="md" onClick={submit} disabled={pending}>
           코드 발급
-        </button>
+        </Btn>
       </div>
 
       {/* 목록 */}

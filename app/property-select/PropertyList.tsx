@@ -2,6 +2,7 @@
 
 import { useTransition, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Btn } from '@/components/ui/Btn'
 import { selectProperty, signOut, createProperty, requestJoinByCode, reactivateProperty } from './actions'
 
 const ROLE_STYLE: Record<string, { bg: string; color: string }> = {
@@ -111,19 +112,21 @@ export default function PropertyList({ properties }: { properties: Property[] })
       {joinError && <p className="text-xs" style={{ color: 'var(--danger-fg)' }}>{joinError}</p>}
       {joinSuccess && <p className="text-xs leading-relaxed" style={{ color: 'var(--persimmon-d)' }}>{joinSuccess}</p>}
       <div className="flex gap-2">
-        <button
+        <Btn
+          variant="secondary"
+          size="md"
           onClick={() => { setShowJoin(false); setJoinCode(''); setJoinMsg(''); setJoinError(''); setJoinSuccess('') }}
-          className="flex-1 py-2.5 rounded-lg text-sm"
-          style={{ background: 'var(--canvas)', color: 'var(--warm-muted)', border: '1px solid var(--warm-border)' }}>
+          className="flex-1">
           닫기
-        </button>
-        <button
+        </Btn>
+        <Btn
+          variant="primary"
+          size="md"
           onClick={handleJoin}
           disabled={isJoining || !joinCode.trim()}
-          className="flex-1 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50"
-          style={{ background: 'var(--coral)', color: 'var(--on-solid)' }}>
+          className="flex-1">
           {isJoining ? '요청 중…' : '참여 요청 보내기'}
-        </button>
+        </Btn>
       </div>
     </div>
   )
@@ -144,19 +147,21 @@ export default function PropertyList({ properties }: { properties: Property[] })
       />
       {createError && <p className="text-xs text-[var(--danger-fg)]">{createError}</p>}
       <div className="flex gap-2">
-        <button
+        <Btn
+          variant="secondary"
+          size="md"
           onClick={() => { setShowCreate(false); setNewName(''); setCreateError('') }}
-          className="flex-1 py-2.5 rounded-lg text-sm"
-          style={{ background: 'var(--canvas)', color: 'var(--warm-muted)', border: '1px solid var(--warm-border)' }}>
+          className="flex-1">
           취소
-        </button>
-        <button
+        </Btn>
+        <Btn
+          variant="primary"
+          size="md"
           onClick={handleCreate}
           disabled={isCreating || !newName.trim()}
-          className="flex-1 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50"
-          style={{ background: 'var(--coral)', color: 'var(--on-solid)' }}>
+          className="flex-1">
           {isCreating ? '개설 중…' : '개설하기'}
-        </button>
+        </Btn>
       </div>
     </div>
   )
@@ -175,12 +180,13 @@ export default function PropertyList({ properties }: { properties: Property[] })
           </p>
           {!showCreate && !showJoin && (
             <div className="flex flex-col gap-2 items-center mt-2">
-              <button
+              <Btn
+                variant="primary"
+                size="md"
                 onClick={() => setShowCreate(true)}
-                className="px-6 py-2.5 rounded-lg text-sm font-medium"
-                style={{ background: 'var(--coral)', color: 'var(--on-solid)' }}>
+                className="px-6">
                 + 새 영업장 개설
-              </button>
+              </Btn>
               <button
                 onClick={() => setShowJoin(true)}
                 className="text-sm"
@@ -271,13 +277,14 @@ export default function PropertyList({ properties }: { properties: Property[] })
         joinForm
       ) : (
         <div className="flex flex-col gap-2">
-          <button
+          <Btn
+            variant="secondary"
+            size="md"
+            fullWidth
             onClick={() => setShowCreate(true)}
-            disabled={isPending}
-            className="w-full py-3 rounded-lg text-sm font-medium disabled:opacity-40"
-            style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-mid)' }}>
+            disabled={isPending}>
             + 새 영업장 개설
-          </button>
+          </Btn>
           <button
             onClick={() => setShowJoin(true)}
             disabled={isPending}

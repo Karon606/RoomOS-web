@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import type { Conflict, PreviewResult } from '@/lib/import-types'
 import { Modal } from '@/components/ui/Modal'
+import { Btn } from '@/components/ui/Btn'
 
 type SheetResult = { imported: number; skipped: number; errors: string[] }
 type Resolution = 'overwrite' | 'keep' | 'archive'
@@ -265,14 +266,8 @@ export default function DataButtons() {
         ].filter(Boolean).join(' / ')}
         footer={
           <div className="flex gap-2">
-            <button onClick={close}
-              className="flex-1 py-2.5 bg-[var(--canvas)] text-[var(--warm-dark)] text-sm rounded-lg transition-colors">
-              취소
-            </button>
-            <button onClick={() => applyImport(file, resolutions)}
-              className="flex-1 py-2.5 bg-[var(--coral)] text-[var(--on-solid)] text-sm font-medium rounded-lg transition-colors">
-              가져오기 적용
-            </button>
+            <Btn variant="secondary" size="md" className="flex-1" onClick={close}>취소</Btn>
+            <Btn variant="primary" size="md" className="flex-1" onClick={() => applyImport(file, resolutions)}>가져오기 적용</Btn>
           </div>
         }>
 
@@ -357,10 +352,7 @@ export default function DataButtons() {
               {allErrors.length > 5 && <p className="text-xs text-[var(--danger-fg)]">외 {allErrors.length - 5}건...</p>}
             </div>
           )}
-          <button onClick={close} className="w-full py-2.5 rounded-lg text-sm font-medium"
-            style={{ background: 'var(--coral)', color: 'var(--on-solid)' }}>
-            확인
-          </button>
+          <Btn variant="primary" size="md" fullWidth onClick={close}>확인</Btn>
         </div>
       </Modal>
     )
@@ -371,17 +363,13 @@ export default function DataButtons() {
   return (
     <>
       <div className="flex items-center gap-2">
-        <button onClick={handleExportClick}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-          style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)', color: 'var(--warm-mid)' }}>
+        <Btn variant="secondary" size="md" onClick={handleExportClick}>
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
             <path d="M7 1v8M4 6l3 3 3-3M2 11h10"/>
           </svg>
           내보내기
-        </button>
-        <button onClick={() => fileRef.current?.click()} disabled={isLoading}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-          style={{ background: 'var(--coral)', color: 'var(--on-solid)' }}>
+        </Btn>
+        <Btn variant="primary" size="md" onClick={() => fileRef.current?.click()} disabled={isLoading}>
           {isLoading ? (
             <>
               <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
@@ -398,7 +386,7 @@ export default function DataButtons() {
               가져오기
             </>
           )}
-        </button>
+        </Btn>
         <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={handleFileSelect} />
       </div>
 
@@ -409,16 +397,8 @@ export default function DataButtons() {
           subtitle={`${month.slice(0, 4)}년 ${parseInt(month.slice(5))}월 기준`}
           footer={
             <div className="flex gap-2">
-              <button onClick={() => setShowExportModal(false)}
-                className="flex-1 py-2.5 rounded-lg text-sm font-medium"
-                style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>
-                취소
-              </button>
-              <button onClick={doExport}
-                className="flex-1 py-2.5 rounded-lg text-sm font-medium text-[var(--on-solid)]"
-                style={{ background: 'var(--coral)' }}>
-                내보내기
-              </button>
+              <Btn variant="secondary" size="md" className="flex-1" onClick={() => setShowExportModal(false)}>취소</Btn>
+              <Btn variant="primary" size="md" className="flex-1" onClick={doExport}>내보내기</Btn>
             </div>
           }>
             <div className="px-6 py-4">
