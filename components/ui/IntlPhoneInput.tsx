@@ -96,7 +96,7 @@ export function IntlPhoneInput({
         />
       </div>
       {callingCode && (
-        <p className="text-[0.625rem] text-[var(--warm-muted)] pl-1">국가 번호 {callingCode} · 저장 시 국제 형식(E.164)으로 변환됩니다.</p>
+        <p className="text-[0.65625rem] text-[var(--warm-muted)] pl-1">국가 번호 {callingCode} · 저장 시 국제 형식(E.164)으로 변환됩니다.</p>
       )}
     </div>
   )

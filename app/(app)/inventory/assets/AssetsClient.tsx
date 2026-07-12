@@ -34,7 +34,7 @@ const PinMarker = () => (
   </svg>
 )
 const CoralTag = ({ children }: { children: ReactNode }) => (
-  <span className="text-[0.625rem] font-normal text-[var(--coral)]">{children}</span>
+  <span className="text-[0.65625rem] font-normal text-[var(--coral)]">{children}</span>
 )
 
 import { fmtWon as won } from '@/lib/fmtMoney'   // v2.0 §06 단일 경로
@@ -389,7 +389,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         onLongPress={!mergeMode ? () => { setMergeMode(true); toggleMergeSel(it.id) } : undefined}
         title={it.itemLabel}
         badges={<>
-          {it.isService && <span className="inline-flex items-center rounded-full bg-[var(--canvas)] text-[var(--warm-mid)] text-[0.625rem] font-semibold px-1.5 py-0.5 border border-[var(--warm-border)]">서비스</span>}
+          {it.isService && <span className="inline-flex items-center rounded-full bg-[var(--canvas)] text-[var(--warm-mid)] text-[0.65625rem] font-semibold px-1.5 py-0.5 border border-[var(--warm-border)]">서비스</span>}
           {it.amount === 0 && <Badge tone="pale-blue">무상</Badge>}
         </>}
         meta={[boughtThisMonth(it) ? `${monthLabel} 구매분` : null, `${it.date.slice(2)} 구매`, it.vendor, it.assignedAt ? `${it.assignedAt.slice(2)} 배정` : null, it.category, won(it.amount)].filter(Boolean).join(' · ')}
@@ -503,7 +503,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
         ]} />
         <div className="self-end md:self-auto text-right">
           <MonthSelector />
-          <p className="mt-0.5 text-[0.625rem] text-[var(--warm-muted)]">월은 &lsquo;이달 구매&rsquo; 요약에만 적용 · 아래 배치 현황은 누적</p>
+          <p className="mt-0.5 text-[0.65625rem] text-[var(--warm-muted)]">월은 &lsquo;이달 구매&rsquo; 요약에만 적용 · 아래 배치 현황은 누적</p>
         </div>
       </div>
       {/* 헤더 — 소모품 탭과 동일 골격: 제목 블록 → 버튼 줄 → 검색(v2.0 §23) */}
@@ -677,7 +677,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
             <input type="date" value={batchAssign.assignedAt}
               onChange={e => setBatchAssign(b => b ? { ...b, assignedAt: e.target.value } : b)}
               className="h-9 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
-            <span className="text-[0.625rem] text-[var(--warm-muted)]">기본 오늘 · 나중에 카드 상세에서도 수정 가능</span>
+            <span className="text-[0.65625rem] text-[var(--warm-muted)]">기본 오늘 · 나중에 카드 상세에서도 수정 가능</span>
           </div>
           <ul className="space-y-2">
             {batchAssign.rows.map((r, idx) => {
@@ -733,7 +733,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
               <div>
                 <span className="block text-xs font-medium text-[var(--warm-mid)] mb-1">규격 <span className="text-[var(--warm-muted)] font-normal">(선택)</span>
                   <button type="button" onClick={() => setFreeWizOpen(true)}
-                    className="ml-2 text-[0.625rem] font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-2">단계별 입력</button>
+                    className="ml-2 text-[0.65625rem] font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-2">단계별 입력</button>
                 </span>
                 <div className="flex gap-1.5">
                   <input value={freeForm.spec} disabled={pending} inputMode="decimal" placeholder="값"
@@ -807,7 +807,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                     disabled={pending || !(adjQty?.id === it.id && adjQty.v.trim() !== '' && Number(adjQty.v) !== (it.qtyValue ?? 0))}
                     onClick={() => adjQty && runAdjustQty(it, adjQty.v)}
                     className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity disabled:opacity-35">저장</button>
-                  <span className="text-[0.625rem] text-[var(--warm-muted)]">줄이면 여분으로, 늘리면 여분에서 가져와요</span>
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)]">줄이면 여분으로, 늘리면 여분에서 가져와요</span>
                 </div>
               )}
               {(it.roomNo || it.locationName) && (
@@ -820,7 +820,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                     ? <button type="button" onClick={() => saveAssignedAt(it, '')} disabled={pending}
                         className="min-h-[34px] inline-flex items-center text-[0.6875rem] px-2 py-1 text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">비우기</button>
                     : <span className="text-[0.6875rem] text-[var(--warm-muted)]">미상</span>}
-                  <span className="text-[0.625rem] text-[var(--warm-muted)]">날짜를 고르면 바로 저장돼요</span>
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)]">날짜를 고르면 바로 저장돼요</span>
                 </div>
               )}
               {(() => {
@@ -854,7 +854,7 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                         )
                       })}
                     </ul>
-                    <p className="mt-1 text-[0.625rem] text-[var(--warm-muted)]">눌러서 그 위치 카드로 이동할 수 있어요</p>
+                    <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">눌러서 그 위치 카드로 이동할 수 있어요</p>
                   </div>
                 )
               })()}
@@ -887,12 +887,12 @@ export default function AssetsClient({ data, rooms, locations, targetMonth }: {
                     )
                   })}
                 </ul>
-                <p className="mt-1 text-[0.625rem] text-[var(--warm-muted)]">규격(사이즈·용량)이 서로 다르면 별도 카드로 분리돼 따로 배정할 수 있습니다.</p>
+                <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)]">규격(사이즈·용량)이 서로 다르면 별도 카드로 분리돼 따로 배정할 수 있습니다.</p>
               </div>
               {logRows.length > 0 && (
                 <div>
                   <p className="mb-1.5 text-xs font-semibold text-[var(--warm-mid)]">배정 변경 이력</p>
-                  <p className="mb-1.5 text-[0.625rem] text-[var(--warm-muted)]">되돌리기 = 그 이동을 원상복구하고 이력도 지웁니다 · 지우기 = 기록만 지웁니다</p>
+                  <p className="mb-1.5 text-[0.65625rem] text-[var(--warm-muted)]">되돌리기 = 그 이동을 원상복구하고 이력도 지웁니다 · 지우기 = 기록만 지웁니다</p>
                   <ul className="space-y-1">
                     {logRows.map(r => (
                       <li key={r.id} className="flex items-center justify-between gap-2 text-xs">

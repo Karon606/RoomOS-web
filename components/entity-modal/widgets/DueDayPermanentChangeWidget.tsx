@@ -48,7 +48,7 @@ export function DueDayPermanentChangeWidget({ leaseTermId, targetMonth, expected
         <div className="flex items-center justify-between gap-2">
           <div>
             <p className="text-xs font-medium text-[var(--warm-mid)]">납입일 영구 변경</p>
-            <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">일할 정산 후 다음 달부터 계속 적용</p>
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">일할 정산 후 다음 달부터 계속 적용</p>
           </div>
           <button type="button" onClick={() => { setShowForm(true); setInput('') }}
             className="text-[0.6875rem] px-2 py-1 rounded transition-colors shrink-0"

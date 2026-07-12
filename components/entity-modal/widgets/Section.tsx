@@ -16,7 +16,7 @@ export function Grid({ children }: { children: React.ReactNode }) {
 export function Item({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <p className="text-[0.625rem] text-[var(--warm-muted)] mb-0.5">{label}</p>
+      <p className="text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">{label}</p>
       <div className="text-sm text-[var(--warm-dark)]">{value}</div>
     </div>
   )

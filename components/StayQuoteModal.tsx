@@ -106,7 +106,7 @@ export function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () =
                 <span className="tabular-nums text-[var(--warm-dark)]">{fmtWon(short.deposit)}</span>
               </p>
             )}
-            <p className="text-[0.625rem] text-[var(--warm-muted)]">
+            <p className="text-[0.65625rem] text-[var(--warm-muted)]">
               {data.shortStay.unitDays}일 단위 계약(일할 아님) · {data.shortStay.thresholdDays}일 이하 거주에 적용. 수치는 설정에서 영업장별로 바꿀 수 있습니다.
             </p>
           </div>
@@ -130,7 +130,7 @@ export function StayQuoteModal({ open, onClose }: { open: boolean; onClose: () =
               </span>
               <span className="text-lg font-bold tnum text-[var(--coral)]">{fmtWon(quote.total)}</span>
             </div>
-            <p className="text-[0.625rem] text-[var(--warm-muted)]">일할은 30일 기준. 퇴실 정산과 동일한 계산입니다.</p>
+            <p className="text-[0.65625rem] text-[var(--warm-muted)]">일할은 30일 기준. 퇴실 정산과 동일한 계산입니다.</p>
           </div>
         )}
 

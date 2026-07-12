@@ -385,13 +385,13 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
                   <div className="flex items-center gap-2">
                     <Btn type="button" variant="primary" size="sm" onClick={() => applyDraft(editingDim.key)}>적용</Btn>
                     <Btn type="button" variant="ghost" size="sm" onClick={() => setEditing(null)}>취소</Btn>
-                    <span className="text-[0.625rem] text-[var(--warm-muted)]">아무것도 안 고르고 적용하면 이 조건이 빠집니다.</span>
+                    <span className="text-[0.65625rem] text-[var(--warm-muted)]">아무것도 안 고르고 적용하면 이 조건이 빠집니다.</span>
                   </div>
                 </div>
               )}
 
               {activeDims.length >= 2 && (
-                <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
+                <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
                   조건이 여러 개면 모두 만족하는 사람에게만 보냅니다.
                 </p>
               )}
@@ -468,7 +468,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
             )}
             <AiQuotaHint />
           </div>
-          <span className="text-[0.625rem] text-[var(--warm-muted)] tabular-nums shrink-0">{body.trim().length}자</span>
+          <span className="text-[0.65625rem] text-[var(--warm-muted)] tabular-nums shrink-0">{body.trim().length}자</span>
         </div>
         <div className="flex items-center justify-between">
           <button type="button" onClick={saveAsTemplate}
@@ -491,7 +491,7 @@ export function NoticeSmsModal({ onClose }: { onClose: () => void }) {
             </a>
           ))}
         </div>
-        <p className="text-[0.625rem] text-[var(--warm-muted)]">
+        <p className="text-[0.65625rem] text-[var(--warm-muted)]">
           버튼을 누르면 발송 시도로 기록되고 폰 메시지 앱이 단체 대화로 열립니다. 실제 발송은 메시지 앱에서 완료하세요.
         </p>
       </div>

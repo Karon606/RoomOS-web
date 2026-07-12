@@ -68,7 +68,7 @@ export function PaymentHistoryAll({ leaseTermId, reloadSignal }: { leaseTermId: 
                     <span className="num font-semibold text-[var(--warm-dark)] flex-1 text-right">{fmtWon(r.actualAmount)}</span>
                     <span className="text-[var(--warm-muted)] w-[60px] shrink-0 truncate text-right">{r.payMethod ?? ''}</span>
                   </div>
-                  {r.memo && <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 pl-[90px] break-keep">{r.memo}</p>}
+                  {r.memo && <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 pl-[90px] break-keep">{r.memo}</p>}
                 </li>
               ))}
             </ul>

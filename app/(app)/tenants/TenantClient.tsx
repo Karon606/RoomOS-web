@@ -1063,7 +1063,7 @@ export default function TenantClient({
                     </label>
                     {/* 퇴실 전이 미니폼과 동일한 빠른 버튼 — 두 경로의 문법 통일(신규유저 감사) */}
                     <button type="button" onClick={() => setDepositReturnAmt(0)}
-                      className={`shrink-0 text-[0.625rem] px-2 py-1 rounded-md border transition-colors ${
+                      className={`shrink-0 text-[0.65625rem] px-2 py-1 rounded-md border transition-colors ${
                         depositReturnAmt === 0
                           ? 'border-[var(--coral)] text-[var(--coral)] bg-[var(--coral)]/10'
                           : 'border-[var(--warm-border)] text-[var(--warm-mid)] hover:bg-[var(--warm-border)]/40'
@@ -1072,7 +1072,7 @@ export default function TenantClient({
                     </button>
                   </div>
                   <MoneyInput value={depositReturnAmt} onChange={setDepositReturnAmt} placeholder="0원" />
-                  <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">환불하지 않은 금액은 보증금 수익으로 자동 기록됩니다.</p>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">환불하지 않은 금액은 보증금 수익으로 자동 기록됩니다.</p>
                   {exceedsMax && (
                     <p className="text-[0.6875rem] text-[var(--danger-fg)]">환불 금액은 최대 {fmtWon(maxRefund)}입니다.</p>
                   )}
@@ -1095,7 +1095,7 @@ export default function TenantClient({
                       <span className="font-medium">{fmtWon(unreturned)}</span>
                     </div>
                   )}
-                  <p className="text-[0.625rem] pt-1 text-[var(--warm-muted)]">
+                  <p className="text-[0.65625rem] pt-1 text-[var(--warm-muted)]">
                     미환불분은 부가수익 카테고리 &apos;보증금&apos; · 입금수단 &apos;보유 보증금&apos;으로 자동 등록됩니다.
                   </p>
                 </div>
@@ -1185,7 +1185,7 @@ export default function TenantClient({
                     {lease?.room?.roomNo ? (
                       <>
                         <span className="text-sm font-bold tnum text-[var(--warm-dark)]">{fmtRoomNo(lease.room.roomNo)}</span>
-                        {lease.room.floor && <span className="text-[0.625rem] px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">{lease.room.floor}층</span>}
+                        {lease.room.floor && <span className="text-[0.65625rem] px-1.5 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">{lease.room.floor}층</span>}
                       </>
                     ) : (() => {
                       // 호실 미배정자 — wishRooms > wishConditions > '미배정' 순으로 라벨 결정
@@ -1543,7 +1543,7 @@ export default function TenantClient({
                         <p className="text-xs text-[var(--warm-muted)]">총 수납</p>
                         <p className="text-sm font-bold mt-0.5 text-[var(--warm-dark)]"><MoneyDisplay amount={regularPaid} /></p>
                         {adjNet !== 0 && (
-                          <p className="text-[0.625rem] mt-0.5 font-medium"
+                          <p className="text-[0.65625rem] mt-0.5 font-medium"
                             style={{ color: adjNet > 0 ? 'var(--success-fg)' : 'var(--danger-fg)' }}>
                             조정 {adjNet > 0 ? '+' : ''}{fmtWon(adjNet)}
                           </p>
@@ -1587,7 +1587,7 @@ export default function TenantClient({
                                   {isExtra ? '추가납부 필요' : '과입금 처리'}
                                 </p>
                                 {label && (
-                                  <p className="text-[0.625rem] mt-0.5" style={{ color: 'var(--warm-muted)' }}>{label}</p>
+                                  <p className="text-[0.65625rem] mt-0.5" style={{ color: 'var(--warm-muted)' }}>{label}</p>
                                 )}
                               </div>
                               <div className="flex items-center gap-2">
@@ -1614,20 +1614,20 @@ export default function TenantClient({
                               <div key={p.id} className="rounded-xl border border-[var(--deposit-ring)] bg-[var(--deposit-bg)] px-3 py-2.5 space-y-2">
                                 <div className="grid grid-cols-2 gap-2">
                                   <div className="space-y-1">
-                                    <p className="text-[0.625rem] text-[var(--deposit-fg)]">금액</p>
+                                    <p className="text-[0.65625rem] text-[var(--deposit-fg)]">금액</p>
                                     <input type="text" inputMode="numeric"
                                       value={editAmount.toLocaleString()}
                                       onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
-                                    <p className="text-[0.625rem] text-[var(--deposit-fg)]">납부일</p>
+                                    <p className="text-[0.65625rem] text-[var(--deposit-fg)]">납부일</p>
                                     <DatePicker value={editDate} onChange={setEditDate}
                                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
                                   </div>
                                 </div>
                                 <div className="space-y-1">
-                                  <p className="text-[0.625rem] text-[var(--deposit-fg)]">납부방법</p>
+                                  <p className="text-[0.65625rem] text-[var(--deposit-fg)]">납부방법</p>
                                   <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
                                     placeholder="계좌이체, 현금…"
                                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
@@ -1646,14 +1646,14 @@ export default function TenantClient({
                               <div>
                                 <p className="text-xs text-[var(--deposit-fg)]">
                                   {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
-                                  <span className="ml-1.5 text-[0.625rem] font-semibold bg-[var(--deposit-bg)] text-[var(--deposit-fg)] rounded px-1 py-0.5">보증금</span>
+                                  <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--deposit-bg)] text-[var(--deposit-fg)] rounded px-1 py-0.5">보증금</span>
                                 </p>
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-semibold text-[var(--deposit-fg)]">{fmtWon(p.actualAmount)}</span>
                                 <div className="flex gap-1.5 ml-1">
                                   <button onClick={() => handleUpdatePayRecord(p)}
-                                    className="text-[0.625rem] font-medium px-2 py-1 rounded-lg border border-[var(--deposit-ring)] text-[var(--deposit-fg)] transition-colors">
+                                    className="text-[0.65625rem] font-medium px-2 py-1 rounded-lg border border-[var(--deposit-ring)] text-[var(--deposit-fg)] transition-colors">
                                     수정
                                   </button>
                                   <button onClick={() => handleDeletePayRecord(p.id)}
@@ -1679,27 +1679,27 @@ export default function TenantClient({
                               <div key={p.id} className={`rounded-xl border px-3 py-2.5 space-y-2 ${prevOwner ? 'border-[var(--info-ring)] bg-[var(--info-bg)]' : 'border-[var(--coral)] bg-[var(--canvas)]'}`}>
                                 <div className="grid grid-cols-2 gap-2">
                                   <div className="space-y-1">
-                                    <p className={`text-[0.625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>금액</p>
+                                    <p className={`text-[0.65625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>금액</p>
                                     <input type="text" inputMode="numeric"
                                       value={editAmount.toLocaleString()}
                                       onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
-                                    <p className={`text-[0.625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>납부일</p>
+                                    <p className={`text-[0.65625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>납부일</p>
                                     <DatePicker value={editDate} onChange={setEditDate}
                                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-lg px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
                                   </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                   <div className="space-y-1">
-                                    <p className={`text-[0.625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>납부방법</p>
+                                    <p className={`text-[0.65625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>납부방법</p>
                                     <input type="text" value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
                                       placeholder="계좌이체, 현금…"
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
                                   <div className="space-y-1">
-                                    <p className={`text-[0.625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>메모</p>
+                                    <p className={`text-[0.65625rem] ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-muted)]'}`}>메모</p>
                                     <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
                                       className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
                                   </div>
@@ -1716,9 +1716,9 @@ export default function TenantClient({
                               <div>
                                 <p className={`text-xs ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-mid)]'}`}>
                                   {p.seqNo}회차 · {fmtPayDate(p.payDate)} · {p.payMethod ?? '—'}
-                                  {prevOwner && <span className="ml-1.5 text-[0.625rem] font-semibold bg-[var(--info-bg)] text-[var(--info-fg)] rounded px-1 py-0.5">양도인</span>}
+                                  {prevOwner && <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--info-bg)] text-[var(--info-fg)] rounded px-1 py-0.5">양도인</span>}
                                   {!p.isDeposit && p.targetMonth !== targetMonth && (
-                                    <span className="ml-1.5 text-[0.625rem] font-semibold bg-[var(--badge-await-bg)] text-[var(--badge-await-fg)] rounded px-1 py-0.5">
+                                    <span className="ml-1.5 text-[0.65625rem] font-semibold bg-[var(--badge-await-bg)] text-[var(--badge-await-fg)] rounded px-1 py-0.5">
                                       {p.targetMonth < targetMonth
                                         ? `${Number(p.targetMonth.slice(5))}월 미납분 처리`
                                         : `${Number(p.targetMonth.slice(5))}월 선납`}
@@ -1731,7 +1731,7 @@ export default function TenantClient({
                                 <span className={`text-sm font-semibold ${prevOwner ? 'text-[var(--info-fg)]' : 'text-[var(--warm-dark)]'}`}>{fmtWon(p.actualAmount)}</span>
                                 <div className="flex gap-1.5 ml-1">
                                   <button onClick={() => handleUpdatePayRecord(p)}
-                                    className="text-[0.625rem] font-medium px-2 py-1 rounded-lg border transition-colors"
+                                    className="text-[0.65625rem] font-medium px-2 py-1 rounded-lg border transition-colors"
                                     style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
                                     수정
                                   </button>
@@ -1957,7 +1957,7 @@ export default function TenantClient({
                 <form onSubmit={handleSavePayment} className="flex flex-col flex-1 overflow-hidden">
                   <div className="flex-1 overflow-y-auto p-6 space-y-3">
                     {!isDepositMode && (
-                      <p className="text-[0.625rem] text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed">
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed">
                         미수가 있는 가장 오래된 월부터 자동으로 충당됩니다 (발생주의). 입력 금액이 한 달 이용료를 초과하면 다음 달로 이월됩니다.
                       </p>
                     )}
@@ -2519,7 +2519,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             숨겨져도 저장 시 기존 값은 보존(필드 부재 = 서버가 건드리지 않음). */}
         {natVal !== '대한민국' && (
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-[var(--warm-mid)]">본국 연락처 <span className="text-[0.625rem] text-[var(--warm-muted)] font-normal">(외국인 고객 · 국가 선택 시 자동 포맷)</span></label>
+          <label className="text-xs font-medium text-[var(--warm-mid)]">본국 연락처 <span className="text-[0.65625rem] text-[var(--warm-muted)] font-normal">(외국인 고객 · 국가 선택 시 자동 포맷)</span></label>
           <IntlPhoneInput
             name="homeCountryContact"
             countryName="homeCountryCode"
@@ -2549,10 +2549,10 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
             </select>
             {/* 처음 보는 상태 정의 — 선택했을 때만 한 줄(신규유저 감사 #5) */}
             {statusVal === 'NON_RESIDENT' && (
-              <p className="mt-1 text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">비거주자 = 방에 살지는 않지만 계약·요금이 있는 경우 (창고·사무실 임대 등)</p>
+              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">비거주자 = 방에 살지는 않지만 계약·요금이 있는 경우 (창고·사무실 임대 등)</p>
             )}
             {statusVal === 'RESERVED' && (
-              <p className="mt-1 text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">예약 = 입주 의사만 받은 상태 · 아래 &lsquo;예약 확정&rsquo;을 체크하면 방을 실제로 잡아둡니다</p>
+              <p className="mt-1 text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">예약 = 입주 의사만 받은 상태 · 아래 &lsquo;예약 확정&rsquo;을 체크하면 방을 실제로 잡아둡니다</p>
             )}
           </div>
           <SelectField label="선납/후납" name="paymentTiming" defaultValue={lease?.paymentTiming ?? 'PREPAID'}>
@@ -2629,10 +2629,10 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               />
               <span className="text-xs font-medium text-[var(--warm-dark)]">예약 확정</span>
               {reservationConfirmed && lease?.reservationConfirmedAt && (
-                <span className="text-[0.625rem] text-[var(--warm-muted)]">· {fmtDate(lease.reservationConfirmedAt)}</span>
+                <span className="text-[0.65625rem] text-[var(--warm-muted)]">· {fmtDate(lease.reservationConfirmedAt)}</span>
               )}
             </label>
-            <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed pl-6">
+            <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed pl-6">
               체크 시 호실/월 이용료/입주 희망일이 필수가 되고, 공실·퇴실 예정 방만 선택할 수 있습니다. 입주 희망일이 도래하면 대시보드 알림에서 거주중 전환을 진행하세요.
             </p>
           </div>
@@ -2666,12 +2666,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                   <DatePicker value={effective} onChange={setContactAlertVal}
                     className="!w-auto inline-flex items-center px-1 text-sm font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-4" />
                   <input type="hidden" name="contactAlertDate" value={contactAlertVal} />
-                  <span className="text-[0.625rem] text-[var(--warm-muted)]">
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)]">
                     {contactAlertVal ? '직접 지정' : `기본 · 희망일 ${contactLeadDays}일 전`} · 이 날부터 홈 화면과 알림(종 아이콘)에 표시
                   </span>
                   {contactAlertVal && (
                     <button type="button" onClick={() => setContactAlertVal('')}
-                      className="min-h-[28px] inline-flex items-center text-[0.625rem] px-1.5 text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">기본값으로</button>
+                      className="min-h-[28px] inline-flex items-center text-[0.65625rem] px-1.5 text-[var(--warm-muted)] hover:text-[var(--warm-dark)]">기본값으로</button>
                   )}
                 </div>
               )
@@ -2687,7 +2687,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               className="w-4 h-4 accent-[var(--coral)]" />
             <span className="text-xs font-medium text-[var(--warm-dark)]">단기 희망</span>
           </label>
-          <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed pl-6">
+          <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed pl-6">
             체크 시 호실 선택 후에도 월 이용료/보증금/청소비가 자동 채워지지 않고 모두 수동 입력합니다. 호실의 표준 가격에는 영향이 없으며 퇴실 후 다음 입주자는 다시 자동 채워집니다.
           </p>
           {isShortTerm && (() => {
@@ -2701,12 +2701,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 <p className="text-[0.6875rem] font-medium text-[var(--warm-mid)]">단기 요금 자동 계산 <span className="font-normal text-[var(--warm-muted)]">(홈의 단기 요금 계산과 같은 규칙)</span></p>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-0.5">입실일 = 입주 희망일</span>
+                    <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">입실일 = 입주 희망일</span>
                     <DatePicker value={moveInDateVal} onChange={setMoveInDateVal} placeholder="입실일"
                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none w-full" />
                   </div>
                   <div>
-                    <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-0.5">퇴실일 (예정 퇴실일로 저장)</span>
+                    <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-0.5">퇴실일 (예정 퇴실일로 저장)</span>
                     <DatePicker value={shortOut} onChange={setShortOut} placeholder="퇴실일"
                       className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none w-full" />
                   </div>
@@ -2714,7 +2714,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                 {/* 문의 단계(거주 전)에는 퇴실일 필드가 폼에 없어 여기 값으로 저장 — 거주 단계는 기존 퇴실일 필드 사용 */}
                 {roomIsOptional && shortOut && <input type="hidden" name="expectedMoveOut" value={shortOut} />}
                 {!selectedRoomId ? (
-                  <p className="text-[0.625rem] text-[var(--warm-muted)]">호실을 고르면 그 방의 표준가로 자동 계산합니다</p>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">호실을 고르면 그 방의 표준가로 자동 계산합니다</p>
                 ) : short && days != null ? (
                   <div className="rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] px-2.5 py-2 space-y-1">
                     <p className="text-[0.6875rem] text-[var(--warm-dark)]">
@@ -2727,12 +2727,12 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
                       className="min-h-[32px] inline-flex items-center text-[0.6875rem] px-2.5 py-1 rounded-md bg-[var(--coral)] text-[var(--on-solid)] hover:opacity-90 transition-opacity">
                       이 금액 채우기
                     </button>
-                    <span className="ml-2 text-[0.625rem] text-[var(--warm-muted)]">채운 뒤 아래에서 자유롭게 수정할 수 있어요</span>
+                    <span className="ml-2 text-[0.65625rem] text-[var(--warm-muted)]">채운 뒤 아래에서 자유롭게 수정할 수 있어요</span>
                   </div>
                 ) : days != null && shortQuoteData && days > shortQuoteData.shortStay.thresholdDays ? (
-                  <p className="text-[0.625rem] text-[var(--warning-fg)]">단기 정책 범위({shortQuoteData.shortStay.thresholdDays}일)를 넘는 기간입니다. 월 단위로 입력해 주세요.</p>
+                  <p className="text-[0.65625rem] text-[var(--warning-fg)]">단기 정책 범위({shortQuoteData.shortStay.thresholdDays}일)를 넘는 기간입니다. 월 단위로 입력해 주세요.</p>
                 ) : (
-                  <p className="text-[0.625rem] text-[var(--warm-muted)]">입실일과 퇴실일을 고르면 요금이 자동 계산됩니다</p>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">입실일과 퇴실일을 고르면 요금이 자동 계산됩니다</p>
                 )}
               </div>
             )
@@ -2743,7 +2743,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-[var(--warm-mid)]">
             호실{roomCanBeEmpty ? '' : ' *'}
-            {!roomIsOptional && statusVal === 'RESERVED' && <span className="ml-1 text-[0.625rem] text-[var(--warm-muted)] font-normal">(맞바꿈 시 잠시 비워둘 수 있음)</span>}
+            {!roomIsOptional && statusVal === 'RESERVED' && <span className="ml-1 text-[0.65625rem] text-[var(--warm-muted)] font-normal">(맞바꿈 시 잠시 비워둘 수 있음)</span>}
           </label>
           <select name="roomId" value={selectedRoomId} onChange={handleRoomChange} required={!roomCanBeEmpty}
             onWheel={e => e.stopPropagation()}
@@ -2782,7 +2782,7 @@ function TenantForm({ rooms, tenant, error, defaultDeposit, defaultCleaningFee, 
               </div>
               <MoneyInput name="rentAmount" value={rentAmount} onChange={setRentAmount} placeholder="0원" />
               {isNR && selectedRoom && selectedRoom.nonResidentRent == null && (
-                <p className="text-[0.625rem] text-[var(--warning-fg)]">
+                <p className="text-[0.65625rem] text-[var(--warning-fg)]">
                   이 호실에 비거주 이용료가 설정되어 있지 않습니다. 호실 관리에서 먼저 설정해 주세요.
                 </p>
               )}
@@ -3055,7 +3055,7 @@ function ContractFilesPanel({ tenantId, tenantName }: { tenantId: string; tenant
             const dateLabel = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')}`
             return (
               <li key={f.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)]">
-                <span className={`text-[0.625rem] px-1.5 py-0.5 rounded font-medium ${f.source === 'GENERATED' ? 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]' : 'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]'}`}>
+                <span className={`text-[0.65625rem] px-1.5 py-0.5 rounded font-medium ${f.source === 'GENERATED' ? 'bg-[var(--success-bg)] text-[var(--success-fg)] ring-1 ring-[var(--success-ring)]' : 'bg-[var(--warning-bg)] text-[var(--warning-fg)] ring-1 ring-[var(--warning-ring)]'}`}>
                   {f.source === 'GENERATED' ? '서명' : '스캔'}
                 </span>
                 <a href={f.viewUrl} target="_blank" rel="noreferrer" className="flex-1 min-w-0 text-xs text-[var(--warm-dark)] hover:text-[var(--coral)] truncate">

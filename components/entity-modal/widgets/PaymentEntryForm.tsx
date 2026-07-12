@@ -167,7 +167,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
       <p className="text-xs font-semibold text-[var(--coral)]">수납 등록</p>
       {!isDepositMode && !isCleaningFeeMode && (
         <>
-          <p className="text-[0.625rem] text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed">
+          <p className="text-[0.65625rem] text-[var(--warm-muted)] bg-[var(--canvas)] rounded-lg px-2.5 py-1.5 leading-relaxed">
             받은 돈은 가장 오래 밀린 달부터 자동으로 채웁니다. 특정 달 이용료로 넣고 싶으면 아래에서 직접 선택하세요.
           </p>
           <div className="space-y-1">
@@ -184,7 +184,7 @@ export function PaymentEntryForm({ room, targetMonth, onSaved, onCancel }: {
               })}
             </select>
             {forcedTm !== 'auto' && (
-              <p className="text-[0.625rem] text-[var(--warning-fg)] leading-relaxed">
+              <p className="text-[0.65625rem] text-[var(--warning-fg)] leading-relaxed">
                 직접 선택 · 입력 금액이 그 달 이용료보다 많으면 남는 금액은 다음 달로 넘어갑니다.
               </p>
             )}

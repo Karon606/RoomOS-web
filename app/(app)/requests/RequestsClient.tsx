@@ -362,7 +362,7 @@ export default function RequestsClient({
                     <Badge tone="pale-red">긴급</Badge>
                   )}
                   {c && (
-                    <span className={`text-[0.625rem] px-2 py-0.5 rounded-full font-medium ring-1 ${c.bg} ${c.fg} ${c.ring}`}>
+                    <span className={`text-[0.65625rem] px-2 py-0.5 rounded-full font-medium ring-1 ${c.bg} ${c.fg} ${c.ring}`}>
                       {r.category}
                     </span>
                   )}
@@ -381,12 +381,12 @@ export default function RequestsClient({
                       {r.tenant?.name ?? '입주자 미상'}{roomNo && ` · ${roomNo}호`}
                     </Link>
                   )}
-                  <span className="text-[0.625rem] text-[var(--warm-muted)]">요청 {fmtDate(r.requestDate)}</span>
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)]">요청 {fmtDate(r.requestDate)}</span>
                   {r.targetDate && !resolved && (
-                    <span className="text-[0.625rem] font-medium text-[var(--warning-fg)]">목표 {fmtDate(r.targetDate)}</span>
+                    <span className="text-[0.65625rem] font-medium text-[var(--warning-fg)]">목표 {fmtDate(r.targetDate)}</span>
                   )}
                   {resolved && (
-                    <span className="text-[0.625rem] text-[var(--success-fg)]">완료 {fmtDate(r.resolvedAt)}</span>
+                    <span className="text-[0.65625rem] text-[var(--success-fg)]">완료 {fmtDate(r.resolvedAt)}</span>
                   )}
                   {resolved && (
                     <button type="button" disabled={pending}
@@ -396,7 +396,7 @@ export default function RequestsClient({
                         pushToast('info', '완료를 해제했습니다 (미완료로 복귀)')
                         router.refresh()
                       })}
-                      className="min-h-[26px] inline-flex items-center text-[0.625rem] px-1.5 py-0.5 rounded-md text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">완료 해제</button>
+                      className="min-h-[26px] inline-flex items-center text-[0.65625rem] px-1.5 py-0.5 rounded-md text-[var(--warm-muted)] hover:text-[var(--warm-dark)] transition-colors">완료 해제</button>
                   )}
                 </div>
 

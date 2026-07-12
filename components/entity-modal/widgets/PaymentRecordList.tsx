@@ -112,20 +112,20 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
             <div key={p.id} className="rounded-xl border border-[var(--coral)] bg-[var(--canvas)] px-3 py-2.5 space-y-2">
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <p className="text-[0.625rem] text-[var(--warm-muted)]">금액</p>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">금액</p>
                   <input type="text" inputMode="numeric" value={editAmount.toLocaleString()}
                     onChange={e => setEditAmount(Number(e.target.value.replace(/[^0-9]/g, '')))}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[0.625rem] text-[var(--warm-muted)]">납부일</p>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">납부일</p>
                   <DatePicker value={editDate} onChange={setEditDate}
                     className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)]" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <p className="text-[0.625rem] text-[var(--warm-muted)]">납부방법</p>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">납부방법</p>
                   <select value={editPayMethod} onChange={e => setEditPayMethod(e.target.value)}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {!['계좌이체', '현금', '신용카드', '기타'].includes(editPayMethod) && editPayMethod && (
@@ -138,14 +138,14 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[0.625rem] text-[var(--warm-muted)]">메모</p>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">메모</p>
                   <input type="text" value={editMemo} onChange={e => setEditMemo(e.target.value)}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 </div>
               </div>
               {!p.isDeposit && (
                 <div className="space-y-1">
-                  <p className="text-[0.625rem] text-[var(--warm-muted)]">귀속월 (이 record가 인식되는 월)</p>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">귀속월 (이 record가 인식되는 월)</p>
                   <select value={editTargetMonth} onChange={e => setEditTargetMonth(e.target.value)}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-1.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]">
                     {!tmOptions.some(o => o.month === p.targetMonth) && (
@@ -188,10 +188,10 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
             {/* 줄2: 뱃지들 + 메모 + 액션 버튼 */}
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-1 flex-wrap">
-                {p.isDeposit && <span className="text-[0.625rem] font-semibold bg-[var(--deposit-bg)] text-[var(--deposit-fg)] rounded px-1.5 py-0.5">보증금</span>}
-                {prevOwner && <span className="text-[0.625rem] font-semibold bg-[var(--info-bg)] text-[var(--info-fg)] rounded px-1.5 py-0.5">양도인</span>}
+                {p.isDeposit && <span className="text-[0.65625rem] font-semibold bg-[var(--deposit-bg)] text-[var(--deposit-fg)] rounded px-1.5 py-0.5">보증금</span>}
+                {prevOwner && <span className="text-[0.65625rem] font-semibold bg-[var(--info-bg)] text-[var(--info-fg)] rounded px-1.5 py-0.5">양도인</span>}
                 {!p.isDeposit && (
-                  <span className={`text-[0.625rem] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap ${
+                  <span className={`text-[0.65625rem] font-semibold rounded px-1.5 py-0.5 whitespace-nowrap ${
                     p.targetMonth === targetMonth
                       ? 'bg-[var(--cream-2)] text-[var(--warm-mid)]'
                       : 'bg-[var(--badge-await-bg)] text-[var(--badge-await-fg)]'
@@ -206,12 +206,12 @@ export function PaymentRecordList({ leaseTermId, targetMonth, canEdit, onChange,
               {canEdit && (
                 <div className="flex gap-1.5">
                   <button onClick={() => startEdit(p)}
-                    className="text-[0.625rem] font-medium px-2 py-1 rounded-lg border transition-colors"
+                    className="text-[0.65625rem] font-medium px-2 py-1 rounded-lg border transition-colors"
                     style={{ borderColor: 'var(--warm-border)', color: 'var(--warm-mid)' }}>
                     수정
                   </button>
                   <button onClick={() => handleDelete(p.id)}
-                    className="text-[0.625rem] font-medium px-2 py-1 rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">
+                    className="text-[0.65625rem] font-medium px-2 py-1 rounded-lg border border-[var(--danger-ring)] text-[var(--danger-fg)] transition-colors">
                     삭제
                   </button>
                 </div>

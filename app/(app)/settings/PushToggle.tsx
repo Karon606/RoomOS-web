@@ -99,7 +99,7 @@ export function PushToggle() {
         )}
         {enabled && <span className="text-[0.6875rem] text-[var(--success-fg)] font-medium">● 이 기기 알림 켜짐</span>}
       </div>
-      <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
+      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
         납부 예정·퇴실 예정·재고 소진 등 대시보드 알림을 이 기기로 받습니다.
         iPhone은 <strong>홈 화면에 추가</strong>한 상태에서만 동작합니다 (iOS 16.4+).
       </p>

@@ -183,7 +183,7 @@ export default function AccrualCheckClient({ initialResult }: { initialResult: R
                     </>
                   )}
                 </div>
-                <span className={`text-[0.625rem] px-2 py-0.5 rounded-full font-medium ${CATEGORY_COLOR[s.category]}`}>
+                <span className={`text-[0.65625rem] px-2 py-0.5 rounded-full font-medium ${CATEGORY_COLOR[s.category]}`}>
                   {CATEGORY_LABEL[s.category]}
                 </span>
               </div>

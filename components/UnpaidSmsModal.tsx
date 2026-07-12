@@ -155,7 +155,7 @@ export function UnpaidSmsModal({ target, onClose }: { target: UnpaidSmsTarget; o
                 onChange={e => setBody(e.target.value)}
                 className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] leading-relaxed" />
             </label>
-            <p className="text-[0.625rem] text-[var(--warm-muted)]">
+            <p className="text-[0.65625rem] text-[var(--warm-muted)]">
               &lsquo;문자앱으로 보내기&rsquo;를 누르면 발송 시도로 기록되고 폰 메시지 앱이 열립니다. 실제 발송은 메시지 앱에서 완료하세요.
             </p>
           </>

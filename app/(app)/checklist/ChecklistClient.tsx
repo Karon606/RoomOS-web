@@ -209,7 +209,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
     <div className="space-y-2">
       <div className="flex items-baseline gap-2">
         <h2 className="text-sm font-semibold" style={{ color: 'var(--warm-mid)' }}>{title}</h2>
-        {hint && <span className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>{hint}</span>}
+        {hint && <span className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>{hint}</span>}
       </div>
       {children}
     </div>
@@ -228,7 +228,7 @@ function Card({ row, onCheck, onEdit, muted }: { row: ChecklistRow; onCheck: () 
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>{row.title}</span>
             {row.isActive && (
-              <span className="text-[0.625rem] font-medium px-2 py-0.5 rounded-full"
+              <span className="text-[0.65625rem] font-medium px-2 py-0.5 rounded-full"
                 style={{ background: chip.bg, color: chip.color }}>
                 {chip.label}
               </span>
@@ -434,7 +434,7 @@ function CheckModal({
                       {log.memo && <p className="text-[0.6875rem] truncate" style={{ color: 'var(--warm-muted)' }}>{log.memo}</p>}
                     </div>
                     <button onClick={() => onDeleteLog(log.id)} disabled={isPending}
-                      className="text-[0.625rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] px-2 py-1 disabled:opacity-50">
+                      className="text-[0.65625rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] px-2 py-1 disabled:opacity-50">
                       삭제
                     </button>
                   </div>

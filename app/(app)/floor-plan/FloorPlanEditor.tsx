@@ -365,7 +365,7 @@ function AlignPanel({ count, onAlign }: { count: number; onAlign: (type: AlignTy
           </button>
         ))}
       </div>
-      <p className="text-[0.625rem] text-[var(--warm-muted)] leading-tight">
+      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-tight">
         좌→우→우측끝 / 위→가운데→아래 · 배분은 3개 이상
       </p>
     </div>
@@ -1104,7 +1104,7 @@ export default function FloorPlanEditor({
             {floors.length > 1 && !viewOnly && (
               <button
                 onClick={async e => { e.stopPropagation(); if (await confirmDialog({ title: `'${fl.label}'을 삭제할까요?`, message: '이 층에 배치된 도면 요소도 함께 삭제됩니다.', level: 'danger', confirmLabel: '삭제' })) deleteFloor(fl.id) }}
-                className="ml-0.5 w-4 h-4 flex items-center justify-center text-[var(--warm-muted)] hover:text-[var(--danger-fg)] rounded-full text-[0.625rem] leading-none">
+                className="ml-0.5 w-4 h-4 flex items-center justify-center text-[var(--warm-muted)] hover:text-[var(--danger-fg)] rounded-full text-[0.65625rem] leading-none">
                 ×
               </button>
             )}
@@ -1161,7 +1161,7 @@ export default function FloorPlanEditor({
             {divider}
 
             {/* 요소 추가 */}
-            <span className="text-[0.625rem] text-[var(--warm-muted)] shrink-0 hidden sm:inline">추가:</span>
+            <span className="text-[0.65625rem] text-[var(--warm-muted)] shrink-0 hidden sm:inline">추가:</span>
             {PALETTE.map(type => (
               <button key={type} onClick={() => addElement(type)} className={btnOff}>{TYPE_LABEL[type]}</button>
             ))}

@@ -118,7 +118,7 @@ export default function MonthSelector() {
         >
           {displayMonth}
           {rel && (
-            <span className="text-[0.625rem] font-bold px-1.5 py-0.5 rounded-full leading-none"
+            <span className="text-[0.65625rem] font-bold px-1.5 py-0.5 rounded-full leading-none"
               style={{ background: 'var(--warning-solid)', color: 'var(--on-solid)' }}>{rel}</span>
           )}
         </div>

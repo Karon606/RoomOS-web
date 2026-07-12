@@ -89,7 +89,7 @@ export function StatusBadge({
         )}
       </span>
       {sub && (
-        <span className="text-[10px] font-semibold whitespace-nowrap" style={{ color: SUB_FG[tone] }}>
+        <span className="text-[0.65625rem] font-semibold whitespace-nowrap" style={{ color: SUB_FG[tone] }}>
           {sub}
         </span>
       )}

@@ -52,7 +52,7 @@ export function PeekSheet({ open, onClose }: { open: boolean; onClose: () => voi
                 </button>
               ))}
             </div>
-            <span className="hidden sm:block text-[0.625rem] text-[var(--warm-muted)] shrink-0">보기만 하는 작은 창 · 닫으면 입력하던 그대로</span>
+            <span className="hidden sm:block text-[0.65625rem] text-[var(--warm-muted)] shrink-0">보기만 하는 작은 창 · 닫으면 입력하던 그대로</span>
             <button type="button" onClick={onClose} title="닫기"
               className="h-9 w-9 shrink-0 grid place-items-center rounded-lg text-[var(--warm-muted)] hover:text-[var(--warm-dark)] hover:bg-[var(--cream)] transition-colors">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>

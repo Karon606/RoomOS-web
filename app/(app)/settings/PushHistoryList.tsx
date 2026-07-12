@@ -58,9 +58,9 @@ export function PushHistoryList() {
           {rows && rows.length > 0 && (
             <>
               <div className="flex items-center justify-between">
-                <p className="text-[0.625rem] text-[var(--warm-muted)]">최근 {rows.length}건</p>
+                <p className="text-[0.65625rem] text-[var(--warm-muted)]">최근 {rows.length}건</p>
                 <button type="button" onClick={load} disabled={loading}
-                  className="text-[0.625rem] text-[var(--coral)] hover:underline disabled:opacity-50">
+                  className="text-[0.65625rem] text-[var(--coral)] hover:underline disabled:opacity-50">
                   새로고침
                 </button>
               </div>
@@ -76,7 +76,7 @@ export function PushHistoryList() {
                         }}>
                         {SOURCE_LABEL[r.source] ?? r.source}
                       </span>
-                      <span className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>
+                      <span className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>
                         {fmtWhen(r.sentAt)} · {r.successCount}/{r.endpointCount} 기기
                       </span>
                     </div>

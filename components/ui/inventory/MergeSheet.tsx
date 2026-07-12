@@ -54,14 +54,14 @@ export function MergeSheet({
         {dest && (
           <div className="mt-3 flex items-center gap-2 rounded-xl border border-[var(--warm-border)] bg-[var(--canvas)] px-3 py-2.5">
             <div className="min-w-0 flex-1">
-              <p className="text-[0.625rem] text-[var(--warm-muted)]">합쳐질(사라짐)</p>
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">합쳐질(사라짐)</p>
               <p className="truncate text-[0.8125rem] font-semibold text-[var(--warm-dark)]">{sourceLabel}</p>
             </div>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden>
               <path d="M5 12h14M13 6l6 6-6 6" />
             </svg>
             <div className="min-w-0 flex-1 text-right">
-              <p className="text-[0.625rem] text-[var(--warm-muted)]">남을(대표)</p>
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">남을(대표)</p>
               <p className="truncate text-[0.8125rem] font-semibold text-[var(--coral)]">{dest.label}</p>
             </div>
           </div>

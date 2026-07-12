@@ -21,7 +21,7 @@ export function PhotoStrip({ photos }: { photos: Photo[] }) {
               onClick={() => setIdx(i)}
               className="h-44 w-44 object-cover rounded-xl cursor-zoom-in" />
             {looksLike360(p.fileName) && (
-              <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-black/65 text-white text-[0.625rem] font-bold pointer-events-none">360°</span>
+              <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-black/65 text-white text-[0.65625rem] font-bold pointer-events-none">360°</span>
             )}
           </div>
         ))}

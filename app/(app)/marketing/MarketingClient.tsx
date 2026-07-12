@@ -225,7 +225,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
                 )
               })}
             </div>
-            <div className="flex justify-between text-[10px] mt-1.5" style={{ color: 'var(--warm-muted)' }}>
+            <div className="flex justify-between text-[0.65625rem] mt-1.5" style={{ color: 'var(--warm-muted)' }}>
               <span>{stats.trend[0]?.label}</span>
               {stats.trend.length > 2 && (
                 <span>{stats.trend[Math.floor(stats.trend.length / 2)]?.label}</span>
@@ -249,15 +249,15 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
         ) : (
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <p className="text-[10px]" style={{ color: 'var(--warm-muted)' }}>평균 체류</p>
+              <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>평균 체류</p>
               <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{fmtDuration(stats.engagement.avgDurationMs)}</p>
             </div>
             <div>
-              <p className="text-[10px]" style={{ color: 'var(--warm-muted)' }}>평균 스크롤</p>
+              <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>평균 스크롤</p>
               <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{stats.engagement.avgScrollPct}%</p>
             </div>
             <div>
-              <p className="text-[10px]" style={{ color: 'var(--warm-muted)' }}>이탈률 <span className="text-[9px]">(5초↓)</span></p>
+              <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>이탈률 <span className="text-[0.65625rem]">(5초↓)</span></p>
               <p className="text-sm font-bold mt-1 tabular-nums" style={{ color: 'var(--ink-2)' }}>{stats.engagement.bounceRatePct}%</p>
             </div>
           </div>
@@ -283,7 +283,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
                 <li key={s.id}>
                   <div className="flex items-baseline justify-between gap-2 mb-1">
                     <span className="text-xs truncate" style={{ color: i === 0 ? 'var(--tc-text)' : 'var(--warm-dark)', fontWeight: i === 0 ? 600 : 400 }}>
-                      {s.name}{i === 0 && <span className="text-[0.625rem] font-normal"> · 최다 체류</span>}
+                      {s.name}{i === 0 && <span className="text-[0.65625rem] font-normal"> · 최다 체류</span>}
                     </span>
                     <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>
                       {fmtDuration(s.avgMs)} · {fmt(s.sampleCount)}명
@@ -319,7 +319,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
               {stats.namedSources.map((s, i) => (
                 <li key={i} className="flex items-baseline justify-between gap-2">
                   <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>
-                    {s.name} <span className="text-[10px]" style={{ color: 'var(--warm-muted)' }}>({s.category})</span>
+                    {s.name} <span className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>({s.category})</span>
                   </span>
                   <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(s.count)}건</span>
                 </li>
@@ -369,7 +369,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
                   <span className="text-xs truncate" style={{ color: 'var(--warm-dark)' }}>
                     {c.city}
                     {c.region && <span className="text-[11px]" style={{ color: 'var(--warm-mid)' }}> · {c.region}</span>}
-                    {c.country && <span className="text-[10px]" style={{ color: 'var(--warm-muted)' }}> ({c.country})</span>}
+                    {c.country && <span className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}> ({c.country})</span>}
                   </span>
                   <span className="text-[11px] tabular-nums shrink-0" style={{ color: 'var(--warm-muted)' }}>{fmt(c.count)}건</span>
                 </li>
@@ -447,7 +447,7 @@ export default function MarketingClient({ initialStats }: { initialStats: Market
             )
           })}
         </div>
-        <div className="flex justify-between text-[10px] mt-1.5" style={{ color: 'var(--warm-muted)' }}>
+        <div className="flex justify-between text-[0.65625rem] mt-1.5" style={{ color: 'var(--warm-muted)' }}>
           <span>0시</span>
           <span>6시</span>
           <span>12시</span>

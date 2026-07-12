@@ -498,7 +498,7 @@ export default function RoomManageClient({
         <option value="">선택</option>
         {types.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
-      <p className="text-[0.625rem] text-[var(--warm-muted)]">방 타입 추가·관리는 환경설정에서 할 수 있습니다.</p>
+      <p className="text-[0.65625rem] text-[var(--warm-muted)]">방 타입 추가·관리는 환경설정에서 할 수 있습니다.</p>
     </div>
   )
 
@@ -510,7 +510,7 @@ export default function RoomManageClient({
         <option value="">선택</option>
         {tiers.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
-      <p className="text-[0.625rem] text-[var(--warm-muted)]">등급(스탠다드/실속형 등) 추가·관리는 환경설정에서 할 수 있습니다.</p>
+      <p className="text-[0.65625rem] text-[var(--warm-muted)]">등급(스탠다드/실속형 등) 추가·관리는 환경설정에서 할 수 있습니다.</p>
     </div>
   )
 
@@ -771,7 +771,7 @@ export default function RoomManageClient({
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`text-base font-bold ${rs.kind === 'vacant' ? 'text-[var(--warm-mid)]' : 'text-[var(--coral)]'}`}>{fmtRoomNo(room.roomNo)}</span>
                     {cardFields.floor && room.floor && (
-                      <span className="text-[0.625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
+                      <span className="text-[0.65625rem] px-2 py-0.5 rounded-full font-medium shrink-0 bg-[var(--canvas)] text-[var(--warm-muted)] ring-1 ring-[var(--warm-border)]">
                         {room.floor}층
                       </span>
                     )}
@@ -896,7 +896,7 @@ export default function RoomManageClient({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium text-[var(--warm-mid)]">비거주 이용료 설정</p>
-                  <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">일반 이용료와 별도로 비거주자 전용 금액을 설정합니다</p>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">일반 이용료와 별도로 비거주자 전용 금액을 설정합니다</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer shrink-0">
                   <input type="checkbox" className="sr-only" checked={addNrEnabled} onChange={e => setAddNrEnabled(e.target.checked)} />
@@ -1024,7 +1024,7 @@ export default function RoomManageClient({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium text-[var(--warm-mid)]">비거주 이용료 설정</p>
-                  <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">일반 이용료와 별도로 비거주자 전용 금액을 설정합니다</p>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">일반 이용료와 별도로 비거주자 전용 금액을 설정합니다</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer shrink-0">
                   <input type="checkbox" className="sr-only" checked={nrEnabled} onChange={e => setNrEnabled(e.target.checked)} />
@@ -1098,7 +1098,7 @@ export default function RoomManageClient({
                         onClick={() => setViewPhoto(photo)}
                         className="w-full h-full object-cover cursor-zoom-in" />
                       {looksLike360(photo.fileName) && (
-                        <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-full bg-black/65 text-white text-[0.5625rem] font-bold pointer-events-none">360°</span>
+                        <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-full bg-black/65 text-white text-[0.65625rem] font-bold pointer-events-none">360°</span>
                       )}
                       <button type="button" onClick={() => handlePhotoDelete(photo.id)} aria-label="사진 삭제"
                         className="absolute top-1 right-1 w-6 h-6 bg-black/70 hover:bg-[var(--danger-solid)]/80 rounded-full text-white transition-colors flex items-center justify-center">
@@ -1110,7 +1110,7 @@ export default function RoomManageClient({
                     <div className="aspect-square rounded-lg bg-[var(--canvas)] flex flex-col items-center justify-center gap-1">
                       <div className="w-5 h-5 border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
                       {photoProgress && (
-                        <span className="text-[0.625rem] text-[var(--warm-muted)]">{photoProgress.percent}%</span>
+                        <span className="text-[0.65625rem] text-[var(--warm-muted)]">{photoProgress.percent}%</span>
                       )}
                     </div>
                   )}
@@ -1122,14 +1122,14 @@ export default function RoomManageClient({
                     ? <div className="flex flex-col items-center gap-1">
                         <div className="w-5 h-5 border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
                         {photoProgress && (
-                          <span className="text-[0.625rem] text-[var(--warm-muted)]">{photoProgress.percent}%</span>
+                          <span className="text-[0.65625rem] text-[var(--warm-muted)]">{photoProgress.percent}%</span>
                         )}
                       </div>
                     : <p className="text-xs text-[var(--warm-muted)]">클릭하여 사진 업로드</p>}
                 </div>
               )}
               {photoProgress && photoProgress.total > 1 && (
-                <p className="text-[0.625rem] text-[var(--warm-muted)] text-right">
+                <p className="text-[0.65625rem] text-[var(--warm-muted)] text-right">
                   업로드 중 ({photoProgress.current}/{photoProgress.total}) · {photoProgress.percent}%
                 </p>
               )}
@@ -1200,7 +1200,7 @@ function PhotoLightbox({ photo, onClose }: { photo: Photo; onClose: () => void }
           <ZoomableImage src={hiRes} alt={photo.fileName ?? ''} onImgLoad={handleImgLoad} />
         )}
       </div>
-      <p className="text-center text-white/40 text-[0.625rem] pb-3 shrink-0" onClick={e => e.stopPropagation()}>
+      <p className="text-center text-white/40 text-[0.65625rem] pb-3 shrink-0" onClick={e => e.stopPropagation()}>
         {is360 ? '드래그해서 둘러보기 · 휠로 확대/축소' : '두 손가락으로 확대/축소 · 두 번 탭하면 확대 · 배경을 누르면 닫힘'}
       </p>
     </div>
@@ -1441,7 +1441,7 @@ function BatchEditRoomsModal({ selectedIds, roomTypes, roomTiers, windowTypeOpti
             </div>
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input type="checkbox" checked={clearScheduled} onChange={e => { setClearScheduled(e.target.checked); if (e.target.checked) setScheduledRent(undefined) }} className="rounded" />
-              <span className="text-[0.625rem] text-[var(--warm-muted)]">예약이용료 삭제</span>
+              <span className="text-[0.65625rem] text-[var(--warm-muted)]">예약이용료 삭제</span>
             </label>
           </div>
         </div>
@@ -1521,7 +1521,7 @@ function SelectField({ label, name, options, defaultValue, hint }: {
         <option value="">선택</option>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
-      {hint && <p className="text-[0.625rem] text-[var(--warm-muted)]">{hint}</p>}
+      {hint && <p className="text-[0.65625rem] text-[var(--warm-muted)]">{hint}</p>}
     </div>
   )
 }

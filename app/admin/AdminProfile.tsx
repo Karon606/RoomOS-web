@@ -56,7 +56,7 @@ export default function AdminProfile({
         >
           {email && (
             <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--cream-3)' }}>
-              <p className="text-[0.625rem]" style={{ color: 'var(--ink-mute)' }}>로그인 계정</p>
+              <p className="text-[0.65625rem]" style={{ color: 'var(--ink-mute)' }}>로그인 계정</p>
               <p className="text-sm font-medium truncate mt-0.5" style={{ color: 'var(--ink-2)' }}>{email}</p>
             </div>
           )}

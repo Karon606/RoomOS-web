@@ -678,7 +678,7 @@ export default function SettingsForm({
                 {appLogoUrl ? (
                   <img src={appLogoUrl} alt="영업장 로고" className="w-full h-full object-cover" />
                 ) : (
-                  <span className="text-[0.625rem] text-[var(--warm-muted)]">미등록</span>
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)]">미등록</span>
                 )}
               </div>
               <div className="flex flex-col gap-2">
@@ -774,7 +774,7 @@ export default function SettingsForm({
             </div>
             <div className="pt-3 mt-1 border-t border-[var(--warm-border)]">
               <h3 className="text-xs font-semibold text-[var(--warm-dark)]">계약·서류</h3>
-              <p className="text-[0.625rem] text-[var(--warm-muted)]">계약서와 함께 적용·출력되는 환불 규정·동의서 설정입니다.</p>
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">계약서와 함께 적용·출력되는 환불 규정·동의서 설정입니다.</p>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--warm-mid)]">퇴실 환불 규정</label>
@@ -782,7 +782,7 @@ export default function SettingsForm({
               <label className="flex items-center gap-2 text-xs text-[var(--warm-dark)] cursor-pointer pt-0.5">
                 <input type="checkbox" name="refundClauseInContract" value="1" defaultChecked={property?.refundClauseInContract ?? true}
                   className="w-4 h-4 accent-[var(--coral)]" />
-                계약서에 환불 규정 자동 표시 <span className="text-[0.625rem] text-[var(--warm-muted)]">(끄면 계약서의 {'{{환불규정}}'} 자리가 비워짐)</span>
+                계약서에 환불 규정 자동 표시 <span className="text-[0.65625rem] text-[var(--warm-muted)]">(끄면 계약서의 {'{{환불규정}}'} 자리가 비워짐)</span>
               </label>
             </div>
             <div className="space-y-1.5">
@@ -1068,7 +1068,7 @@ export default function SettingsForm({
                     {recItemsActive ? (
                       <div className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-3 py-2.5 text-sm flex items-center justify-between">
                         <span className="font-medium text-[var(--warm-dark)]">{fmtWon(recItemsTotal)}</span>
-                        <span className="text-[0.625rem] text-[var(--warm-muted)]">세부항목 합계</span>
+                        <span className="text-[0.65625rem] text-[var(--warm-muted)]">세부항목 합계</span>
                       </div>
                     ) : (
                       <MoneyInput
@@ -1106,7 +1106,7 @@ export default function SettingsForm({
                       className="text-[0.6875rem] px-2 py-1 rounded-lg border border-[var(--warm-border)] text-[var(--coral)] hover:bg-[var(--coral)]/5 transition-colors">+ 항목 추가</button>
                   </div>
                   {recItems.length === 0 ? (
-                    <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
                       한 번에 납부하는 여러 항목(예: 관리비 = 청소관리비 + 수도요금 + 공용전기)으로 나누면, 위 금액·변동 여부가 세부항목에서 자동 합산됩니다.
                     </p>
                   ) : (
@@ -1132,7 +1132,7 @@ export default function SettingsForm({
                           </div>
                         </div>
                       ))}
-                      <p className="text-[0.625rem] text-[var(--warm-muted)]">세부항목이 있으면 위 금액·변동 금액은 자동 합산값입니다. 모두 지우면 단순 고정지출로 돌아갑니다.</p>
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)]">세부항목이 있으면 위 금액·변동 금액은 자동 합산값입니다. 모두 지우면 단순 고정지출로 돌아갑니다.</p>
                     </div>
                   )}
                 </div>
@@ -1142,20 +1142,20 @@ export default function SettingsForm({
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors">
                     {expenseCategs.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
-                  <p className="text-[0.625rem] text-[var(--warm-muted)]">카테고리 추가·수정은 위 '지출 카테고리 관리'에서 할 수 있습니다.</p>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">카테고리 추가·수정은 위 '지출 카테고리 관리'에서 할 수 있습니다.</p>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">알림 (납부일 N일 전)</label>
                   <input type="number" min={0} max={30} value={recForm.alertDaysBefore}
                     onChange={e => setRecForm(p => ({ ...p, alertDaysBefore: e.target.value }))}
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
-                  <p className="text-[0.625rem] text-[var(--warm-muted)]">자동이체 항목은 주말·공휴일이면 다음 영업일 기준으로 알림이 계산됩니다.</p>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">자동이체 항목은 주말·공휴일이면 다음 영업일 기준으로 알림이 계산됩니다.</p>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--warm-mid)]">활성화 시작일 (선택)</label>
                   <DatePicker value={recForm.activeSince} onChange={v => setRecForm(p => ({ ...p, activeSince: v }))}
                     className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-xl px-3 py-2 text-sm text-[var(--warm-dark)]" />
-                  <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">
                     이 항목이 실제로 <strong>내 부담</strong>이 되는 첫 날짜입니다.<br />
                     예) 인터넷 요금 결제일이 25일이고 4월25일분이 3월 사용분이면, 양도인이 부담하는 마지막 청구가 4월 → 내 부담 시작은 <strong>5월 청구분(5월25일)</strong>부터이므로 2026-05-25 입력.<br />
                     입력하지 않으면 즉시 활성화됩니다.
@@ -1175,7 +1175,7 @@ export default function SettingsForm({
                   <input type="text" value={recForm.vendor} onChange={e => setRecForm(p => ({ ...p, vendor: e.target.value }))}
                     placeholder="예: 한국전력, 아리수, KT"
                     className="w-full bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-3 py-2 text-sm text-[var(--warm-dark)] outline-none focus:border-[var(--coral)] transition-colors" />
-                  <p className="text-[0.625rem] text-[var(--warm-muted)]">기록되는 지출의 구매처로 자동 입력됩니다.</p>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)]">기록되는 지출의 구매처로 자동 입력됩니다.</p>
                 </div>
                 <div className="flex gap-4">
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -1188,7 +1188,7 @@ export default function SettingsForm({
                       onChange={e => setRecForm(p => ({ ...p, isVariable: e.target.checked }))} className="accent-[var(--coral)]" />
                     <div>
                       <span className="text-xs text-[var(--warm-dark)]">변동 금액</span>
-                      <p className="text-[0.625rem] text-[var(--warm-muted)] leading-tight mt-0.5">
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-tight mt-0.5">
                         {recItemsActive ? '세부항목에 변동 항목이 있으면 자동으로 변동 처리됩니다' : '전기·수도 등 매달 금액이 달라지는 항목'}
                       </p>
                     </div>
@@ -1217,15 +1217,15 @@ export default function SettingsForm({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{r.title}</p>
-                      {r.items.length > 0 && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--coral)]/10 text-[var(--coral)]">묶음 {r.items.length}</span>}
+                      {r.items.length > 0 && <span className="text-[0.65625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--coral)]/10 text-[var(--coral)]">묶음 {r.items.length}</span>}
                       {r.isAutoDebit && <Badge tone="pale-blue">자동이체</Badge>}
-                      {!r.isActive && <span className="text-[0.5625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--neutral-bg)] text-[var(--neutral-fg)]">비활성</span>}
+                      {!r.isActive && <span className="text-[0.65625rem] font-semibold px-1.5 py-0.5 rounded-full bg-[var(--neutral-bg)] text-[var(--neutral-fg)]">비활성</span>}
                     </div>
                     <p className="text-xs text-[var(--warm-muted)] mt-0.5">
                       매월 {r.dueDay >= 30 ? '말일' : `${r.dueDay}일`} · {fmtWon(r.amount)} · {r.category} · {r.alertDaysBefore}일 전 알림
                     </p>
                     {r.items.length > 0 && (
-                      <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5 truncate">
+                      <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5 truncate">
                         {r.items.map(it => `${it.name}${it.isVariable ? '(변동)' : ''}`).join(' · ')}
                       </p>
                     )}
@@ -1268,7 +1268,7 @@ export default function SettingsForm({
               <div className="flex items-baseline justify-between gap-2">
                 <h2 className="text-sm font-semibold text-[var(--warm-dark)]">참여 코드</h2>
                 {joinCode && (
-                  <span className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>
+                  <span className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>
                     공유 가능 (현재 1개)
                   </span>
                 )}
@@ -1305,7 +1305,7 @@ export default function SettingsForm({
                     <li key={req.id} className="bg-[var(--canvas)] rounded-xl px-4 py-3 space-y-2">
                       <div className="flex items-baseline justify-between gap-2">
                         <p className="text-sm font-medium text-[var(--warm-dark)] truncate">{name}</p>
-                        <p className="text-[0.625rem] shrink-0" style={{ color: 'var(--warm-muted)' }}>
+                        <p className="text-[0.65625rem] shrink-0" style={{ color: 'var(--warm-muted)' }}>
                           {new Intl.DateTimeFormat('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(req.createdAt))}
                         </p>
                       </div>
@@ -1640,7 +1640,7 @@ function ContractTab({ initial }: { initial: ContractSettings }) {
 
         <div className="rounded-lg px-3 py-2 text-[0.6875rem] text-[var(--warm-muted)] leading-relaxed" style={{ background: 'var(--canvas)' }}>
           본문에서 다음 변수를 사용하면 출력 시 입실자 정보로 자동 치환됩니다:
-          <span className="block mt-1 num text-[0.625rem]">
+          <span className="block mt-1 num text-[0.65625rem]">
             {`{{name}} {{phone}} {{birth}} {{job}} {{gender}} {{smoking}} {{deposit}} {{checkInDate}} {{roomNo}} {{checkOutDate}} {{rentFee}} {{emergencyContact}}`}
           </span>
         </div>
@@ -1762,7 +1762,7 @@ function AppearanceTab() {
                   <span className={`text-sm font-medium ${selected ? 'text-[var(--persimmon-d)]' : 'text-[var(--warm-dark)]'}`}>{o.label}</span>
                 </div>
                 <FontSizePreview basePx={o.basePx} />
-                <span className="text-[0.625rem] text-[var(--warm-muted)] leading-snug">{o.desc}</span>
+                <span className="text-[0.65625rem] text-[var(--warm-muted)] leading-snug">{o.desc}</span>
               </button>
             )
           })}
@@ -1869,7 +1869,7 @@ function OptionSection({
                   className="flex-1 bg-[var(--canvas)] border border-[var(--coral)] rounded-sm px-2 py-1 text-sm text-[var(--warm-dark)] outline-none"
                 />
                 <button onClick={saveEdit}
-                  className="shrink-0 text-[0.625rem] px-2 py-1 rounded-lg text-[var(--on-solid)] transition-colors"
+                  className="shrink-0 text-[0.65625rem] px-2 py-1 rounded-lg text-[var(--on-solid)] transition-colors"
                   style={{ background: 'var(--coral)' }}>저장</button>
                 <button onClick={() => setEditingItem(null)}
                   className="shrink-0 text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">취소</button>
@@ -1882,7 +1882,7 @@ function OptionSection({
                     className="shrink-0 text-xs px-2.5 py-1.5 min-h-[32px] rounded-lg border border-[var(--warm-border)] text-[var(--warm-mid)] hover:text-[var(--warm-dark)] transition-colors">수정</button>
                 )}
                 <button onClick={() => onDelete(item)}
-                  className="shrink-0 text-[0.625rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors px-1">삭제</button>
+                  className="shrink-0 text-[0.65625rem] text-[var(--danger-fg)] hover:text-[var(--danger-fg)] transition-colors px-1">삭제</button>
               </>
             )}
           </div>
@@ -2164,12 +2164,12 @@ function SmsTemplateCard() {
           {edit ? (
             <div className="space-y-2 rounded-xl border border-[var(--coral)]/40 bg-[var(--canvas)]/50 p-3">
               <label className="block">
-                <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">템플릿 이름</span>
+                <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-1">템플릿 이름</span>
                 <input value={edit.name} disabled={busy} placeholder="예: 1차 안내"
                   onChange={e => setEdit(v => v ? { ...v, name: e.target.value } : v)} className={inputCls} />
               </label>
               <label className="block">
-                <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">문자 내용 (변수 그대로 적으면 보낼 때 치환)</span>
+                <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-1">문자 내용 (변수 그대로 적으면 보낼 때 치환)</span>
                 <textarea value={edit.body} disabled={busy} rows={5}
                   onChange={e => setEdit(v => v ? { ...v, body: e.target.value } : v)}
                   className={`${inputCls} leading-relaxed`} />
@@ -2231,35 +2231,35 @@ function ShortStayPolicyCard() {
             <>
               <div className="flex flex-wrap gap-3">
                 <label className="block">
-                  <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">계약 단위(일)</span>
+                  <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-1">계약 단위(일)</span>
                   <input value={String(p.unitDays)} inputMode="numeric" onChange={setNum('unitDays')} className={numCls} />
                 </label>
                 <label className="block">
-                  <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">최소 계약(단위 수)</span>
+                  <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-1">최소 계약(단위 수)</span>
                   <input value={String(p.minUnits)} inputMode="numeric" onChange={setNum('minUnits')} className={numCls} />
                 </label>
                 <label className="block">
-                  <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">적용 상한(거주일)</span>
+                  <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-1">적용 상한(거주일)</span>
                   <input value={String(p.thresholdDays)} inputMode="numeric" onChange={setNum('thresholdDays')} className={numCls} />
                 </label>
                 <label className="block">
-                  <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">청구 배율</span>
+                  <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-1">청구 배율</span>
                   <input value={String(p.multiplier)} inputMode="decimal" onChange={setNum('multiplier')} className={numCls} />
                 </label>
                 <label className="block">
-                  <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">청소비(원)</span>
+                  <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-1">청소비(원)</span>
                   <input value={String(p.cleaningFee)} inputMode="numeric" onChange={setNum('cleaningFee')} className={numCls} />
                 </label>
                 <label className="block">
-                  <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">절삭 단위(원)</span>
+                  <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-1">절삭 단위(원)</span>
                   <input value={String(p.roundTo)} inputMode="numeric" onChange={setNum('roundTo')} className={numCls} />
                 </label>
                 <label className="block">
-                  <span className="block text-[0.625rem] text-[var(--warm-muted)] mb-1">보증금(원) · 퇴실 시 환불</span>
+                  <span className="block text-[0.65625rem] text-[var(--warm-muted)] mb-1">보증금(원) · 퇴실 시 환불</span>
                   <input value={String(p.deposit)} inputMode="numeric" onChange={setNum('deposit')} className={numCls} />
                 </label>
               </div>
-              <p className="text-[0.625rem] text-[var(--warm-muted)]">
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">
                 계산: 거주일을 계약 단위로 올림 → 계약일수 × 배율 = 청구 일수(1개월 30일 상한) → 월세의 일할을 절삭 단위로 반올림 + 청소비.
                 보증금은 요금에 포함되지 않는 별도 예치금이며 일반 입주자처럼 퇴실 때 환불합니다(0이면 없음).
                 {preview && ` 예: 월세 60만 기준 최소 계약(${p.unitDays * p.minUnits}일) = ${preview.total.toLocaleString()}원`}

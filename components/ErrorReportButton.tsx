@@ -177,7 +177,7 @@ export default function ErrorReportButton() {
           {/* 자동 캡처 맥락 미리보기 */}
           <details className="rounded-lg bg-[var(--canvas)] border border-[var(--warm-border)] px-3 py-2">
             <summary className="cursor-pointer text-[0.6875rem] font-semibold text-[var(--warm-mid)]">함께 보내는 정보 보기</summary>
-            <div className="mt-2 space-y-1 text-[0.625rem] text-[var(--warm-muted)] break-all">
+            <div className="mt-2 space-y-1 text-[0.65625rem] text-[var(--warm-muted)] break-all">
               <div><span className="text-[var(--warm-mid)]">화면:</span> {snapshot.url || '—'}</div>
               {snapshot.err && <div><span className="text-[var(--danger-fg)]">최근 에러:</span> {snapshot.err}</div>}
               <div className="text-[var(--warm-mid)] mt-1">직전 동작:</div>

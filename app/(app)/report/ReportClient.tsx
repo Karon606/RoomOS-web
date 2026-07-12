@@ -182,7 +182,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                     />
                   </div>
                   <span className="text-xs text-[var(--warm-mid)] w-24 text-right shrink-0">
-                    {fmt(c.amount)} <span className="text-[0.625rem] text-[var(--warm-muted)]">({c.percent}%)</span>
+                    {fmt(c.amount)} <span className="text-[0.65625rem] text-[var(--warm-muted)]">({c.percent}%)</span>
                   </span>
                 </div>
               )
@@ -220,7 +220,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                     <span className="flex items-center gap-1.5">
                       <span className="text-[var(--warm-mid)]">{fmt(prevRow?.revenue ?? 0)}</span>
                       {prevRow && r.revenue > 0 && delta !== 0 && (
-                        <span className={`text-[0.625rem] font-semibold ${delta > 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
+                        <span className={`text-[0.65625rem] font-semibold ${delta > 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
                           {(delta > 0 ? '▲' : '▼')} {fmtWon(Math.abs(delta))}
                         </span>
                       )}
@@ -230,18 +230,18 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
               </div>
               <div className="space-y-1 pt-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-[0.625rem] text-[var(--warm-muted)] w-8 shrink-0">수익</span>
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)] w-8 shrink-0">수익</span>
                   <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${Math.min(100, incomePct)}%`, minWidth: incomeTotal > 0 ? 2 : 0, background: 'var(--success-fg)' }} />
                   </div>
-                  <span className="text-[0.625rem] text-[var(--warm-muted)] tabular-nums w-12 text-right shrink-0">{fmtMan(incomeTotal)}</span>
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)] tabular-nums w-12 text-right shrink-0">{fmtMan(incomeTotal)}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[0.625rem] text-[var(--warm-muted)] w-8 shrink-0">지출</span>
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)] w-8 shrink-0">지출</span>
                   <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${Math.min(100, expensePct)}%`, minWidth: r.expense > 0 ? 2 : 0, background: 'var(--coral)' }} />
                   </div>
-                  <span className="text-[0.625rem] text-[var(--warm-muted)] tabular-nums w-12 text-right shrink-0">{fmtMan(r.expense)}</span>
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)] tabular-nums w-12 text-right shrink-0">{fmtMan(r.expense)}</span>
                 </div>
               </div>
             </div>
@@ -267,7 +267,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                   <span className="flex items-center gap-1.5">
                     <span className="text-[var(--warm-mid)]">{fmt(summary.prevYear.totalRevenue)}</span>
                     {totalDelta !== 0 && (
-                      <span className={`text-[0.625rem] font-semibold ${totalDelta > 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
+                      <span className={`text-[0.65625rem] font-semibold ${totalDelta > 0 ? 'text-[var(--success-fg)]' : 'text-[var(--danger-fg)]'}`}>
                         {(totalDelta > 0 ? '▲' : '▼')} {fmtWon(Math.abs(totalDelta))}
                       </span>
                     )}
@@ -310,7 +310,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                       <td className="px-4 py-3 text-right">
                         <div className="text-[var(--warm-mid)] text-xs">{fmt(prevRow?.revenue ?? 0)}</div>
                         {prevRow && r.revenue > 0 && (
-                          <div className={`text-[0.625rem] mt-0.5 font-semibold ${
+                          <div className={`text-[0.65625rem] mt-0.5 font-semibold ${
                             delta > 0 ? 'text-[var(--success-fg)]' : delta < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
                           }`}>
                             {delta === 0 ? '—' : (delta > 0 ? '▲' : '▼') + ' ' + Math.abs(delta).toLocaleString() + '원'}
@@ -332,13 +332,13 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                           <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
                             <div className="h-full rounded-full" style={{ width: `${Math.min(100, incomePct)}%`, minWidth: incomeTotal > 0 ? 2 : 0, background: 'var(--success-fg)' }} />
                           </div>
-                          <span className="text-[0.625rem] text-[var(--warm-muted)] tabular-nums w-10 text-right shrink-0">{fmtMan(incomeTotal)}</span>
+                          <span className="text-[0.65625rem] text-[var(--warm-muted)] tabular-nums w-10 text-right shrink-0">{fmtMan(incomeTotal)}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="flex-1 h-1.5 rounded-full bg-[var(--canvas)] overflow-hidden">
                             <div className="h-full rounded-full" style={{ width: `${Math.min(100, expensePct)}%`, minWidth: r.expense > 0 ? 2 : 0, background: 'var(--coral)' }} />
                           </div>
-                          <span className="text-[0.625rem] text-[var(--warm-muted)] tabular-nums w-10 text-right shrink-0">{fmtMan(r.expense)}</span>
+                          <span className="text-[0.65625rem] text-[var(--warm-muted)] tabular-nums w-10 text-right shrink-0">{fmtMan(r.expense)}</span>
                         </div>
                       </div>
                     </td>
@@ -354,7 +354,7 @@ export default function ReportClient({ summary, years, forecast }: { summary: An
                     {summary.prevYear.totalRevenue > 0 && (() => {
                       const totalDelta = summary.totalRevenue - summary.prevYear.totalRevenue
                       return (
-                        <div className={`text-[0.625rem] mt-0.5 font-semibold ${
+                        <div className={`text-[0.65625rem] mt-0.5 font-semibold ${
                           totalDelta > 0 ? 'text-[var(--success-fg)]' : totalDelta < 0 ? 'text-[var(--danger-fg)]' : 'text-[var(--warm-muted)]'
                         }`}>
                           {totalDelta === 0 ? '—' : (totalDelta > 0 ? '▲' : '▼') + ' ' + Math.abs(totalDelta).toLocaleString() + '원'}
@@ -506,7 +506,7 @@ function AISection() {
         <div className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-xl p-6 text-center space-y-3">
           <div className="w-6 h-6 mx-auto border-2 border-[var(--coral)] border-t-transparent rounded-full animate-spin" />
           <p className="text-xs text-[var(--coral)] animate-pulse">데이터 수집 + AI 분석 중…</p>
-          <p className="text-[0.625rem] text-[var(--warm-muted)]">10~20초 소요됩니다</p>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">10~20초 소요됩니다</p>
         </div>
       )}
 

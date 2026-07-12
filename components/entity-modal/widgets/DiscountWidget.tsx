@@ -113,7 +113,7 @@ export function DiscountWidget({ leaseTermId, onChange }: {
             <Btn variant="secondary" size="sm" className="flex-1" onClick={() => setShowForm(false)}>취소</Btn>
             <Btn variant="success" size="sm" className="flex-1" onClick={handleAdd} disabled={pending || !(value > 0)}>적용</Btn>
           </div>
-          <p className="text-[0.625rem] text-[var(--warm-muted)]">할인은 해당 월 청구액(이용료)에서 차감돼 미수 계산에 반영됩니다.</p>
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">할인은 해당 월 청구액(이용료)에서 차감돼 미수 계산에 반영됩니다.</p>
         </div>
       )}
     </div>

@@ -109,10 +109,10 @@ export default function ResidenceCertClient({ files, tenants }: { files: Residen
                       className="text-sm font-semibold text-[var(--warm-dark)] hover:text-[var(--coral)] transition-colors">
                       {c.roomNo ? `${fmtRoomNo(c.roomNo)} · ` : ''}{c.tenantName}
                     </button>
-                    {c.status && <span className="text-[0.5625rem] text-[var(--warm-muted)]">{STATUS_LABEL[c.status] ?? c.status}</span>}
+                    {c.status && <span className="text-[0.65625rem] text-[var(--warm-muted)]">{STATUS_LABEL[c.status] ?? c.status}</span>}
                   </div>
                   <p className="text-[0.6875rem] text-[var(--warm-muted)] truncate mt-0.5">{c.fileName}</p>
-                  <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">{fmtDate(c.issuedAt)} 발급</p>
+                  <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">{fmtDate(c.issuedAt)} 발급</p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <a href={c.viewUrl} target="_blank" rel="noreferrer"

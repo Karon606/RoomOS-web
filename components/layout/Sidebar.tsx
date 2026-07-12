@@ -354,7 +354,7 @@ function MobileMenu({
       <div className="flex-1 overflow-y-auto px-3 py-2">
         {NAV_GROUPS.map(group => (
           <div key={group.label} className="mb-1.5">
-            <div className="px-1.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wide" style={{ color: 'var(--warm-muted)' }}>
+            <div className="px-1.5 pt-2 pb-1 text-[0.65625rem] font-semibold uppercase tracking-wide" style={{ color: 'var(--warm-muted)' }}>
               {group.label}
             </div>
             <div className="grid grid-cols-3 gap-1.5">
@@ -378,7 +378,7 @@ function MobileMenu({
 
         {/* 도구 — 페이지 이동 없는 즉시 도구(요금 계산: 홈 헤더와 동일 모달) */}
         <div className="mb-1.5">
-          <div className="px-1.5 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wide" style={{ color: 'var(--warm-muted)' }}>
+          <div className="px-1.5 pt-2 pb-1 text-[0.65625rem] font-semibold uppercase tracking-wide" style={{ color: 'var(--warm-muted)' }}>
             도구
           </div>
           <div className="grid grid-cols-3 gap-1.5">

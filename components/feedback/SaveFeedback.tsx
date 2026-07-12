@@ -127,7 +127,7 @@ export default function SaveFeedback() {
                 <p className="text-[13px] font-semibold leading-snug">
                   {t.message}
                   {t.count > 1 && (
-                    <span className="ml-1.5 inline-flex items-center rounded-full px-1.5 text-[10px] font-bold"
+                    <span className="ml-1.5 inline-flex items-center rounded-full px-1.5 text-[0.65625rem] font-bold"
                       style={{ background: 'rgba(251,246,239,.18)' }}>×{t.count}</span>
                   )}
                 </p>

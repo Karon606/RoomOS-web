@@ -92,7 +92,7 @@ export function PaymentBody({ leaseTermId, month, canEdit, roomNo, openCheckoutP
                     <li key={r.id} className="flex items-center justify-between bg-[var(--canvas)] rounded-lg px-3 py-2 text-xs">
                       <span className="text-[var(--warm-mid)]">
                         {payDateStr}
-                        {r.isDeposit && <span className="ml-1.5 text-[0.5625rem] text-[var(--coral)]">보증금</span>}
+                        {r.isDeposit && <span className="ml-1.5 text-[0.65625rem] text-[var(--coral)]">보증금</span>}
                         {r.payMethod && <span className="ml-1.5 text-[var(--warm-muted)]">· {r.payMethod}</span>}
                       </span>
                       <span className="font-semibold text-[var(--warm-dark)]">{fmtWon(r.actualAmount)}</span>

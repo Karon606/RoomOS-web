@@ -122,12 +122,12 @@ export function CheckoutProrationWidget({
           <div>
             <p className="text-xs font-medium text-[var(--warm-mid)]">퇴실 정산 (일할)</p>
             {isApplied ? (
-              <p className="text-[0.625rem] mt-0.5" style={{ color: 'var(--success-fg)' }}>
+              <p className="text-[0.65625rem] mt-0.5" style={{ color: 'var(--success-fg)' }}>
                 {fmtMonth(checkoutProratedMonth!)} 청구 {fmtWon(checkoutProratedAmount!)} 로 일할 적용됨
                 {expectedMoveOut ? ` · 퇴실 ${expectedMoveOut.slice(5).replace('-', '/')}` : ''}
               </p>
             ) : (
-              <p className="text-[0.625rem] text-[var(--warm-muted)] mt-0.5">퇴실일 기준 마지막 달을 사용 일수만큼만 청구</p>
+              <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-0.5">퇴실일 기준 마지막 달을 사용 일수만큼만 청구</p>
             )}
           </div>
           <div className="flex gap-1.5 shrink-0">
@@ -158,7 +158,7 @@ export function CheckoutProrationWidget({
           <label className="text-xs text-[var(--warm-muted)]">퇴실 예정일</label>
           <DatePicker value={date} onChange={handleDate}
             className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-[var(--warm-dark)]" />
-          <p className="text-[0.625rem] text-[var(--warm-muted)]">
+          <p className="text-[0.65625rem] text-[var(--warm-muted)]">
             납부일 {currentDueDay ? (currentDueDay.includes('말') ? '말일' : `${currentDueDay}일`) : '—'} 부터 퇴실일까지(양끝 포함) 일수만큼 청구합니다.
           </p>
         </div>
@@ -177,7 +177,7 @@ export function CheckoutProrationWidget({
             {/* 정산 방식 — 법정(공정위: 위약금 10% + 잔여 환불) / 선의(일할만) */}
             <div className="space-y-1">
               <label className="text-xs text-[var(--warm-muted)]">정산 방식</label>
-              <p className="text-[0.625rem] text-[var(--warm-muted)] leading-relaxed">법정(공정위) = 위약금을 공제하는 공식 기준 · 선의(일할) = 지낸 날짜만큼만 받고 위약금 없음</p>
+              <p className="text-[0.65625rem] text-[var(--warm-muted)] leading-relaxed">법정(공정위) = 위약금을 공제하는 공식 기준 · 선의(일할) = 지낸 날짜만큼만 받고 위약금 없음</p>
               <SegmentedControl<RefundMode>
                 ariaLabel="정산 방식"
                 size="sm"
@@ -188,21 +188,21 @@ export function CheckoutProrationWidget({
                   { value: 'goodwill', label: '선의(일할)' },
                 ]}
               />
-              <p className="text-[0.5625rem] text-[var(--warm-muted)]">
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">
                 {refundMode === 'legal'
                   ? `원칙(공정위). 위약금 ${LEGAL_PENALTY_PCT}%를 제하고 남은 일수를 환불합니다.`
                   : '선의. 위약금 없이 사용한 일수만 청구하고 나머지를 환불합니다.'}
               </p>
             </div>
             <div className="space-y-1">
-              <label className="text-xs text-[var(--warm-muted)]">적용 금액 <span className="text-[0.625rem]">(퇴실월 청구 = 사용분{refundMode === 'legal' ? ' + 위약금' : ''} · 필요시 수정)</span></label>
+              <label className="text-xs text-[var(--warm-muted)]">적용 금액 <span className="text-[0.65625rem]">(퇴실월 청구 = 사용분{refundMode === 'legal' ? ' + 위약금' : ''} · 필요시 수정)</span></label>
               <div className="flex items-center gap-1.5">
                 <input type="text" inputMode="numeric" value={amountInput ? Number(amountInput.replace(/[^0-9]/g, '')).toLocaleString() : ''}
                   onChange={e => setAmountInput(e.target.value.replace(/[^0-9]/g, ''))}
                   className="flex-1 bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2.5 py-1.5 text-sm text-right tabular-nums text-[var(--warm-dark)] outline-none focus:border-[var(--coral)]" />
                 <span className="text-xs text-[var(--warm-muted)]">원</span>
               </div>
-              <p className="text-[0.5625rem] text-[var(--warm-muted)]">하루 더 봐주기 등 예외는 이 금액을 직접 조정하세요. (환불액 = 총 결제금액 − 이 금액)</p>
+              <p className="text-[0.65625rem] text-[var(--warm-muted)]">하루 더 봐주기 등 예외는 이 금액을 직접 조정하세요. (환불액 = 총 결제금액 − 이 금액)</p>
             </div>
           </div>
         )}
@@ -216,7 +216,7 @@ export function CheckoutProrationWidget({
           const refundAmt = Math.max(0, refund.prepaidAmount - applied)
           return (
             <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
-              <p className="font-semibold text-[var(--warm-mid)] mb-1">환불 미리보기 <span className="font-normal text-[0.625rem] text-[var(--warm-muted)]">({refundMode === 'legal' ? '법정·공정위' : '선의·일할'})</span></p>
+              <p className="font-semibold text-[var(--warm-mid)] mb-1">환불 미리보기 <span className="font-normal text-[0.65625rem] text-[var(--warm-muted)]">({refundMode === 'legal' ? '법정·공정위' : '선의·일할'})</span></p>
               <div className="space-y-0.5 text-[var(--warm-muted)]">
                 <div className="flex justify-between"><span>총 결제금액</span><span className="tabular-nums">{fmtWon(refund.prepaidAmount)}</span></div>
                 <div className="flex justify-between"><span>− 사용분 ({refund.refund.daysUsed}일 × {fmtWon(refund.refund.dailyRate)})</span><span className="tabular-nums">{fmtWon(refund.refund.usedAmount)}</span></div>
@@ -225,7 +225,7 @@ export function CheckoutProrationWidget({
               <div className="flex justify-between font-bold mt-1 pt-1 border-t" style={{ borderColor: 'var(--warm-border)', color: 'var(--success-fg)' }}>
                 <span>환불액</span><span className="tabular-nums">{fmtWon(refundAmt)}</span>
               </div>
-              <p className="text-[0.5625rem] text-[var(--warm-muted)] mt-1">참고용. 보증금 환불(퇴실 처리)에서 이 금액을 함께 정산하세요.</p>
+              <p className="text-[0.65625rem] text-[var(--warm-muted)] mt-1">참고용. 보증금 환불(퇴실 처리)에서 이 금액을 함께 정산하세요.</p>
             </div>
           )
         })()}

@@ -116,7 +116,7 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
         </svg>
         {count > 0 && (
           <span
-            className="absolute top-1 right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full text-[0.625rem] font-bold leading-none"
+            className="absolute top-1 right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full text-[0.65625rem] font-bold leading-none"
             style={{ background: 'var(--coral)', color: 'var(--on-solid)' }}
           >
             {count > 99 ? '99+' : count}
@@ -129,7 +129,7 @@ export default function NotificationBell({ currentPropertyId }: { currentPropert
              style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
           <div className="px-3.5 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--warm-border)' }}>
             <span className="text-sm font-semibold" style={{ color: 'var(--warm-dark)' }}>오늘 챙길 일</span>
-            <span className="block text-[0.625rem] font-normal" style={{ color: 'var(--warm-muted)' }}>푸시와 같은 핵심 알림만 — 전체 일정·소식은 홈 화면 알림에 있어요</span>
+            <span className="block text-[0.65625rem] font-normal" style={{ color: 'var(--warm-muted)' }}>푸시와 같은 핵심 알림만 — 전체 일정·소식은 홈 화면 알림에 있어요</span>
             {count > 0 && (
               <button onClick={() => markRead(visible.map(a => a.id))}
                 className="text-[0.6875rem] font-medium hover:underline rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--persimmon)]/30" style={{ color: 'var(--warm-muted)' }}>

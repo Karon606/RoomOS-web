@@ -115,7 +115,7 @@ export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
             }}
           >
             <Icon />
-            <span className="text-[0.625rem] font-medium leading-none">{label}</span>
+            <span className="text-[0.65625rem] font-medium leading-none">{label}</span>
           </Link>
         )
       })}
@@ -129,7 +129,7 @@ export default function BottomNav({ onMenuOpen }: { onMenuOpen?: () => void }) {
         style={{ color: menuActive ? 'var(--coral)' : 'var(--warm-muted)', minHeight: 49 }}
       >
         <svg {...ico}><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-        <span className="text-[0.625rem] font-medium leading-none">전체</span>
+        <span className="text-[0.65625rem] font-medium leading-none">전체</span>
       </button>
     </nav>
   )

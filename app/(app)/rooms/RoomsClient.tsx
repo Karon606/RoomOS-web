@@ -1045,7 +1045,7 @@ export default function RoomsClient({
                   {shown.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {shown.map((c, i) => (
-                        <span key={i} className="text-[0.625rem] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>{c}</span>
+                        <span key={i} className="text-[0.65625rem] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--canvas)', color: 'var(--warm-mid)' }}>{c}</span>
                       ))}
                     </div>
                   )}
@@ -1055,7 +1055,7 @@ export default function RoomsClient({
                     </p>
                   )}
                   {vacantColVis.prevTenantName && room.prevTenantName && (
-                    <p className="text-[0.625rem] text-[var(--warm-muted)] truncate">직전 {room.prevTenantName}</p>
+                    <p className="text-[0.65625rem] text-[var(--warm-muted)] truncate">직전 {room.prevTenantName}</p>
                   )}
                 </div>
               )

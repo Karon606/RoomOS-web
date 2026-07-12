@@ -63,12 +63,12 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
             style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)', color: 'var(--warm-dark)', outline: 'none' }} />
           <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
             <div className="min-w-0">
-              <label className="block text-[0.625rem] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>요청 날짜</label>
+              <label className="block text-[0.65625rem] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>요청 날짜</label>
               <DatePicker value={newReqDate} onChange={setNewReqDate}
                 className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-2 text-[0.6875rem] text-[var(--warm-dark)] min-w-0" />
             </div>
             <div className="min-w-0">
-              <label className="block text-[0.625rem] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>처리 목표일 (선택)</label>
+              <label className="block text-[0.65625rem] font-medium mb-1" style={{ color: 'var(--warm-muted)' }}>처리 목표일 (선택)</label>
               <DatePicker value={newTargetDate} onChange={setNewTargetDate}
                 className="bg-[var(--canvas)] border border-[var(--warm-border)] rounded-sm px-2 py-2 text-[0.6875rem] text-[var(--warm-dark)] min-w-0" />
             </div>
@@ -86,7 +86,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
             {unresolved.map(r => (
               <div key={r.id} className="rounded-xl p-4 space-y-3" style={{ background: 'var(--cream)', border: '1px solid var(--warm-border)' }}>
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2 text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>
+                  <div className="flex items-center gap-2 text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>
                     <span>요청 {fmtDate(r.requestDate)}</span>
                     {r.targetDate && <span className="font-medium" style={{ color: 'var(--warning-fg)' }}>목표 {fmtDate(r.targetDate)}</span>}
                   </div>
@@ -123,7 +123,7 @@ export function TenantRequestsTab({ tenantId }: { tenantId: string }) {
                 {resolved.map(r => (
                   <div key={r.id} className="rounded-xl p-3 opacity-60" style={{ background: 'var(--canvas)', border: '1px solid var(--warm-border)' }}>
                     <div className="flex items-start justify-between gap-1 mb-1">
-                      <div className="flex items-center gap-2 text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>
+                      <div className="flex items-center gap-2 text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>
                         <span className="font-medium text-[var(--success-fg)]">완료</span>
                         <span>{fmtDate(r.resolvedAt)}</span>
                         <span>·</span>

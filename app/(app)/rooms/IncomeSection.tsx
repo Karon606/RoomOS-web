@@ -163,13 +163,13 @@ export function IncomeSection({ incomes, incomeCategories, leaseOptions }: {
               <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
                 <Badge tone="pale-green">{i.category}</Badge>
                 {tenantLabel(i) && (
-                  <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] font-medium">{tenantLabel(i)}</span>
+                  <span className="text-[0.65625rem] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-dark)] font-medium">{tenantLabel(i)}</span>
                 )}
                 {i.payMethod && (
-                  <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{i.payMethod}</span>
+                  <span className="text-[0.65625rem] px-2 py-0.5 rounded-full bg-[var(--canvas)] text-[var(--warm-mid)]">{i.payMethod}</span>
                 )}
                 {i.financialAccount && (
-                  <span className="text-[0.625rem] text-[var(--warm-muted)]">{accName(i.financialAccount)}</span>
+                  <span className="text-[0.65625rem] text-[var(--warm-muted)]">{accName(i.financialAccount)}</span>
                 )}
               </div>
               {(i.detail || i.memo) && (

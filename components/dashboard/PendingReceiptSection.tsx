@@ -107,7 +107,7 @@ export function PendingReceiptSection() {
       <header className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-bold" style={{ color: 'var(--warm-dark)' }}>찍어 올리기 · 등록 대기</h2>
-          <p className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>영수증/물품 사진을 올리면 AI 가 분류하고, 검토 후 등록</p>
+          <p className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>영수증/물품 사진을 올리면 AI 가 분류하고, 검토 후 등록</p>
           <AiQuotaHint />
         </div>
         <Btn variant="primary" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
@@ -259,17 +259,17 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
       </a>
       <div className="flex-1 min-w-0 space-y-1.5">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[0.625rem] font-semibold px-1.5 py-0.5 rounded"
+          <span className="text-[0.65625rem] font-semibold px-1.5 py-0.5 rounded"
             style={{ background: 'var(--cream)', color: kindInfo.color, border: `1px solid color-mix(in srgb, ${kindInfo.color} 25%, transparent)` }}>
             {kindInfo.label}
           </span>
           {editingMode && (
-            <span className="text-[0.625rem] font-semibold px-1.5 py-0.5 rounded"
+            <span className="text-[0.65625rem] font-semibold px-1.5 py-0.5 rounded"
               style={{ background: isInventory ? 'var(--success-bg)' : 'color-mix(in srgb, var(--coral) 12.5%, transparent)', color: isInventory ? 'var(--success-fg)' : 'var(--coral)' }}>
               {isInventory ? '재고 등록 중' : '지출 등록 중'}
             </span>
           )}
-          <span className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>{fmtAgo(row.createdAt)}</span>
+          <span className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>{fmtAgo(row.createdAt)}</span>
         </div>
 
         {!editingMode && (
@@ -321,16 +321,16 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
             {isInventory && (
               <>
                 <div>
-                  <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>품목명 *</label>
+                  <label className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>품목명 *</label>
                   <input type="text" placeholder="예: 신라면, 두루마리 휴지"
                     value={itemLabel} onChange={e => setItemLabel(e.target.value)}
                     className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   <div>
-                    <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>규격 (선택)
+                    <label className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>규격 (선택)
                       <button type="button" onClick={() => setWizOpen(true)}
-                        className="ml-1.5 text-[0.625rem] font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-2">단계별</button>
+                        className="ml-1.5 text-[0.65625rem] font-semibold text-[var(--coral)] underline decoration-dotted underline-offset-2">단계별</button>
                     </label>
                     <div className="flex gap-1">
                       <input type="text" placeholder="300" value={specValue} onChange={e => setSpecValue(e.target.value)}
@@ -338,10 +338,10 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                       <input type="text" placeholder="ml" value={specUnit} onChange={e => setSpecUnit(e.target.value)}
                         className="w-12 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-1.5 py-1 text-xs text-[var(--warm-dark)] outline-none" />
                     </div>
-                    {specText.trim() && <p className="mt-0.5 text-[0.625rem] text-[var(--coral)]">서술 규격: {specText}</p>}
+                    {specText.trim() && <p className="mt-0.5 text-[0.65625rem] text-[var(--coral)]">서술 규격: {specText}</p>}
                   </div>
                   <div>
-                    <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>수량 *</label>
+                    <label className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>수량 *</label>
                     <div className="flex gap-1">
                       <input type="text" placeholder="6" value={qtyValue} onChange={e => setQtyValue(e.target.value)}
                         className="flex-1 min-w-0 bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none" />
@@ -352,17 +352,17 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
                 </div>
                 {setHint && !(Number(specValue) > 1) && (
                   <div className="flex items-center gap-1.5 flex-wrap rounded-lg bg-[var(--cream)] ring-1 ring-[var(--coral)]/30 px-2 py-1.5">
-                    <span className="text-[0.625rem] text-[var(--warm-dark)] flex-1 min-w-[8rem]">
+                    <span className="text-[0.65625rem] text-[var(--warm-dark)] flex-1 min-w-[8rem]">
                       {setHint.basis === 'price'
                         ? `단가가 평소(${(setHint.histUnit ?? 0).toLocaleString()}원/개)의 ${setHint.count}배예요. 1세트에 ${setHint.count}개입인가요?`
                         : `표기상 ${setHint.count}개입 세트로 보여요. 실물 ${setHint.count}개 맞나요?`}
                     </span>
                     <button type="button" onClick={applySetHint}
-                      className="px-2 py-1 text-[0.625rem] font-medium rounded-md bg-[var(--coral)] text-[var(--on-solid)]">
+                      className="px-2 py-1 text-[0.65625rem] font-medium rounded-md bg-[var(--coral)] text-[var(--on-solid)]">
                       네, {setHint.count}개입{setHint.perPiece > 0 ? ` (개당 ${setHint.perPiece.toLocaleString()}원)` : ''}
                     </button>
                     <button type="button" onClick={() => setSetHint(null)}
-                      className="px-2 py-1 text-[0.625rem] rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)]">
+                      className="px-2 py-1 text-[0.65625rem] rounded-md border border-[var(--warm-border)] text-[var(--warm-muted)]">
                       아니요
                     </button>
                   </div>
@@ -373,26 +373,26 @@ function PendingCard({ row, editingMode, onStartEdit, onCancelEdit, onApproved, 
             {/* 공통: 날짜·금액·카테고리·상호·메모 */}
             <div className="grid grid-cols-2 gap-1.5">
               <div>
-                <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>날짜 *</label>
+                <label className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>날짜 *</label>
                 <DatePicker value={date} onChange={setDate}
                   className="bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)]" />
               </div>
               <div>
-                <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>
+                <label className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>
                   금액 {isInventory ? '(영수증·구매가)' : '*'}
                 </label>
                 <MoneyInput value={amount} onChange={setAmount} placeholder="0원" />
               </div>
             </div>
             <div>
-              <label className="text-[0.625rem]" style={{ color: 'var(--warm-muted)' }}>카테고리 *</label>
+              <label className="text-[0.65625rem]" style={{ color: 'var(--warm-muted)' }}>카테고리 *</label>
               <select value={category} onChange={e => setCategory(e.target.value)}
                 className="w-full bg-[var(--cream)] border border-[var(--warm-border)] rounded-sm px-2 py-1 text-xs text-[var(--warm-dark)] outline-none">
                 <option value="">선택</option>
                 {(isInventory ? INVENTORY_CATEGORIES : EXPENSE_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               {isInventory && (
-                <p className="text-[0.5625rem] mt-0.5" style={{ color: 'var(--warm-muted)' }}>
+                <p className="text-[0.65625rem] mt-0.5" style={{ color: 'var(--warm-muted)' }}>
                   ※ 재고 추적은 부식비/소모품비/폐기물 처리비만
                 </p>
               )}
