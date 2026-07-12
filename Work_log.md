@@ -3,6 +3,13 @@
 마지막 업데이트: 2026-07-12
 브랜치: main
 
+## 2026-07-12 (2) — 2차 백로그 착수: 퀵윈·globals 토대·정본 컴포넌트 교체 (추천 순서대로)
+- 순서 원칙: 재작업 방지(토대→구조→텍스트) + 저비용·고효과 UX 앞배치. 운영자 승인: 1차=기계+구조, 2차 순서 0→1→2→3, Phase 4(§4)는 건별 승인.
+- Phase 0 퀵윈(83ffb7f): MoneyInput inputMode=numeric(모바일 숫자패드), 토스트 오프셋 모바일 4.5rem(하단탭 가림 해소), 확인서·수령증 미리보기 팝업차단 회피(제스처 시점 새 탭 선점→URL 주입), AI 재무분석 오류에서 HTTP 상태코드·'스트림' 제거.
+- Phase 1 globals 토대(2bba9d2): --honey/--sun→var(--warning-fg)(새 hue 제거, 22곳 경고 계열 통일), .shadow-lift→§07 정본값, 드롭다운 z-50→--z-dropdown·Header z-[100]→--z-sticky, 가이드 §03 --cream-2 hex 표기 코드 진실(#E8DDD0)로 정정+--cream-soft 명시.
+- Phase 2a 정본 컴포넌트 교체(992d1a4): PrismNavBar→ViewTabs, EntityModal printChoice→choiceDialog, 정산·희망모드·성별·Requests 카테고리 수제 세그먼트→SegmentedControl, TenantClient·DueDayTempAdjust 수제 삭제확인→confirmDialog(danger), TenantClient 수제 토스트→pushToast, AddressSearch 수제 모달→Modal. 동작·로직 불변, 재검수 회귀 없음.
+- 미착수 백로그: Phase 2b raw button→Btn 439곳(점진, 영역별), Phase 3 폰트 9/10px→10.5px 일괄(레이아웃 검증), Phase 4 UX 64건 중 §4 행동 건(삭제 undo·확인창 추가 등, 건별 운영자 승인). UX 상세 보고서 4건은 scratchpad(ux-*.md) 및 대화 로그에 보존.
+
 ## 2026-07-12 — 디자인 가이드 전수검사 + 1차 정합 수정 (검수 11명·수정 7명·재검수 2명)
 - 깐깐한 웹디자이너 역할 서브에이전트로 앱 전 UI를 v2.0 정본과 대조: 디자인 위배 7영역(원시 약 526건), UX 불편 4영역(64건). Fable 5 크레딧 소진으로 중단→Opus로 재투입 완료.
 - 가이드 자체 모순 2건 정정: §28 '코랄 솔리드 위 #fff'→--on-solid(§03·§25 순백 금지와 정합), §29 국가 식별용 국기 이모지 기능적 예외 명문화(운영자 결정).
