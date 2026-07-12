@@ -499,13 +499,15 @@ export default function TenantClient({
     // 검색
     if (!search.trim()) return true
     const q = search.toLowerCase()
+    const qDigits = q.replace(/[^0-9]/g, '')   // 전화번호 검색 — 하이픈·공백 무관 숫자 비교
     return (
       t.name.toLowerCase().includes(q) ||
       (t.englishName?.toLowerCase().includes(q) ?? false) ||
       (t.leaseTerms[0]?.room?.roomNo ?? '').includes(q) ||
       (STATUS_LABEL[status] ?? '').includes(q) ||
       (t.nationality?.toLowerCase().includes(q) ?? false) ||
-      (t.job?.toLowerCase().includes(q) ?? false)
+      (t.job?.toLowerCase().includes(q) ?? false) ||
+      (qDigits.length >= 2 && t.contacts.some(c => c.contactValue.replace(/[^0-9]/g, '').includes(qDigits)))
     )
   })
 
@@ -953,7 +955,7 @@ export default function TenantClient({
       </div>
 
       {/* 검색 — v2.0 §23 공용 SearchBar (모바일 포함 항상 노출) */}
-      <SearchBar value={search} onChange={setSearch} placeholder="이름, 호실, 국적, 직업 검색" />
+      <SearchBar value={search} onChange={setSearch} placeholder="이름, 호실, 전화번호, 국적, 직업 검색" />
 
       {/* 상태 필터 — v2.0 §23 단일 SegmentedControl(탭+하위 2단계를 생애주기 한 줄로 평탄화) */}
       <div className="flex gap-2 flex-wrap items-center">
