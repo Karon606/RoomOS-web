@@ -15,6 +15,7 @@ import {
 import type { RoomPrice, CompetitorRow } from './actions'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
+import { pushToast } from '@/lib/saveStatus'
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -686,6 +687,21 @@ export default function MarketClient({
               : s,
           ),
         )
+        const snap = res.snapshot
+        if (snap) {
+          pushToast('success', '경쟁업체를 삭제했습니다', {
+            action: { label: '적용취소', run: () => { startTransition(async () => {
+              const r = await addCompetitor(snap.marketSurveyId, {
+                name: snap.name, address: snap.address,
+                naverPlaceUrl: snap.naverPlaceUrl, roomPrices: snap.roomPrices, notes: snap.notes,
+              })
+              if (r.ok && r.competitor) {
+                const added = r.competitor
+                setSurveys(prev => prev.map(s => s.id === snap.marketSurveyId ? { ...s, competitors: [...s.competitors, added] } : s))
+              } else pushToast('error', r.error ?? '복구에 실패했습니다.')
+            }) } },
+          })
+        }
       }
     })
   }

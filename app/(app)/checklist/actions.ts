@@ -171,12 +171,13 @@ export async function deleteChecklist(id: string): Promise<{ ok: true } | { ok: 
 export async function markChecklistDone(input: {
   id: string
   memo?: string
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; logId: string } | { ok: false; error: string }> {
   try {
     await requireEdit()
     const { userId } = await getPropertyId()
     const now = new Date()
-    await prisma.$transaction([
+    // 적용취소(undo)용으로 생성된 로그 id를 반환 — 취소는 기존 deleteChecklistLog 재사용.
+    const [, log] = await prisma.$transaction([
       prisma.checklist.update({
         where: { id: input.id },
         data: { lastCheckedAt: now },
@@ -192,7 +193,7 @@ export async function markChecklistDone(input: {
     ])
     revalidatePath('/checklist')
     revalidatePath('/dashboard')
-    return { ok: true }
+    return { ok: true, logId: log.id }
   } catch (err) {
     if ((err as any)?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false, error: (err as Error).message ?? '오류가 발생했습니다.' }

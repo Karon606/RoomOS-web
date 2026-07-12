@@ -111,7 +111,7 @@ export async function saveFloorPlan(data: FloorPlanData): Promise<{ ok: true } |
 }
 
 // 도면 저장 적용취소 — 현재본과 직전본을 맞바꿈(다시 누르면 재실행)
-export async function swapFloorPlanWithPrev(): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function swapFloorPlanWithPrev(): Promise<{ ok: true; floors: unknown } | { ok: false; error: string }> {
   try {
     const propertyId = await getPropertyId()
     const cur = await prisma.property.findUnique({ where: { id: propertyId }, select: { floorPlanData: true, floorPlanPrevData: true } })
@@ -121,7 +121,8 @@ export async function swapFloorPlanWithPrev(): Promise<{ ok: true } | { ok: fals
       data: { floorPlanData: cur.floorPlanPrevData, floorPlanPrevData: cur.floorPlanData ?? undefined },
     })
     revalidatePath('/dashboard'); revalidatePath('/floor-plan')
-    return { ok: true }
+    // 스왑 후 새 현재본(=직전본)을 반환 — 클라이언트가 새로고침 없이 캔버스에 반영.
+    return { ok: true, floors: cur.floorPlanPrevData }
   } catch (e) {
     return { ok: false, error: String(e) }
   }

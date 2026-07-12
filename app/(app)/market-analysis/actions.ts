@@ -141,13 +141,23 @@ export async function updateCompetitor(
   }
 }
 
-export async function deleteCompetitor(id: string): Promise<{ ok: boolean }> {
+export async function deleteCompetitor(id: string): Promise<{ ok: boolean; snapshot?: {
+  marketSurveyId: string; name: string; address: string
+  naverPlaceUrl?: string; roomPrices: RoomPrice[]; notes?: string
+} }> {
   try {
     await requireEdit()
     await getPropertyId()
+    // 적용취소(undo)용 스냅샷 — 취소는 기존 addCompetitor 재사용(새 id로 복원).
+    const c = await prisma.marketCompetitor.findUnique({ where: { id } })
     await prisma.marketCompetitor.delete({ where: { id } })
     revalidatePath('/market-analysis')
-    return { ok: true }
+    return { ok: true, snapshot: c ? {
+      marketSurveyId: c.marketSurveyId, name: c.name, address: c.address,
+      naverPlaceUrl: c.naverPlaceUrl ?? undefined,
+      roomPrices: c.roomPrices as RoomPrice[],
+      notes: c.notes ?? undefined,
+    } : undefined }
   } catch (err) {
     if ((err as { digest?: string })?.digest?.startsWith('NEXT_REDIRECT')) throw err
     return { ok: false }

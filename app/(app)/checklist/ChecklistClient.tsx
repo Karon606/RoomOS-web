@@ -12,7 +12,7 @@ import {
   deleteChecklistLog,
 } from './actions'
 import { DEFAULT_CHECKLIST_ALERT_DAYS_BEFORE } from '@/lib/appConfig'
-import { withSave } from '@/lib/saveStatus'
+import { withSave, pushToast } from '@/lib/saveStatus'
 import { Btn } from '@/components/ui/Btn'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { Modal } from '@/components/ui/Modal'
@@ -86,8 +86,12 @@ export default function ChecklistClient({ initialRows }: { initialRows: Checklis
   // 카드에서 1탭 점검 완료 — 메모 없이 바로 기록(메모·이력은 '이력·메모' 버튼으로)
   const handleQuickDone = (row: ChecklistRow) => {
     startTransition(async () => {
-      const res = await withSave(() => markChecklistDone({ id: row.id, memo: '' }), { success: '점검 완료로 기록했습니다' })
+      const res = await withSave(() => markChecklistDone({ id: row.id, memo: '' }))
       if (!res.ok) return
+      const logId = res.logId
+      pushToast('success', '점검 완료로 기록했습니다', {
+        action: { label: '적용취소', run: () => { void deleteChecklistLog(logId).then(r => { if (r.ok) refresh(); else pushToast('error', r.error) }) } },
+      })
       refresh()
     })
   }
